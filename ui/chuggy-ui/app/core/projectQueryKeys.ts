@@ -19,6 +19,10 @@
  * other leaves stale, and neither a `Project` frame nor the partition's own
  * invalidation reaches it.
  *
+ * `["caller", resource]` is the reader's own entry, outside every tenant for
+ * the same reason again: which workspaces hold them is a fact about the
+ * reader, asked on a page that is in none yet.
+ *
  * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
  * — the cache being the only thing under a partition that outlives the screen
  * that wrote it. Its marker is outside the kinds, so nothing addressed by kind
@@ -49,6 +53,7 @@ import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 export const projectQueryScope = "project";
 export const projectsQueryScope = "projects";
 export const tenantQueryScope = "tenant";
+export const callerQueryScope = "caller";
 export const projectListMarker = "list";
 
 /** Neither a kind nor a list of one, which is what keeps a held entry out of
@@ -67,6 +72,11 @@ export function tenantResourceKey(
   resource: string,
 ): ProjectQueryKey {
   return [tenantQueryScope, tenant, resource];
+}
+
+/** The reader's own resource, of no tenant and no project. */
+export function callerResourceKey(resource: string): ProjectQueryKey {
+  return [callerQueryScope, resource];
 }
 
 export function projectPartitionKey(

@@ -39,7 +39,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
-// jscpd:ignore-end
+// jscpd:ignore-end -- the case's own doubles resume here
 
 /**
  * A settled ticket's runs, read back from its ledger.

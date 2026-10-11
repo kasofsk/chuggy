@@ -43,8 +43,8 @@ import {
  * polled and what it may serve. Neither reads a token or a client, and neither
  * may change what a runner is or serves.
  */
-export const migration046: Migration = {
-  version: 46,
+export const migration048: Migration = {
+  version: 48,
   name: "a member registers a personal runner in a tenant",
   statements: [
     `CREATE TABLE public.personal_runner (

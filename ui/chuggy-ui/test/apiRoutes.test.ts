@@ -38,6 +38,7 @@ import {
   apiPersonalRunnerPermit,
   apiPersonalRunnerServes,
   apiProject,
+  apiProjectAbilities,
   apiProjectInventory,
   apiProjectInventoryAll,
   apiProjectRepositories,
@@ -51,6 +52,7 @@ import {
   apiStopTimeoutMs,
   apiTicket,
   apiTicketActionReach,
+  apiTicketDispatchView,
   apiTicketNativeActions,
   apiWriteOwnerFallback,
   apiWriteProjectRepositoryLanding,
@@ -178,6 +180,19 @@ test("a dispatch read can address one ticket-sized candidate page", async () => 
   expect(held.urls[0]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las/dispatch-view?after=11&limit=1`,
   );
+});
+
+/** The route reads candidates after a ticket, so one ticket's own page starts
+ * at the ticket before it, and the first ticket's at the head. */
+test("one ticket's dispatch read is the page that would hold it", async () => {
+  const held = recording(() => ({ result: "Reset" }));
+  await apiTicketDispatchView(held.ports, partition, 12);
+  await apiTicketDispatchView(held.ports, partition, 1);
+  const view = `${nativeHttpBasePath}/tenants/acme/projects/at%20las/dispatch-view`;
+  expect(held.urls).toStrictEqual([
+    `${view}?after=11&limit=1`,
+    `${view}?limit=1`,
+  ]);
 });
 
 test("a revision that looks like a path is one segment, not several", async () => {
@@ -367,6 +382,21 @@ test("the hosted-runs grant hangs from the partition and is read as given or not
     value: { granted: false },
   });
   expect(held.urls[0]).toBe(`${partitionPath}/hosted-runs`);
+});
+
+test("the reader's abilities hang from the partition and are read door by door", async () => {
+  const abilities = {
+    mutate: false,
+    dispatch: false,
+    manageSelector: false,
+    administer: false,
+  };
+  const held = recording(() => abilities);
+  expect(await apiProjectAbilities(held.ports, partition)).toStrictEqual({
+    outcome: "Ok",
+    value: abilities,
+  });
+  expect(held.urls[0]).toBe(`${partitionPath}/abilities`);
 });
 
 /**

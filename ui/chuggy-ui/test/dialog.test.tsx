@@ -121,7 +121,10 @@ function pressedOutside(): void {
   fireEvent.click(document.body);
 }
 
-function Held(props: { readonly busy: boolean }): ReactNode {
+function Held(props: {
+  readonly busy: boolean;
+  readonly kept?: boolean;
+}): ReactNode {
   const [open, setOpen] = useState(true);
   return (
     <Dialog
@@ -130,6 +133,7 @@ function Held(props: { readonly busy: boolean }): ReactNode {
       open={open}
       onOpenChange={setOpen}
       busy={props.busy}
+      kept={props.kept ?? false}
       foot={<button type="button">Done</button>}
     >
       <p>roles</p>
@@ -162,6 +166,21 @@ test("a press outside closes a dialog whose caller awaits nothing", async () => 
   render(<Held busy={false} />);
   await turned();
   await turned(pressedOutside);
+  await turned();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  styleless();
+});
+
+test("a press outside does not close a kept dialog, and Escape does", async () => {
+  render(<Held busy={false} kept />);
+  await turned();
+  const dialog = screen.getByRole("dialog", { name: "Edit" });
+  await turned(pressedOutside);
+  await turned();
+  expect(screen.getByRole("dialog", { name: "Edit" })).toBe(dialog);
+  await turned(() => {
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  });
   await turned();
   expect(screen.queryByRole("dialog")).toBeNull();
   styleless();

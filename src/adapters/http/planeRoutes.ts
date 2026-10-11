@@ -1,11 +1,13 @@
 /**
- * How the job, session, pool and access planes serve a route: the plane's
- * release check where it has one, then the caller resolved from its bearer,
- * both in `onRequest` hooks
+ * How the job, session, pool and access planes serve a route to a caller: the
+ * plane's release check where it has one, then the caller resolved from its
+ * bearer, both in `onRequest` hooks
  * that run before any byte of the body is read, and only then the body, read
  * under the most that one route takes. A request from anyone the plane does not
  * serve is refused without the plane buffering or parsing what it sent, and the
  * handler is handed the caller its hook resolved rather than resolving it again.
+ * A route served to no caller, as the access plane's registration gate is, and
+ * a plane's health probes are registered beside these and resolve nobody.
  */
 
 import fastify, {

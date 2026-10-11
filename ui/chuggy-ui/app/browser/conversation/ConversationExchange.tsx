@@ -220,24 +220,28 @@ const conversationPartWhole: MessagePartStatus = { type: "complete" };
 
 /**
  * The report gives up its own panel here: what it sits on is already a
- * surface, and a box inside a box is width the words need more. It is still
- * being written while its turn is at it, and while the pace has yet to catch
- * up with what was heard of it.
- *
- * Only the last part of an answer is let out at a pace. A text something was
- * written after is drawn whole from then on, so a part is never drawn under
- * one still arriving and two texts never carry the mark at once; so is every
- * text of a turn that was stopped, at once, since a stop leaves nothing moving.
+ * surface, and a box inside a box is width the words need more. Only the last
+ * part of an answer is let out at a pace.
  */
 const ConversationReport: TextMessagePartComponent = (props) => {
   const paced = useContext(ConversationPaced);
   const place = useContext(ConversationTextPlaced);
+  /**
+   * A text something was written after is drawn whole from then on, so a part
+   * is never drawn under one still arriving and two texts never carry the mark
+   * at once; so is every text of a turn that was stopped, at once, since a stop
+   * leaves nothing moving.
+   */
   const [closed, setClosed] = useState(false);
   if ((place === "Closed" || place === "Cut") && !closed) setClosed(true);
   const shown = useSmooth(
     { ...props, status: conversationPartWhole },
     paced && !closed,
   );
+  /**
+   * Still being written while its turn is at it, and while the pace has yet to
+   * catch up with what was heard of it.
+   */
   const writing = place === "UnderWay" || shown.text.length < props.text.length;
   const marked = useContext(ConversationMarkedSaid);
   useLayoutEffect(() => {

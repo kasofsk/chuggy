@@ -4,10 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json && tsc --noEmit -p tsconfig.terminal.json",
     "lint": "eslint .",
     "test": "vitest run",
-    "build": "vite build && node ../../scripts/check-console-policy.ts dist",
+    "build": "vite build && vite build --config vite.terminal.config.ts && node ../../scripts/check-console-policy.ts dist && node terminal/built.ts dist",
     "format": "../../node_modules/.bin/prettier --check --log-level warn --ignore-path ../../.gitignore --ignore-path ../../.prettierignore ."
   },
   "dependencies": {

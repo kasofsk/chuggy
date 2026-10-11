@@ -59,6 +59,9 @@ export function siteWorkspaceUnnamedLine(
     : `+${String(listed.unnamed)} more`;
 }
 
+/** The box that hands account creation on with a workspace, as its form and a link's row word it. */
+export const siteWorkspaceCreateAccountsLabel = "Can invite new people";
+
 /** Whom a workspace's admins may invite, as its row says it. */
 export function siteWorkspaceInvitesLabel(createAccounts: boolean): string {
   return createAccounts ? "New people" : "Existing accounts";
@@ -88,6 +91,9 @@ export function siteWorkspaceHeld(
   };
 }
 
+/** What a name something already holds is refused as. */
+export const siteWorkspaceNameTaken = "Name taken";
+
 /** Why one name cannot be sent, in the lines a project's creation draws, or
  * nothing while it is empty. */
 export function siteWorkspaceNameFault(name: string): string | undefined {
@@ -109,11 +115,12 @@ export interface SiteWorkspaceOutcome {
   readonly line: string;
 }
 
-function siteWorkspaceRefusal(failure: ApiFailure): string {
+/** What the dialog's one line says of an answer that made nothing. */
+export function siteWorkspaceRefusal(failure: ApiFailure): string {
   switch (failure.outcome) {
     case "Conflict":
     case "Rejected":
-      if (failure.code === accessTenantTakenCode) return "Name taken";
+      if (failure.code === accessTenantTakenCode) return siteWorkspaceNameTaken;
       if (failure.code === accessNotPermittedCode) return "Not permitted";
       return accessFailureLabel(failure);
     case "Unauthenticated":

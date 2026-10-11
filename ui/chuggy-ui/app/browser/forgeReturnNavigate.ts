@@ -2,7 +2,7 @@
 
 import type { UseNavigateResult } from "@tanstack/react-router";
 
-import type { ForgeAuthorizeTarget } from "../core/forgeAuthorization.ts";
+import type { ForgePress } from "../core/forgePress.ts";
 import { forgeReturnHold } from "../core/forgeReturn.ts";
 import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import { transientStore } from "./ports.ts";
@@ -10,9 +10,9 @@ import { transientStore } from "./ports.ts";
 /** The page left replaces this address, so going back does not land here again. */
 export function forgeReturnNavigate(
   navigate: UseNavigateResult<string>,
-  target: ForgeAuthorizeTarget,
+  press: ForgePress,
   word: ForgeReturnWord | undefined,
 ): Promise<void> {
-  if (word !== undefined) forgeReturnHold(transientStore, target.tenant, word);
-  return navigate({ href: target.returnPath, replace: true });
+  if (word !== undefined) forgeReturnHold(transientStore, press.tenant, word);
+  return navigate({ href: press.returnPath, replace: true });
 }

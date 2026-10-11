@@ -3,16 +3,37 @@
  * waiting on a person for, or nothing.
  */
 
+import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { EscalationStep } from "../../core/codeLabels.ts";
+import { navRoutes } from "../../core/shellNav.ts";
 import type { TicketSlot as Slot } from "../../core/ticketSituation.ts";
 import { TicketNow } from "./TicketNow.tsx";
 
 import "./ticket.css";
 
+/** The page the way past the wait is on, after the line that names the wait. */
+function NeedsYouStep(props: {
+  readonly partition: PartitionIdentity;
+  readonly step: EscalationStep | undefined;
+}): ReactNode {
+  if (props.step === undefined) return null;
+  return (
+    <span className="text-md text-ink-3">
+      {" · "}
+      <Link to={navRoutes.runners} params={props.partition}>
+        Runners
+      </Link>
+    </span>
+  );
+}
+
 function NeedsYou(props: {
+  readonly partition: PartitionIdentity;
   readonly detail: string;
+  readonly step: EscalationStep | undefined;
   readonly more: string | undefined;
   readonly overrides: ReactNode;
   readonly actions: ReactNode;
@@ -24,7 +45,10 @@ function NeedsYou(props: {
       role="status"
     >
       <span className="eyebrow text-tone-parked">Needs you</span>
-      <p className="text-lg text-ink-1">{props.detail}</p>
+      <p className="text-lg text-ink-1">
+        {props.detail}
+        <NeedsYouStep partition={props.partition} step={props.step} />
+      </p>
       {props.more === undefined ? null : (
         <p className="text-ink-3">{props.more}</p>
       )}
@@ -47,7 +71,9 @@ export function TicketSlot(props: {
     case "NeedsYou":
       return (
         <NeedsYou
+          partition={props.partition}
           detail={slot.detail}
+          step={slot.step}
           more={slot.more}
           overrides={props.overrides}
           actions={props.actions}

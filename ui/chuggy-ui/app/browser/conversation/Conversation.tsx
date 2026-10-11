@@ -610,6 +610,9 @@ function ConversationDrawn(props: {
 export interface ConversationProps {
   readonly exchanges: readonly ConversationExchange[];
   readonly composer?: ConversationComposerProps;
+  /** The line that stands where the composer would, from a page that hands
+   * no composer and says why. */
+  readonly unsendable?: ReactNode;
   /** The one line a column with nothing in it says. A caller that words none
    * draws nothing at all, which is what a chat nobody has typed in yet wants:
    * the composer under it already says what to do. */
@@ -637,33 +640,39 @@ export interface ConversationProps {
   readonly image?: (artifact: string) => ReactNode;
 }
 
-/** The composer at the foot of the column, with what the surface holds of
- * its button and its images. */
+/** The foot of the column: the composer, with what the surface holds of its
+ * button and its images, or the line a page hands in its place. */
 function ConversationFoot(props: {
-  readonly composer: ConversationComposerProps;
+  readonly composer: ConversationComposerProps | undefined;
+  readonly unsendable: ReactNode;
   readonly pane: boolean;
   readonly sending: boolean;
   readonly stoppable: string | undefined;
   readonly beat: ConversationStopBeat;
   readonly attachments: ConversationComposerAttached;
 }): ReactNode {
-  const { beat, attachments } = props;
+  const { beat, attachments, composer } = props;
+  if (composer === undefined && props.unsendable === undefined) return null;
   return (
     <div
       className={`conversation-column mx-auto w-full ${props.pane ? "conversation-foot" : "pt-4"}`}
     >
-      <ConversationComposer
-        {...props.composer}
-        busy={props.sending}
-        stops={props.stoppable !== undefined}
-        ignores={beat.ignores}
-        rests={beat.rests(props.stoppable === undefined ? "Send" : "Stop")}
-        onSendClick={beat.sent}
-        attached={attachments.attached}
-        attachRefused={attachments.attachRefused}
-        onAttach={attachments.onAttach}
-        onDetach={attachments.onDetach}
-      />
+      {composer === undefined ? (
+        props.unsendable
+      ) : (
+        <ConversationComposer
+          {...composer}
+          busy={props.sending}
+          stops={props.stoppable !== undefined}
+          ignores={beat.ignores}
+          rests={beat.rests(props.stoppable === undefined ? "Send" : "Stop")}
+          onSendClick={beat.sent}
+          attached={attachments.attached}
+          attachRefused={attachments.attachRefused}
+          onAttach={attachments.onAttach}
+          onDetach={attachments.onDetach}
+        />
+      )}
     </div>
   );
 }
@@ -729,16 +738,15 @@ export function Conversation(props: ConversationProps): ReactNode {
           </div>
         </ThreadPrimitive.Viewport>
         <ConversationBottom />
-        {props.composer === undefined ? null : (
-          <ConversationFoot
-            composer={props.composer}
-            pane={props.pane === true}
-            sending={sending}
-            stoppable={stoppable}
-            beat={beat}
-            attachments={attachments}
-          />
-        )}
+        <ConversationFoot
+          composer={props.composer}
+          unsendable={props.unsendable}
+          pane={props.pane === true}
+          sending={sending}
+          stoppable={stoppable}
+          beat={beat}
+          attachments={attachments}
+        />
       </ThreadPrimitive.Root>
     </AssistantRuntimeProvider>
   );

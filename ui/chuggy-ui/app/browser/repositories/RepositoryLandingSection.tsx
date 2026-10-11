@@ -19,6 +19,7 @@ import type {
 import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
 import { apiWriteProjectRepositoryLanding } from "../../core/apiRoutes.ts";
 import { landingEffect, landingLabel } from "../../core/codeLabels.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   projectRepositoriesWith,
@@ -35,6 +36,7 @@ import type {
   RepositoryLandingSaved,
 } from "../../core/repositoryLanding.ts";
 import { useApiPorts } from "../api.ts";
+import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
@@ -158,6 +160,7 @@ export function RepositoryLandingSection(props: {
     held,
   );
   const [editing, setEditing] = useState(false);
+  const abilities = useProjectAbilities(props.partition);
   const saved = writing.saved;
   return (
     <SettingsSection
@@ -165,6 +168,7 @@ export function RepositoryLandingSection(props: {
       about="How a finished ticket lands. A ticket may choose otherwise."
       editing={editing}
       editable
+      readOnly={projectAbilityRefused(abilities, "administer")}
       savable={
         repositoryLandingSavable(held.draft) && saved.saved !== "Writing"
       }

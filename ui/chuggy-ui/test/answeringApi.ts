@@ -1,7 +1,9 @@
 /**
  * An API double that answers each request with what the case decides and
  * records every request it was sent, its body parsed, so a suite asserts the
- * traffic a screen made rather than a return value.
+ * traffic a screen made rather than a return value. A wait is over at once,
+ * and one whose signal has been aborted is refused as the browser's is, so a
+ * follow its caller ends stops here as it does there.
  */
 
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -39,7 +41,10 @@ export function answeringApi(
         } as unknown as Response);
       },
       bearer: () => Promise.resolve("token"),
-      sleepMs: () => Promise.resolve(),
+      sleepMs: (_ms, signal) =>
+        signal?.aborted === true
+          ? Promise.reject(new Error("the wait was abandoned"))
+          : Promise.resolve(),
     },
   };
 }

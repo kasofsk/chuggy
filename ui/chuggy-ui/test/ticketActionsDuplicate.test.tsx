@@ -6,7 +6,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, within } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -26,6 +26,12 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
+import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm } from "./viewport.ts";
 
@@ -89,15 +95,18 @@ function routed(
   };
 }
 
+/** The page of a ticket in `phase`, the abilities read answering as its other
+ * reads do unless the case hands a `fetch` of its own over them. */
 async function bar(
   phase: TicketPhase,
   actionsRead = true,
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<{ readonly api: ApiDouble; readonly bar: HTMLElement }> {
   const api = apiDouble({
     operation: operationAt("Pending"),
     route: routed(phase, actionsRead),
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   const { container } = render(
     <ScreenHarness
       partition={atlas}
@@ -135,3 +144,46 @@ test("Duplicate is offered where the open actions could not be read", async () =
   const { bar: drawn } = await bar("Escalated", false);
   expect(duplicateOf(drawn)).toBeTruthy();
 });
+
+/** Which of what a Pending ticket's page and an Escalated one's offer a
+ * reader are drawn: the two links, and the answer the bar holds. */
+async function offeredTo(
+  abilities: AbilitiesAnswer,
+): Promise<Record<string, boolean>> {
+  const over = abilitiesOver(abilities);
+  const named = (role: string, name: string): boolean =>
+    screen.queryByRole(role, { name }) !== null;
+  await bar("Pending", true, over);
+  const pending = {
+    edit: named("link", "Edit"),
+    duplicate: named("link", "Duplicate"),
+  };
+  cleanup();
+  await bar("Escalated", true, over);
+  return {
+    ...pending,
+    revoke: named("button", "Revoke"),
+    duplicateParked: named("link", "Duplicate"),
+  };
+}
+
+test("a reader who may not mutate is offered no Edit, Duplicate or Revoke", async () => {
+  expect(await offeredTo({ ...abilitiesEvery, mutate: false })).toStrictEqual({
+    edit: false,
+    duplicate: false,
+    revoke: false,
+    duplicateParked: false,
+  });
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Edit, Duplicate and Revoke",
+  async (_said, abilities) => {
+    expect(await offeredTo(abilities)).toStrictEqual({
+      edit: true,
+      duplicate: true,
+      revoke: true,
+      duplicateParked: true,
+    });
+  },
+);

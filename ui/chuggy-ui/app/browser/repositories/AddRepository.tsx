@@ -1,10 +1,44 @@
 /**
  * Adding a repository: what the tenant's portal installations grant, marked
- * against what this project already binds, and what choosing one came to.
+ * against what this project already binds and against what the worker app was
+ * read not to grant, and what choosing one came to.
  *
  * A refusal is one line under the roster and never a second dialog, because
  * the choice that earned it is still on screen and is what the reader would go
  * back to.
+ *
+ * WHAT AN INSTALLATION GRANTS IS CHANGED ON THE FORGE, so the roster carries
+ * the way there under it: the portal app's own page for a repository it does
+ * not list, and the worker app's for one a row marks. Each is the install link
+ * the page draws, returning to this picker open, where the roster is read
+ * again.
+ *
+ * THE ROSTER IS READ WHEN A PERSON OPENS THE PICKER, AND AGAIN ON A CLOCK OF
+ * ITS OWN WHILE IT STAYS OPEN, because the forge can be slow to list a grant
+ * just made and nothing tells this console when it does. A listing costs the
+ * forge a request whenever it is asked for, so an opening's own readings are
+ * counted and stop, and none is made in a tab out of view;
+ * `ui/chuggy-ui/app/core/projectRepositories.ts` names the pace and the count.
+ * None is raised by the project's stream either, which reports nothing that
+ * changes what an installation grants: the roster is held under the tenant's
+ * key, which no frame and no refetch of the partition reaches.
+ *
+ * THE ROSTER IS DRAWN WHEN THE PORTAL APP'S LISTINGS ARE READ, and the worker
+ * app's follow it: an opening's first reading writes what it has under its own
+ * key before it asks for them. A row is marked once they answer and nothing is
+ * drawn of them before, but for a reader who chooses a row meanwhile, who is
+ * told under the roster that they are unread until the mark she might have
+ * missed can arrive.
+ *
+ * A READING THE PICKER MAKES BY ITSELF CHANGES WHAT IS DRAWN ONLY WHEN IT IS
+ * WHOLE, so no row loses a mark to get it back. One that a listing did not
+ * answer says nothing and is answered as the roster that stood, which leaves
+ * no failure under the key for the next opening to draw.
+ *
+ * A ROW ONCE DRAWN KEEPS ITS PLACE UNTIL THE PICKER CLOSES, because a press
+ * binds at once and a row moved under the pointer between aim and press binds
+ * another repository. A reading's new rows are drawn after every row, and one
+ * it no longer lists stands where it stood, saying so, and cannot be pressed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -17,69 +51,167 @@ import type {
   ForgeRepositoryResponse,
   ProjectRepositoryResponse,
 } from "../../../../../src/contract/responses.ts";
+import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import {
   apiBindProjectRepository,
   apiForgeInstallationRepositories,
 } from "../../core/apiRoutes.ts";
+import type { PanelState } from "../../core/freshness.ts";
 import { operationIdBytesCount } from "../../core/operationFollow.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import {
+  projectResourceKey,
+  tenantResourceKey,
+} from "../../core/projectQueryKeys.ts";
 import {
   repositoriesTruncated,
+  repositoriesWorkerless,
+  repositoryAddReturnPath,
   repositoryBindNote,
   repositoryBindOutcome,
   repositoryChoices,
+  repositoriesDrawn,
+  repositoryGrantLines,
+  repositoryRosterRereadMs,
+  repositoryUnlisted,
+  repositoryWorkerLine,
+  repositoryWorkerMissing,
+  repositoryWorkerReading,
 } from "../../core/projectRepositories.ts";
 import type {
+  InstallationGrant,
   RepositoryChoice,
+  RepositoryDrawn,
   RepositoryNote,
 } from "../../core/projectRepositories.ts";
-import { useApiPorts, usePanelResource } from "../api.ts";
+import type { WorkRunner } from "../../core/workRunner.ts";
+import { useApiPorts, usePanelTenantResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
-import { drawBytes } from "../ports.ts";
+import { currentPath, drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
-import { NewTicketOffer } from "./NewTicketOffer.tsx";
+import { InstallLink } from "./InstallLink.tsx";
+import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
 
-/** No frame names either read, so the partition's own refetch is what reaches
- * them: a bind raises none, so the bindings key is invalidated by the bind. */
+/** The roster's entry under the tenant's key, where nothing reads it but the
+ * picker that draws it. */
 export const forgeReachableResource = "forge-reachable";
+
+/** No frame names this read, so the partition's own refetch is what reaches
+ * it: a bind raises none, so the bindings key is invalidated by the bind. */
 export const projectRepositoriesResource = "project-repositories";
 
 interface Reachable {
   readonly repositories: readonly ForgeRepositoryResponse[];
   readonly truncated: boolean;
+  /** The addresses among them the worker app was read not to grant, and
+   * `undefined` until its listings are read. */
+  readonly workerless: readonly string[] | undefined;
+}
+
+function reachableOf(
+  portal: readonly InstallationGrant[],
+  worker: readonly InstallationGrant[] | undefined,
+): Reachable {
+  return {
+    repositories: portal.flatMap((grant) => grant.repositories),
+    truncated: portal.some((grant) => grant.truncated),
+    workerless:
+      worker === undefined ? undefined : repositoriesWorkerless(portal, worker),
+  };
+}
+
+/** What one installation grants, under the account its claim names. */
+async function readGrant(
+  ports: ApiPorts,
+  tenant: string,
+  installation: ForgeInstallationResponse,
+): Promise<ApiResult<InstallationGrant>> {
+  const answered = await apiForgeInstallationRepositories(
+    ports,
+    tenant,
+    installation.installationId,
+  );
+  if (answered.outcome !== "Ok") return answered;
+  return {
+    outcome: "Ok",
+    value: { account: installation.account, ...answered.value },
+  };
+}
+
+/**
+ * What the worker installations grant, one that does not answer `Ok` left out.
+ * The roster is the portal app's, so a worker listing that was not read takes
+ * nothing down and marks no row.
+ */
+async function readWorkerGrants(
+  ports: ApiPorts,
+  tenant: string,
+  workers: readonly ForgeInstallationResponse[],
+): Promise<readonly InstallationGrant[]> {
+  const granted: InstallationGrant[] = [];
+  for (const installation of workers) {
+    const answered = await readGrant(ports, tenant, installation);
+    if (answered.outcome === "Ok") granted.push(answered.value);
+  }
+  return granted;
 }
 
 /**
  * What every portal installation the tenant holds grants, read one after
  * another: a listing that is partial makes the whole roster partial, because a
  * repository the reader cannot find may be in the part that was not answered.
- * The first installation that does not answer `Ok` therefore takes the whole
- * roster down deliberately, so one revoked claim is read as a refusal rather
+ * The first installation that does not answer `Ok` is therefore the answer for
+ * them all, deliberately, so one revoked claim is read as a refusal rather
  * than as a roster silently missing the account it covered.
  */
+async function readPortalGrants(
+  ports: ApiPorts,
+  tenant: string,
+  installations: readonly ForgeInstallationResponse[],
+): Promise<ApiResult<readonly InstallationGrant[]>> {
+  const portal: InstallationGrant[] = [];
+  for (const installation of installations) {
+    const answered = await readGrant(ports, tenant, installation);
+    if (answered.outcome !== "Ok") return answered;
+    portal.push(answered.value);
+  }
+  return { outcome: "Ok", value: portal };
+}
+
+/** An opening's first reading: the portal app's roster handed to `drawn`
+ * before the worker app's listings are asked for, then the roster they mark. */
 async function readReachable(
   ports: ApiPorts,
   tenant: string,
   installations: readonly ForgeInstallationResponse[],
+  workers: readonly ForgeInstallationResponse[],
+  drawn: (roster: Reachable) => void,
 ): Promise<ApiResult<Reachable>> {
-  const repositories: ForgeRepositoryResponse[] = [];
-  let truncated = false;
-  for (const installation of installations) {
-    const answered = await apiForgeInstallationRepositories(
-      ports,
-      tenant,
-      installation.installationId,
-    );
-    if (answered.outcome !== "Ok") return answered;
-    repositories.push(...answered.value.repositories);
-    truncated = truncated || answered.value.truncated;
-  }
-  return { outcome: "Ok", value: { repositories, truncated } };
+  const portal = await readPortalGrants(ports, tenant, installations);
+  if (portal.outcome !== "Ok") return portal;
+  drawn(reachableOf(portal.value, undefined));
+  const worker = await readWorkerGrants(ports, tenant, workers);
+  return { outcome: "Ok", value: reachableOf(portal.value, worker) };
+}
+
+/** A reading the open picker makes by itself: the whole roster, and nothing
+ * where a listing of either app did not answer. */
+async function rereadReachable(
+  ports: ApiPorts,
+  tenant: string,
+  installations: readonly ForgeInstallationResponse[],
+  workers: readonly ForgeInstallationResponse[],
+): Promise<Reachable | undefined> {
+  const portal = await readPortalGrants(ports, tenant, installations);
+  if (portal.outcome !== "Ok") return undefined;
+  const worker = await readWorkerGrants(ports, tenant, workers);
+  return worker.length === workers.length
+    ? reachableOf(portal.value, worker)
+    : undefined;
 }
 
 function RepositoryChoiceRow(props: {
@@ -89,24 +221,139 @@ function RepositoryChoiceRow(props: {
 }): ReactNode {
   const choice = props.choice;
   return (
-    <span className="flex items-center gap-2">
+    <span className="flex flex-wrap items-center gap-x-2">
       <Button
         size="sm"
         variant="quiet"
-        disabled={props.busy}
+        disabled={props.busy || !choice.listed}
         onClick={() => {
           props.onChoose(choice);
         }}
       >
         {choice.repository.fullName}
       </Button>
+      {choice.listed ? null : (
+        <span className="text-sm text-ink-3">{repositoryUnlisted}</span>
+      )}
       {choice.bound ? <span className="text-sm text-ink-3">Bound</span> : null}
+      {choice.workerless ? (
+        <span className="text-sm text-tone-parked">
+          {repositoryWorkerMissing}
+        </span>
+      ) : null}
     </span>
   );
 }
 
-/** One bind, from the identity it spends to the line it leaves behind. */
-function useRepositoryBind(partition: PartitionIdentity): {
+/** One line about a repository an app's installation does not grant, with that
+ * app's own page on the forge beside it, returning to this picker open. */
+function RepositoryGrant(props: {
+  readonly tenant: string;
+  readonly app: ForgeAppName;
+}): ReactNode {
+  const line = repositoryGrantLines[props.app];
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Notice
+        tone={props.app === "worker" ? "parked" : "info"}
+        inline
+        detail={line.status}
+      />
+      <InstallLink
+        tenant={props.tenant}
+        returnPath={repositoryAddReturnPath(currentPath())}
+        app={props.app}
+        label={line.label}
+      />
+    </div>
+  );
+}
+
+/** The worker app's line under the roster: its own page on the forge for what
+ * a row marks, or that its listings are unread where a row was chosen first. */
+function RepositoryWorkerGrant(props: {
+  readonly tenant: string;
+  readonly workerless: readonly string[] | undefined;
+  readonly chosen: boolean;
+}): ReactNode {
+  switch (repositoryWorkerLine(props.workerless, props.chosen)) {
+    case "Reading":
+      return <Notice tone="info" inline detail={repositoryWorkerReading} />;
+    case "Missing":
+      return <RepositoryGrant tenant={props.tenant} app="worker" />;
+    case undefined:
+      return null;
+  }
+}
+
+/**
+ * The roster, read under the tenant's key when the picker opens and written
+ * there as it arrives, then read again by itself while the picker stays open.
+ * A read the picker abandoned by closing writes nothing, what it still hears
+ * being older than whatever the next opening read.
+ */
+function useReachable(
+  tenant: string,
+  installations: readonly ForgeInstallationResponse[],
+  workers: readonly ForgeInstallationResponse[],
+): PanelState<Reachable> {
+  const client = useQueryClient();
+  const key = tenantResourceKey(tenant, forgeReachableResource);
+  /** Whether this opening's first reading has drawn the portal app's roster,
+   * which is what a reading made by itself stands on. */
+  const [firstDrawn, setFirstDrawn] = useState(false);
+  const [rereads, setRereads] = useState(0);
+  return usePanelTenantResource(
+    tenant,
+    forgeReachableResource,
+    async (ports, signal) => {
+      const stood = client.getQueryData<Reachable>(key);
+      if (firstDrawn && stood !== undefined) {
+        setRereads((made) => made + 1);
+        const whole = await rereadReachable(
+          ports,
+          tenant,
+          installations,
+          workers,
+        );
+        return { outcome: "Ok", value: whole ?? stood };
+      }
+      return readReachable(ports, tenant, installations, workers, (roster) => {
+        if (signal.aborted) return;
+        client.setQueryData(key, roster);
+        setFirstDrawn(true);
+      });
+    },
+    firstDrawn ? repositoryRosterRereadMs(rereads) : undefined,
+  );
+}
+
+/**
+ * The rows this opening of the picker has drawn, each reading laid over them
+ * in the render that first sees it, so no frame draws a reading in its own
+ * order. They are kept here and not under the tenant's key because they are
+ * this opening's: the key holds each reading as the forge listed it, which is
+ * what the next opening first draws, and closing the picker lets them go.
+ */
+function useRowsDrawn(
+  read: readonly ForgeRepositoryResponse[] | undefined,
+): readonly RepositoryDrawn[] {
+  const [drawn, setDrawn] = useState<{
+    readonly from: readonly ForgeRepositoryResponse[];
+    readonly rows: readonly RepositoryDrawn[];
+  }>();
+  if (read === undefined || read === drawn?.from) return drawn?.rows ?? [];
+  const rows = repositoriesDrawn(drawn?.rows ?? [], read);
+  setDrawn({ from: read, rows });
+  return rows;
+}
+
+/** One bind, from the identity it spends to the line it leaves behind, with
+ * `bound` told of one the route accepted. */
+function useRepositoryBind(
+  partition: PartitionIdentity,
+  bound: () => void,
+): {
   readonly note: RepositoryNote | undefined;
   readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;
@@ -133,6 +380,7 @@ function useRepositoryBind(partition: PartitionIdentity): {
         setBusy(false);
         setNote(repositoryBindNote(outcome));
         if (outcome.outcome === "Refused") return;
+        bound();
         await client.invalidateQueries({
           queryKey: projectResourceKey(
             partition,
@@ -148,24 +396,32 @@ function useRepositoryBind(partition: PartitionIdentity): {
 function AddRepositoryBody(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
+  readonly workers: readonly ForgeInstallationResponse[];
   readonly bound: readonly ProjectRepositoryResponse[];
+  readonly runner: WorkRunner;
+  readonly onBound: () => void;
 }): ReactNode {
   const partition = props.partition;
-  const installations = props.installations;
-  const state = usePanelResource(
-    partition,
-    "Project",
-    forgeReachableResource,
-    (ports) => readReachable(ports, partition.tenant, installations),
+  const state = useReachable(
+    partition.tenant,
+    props.installations,
+    props.workers,
   );
-  const binding = useRepositoryBind(partition);
+  const binding = useRepositoryBind(partition, props.onBound);
+  const drawn = useRowsDrawn(
+    state.state === "Ready" ? state.value.repositories : undefined,
+  );
   return (
     <>
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SearchableRoster
           label="Filter"
-          rows={repositoryChoices(state.value.repositories, props.bound)}
+          rows={repositoryChoices(
+            drawn,
+            props.bound,
+            state.value.workerless ?? [],
+          )}
           textOf={(choice) => choice.repository.fullName}
           keyOf={(choice) => choice.repository.url}
           renderRow={(choice) => (
@@ -180,11 +436,22 @@ function AddRepositoryBody(props: {
       {state.state === "Ready" && state.value.truncated ? (
         <Notice tone="parked" inline detail={repositoriesTruncated} />
       ) : null}
+      {state.state === "Ready" ? (
+        <RepositoryGrant tenant={partition.tenant} app="portal" />
+      ) : null}
+      {state.state === "Ready" ? (
+        <RepositoryWorkerGrant
+          tenant={partition.tenant}
+          workerless={state.value.workerless}
+          chosen={binding.busy || binding.note !== undefined}
+        />
+      ) : null}
       {binding.note === undefined ? null : (
         <Notice tone="info" inline detail={binding.note.status} role="status">
-          <NewTicketOffer
+          <RepositoryNextStep
             partition={partition}
-            offered={binding.note.ticketOffered}
+            ticketOffered={binding.note.ticketOffered}
+            runner={props.runner}
           />
         </Notice>
       )}
@@ -194,22 +461,35 @@ function AddRepositoryBody(props: {
 
 export function AddRepository(props: {
   readonly partition: PartitionIdentity;
+  /** The portal app's claims, which are what the roster is read under. */
   readonly installations: readonly ForgeInstallationResponse[];
+  /** The worker app's claims on the same accounts, read to mark its rows. */
+  readonly workers: readonly ForgeInstallationResponse[];
   readonly bound: readonly ProjectRepositoryResponse[];
+  /** Whether the project's work has a runner to go to, which a bind's next step turns on. */
+  readonly runner: WorkRunner;
+  /** The page's own state, because the page opens this from more than its trigger. */
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
+  /** Told of a bind the route accepted, the picker staying open over what it came to. */
+  readonly onBound: () => void;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
+  const offered = props.installations.length > 0;
   return (
     <Dialog
       title="Add"
       trigger="Add"
-      triggerDisabled={props.installations.length === 0}
-      open={open}
-      onOpenChange={setOpen}
+      triggerDisabled={!offered}
+      open={props.open && offered}
+      onOpenChange={props.onOpenChange}
     >
       <AddRepositoryBody
         partition={props.partition}
         installations={props.installations}
+        workers={props.workers}
         bound={props.bound}
+        runner={props.runner}
+        onBound={props.onBound}
       />
     </Dialog>
   );

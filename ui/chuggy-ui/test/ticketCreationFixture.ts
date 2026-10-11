@@ -23,6 +23,7 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../app/core/ticketCreation.ts";
+import type { TicketCreationRequest } from "../app/core/ticketCreationRun.ts";
 
 export const creationDigest = "a".repeat(64);
 
@@ -100,6 +101,16 @@ export const creationDraft: DraftResponse = {
   state: "Draft",
   configurationRevision: "r3",
   authoring: creationInitialization.defaults,
+};
+
+/** What a form over that initialization creates its draft with, saying the
+ * least a form may. */
+export const creationBody: TicketCreationRequest["body"] = {
+  configurationRevision: creationInitialization.configuration.revision,
+  configurationDigest: creationInitialization.fence.configurationDigest,
+  expectedProjectSequence: creationInitialization.fence.projectSequence,
+  authoring: creationInitialization.defaults,
+  brief: { intent: "ship it", links: [] },
 };
 
 /** One binding as the listing answers it, whose landing is what a form seeded

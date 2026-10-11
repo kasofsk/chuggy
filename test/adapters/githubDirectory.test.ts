@@ -36,6 +36,7 @@ import {
   githubInstallationDirectory,
 } from "../../src/adapters/forge/githubApp.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
+import { githubInstallationTokens } from "../../src/adapters/forge/githubInstallationTokens.ts";
 import {
   asForgeAccount,
   asForgeAccountId,
@@ -48,7 +49,11 @@ import {
   type ForgeTokenMinted,
   type ForgeTokenRequest,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
+import {
+  fixtureForge,
+  fixtureGrantingForge,
+  type ForgeRecorder,
+} from "./forgeFixtures.ts";
 
 const fixtureAppId = "4708055";
 const fixtureApiUrl = "https://forge.invalid";
@@ -287,7 +292,7 @@ test("an account without the app is missing and an outage is not", async (t) => 
   );
 });
 
-test("the listing mints for the whole installation and names no repository", async () => {
+test("the listing mints for the whole installation, unheld, and names no repository", async () => {
   const asked: ForgeTokenRequest[] = [];
   const recorder = fixtureForge([fixturePage(1, 2, 2)]);
   const read = await githubInstallationRepositories({
@@ -297,7 +302,7 @@ test("the listing mints for the whole installation and names no repository", asy
   }).repositories(fixtureInstallation);
   assert.equal(read.read, "Repositories");
   assert.deepEqual(asked, [
-    { installation: fixtureInstallation, permissions: "read" },
+    { installation: fixtureInstallation, permissions: "read", unheld: true },
   ]);
   assert.equal(
     recorder.calls[0]?.headers["authorization"],
@@ -306,6 +311,33 @@ test("the listing mints for the whole installation and names no repository", asy
   assert.equal(
     recorder.calls[0]?.url,
     `${fixtureApiUrl}/installation/repositories?per_page=100&page=1`,
+  );
+});
+
+/**
+ * The listing and the mint it pages under are both the real adapters here: the
+ * listing asking for an unheld mint and the mint honouring it are two halves,
+ * and a double standing in for either would pass with the other one missing.
+ */
+test("a repository granted after one listing is in the next", async (t) => {
+  const forge = fixtureGrantingForge(fixtureInstallation.account);
+  forge.grant("chuggy");
+  const listing = githubInstallationRepositories({
+    fetch: forge.requestFetch,
+    apiUrl: fixtureApiUrl,
+    tokens: githubInstallationTokens(fixtureAppOptions(t, forge)),
+  });
+  const listed = async (): Promise<readonly string[] | string> => {
+    const read = await listing.repositories(fixtureInstallation);
+    return read.read === "Repositories"
+      ? read.repositories.map((repository) => repository.fullName)
+      : read.read;
+  };
+  const before = await listed();
+  forge.grant("chuggy-rehearsal");
+  assert.deepEqual(
+    [before, await listed()],
+    [["kasofsk/chuggy"], ["kasofsk/chuggy", "kasofsk/chuggy-rehearsal"]],
   );
 });
 

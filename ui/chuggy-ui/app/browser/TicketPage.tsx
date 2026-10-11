@@ -27,8 +27,8 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import {
   apiDraft,
-  apiDispatchView,
   apiTicket,
+  apiTicketDispatchView,
   apiTicketNativeActions,
 } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -54,6 +54,8 @@ import {
   offersAnswered,
   offersDispatchByHand,
   ticketOffers,
+  ticketOffersAllowed,
+  ticketOffersStartable,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
@@ -64,6 +66,7 @@ import { usePanelList, usePanelResource } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
 import { currentAnchor } from "./ports.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import {
   TicketActingScope,
@@ -95,6 +98,7 @@ import {
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
 import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { useWorkRunner } from "./workRunner.tsx";
 
 /** Everything the page has read, so each part is handed facts and not a query. */
 export interface TicketReads {
@@ -239,7 +243,13 @@ function statusLanding(props: StandingProps): ReactNode {
 function TicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ): ReactNode {
-  const { offers, slot, fence } = standingOf(props);
+  const abilities = useProjectAbilities(props.partition);
+  const runner = useWorkRunner(props.partition);
+  const { slot, fence, ...standing } = standingOf(props);
+  const { offers, noRunner } = ticketOffersStartable(
+    ticketOffersAllowed(standing.offers, abilities),
+    runner,
+  );
   const parked = useParkedStanding(props, fence);
   const asking = slot.slot === "NeedsYou";
   const answered = offersAnswered(offers, asking);
@@ -265,6 +275,7 @@ function TicketStanding(
             dispatchState={props.reads.dispatchState}
             resume={props.facts.resume}
             answered={answered}
+            noRunner={noRunner}
             byHand={offersDispatchByHand(
               offers,
               projectLeadPresent(props.reads.leadState),
@@ -384,11 +395,7 @@ export function TicketPage(): ReactNode {
   );
   const dispatchState = usePanelList(
     ticketDispatchList(partition, ticket),
-    (ports) =>
-      apiDispatchView(ports, partition, {
-        ...(ticket > 1 ? { after: ticket - 1 } : {}),
-        limit: 1,
-      }),
+    (ports) => apiTicketDispatchView(ports, partition, ticket),
   );
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);

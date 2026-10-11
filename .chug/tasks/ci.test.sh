@@ -662,12 +662,12 @@ check "a gate selects its suite of fixtures" 0 "$RC" "  - .chug/tasks/check-post
 
 # A SUITE THAT READS A FILE BESIDE ITS GATE IS SELECTED BY IT: this suite holds
 # the justfile to the sequencer, three gates' suites run their gate over the
-# tree's own configuration of its tools, and a suite kept beside what it
-# proves shares the harness.
+# tree's own configuration of its tools, one runs its gate on the tree's own
+# parser, and a suite kept beside what it proves shares the harness.
 stub_repo 0
 mkdir -p "$R/.githooks" "$R/deploy/rig"
 for suite in .chug/tasks/ci .chug/tasks/check-source .chug/tasks/check-boundaries \
-	.chug/tasks/check-duplication .githooks/pre-commit deploy/rig/drill; do
+	.chug/tasks/check-duplication .chug/tasks/check-comments .githooks/pre-commit deploy/rig/drill; do
 	printf '#!/bin/sh\nexit 0\n' > "$R/$suite.test.sh"
 done
 printf '#!/bin/sh\nexit 0\n' > "$R/.githooks/pre-commit"
@@ -679,7 +679,12 @@ printf '{}\n' > "$R/tsconfig.contract.json"
 printf '{}\n' > "$R/.jscpd.json"
 printf 'check:\n    ./.chug/tasks/ci.sh\n' > "$R/justfile"
 printf 'export default [];\n' > "$R/eslint.config.js"
+printf '{}\n' > "$R/package-lock.json"
 commit_all baseline
+printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
+commit_all parser
+run_last_commit 1
+check "the toolchain selects the suite that runs its parser" 0 "$RC" "  - .chug/tasks/check-comments.test.sh"
 printf 'module.exports = { forbidden: [] };\n' > "$R/.dependency-cruiser.cjs"
 commit_all boundaries
 run_last_commit 1

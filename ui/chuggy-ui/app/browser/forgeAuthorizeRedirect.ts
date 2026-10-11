@@ -2,26 +2,21 @@
 
 import type { ForgeAuthorizationClientResponse } from "../../../../src/contract/responses.ts";
 import { forgeAuthorizeBegin } from "../core/forgeAuthorization.ts";
-import type { ForgeAuthorizeTarget } from "../core/forgeAuthorization.ts";
-import {
-  currentOrigin,
-  digest,
-  drawBytes,
-  redirect,
-  transientStore,
-} from "./ports.ts";
+import type { ForgePress } from "../core/forgePress.ts";
+import { currentOrigin, digest, drawBytes, transientStore } from "./ports.ts";
 
-/** Stores this tab's transaction and sends the person to the forge. */
+/** Stores this tab's transaction and sends the person to the forge by `leave`, which is what says whether Back returns to the address left. */
 export async function forgeAuthorizeRedirect(
   client: ForgeAuthorizationClientResponse,
-  target: ForgeAuthorizeTarget,
+  press: ForgePress,
+  leave: (url: string) => void,
 ): Promise<void> {
-  redirect(
+  leave(
     await forgeAuthorizeBegin(
       { drawBytes, digest, transient: transientStore },
       client,
       currentOrigin(),
-      target,
+      press,
     ),
   );
 }

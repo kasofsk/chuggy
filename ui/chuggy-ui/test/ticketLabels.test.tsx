@@ -34,7 +34,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
-// jscpd:ignore-end
+// jscpd:ignore-end -- the case's own doubles resume here
 
 /**
  * The identities a label replaced, on the page they were replaced on.

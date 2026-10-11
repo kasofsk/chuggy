@@ -4,35 +4,36 @@
  *
  * An account is a row per account and not per installation, because what
  * onboarding needs to know is whether both of this deployment's apps are on
- * it. Connect GitHub claims both where they are, and is the panel's one
- * action until an account is connected or the person comes back from the
- * forge owning none that holds the portal app; then Add account installs the
- * portal app, and an account without the worker app offers its install on its
- * own row. A return from the forge that did not simply connect says so in one
- * line on the panel, until the person leaves.
+ * it. Connect GitHub claims both where they are and goes on to the install of
+ * one that is missing, once for each. It is the panel's one action until an
+ * account is connected or the person comes back from the forge owning none
+ * that holds the portal app; then Add account installs the portal app, and an
+ * account without the worker app offers its install on its own row. A return
+ * from the forge that did not simply connect says so in one line on the
+ * panel, until the person leaves.
  * Where Connect or Add is withheld the line under them says why, and a reader
  * the accounts are not shown to is told who connects them and offered nothing
  * to connect with.
  */
 
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import { apiForgeInstallations } from "../../core/apiRoutes.ts";
 import { forgeAccountRows } from "../../core/forgeInstallation.ts";
 import type { ForgeAccountRow } from "../../core/forgeInstallation.ts";
-import { forgeReturnTake } from "../../core/forgeReturn.ts";
-import type { ForgeReturnStanding } from "../../core/forgeReturn.ts";
 import { forgeAccountsWithheld } from "../../core/projectRepositories.ts";
 import { forgeAppStandingTone } from "../../core/tones.ts";
 import { usePanelTenantResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
-import { currentPath, transientStore } from "../ports.ts";
+import { currentPath } from "../ports.ts";
 import { ConnectGithub } from "../repositories/ConnectGithub.tsx";
+import {
+  ForgeReturned,
+  useForgeReturned,
+} from "../repositories/ForgeReturned.tsx";
 import { InstallLink } from "../repositories/InstallLink.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import type { NoticeTone } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Table } from "../ui/Table.tsx";
@@ -94,21 +95,11 @@ function AccountTable(props: {
   );
 }
 
-function tenantAccountsReturnTone(standing: ForgeReturnStanding): NoticeTone {
-  switch (standing) {
-    case "Failed":
-      return "danger";
-    case "Unfinished":
-    case "Uninstalled":
-      return "parked";
-  }
-}
-
 /** The listing answers only a workspace admin, so its absence is this reader's
  * standing rather than a fault, and a claim they started would be refused. */
 export function TenantAccountsPage(): ReactNode {
   const tenant = useSettingsTenant();
-  const [returned] = useState(() => forgeReturnTake(transientStore, tenant));
+  const returned = useForgeReturned(tenant);
   const accounts = usePanelTenantResource(
     tenant,
     forgeInstallationsResource,
@@ -142,13 +133,7 @@ export function TenantAccountsPage(): ReactNode {
           </span>
         }
       >
-        {returned === undefined ? null : (
-          <Notice
-            tone={tenantAccountsReturnTone(returned.standing)}
-            inline
-            detail={returned.status}
-          />
-        )}
+        <ForgeReturned word={returned} />
         {withheld ? (
           <Notice tone="parked" inline detail={forgeAccountsWithheld} />
         ) : (

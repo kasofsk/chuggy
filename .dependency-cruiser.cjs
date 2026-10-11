@@ -144,18 +144,24 @@ module.exports = {
       to: { reachable: true, path: "^src/adapters/hydra/" },
     },
     {
-      name: "access-plane-names-no-database",
+      name: "access-plane-reaches-only-its-link-store",
       comment:
-        "The access plane answers from the authority and from nothing else: " +
-        "every role it lists or changes is a tuple there, so it is composed " +
-        "with no PostgreSQL role, migration or pool, and a database reached " +
-        "from its root would be a second store of who holds what. So the " +
-        "root may not reach a PostgreSQL adapter at all — reachability " +
-        "rather than an import, because the shape that breaks it is a " +
-        "shared composition helper that opens a pool for several roots.",
+        "The access plane answers who holds what from the authority and from " +
+        "nothing else: every role it lists or changes is a tuple there. Its " +
+        "database keeps invite links, which are not roles until redeemed and " +
+        "then are tuples, so a PostgreSQL adapter reached from its root " +
+        "other than the link store and what opening a pool reaches would be " +
+        "a second store of who holds what. Reachability rather than an " +
+        "import, because the shape that breaks it is a shared composition " +
+        "helper that opens a pool and composes some other store beside it.",
       severity: "error",
       from: { path: "^src/roots/accessPlane[.]ts$" },
-      to: { reachable: true, path: "^src/adapters/postgres/" },
+      to: {
+        reachable: true,
+        path: "^src/adapters/postgres/",
+        pathNot:
+          "^src/adapters/postgres/((inviteLinks|pool|schema)[.]ts$|schema/)",
+      },
     },
     {
       name: "only-the-access-plane-reaches-the-directory",
@@ -213,7 +219,14 @@ module.exports = {
         "outside ui/ this rule leaves to the console, because a console " +
         "bundles what it reaches and ships the bundle. Node's " +
         "own modules are not packages: they resolve to a bare specifier, so " +
-        "this rule refuses them to every console. A package is recognised by " +
+        "this rule refuses them to every console. ui/chuggy-ui/terminal/ is " +
+        "the one directory under ui/ that Node runs and no browser is " +
+        "served, so it is not judged here: " +
+        "chuggy-ui-terminal-reaches-a-closed-roster names what it may " +
+        "reach. The exemption is the directory's own and nobody else's, " +
+        "because this rule starts from each module in turn, so a browser " +
+        "module or a suite that reaches a builtin THROUGH terminal/ is " +
+        "still a finding. A package is recognised by " +
         "the node_modules directory holding it and not by where that " +
         "directory is, because the resolver reports the install it actually " +
         "found — hoisted, linked, or beside the module. Stated as " +
@@ -223,11 +236,43 @@ module.exports = {
         "to stop writing a constant twice — which is what src/contract/, the " +
         "one exemption above, already is.",
       severity: "error",
-      from: { path: "^ui/" },
+      from: { path: "^ui/", pathNot: "^ui/chuggy-ui/terminal/" },
       to: {
         reachable: true,
         path: "^(?!ui/)",
         pathNot: "node_modules/|^src/contract/",
+      },
+    },
+    {
+      name: "chuggy-ui-terminal-reaches-a-closed-roster",
+      comment:
+        "ui/chuggy-ui/terminal/ is the setup program's entry and the " +
+        "adapters it runs on under Node: the files, the listener, the " +
+        "processes and the network of the machine a person runs it on. It " +
+        "is bundled into one file that person's Node runs with nothing " +
+        "installed beside it, so what it reaches is what that file carries " +
+        "and what that Node must already have. That is a closed list: its " +
+        "own files, the decision layer it is an adapter for, the public " +
+        "contract and the parser the contract is written in, which are " +
+        "what the decision layer itself reaches, and the modules of Node's " +
+        "named here. A builtin is named by the bare specifier the resolver " +
+        "reports for it, the `node:` prefix dropped and a subpath kept, and " +
+        "the roster is anchored at both ends so `fs` does not admit " +
+        "`fs/promises`. One is added with the adapter that needs it. The " +
+        "browser's own layer is outside the list, which is what keeps a " +
+        "program run in a terminal from carrying a renderer, and nothing " +
+        "under app/ reaches back, which " +
+        "chuggy-ui-is-what-a-browser-fetches already holds. Reachability, " +
+        "because the shape that breaks it is a helper between an adapter " +
+        "and a module nobody meant the program to ship.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/terminal/" },
+      to: {
+        reachable: true,
+        path: "^(?!ui/chuggy-ui/(terminal|app/core)/)",
+        pathNot:
+          "^src/contract/|node_modules/zod/|" +
+          "^(child_process|fs|http|os|path|timers/promises)$",
       },
     },
     {

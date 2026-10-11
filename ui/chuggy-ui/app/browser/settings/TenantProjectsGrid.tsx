@@ -3,6 +3,11 @@
  * role: where a person's project roles are changed, and where an invitation's
  * are chosen. Each box is named by its project and its role, a cell the caller
  * answers with no box is left empty, and no project draws no grid.
+ *
+ * Total over a grid wide enough for a name beside its roles and one that is
+ * not, where a project is a block and the sheet draws each box under its
+ * role's word. The word is in every cell that has a box for that form alone:
+ * the box is named without it, so it is hidden from a reader who is read to.
  */
 
 import type { ReactNode } from "react";
@@ -33,19 +38,25 @@ function TenantProjectsRow(props: {
       <th scope="row">{props.project}</th>
       {accessProjectRoles.map((role) => {
         const box = props.box(role);
+        const word = projectRoleLabel(role);
         return (
           <td key={role}>
             {box === undefined ? null : (
-              <Checkbox
-                bare
-                label={`${props.project} ${projectRoleLabel(role)}`}
-                checked={box.checked}
-                disabled={box.disabled}
-                held={box.held ?? false}
-                onChange={() => {
-                  props.onToggle(role);
-                }}
-              />
+              <label className="people-grid-box">
+                <span className="people-grid-role" aria-hidden="true">
+                  {word}
+                </span>
+                <Checkbox
+                  bare
+                  label={`${props.project} ${word}`}
+                  checked={box.checked}
+                  disabled={box.disabled}
+                  held={box.held ?? false}
+                  onChange={() => {
+                    props.onToggle(role);
+                  }}
+                />
+              </label>
             )}
           </td>
         );

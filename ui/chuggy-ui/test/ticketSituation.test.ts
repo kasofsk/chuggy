@@ -118,6 +118,51 @@ test("a parked ticket needs you, with its wall and the stage it failed", () => {
   });
 });
 
+/** The first ticket of a project with no runner parks here, before any run. */
+test("a ticket parked with nowhere to run says so, and leads to Runners", () => {
+  expect(
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "WorkExecutionUnavailableEscalated",
+            evidence: "RequiredCapabilityUnavailable",
+            resumeAt: "ResumeWork",
+          },
+        }),
+      }),
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Nowhere to run this work",
+    step: "Runners",
+    more: "Work cancelled",
+  });
+});
+
+test("a ticket that needs you for anything else leads to no page", () => {
+  const parked = ticketSlot(
+    reads({
+      ticket: ticket({
+        phase: "Escalated",
+        escalation: {
+          kind: "WorkExecutionUnavailableEscalated",
+          evidence: "ExecutionProfileUnavailable",
+          resumeAt: "ResumeWork",
+        },
+      }),
+    }),
+  );
+  const blocked = ticketSlot(
+    reads({ ticket: ticket({ revokedDependencies: [3] }) }),
+  );
+  const asked = ticketSlot(reads({ open: [approval] }));
+  for (const slot of [parked, blocked, asked])
+    expect(slot).toMatchObject({ slot: "NeedsYou", step: undefined });
+  expect(Object.keys(asked)).toContain("step");
+});
+
 test("an open approval needs you even while the ticket is running", () => {
   const running = over21(
     [

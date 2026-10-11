@@ -98,6 +98,8 @@ import {
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  canonicalConfigurationOf,
+  draftReleaseReadiness,
   type CanonicalConfiguration,
   type ConfigurationCreated,
   type ConfigurationRevisionId,
@@ -2140,9 +2142,11 @@ function fixtureRevisions(
 function fixtureRevisionsService(
   revisions: ReturnType<typeof fixtureRevisions>,
   granted: readonly (ProjectAccessKind | TenantAccessKind)[] = ["Administer"],
+  given: FixturePorts = {},
 ) {
   const { ports, wrote } = fixturePorts(fixtureAccess(granted).access, {
     configurations: undeclared,
+    ...given,
   });
   const service = repositoryOnboarding({
     ...ports,
@@ -2238,4 +2242,120 @@ test("a bootstrap that no longer releases is not held, and the step meets it rat
   );
   assert.equal(wrote.heads.length, 1, "the step ran");
   assert.deepEqual(revisions.created, [], "nothing was authored over it");
+});
+
+/** The one criterion an earlier bootstrap held its change to, an outcome no change shows. */
+const earlierBootstrapCriterion = `${repository} declares its own .chug/configurations/ and no longer runs on this configuration.`;
+
+/** What an earlier bootstrap told its reviewer, in the block the shape requires and in its one stage. */
+const earlierBootstrapReview = {
+  instructions: [
+    "Review the change against what the repository itself asks of one and against the ticket's acceptance criteria.",
+  ],
+};
+
+/**
+ * The bootstrap as an earlier generator authored it for this repository, branch
+ * and image. A project that bound its repository then holds this text for good,
+ * a revision being never rewritten.
+ */
+const earlierBootstrap = canonicalConfigurationOf({
+  version: 1,
+  image: workerImage,
+  worker: {
+    mode: {
+      type: "SingleAgent",
+      agent: "Claude",
+      arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
+    },
+    setup: [],
+    files: [],
+  },
+  brief: {
+    motivation: [`Bring ${repository} under chuggy.`],
+    acceptanceCriteria: [earlierBootstrapCriterion],
+    constraints: [bootstrapConstraint(madeBranch)],
+  },
+  practices: [],
+  work: {
+    instructions: [
+      "Read the repository before changing anything in it.",
+      "Write .chug/configurations/, so that what later tickets run under is the repository's own.",
+      'Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.',
+      'C is {"version":1,"image":I,"worker":{"mode":{"type":"SingleAgent","agent":"Claude","arguments":["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"]},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most 8 sentences and motivation or acceptanceCriteria not empty.',
+      'Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to 8 shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.',
+      "Each sentence and each line L is one line of 1 to 512 characters, with no tab or line break in it.",
+      "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file.",
+      `Name ${workerImage} as I: it is the image this ticket runs on, and the checks you command run in it.`,
+    ],
+  },
+  review: earlierBootstrapReview,
+  evaluations: [
+    { purpose: "Review", practices: [], ...earlierBootstrapReview },
+  ],
+});
+
+test("a bootstrap of an earlier text is still held, and its repository's configuration is answered without a read", async () => {
+  const revisions = fixtureRevisions(
+    new Map([["bootstrap", earlierBootstrap]]),
+  );
+  const { service, wrote } = fixtureRevisionsService(revisions, [
+    "Administer",
+    "Read",
+  ]);
+  const held = { result: "Bootstrapped", revision: "bootstrap" };
+  const listed = await service.projectRepositories(principal, partition);
+  assert.deepEqual(
+    listed.result === "Repositories" &&
+      listed.repositories.map(
+        (row) => row.configured && row.configurationsHeld,
+      ),
+    [held],
+  );
+  assert.deepEqual(
+    await service.configureRepository(principal, partition, repository),
+    { result: "Configurations", repository, configurations: held },
+  );
+  assert.deepEqual(wrote.heads, [], "the repository was not read");
+  assert.deepEqual(revisions.created, [], "nothing was authored over it");
+});
+
+test("a bind meeting a bootstrap of an earlier text is told it differs, for the repository it was authored for as for any other", async () => {
+  const elsewhere = asRepositoryId("https://github.com/kasofsk/other.git");
+  for (const bound of [repository, elsewhere]) {
+    const revisions = fixtureRevisions(
+      new Map([["bootstrap", earlierBootstrap]]),
+    );
+    const { service } = fixtureRevisionsService(revisions, ["Administer"], {
+      resolved: credentialProved,
+    });
+    assert.deepEqual(
+      await service.bindRepository(principal, partition, {
+        repository: bound,
+        operation,
+      }),
+      {
+        result: "Bound",
+        repository: bound,
+        landing: { mode: "Push" },
+        configurations: { result: "Deferred", reason: "BootstrapDiffers" },
+      },
+      bound,
+    );
+    assert.deepEqual(revisions.created, [], bound);
+  }
+});
+
+test("a ticket still releases against a bootstrap of an earlier text, under the criterion it was authored with", () => {
+  const released = draftReleaseReadiness(
+    earlierBootstrap,
+    { checks: [], repository },
+    undefined,
+    undefined,
+  );
+  assert.equal(released.readiness, "Ready");
+  if (released.readiness !== "Ready") return;
+  assert.deepEqual(released.configuration.brief.acceptanceCriteria, [
+    earlierBootstrapCriterion,
+  ]);
 });

@@ -49,8 +49,7 @@
 // The count is the linter's, so the rule cannot drift from what is measured.
 //
 // RULE 6 is Prettier's and is not restated here. RULE 1 is comment quantity,
-// which needs the raw text rather than the syntax tree, and is
-// `.chug/tasks/check-comments.sh`.
+// and is `.chug/tasks/check-comments.sh`.
 //
 // WHY `recommendedTypeChecked` AND NOT `strictTypeChecked`. The strict set
 // includes `no-unnecessary-condition`, which rejects a check the types have

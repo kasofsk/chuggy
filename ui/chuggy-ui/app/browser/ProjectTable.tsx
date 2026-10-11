@@ -28,6 +28,7 @@ import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
@@ -59,6 +60,7 @@ import { useApiPorts, usePanelList } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { Freshness, useNowMs } from "./Freshness.tsx";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   ticketRowExecutionCell,
@@ -304,9 +306,10 @@ function ProjectTableNewTicket(props: {
 }
 
 /** What a project holding no ticket at all draws in place of the sections:
- * the one way to make the first. */
+ * the one way to make the first, for a reader who may. */
 function ProjectTableEmpty(props: {
   readonly partition: PartitionIdentity;
+  readonly authoring: boolean;
 }): ReactNode {
   return (
     <>
@@ -314,7 +317,11 @@ function ProjectTableEmpty(props: {
       <EmptyState
         variant="page"
         label="No tickets"
-        action={<ProjectTableNewTicket partition={props.partition} />}
+        action={
+          props.authoring ? (
+            <ProjectTableNewTicket partition={props.partition} />
+          ) : undefined
+        }
       />
     </>
   );
@@ -326,6 +333,10 @@ export function ProjectTable(): ReactNode {
   const tickets = useTicketRows(partition, filter);
   const executions = useProjectExecutionIndex(partition);
   const nowMs = useNowMs();
+  const authoring = !projectAbilityRefused(
+    useProjectAbilities(partition),
+    "mutate",
+  );
   const index =
     executions.state === "Ready"
       ? executions.value
@@ -334,7 +345,7 @@ export function ProjectTable(): ReactNode {
     tickets.state.state === "Ready" &&
     ticketFilterProjectEmpty(filter, tickets.state.value)
   )
-    return <ProjectTableEmpty partition={partition} />;
+    return <ProjectTableEmpty partition={partition} authoring={authoring} />;
   const partialFailure =
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
@@ -342,7 +353,7 @@ export function ProjectTable(): ReactNode {
       <ProjectTableTitle />
       <div className="flex items-center gap-4">
         <TicketFilters filter={filter} onChange={setFilter} />
-        <ProjectTableNewTicket partition={partition} />
+        {authoring ? <ProjectTableNewTicket partition={partition} /> : null}
       </div>
       {executions.state === "Failed" ? (
         <p className="panel-failed">

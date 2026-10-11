@@ -61,12 +61,18 @@ export interface TicketAuthoringProps {
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dependenciesLocked: boolean;
   readonly assemble: (form: TicketCreationForm) => Assembled;
+  /** The form with what the screen proposes for a box left empty, which is
+   * what the Form side submits and the YAML is first written from. */
+  readonly proposed?:
+    ((form: TicketCreationForm) => TicketCreationForm) | undefined;
   /** The form as a screen draws it, fields and faults, for the Form side. */
   readonly fields: ReactNode;
   readonly storeKey: string;
   readonly submitLabel: string;
   /** What submitting does beyond what its label says, drawn beside it. */
   readonly submitEffect?: string | undefined;
+  /** What a reader does about that effect, drawn after it. */
+  readonly submitStep?: ReactNode;
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
   readonly onDirty?: ((dirty: boolean) => void) | undefined;
@@ -117,10 +123,12 @@ function ModeSwitch(props: {
   );
 }
 
-/** The form's submit, and the line saying what it does as its description. */
+/** The form's submit, and the line saying what it does as its description,
+ * with what a reader does about it after that line and outside the description. */
 function FormSubmit(props: {
   readonly label: string;
   readonly effect: string | undefined;
+  readonly step: ReactNode;
   readonly busy: boolean;
   readonly onSubmit: () => void;
 }): ReactNode {
@@ -136,8 +144,9 @@ function FormSubmit(props: {
         {props.label}
       </Button>
       {props.effect === undefined ? null : (
-        <span id={effect} className="text-ink-3 text-sm">
-          {props.effect}
+        <span className="text-ink-3 text-sm">
+          <span id={effect}>{props.effect}</span>
+          {props.step === undefined ? null : <> · {props.step}</>}
         </span>
       )}
     </div>
@@ -165,6 +174,7 @@ function useYamlContext(props: TicketAuthoringProps) {
 
 export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
   const { assemble, initial, onDirty } = props;
+  const sent = props.proposed?.(props.form) ?? props.form;
   const storeKey = props.storeKey;
   const [mode, setMode] = useState<AuthoringMode>(() =>
     ticketYamlStored(storeKey) === undefined ? "Form" : "YAML",
@@ -195,13 +205,14 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
       {mode === "YAML" ? (
         <YamlSide
           context={context}
-          form={props.form}
+          form={sent}
           onForm={props.onForm}
           onReadable={setReadable}
           faultsOf={faultsOf}
           storeKey={storeKey}
           submitLabel={props.submitLabel}
           submitEffect={props.submitEffect}
+          submitStep={props.submitStep}
           busy={props.busy}
           onSubmit={props.onSubmit}
         />
@@ -211,9 +222,10 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
           <FormSubmit
             label={props.submitLabel}
             effect={props.submitEffect}
+            step={props.submitStep}
             busy={props.busy}
             onSubmit={() => {
-              props.onSubmit(props.form);
+              props.onSubmit(sent);
             }}
           />
         </>

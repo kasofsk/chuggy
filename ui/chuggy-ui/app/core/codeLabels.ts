@@ -82,7 +82,7 @@ export function blockedReasonLabel(reason: BlockedReason): string {
     case "RuntimeVersionUnsupported":
       return "Runtime version unsupported";
     case "RequiredCapabilityUnavailable":
-      return "Required capability unavailable";
+      return "Nowhere to run this work";
   }
 }
 
@@ -281,6 +281,19 @@ export function escalationDetail(escalation: TicketEscalation): string {
   return escalation.evidence === undefined
     ? escalationKindLabel(escalation.kind)
     : escalationEvidenceLabel(escalation.evidence);
+}
+
+/** Where the way past an escalation is, for one whose line can name a page. */
+export type EscalationStep = "Runners";
+
+/** The page an escalation's one line leads to: where the project's work runs,
+ * for a wall that is nothing being there to run it. */
+export function escalationStep(
+  escalation: TicketEscalation,
+): EscalationStep | undefined {
+  return escalation.evidence === "RequiredCapabilityUnavailable"
+    ? "Runners"
+    : undefined;
 }
 
 /** What the page knows about the wall, which is what the second line can name. */

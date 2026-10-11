@@ -23,6 +23,7 @@ import {
 } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,
+  creationBody,
   creationDeclared,
   creationDraft,
   creationInitialization,
@@ -61,16 +62,7 @@ const configurationsPage = {
   configurations: [creationSummary("r3", "Ready")],
 };
 
-const releaseSubmission = {
-  body: {
-    configurationRevision: "r3",
-    configurationDigest: creationInitialization.fence.configurationDigest,
-    expectedProjectSequence: 41,
-    authoring: creationInitialization.defaults,
-    brief: { intent: "ship it", links: [] },
-  },
-  operation: "op-1",
-};
+const releaseSubmission = { body: creationBody, operation: "op-1" };
 
 function creationAnswers(
   release: (path: string) => Answer,

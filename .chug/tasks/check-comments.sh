@@ -29,11 +29,17 @@
 # rejected as one: the half the tool ignores is where an explanation grows that
 # nothing checks.
 #
+# WHAT IT READS is the tree's own pinned TypeScript parser's account of each
+# file, a `*.tsx` parsed as markup. A comment is the trivia before a token, so
+# the inside of a string, a template, a regex literal or JSX text is never read
+# as one, and a comment after markup is judged exactly as one before it. That
+# is why the gate needs `npm ci`, and says so with exit 2 when it is absent.
+#
 # WHAT IT CANNOT SEE. Sentence counting is terminator counting, so an
 # abbreviation with a period in it reads as a sentence boundary and a
 # semicolon-joined pair reads as one sentence. Both errors point the same way,
-# toward shorter comments. A string literal containing `//` is not a comment,
-# and neither is a regex literal matching one; both are tracked.
+# toward shorter comments. A file that does not parse is judged as the parser
+# recovers it; rejecting it is the compiler's.
 #
 # SCOPE: tracked `*.ts` and `*.tsx`. Both, because a console that builds writes
 # its components in the second and they are TypeScript in every way this rule
@@ -87,160 +93,118 @@ set -- $files
 unset IFS
 set +f
 
+# The parser is the tree's own pinned one: a verdict that depends on which
+# version happens to be installed is not a verdict.
+if ! command -v node >/dev/null 2>&1; then
+	echo "check-comments: LINTER ERROR — no node, so nothing can parse the corpus"
+	exit 2
+fi
+if [ ! -f node_modules/typescript/package.json ]; then
+	echo "check-comments: LINTER ERROR — no typescript in node_modules. Install with \`npm ci\`."
+	exit 2
+fi
+
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-awk '
-BEGIN {
-	# The rules that exist to be unsuppressible: the boundary, purity and
-	# exhaustiveness rules this tree states as house rules.
-	split("@typescript-eslint/switch-exhaustiveness-check no-restricted-globals no-restricted-imports no-restricted-properties @typescript-eslint/no-floating-promises @typescript-eslint/no-misused-promises", unsuppressable, " ")
-	for (i in unsuppressable) sealed[unsuppressable[i]] = 1
+set +e
+node -e '
+const ts = require(process.cwd() + "/node_modules/typescript");
+const fs = require("node:fs");
+
+/* The rules that exist to be unsuppressible: the boundary, purity and
+   exhaustiveness rules this tree states as house rules. */
+const sealed = new Set([
+	"@typescript-eslint/switch-exhaustiveness-check",
+	"no-restricted-globals",
+	"no-restricted-imports",
+	"no-restricted-properties",
+	"@typescript-eslint/no-floating-promises",
+	"@typescript-eslint/no-misused-promises",
+]);
+
+/* Every comment is trivia before some token, and JSX text is a token whose
+   content is never trivia: so the parser tree, read leaf by leaf, finds each
+   comment once and nothing that only looks like one. */
+function commentsOf(file, text) {
+	const kind = file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+	const sf = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, false, kind);
+	const found = new Map();
+	const leaf = (node) => {
+		if (node.kind === ts.SyntaxKind.JsxText || node.kind === ts.SyntaxKind.JsxTextAllWhiteSpaces) return;
+		for (const read of [ts.getTrailingCommentRanges, ts.getLeadingCommentRanges])
+			for (const range of read(text, node.pos) ?? []) found.set(range.pos, range);
+	};
+	const visit = (node) => {
+		if (node.kind <= ts.SyntaxKind.LastToken) return leaf(node);
+		for (const child of node.getChildren(sf)) if (!ts.isJSDoc(child)) visit(child);
+	};
+	visit(sf);
+	const lineOf = (pos) => sf.getLineAndCharacterOfPosition(pos).line + 1;
+	return [...found.values()]
+		.sort((a, b) => a.pos - b.pos)
+		.map((range) => ({ body: text.slice(range.pos, range.end), line: lineOf(range.pos) }));
 }
 
-FNR == 1 {
-	in_block = 0		# inside a /* ... */ of any kind
-	is_doc = 0		# ... and it opened as /**
-	seen_header = 0		# the first /** */ block has been closed
-	in_regex = 0		# inside a /.../ literal
-	in_class = 0		# ... and inside a [...] within it
-	doc_text = ""
-	doc_start = 0
+function judgeDoc(body) {
+	const prose = body
+		.slice(3, -2)
+		.replace(/\n/g, "")
+		.replace(/\*/g, " ")
+		.replace(/`[^`]*`/g, "X");
+	const sentences = (prose.match(/[.!?]+([ \t\n]|$)/g) ?? []).length;
+	if (sentences > 2) return "a doc comment of " + sentences + " sentences; the cap is two";
 }
 
-{
-	line = $0
-	i = 1
-	n = length(line)
-	in_string = ""
-	prev = ""
+function judgeLine(rest) {
+	const trimmed = rest.replace(/^[ \t]+/, "").replace(/[ \t]+$/, "");
+	if (/^@ts-ignore/.test(trimmed))
+		return "@ts-ignore suppresses without saying what it expected; use @ts-expect-error";
+	if (/^@ts-expect-error/.test(trimmed)) {
+		if (trimmed.length - "@ts-expect-error".length < 10)
+			return "@ts-expect-error needs a description of what is expected";
+		return;
+	}
+	if (/^prettier-ignore$/.test(trimmed)) return;
+	if (/^jscpd:ignore-(start|end)/.test(trimmed)) {
+		if (/^jscpd:ignore-(start|end)$/.test(trimmed))
+			return "a jscpd directive states its reason on the directive line";
+		return;
+	}
+	if (/^eslint-disable-next-line[ \t]/.test(trimmed)) {
+		const rule = trimmed
+			.replace(/^eslint-disable-next-line[ \t]+/, "")
+			.replace(/[ \t]*--.*$/, "")
+			.replace(/[ \t]+$/, "");
+		if (rule === "") return "eslint-disable-next-line names the rule it disables";
+		if (sealed.has(rule))
+			return rule + " is a boundary, purity or exhaustiveness rule and is not suppressible";
+		return;
+	}
+	return "a line comment; /** */ is the only prose a source file carries";
+}
 
-	while (i <= n) {
-		c = substr(line, i, 1)
-		two = substr(line, i, 2)
-
-		if (in_block) {
-			if (two == "*/") {
-				if (is_doc) doc_close()
-				in_block = 0
-				is_doc = 0
-				i += 2
-				continue
-			}
-			if (is_doc) doc_text = doc_text c
-			i++
-			continue
-		}
-
-		if (in_string != "") {
-			if (c == "\\") { i += 2; continue }
-			if (c == in_string) in_string = ""
-			i++
-			continue
-		}
-
-		if (in_regex) {
-			if (c == "\\") { i += 2; continue }
-			if (c == "[") in_class = 1
-			else if (c == "]") in_class = 0
-			else if (c == "/" && !in_class) in_regex = 0
-			i++
-			continue
-		}
-
-		if (c == "\"" || c == "\047" || c == "`") { in_string = c; i++; continue }
-
-		# A regex literal is not a comment. Its ambiguity with division is
-		# settled by what precedes the slash: after an operator or an opening
-		# bracket a regex may start, after a value only division can.
-		if (c == "/" && two != "//" && two != "/*" && index("(,=:[!&|?{};+-~^<>%*", prev) > 0) {
-			in_regex = 1
-			in_class = 0
-			i++
-			continue
-		}
-
-		if (two == "//") {
-			rest = substr(line, i + 2)
-			judge_line_comment(rest)
-			break
-		}
-
-		if (two == "/*") {
-			if (substr(line, i, 3) == "/**" && substr(line, i, 4) != "/**/") {
-				is_doc = 1
-				doc_text = ""
-				doc_start = FNR
-				i += 3
-			} else {
-				print "ERROR " FILENAME ":" FNR ": a block comment that is not a doc comment"
-				is_doc = 0
-				i += 2
-			}
-			in_block = 1
-			continue
-		}
-
-		if (c != " " && c != "\t") prev = c
-		i++
+for (const file of process.argv.slice(1)) {
+	let seenHeader = false;
+	for (const { body, line } of commentsOf(file, fs.readFileSync(file, "utf8"))) {
+		let finding;
+		if (body.startsWith("//")) finding = judgeLine(body.slice(2));
+		else if (body.length < 4 || !body.endsWith("*/")) finding = "unterminated comment";
+		else if (!body.startsWith("/**") || body === "/**/") finding = "a block comment that is not a doc comment";
+		/* The first doc comment in a file is the module header and carries no cap. */
+		else if (!seenHeader) seenHeader = true;
+		else finding = judgeDoc(body);
+		if (finding) console.log("ERROR " + file + ":" + line + ": " + finding);
 	}
 }
-
-END {
-	if (in_block) print "ERROR " FILENAME ":" FNR ": unterminated comment"
-}
-
-function doc_close(   sentences, body, capped) {
-	# The first block in a file is the module header and carries no cap.
-	if (!seen_header) { seen_header = 1; return }
-
-	body = doc_text
-	gsub(/\*/, " ", body)
-	gsub(/`[^`]*`/, "X", body)
-	sentences = gsub(/[.!?]+([ \t\n]|$)/, "&", body)
-	if (sentences > 2)
-		print "ERROR " FILENAME ":" doc_start ": a doc comment of " sentences " sentences; the cap is two"
-}
-
-function judge_line_comment(rest,   trimmed, rule) {
-	trimmed = rest
-	sub(/^[ \t]+/, "", trimmed)
-	sub(/[ \t]+$/, "", trimmed)
-
-	if (trimmed ~ /^@ts-ignore/) {
-		print "ERROR " FILENAME ":" FNR ": @ts-ignore suppresses without saying what it expected; use @ts-expect-error"
-		return
-	}
-	if (trimmed ~ /^@ts-expect-error/) {
-		if (length(trimmed) - length("@ts-expect-error") < 10)
-			print "ERROR " FILENAME ":" FNR ": @ts-expect-error needs a description of what is expected"
-		return
-	}
-	if (trimmed ~ /^prettier-ignore$/) return
-	if (trimmed ~ /^jscpd:ignore-(start|end)/) {
-		if (trimmed ~ /^jscpd:ignore-(start|end)$/)
-			print "ERROR " FILENAME ":" FNR ": a jscpd directive states its reason on the directive line"
-		return
-	}
-	if (trimmed ~ /^eslint-disable-next-line[ \t]/) {
-		rule = trimmed
-		sub(/^eslint-disable-next-line[ \t]+/, "", rule)
-		sub(/[ \t]*--.*$/, "", rule)
-		sub(/[ \t]+$/, "", rule)
-		if (rule == "") {
-			print "ERROR " FILENAME ":" FNR ": eslint-disable-next-line names the rule it disables"
-			return
-		}
-		if (rule in sealed) {
-			print "ERROR " FILENAME ":" FNR ": " rule " is a boundary, purity or exhaustiveness rule and is not suppressible"
-			return
-		}
-		return
-	}
-
-	print "ERROR " FILENAME ":" FNR ": a line comment; /** */ is the only prose a source file carries"
-}
-' "$@" > "$work/findings"
+' -- "$@" >"$work/findings" 2>"$work/err"
+rc=$?
+set -e
+if [ "$rc" -ne 0 ]; then
+	echo "check-comments: LINTER ERROR — the parser could not read the corpus (rc=$rc)"
+	sed 's/^/    /' "$work/err"
+	exit 2
+fi
 
 cat "$work/findings"
 found="$(grep -c . "$work/findings" || true)"

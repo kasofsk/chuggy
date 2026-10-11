@@ -59,6 +59,7 @@ import type {
   OperationStep,
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
 import { ticketArrival } from "../core/ticketArrival.ts";
 import { ticketDispatchList } from "../core/ticketActions.ts";
 import type {
@@ -85,6 +86,7 @@ import {
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { AddRunnerLink } from "./workRunner.tsx";
 
 interface Attempt {
   readonly action: TicketAction;
@@ -565,6 +567,21 @@ export interface TicketActionsProps {
   readonly answered: readonly TicketAction[];
   /** Whether Dispatch is offered in a project no lead dispatches. */
   readonly byHand: boolean;
+  /** Whether a Dispatch gave way because the project's work has no runner. */
+  readonly noRunner: boolean;
+}
+
+/** Where Dispatch would be drawn in a project whose work has no runner to go
+ * to: the words the creation form says it in, and the way to add one. */
+function NoRunnerLine(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <Notice tone="parked" inline detail={sessionRunnerShortWord("NoRunner")}>
+      {" · "}
+      <AddRunnerLink partition={props.partition} />
+    </Notice>
+  );
 }
 
 /** Every action but the ones a card answers, the edit screen, the duplicate
@@ -574,6 +591,7 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
   const offers = props.offers;
   return (
     <>
+      {props.noRunner ? <NoRunnerLine partition={props.partition} /> : null}
       {offers.offers === "Unread" ? (
         <PanelUnready state={props.openState} />
       ) : (

@@ -35,6 +35,12 @@ import {
 } from "./screenHarness.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  abilitiesEvery,
+  abilitiesFetch,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
+import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm } from "./viewport.ts";
 
@@ -340,3 +346,36 @@ test("a ticket parked at its finalization is offered no overrides, its resume st
   ).toBeNull();
   expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
 });
+
+/** The card with its overrides open and a model typed over the one held, for
+ * a reader the abilities read answers as `abilities` says. */
+async function typedBy(abilities: AbilitiesAnswer): Promise<HTMLElement> {
+  serving("WorkFailureEscalated");
+  vi.stubGlobal("fetch", abilitiesFetch(abilities, fetch));
+  const card = await drawn();
+  await overridesOpened(card);
+  await modelTyped(card, "opus");
+  return card;
+}
+
+function overridesOffers(card: HTMLElement): readonly boolean[] {
+  return ["Save overrides", "Discard"].map(
+    (name) => within(card).queryByRole("button", { name }) !== null,
+  );
+}
+
+test("a reader who may not mutate reads the overrides and is offered neither Save overrides nor Discard", async () => {
+  const card = await typedBy({ ...abilitiesEvery, mutate: false });
+  expect(within(card).getByLabelText(/^Model/u)).toBeDefined();
+  expect(overridesOffers(card)).toStrictEqual([false, false]);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Save overrides and Discard",
+  async (_said, abilities) => {
+    expect(overridesOffers(await typedBy(abilities))).toStrictEqual([
+      true,
+      true,
+    ]);
+  },
+);

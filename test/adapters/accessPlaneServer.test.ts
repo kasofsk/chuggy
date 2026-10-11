@@ -1,11 +1,14 @@
 /**
  * The access plane's server over an authority held in memory: a body read as
- * the API's media type, a removal served, every refusal in the API's
- * envelope, what a caller may do and who holds each authority read as their
+ * the API's media type, a removal served, every refusal of a caller in the
+ * API's envelope, what a caller may do and who holds each authority read as their
  * schemas, each change of a holder's outcome, and no request reaching a
  * relation but the ones the role rosters and the authority rosters name,
  * hosted runs, personal runners, and the `site` link a site's invitation
- * writes on a new tenant, which the site's tenant list then reads back.
+ * writes on a new tenant, which the site's tenant list then reads back, the
+ * caller's own tenants, and a tenant's invite links made, listed, revoked and
+ * redeemed, each route's refusals among them, and the directory's registration
+ * gate, which holds no bearer and is answered in the directory's own shape.
  */
 
 import assert from "node:assert/strict";
@@ -22,6 +25,13 @@ import {
   accessInvitationCodes,
   accessInvitationProjectsMax,
   accessInvitedSchema,
+  accessInviteLinkEndedCode,
+  accessInviteLinkLimitReachedCode,
+  accessInviteLinkMintedSchema,
+  accessInviteLinkRedeemedSchema,
+  accessInviteLinksNotConfiguredCode,
+  accessInviteLinksOpenMax,
+  accessInviteLinksSchema,
   accessLastTenantAdministratorCode,
   accessNotPermittedCode,
   accessOwnerInvitedSchema,
@@ -31,15 +41,21 @@ import {
   accessProjectAuthoritiesSchema,
   accessProjectPeopleSchema,
   accessProjectRoles,
+  accessRegistrationGateMessageId,
+  accessRegistrationGatePath,
   accessSiteAbilitiesSchema,
   accessSiteAuthorities,
   accessSiteAuthoritiesSchema,
   accessSiteTenantsSchema,
+  accessCallerTenantsSchema,
   accessTenantAbilitiesSchema,
   accessTenantAuthoritiesSchema,
   accessTenantPeopleSchema,
   accessTenantRoles,
   accessTenantTakenCode,
+  accessWorkspaceLinkNameWantedCode,
+  accessWorkspaceLinkNoteCharsMax,
+  accessWorkspaceLinksSchema,
   type AccessPlaneRouteName,
 } from "../../src/contract/accessPlane.ts";
 import {
@@ -62,6 +78,7 @@ import {
   accessTenantAuthorityRelations,
 } from "../../src/interpreter/accessAuthorities.ts";
 import { principalCharsMax } from "../../src/interpreter/principal.ts";
+import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import { projectAccessTenantObject } from "../../src/interpreter/projectAccess.ts";
 import {
   allProjectGrantRelations,
@@ -96,6 +113,10 @@ import {
 } from "../interpreter/accessInvitationFixture.ts";
 import { fixtureForge } from "./forgeFixtures.ts";
 import {
+  accessMemoryInviteLinks,
+  inviteLinkMemory,
+} from "../interpreter/accessInviteLinkFixture.ts";
+import {
   accessFixtureIssuer,
   accessFixturePartition,
   accessFixturePrincipal,
@@ -104,6 +125,7 @@ import {
   accessGivenTenantAdministrator,
   accessMemory,
   accessMemoryAbilities,
+  accessMemoryCallerTenants,
   accessMemoryAuthorities,
   accessMemoryHolders,
   accessMemoryPlane,
@@ -183,8 +205,10 @@ async function served(
       accessMemoryOwnerInvitations(memory, invitedDirectory, invitedGithub),
   },
   directory?: AccessDirectory,
+  stored = true,
 ) {
   const memory = accessMemory();
+  const links = stored ? inviteLinkMemory() : undefined;
   for (const grant of [
     projectTenantGrant(web),
     tenantPrincipalGrant({
@@ -220,7 +244,9 @@ async function served(
     plane: accessMemoryPlane(memory, accessPlaneBoundsDefault, directory),
     invitations: invitations.tenant(memory),
     ownerInvitations: invitations.owner(memory),
+    inviteLinks: accessMemoryInviteLinks(memory, links, directory),
     abilities: accessMemoryAbilities(memory),
+    callerTenants: accessMemoryCallerTenants(memory),
     authorities: accessMemoryAuthorities(
       memory,
       accessPlaneBoundsDefault,
@@ -234,18 +260,40 @@ async function served(
     ),
     ready: () => Promise.resolve(ready && !memory.unavailable),
   });
-  return { memory, app };
+  return { memory, app, links };
 }
 
-/** The path one route is asked at for `web`, its subject, role, authority and group where it names them. */
+/** The path one route is asked at for `web`, its subject, role, authority, group and link where it names them. */
 function pathOf(
   name: AccessPlaneRouteName,
   subject = "zed",
   role = "Member",
   authority = "AuthorityManagers",
   group = "TenantAdmins",
+  link = "link",
 ) {
-  return accessPlanePath(name, { ...web, subject, role, authority, group });
+  return accessPlanePath(name, {
+    ...web,
+    subject,
+    role,
+    authority,
+    group,
+    link,
+  });
+}
+
+/** A mint of a link granting `grants` in `web`'s tenant, sent with `token`. */
+function linkMinted(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string,
+  grants: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("tenantInviteLinkCreation"),
+    headers: { ...as(token), ...typed },
+    payload: JSON.stringify(grants),
+  });
 }
 
 /** A site's invitation of octo-cat into a tenant of their own that may make accounts. */
@@ -341,7 +389,7 @@ test("a list reads as its schema, the caller marked by the server", async () => 
   );
 });
 
-test("every refusal carries the API's envelope: unauthenticated, absent, rejected and the conflict by its own name", async () => {
+test("every refusal of a caller carries the API's envelope: unauthenticated, absent, rejected and the conflict by its own name", async () => {
   const { app } = await served();
   const missing = await app.inject({
     method: "GET",
@@ -795,6 +843,9 @@ test("a tenant's administrators are added to the site's account creators once th
 
 test("an authority that cannot answer is retryable on every route and unready on readiness", async () => {
   const { memory, app } = await served();
+  const open = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
   memory.unavailable = true;
   for (const name of Object.keys(accessPlaneRoutes) as AccessPlaneRouteName[]) {
     const route = accessPlaneRoutes[name];
@@ -804,10 +855,14 @@ test("an authority that cannot answer is retryable on every route and unready on
         ? { ...person, role: "Admin" }
         : name === "siteOwnerInvitation"
           ? { ...person, tenant: "octo-works", createAccounts: true }
-          : { role: "Admin" };
+          : name === "inviteLinkRedemption"
+            ? { token: open.token }
+            : name === "siteWorkspaceLinkCreation"
+              ? { createAccounts: true, note: "for octo-cat" }
+              : { role: "Admin" };
     const answered = await app.inject({
       method: route.method,
-      url: pathOf(name, "zed", "Admin"),
+      url: pathOf(name, "zed", "Admin", undefined, undefined, open.link),
       headers: {
         ...as("alice-token"),
         ...(route.method === "POST" ? typed : {}),
@@ -1384,6 +1439,31 @@ test("the site's tenants read as their strict schema to a caller who may make on
   enveloped(unauthenticated, "Unauthenticated");
 });
 
+test("the caller's own tenants read as their strict schema to any caller signed in, empty to one holding only a project's role, and are refused without a credential", async () => {
+  const { app } = await served();
+  const get = (token?: string) =>
+    app.inject({
+      method: "GET",
+      url: pathOf("callerTenants"),
+      ...(token === undefined ? {} : { headers: as(token) }),
+    });
+  const held = await get("alice-token");
+  assert.equal(held.statusCode, 200, held.body);
+  assert.deepEqual(accessCallerTenantsSchema.parse(held.json()), {
+    tenants: [{ tenant, roles: ["Admin"], administer: true }],
+    truncated: false,
+  });
+  const none = await get("priya-token");
+  assert.equal(none.statusCode, 200, none.body);
+  assert.deepEqual(accessCallerTenantsSchema.parse(none.json()), {
+    tenants: [],
+    truncated: false,
+  });
+  const unauthenticated = await get();
+  assert.equal(unauthenticated.statusCode, 401);
+  enveloped(unauthenticated, "Unauthenticated");
+});
+
 test("a site's invitation naming a tenant outside its shape, past its bound or reserved is rejected before GitHub, the directory or the authority is asked anything", async () => {
   const { memory, directory, github, own } = await inviting();
   memory.asked.length = 0;
@@ -1531,4 +1611,557 @@ test("no remote text reaches a site's invitation: neither a refusal GitHub or th
     assert.equal(answered.statusCode, status, answered.body);
     assert.ok(!answered.body.includes(marker), answered.body);
   }
+});
+
+test("a link is made 201 with its id, token, expiry and `newAccounts`, listed 200 without its token, revoked 204, and then a conflict", async () => {
+  const { app } = await served();
+  const made = await linkMinted(app, "alice-token", {
+    role: "Member",
+    projects: [{ project: "web", roles: ["Developer"] }],
+  });
+  assert.equal(made.statusCode, 201, made.body);
+  const minted = accessInviteLinkMintedSchema.parse(made.json());
+  assert.deepEqual(Object.keys(minted).sort(), [
+    "expiresAtMs",
+    "link",
+    "newAccounts",
+    "token",
+  ]);
+  assert.equal(minted.newAccounts, true);
+  const list = () =>
+    app.inject({
+      method: "GET",
+      url: pathOf("tenantInviteLinks"),
+      headers: as("alice-token"),
+    });
+  const listed = await list();
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(
+    accessInviteLinksSchema
+      .parse(listed.json())
+      .links.map((one) => [one.link, one.state]),
+    [[minted.link, "Open"]],
+  );
+  assert.ok(!listed.body.includes(minted.token), listed.body);
+  const revoke = (token: string, link = minted.link) =>
+    app.inject({
+      method: "DELETE",
+      url: pathOf("tenantInviteLinkRevocation", "zed", "Member", "", "", link),
+      headers: as(token),
+    });
+  enveloped(await revoke("sam-token"), "Absent");
+  assert.equal((await revoke("alice-token")).statusCode, 204);
+  enveloped(await revoke("alice-token"), "Conflict", accessInviteLinkEndedCode);
+  enveloped(await revoke("alice-token", "no/such link?"), "Absent");
+  assert.equal(
+    accessInviteLinksSchema.parse((await list()).json()).links[0]?.state,
+    "Revoked",
+  );
+});
+
+test("a mint is absent, refused under the plane's code, a project unknown under the invitation's, rejected or a conflict at the tenant's bound, and only a mint stores anything", async () => {
+  const { app, links } = await served();
+  enveloped(await linkMinted(app, "sam-token", { role: "Member" }), "Absent");
+  enveloped(
+    await linkMinted(app, "dee-token", {
+      role: "Member",
+      projects: [{ project: "web", roles: ["Dispatcher"] }],
+    }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  enveloped(
+    await linkMinted(app, "alice-token", {
+      role: "Member",
+      projects: [{ project: "elsewhere", roles: ["Viewer"] }],
+    }),
+    "Rejected",
+    accessInvitationCodes.ProjectUnknown,
+  );
+  enveloped(
+    await linkMinted(app, "alice-token", {
+      role: "Member",
+      github: "octo-cat",
+    }),
+    "Rejected",
+    "InvalidRequest",
+  );
+  assert.deepEqual(links?.rows, []);
+  const dee = await linkMinted(app, "dee-token", { role: "Member" });
+  assert.equal(
+    accessInviteLinkMintedSchema.parse(dee.json()).newAccounts,
+    false,
+  );
+  for (let minted = 1; minted < accessInviteLinksOpenMax; minted += 1)
+    assert.equal(
+      (await linkMinted(app, "alice-token", { role: "Member" })).statusCode,
+      201,
+    );
+  enveloped(
+    await linkMinted(app, "alice-token", { role: "Member" }),
+    "Conflict",
+    accessInviteLinkLimitReachedCode,
+  );
+  assert.equal(links?.rows.length, accessInviteLinksOpenMax);
+});
+
+test("a redemption answers what it granted to the caller, and the same again to them once spent writing nothing, is unauthenticated without a bearer, and is absent once spent to another caller or for a token nobody holds", async () => {
+  const { memory, app } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await linkMinted(app, "alice-token", {
+        role: "Member",
+        projects: [{ project: "web", roles: ["Viewer"] }],
+      })
+    ).json(),
+  );
+  const redeem = (headers: Record<string, string>, token = minted.token) =>
+    app.inject({
+      method: "POST",
+      url: pathOf("inviteLinkRedemption"),
+      headers: { ...headers, ...typed },
+      payload: JSON.stringify({ token }),
+    });
+  enveloped(await redeem({}), "Unauthenticated");
+  enveloped(await redeem(as("sam-token"), "t".repeat(4_096)), "Rejected");
+  const redeemed = await redeem(as("sam-token"));
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+    tenant,
+    role: "Member",
+    projects: [{ project: "web", roles: ["Viewer"] }],
+  });
+  assert.deepEqual(
+    memory.batches.flat().map((grant) => grant.holder),
+    [
+      { subject: "Principal", principal: accessFixturePrincipal("sam") },
+      { subject: "Principal", principal: accessFixturePrincipal("sam") },
+    ],
+  );
+  const again = await redeem(as("sam-token"));
+  assert.equal(again.statusCode, 200, again.body);
+  assert.equal(again.body, redeemed.body);
+  assert.equal(memory.batches.length, 1);
+  enveloped(await redeem(as("dee-token")), "Absent");
+  enveloped(await redeem(as("dee-token"), "token-nobody-holds"), "Absent");
+});
+
+test("a plane with no store answers every link route not configured, while an invitation and a people list still answer", async () => {
+  const { memory, app } = await served(true, undefined, undefined, false);
+  for (const name of [
+    "tenantInviteLinkCreation",
+    "tenantInviteLinks",
+    "tenantInviteLinkRevocation",
+    "siteWorkspaceLinkCreation",
+    "siteWorkspaceLinks",
+    "siteWorkspaceLinkRevocation",
+    "inviteLinkRedemption",
+  ] as const) {
+    const route = accessPlaneRoutes[name];
+    const answered = await app.inject({
+      method: route.method,
+      url: pathOf(name),
+      headers: {
+        ...as("alice-token"),
+        ...(route.method === "POST" ? typed : {}),
+      },
+      ...(route.method === "POST"
+        ? {
+            payload: JSON.stringify(
+              name === "inviteLinkRedemption"
+                ? { token: "token-0", workspace: "alice-works" }
+                : name === "siteWorkspaceLinkCreation"
+                  ? { createAccounts: false }
+                  : { role: "Member" },
+            ),
+          }
+        : {}),
+    });
+    enveloped(answered, "Absent");
+    assert.equal(
+      errorEnvelopeSchema.parse(answered.json()).error.code,
+      accessInviteLinksNotConfiguredCode,
+      name,
+    );
+  }
+  assert.deepEqual(memory.asked, []);
+  assert.equal(
+    (
+      await app.inject({
+        method: "GET",
+        url: pathOf("tenantPeople"),
+        headers: as("alice-token"),
+      })
+    ).statusCode,
+    200,
+  );
+  const invited = await app.inject({
+    method: "POST",
+    url: pathOf("tenantInvitation"),
+    headers: { ...as("alice-token"), ...typed },
+    payload: JSON.stringify(invitation),
+  });
+  assert.ok([200, 201].includes(invited.statusCode), invited.body);
+});
+
+/** A mint of a workspace link sent `body` with `token`. */
+function workspaceLinkMinted(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string,
+  body: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("siteWorkspaceLinkCreation"),
+    headers: { ...as(token), ...typed },
+    payload: JSON.stringify(body),
+  });
+}
+
+/** A redemption sent `body` with `token`, or with no bearer where `token` is undefined. */
+function redemption(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  token: string | undefined,
+  body: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: pathOf("inviteLinkRedemption"),
+    headers: { ...(token === undefined ? {} : as(token)), ...typed },
+    payload: JSON.stringify(body),
+  });
+}
+
+const workspaceNote = "for Octo Cat, handed over at the meetup";
+
+test("a workspace link is made 201 with its id, token, expiry and `newAccounts`, listed 200 with its note and without its token, revoked 204, and then a conflict", async () => {
+  const { app } = await served();
+  const made = await workspaceLinkMinted(app, "sita-token", {
+    createAccounts: true,
+    note: workspaceNote,
+  });
+  assert.equal(made.statusCode, 201, made.body);
+  const minted = accessInviteLinkMintedSchema.parse(made.json());
+  assert.deepEqual(Object.keys(minted).sort(), [
+    "expiresAtMs",
+    "link",
+    "newAccounts",
+    "token",
+  ]);
+  assert.equal(minted.newAccounts, true);
+  const list = (token = "sita-token") =>
+    app.inject({
+      method: "GET",
+      url: pathOf("siteWorkspaceLinks"),
+      headers: as(token),
+    });
+  const listed = await list();
+  assert.equal(listed.statusCode, 200, listed.body);
+  assert.deepEqual(
+    accessWorkspaceLinksSchema
+      .parse(listed.json())
+      .links.map((one) => [one.link, one.state, one.note, one.createAccounts]),
+    [[minted.link, "Open", workspaceNote, true]],
+  );
+  assert.ok(!listed.body.includes(minted.token), listed.body);
+  const revoke = (token: string, link = minted.link) =>
+    app.inject({
+      method: "DELETE",
+      url: pathOf("siteWorkspaceLinkRevocation", "", "", "", "", link),
+      headers: as(token),
+    });
+  assert.equal((await revoke("sita-token")).statusCode, 204);
+  enveloped(await revoke("sita-token"), "Conflict", accessInviteLinkEndedCode);
+  enveloped(await revoke("sita-token", "no/such link?"), "Absent");
+  assert.equal(
+    accessWorkspaceLinksSchema.parse((await list()).json()).links[0]?.state,
+    "Revoked",
+  );
+});
+
+test("each workspace link route is unauthenticated without a bearer, absent without `CreateTenant`, and forbidden `createAccounts` without `ManageSiteAuthorities`, and only a mint stores anything", async () => {
+  const { app, links, memory } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", { createAccounts: true })
+    ).json(),
+  );
+  const routes = [
+    ["siteWorkspaceLinkCreation", { createAccounts: false }],
+    ["siteWorkspaceLinks", undefined],
+    ["siteWorkspaceLinkRevocation", undefined],
+  ] as const;
+  for (const [token, outcome] of [
+    [undefined, "Unauthenticated"],
+    ["alice-token", "Absent"],
+    ["hal-token", "Absent"],
+  ] as const)
+    for (const [name, body] of routes)
+      enveloped(
+        await app.inject({
+          method: accessPlaneRoutes[name].method,
+          url: pathOf(name, "", "", "", "", minted.link),
+          headers: {
+            ...(token === undefined ? {} : as(token)),
+            ...(body === undefined ? {} : typed),
+          },
+          ...(body === undefined ? {} : { payload: JSON.stringify(body) }),
+        }),
+        outcome,
+      );
+  accessGiven(memory, accessFixturePrincipal("mo"), [
+    { on: "Site", kind: "CreateTenant" },
+  ]);
+  enveloped(
+    await workspaceLinkMinted(app, "mo-token", { createAccounts: true }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  enveloped(
+    await app.inject({
+      method: "DELETE",
+      url: pathOf("siteWorkspaceLinkRevocation", "", "", "", "", minted.link),
+      headers: as("mo-token"),
+    }),
+    "Rejected",
+    accessNotPermittedCode,
+  );
+  assert.equal(links?.rows.length, 1);
+  const plain = await workspaceLinkMinted(app, "mo-token", {
+    createAccounts: false,
+  });
+  assert.equal(plain.statusCode, 201, plain.body);
+  assert.equal(
+    accessInviteLinkMintedSchema.parse(plain.json()).newAccounts,
+    false,
+  );
+});
+
+test("a workspace link's note past its bound or holding a line break, or a body outside its shape, is rejected, a note at its bound is kept, and the site's bound is a conflict", async () => {
+  const { app, links } = await served();
+  for (const body of [
+    {
+      createAccounts: true,
+      note: "n".repeat(accessWorkspaceLinkNoteCharsMax + 1),
+    },
+    { createAccounts: true, note: "one\ntwo" },
+    { createAccounts: true, note: "one\r\ntwo" },
+    { createAccounts: true, note: "" },
+    { createAccounts: true, role: "Admin" },
+    { note: workspaceNote },
+  ])
+    enveloped(
+      await workspaceLinkMinted(app, "sita-token", body),
+      "Rejected",
+      "InvalidRequest",
+    );
+  assert.deepEqual(links?.rows, []);
+  const widest = '"é'.repeat(accessWorkspaceLinkNoteCharsMax / 2);
+  const kept = await workspaceLinkMinted(app, "sita-token", {
+    createAccounts: false,
+    note: widest,
+  });
+  assert.equal(kept.statusCode, 201, kept.body);
+  assert.equal(
+    accessWorkspaceLinksSchema.parse(
+      (
+        await app.inject({
+          method: "GET",
+          url: pathOf("siteWorkspaceLinks"),
+          headers: as("sita-token"),
+        })
+      ).json(),
+    ).links[0]?.note,
+    widest,
+  );
+  for (let minted = 1; minted < accessInviteLinksOpenMax; minted += 1)
+    assert.equal(
+      (await workspaceLinkMinted(app, "sita-token", { createAccounts: false }))
+        .statusCode,
+      201,
+    );
+  enveloped(
+    await workspaceLinkMinted(app, "sita-token", { createAccounts: false }),
+    "Conflict",
+    accessInviteLinkLimitReachedCode,
+  );
+});
+
+test("a workspace link presented without a name, with a taken one or one no tenant may take is refused under its own code and stays open, with a free name makes its user the workspace's administrator, and is then answered the same to them alone", async () => {
+  const { app, memory } = await served();
+  await memory.grants.write(
+    tenantPrincipalGrant({
+      issuer: accessFixtureIssuer,
+      subject: "alice",
+      tenant: asTenantId("held-works"),
+      relation: "admins",
+    }),
+  );
+  const minted = accessInviteLinkMintedSchema.parse(
+    (
+      await workspaceLinkMinted(app, "sita-token", {
+        createAccounts: true,
+        note: workspaceNote,
+      })
+    ).json(),
+  );
+  const { token } = minted;
+  enveloped(await redemption(app, undefined, { token }), "Unauthenticated");
+  const wanted = await redemption(app, "sam-token", { token });
+  enveloped(wanted, "Conflict", accessWorkspaceLinkNameWantedCode);
+  for (const caller of ["sam-token", "alice-token"])
+    enveloped(
+      await redemption(app, caller, { token, workspace: "held-works" }),
+      "Conflict",
+      accessTenantTakenCode,
+    );
+  for (const workspace of ["Not A Name", "api", "w".repeat(40), 7])
+    enveloped(
+      await redemption(app, "sam-token", { token, workspace }),
+      "Rejected",
+      "InvalidRequest",
+    );
+  assert.equal((await registrationAsked(app, { token })).statusCode, 204);
+  const redeemed = await redemption(app, "sam-token", {
+    token,
+    workspace: "sam-works",
+  });
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+    tenant: "sam-works",
+    role: "Admin",
+    projects: [],
+  });
+  assert.ok(!redeemed.body.includes("Octo"), redeemed.body);
+  assert.ok(!wanted.body.includes("Octo"), wanted.body);
+  const batches = memory.batches.length;
+  for (const workspace of [undefined, "sam-other-works", "Not A Name"]) {
+    const again = await redemption(app, "sam-token", { token, workspace });
+    assert.equal(again.statusCode, 200, again.body);
+    assert.equal(again.body, redeemed.body);
+  }
+  assert.equal(memory.batches.length, batches);
+  enveloped(
+    await redemption(app, "dee-token", { token, workspace: "dee-works" }),
+    "Absent",
+  );
+  enveloped(
+    await redemption(app, "dee-token", {
+      token: "token-nobody-holds",
+      workspace: "Not A Name",
+    }),
+    "Absent",
+  );
+});
+
+test("a tenant's link redeemed with a workspace's name or without one is used as before", async () => {
+  const { app } = await served();
+  for (const workspace of [undefined, "sam-works", "Not A Name"]) {
+    const minted = accessInviteLinkMintedSchema.parse(
+      (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+    );
+    const redeemed = await redemption(app, "sam-token", {
+      token: minted.token,
+      ...(workspace === undefined ? {} : { workspace }),
+    });
+    assert.equal(redeemed.statusCode, 200, redeemed.body);
+    assert.deepEqual(accessInviteLinkRedeemedSchema.parse(redeemed.json()), {
+      tenant,
+      role: "Member",
+      projects: [],
+    });
+  }
+});
+
+/** The directory's question about a registration presenting `body`, sent as JSON as the directory sends it, with `headers` beside. */
+function registrationAsked(
+  app: Awaited<ReturnType<typeof served>>["app"],
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
+  return app.inject({
+    method: "POST",
+    url: accessRegistrationGatePath,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: JSON.stringify(body),
+  });
+}
+
+/** Asserts the gate refused, its body exactly the directory's message. */
+function registrationRefused(answered: {
+  statusCode: number;
+  body: string;
+}): void {
+  assert.equal(answered.statusCode, 403, answered.body);
+  assert.deepEqual(JSON.parse(answered.body), {
+    messages: [
+      {
+        instance_ptr: "#/",
+        messages: [
+          {
+            id: accessRegistrationGateMessageId,
+            text: "Invite needed",
+            type: "error",
+          },
+        ],
+      },
+    ],
+  });
+}
+
+test("the registration gate admits an open link that may make accounts 204 with no body, with or without a bearer, and refuses every other token in the directory's shape", async () => {
+  const { app } = await served();
+  const opened = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
+  const accountless = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "dee-token", { role: "Member" })).json(),
+  );
+  for (const headers of [{}, as("forged"), as("alice-token")]) {
+    const admitted = await registrationAsked(
+      app,
+      { token: opened.token },
+      headers,
+    );
+    assert.equal(admitted.statusCode, 204, admitted.body);
+    assert.equal(admitted.body, "");
+    registrationRefused(
+      await registrationAsked(app, { token: accountless.token }, headers),
+    );
+  }
+  for (const body of [{}, { token: "" }, { token: "token-nobody-holds" }])
+    registrationRefused(await registrationAsked(app, body));
+  enveloped(
+    await registrationAsked(app, { token: 7 }),
+    "Rejected",
+    "InvalidRequest",
+  );
+  const redeemed = await app.inject({
+    method: "POST",
+    url: pathOf("inviteLinkRedemption"),
+    headers: { ...as("sam-token"), ...typed },
+    payload: JSON.stringify({ token: opened.token }),
+  });
+  assert.equal(redeemed.statusCode, 200, redeemed.body);
+  registrationRefused(await registrationAsked(app, { token: opened.token }));
+});
+
+test("the registration gate refuses on a plane with no store, and a store that rejects is a fault without the refusal's body", async () => {
+  registrationRefused(
+    await registrationAsked(
+      (await served(true, undefined, undefined, false)).app,
+      { token: "token-0" },
+    ),
+  );
+  const { app, links } = await served();
+  const minted = accessInviteLinkMintedSchema.parse(
+    (await linkMinted(app, "alice-token", { role: "Member" })).json(),
+  );
+  if (links !== undefined)
+    Object.assign(links.store, {
+      opened: () => Promise.reject(new Error("store down")),
+    });
+  const faulted = await registrationAsked(app, { token: minted.token });
+  assert.ok(faulted.statusCode >= 500, faulted.body);
+  assert.ok(!faulted.body.includes("Invite needed"), faulted.body);
 });

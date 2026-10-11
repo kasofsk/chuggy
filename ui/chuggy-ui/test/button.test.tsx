@@ -94,6 +94,30 @@ test("pressed and busy are attributes, and the default type is not submit", () =
   styleless();
 });
 
+test("a form's button submits it and nothing else, and a disabled one does not", () => {
+  let submissions = 0;
+  const form = (disabled: boolean): ReactNode => (
+    <form
+      onSubmit={(event) => {
+        event.preventDefault();
+        submissions += 1;
+      }}
+    >
+      <Button type="submit" disabled={disabled}>
+        Create
+      </Button>
+    </form>
+  );
+  const { rerender } = render(form(false));
+  expect(screen.getByRole("button").getAttribute("type")).toBe("submit");
+  fireEvent.click(screen.getByRole("button"));
+  expect(submissions).toBe(1);
+  rerender(form(true));
+  fireEvent.click(screen.getByRole("button"));
+  expect(submissions).toBe(1);
+  styleless();
+});
+
 test("a link is drawn with the button's own look, and no style attribute", () => {
   const view = render(<ButtonLink to="/">New ticket</ButtonLink>);
   const drawn = view.container.querySelector("a");

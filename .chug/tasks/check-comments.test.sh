@@ -7,12 +7,17 @@
 # doc comment, every directive kind the gate allows, and a string literal
 # containing what looks like a comment.
 #
+# A COMPONENT FILE GETS A CASE FOR EACH WAY MARKUP ONCE HID WHAT FOLLOWED IT,
+# and each control after markup stands beside a violation the gate reports: a
+# fixture the gate reads nothing of would pass the control too.
+#
 # Run:  .chug/tasks/check-comments.test.sh
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/check-comments.sh"
+ROOT="$(cd "$HERE/../.." && pwd)"
 trap 'rm -rf "$WORK"' EXIT
 
 R="$WORK/repo"
@@ -27,17 +32,37 @@ run_in() { # <dir> [<file>...]
 	set -e
 }
 
+# node_modules is symlinked rather than installed: the parser must be the one
+# this tree pins, and an install per case would put this suite outside the
+# sequencer per-suite cap.
+tooled_repo() { # <dir>
+	fresh_repo "$1"
+	ln -s "$ROOT/node_modules" "$1/node_modules"
+	printf '%s\n' node_modules >> "$1/.git/info/exclude"
+}
+
 # A source file whose first block is a module header, then whatever the case is
 # testing. Every case gets the header: its exemption is what every other
 # judgement is relative to.
 source_saying() { # <line>...
-	fresh_repo "$R"
+	tooled_repo "$R"
 	{
 		printf '%s\n' '/**'
 		printf '%s\n' ' * A module header. It states what this module accepts and emits.'
 		printf '%s\n' ' */'
 		printf '%s\n' "$@"
 	} > "$R/a.ts"
+	git -C "$R" add -A
+	run_in "$R"
+}
+
+# The same, as a component.
+component_saying() { # <line>...
+	tooled_repo "$R"
+	{
+		printf '%s\n' '/** A component header. */'
+		printf '%s\n' "$@"
+	} > "$R/a.tsx"
 	git -C "$R" add -A
 	run_in "$R"
 }
@@ -90,7 +115,7 @@ check "a disable must name its rule" 1 "$RC" "a line comment"
 # --- What is allowed ---------------------------------------------------------
 
 # The module header carries no cap, and is bounded by being one block per file.
-fresh_repo "$R"
+tooled_repo "$R"
 {
 	printf '%s\n' '/**'
 	printf '%s\n' ' * One. Two. Three. Four. Five. Six. Seven sentences of contract.'
@@ -102,7 +127,7 @@ run_in "$R"
 check "the module header is exempt from the cap" 0 "$RC" "0 finding(s)"
 
 # The exemption is the FIRST block only.
-fresh_repo "$R"
+tooled_repo "$R"
 {
 	printf '%s\n' '/**'
 	printf '%s\n' ' * One. Two. Three. Four. Five sentences of contract.'
@@ -155,7 +180,7 @@ check "a template literal is not a comment" 0 "$RC" "0 finding(s)"
 # --- Could not run -----------------------------------------------------------
 
 # An empty corpus must not be the way this gate passes.
-fresh_repo "$R"
+tooled_repo "$R"
 printf '%s\n' 'x' > "$R/readme.md"
 git -C "$R" add -A
 run_in "$R"
@@ -164,8 +189,15 @@ check "an empty corpus exits 2, not 0" 2 "$RC" "the glob matched nothing"
 run_in "$WORK"
 check "outside a git checkout exits 2, not 0" 2 "$RC" "not a git checkout"
 
-# A path with a space in it survives.
+# Without the pinned parser there is no verdict, and saying so is not a pass.
 fresh_repo "$R"
+printf '%s\n' '/** A header. */' 'export const x = 1' > "$R/a.ts"
+git -C "$R" add -A
+run_in "$R"
+check "a checkout without the toolchain exits 2, not 0" 2 "$RC" "npm ci"
+
+# A path with a space in it survives.
+tooled_repo "$R"
 mkdir -p "$R/a dir"
 {
 	printf '%s\n' '/** A header. */'
@@ -193,7 +225,7 @@ check "a comment after a division is still a comment" 1 "$RC" "a line comment"
 # A component file is TypeScript in every way this rule is about, and the
 # extension is the only thing separating it from a file the corpus already
 # reads.
-fresh_repo "$R"
+tooled_repo "$R"
 {
 	printf '%s\n' '/** A header. */'
 	printf '%s\n' '// a note in a component'
@@ -207,5 +239,45 @@ check "a component file is in the corpus too" 1 "$RC" "a line comment"
 # TypeScript is scanned rather than reported as having nothing to read.
 check "a tree of components alone is not an empty corpus" 1 "$RC" "1 finding(s)"
 
+# --- After markup ------------------------------------------------------------
+
+# A comment after markup is judged exactly as one before it.
+component_saying 'export const a = <a>x</a>;' '// a note'
+check "a line comment after a closing tag is a finding" 1 "$RC" "a.tsx:3: a line comment"
+
+component_saying 'export const b = (x: string) => <Row value={x} />;' '/* a plain block */'
+check "a block after a self-closing tag ending in {x} is a finding" 1 "$RC" "a.tsx:3: a block comment that is not a doc comment"
+
+component_saying 'export const c = <Row value="x" />;' '/** One. Two. Three. */' 'export const d = 1;'
+check "a doc comment after a self-closing tag ending in a string is capped" 1 "$RC" "a.tsx:3: a doc comment of 3 sentences"
+
+# Prettier puts the `/>` of a wrapped element on a line of its own.
+component_saying 'export const e = (' '  <Row' '    value="x"' '  />' ');' '// jscpd:ignore-end'
+check "a directive after a lone /> still needs its reason" 1 "$RC" "a.tsx:7: a jscpd directive states its reason"
+
+# JSX text is not code: an apostrophe, a backtick or a slash in it opens
+# nothing.
+component_saying "export const f = <p>don't {/* x */}</p>;"
+check "a block after an apostrophe in JSX text is a finding" 1 "$RC" "a.tsx:2: a block comment that is not a doc comment"
+
+component_saying 'export const g = <p>a ` b {/* x */}</p>;'
+check "a block after a backtick in JSX text is a finding" 1 "$RC" "a.tsx:2: a block comment that is not a doc comment"
+
+component_saying 'export const h = <p>/etc {/* x */}</p>;'
+check "a block after a slash in JSX text is a finding" 1 "$RC" "a.tsx:2: a block comment that is not a doc comment"
+
+# The controls, each beside a finding so the gate is seen reading past them.
+component_saying 'export const a = <a>x</a>;' 'export const u = "https://example.test/x";' '// a note'
+check "after markup, a string holding // is not a comment" 1 "$RC" "1 finding(s)"
+check "after markup, the comment past the string is still read" 1 "$RC" "a.tsx:4: a line comment"
+
+component_saying 'export const a = <a>x</a>;' 'export const r = "x".match(/a\/\/b/);' '// a note'
+check "after markup, a regex matching slashes is not a comment" 1 "$RC" "1 finding(s)"
+check "after markup, the comment past the regex is still read" 1 "$RC" "a.tsx:4: a line comment"
+
+# A regex that begins its line has nothing before it to say it is one.
+source_saying 'export const two =' '  /\/\//.test("a//b");' '// a note'
+check "a regex beginning its line is not a comment" 1 "$RC" "1 finding(s)"
+check "and the comment after it is read" 1 "$RC" "a.ts:6: a line comment"
 
 done_ "check-comments.test.sh"

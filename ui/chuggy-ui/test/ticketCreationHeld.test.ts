@@ -19,10 +19,7 @@ import type {
 } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
-import {
-  creationInitialization,
-  creationPartition,
-} from "./ticketCreationFixture.ts";
+import { creationBody, creationPartition } from "./ticketCreationFixture.ts";
 import {
   ticketDoor,
   ticketDoorAnswers,
@@ -35,13 +32,7 @@ type Body = TicketCreationRequest["body"];
 
 const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
 
-const first: Body = {
-  configurationRevision: "r3",
-  configurationDigest: creationInitialization.fence.configurationDigest,
-  expectedProjectSequence: 41,
-  authoring: creationInitialization.defaults,
-  brief: { intent: "ship it", links: [] },
-};
+const first: Body = creationBody;
 
 function saying(intent: string): Body {
   return { ...first, brief: { intent, links: [] } };

@@ -101,16 +101,16 @@ test("an app is offered the address it is installed from, with a state on it", a
   expect(stateOn(link)).toBeTruthy();
 });
 
-test("following a link stores the transaction the landing will match", async () => {
+test("following a link stores the transaction the landing will match, sent on to its own app's install", async () => {
   await drawLinks(["worker"]);
   const link = linkTo("Install worker");
   fireEvent.click(link);
   await settled();
   expect(stored()).toStrictEqual({
     state: stateOn(link),
-    app: "worker",
     tenant: leadPartition.tenant,
     returnPath,
+    installs: ["worker"],
   });
 });
 

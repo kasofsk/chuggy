@@ -39,6 +39,11 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  draftPanelText,
+} from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const waiting = vi.hoisted(() => ({ held: true }));
@@ -183,15 +188,18 @@ function drawn(from: number | undefined): ReactNode {
   return <TicketCreationFrom from={from} />;
 }
 
+/** The screen over the project's reads, which are what it returns as sent:
+ * a `fetch` laid over them answers the abilities read before they see it. */
 async function drawDuplicate(
   from: number | undefined,
   project: Project = { drafts: [eleven, thirteen] },
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<{
   readonly sent: readonly SentRequest[];
   readonly redraw: (next: number | undefined) => Promise<void>;
 }> {
   const scripted = scriptedFetch(routed(project));
-  vi.stubGlobal("fetch", scripted.fetch);
+  vi.stubGlobal("fetch", over(scripted.fetch));
   const client = new QueryClient();
   const transport = openedStream().ports.fetch;
   const harnessed = (inner: ReactNode): ReactNode => (
@@ -338,4 +346,19 @@ test("an original whose configuration is gone asks for one and keeps what it car
     authoring: { dependencies: [40], program: gone.authoring.program },
     brief: { checks: ["npm test"] },
   });
+});
+
+test("a reader who may not mutate, arriving at a duplicate by address, is told View only and nothing of the ticket is read", async () => {
+  const { sent } = await drawDuplicate(
+    11,
+    undefined,
+    abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  );
+  expect(draftPanelText()).toBe("DraftView only");
+  expect(sent).toStrictEqual([]);
+});
+
+test("a reader the abilities read says may mutate is drawn the duplicate's form", async () => {
+  await drawDuplicate(11, undefined, abilitiesOver(abilitiesEvery));
+  expect(title()).toBe("Ship it");
 });

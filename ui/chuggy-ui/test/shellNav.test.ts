@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { navEntryCurrent, navRoutes, shellNav } from "../app/core/shellNav.ts";
+import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -46,6 +47,26 @@ test("the inbox count and the lead's standing are drawn only where a read suppli
     word: "Working",
     tone: "live",
   });
+});
+
+function entryIds(abilities: Parameters<typeof shellNav>[0]["abilities"]) {
+  return shellNav({ partition: atlas, abilities }).map((entry) => entry.id);
+}
+
+test("New ticket is left out only for a reader the abilities read said may not mutate", () => {
+  expect(entryIds({ ...abilitiesEvery, mutate: false })).toStrictEqual([
+    "overview",
+    "inbox",
+    "lead",
+    "settings",
+    "repositories",
+    "runners",
+  ]);
+  expect(entryIds(abilitiesEvery).at(-1)).toBe("ticket-new");
+  expect(entryIds({ ...abilitiesNone, mutate: true }).at(-1)).toBe(
+    "ticket-new",
+  );
+  expect(entryIds(undefined).at(-1)).toBe("ticket-new");
 });
 
 function currentAt(pathname: string): readonly string[] {

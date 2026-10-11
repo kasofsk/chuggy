@@ -26,8 +26,13 @@ import {
 import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
+import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
-import { projectCreationRoutePath } from "../core/projectCreation.ts";
+import {
+  projectCreationQueryOf,
+  projectCreationRoutePath,
+} from "../core/projectCreation.ts";
+import type { ProjectCreationQuery } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
@@ -35,10 +40,11 @@ import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
+import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
 import { persistentStore } from "./ports.ts";
 import {
-  ProjectCreationForm,
+  ProjectCreation,
   ProjectCreationPage,
   ProjectlessFrame,
 } from "./ProjectCreation.tsx";
@@ -76,12 +82,15 @@ export function Landing(): ReactNode {
     return (
       <ProjectlessFrame>
         <div className="grid justify-items-center gap-4">
-          <EmptyState
-            variant="page"
-            label="No projects"
-            detail="Create one to start"
+          <ProjectCreation
+            lead={
+              <EmptyState
+                variant="page"
+                label="No projects"
+                detail="Create one to start"
+              />
+            }
           />
-          <ProjectCreationForm />
         </div>
       </ProjectlessFrame>
     );
@@ -111,6 +120,12 @@ const landingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: Landing,
+});
+
+const inviteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: inviteRoutePath,
+  component: InvitePage,
 });
 
 const partitionRoute = createRoute({
@@ -184,12 +199,23 @@ const forgeCallbackRoute = createRoute({
   ): ForgeCallbackQuery => forgeCallbackQueryOf(search),
 });
 
+function ProjectCreationRoute(): ReactNode {
+  return (
+    <ProjectCreationPage
+      workspace={projectCreationRoute.useSearch().workspace}
+    />
+  );
+}
+
 /** Outside the partition because it makes one. A static segment outranks a
  * parameter, so this address is never read as a tenant and a project. */
 const projectCreationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: projectCreationRoutePath,
-  component: ProjectCreationPage,
+  component: ProjectCreationRoute,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): ProjectCreationQuery => projectCreationQueryOf(search),
 });
 
 function TicketCreationRoute(): ReactNode {
@@ -222,6 +248,7 @@ const routeTree = rootRoute.addChildren([
   forgeSetupRoute,
   forgeCallbackRoute,
   projectCreationRoute,
+  inviteRoute,
   workspaceSettingsRoutes(rootRoute),
   partitionRoute.addChildren([
     projectRoute,

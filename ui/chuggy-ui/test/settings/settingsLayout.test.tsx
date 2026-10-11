@@ -4,6 +4,8 @@
  * the frame it is drawn in, the page's own link the current one, the site's
  * group holding only the pages the reader's site abilities give them, and a
  * workspace's page reading the workspace its address names in either frame.
+ * The frame outside a project hands a page the clipboard, as the shell does
+ * inside one.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -16,7 +18,13 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -36,8 +44,10 @@ import {
   answer,
   holderDouble,
   openedStream,
+  press,
   scriptedFetch,
   settled,
+  turned,
 } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
@@ -56,13 +66,27 @@ import {
   tenantAuthoritiesPath,
 } from "./permissionsFixture.tsx";
 import {
+  siteWorkspaceLinksPath,
   siteWorkspacesPath,
   workspacesListed,
 } from "./siteWorkspacesFixture.tsx";
+import {
+  abilitiesPath,
+  linksPath,
+  peopleAbilitiesAll,
+  peopleListed,
+  peoplePath,
+} from "./tenantPeopleFixture.tsx";
+
+const copied = vi.hoisted((): string[] => []);
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  clipboardWritten: (text: string) => {
+    copied.push(text);
+    return Promise.resolve(true);
+  },
 }));
 
 /** The router restores a scroll position on every load, and jsdom scrolls nothing. */
@@ -72,6 +96,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  copied.length = 0;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -420,6 +445,49 @@ test("the site's page in a project offers the address's workspace, sends it, and
     },
   ]);
   expect(readsOf(drawn, siteAbilitiesPath)).toBeGreaterThan(before);
+});
+
+/** A links route that keeps none, and answers a link made with a made-up one. */
+function linksKept(request: SentRequest): Response {
+  return request.method === "POST"
+    ? answer(
+        { link: "l-new", token: "t0ken", expiresAtMs: 1, newAccounts: true },
+        201,
+      )
+    : answer({ links: [] });
+}
+
+/** A link made in the dialog an action opens, and its address copied. */
+async function linkCopied(opener: string): Promise<void> {
+  await press(opener);
+  await turned(() => {
+    fireEvent.click(screen.getByRole("radio", { name: "Link" }));
+  });
+  await press("Create link");
+  await press("Copy link");
+  expect(copied).toStrictEqual([`${location.origin}/invite#t0ken`]);
+  expect(screen.getByRole("status").textContent).toBe("Copied");
+}
+
+test("a link made on a workspace's People page outside a project is drawn with the control that copies its address", async () => {
+  await drawnSettings("/tenants/acme/settings/people", (request) => {
+    if (request.url === linksPath) return linksKept(request);
+    if (request.url === peoplePath) return answer(peopleListed);
+    if (request.url === abilitiesPath) return answer(peopleAbilitiesAll());
+    return undefined;
+  });
+  await linkCopied("Invite");
+});
+
+test("a workspace link made on the site's Workspaces page outside a project is drawn with the control that copies its address", async () => {
+  await drawnSettings("/tenants/acme/settings/site/workspaces", (request) => {
+    if (request.url === siteWorkspaceLinksPath) return linksKept(request);
+    if (request.url === siteWorkspacesPath) return answer(workspacesListed);
+    if (request.url === siteAbilitiesPath)
+      return answer({ ...siteAbilitiesNone, createTenant: true });
+    return undefined;
+  });
+  await linkCopied("New workspace");
 });
 
 test("a page's title is drawn in the top bar where the shell is around it, and over its sections where it is not", () => {

@@ -108,8 +108,8 @@ function sessionAttemptRecent(
 const personalClaimLock = `PERFORM pg_advisory_xact_lock(hashtextextended(
          'personal-runner-claim:' || in_tenant || '/' || in_owner, 0))`;
 
-export const migration047: Migration = {
-  version: 47,
+export const migration049: Migration = {
+  version: 49,
   name: "a member's personal runner claims their own threads",
   statements: [
     `ALTER TABLE public.session_attempt

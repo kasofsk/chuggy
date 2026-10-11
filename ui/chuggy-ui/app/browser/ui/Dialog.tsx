@@ -15,7 +15,8 @@
  * and while the caller's request is unanswered nothing closes the dialog, so
  * that line always has somewhere to be drawn. A press outside is refused
  * before Radix counts it, so the next close still returns the focus to the
- * trigger.
+ * trigger. A body that cannot be shown again is `kept`: a press outside is
+ * refused the same way, and the caller's own action or Escape closes it.
  *
  * It is never taller than the viewport. The title and the foot stand at its
  * edges and the caller's body scrolls between them, so a roster of any length
@@ -74,6 +75,8 @@ export function Dialog(props: {
   readonly note?: string | undefined;
   /** The caller's request is unanswered, and until it is nothing closes the dialog. */
   readonly busy?: boolean;
+  /** A press outside does not close the dialog. */
+  readonly kept?: boolean;
   readonly open: boolean;
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
@@ -104,7 +107,7 @@ export function Dialog(props: {
           <RadixDialog.Content
             aria-describedby={undefined}
             onInteractOutside={(event) => {
-              if (busy) event.preventDefault();
+              if (busy || props.kept === true) event.preventDefault();
             }}
             className={`pointer-events-auto mx-auto flex max-h-full ${width} flex-col gap-4 rounded-3 border border-edge bg-surface-1 p-5 outline-none`}
           >

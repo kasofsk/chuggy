@@ -1,0 +1,622 @@
+/**
+ * How a run of `runner` is said: every stop by what was found, the command its
+ * rule names and what it exits with, every note by its word, and the redactor
+ * everything another program printed passes through first.
+ */
+
+import { expect, test } from "vitest";
+
+import {
+  setupCheckFirst,
+  setupRegisterRefusal,
+  setupRegisterRefusals,
+  setupRunnerChecks,
+  setupRunnerNoteSaid,
+  setupRunnerStopExit,
+  setupRunnerStopSaid,
+} from "../app/core/setupRunnerSaid.ts";
+import type {
+  SetupRegisterRefusal,
+  SetupRunnerStop,
+} from "../app/core/setupRunnerSaid.ts";
+import {
+  setupExcerpt,
+  setupExcerptCharsMax,
+  setupRedacted,
+} from "../app/core/setupText.ts";
+import { boxLogin, boxPools, boxSettings, boxUnits } from "./setupRunnerBox.ts";
+import {
+  rosterCommand,
+  rosterLingerRefusal,
+  rosterPool,
+  rosterUnit,
+  runnerNotes,
+  runnerStops,
+  runnerStopsAll,
+} from "./setupRunnerRoster.ts";
+
+type Kind = SetupRunnerStop["stop"];
+
+function said(kind: Kind): readonly (readonly [string, number, string])[] {
+  return runnerStops[kind].map((stop) => {
+    const { found, again } = setupRunnerStopSaid(stop, "acme/widgets");
+    return [found, setupRunnerStopExit(stop), again] as const;
+  });
+}
+
+/** Every stop, each way it is made, as what it says was found, what it exits with and the command its rule names. */
+const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
+  Mac: [
+    ["this machine is a Mac, and chuggy's runner runs on Linux", 2, "Status"],
+  ],
+  Unread: [
+    [
+      "the site does not show you acme/widgets or where its work runs",
+      0,
+      "Runner",
+    ],
+    [
+      "the site did not say of acme/widgets how its runners stand (Fault)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site did not say of acme/widgets which runners it has (Cut)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site does not show you acme/widgets or how its runners stand",
+      0,
+      "Runner",
+    ],
+    [
+      "the site does not show you acme/widgets or which runners it has",
+      0,
+      "Runner",
+    ],
+  ],
+  NotAdmin: [
+    ["the site says you are not an admin of acme/widgets", 0, "Runner"],
+  ],
+  Serviceless: [
+    [
+      "this machine's user services did not answer systemctl --user",
+      0,
+      "Runner",
+    ],
+  ],
+  Engineless: [
+    [
+      "docker did not answer you without a password; podman is not installed",
+      0,
+      "Runner",
+    ],
+    ["podman did not answer you without a password", 0, "Runner"],
+  ],
+  DockerBarred: [
+    [
+      `the runner is set to use docker, in ${boxSettings}, and the runner package takes docker only from this machine's user 1000`,
+      0,
+      "Runner",
+    ],
+    [
+      "podman is not installed, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+      0,
+      "Runner",
+    ],
+    [
+      "podman did not answer you without a password, and docker was not asked: the runner package takes docker only from this machine's user 1000",
+      0,
+      "Runner",
+    ],
+  ],
+  SettingsUnread: [
+    [
+      `${boxSettings} is there and does not read as the runner's settings`,
+      1,
+      "Runner",
+    ],
+  ],
+  LoginMissing: [
+    [
+      `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
+      0,
+      "Runner",
+    ],
+  ],
+  Npmless: [
+    [
+      "the runner package is not installed, and npm did not answer",
+      0,
+      "Runner",
+    ],
+  ],
+  Unwritten: [[`chuggy setup could not make ${boxSettings}`, 1, "Runner"]],
+  Act: [
+    [
+      "installing the runner package ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "registering this machine ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "the runner's own check ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "installing the runner's service ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "reloading your services ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "starting the runner's service ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "restarting the runner's service ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    ["installing the runner package could not be started", 1, "Runner"],
+    [
+      "registering this machine did not end within 60 s and was stopped",
+      1,
+      "Runner",
+    ],
+    [
+      "starting the runner's service ended with exit 1 and said nothing",
+      1,
+      "Runner",
+    ],
+    [
+      "registering this machine ended with exit 1, and what it printed is not shown, since it was handed the registration token",
+      1,
+      "Runner",
+    ],
+    [
+      "registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
+      1,
+      "Status",
+    ],
+    ...[
+      "this machine's name makes no name for a runner",
+      "the runner package could not make the directory it keeps registrations in",
+      "the site did not answer the runner package",
+      "the site did not take the registration token it had just made",
+      "the site could not register this machine just then",
+      "the runner package could not write this machine's registration",
+    ].map(
+      (ours) =>
+        [
+          `registering this machine ended with exit 2: ${ours}`,
+          1,
+          "Runner",
+        ] as const,
+    ),
+  ],
+  Unseen: [
+    [
+      `installing the runner package ended well, and what it makes is not at ${rosterCommand}`,
+      1,
+      "Runner",
+    ],
+    [
+      `registering this machine ended well, and what it makes is not at ${boxPools}`,
+      1,
+      "Runner",
+    ],
+    [
+      `installing the runner's service ended well, and what it makes is not at ${boxUnits}/${rosterUnit}`,
+      1,
+      "Runner",
+    ],
+  ],
+  MintRefused: [
+    [
+      "the site made no registration token for acme/widgets (Absent)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site made no registration token for acme/widgets (Conflict)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site made no registration token for acme/widgets (Fault)",
+      1,
+      "Runner",
+    ],
+  ],
+  CheckFailed: [
+    [
+      "the runner could not use the container engine; the runner's own check said: FAIL  container engine: docker did not answer",
+      1,
+      "Runner",
+    ],
+    [
+      "the runner's own check did not pass; the runner's own check said: FAIL  a new check: no",
+      1,
+      "Runner",
+    ],
+  ],
+  LingerAsks: [
+    [
+      "your services stop when you log out, and chuggy setup could not change that",
+      0,
+      "Runner",
+    ],
+    [
+      `your services stop when you log out, and chuggy setup could not change that: loginctl said ${rosterLingerRefusal}`,
+      0,
+      "Runner",
+    ],
+  ],
+  Inactive: [
+    [`${rosterUnit} was started and is failed`, 1, "Runner"],
+    [`${rosterUnit} was started and is not running`, 1, "Runner"],
+    [`${rosterUnit} was running and after 90 s is activating`, 1, "Runner"],
+    [`${rosterUnit} was running and after 0 s is not running`, 1, "Runner"],
+    [
+      `${rosterUnit} was started and this machine's user services did not answer whether it is running`,
+      1,
+      "Runner",
+    ],
+    [
+      `${rosterUnit} was running and after 3 s this machine's user services did not answer whether it is running`,
+      1,
+      "Runner",
+    ],
+  ],
+  NotLive: [
+    [
+      "the runner's service is running, and after 90 s the site still sees no runner of acme/widgets live",
+      1,
+      "Runner",
+    ],
+    [
+      "the runner's service is running, and after 5 s the site lists no runner of acme/widgets",
+      1,
+      "Runner",
+    ],
+  ],
+};
+
+test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
+  for (const kind of Object.keys(all) as Kind[])
+    expect(said(kind), kind).toEqual(all[kind]);
+});
+
+test("every stop tells the person one thing that ends on what they are to tell the agent, and waits on a condition a rule can carry", () => {
+  for (const stop of runnerStopsAll) {
+    const { tell, when, rule } = setupRunnerStopSaid(stop, "acme/widgets");
+    const kind = JSON.stringify(stop);
+    expect(tell, kind).toMatch(
+      /^[A-Zc].* [Tt]ell me (?:once|if|when) [^.]+\.$/u,
+    );
+    expect(when, kind).toMatch(/^(?:once|if|when) \S/u);
+    expect(when, kind).not.toMatch(/\.$/u);
+    expect(rule === undefined, kind).toBe(stop.stop !== "LoginMissing");
+  }
+});
+
+test("only a stop made before the run's first act says nothing was changed, which of the site's reads is the first alone, and a read not given after it says the runner is not known to be set up and never that it is not", () => {
+  const saying = (words: string) =>
+    runnerStopsAll
+      .filter((stop) => setupRunnerStopSaid(stop, "p").tell.includes(words))
+      .map((stop) =>
+        stop.stop === "Unread" ? `${stop.read} ${stop.outcome}` : stop.stop,
+      )
+      .toSorted();
+  expect([...new Set(saying("nothing was changed"))]).toEqual([
+    "DockerBarred",
+    "Engineless",
+    "LoginMissing",
+    "Mac",
+    "NotAdmin",
+    "Npmless",
+    "Serviceless",
+    "SettingsUnread",
+    "work Refused",
+  ]);
+  expect(
+    saying(
+      "so I cannot say the runner is set up. What was done before stays done.",
+    ),
+  ).toEqual([
+    "placement Fault",
+    "placement Refused",
+    "pools Cut",
+    "pools Refused",
+  ]);
+  const unread = runnerStops.Unread.map(
+    (stop) => setupRunnerStopSaid(stop, "p").tell,
+  );
+  for (const tell of unread) expect(tell).not.toContain("is not set up");
+});
+
+test("a registration the package refused for what running again does not mend is not offered again as it stands, since every try makes another token: it waits on a runner elsewhere or on this machine's name, and every other refusal may be tried again", () => {
+  const refused = (refusal: SetupRegisterRefusal | undefined) =>
+    setupRunnerStopSaid(
+      {
+        stop: "Act",
+        act: "Register",
+        failed: { how: "ExitUnquoted", exit: 2, refusal },
+      },
+      "acme/widgets",
+    );
+  expect(refused("a Linux pool runs on")).toEqual({
+    found:
+      "registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
+    tell: "The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
+    when: "once the person says a runner is running on another machine",
+    again: "Status",
+  });
+  expect(refused("hostname makes no pool name")).toEqual({
+    found:
+      "registering this machine ended with exit 2: this machine's name makes no name for a runner",
+    tell: "The runner package names a runner after its machine, and this machine's name makes no name for one, so the runner is not set up yet. Running again as the machine is named now would end the same way. Tell me once this machine's name starts with a letter from a to z or a digit.",
+    when: "once the person says this machine's name starts with a letter from a to z or a digit",
+    again: "Runner",
+  });
+  const known = Object.keys(setupRegisterRefusals) as SetupRegisterRefusal[];
+  const offered = [undefined, ...known].filter((refusal) => {
+    const { tell, when } = refused(refusal);
+    const again = tell.endsWith("Tell me if you want me to try again.");
+    expect(when === "if the person asks to try again", refusal).toBe(again);
+    return again;
+  });
+  expect(offered).toEqual([
+    undefined,
+    "no token was spent",
+    "did not answer the registration",
+    "is unknown, spent or expired",
+    "run register again",
+    "pool file could not be written",
+  ]);
+});
+
+test("a service manager that did not answer is said as that, and never as a service that is not running", () => {
+  const [, stopped, , , unasked, silent] = runnerStops.Inactive.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  const picksUp =
+    "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
+  expect(stopped?.tell).toBe(
+    `The runner's service was started and is not running, so the runner is not set up yet. ${picksUp}`,
+  );
+  for (const one of [unasked, silent]) {
+    expect(one?.tell).toBe(
+      `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${picksUp}`,
+    );
+    expect(one?.found).not.toContain("not running");
+  }
+});
+
+test("a user the package bars from docker is told the package's reason and who they are, then its own way out: the settings changed where they name docker, and podman answering where there are none", () => {
+  const [named, absent, unnumbered] = runnerStops.DockerBarred.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  const why = (who: string) =>
+    `Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${who}.`;
+  const podman =
+    "The package's own answer for any other user is rootless podman";
+  expect(named).toMatchObject({
+    tell: `${why("user 1001")} The runner's settings, ${boxSettings}, set it to use docker, so nothing was changed on this machine. ${podman}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
+    when: `once the person says ${boxSettings} names podman`,
+  });
+  expect(absent).toMatchObject({
+    tell: `${why("user 0")} ${podman}, and podman is not installed, so nothing was changed on this machine. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you.`,
+    when: "once the person says podman answers them on this machine",
+  });
+  expect(unnumbered?.tell).toBe(
+    `${why("not that user")} ${podman}, and podman did not answer you without a password, so nothing was changed on this machine. Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one. Tell me once podman answers you.`,
+  );
+});
+
+test("each thing a run found is said as found and each thing it did as did, in words that name the path, the program or the service", () => {
+  const lines = (kind: keyof typeof runnerNotes) =>
+    runnerNotes[kind].map((note) =>
+      setupRunnerNoteSaid(note, "acme/widgets").join(": "),
+    );
+  expect(lines("Package")).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}`,
+    `found: the runner package is installed: chuggy-linux, at ${rosterCommand}`,
+  ]);
+  expect(lines("PoolGone")).toEqual([
+    `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,
+  ]);
+  expect(lines("Checked")).toEqual([
+    "found: the runner's own check passed",
+    "found: the runner's own check passed, with a warning: warn  job network: it is slow",
+  ]);
+  expect(lines("LingerOn")).toEqual([
+    "did: set your services to keep running after you log out",
+    "did: set your services to keep running after you log out, not having learned whether they already did",
+  ]);
+  expect(lines("Restarted")).toEqual([
+    `did: restarted ${rosterUnit}, so it runs as it is now registered and installed`,
+  ]);
+  expect([...lines("Enabled"), ...lines("Started")]).toEqual([
+    `did: set ${rosterUnit}, which was running, to start when you log in`,
+    `did: started ${rosterUnit}, which also starts when you log in`,
+  ]);
+  const words = Object.fromEntries(
+    Object.entries(runnerNotes).map(([kind, notes]) => [
+      kind,
+      [...new Set(notes.map((note) => setupRunnerNoteSaid(note, "p")[0]))],
+    ]),
+  );
+  expect(words).toEqual({
+    Engine: ["found"],
+    Package: ["found"],
+    Installed: ["did"],
+    Settings: ["found"],
+    SettingsWritten: ["did"],
+    Login: ["found"],
+    Pool: ["found"],
+    PoolGone: ["found"],
+    Registered: ["did"],
+    Checked: ["found"],
+    Unit: ["found"],
+    UnitWritten: ["did"],
+    Linger: ["found"],
+    LingerOn: ["did"],
+    Running: ["found"],
+    Enabled: ["did"],
+    Started: ["did"],
+    Restarted: ["did"],
+  });
+});
+
+test("the first line of the check under a mark is found among the lines that are ok or not a check's at all, with the check it is of where this program knows it", () => {
+  const aside = [
+    "ok    pool file: /p names pool a/b/c",
+    "something else: FAIL  plane: no",
+    "warn  job network: chuggy-jobs is missing",
+    "FAIL  container engine: docker did not answer",
+    "FAIL  plane: https://pool/ did not answer",
+    "warn  plane: slow",
+  ].join("\n");
+  expect(setupCheckFirst(aside, "FAIL")).toEqual({
+    check: "container engine",
+    line: "FAIL  container engine: docker did not answer",
+  });
+  expect(setupCheckFirst(aside, "warn")).toEqual({
+    check: "job network",
+    line: "warn  job network: chuggy-jobs is missing",
+  });
+  expect(setupCheckFirst("FAIL  a new check: no\n", "FAIL")).toEqual({
+    check: undefined,
+    line: "FAIL  a new check: no",
+  });
+  expect(
+    setupCheckFirst("FAIL  toString: no\n", "FAIL")?.check,
+  ).toBeUndefined();
+  expect(setupCheckFirst("FAIL: no\nfailed\n", "FAIL")).toBeUndefined();
+  expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
+});
+
+test("the checks this program has words for are the ones the package's doctor prints, in its order", () => {
+  expect(Object.keys(setupRunnerChecks)).toEqual([
+    "pool file",
+    "runner configuration",
+    "runtime directory",
+    "Claude token file",
+    "podman credential helpers",
+    "container engine",
+    "job network",
+    "pool token",
+    "plane",
+  ]);
+});
+
+test("the refusals of a registration this program has words for are the package's own sentences, each known by the words of it that never change, and nothing else a registration prints is one", () => {
+  expect(Object.keys(setupRegisterRefusals)).toEqual([
+    "a Linux pool runs on",
+    "hostname makes no pool name",
+    "no token was spent",
+    "did not answer the registration",
+    "is unknown, spent or expired",
+    "run register again",
+    "pool file could not be written",
+  ]);
+  const printed: readonly (readonly [string, string])[] = [
+    [
+      "this machine's hostname makes no pool name; name the pool with --pool",
+      "hostname makes no pool name",
+    ],
+    [
+      "this machine is riscv64, and a Linux pool runs on x64 or arm64",
+      "a Linux pool runs on",
+    ],
+    [
+      `${boxPools} cannot be made a directory only you can write, so no token was spent: EACCES`,
+      "no token was spent",
+    ],
+    [
+      "chuggy at https://chuggy.example did not answer the registration: fetch failed",
+      "did not answer the registration",
+    ],
+    [
+      "chuggy at https://chuggy.example did not answer the registration whole, and the token is spent: terminated",
+      "did not answer the registration",
+    ],
+    [
+      "the registration token is unknown, spent or expired; mint another in chuggy's console",
+      "is unknown, spent or expired",
+    ],
+    [
+      "chuggy could not answer the registration; run register again",
+      "run register again",
+    ],
+    [
+      "chuggy failed the registration with HTTP 502; run register again",
+      "run register again",
+    ],
+    [
+      "the pool file could not be written, and the token is spent, so mint another: ENOSPC",
+      "pool file could not be written",
+    ],
+  ];
+  for (const [line, known] of printed) {
+    expect(setupRegisterRefusal(`${line}\n`), line).toBe(known);
+    expect(setupRegisterRefusal(`first\nerror: ${line}\n`), line).toBe(known);
+  }
+  for (const line of [
+    "",
+    "--token is not a registration token",
+    "chuggy answered the registration with HTTP 418",
+    "toString",
+    "constructor",
+  ])
+    expect(setupRegisterRefusal(line), line).toBeUndefined();
+});
+
+test("an excerpt has every secret the run knows struck from it, and everything shaped like one it was never told", () => {
+  const token = "-Zy_registration-token-of-forty-three-chars";
+  expect(setupExcerpt(`bad --token=${token}; again ${token}.`, [token])).toBe(
+    `bad --token=${setupRedacted}; again ${setupRedacted}.`,
+  );
+  expect(setupExcerpt("short pw: hunter2 was sent", ["hunter2"])).toBe(
+    `short pw: ${setupRedacted} was sent`,
+  );
+  expect(setupExcerpt("nothing known", ["", "absent"])).toBe("nothing known");
+  const shaped = "a".repeat(24);
+  expect(setupExcerpt(`id ${shaped} and ${shaped.slice(1)}`, [])).toBe(
+    `id ${setupRedacted} and ${shaped.slice(1)}`,
+  );
+  expect(setupExcerpt("key ab-cd_ef-gh_ij-kl_mn-op_qr.", [])).toBe(
+    `key ${setupRedacted}.`,
+  );
+  expect(
+    setupExcerpt(
+      "Bearer eyJhbGciOiJSUzI1NiIsImtpZCI6.eyJzdWIiOiIxMjM0NTY3ODkw.sig",
+      [],
+    ),
+  ).toBe(`Bearer ${setupRedacted}.${setupRedacted}.sig`);
+});
+
+test("an excerpt is one line that holds nothing a terminal would obey, and no more than a line's worth", () => {
+  expect(setupExcerpt("a\nnext: rm -rf ~\r\n\u001b[2Jb‮", [])).toBe(
+    "a next: rm -rf ~ [2Jb",
+  );
+  const long = setupExcerpt("word ".repeat(100), []);
+  expect(long).toHaveLength(setupExcerptCharsMax + 1);
+  expect(long.endsWith("…")).toBe(true);
+  expect(setupExcerpt("x".repeat(10) + " y".repeat(95), [])).toHaveLength(
+    setupExcerptCharsMax,
+  );
+});

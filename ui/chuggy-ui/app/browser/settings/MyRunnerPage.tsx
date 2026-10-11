@@ -35,7 +35,7 @@ import { panelReason } from "../../core/freshness.ts";
 import { myRunnerAddable, myRunnerWithheld } from "../../core/myRunner.ts";
 import {
   runnerCapabilityLabel,
-  runnerPlatforms,
+  runnerPackageOffered,
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
@@ -51,7 +51,7 @@ import {
   personalRunnerReread,
   usePersonalRunner,
 } from "../personalRunner.ts";
-import { RunnerCommand } from "../RunnerCommand.tsx";
+import { RunnerSteps } from "../RunnerSteps.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -109,14 +109,14 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
   };
 }
 
-/** The press that mints a token, and the command it is handed over in. */
+/** The press that mints a token, and the steps it is handed over in. */
 function MyRunnerRegister(props: { readonly tenant: string }): ReactNode {
   const ports = useApiPorts();
   const client = useQueryClient();
   const [mint, setMint] = useState<MyRunnerMint>({ mint: "Idle" });
   if (mint.mint === "Minted")
     return (
-      <RunnerCommand
+      <RunnerSteps
         minted={mint.minted}
         kind="Personal"
         onDone={() => {
@@ -139,7 +139,7 @@ function MyRunnerRegister(props: { readonly tenant: string }): ReactNode {
               ports,
               props.tenant,
               {
-                capabilities: [...runnerPlatforms],
+                capabilities: [...runnerPackageOffered.platforms],
                 lifetimeSecs: runnerTokenLifetimeSecs,
               },
             );

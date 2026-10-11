@@ -92,8 +92,22 @@ const pendingRead = { ...parkedRead, phase: "Pending", escalation: undefined };
 /** Ticket 21 dispatched, as the project's row carries it. */
 const dispatchedRow = { ...resumedRow, phase: "Work" };
 
+/** Ticket 21 as the dispatch view lists a candidate. */
+const candidateView = ticketDispatchViewOf(atlas, [
+  {
+    ticket: 21,
+    ticketVersion: 4,
+    dependencies: [],
+    program: [],
+    configurationRevision: "r1",
+    configurationDigest: "b".repeat(64),
+    configurationCanonical: "{}",
+  },
+]);
+
 /** The page's routes; the ticket's own read answers `after` once anything has
- * been submitted, the way the API would. */
+ * been submitted, the way the API would, and the dispatch view answers
+ * `dispatch` to the page that would hold ticket 21 and is reset to any other. */
 function drawn(
   held: object = parkedRead,
   after: object = resumedRow,
@@ -107,7 +121,10 @@ function drawn(
       decidedSequence: resumedRow.sequence,
     },
     route: (url) => {
-      if (url.includes("/dispatch-view")) return answer(dispatch);
+      if (url.includes("/dispatch-view"))
+        return answer(
+          url.endsWith("?after=20&limit=1") ? dispatch : { result: "Reset" },
+        );
       if (url.includes("/native-actions")) return answer({ actions: [] });
       if (url.includes("/executions"))
         return answer(ledgerPage(ticket21Parked));
@@ -186,22 +203,14 @@ test("an action's confirmed row leaves the ledger grouped and the brief drawn", 
   expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
 });
 
+test("the page asks the dispatch view for the page that would hold its own ticket", async () => {
+  drawn(pendingRead, dispatchedRow, candidateView);
+  await settled();
+  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+});
+
 test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn", async () => {
-  drawn(
-    pendingRead,
-    dispatchedRow,
-    ticketDispatchViewOf(atlas, [
-      {
-        ticket: 21,
-        ticketVersion: 4,
-        dependencies: [],
-        program: [],
-        configurationRevision: "r1",
-        configurationDigest: "b".repeat(64),
-        configurationCanonical: "{}",
-      },
-    ]),
-  );
+  drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
   const briefDrawn = await briefOpened();
   expect(cyclesDrawn()).toBe(3);

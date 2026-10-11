@@ -26,22 +26,30 @@ import type {
   SessionRunnerShort,
 } from "../core/sessionRunners.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
-import { usePanelResource } from "./api.ts";
+import { usePanelResourceSettled } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
 
 /** No frame names the placement or a runner's poll, so the read is polled. */
 export const sessionPlacementResource = "session-placement";
 
-export function useSessionPlacement(
-  partition: PartitionIdentity,
-): PanelState<SessionPlacementResponse> {
-  return usePanelResource(
+/** The placement, with whether its read has ever come back. */
+export function useSessionPlacementSettled(partition: PartitionIdentity): {
+  readonly state: PanelState<SessionPlacementResponse>;
+  readonly settled: boolean;
+} {
+  return usePanelResourceSettled(
     partition,
     "Project",
     sessionPlacementResource,
     (ports) => apiSessionPlacement(ports, partition),
     sessionPlacementPolledMs,
   );
+}
+
+export function useSessionPlacement(
+  partition: PartitionIdentity,
+): PanelState<SessionPlacementResponse> {
+  return useSessionPlacementSettled(partition).state;
 }
 
 /** Why no runner can take one session's turn, once the placement is read. */

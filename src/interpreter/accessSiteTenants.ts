@@ -4,8 +4,8 @@
  *
  * A TENANT IS LISTED WHERE ITS OWN OBJECT CARRIES AN `admins` TUPLE OR ITS
  * `site` LINK. One held only by a member, only by a project inheriting from it,
- * or only by a row in a database is not listed, because the plane names no
- * database and reads no relation but those two of a tenant.
+ * or only by a row in a database is not listed, because the plane's database
+ * keeps invite links alone and it reads no relation but those two of a tenant.
  *
  * EACH RELATION IS READ ACROSS THE TENANT NAMESPACE AS ITSELF, so a site's
  * members fill no bound its administrators are read under. Who holds the

@@ -24,6 +24,11 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm } from "./viewport.ts";
 
@@ -86,13 +91,18 @@ function routed(url: string): Response {
   return answer({ partition: atlas, sequence: 7, tickets: [escalated] });
 }
 
-async function mounted(operation: unknown = operationAt("Pending")): Promise<{
+/** The parked ticket's page, the abilities read answering as its other reads
+ * do unless the case hands a `fetch` of its own over them. */
+async function mounted(
+  operation: unknown = operationAt("Pending"),
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
+): Promise<{
   readonly api: ApiDouble;
   readonly bar: HTMLElement;
   readonly card: HTMLElement;
 }> {
   const api = apiDouble({ operation, route: routed });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   const { container } = render(
     <ScreenHarness
       partition={atlas}
@@ -222,3 +232,26 @@ test("a revoke the actor refuses closes the ask and says so where any refusal is
       .hasAttribute("disabled"),
   ).toBe(false);
 });
+
+function parkedAnswers(): readonly boolean[] {
+  return ["Resume", "Revoke"].map(
+    (name) => screen.queryByRole("button", { name }) !== null,
+  );
+}
+
+test("a reader who may not mutate reads why the ticket is parked and is offered neither Resume nor Revoke", async () => {
+  const { card } = await mounted(
+    undefined,
+    abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  );
+  expect(card.textContent).not.toBe("");
+  expect(parkedAnswers()).toStrictEqual([false, false]);
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Resume and Revoke",
+  async (_said, abilities) => {
+    await mounted(undefined, abilitiesOver(abilities));
+    expect(parkedAnswers()).toStrictEqual([true, true]);
+  },
+);

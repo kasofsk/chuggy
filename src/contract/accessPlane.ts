@@ -2,10 +2,12 @@
  * The access plane's wire: its routes, the roles a request may name, and what
  * a list answers.
  *
- * IT IS NOT THE PUBLIC API'S CONTRACT. The plane is a process of its own under
- * `accessPlaneBasePath`, so none of this is in `nativeHttpRoutes` or the
- * contract document. It shares that API's media type and error envelope,
- * because the console reads both with the same code.
+ * IT IS NOT THE PUBLIC API'S CONTRACT. The plane is a process of its own, its
+ * callers' routes under `accessPlaneBasePath` and the directory's registration
+ * gate beside them, so none of this is in `nativeHttpRoutes` or the contract
+ * document. Its callers' routes share that API's media type and error
+ * envelope, because the console reads both with the same code; the gate
+ * answers in the directory's own shape.
  *
  * A ROLE IS A CLOSED ROSTER, one for a tenant and one for a project. What
  * relation each names is the interpreter's, in one exhaustive record, so no
@@ -22,6 +24,15 @@
  * THE SITE'S TENANTS ARE ANSWERED TO WHOEVER MAY MAKE ONE, each with its
  * administrators, at the path the site's invitation makes them at.
  *
+ * THE CALLER'S OWN TENANTS ARE ANSWERED TO ANY CALLER SIGNED IN, about them
+ * alone: each tenant a role on its own object names them in, the roles, and
+ * whether they administer it. It names nobody else, so there is nobody it is
+ * hidden from, and a caller written into none is answered an empty list.
+ *
+ * A WORKSPACE LINK IS THE SITE'S INVITATION MADE IN ADVANCE, naming nobody and
+ * no workspace: whoever presents it signed in names the workspace they will
+ * administer, at the route every invite link is redeemed at.
+ *
  * WHAT A CALLER MAY DO IS ANSWERED ABOUT THEM ALONE, at the site, a tenant or
  * a project: each ability is whether they hold the kind it needs there, so a
  * console offers the controls the plane would not refuse.
@@ -34,7 +45,11 @@
 import { z } from "zod";
 
 import { identitySchema, textCodePointsCount } from "./http.ts";
-import { projectNameSchema, tenantNameReserved } from "./requests.ts";
+import {
+  projectNameCharsMax,
+  projectNameSchema,
+  tenantNameReserved,
+} from "./requests.ts";
 
 export const accessPlaneBasePath = "/access/v1";
 
@@ -202,6 +217,22 @@ export const accessPlaneRoutes = {
     method: "POST",
     path: `${accessTenantPath}/invitations`,
   },
+  tenantInviteLinkCreation: {
+    method: "POST",
+    path: `${accessTenantPath}/invite-links`,
+  },
+  tenantInviteLinks: {
+    method: "GET",
+    path: `${accessTenantPath}/invite-links`,
+  },
+  tenantInviteLinkRevocation: {
+    method: "DELETE",
+    path: `${accessTenantPath}/invite-links/:link`,
+  },
+  inviteLinkRedemption: {
+    method: "POST",
+    path: `${accessPlaneBasePath}/invite-links/redemptions`,
+  },
   tenantAbilities: { method: "GET", path: `${accessTenantPath}/abilities` },
   projectPeople: { method: "GET", path: `${accessProjectPath}/people` },
   projectRoleGrant: {
@@ -231,6 +262,19 @@ export const accessPlaneRoutes = {
     path: `${accessSitePath}/workspaces`,
   },
   siteTenants: { method: "GET", path: `${accessSitePath}/workspaces` },
+  callerTenants: { method: "GET", path: `${accessPlaneBasePath}/workspaces` },
+  siteWorkspaceLinkCreation: {
+    method: "POST",
+    path: `${accessSitePath}/workspace-links`,
+  },
+  siteWorkspaceLinks: {
+    method: "GET",
+    path: `${accessSitePath}/workspace-links`,
+  },
+  siteWorkspaceLinkRevocation: {
+    method: "DELETE",
+    path: `${accessSitePath}/workspace-links/:link`,
+  },
   siteAuthorityPersonAddition: {
     method: "POST",
     path: accessHolderPersonPath(accessSitePath),
@@ -333,7 +377,7 @@ export const accessProjectRoleGrantSchema = z.strictObject({
 /** The conflict a removal is refused with when it would leave a tenant no administrator. */
 export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 
-/** The conflict a site's invitation is refused with where something already holds the tenant it names. */
+/** The conflict a site's invitation, or a workspace link's use, is refused with where something already holds the tenant it names. */
 export const accessTenantTakenCode = "InvitationTenantTaken";
 
 /** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, hosted runs or personal runners, or manage the authority it names. */
@@ -377,13 +421,8 @@ export const accessInvitationProjectSchema = z.strictObject({
   roles: z.array(accessProjectRoleSchema).min(1).max(accessProjectRoles.length),
 });
 
-/**
- * What an invitation is sent: the person's GitHub username and email, the
- * tenant role, and roles on projects of the tenant, each project named once.
- */
-export const accessInvitationSchema = z.strictObject({
-  github: accessGithubLoginSchema,
-  email: accessEmailSchema,
+/** What an invitation grants and an invite link is sent: the tenant role, and roles on projects of the tenant, each project named once. */
+export const accessInvitationGrantsSchema = z.strictObject({
   role: accessTenantRoleSchema,
   projects: z
     .array(accessInvitationProjectSchema)
@@ -395,6 +434,13 @@ export const accessInvitationSchema = z.strictObject({
       "each project is named once",
     )
     .optional(),
+});
+
+/** What an invitation is sent: the person's GitHub username and email, and what it grants them. */
+export const accessInvitationSchema = z.strictObject({
+  github: accessGithubLoginSchema,
+  email: accessEmailSchema,
+  ...accessInvitationGrantsSchema.shape,
 });
 
 /** What an invitation answers: the invited subject, and whether this request created its account. */
@@ -621,11 +667,226 @@ export const accessSiteTenantsSchema = z.strictObject({
   truncated: z.boolean(),
 });
 
+/**
+ * One tenant a role names the caller in: the roles their own tuples give, and
+ * whether they hold `AdministerTenant` there, which the authority answers and
+ * no role decides.
+ */
+export const accessCallerTenantSchema = z.strictObject({
+  tenant: identitySchema,
+  roles: z.array(accessTenantRoleSchema),
+  administer: z.boolean(),
+});
+
+/** What the caller's own tenant list answers, in tenant order. */
+export const accessCallerTenantsSchema = z.strictObject({
+  tenants: z.array(accessCallerTenantSchema),
+  truncated: z.boolean(),
+});
+
+/** How long an invite link stands once made. */
+export const accessInviteLinkLifetimeMs = 7 * 24 * 60 * 60 * 1_000;
+
+/** The most open invite links one tenant holds, and the most open workspace links the site holds. */
+export const accessInviteLinksOpenMax = 16;
+
+/** The most ended invite links one tenant keeps, and the site of its workspace links, the most recently ended. */
+export const accessInviteLinksEndedKept = 48;
+
+/** The refusal of every invite link route on a plane composed with no store. */
+export const accessInviteLinksNotConfiguredCode = "InviteLinksNotConfigured";
+
+/** The conflict a mint is refused with where the tenant, or the site, holds as many open links as it may. */
+export const accessInviteLinkLimitReachedCode = "InviteLinkLimitReached";
+
+/** The conflict a revocation is refused with where the link has already ended. */
+export const accessInviteLinkEndedCode = "InviteLinkEnded";
+
+/** The longest token a redemption is read with. */
+export const accessInviteLinkTokenCharsMax = 128;
+
+/** The states an invite link is in, each derived from what happened to it and when. */
+export const accessInviteLinkStates = [
+  "Open",
+  "Used",
+  "Revoked",
+  "Expired",
+] as const;
+
+/** What a mint answers, and the only answer carrying the token. */
+export const accessInviteLinkMintedSchema = z.strictObject({
+  link: identitySchema,
+  token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
+  expiresAtMs: z.number().int().nonnegative(),
+  newAccounts: z.boolean(),
+});
+
+/** Who made or used a link, named as a people list names them. */
+export const accessInviteLinkPersonSchema = z.strictObject({
+  subject: z.string().min(1),
+  ...accessAccountFields,
+});
+
+const accessInviteLinkShape = {
+  link: identitySchema,
+  role: accessTenantRoleSchema,
+  projects: z.array(accessInvitationProjectSchema),
+  newAccounts: z.boolean(),
+  mintedBy: accessInviteLinkPersonSchema,
+  mintedAtMs: z.number().int().nonnegative(),
+  expiresAtMs: z.number().int().nonnegative(),
+};
+
+/** One of a tenant's links, where a `Used` one names who used it and when. */
+export const accessInviteLinkSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...accessInviteLinkShape,
+    state: z.enum(accessInviteLinkStates).exclude(["Used"]),
+  }),
+  z.strictObject({
+    ...accessInviteLinkShape,
+    state: z.literal("Used"),
+    usedBy: accessInviteLinkPersonSchema,
+    usedAtMs: z.number().int().nonnegative(),
+  }),
+]);
+
+/** What a tenant's link list answers, newest first. */
+export const accessInviteLinksSchema = z.strictObject({
+  links: z.array(accessInviteLinkSchema),
+});
+
+/** The longest note a workspace link keeps. */
+export const accessWorkspaceLinkNoteCharsMax = 200;
+
+/** The maker's own line about a workspace link: some text, on one line, within its bound. */
+export const accessWorkspaceLinkNoteSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (note) => textCodePointsCount(note) <= accessWorkspaceLinkNoteCharsMax,
+    `a note is at most ${String(accessWorkspaceLinkNoteCharsMax)} characters`,
+  )
+  .refine(
+    (note) => !/[\n\r\u0085\u2028\u2029]/u.test(note),
+    "a note is one line",
+  );
+
+/**
+ * What a workspace link is sent: whether the workspace's administrators may
+ * make accounts, and a note the site's list alone shows. It names nobody and
+ * no workspace: whoever uses it names the workspace then.
+ */
+export const accessWorkspaceLinkCreationSchema = z.strictObject({
+  createAccounts: z.boolean(),
+  note: accessWorkspaceLinkNoteSchema.optional(),
+});
+
+const accessWorkspaceLinkShape = {
+  link: identitySchema,
+  note: accessWorkspaceLinkNoteSchema.optional(),
+  createAccounts: z.boolean(),
+  newAccounts: z.boolean(),
+  mintedBy: accessInviteLinkPersonSchema,
+  mintedAtMs: z.number().int().nonnegative(),
+  expiresAtMs: z.number().int().nonnegative(),
+};
+
+/** One of the site's workspace links, where a `Used` one names who used it, when, and the workspace they made. */
+export const accessWorkspaceLinkSchema = z.discriminatedUnion("state", [
+  z.strictObject({
+    ...accessWorkspaceLinkShape,
+    state: z.enum(accessInviteLinkStates).exclude(["Used"]),
+  }),
+  z.strictObject({
+    ...accessWorkspaceLinkShape,
+    state: z.literal("Used"),
+    usedBy: accessInviteLinkPersonSchema,
+    usedAtMs: z.number().int().nonnegative(),
+    workspace: identitySchema,
+  }),
+]);
+
+/** What the site's workspace link list answers, newest first. */
+export const accessWorkspaceLinksSchema = z.strictObject({
+  links: z.array(accessWorkspaceLinkSchema),
+});
+
+/**
+ * What a redemption is sent: the token, and the name of the workspace a
+ * workspace link is to make. The name is bounded and nothing more here,
+ * because what it must be depends on the link the token names.
+ */
+export const accessInviteLinkRedemptionSchema = z.strictObject({
+  token: z.string().min(1).max(accessInviteLinkTokenCharsMax),
+  workspace: z.string().max(projectNameCharsMax).optional(),
+});
+
+/** The conflict a workspace link presented without a workspace's name is refused with. */
+export const accessWorkspaceLinkNameWantedCode = "WorkspaceLinkNameWanted";
+
+/**
+ * Where the directory asks, before it makes an account, whether to make it.
+ * It is not under `accessPlaneBasePath` on purpose: a deployment forwards that
+ * prefix alone from the internet, so the gate is reached from beside the plane.
+ */
+export const accessRegistrationGatePath = "/hooks/v1/registration";
+
+/** The id of the message a refused registration shows. */
+export const accessRegistrationGateMessageId = 4_190_001;
+
+/** The words a refused registration shows. */
+export const accessRegistrationGateText = "Invite needed";
+
+/** What the directory sends the gate: the token the person presented, if any. */
+export const accessRegistrationGateSchema = z.strictObject({
+  token: z.string().max(accessInviteLinkTokenCharsMax).optional(),
+});
+
+/** What the gate refuses a registration with, in the directory's own shape. */
+export const accessRegistrationGateRefusal = {
+  messages: [
+    {
+      instance_ptr: "#/",
+      messages: [
+        {
+          id: accessRegistrationGateMessageId,
+          text: accessRegistrationGateText,
+          type: "error",
+        },
+      ],
+    },
+  ],
+} as const;
+
+/** What a redemption answers: what it granted the caller, and where. */
+export const accessInviteLinkRedeemedSchema = z.strictObject({
+  tenant: identitySchema,
+  role: accessTenantRoleSchema,
+  projects: z.array(accessInvitationProjectSchema),
+});
+
 export type AccessTenantPerson = z.infer<typeof accessTenantPersonSchema>;
 export type AccessTenantPeople = z.infer<typeof accessTenantPeopleSchema>;
 export type AccessProjectPerson = z.infer<typeof accessProjectPersonSchema>;
 export type AccessProjectPeople = z.infer<typeof accessProjectPeopleSchema>;
 export type AccessInvitation = z.infer<typeof accessInvitationSchema>;
+export type AccessInvitationGrants = z.infer<
+  typeof accessInvitationGrantsSchema
+>;
+export type AccessInviteLinkMinted = z.infer<
+  typeof accessInviteLinkMintedSchema
+>;
+export type AccessInviteLink = z.infer<typeof accessInviteLinkSchema>;
+export type AccessInviteLinks = z.infer<typeof accessInviteLinksSchema>;
+export type AccessInviteLinkRedeemed = z.infer<
+  typeof accessInviteLinkRedeemedSchema
+>;
+export type AccessWorkspaceLinkCreation = z.infer<
+  typeof accessWorkspaceLinkCreationSchema
+>;
+export type AccessWorkspaceLink = z.infer<typeof accessWorkspaceLinkSchema>;
+export type AccessWorkspaceLinks = z.infer<typeof accessWorkspaceLinksSchema>;
 export type AccessInvited = z.infer<typeof accessInvitedSchema>;
 export type AccessOwnerInvitation = z.infer<typeof accessOwnerInvitationSchema>;
 export type AccessOwnerInvited = z.infer<typeof accessOwnerInvitedSchema>;
@@ -640,6 +901,8 @@ export type AccessSiteAbilities = z.infer<typeof accessSiteAbilitiesSchema>;
 export type AccessAuthorityPerson = z.infer<typeof accessAuthorityPersonSchema>;
 export type AccessSiteTenant = z.infer<typeof accessSiteTenantSchema>;
 export type AccessSiteTenants = z.infer<typeof accessSiteTenantsSchema>;
+export type AccessCallerTenant = z.infer<typeof accessCallerTenantSchema>;
+export type AccessCallerTenants = z.infer<typeof accessCallerTenantsSchema>;
 export type AccessSiteAuthorities = z.infer<typeof accessSiteAuthoritiesSchema>;
 export type AccessTenantAuthorities = z.infer<
   typeof accessTenantAuthoritiesSchema

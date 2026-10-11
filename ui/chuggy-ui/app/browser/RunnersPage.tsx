@@ -1,6 +1,11 @@
 /**
  * The project's runners: the machines registered to run its agents, and the
- * command that adds one.
+ * steps that add one, from installing a runner package to registering the
+ * machine with a token minted here.
+ *
+ * ADD IS DRAWN WHERE IT IS THE NEXT THING TO DO: under the line an empty
+ * roster is said in, and in the panel's head once a runner is registered.
+ * `ui/chuggy-ui/app/core/runners.ts` decides which.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -20,15 +25,17 @@ import {
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import { panelReason } from "../core/freshness.ts";
+import type { PanelState } from "../core/freshness.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
+  runnerAddPlace,
   runnerCapabilityLabel,
-  runnerPlatforms,
+  runnerPackageOffered,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-import { RunnerCommand } from "./RunnerCommand.tsx";
+import { RunnerSteps } from "./RunnerSteps.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -37,18 +44,27 @@ import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Table } from "./ui/Table.tsx";
+import { executionPlacementResource } from "./workRunner.tsx";
 
-/** No frame names these reads, so the partition's own refetch is what reaches them. */
-const executionPlacementResource = "execution-placement";
+/** No frame names this read, so the partition's own refetch is what reaches it. */
 const workerPoolsResource = "worker-pools";
 
 /** This page's own address, which its reads are from. */
 export const runnersRoutePath = "/$tenant/$project/runners";
 
-function PoolTable(props: { readonly listed: WorkerPoolsResponse }): ReactNode {
+/** The registered runners, or the line that says there are none, with the one thing to do about it under it. */
+function RunnerRoster(props: {
+  readonly listed: WorkerPoolsResponse;
+  readonly action: ReactNode;
+}): ReactNode {
   const nowMs = useNowMs();
   if (props.listed.pools.length === 0)
-    return <EmptyState label="No runner registered" />;
+    return (
+      <div className="grid justify-items-start gap-3 pt-3">
+        <EmptyState label="No runner registered" />
+        {props.action}
+      </div>
+    );
   return (
     <Table caption="Registered runners">
       <thead>
@@ -84,18 +100,21 @@ function AddRunner(props: {
   readonly partition: PartitionIdentity;
   readonly mint: RunnerMint;
   readonly onMint: (mint: RunnerMint) => void;
+  /** Drawn as the one thing to do, which it is under an empty roster. */
+  readonly leading: boolean;
 }): ReactNode {
   const ports = useApiPorts();
   return (
     <Button
       size="sm"
+      variant={props.leading ? "primary" : "default"}
       busy={props.mint.mint === "Minting"}
       disabled={props.mint.mint === "Minting"}
       onClick={() => {
         props.onMint({ mint: "Minting" });
         void (async () => {
           const minted = await apiMintWorkerPoolToken(ports, props.partition, {
-            capabilities: [...runnerPlatforms],
+            capabilities: [...runnerPackageOffered.platforms],
             lifetimeSecs: runnerTokenLifetimeSecs,
           });
           props.onMint(
@@ -113,39 +132,42 @@ function AddRunner(props: {
 
 function RunnersSection(props: {
   readonly partition: PartitionIdentity;
-  readonly listed: WorkerPoolsResponse | undefined;
-  readonly unready: ReactNode;
+  readonly roster: PanelState<WorkerPoolsResponse>;
   /** Whether the reader administers the project, which minting needs. */
   readonly administers: boolean;
 }): ReactNode {
   const client = useQueryClient();
   const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
+  const { partition, roster } = props;
+  const place = runnerAddPlace({
+    administers: props.administers,
+    roster,
+    stepsDrawn: mint.mint === "Minted",
+  });
+  const add = (
+    <AddRunner
+      partition={partition}
+      mint={mint}
+      onMint={setMint}
+      leading={place === "Empty"}
+    />
+  );
   return (
     <Panel
       variant="section"
       title="Runners"
       about="Machines that run this project's agents."
-      {...(props.administers
-        ? {
-            meta: (
-              <AddRunner
-                partition={props.partition}
-                mint={mint}
-                onMint={setMint}
-              />
-            ),
-          }
-        : {})}
+      {...(place === "Head" ? { meta: add } : {})}
     >
       {mint.mint === "Minted" ? (
-        <RunnerCommand
+        <RunnerSteps
           minted={mint.minted}
           kind="Pool"
           onDone={() => {
             setMint({ mint: "Idle" });
             void client.invalidateQueries({
               queryKey: projectResourceKey(
-                props.partition,
+                partition,
                 "Project",
                 workerPoolsResource,
               ),
@@ -156,9 +178,14 @@ function RunnersSection(props: {
       {mint.mint === "Failed" ? (
         <Notice tone="danger" inline detail={`Refused · ${mint.reason}`} />
       ) : null}
-      {props.unready}
-      {props.listed === undefined ? null : <PoolTable listed={props.listed} />}
-      {props.listed?.truncated === true ? (
+      <PanelUnready state={roster} />
+      {roster.state === "Ready" ? (
+        <RunnerRoster
+          listed={roster.value}
+          action={place === "Empty" ? add : undefined}
+        />
+      ) : null}
+      {roster.state === "Ready" && roster.value.truncated ? (
         <Notice tone="info" inline detail="More not shown" />
       ) : null}
     </Panel>
@@ -190,8 +217,7 @@ export function RunnersPage(): ReactNode {
       </TopBarSlot>
       <RunnersSection
         partition={partition}
-        listed={pools.state === "Ready" ? pools.value : undefined}
-        unready={<PanelUnready state={pools} />}
+        roster={pools}
         administers={
           placement.state === "Ready" && placement.value.choices.length > 0
         }

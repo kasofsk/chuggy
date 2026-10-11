@@ -2,9 +2,12 @@
  * The process where a tenant's people and their roles are managed and the
  * site's tenants are listed, composed from variables alone.
  *
- * IT NAMES NO DATABASE. Every role it answers is a tuple the authority holds,
- * so it has no PostgreSQL role, migration or pool, and `.dependency-cruiser.cjs`
- * holds it to reaching no PostgreSQL adapter at all.
+ * ITS DATABASE HOLDS INVITE LINKS AND NOTHING ELSE. Every role it answers is a
+ * tuple the authority holds, and a link is not a role until it is redeemed, so
+ * `.dependency-cruiser.cjs` holds it to reaching the link store and what
+ * opening a pool reaches, and no other PostgreSQL adapter. The database is
+ * optional: a plane named none answers every link route as not configured.
+ * Where it has one, it is ready only when it connected as `accessPlaneRole`.
  *
  * THE DIRECTORY IS OPTIONAL. A deployment that brings its own sign-in names
  * no directory address, and the plane then answers every invitation as not
@@ -15,6 +18,7 @@
  * have failed for its own reasons. The composition is exported taking the
  * authentication, which is what lets a suite start it without an issuer.
  */
+import { createHash, randomBytes } from "node:crypto";
 import { pathToFileURL } from "node:url";
 
 import type { FastifyInstance } from "fastify";
@@ -34,6 +38,9 @@ import {
 } from "../adapters/keto/projectAccess.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import { kratosAccessDirectory } from "../adapters/kratos/identities.ts";
+import { postgresInviteLinks } from "../adapters/postgres/inviteLinks.ts";
+import { postgresPool } from "../adapters/postgres/pool.ts";
+import { accessPlaneRole } from "../adapters/postgres/schema/shared.ts";
 import {
   checkedAccessDirectorySettings,
   type AccessDirectorySettings,
@@ -41,7 +48,9 @@ import {
 import { accessAbilities } from "../interpreter/accessAbilities.ts";
 import { accessAuthorities } from "../interpreter/accessAuthorities.ts";
 import { accessAuthorityHolders } from "../interpreter/accessAuthorityHolders.ts";
+import { accessCallerTenants } from "../interpreter/accessCallerTenants.ts";
 import { accessInvitations } from "../interpreter/accessInvitation.ts";
+import { accessInviteLinks } from "../interpreter/accessInviteLink.ts";
 import { accessOwnerInvitations } from "../interpreter/accessOwnerInvitation.ts";
 import { accessSiteTenants } from "../interpreter/accessSiteTenants.ts";
 import {
@@ -69,6 +78,7 @@ export interface AccessPlaneEnvironment {
   readonly read: ProjectAccessSettings;
   readonly write: ProjectGrantSettings;
   readonly directory: AccessDirectorySettings | undefined;
+  readonly databaseUrl: string | undefined;
   readonly host: string;
   readonly port: number;
 }
@@ -84,6 +94,36 @@ function accessPlaneDirectory(): AccessDirectorySettings | undefined {
       projectAccessTimeoutMsDefault,
     ),
   });
+}
+
+/** Where the plane's invite links are kept, or nowhere where the deployment names no database. */
+function accessPlaneDatabaseUrl(): string | undefined {
+  const url = process.env["CHUG_ACCESS_PLANE_DATABASE_URL"];
+  return url === undefined || url.length === 0 ? undefined : url;
+}
+
+/** The invite link store over the database `url` names, its pool, and whether its connection is the plane's role. */
+function accessPlaneLinks(url: string) {
+  const pool = postgresPool(url);
+  return {
+    pool,
+    store: postgresInviteLinks(pool),
+    secrets: {
+      draw: () => randomBytes(32).toString("base64url"),
+      digest: (token: string) =>
+        createHash("sha256").update(token).digest("hex"),
+    },
+    ready: async () => {
+      try {
+        const found = await pool.query<{ current_role: string }>(
+          "SELECT current_user AS current_role",
+        );
+        return found.rows[0]?.current_role === accessPlaneRole;
+      } catch {
+        return false;
+      }
+    },
+  };
 }
 
 export function accessPlaneEnvironment(): AccessPlaneEnvironment {
@@ -116,6 +156,7 @@ export function accessPlaneEnvironment(): AccessPlaneEnvironment {
       requestTimeoutMs,
     }),
     directory: accessPlaneDirectory(),
+    databaseUrl: accessPlaneDatabaseUrl(),
     host: process.env["CHUG_ACCESS_PLANE_HOST"] ?? "127.0.0.1",
     port: planeEnvironmentPositive("CHUG_ACCESS_PLANE_PORT", 3_003),
   };
@@ -139,12 +180,17 @@ export function accessPlaneComposed(
   const issuer = environment.oidc.issuer;
   const github =
     ports.directory === undefined ? undefined : githubUserLookup({ fetch });
-  return createAccessPlaneApp({
+  const claims = ketoTenantClaims(environment.read);
+  const links =
+    environment.databaseUrl === undefined
+      ? undefined
+      : accessPlaneLinks(environment.databaseUrl);
+  const app = createAccessPlaneApp({
     authentication,
     plane: accessPlane(ports, { issuer, bounds: accessPlaneBoundsDefault }),
     invitations: accessInvitations({ ...ports, github }, { issuer }),
     ownerInvitations: accessOwnerInvitations(
-      { ...ports, github, claims: ketoTenantClaims(environment.read) },
+      { ...ports, github, claims },
       { issuer },
     ),
     abilities: accessAbilities(ports, { bounds: accessPlaneBoundsDefault }),
@@ -160,8 +206,16 @@ export function accessPlaneComposed(
       issuer,
       bounds: accessPlaneBoundsDefault,
     }),
-    ready: () => readiness.ready(),
+    callerTenants: accessCallerTenants(ports, {
+      bounds: accessPlaneBoundsDefault,
+    }),
+    inviteLinks: accessInviteLinks({ ...ports, claims, links }, { issuer }),
+    ready: async () =>
+      (await readiness.ready()) &&
+      (links === undefined || (await links.ready())),
   });
+  if (links !== undefined) app.addHook("onClose", () => links.pool.end());
+  return app;
 }
 
 async function main(): Promise<void> {

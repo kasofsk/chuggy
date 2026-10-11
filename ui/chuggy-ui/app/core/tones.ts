@@ -10,6 +10,7 @@
  * link, a button or a focus ring.
  */
 
+import type { AccessInviteLink } from "../../../../src/contract/accessPlane.ts";
 import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
 import type {
   ExecutionOutcome,
@@ -174,6 +175,19 @@ export function sessionStateTone(state: SessionState): Tone {
     case "Open":
       return "live";
     case "Closed":
+      return "retired";
+  }
+}
+
+/** Where one invite link stands: taking a person, taken by one, or ended with nobody. */
+export function inviteLinkStateTone(state: AccessInviteLink["state"]): Tone {
+  switch (state) {
+    case "Open":
+      return "live";
+    case "Used":
+      return "pass";
+    case "Revoked":
+    case "Expired":
       return "retired";
   }
 }

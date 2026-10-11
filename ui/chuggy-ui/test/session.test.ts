@@ -19,6 +19,7 @@ import {
   sessionNeedsRefresh,
   sessionRefreshDueAtMs,
   sessionUsableAccessToken,
+  sessionWithRefreshToken,
 } from "../app/core/session.ts";
 import type { SessionHeld } from "../app/core/session.ts";
 
@@ -54,6 +55,14 @@ test("an issuer that rotates no refresh token leaves the held one in place", () 
     "renew",
   );
   expect(state.state === "Held" && state.held.refreshToken).toBe("renew");
+});
+
+test("a refresh token another document stored replaces the held one and nothing else", () => {
+  const held = heldOf();
+  expect(sessionWithRefreshToken(held, "stored")).toEqual({
+    state: "Held",
+    held: { ...held, refreshToken: "stored" },
+  });
 });
 
 test("the budget ends the session rather than retrying without limit", () => {

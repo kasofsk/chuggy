@@ -2,6 +2,11 @@
  * The site's workspaces as the access plane answers them, and their page
  * drawn against a plane a case scripts: the reader's site abilities and the
  * list at their own paths, and every creation answered by the case.
+ *
+ * The site's workspace links are read at a path of their own, which answers
+ * as a plane that keeps none unless the case says what it lists. The page is
+ * drawn under a clipboard a case reads back, because a made link's copy
+ * control is drawn only where there is one.
  */
 
 import { screen, within } from "@testing-library/react";
@@ -9,14 +14,25 @@ import { screen, within } from "@testing-library/react";
 import type {
   AccessSiteAbilities,
   AccessSiteTenants,
+  AccessWorkspaceLink,
+  AccessWorkspaceLinks,
 } from "../../../../src/contract/accessPlane.ts";
 import { SiteWorkspacesPage } from "../../app/browser/settings/SiteWorkspacesPage.tsx";
+import { CopyProvider } from "../../app/browser/ui/copyHeld.tsx";
 import { answer, drawnStrict } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { siteAbilitiesNone, siteAbilitiesPath } from "./permissionsFixture.tsx";
 
 /** Where the site's workspaces are listed, and where one is made. */
 export const siteWorkspacesPath = "/access/v1/site/workspaces";
+
+/** Where the site's workspace links are listed, and where one is made. */
+export const siteWorkspaceLinksPath = "/access/v1/site/workspace-links";
+
+/** Where one workspace link is revoked. */
+export function siteWorkspaceLinkPath(link: string): string {
+  return `${siteWorkspaceLinksPath}/${link}`;
+}
 
 export const workspacesWithheld = "A site admin creates workspaces";
 
@@ -88,6 +104,56 @@ export const workspacesListed: AccessSiteTenants = {
   truncated: false,
 };
 
+/** A workspace link nobody used, which is every state but the one that names who did. */
+type WorkspaceLinkUnused = Exclude<AccessWorkspaceLink, { state: "Used" }>;
+
+const workspaceLinkMade: Omit<WorkspaceLinkUnused, "link" | "state"> = {
+  createAccounts: false,
+  newAccounts: true,
+  mintedBy: {
+    subject: "s-ada",
+    account: true,
+    email: "ada@example.com",
+    githubLogin: "ada",
+  },
+  mintedAtMs: Date.UTC(2026, 7, 20, 9, 0),
+  expiresAtMs: Date.UTC(2026, 7, 27, 9, 0),
+};
+
+/** One workspace link the reader made, open, with no note and handing nothing on unless a case says otherwise. */
+export function workspaceLinkListed(
+  link: string,
+  over: Partial<Omit<WorkspaceLinkUnused, "link">> = {},
+): AccessWorkspaceLink {
+  return { ...workspaceLinkMade, state: "Open", ...over, link };
+}
+
+/** A workspace link in each of its four states, newest first: the open one
+ * noted and handing account creation on, the used one by a subject the
+ * directory cannot name. */
+export const workspaceLinksListed: AccessWorkspaceLinks = {
+  links: [
+    workspaceLinkListed("w-open", {
+      note: "For the Lisbon team",
+      createAccounts: true,
+    }),
+    {
+      ...workspaceLinkMade,
+      link: "w-used",
+      state: "Used",
+      note: "Sent to Grace",
+      usedBy: { subject: "s-grace" },
+      usedAtMs: Date.UTC(2026, 7, 21, 9, 0),
+      workspace: "northwind",
+    },
+    workspaceLinkListed("w-revoked", { state: "Revoked" }),
+    workspaceLinkListed("w-expired", {
+      state: "Expired",
+      createAccounts: true,
+    }),
+  ],
+};
+
 /** What the plane answers a creation with: made, or found already theirs. */
 export function workspaceCreated(status = 201): Response {
   return answer(
@@ -102,6 +168,12 @@ export interface WorkspacesDrawing {
   readonly listing?: () => Response | Promise<Response>;
   /** What a creation is answered with. */
   readonly sent?: () => Response | Promise<Response>;
+  /** What the site's links answer, a plane that keeps none where a case says nothing. */
+  readonly links?: () => Response | Promise<Response>;
+  /** What a link made or one revoked is answered with. */
+  readonly linked?: (request: SentRequest) => Response | Promise<Response>;
+  /** Every text the page put on the clipboard, in order. */
+  readonly copied?: string[];
 }
 
 export function drawWorkspaces(
@@ -111,16 +183,40 @@ export function drawWorkspaces(
     drawing.abilities ?? (() => answer(workspacesAbilitiesEvery));
   const listing = drawing.listing ?? (() => answer(workspacesListed));
   const sent = drawing.sent ?? (() => workspaceCreated());
-  return drawnStrict(<SiteWorkspacesPage />, (request: SentRequest) => {
-    if (request.url === siteAbilitiesPath) return abilities();
-    if (request.url !== siteWorkspacesPath) return answer({}, 404);
-    return request.method === "GET" ? listing() : sent();
-  });
+  const links = drawing.links ?? (() => answer({}, 404));
+  const linked = drawing.linked ?? (() => answer({}, 404));
+  return drawnStrict(
+    <CopyProvider
+      write={(text) => {
+        drawing.copied?.push(text);
+        return Promise.resolve(true);
+      }}
+    >
+      <SiteWorkspacesPage />
+    </CopyProvider>,
+    (request: SentRequest) => {
+      if (request.url === siteAbilitiesPath) return abilities();
+      if (request.url === siteWorkspacesPath)
+        return request.method === "GET" ? listing() : sent();
+      if (!request.url.startsWith(siteWorkspaceLinksPath))
+        return answer({}, 404);
+      return request.url === siteWorkspaceLinksPath && request.method === "GET"
+        ? links()
+        : linked(request);
+    },
+  );
 }
 
 export function workspaceListReads(drawn: DrawnStrict): number {
   return drawn.sent.filter(
     (request) => request.url === siteWorkspacesPath && request.method === "GET",
+  ).length;
+}
+
+export function workspaceLinksReads(drawn: DrawnStrict): number {
+  return drawn.sent.filter(
+    (request) =>
+      request.url === siteWorkspaceLinksPath && request.method === "GET",
   ).length;
 }
 

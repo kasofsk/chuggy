@@ -26,6 +26,7 @@ import {
   asSessionTurnId,
   type SessionId,
 } from "../../src/interpreter/agentSession.ts";
+import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
 import { leadSystemPrompt } from "../../src/interpreter/leadTools.ts";
 import { parseLeadObservation } from "../../src/interpreter/leadTurn.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -72,9 +73,9 @@ const clock: LeadPolicyClock = {
     new Promise((resolve) => setTimeout(resolve, milliseconds)),
 };
 
-function seedingPolicy() {
+function seedingPolicy(mailbox: LeadMailbox = rig.mailbox) {
   return leadSelectorPolicy(
-    rig.mailbox,
+    mailbox,
     postgresSelectorState(rig.selectorPool),
     leadSessionMint(),
     clock,
@@ -577,10 +578,19 @@ test("a lead with this decision's turn in flight is not closed, and takes the de
     "Enqueued",
     "a predecessor process offered this decision's turn and did not survive",
   );
-  const deciding = seedingPolicy().execute(
-    request,
-    new AbortController().signal,
-  );
+  let refused!: () => void;
+  const closeRefused = new Promise<void>((resolve) => {
+    refused = resolve;
+  });
+  const deciding = seedingPolicy({
+    ...rig.mailbox,
+    closeLead: async (held, session) => {
+      const closed = await rig.mailbox.closeLead(held, session);
+      refused();
+      return closed;
+    },
+  }).execute(request, new AbortController().signal);
+  await closeRefused;
   await leadRigPod(rig, partition, lead, "in-flight", () => aDecision);
   await deciding;
   assert.deepEqual(await sessionRow(lead), {

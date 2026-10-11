@@ -2,8 +2,8 @@
  * The platform capabilities the decision layer takes as arguments.
  *
  * Every ambient thing this console touches — the clock, the network, the
- * timers, the draws, the digest, the two stores, the address bar and the
- * worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
+ * timers, the draws, the digest, the two stores, the cookies, the address bar
+ * and the worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
  * something else. A store a browser refuses in a private window is read as
  * empty rather than thrown from.
  */
@@ -11,7 +11,7 @@
 import type { FormRequest } from "../core/authorization.ts";
 import type { ApiFetchInit } from "../core/apiRequest.ts";
 import type { StreamResponse } from "../core/streamConnection.ts";
-import { FetchJsonError } from "../core/sessionHolder.ts";
+import { fetchJsonThrough } from "../core/sessionHolder.ts";
 import type { KeyValuePort, SessionLocation } from "../core/sessionHolder.ts";
 import type { MarkdownSyntaxWorker } from "./ui/markdownSyntax.ts";
 
@@ -87,50 +87,21 @@ export async function streamFetch(
   };
 }
 
-function fetchJsonInit(request: FormRequest | string): RequestInit {
-  if (typeof request === "string")
-    return { headers: { accept: "application/json" } };
-  return {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/x-www-form-urlencoded",
-    },
-    body: request.body,
-  };
-}
+/** How long a request for JSON is waited on, body and all. A renewal keeps
+ * every other document of the origin from renewing until its own is answered. */
+export const fetchJsonWaitMs = 20_000;
 
-function fetchJsonUnanswered(failure: unknown): FetchJsonError {
-  return new FetchJsonError(
-    { fault: "Unanswered" },
-    failure instanceof Error ? failure.message : "the request got no answer",
-  );
-}
-
-/**
- * The token endpoints speak form encoding; `/config.json` and discovery, GET.
- * A request that got no answer, or lost its body on the way, rejects as
- * unanswered, and a body that is not JSON as the parser's own error.
- */
-export async function fetchJson(
-  request: FormRequest | string,
-): Promise<unknown> {
-  const url = typeof request === "string" ? request : request.url;
-  const response = await fetch(url, fetchJsonInit(request)).catch(
-    (failure: unknown) => {
-      throw fetchJsonUnanswered(failure);
-    },
-  );
-  if (!response.ok)
-    throw new FetchJsonError(
-      { fault: "Status", status: response.status },
-      `${url} answered ${String(response.status)}`,
-    );
-  const text = await response.text().catch((failure: unknown) => {
-    throw fetchJsonUnanswered(failure);
+export function fetchJson(request: FormRequest | string): Promise<unknown> {
+  const waited = new AbortController();
+  const timer = setTimeout(() => {
+    waited.abort();
+  }, fetchJsonWaitMs);
+  return fetchJsonThrough(
+    (url, init) => fetch(url, { ...init, signal: waited.signal }),
+    request,
+  ).finally(() => {
+    clearTimeout(timer);
   });
-  const value: unknown = JSON.parse(text);
-  return value;
 }
 
 function keyValuePort(store: () => Storage): KeyValuePort {
@@ -162,8 +133,118 @@ function keyValuePort(store: () => Storage): KeyValuePort {
 export const persistentStore = keyValuePort(() => localStorage);
 export const transientStore = keyValuePort(() => sessionStorage);
 
+/** Tells `heard` each time another document of this origin changes the
+ * persistent store. The document that made the change is not told. */
+export function persistentChangeHeard(heard: () => void): void {
+  addEventListener("storage", heard);
+}
+
+/**
+ * Runs `body` while no other document of this origin is running one under
+ * `name`, by the Web Locks API, rejecting where the turn did not come within
+ * `waitMs`, and at once where the browser has no such API or withholds it.
+ * Only a document that is shown waits: a browser grants a waiting request to
+ * a document it has frozen, whose body cannot run, so the wait is given up as
+ * the document is hidden and asked afresh if it is shown again.
+ */
+export function exclusively<T>(
+  name: string,
+  waitMs: number,
+  body: () => Promise<T>,
+): Promise<T> {
+  if (!("locks" in navigator)) return body();
+  return new Promise<T>((resolve) => {
+    let leave: (() => void) | undefined;
+    const ended = (): void => {
+      removeEventListener("pagehide", hidden);
+      removeEventListener("pageshow", shown);
+    };
+    function ask(): void {
+      const waited = new AbortController();
+      const timer = setTimeout(() => {
+        waited.abort();
+      }, waitMs);
+      let left = false;
+      leave = () => {
+        left = true;
+        waited.abort();
+      };
+      const asked = navigator.locks.request(
+        name,
+        { signal: waited.signal },
+        () => {
+          clearTimeout(timer);
+          ended();
+          return body();
+        },
+      );
+      const answered = (): void => {
+        clearTimeout(timer);
+        if (left) return;
+        ended();
+        resolve(asked);
+      };
+      asked.then(answered, answered);
+    }
+    function hidden(): void {
+      leave?.();
+      leave = undefined;
+    }
+    function shown(): void {
+      if (leave === undefined) ask();
+    }
+    addEventListener("pagehide", hidden);
+    addEventListener("pageshow", shown);
+    ask();
+  });
+}
+
 export function redirect(url: string): void {
   location.assign(url);
+}
+
+/** Leaves this document for another address in this entry's place, so Back does not return to the one left. */
+export function replaceLocation(url: string): void {
+  location.replace(url);
+}
+
+/** Loads this document again, at the address and the fragment it is at. */
+export function reloadLocation(): void {
+  location.reload();
+}
+
+/** Tells `heard` each time the fragment changes under this document, which loads nothing. */
+export function anchorHeard(heard: () => void): void {
+  addEventListener("hashchange", heard);
+}
+
+/** Tells `heard` each time the browser shows this document again as it was left, out of its back-forward cache; the answer stops the telling. */
+export function pageRestoredHeard(heard: () => void): () => void {
+  const shown = (event: PageTransitionEvent): void => {
+    if (event.persisted) heard();
+  };
+  addEventListener("pageshow", shown);
+  return () => {
+    removeEventListener("pageshow", shown);
+  };
+}
+
+/** Every cookie a script may read here, none where the browser refuses the read. */
+export function cookiesRead(): string {
+  try {
+    return document.cookie;
+  } catch {
+    return "";
+  }
+}
+
+/** Hands the browser one cookie to keep or to end. */
+export function cookieWritten(line: string): void {
+  try {
+    document.cookie = line;
+  } catch {
+    return;
+  }
 }
 
 /** This console's own origin, where its API answers and where a forge is told to return an authorization. */

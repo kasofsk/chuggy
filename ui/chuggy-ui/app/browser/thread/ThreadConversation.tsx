@@ -96,9 +96,14 @@ import {
   threadTurnsWait,
   threadWriting,
 } from "../../core/threads.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import type { ProjectAbilities } from "../../core/projectAbilities.ts";
 import { Conversation } from "../conversation/Conversation.tsx";
+import type { ConversationProps } from "../conversation/Conversation.tsx";
+import type { ConversationComposerProps } from "../conversation/ConversationComposer.tsx";
 import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
 import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
+import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { useThreadImage } from "./threadImage.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
@@ -247,6 +252,17 @@ function useThreadStood(
   return conversationExchangesStood(exchanges, next);
 }
 
+/** What the reader's own thread ends on: its composer, or the one line where
+ * they may send it nothing. */
+function threadFoot(
+  abilities: ProjectAbilities,
+  composer: ConversationComposerProps,
+): Pick<ConversationProps, "composer" | "unsendable"> {
+  return projectAbilityRefused(abilities, "mutate")
+    ? { unsendable: <ViewOnlyNotice /> }
+    : { composer };
+}
+
 export function ThreadConversation(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadResponse;
@@ -278,6 +294,7 @@ export function ThreadConversation(props: {
   const mentions = useConversationMentions(props.partition);
   const image = useThreadImage(props.partition);
   const door = useThreadDoor(props.partition).door;
+  const abilities = useProjectAbilities(props.partition);
   const drawn = useThreadExchanges(props.partition, thread, walked, sends);
   const [read, setRead] = useState(false);
   if (!walked.reading && !read) setRead(true);
@@ -303,13 +320,11 @@ export function ThreadConversation(props: {
             : exchanges
         }
         {...(thread.mine
-          ? {
-              composer: {
-                ...sends.composer,
-                focusOnMount: props.named === true,
-                mentions,
-              },
-            }
+          ? threadFoot(abilities, {
+              ...sends.composer,
+              focusOnMount: props.named === true,
+              mentions,
+            })
           : {})}
         reading={walked.reading && !read}
         image={image}

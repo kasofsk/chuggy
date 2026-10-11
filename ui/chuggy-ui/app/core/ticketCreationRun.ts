@@ -8,8 +8,19 @@
  * number of pages ends — and each offered revision's initialization is read in
  * the same motion, because a revision without its defaults is not something a
  * form can be drawn from, and a choice among them is then one no request
- * waits on. Release reuses `followOperation`, whose one budget spans the whole
- * follow, so this module adds no second wait.
+ * waits on. The release and the dispatch after it are each followed by
+ * `followOperation` out of one attempts budget, the dispatch starting from the
+ * attempts its release spent, so this module adds no budget of its own.
+ *
+ * A CREATION DISPATCHES THE TICKET IT RELEASED, FOR A READER WHO MAY. The
+ * ticket exists from the moment its release settles, so nothing its dispatch
+ * meets ends the submit any other way: a ticket that is no candidate, a
+ * dispatch view that could not be read, a refusal, a deferral and a follow
+ * that ran out of budget all hand back the ticket, as a release alone does,
+ * and its page offers `Dispatch` wherever a press is still what starts it. A
+ * deferral is the API saying not now, so the follow is ended where it meets
+ * one rather than waited through: the ticket's page is where a deferred
+ * dispatch is drawn and pressed again.
  *
  * A DRAFT THAT WAS CREATED AND NOT RELEASED IS HANDED BACK. The release is the
  * half that can be refused on its own, and a retry that created a second draft
@@ -39,6 +50,7 @@ import {
   apiDraftInitialization,
   apiProjectRepositories,
   apiReviseDraft,
+  apiTicketDispatchView,
   configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
@@ -50,11 +62,12 @@ import {
   operationRefusalSentence,
   operationStateSentence,
 } from "./codeSentences.ts";
-import { followOperation } from "./operationFollow.ts";
+import { followOperation, operationFinished } from "./operationFollow.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 import { readProjectConfigurations } from "./repositoryConfigurations.ts";
+import { manualDispatchAction } from "./ticketActions.ts";
 import {
   creationConfigurationsDecided,
   creationConfigurationsOffered,
@@ -125,6 +138,9 @@ export interface TicketCreationRequest {
   /** What a release nothing has sent yet goes under. */
   readonly operation: string;
   readonly held?: CreationDraftHeld | undefined;
+  /** What the dispatch of the ticket this makes goes under, absent for a
+   * reader who may not dispatch, whose submit sends none. */
+  readonly dispatchOperation?: string | undefined;
 }
 
 export type TicketCreated<Held extends DraftHeld = DraftHeld> =
@@ -502,8 +518,41 @@ async function creationDraftFencedOut(
 }
 
 /**
- * One submit: the draft is written to what the form says, and released and
- * followed to settlement. Only a settled success is a ticket to navigate to.
+ * The ticket a release made, dispatched where the dispatch view lists it as a
+ * candidate, at the version that view gives it, and followed from the
+ * `attempts` its release had spent until it settles or the API defers it. It
+ * answers nothing, the ticket being there whatever this meets.
+ */
+async function creationTicketDispatched(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+  operation: string,
+  attempts: number,
+): Promise<void> {
+  const view = await apiTicketDispatchView(ports, partition, ticket);
+  if (view.outcome !== "Ok") return;
+  const dispatch = manualDispatchAction(ticket, view.value);
+  if (dispatch === undefined) return;
+  const deferred = new AbortController();
+  await followOperation(
+    ports,
+    partition,
+    { operation, mutation: dispatch.mutation },
+    ticket,
+    (step) => {
+      if (step.step === "Backlogged") deferred.abort();
+    },
+    deferred.signal,
+    { step: "Submitting", attempts },
+  );
+}
+
+/**
+ * One submit: the draft is written to what the form says, released and
+ * followed to settlement, and the ticket that makes dispatched where the
+ * request names what its dispatch goes under. Only a settled release is a
+ * ticket to navigate to, and it is one whatever its dispatch came to.
  */
 export async function createAndReleaseTicket(
   ports: ApiPorts,
@@ -513,7 +562,7 @@ export async function createAndReleaseTicket(
 ): Promise<TicketCreationEnded> {
   const written = await creationDraftWritten(ports, partition, request);
   if ("created" in written) return written;
-  const seen = { accepted: false };
+  const seen = { accepted: false, attempts: 0 };
   const followed = await followOperation(
     ports,
     partition,
@@ -524,11 +573,21 @@ export async function createAndReleaseTicket(
     written.draft.ticket,
     (step) => {
       if (step.step === "Following") seen.accepted = true;
+      if (!operationFinished(step)) seen.attempts = step.attempts;
       onStep(step);
     },
   );
   const step = followed.step;
   const released = releasedTicket(step, written);
+  const dispatchOperation = request.dispatchOperation;
+  if (released.created === "Created" && dispatchOperation !== undefined)
+    await creationTicketDispatched(
+      ports,
+      partition,
+      released.ticket,
+      dispatchOperation,
+      seen.attempts,
+    );
   if (released.created !== "Refused") return released;
   if (step.step === "Settled" && step.refusal?.type === "AuthoringChanged")
     return creationDraftFencedOut(ports, partition, released.reason, written);

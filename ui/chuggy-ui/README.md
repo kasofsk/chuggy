@@ -47,12 +47,20 @@ builds with.
   than a query.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
   design system still draw with; it shrinks as they move.
+- `ui/chuggy-ui/terminal/` — the setup program's entry and its Node adapters:
+  files, a lock, a listener, child processes, the machine's own paths and
+  requests, filling the ports `ui/chuggy-ui/app/core/setupPorts.ts` declares.
+  Its decisions are in `app/core/` with the console's own.
+  `ui/chuggy-ui/terminal/built.ts` is not part of the program: it is the
+  build's last step, which starts what was built.
 - `ui/chuggy-ui/test/` — the suites, run by the console's own runner.
 - `ui/chuggy-ui/config.example.json` — the shape of the runtime configuration.
 
 Those splits are rules in `.dependency-cruiser.cjs` rather than conventions: the
-served source reaches nothing else in this directory, and the decision layer
-reaches only itself, `src/contract/` and the parser that contract is written in.
+served source reaches nothing else in this directory, the decision layer
+reaches only itself, `src/contract/` and the parser that contract is written in,
+and `chuggy-ui-terminal-reaches-a-closed-roster` names every Node builtin the
+terminal program may reach beyond those.
 
 ## The contract is imported, never restated
 
@@ -86,11 +94,15 @@ scoped to a tree this directory is not in, and declines it. The root formatter
 still owns these sources — there is one formatter in this tree — and only the
 build output is in `.prettierignore`.
 
-`build` writes the bundle and then runs `scripts/check-console-policy.ts` over
-what it wrote, which holds the emitted document to the policy the web image
-serves it under: no inline script, no inline style, no other origin. What it
-decides is `scripts/console-policy.ts`, and `test/scripts/consolePolicy.test.ts`
-holds that to every finding it names.
+`build` writes the bundle, then the setup program beside it through
+`ui/chuggy-ui/vite.terminal.config.ts`, and then runs
+`scripts/check-console-policy.ts` over what it wrote, which holds the emitted
+document to the policy the web image serves it under: no inline script, no
+inline style, no other origin. What it decides is `scripts/console-policy.ts`,
+and `test/scripts/consolePolicy.test.ts` holds that to every finding it names.
+Last, `ui/chuggy-ui/terminal/built.ts` starts the setup program where the build
+left it, under an empty home, and fails the build where the file is missing or
+does not print and exit as a first run does.
 
 ## Runtime configuration
 
@@ -102,6 +114,13 @@ blank page.
 
 `audience` is the API's own identity and not this console's host: without it the
 access token comes back with an empty audience and every read is refused.
+
+`inviteCookieDomain` is the one key a deployment may leave out. An invite link
+is opened at `/invite`, and its token crosses the sign-in in a cookie,
+`chuggy_invite`, which the deployment's sign-in hook reads to admit a person
+with no account. Name the domain the console and the sign-in service share, so
+that service is sent the cookie. Without the key the cookie is the console
+host's own, which still carries a person who has an account.
 
 ## The image
 
@@ -118,46 +137,150 @@ deploy/rig/images/build-and-import.sh chuggy-ui
 `script-src 'self'` and `style-src 'self'`, and the emitted document loads one
 script and one stylesheet from this origin and nothing else.
 
+## The setup program
+
+A second program of this workspace, which a person's coding agent fetches from
+the console's own origin and runs under Node:
+
+```sh
+curl -fsS https://<site>/chuggy-setup.mjs -o chuggy-setup.mjs
+node chuggy-setup.mjs --site https://<site>
+```
+
+It is one file with nothing to install, and it runs on Linux and macOS: on any
+other platform it says so and does nothing. Every line it prints is a word from
+a closed set, a colon and its text; the last is `next:` and names the exact
+command to run after it, or says to stop. It says to stop where running a
+command again would mend nothing until something else has changed: where the
+Node it was run under is too old, after a sign-in that was declined, left to
+expire or refused, where the site or the sign-in server did not answer, where
+the machine would not keep its files or another run held them, and where a
+step of setup waits on her. A `rule:` line then names the command and what
+must be so before it is run. How the last
+sign-in ended is said once by whichever command meets it first; from then on
+the bare command goes on saying it, and the next `sign-in` opens a page. It
+exits 0 where the last line is to be followed, 1 where it failed and 2 where it
+was asked wrongly or cannot run on this machine.
+
+Run bare and signed in, it prints the checklist: a `step:` line for each step
+of setup in order (workspace, project, github, repository, runner, ticket),
+saying it is done, waiting on something named, to do or not read, and then the
+one next thing. It sends the site nothing but reads and keeps nothing of what
+they answered: the site is the record. The sign-in server is sent one renewal,
+and where the site refuses the sign-in, one more and then the revocation of the
+token, which is forgotten. Each read stands by itself, so one the site refused,
+failed or sent only part of leaves its own step not read and is said as that.
+Once a repository is added the github step is held to it: done only where both
+apps on the account that owns it are granted that repository, which is read
+from each of the two installations' own listings and from no other.
+The runner's step is the one the program does. For any other step that is the
+first not done, a `tell:` line says what mends it, a console page and what to
+press there wherever a page is what does, and `next:` is `stop`. At the
+runner's step it looks at the machine and changes nothing. Where a runner could
+be put there, one `tell:` says what `runner` would put on the machine and the
+`rule:` names that command for once she says yes; where one could not (a Mac,
+user services that do not answer, no container engine that answers her without
+a password, or none the runner package takes from her user) the `tell:` says
+that instead.
+
+With one workspace and one project there is nothing to choose. Otherwise
+`--workspace` and `--project` name them, and every command the program prints
+carries them, so the conversation holds the choice and no file does. Where one
+is still to be chosen an `ask:` line puts the question to the person, and the
+`rule:` line names the flag her answer goes in. The list of projects is read to
+its end, and no name is taken from a list that did not end; a project named
+with both flags is read by its name. Run in a git checkout whose
+`origin` is a repository added to exactly one of her projects, it proposes that
+project and says so in a `found:` line. It asks `git` for that address and
+prints only its host and path, never a credential the address carried.
+
+`sign-in` opens the installation's sign-in in a browser and takes the answer on
+`127.0.0.1`, as the public client `chuggy-setup`. It remembers the site and the
+renewal token in the person's home directory and never prints the token. The
+issuer hands a new token back for each one it is shown, so before one is shown
+the program keeps room in that directory for the next: a home that will not
+take it is said as that, with its path, and the sign-in is not spent.
+
+`runner --workspace <w> --project <p>` sets a runner up for that project on the
+Linux machine it is run on, and is done once the site sees the runner live;
+`--wait-secs` bounds that wait. The machine is the record of the machine's
+things and the site of the site's, and the program keeps neither: every act is
+preceded by the probe that would show it done, so the command is run again
+after any failure and picks up where things stand. In order it has the runner
+package installed, by the console's own install command and under a prefix in
+her home directory where npm's own is not hers to write; the package's
+settings written, with its guide's values, where there are none; the machine
+registered; the package's own check passed; its service installed; her
+services set to outlive a logout; and the service enabled and started. For a
+registration it mints a registration token, which is the one write it sends a
+site, and hands it to the package's `register` as one word of its arguments
+and nowhere else. Every try mints one, so a registration the package refuses
+for the machine's processor or its name is not offered again as the machine
+stands.
+It takes no password: a child has no terminal to ask on, and what wants one is
+told to her to do herself. It does not make the runner's Claude login, and
+stops where there is none. The runner package takes docker from one user of a
+machine only, so docker is asked of that user alone and podman of any other,
+and a user left with no engine is stopped before anything is changed. Nothing
+a child prints is printed as it came: a failure, or a check that passed with a
+warning, keeps one short excerpt with the run's secrets struck out; a
+service's state is said only where it is one word; and of the registration,
+which is handed the token, nothing it printed is kept but which of the
+package's own refusals it was.
+
 ## The session
 
 OIDC authorization code with PKCE against the issuer `/config.json` names, with
 a public client that authenticates with nothing. The access token lives in
 memory for the life of the tab; the refresh token is what reaches
 `localStorage`, so a reload or a restart keeps the session without an access
-token ever being written down. The renewal happens before expiry, on a budget:
-an issuer that keeps declining ends the session once rather than being asked
-forever. Signing out clears both and revokes the refresh token where the issuer
-publishes an endpoint for it.
+token ever being written down. The renewal happens before expiry. Every tab of
+a browser shares that one stored token and the issuer rotates it, so a tab
+renews with the token the store holds at that moment, one tab at a time under a
+Web Lock, and signing out in one tab signs the others out. A tab is one
+sign-in's for as long as it is loaded: each sign-in stores a random mark beside
+its token, which a renewal leaves, and a tab that finds another mark there ends
+its own session, reads `Session changed` and offers a reload, sending and
+revoking nothing more. A tab the issuer redirected back with a sign-in of its
+own to complete takes no stored session until that sign-in has answered; the
+callback address opened in a tab that began none takes the stored session at
+once. A renewal the issuer refuses ends the session at once; one that got no
+answer keeps it, a gateway's own status and a request given up at its bound
+among those; one answered unusably is on a budget, so such an issuer ends the
+session once rather than being asked forever. Signing out clears the store and
+revokes the refresh token where the issuer publishes an endpoint for it.
 
 ## Connecting a forge account
 
 A forge account is the tenant's, not any one project's, so the Accounts panel
 is a workspace page of the settings: `/$tenant/$project/settings/workspace/accounts`
 inside a project and `/tenants/$tenant/settings/accounts` outside one. The
-Repositories page, which only binds a project's repositories, says where to
-connect one and links to the first.
+Repositories page offers `Connect GitHub` itself while the tenant has no
+account, and the worker App's install where a connected account lacks it.
 
 `Connect GitHub` sends the person to authorize the portal App, with a state and
 a PKCE challenge the console draws the way the sign-in's are drawn. The state,
-the verifier, the tenant and where the person was are stored in
-`sessionStorage` under one key. The forge returns to `/forge/github/callback`,
-which takes that transaction once and posts the code only when the state it was
-sent matches; a callback reached without a matching transaction says "Not
-expected", posts nothing and links home. The page then drops the code and state
-from the address. The api claims each account the authorization proves the
-person owns, with the worker App's installation on it, and the page puts the
-person back where they pressed `Connect GitHub`. Anything short of a plain
-connection comes back as one word, held in `sessionStorage` and shown once on
-the Accounts page. A person who reached no account, or only accounts they do
-not own, comes back to `Add account`, the portal App's install.
+the verifier and the press (its tenant, the page it began on, the Apps it has
+gone on to install) are stored in `sessionStorage` under one key. The forge
+returns to `/forge/github/callback`, which takes that transaction once and
+posts the code only when the state it was sent matches; a callback reached
+without a matching transaction says "Not expected", posts nothing and links
+home. The page then drops the code and state from the address. The api claims
+each account the authorization proves the person owns, with the worker App's
+installation on it. A press goes on to an install the answer leaves, each App's
+at most once: the portal App's where a whole answer reached no account they
+own, the worker App's where one they own lacks it. Otherwise it returns to the
+page it began on, and anything short of a plain connection comes back as one
+word, held in `sessionStorage` and shown once on that page.
 
-`Connect GitHub` is the Accounts page's one action until an account is
-connected or a return offers that install. Then `Add account` installs the
-portal App, and an account without the worker App offers that App's install on
-its own row. Each install link carries a state of its own, stored the same way.
-The forge sends the person back to `/forge/github/setup`, which takes that
-transaction once and, when the state matches, goes on to the authorization; an
-install an owner has to approve returns with "Requested".
+On the Accounts page `Connect GitHub` is the one action until an account is
+connected or a press returns having reached none the person owns. Then
+`Add account` installs the portal App, and an account without the worker App
+offers that App's install on its own row. Every install stores a state of its
+own and the press, naming its App, under a second key. The forge sends the
+person back to `/forge/github/setup`, which takes that transaction once and,
+when the state matches, goes on to the authorization with the press; an install
+an owner has to approve returns with "Requested".
 
 Both Apps' Setup URL must be that route on the console's own host, with
 "Redirect on update" set so an App already installed comes back too, and the

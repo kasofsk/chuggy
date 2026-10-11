@@ -16,6 +16,7 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  draftsResponseSchema,
   executionPlacementResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
@@ -59,6 +60,7 @@ import type {
   DispatchViewResponse,
   DraftInitializationResponse,
   DraftResponse,
+  DraftsResponse,
   ExecutionPlacementResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
@@ -707,6 +709,19 @@ export function apiDispatchView(
   );
 }
 
+/** The page of the dispatch view that says whether one ticket is a candidate.
+ * The route's `after` is exclusive and names a ticket, so the first has none. */
+export function apiTicketDispatchView(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): Promise<ApiResult<DispatchViewResponse>> {
+  return apiDispatchView(ports, partition, {
+    ...(ticket > 1 ? { after: ticket - 1 } : {}),
+    limit: 1,
+  });
+}
+
 /** Every question this one ticket has open, which the ticket read omits. */
 export function apiTicketNativeActions(
   ports: ApiPorts,
@@ -951,6 +966,25 @@ export function apiDraft(
   );
 }
 
+/** One page of the drafts a project still holds open, which a released or deleted one is not among. */
+export function apiDrafts(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  page: {
+    readonly cursor?: string | undefined;
+    readonly limit?: number | undefined;
+  } = {},
+): Promise<ApiResult<DraftsResponse>> {
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "drafts"), {
+      cursor: page.cursor,
+      limit: page.limit,
+    }),
+    (value) => draftsResponseSchema.parse(value),
+  );
+}
+
 /** The project's lead session, its mailbox tail and the streams its store
  * holds, or that the project has none. */
 export const apiLead = apiProjectEndpoint(
@@ -961,6 +995,12 @@ export const apiLead = apiProjectEndpoint(
 /** Whether the project's tenant grants the reader hosted runs. */
 export const apiHostedRuns = apiProjectEndpoint(
   nativeHttpEndpoints.hostedRuns,
+  (partition) => ({ parameters: partition }),
+);
+
+/** Which of the project's doors the reader may press. */
+export const apiProjectAbilities = apiProjectEndpoint(
+  nativeHttpEndpoints.abilities,
   (partition) => ({ parameters: partition }),
 );
 

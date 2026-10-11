@@ -7,10 +7,11 @@
  * the images it carries, the check lines this ticket adds where its
  * configuration commands a stage for them, the branch the work happens on and
  * the one it lands on; the rest is prefilled behind the disclosure. Submit
- * creates the draft and releases it in one motion, and the navigation happens
- * on a settled success alone, so a screen never hands a reader a ticket the
- * projection has not got to yet. Every other ending is drawn here with its
- * reason and the form still holding what was typed.
+ * creates the draft, releases it and, for a reader who may dispatch, starts
+ * the ticket in one motion, and the navigation happens on a settled release
+ * alone, so a screen never hands a reader a ticket the projection has not got
+ * to yet. Every other ending of the release is drawn here with its reason and
+ * the form still holding what was typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,14 +39,19 @@ import {
   creationBodyFrom,
   creationBootstrapLine,
   creationBranchFieldHint,
+  creationBranchProposed,
   creationConfigurationAsked,
   creationConfigurationChosen,
   creationConfigurationLabel,
   creationFormFrom,
+  creationFormProposed,
   creationOfferOf,
   creationRepositories,
   creationRepositoryChosen,
+  creationStart,
   creationStepSentence,
+  creationSubmitEffect,
+  creationSubmitMotion,
   creationTargetBranchFieldHint,
 } from "../core/ticketCreation.ts";
 import type {
@@ -53,6 +59,7 @@ import type {
   CreationField,
   CreationMotion,
   CreationOffer,
+  CreationStart,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
@@ -84,8 +91,9 @@ import {
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
+import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { DraftScreen } from "./ticket/DraftScreen.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { ConfigurationOverrides } from "./ConfigurationOverrides.tsx";
 import { overrideDocumentOf, overrideFields } from "../core/ticketOverrides.ts";
@@ -99,6 +107,7 @@ import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 
 import "./TicketCreation.css";
 
@@ -344,14 +353,18 @@ function BranchRow(props: {
   );
 }
 
-function Branch(props: FormEdit): ReactNode {
+/** The branch box, which an empty one draws the screen's proposal in where it
+ * has one, as the name a submit sends. */
+function Branch(
+  props: FormEdit & { readonly proposed: string | undefined },
+): ReactNode {
   const { form, onChange } = props;
   return (
     <BranchRow
       label="Branch"
       hint={creationBranchFieldHint}
       value={form.branchName}
-      placeholder="the branch name"
+      placeholder={props.proposed ?? "the branch name"}
       onChange={(branchName) => {
         onChange({ ...form, branchName });
       }}
@@ -435,7 +448,7 @@ function attemptHeldDraft(
   draft: DraftResponse | undefined,
   motion: CreationMotion,
 ): string {
-  if (draft === undefined || motion === "Release") return "";
+  if (draft === undefined || motion !== "Update") return "";
   return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
 }
 
@@ -549,6 +562,8 @@ export function CreationFields(
     readonly partial?: boolean;
     readonly repositories: readonly ProjectRepositoryResponse[];
     readonly dependenciesLocked?: boolean;
+    /** The branch a screen that proposes one sends for a box left empty. */
+    readonly branchProposed?: string | undefined;
     readonly api: CreationImagesApi;
   },
 ): ReactNode {
@@ -575,7 +590,7 @@ export function CreationFields(
           <Fault field="checks" faults={faults} />
         </>
       )}
-      <Branch form={form} onChange={onChange} />
+      <Branch form={form} onChange={onChange} proposed={props.branchProposed} />
       <Fault field="branch" faults={faults} />
       <Repository
         form={form}
@@ -650,10 +665,12 @@ function creationAttemptHeld(
  */
 function CreationAttemptNote(props: {
   readonly attempt: CreationAttempt;
+  readonly motion: CreationMotion;
   readonly existing: (ticket: number) => ReactNode;
 }): ReactNode {
   const attempt = props.attempt;
-  if (attempt.attempt !== "Exists") return <AttemptNote attempt={attempt} />;
+  if (attempt.attempt !== "Exists")
+    return <AttemptNote attempt={attempt} motion={props.motion} />;
   return (
     <p className="panel-failed">
       {creationTicketExistsSentence(attempt.ticket)} —{" "}
@@ -667,6 +684,11 @@ interface CreationSubmit {
   readonly submit: (form: TicketCreationForm) => Promise<void>;
 }
 
+/** An operation identity nothing has been sent under. */
+function operationDrawn(): string {
+  return base64urlFromBytes(drawBytes(operationIdBytesCount));
+}
+
 /**
  * One submit, from the body it assembles to the state it leaves behind. The
  * form's faults are set by the caller's own setter, so nothing but this hook
@@ -678,6 +700,7 @@ function useCreationSubmit(props: {
   readonly queryKey: ProjectQueryKey;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly dispatches: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
 }): CreationSubmit {
@@ -685,6 +708,7 @@ function useCreationSubmit(props: {
   const mounted = useMounted();
   const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
+    dispatches,
     offers,
     onCreated,
     onFaults,
@@ -702,12 +726,13 @@ function useCreationSubmit(props: {
     }
     onFaults([]);
     const held = creationAttemptHeld(attempt);
-    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
+    const operation = operationDrawn();
+    const dispatchOperation = dispatches ? operationDrawn() : undefined;
     setAttempt({ attempt: "Running", step: operationSubmitting() });
     const created = await createAndReleaseTicket(
       ports,
       partition,
-      { body: assembled.body, operation, held },
+      { body: assembled.body, operation, held, dispatchOperation },
       (step) => {
         if (mounted.current) setAttempt({ attempt: "Running", step });
       },
@@ -790,22 +815,26 @@ function CreationDuplicateDropped(props: {
   return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
-/**
- * The form itself, which reaches the network and the address bar through its
- * caller: the route component below owns the session and the router, and this
- * owns what one screenful of typing becomes, as fields or as YAML.
- */
-export function CreationForm(props: {
+interface CreationFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
+  /** What a submit goes on to once the ticket it makes is released. */
+  readonly start: CreationStart;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
   readonly onDirty?: (dirty: boolean) => void;
   readonly duplicate?: CreationDuplicate;
-}): ReactNode {
+}
+
+/**
+ * The form itself, which reaches the network and the address bar through its
+ * caller: the route component below owns the session and the router, and this
+ * owns what one screenful of typing becomes, as fields or as YAML.
+ */
+export function CreationForm(props: CreationFormProps): ReactNode {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const { offers, partial, repositories: bound } = props.context;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
@@ -818,6 +847,7 @@ export function CreationForm(props: {
     queryKey: props.queryKey,
     offers,
     repositories,
+    dispatches: props.start === "Starts",
     onFaults: setFaults,
     onCreated: (ticket) => {
       ticketYamlForgotten(storeKey);
@@ -836,9 +866,15 @@ export function CreationForm(props: {
         repositories={repositories}
         dependenciesLocked={false}
         assemble={(form) => creationBodyFrom(offers, form, repositories)}
+        proposed={creationFormProposed}
         storeKey={storeKey}
         submitLabel="Create ticket"
-        submitEffect="Releases the ticket to run"
+        submitEffect={creationSubmitEffect(props.start)}
+        submitStep={
+          props.start === "NoRunner" ? (
+            <AddRunnerLink partition={props.partition} />
+          ) : undefined
+        }
         busy={running.attempt.attempt === "Running"}
         onSubmit={(form) => {
           void running.submit(form);
@@ -852,12 +888,14 @@ export function CreationForm(props: {
             offers={offers}
             partial={partial}
             repositories={repositories}
+            branchProposed={creationBranchProposed(held.form)}
             api={props}
           />
         }
       />
       <CreationAttemptNote
         attempt={running.attempt}
+        motion={creationSubmitMotion(props.start)}
         existing={props.existing}
       />
     </div>
@@ -914,66 +952,81 @@ export interface CreationScreenReady {
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
   readonly context: Extract<CreationContext, { context: "Ready" }>;
+  /** What a submit goes on to, which is a start once the abilities read has
+   * come back without a no and the project's work is read to have a runner. */
+  readonly start: CreationStart;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
 }
 
-/**
- * A new-ticket screen: its title, the project's read, and the guard and the
- * navigation a settled submit releases, around whatever form it draws.
- */
-export function CreationScreen(props: {
-  readonly heading: ReactNode;
+/** The project's read, and the guard and the navigation a settled submit
+ * releases, around whatever form a new-ticket screen draws. */
+function CreationScreenRead(props: {
+  readonly partition: PartitionIdentity;
   readonly children: (ready: CreationScreenReady) => ReactNode;
 }): ReactNode {
-  const params = useParams({ from: "/$tenant/$project" });
+  const partition = props.partition;
   const ports = useApiPorts();
   const navigate = useNavigate();
-  const partition: PartitionIdentity = {
-    tenant: params.tenant,
-    project: params.project,
-  };
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
+  const start = creationStart(
+    useProjectAbilityRead(partition, "dispatch"),
+    useWorkRunner(partition),
+  );
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
     readCreationContext(readPorts, partition),
   );
   return (
-    <>
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          {props.heading}
-        </h1>
-      </TopBarSlot>
-      <DataPanel title="Draft" state={state}>
-        {(context) =>
-          context.context === "Ready" ? (
-            props.children({
-              ports,
-              partition,
-              queryKey,
-              context,
-              onDirty: setDirty,
-              onCreated: (ticket) => {
-                guard.release();
-                void navigate({
-                  to: "/$tenant/$project/tickets/$ticket",
-                  params: { ...partition, ticket: String(ticket) },
-                });
-              },
-              existing: (ticket) => (
-                <CreationTicketLink partition={partition} ticket={ticket} />
-              ),
-            })
-          ) : (
-            <CreationContextAbsent partition={partition} context={context} />
-          )
-        }
-      </DataPanel>
-    </>
+    <DataPanel title="Draft" state={state}>
+      {(context) =>
+        context.context === "Ready" ? (
+          props.children({
+            ports,
+            partition,
+            queryKey,
+            context,
+            start,
+            onDirty: setDirty,
+            onCreated: (ticket) => {
+              guard.release();
+              void navigate({
+                to: "/$tenant/$project/tickets/$ticket",
+                params: { ...partition, ticket: String(ticket) },
+              });
+            },
+            existing: (ticket) => (
+              <CreationTicketLink partition={partition} ticket={ticket} />
+            ),
+          })
+        ) : (
+          <CreationContextAbsent partition={partition} context={context} />
+        )
+      }
+    </DataPanel>
+  );
+}
+
+/** A new-ticket screen: its title, and the form it draws for a reader who may
+ * open a ticket. */
+export function CreationScreen(props: {
+  readonly heading: ReactNode;
+  readonly children: (ready: CreationScreenReady) => ReactNode;
+}): ReactNode {
+  const params = useParams({ from: "/$tenant/$project" });
+  const partition: PartitionIdentity = {
+    tenant: params.tenant,
+    project: params.project,
+  };
+  return (
+    <DraftScreen partition={partition} heading={props.heading}>
+      <CreationScreenRead partition={partition}>
+        {props.children}
+      </CreationScreenRead>
+    </DraftScreen>
   );
 }
 

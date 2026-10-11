@@ -24,6 +24,7 @@ import { useMemo } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
+import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import {
@@ -33,6 +34,7 @@ import {
 } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
+  callerResourceKey,
   projectResourceKey,
   projectsInventoryKey,
   tenantResourceKey,
@@ -49,36 +51,16 @@ type PanelRead<T> = (
 
 /**
  * The ports every read runs on, where a refusal the session could not see
- * coming ends it: a 401 reaching here is the API disagreeing with a session
- * this console still believes in, and believing it anyway draws every screen as
+ * coming ends it. Believing in a session the API refuses draws every screen as
  * a failed read while `Sign out`, the only control that could clear it, sits on
  * a bar the landing page never draws.
- *
- * So the token is renewed once against the issuer, and the session is forgotten
- * and said to be where the issuer will not renew it or where the API refuses
- * the fresh one too — a token minted happily and rejected anyway, which is what
- * an audience or a key set changing under a stored session looks like.
  */
 export function useApiPorts(): ApiPorts {
   const holder = useSessionHolder();
-  return useMemo<ApiPorts>(() => {
-    const abandon = async (): Promise<void> => {
-      await holder.signOut();
-      holder.refuse("the API refused this session, so it was signed out");
-    };
-    return {
-      fetch: apiFetch,
-      bearer: () => holder.bearer(),
-      sleepMs: (ms: number, signal: AbortSignal | undefined) =>
-        sleepMs(ms, signal),
-      renew: async () => {
-        if (await holder.refresh()) return true;
-        await abandon();
-        return false;
-      },
-      refused: abandon,
-    };
-  }, [holder]);
+  return useMemo<ApiPorts>(
+    () => apiPortsOver(holder, apiFetch, sleepMs),
+    [holder],
+  );
 }
 
 /** One key's read, the same however many keys a screen asks for at once, so a
@@ -117,9 +99,13 @@ function usePanelQuery<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
   polledMs?: number,
+  asked = true,
 ): PanelState<T> {
   const ports = useApiPorts();
-  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
+  const query = useQuery({
+    ...panelQueryOptions(ports, key, read, polledMs),
+    enabled: asked,
+  });
   return panelQueryState(query, polledMs);
 }
 
@@ -139,6 +125,44 @@ export function usePanelResource<T>(
     read,
     polledMs,
   );
+}
+
+/** A resource as `usePanelResource` reads it, requested only while `asked`
+ * and pending while not, whatever an earlier read left under its key. */
+export function usePanelResourceAsked<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resource: string,
+  read: PanelRead<T>,
+  polledMs: number | undefined,
+  asked: boolean,
+): PanelState<T> {
+  const state = usePanelQuery(
+    projectResourceKey(partition, kind, resource),
+    read,
+    polledMs,
+    asked,
+  );
+  return asked ? state : { state: "Pending" };
+}
+
+/** A resource as `usePanelResource` reads it, with whether its read has ever
+ * come back, which a read that failed cannot say by being pending again on
+ * every retry. */
+export function usePanelResourceSettled<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  resource: string,
+  read: PanelRead<T>,
+  polledMs?: number,
+): { readonly state: PanelState<T>; readonly settled: boolean } {
+  const ports = useApiPorts();
+  const key = projectResourceKey(partition, kind, resource);
+  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
+  return {
+    state: panelQueryState(query, polledMs),
+    settled: query.isFetched,
+  };
 }
 
 /** Several resources of one kind, each under the key `usePanelResource` reads
@@ -222,8 +246,9 @@ export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
 
 /** One tenant's own resource, shared by every project under it and so outside
  * any one partition's refresh path — the same arrangement as `usePanelInventory`,
- * for a read that belongs to the tenant rather than to no partition at all —
- * read again every `polledMs` as well where a caller names one. */
+ * for a read that belongs to the tenant rather than to no partition at all.
+ * Where a caller names a `polledMs` it is read again on that clock, as
+ * `usePanelResource` reads one. */
 export function usePanelTenantResource<T>(
   tenant: string,
   resource: string,
@@ -231,4 +256,13 @@ export function usePanelTenantResource<T>(
   polledMs?: number,
 ): PanelState<T> {
   return usePanelQuery(tenantResourceKey(tenant, resource), read, polledMs);
+}
+
+/** The reader's own resource, outside every tenant and so every refresh path,
+ * as `usePanelInventory`'s is: read when a screen drawing it mounts. */
+export function usePanelCallerResource<T>(
+  resource: string,
+  read: PanelRead<T>,
+): PanelState<T> {
+  return usePanelQuery(callerResourceKey(resource), read);
 }

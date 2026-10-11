@@ -143,7 +143,10 @@ one under another name — is a **could-not-run** that applies nothing and exits
 ## Grant a project access
 
 Not here any more. Access is a relation tuple in the authority rather than a
-row in this database, and `deploy/rig/keto/README.md` is that procedure.
+row in this database, and `deploy/rig/keto/README.md` is that procedure. The
+access plane keeps a tenant's invite links here, as `chuggy_access_plane`, but
+a link grants nothing until it is redeemed, and redeeming it writes tuples
+there.
 
 ## Open an agent session
 

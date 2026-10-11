@@ -9,6 +9,7 @@
 
 import { expect, test } from "vitest";
 
+import { accessInviteLinkStates } from "../../../src/contract/accessPlane.ts";
 import { allActionReaches } from "../../../src/contract/actionReach.ts";
 import {
   executionOutcomes,
@@ -20,6 +21,7 @@ import {
   actionReachArm,
   conversationStandingArm,
   executionTone,
+  inviteLinkStateTone,
   pillTones,
   phaseTone,
   stageArm,
@@ -50,6 +52,15 @@ test("every landing state draws a tone the pill knows, a failure in the failure'
   expect(ticketLandingTone("Failed")).toBe("fail");
   expect(ticketLandingTone("Landed")).toBe("pass");
   expect(ticketLandingTone("Running")).toBe("live");
+});
+
+test("every state of an invite link draws a tone the pill knows, an open one live and a used one passed", () => {
+  for (const state of accessInviteLinkStates)
+    expect(pillTones).toContain(inviteLinkStateTone(state));
+  expect(inviteLinkStateTone("Open")).toBe("live");
+  expect(inviteLinkStateTone("Used")).toBe("pass");
+  expect(inviteLinkStateTone("Revoked")).toBe("retired");
+  expect(inviteLinkStateTone("Expired")).toBe("retired");
 });
 
 test("the machine's own meanings keep their own hues", () => {

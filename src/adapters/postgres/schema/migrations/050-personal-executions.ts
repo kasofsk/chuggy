@@ -16,7 +16,7 @@
  * as before, so its placement does not change.
  *
  * A PERSONAL RUNNER'S EXECUTION ATTEMPT IS NAMED BY ITS OWNER, as its session
- * attempt is in `047`: `pool` records the owner and `personal` tells it apart,
+ * attempt is in `049`: `pool` records the owner and `personal` tells it apart,
  * so its room, its lock and its fence are the runner's across the projects it
  * serves, and a pool's own count and fence pass over it. Its release is a
  * function of its own for the reason `023` gives a pool's.
@@ -70,12 +70,12 @@ function owned(signature: string, role: string): readonly string[] {
   ];
 }
 
-/** The lock every claim by one personal runner and its fence take, as `047` takes it. */
+/** The lock every claim by one personal runner and its fence take, as `049` takes it. */
 const personalClaimLock = `PERFORM pg_advisory_xact_lock(hashtextextended(
          'personal-runner-claim:' || in_tenant || '/' || in_owner, 0))`;
 
-export const migration048: Migration = {
-  version: 48,
+export const migration050: Migration = {
+  version: 50,
   name: "a member's personal runner claims their own executions",
   statements: [
     `ALTER TABLE public.execution

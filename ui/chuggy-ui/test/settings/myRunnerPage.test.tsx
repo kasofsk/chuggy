@@ -122,7 +122,10 @@ test("a member the workspace lets register one is handed the personal command fo
       },
     ],
   ]);
-  expect(screen.getByLabelText("Command").textContent).toBe(
+  const steps = screen.getByRole("list", { name: "Register runner" });
+  expect(
+    [...steps.querySelectorAll("code")].map((code) => code.textContent),
+  ).toContain(
     "chuggy-linux register --personal --api https://chuggy.test --token=tok_en-1",
   );
 });

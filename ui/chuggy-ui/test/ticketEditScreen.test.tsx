@@ -46,6 +46,11 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  draftPanelText,
+} from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 /**
@@ -144,6 +149,9 @@ interface Drawing {
   /** The state the update's operation settles in, which is succeeded unless a
    * case says the actor refused it. */
   readonly settles?: string;
+  /** A `fetch` laid over the project's, which answers the abilities read
+   * before the requests the screen returns as sent. */
+  readonly over?: (served: typeof fetch) => typeof fetch;
 }
 
 /**
@@ -206,7 +214,10 @@ function routed(
 
 async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(routed(drawing));
-  vi.stubGlobal("fetch", scripted.fetch);
+  vi.stubGlobal(
+    "fetch",
+    (drawing.over ?? ((served) => served))(scripted.fetch),
+  );
   render(
     <ScreenHarness
       partition={creationPartition}
@@ -382,4 +393,21 @@ test("an offer that could not be read is left out of an edit, and said", async (
   expect(screen.getByText(/^Configuration · /u).textContent).toContain(
     "development",
   );
+});
+
+test("a reader who may not mutate, arriving at an edit by address, is told View only and nothing of the ticket is read", async () => {
+  const sent = await drawEdit({
+    draft: pinned("development", "o-development"),
+    over: abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  });
+  expect(draftPanelText()).toBe("DraftView only");
+  expect(sent).toStrictEqual([]);
+});
+
+test("a reader the abilities read says may mutate is drawn the edit's form", async () => {
+  await drawEdit({
+    draft: pinned("development", "o-development"),
+    over: abilitiesOver(abilitiesEvery),
+  });
+  expect(configurationChosen()).not.toBeNull();
 });

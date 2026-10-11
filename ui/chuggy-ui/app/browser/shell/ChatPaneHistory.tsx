@@ -197,6 +197,8 @@ function ChatPaneCloseConfirm(props: {
 export function ChatPaneThreadActions(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadEntryResponse;
+  /** The reader may change no thread, so the title stands alone. */
+  readonly viewOnly?: boolean;
 }): ReactNode {
   const actions = useThreadEntryActions(props.partition, props.thread);
   const [confirming, setConfirming] = useState(false);
@@ -213,14 +215,14 @@ export function ChatPaneThreadActions(props: {
             <h2 className="text-ink-2 font-strong min-w-0 truncate pr-1 text-sm">
               {threadLabel(props.thread)}
             </h2>
-            {actions.renameable ? (
+            {actions.renameable && props.viewOnly !== true ? (
               <ChatPaneIconButton
                 glyph="rename"
                 label="Rename"
                 onClick={actions.startRename}
               />
             ) : null}
-            {actions.closable ? (
+            {actions.closable && props.viewOnly !== true ? (
               <ChatPaneIconButton
                 glyph="close"
                 label="Close"

@@ -11,6 +11,11 @@
  * IT COMMANDS NO CHECK ON PURPOSE, so the case that a ticket carrying check
  * lines is unreleasable against it is asserted here rather than left to be
  * discovered on a repository nobody has configured yet.
+ *
+ * WHAT ITS BRIEF SAYS IS READ WHERE A ROLE READS IT, in the briefing a worker
+ * and a reviewer are each handed for a request that ends in a limit, and by the
+ * terms a reading turns on and not by whole sentences. A suite cannot settle
+ * how either role reads a sentence, only that each is handed it.
  */
 
 import assert from "node:assert/strict";
@@ -29,16 +34,28 @@ import {
   bootstrapImageCharsMax,
   bootstrapImageFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
+import type { BriefingSectionId } from "../../src/interpreter/briefingTemplate.ts";
 import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  finalizerIdentityCharsMax,
+  gitRefNameCharsMax,
+  gitRefNamePrefix,
 } from "../../src/interpreter/finalizer.ts";
 import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
-import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
+import {
+  blessedPracticeCatalog,
+  composeTaskInvocation,
+  pinnedTaskConfigurationReadiness,
+} from "../../src/interpreter/taskBriefing.ts";
+import {
+  asBriefCheckLine,
+  asDraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -174,9 +191,11 @@ function bootstrapReady(): ReleaseConfiguration {
   return readiness.configuration;
 }
 
-/** The instruction lines the bootstrap configuration's worker is told. */
-function toldLines(): readonly string[] {
-  const work = bootstrapReady().work;
+/** The instruction lines a configuration's worker is told, the bootstrap's where none is named. */
+function toldLines(
+  configuration: ReleaseConfiguration = bootstrapReady(),
+): readonly string[] {
+  const work = configuration.work;
   return ("instructions" in work ? work.instructions : undefined) ?? [];
 }
 
@@ -190,8 +209,8 @@ function toldBound(pattern: RegExp): number {
   return found[0] ?? Number.NaN;
 }
 
-/** The skeletons the worker is told, filled to `filling` and put to an import. */
-function declaredTo(filling: Filling) {
+/** The file a worker writes from the skeletons it is told, filled to `filling`. */
+function declaredFile(filling: Filling): string {
   const told = toldLines();
   const [envelope, configuration, ...stages] = told.flatMap(skeletons);
   assert.ok(envelope !== undefined && configuration !== undefined);
@@ -207,7 +226,7 @@ function declaredTo(filling: Filling) {
   ).join(",");
   const stage = (skeleton: string): string =>
     filled(skeleton, { S: sentences, L: lines });
-  const file = filled(envelope, {
+  return filled(envelope, {
     N: JSON.stringify("default"),
     C: filled(configuration, {
       I: JSON.stringify(image),
@@ -216,15 +235,18 @@ function declaredTo(filling: Filling) {
       E: stages.map(stage).join(","),
     }),
   });
+}
+
+/** Where that file is written, which is directly in the directory an import reads. */
+const declaredPath = `${repositoryConfigurationRoot}default.json`;
+
+/** That file, put to an import as the one declaration its repository makes. */
+function declaredTo(filling: Filling) {
   return repositoryConfigurationImportReadiness({
     repository,
     commit,
     files: [
-      {
-        path: `${repositoryConfigurationRoot}default.json`,
-        kind: "File",
-        content: file,
-      },
+      { path: declaredPath, kind: "File", content: declaredFile(filling) },
     ],
   });
 }
@@ -322,5 +344,292 @@ test("an image a briefing line cannot carry is a fault before it is a configurat
         image: image.concat("\n"),
       }),
     RangeError,
+  );
+});
+
+test("a repository and a branch as long as each is branded compose beside the longest image", () => {
+  const longest = bootstrapConfiguration({
+    repository: asRepositoryId("r".repeat(finalizerIdentityCharsMax)),
+    defaultBranch: asGitRefName(
+      gitRefNamePrefix.concat(
+        "b".repeat(gitRefNameCharsMax - gitRefNamePrefix.length),
+      ),
+    ),
+    image: "r/".concat("i".repeat(bootstrapImageCharsMax - 2)),
+  });
+  assert.equal(releaseConfigurationReadiness(longest).readiness, "Ready");
+});
+
+/** A request that ends in a limit on what may change, as an ordinary first ticket's does. */
+const limitedRequest = asDraftBrief({
+  intent:
+    "Say in README.md that this repository is a rehearsal. Change nothing else.",
+  links: [],
+  repository,
+});
+
+/** The lines one role is handed under the bootstrap for that request, in one section of its briefing. */
+function briefed(
+  purpose: "Work" | "Review",
+  section: BriefingSectionId,
+): readonly string[] {
+  const pin = {
+    configurationRevision: bootstrapConfigurationName,
+    configurationDigest: "sha256:bootstrap",
+  };
+  const document: unknown = JSON.parse(
+    bootstrapConfiguration({ repository, defaultBranch, image }),
+  );
+  const read = pinnedTaskConfigurationReadiness(document, pin);
+  if (read.readiness !== "Ready") assert.fail(read.fault);
+  const outcome = composeTaskInvocation(blessedPracticeCatalog, {
+    purpose,
+    ...(purpose === "Review" ? { stage: 0 } : {}),
+    pin,
+    configuration: read.configuration,
+    runtime: { changedFiles: [], handoff: [] },
+    priorWorkReports: { reports: [] },
+    priorEvaluationReports: { reports: [] },
+    brief: limitedRequest,
+    grant: {
+      tools: [],
+      credentials: [],
+      network: false,
+      filesystem: "WriteWorkspace",
+      mayCompleteTask: false,
+    },
+  });
+  if (outcome.composed !== "Composed") assert.fail(outcome.fault);
+  const rendered = outcome.invocation.briefing.sections.find(
+    (held) => held.section === section,
+  );
+  return rendered?.lines ?? [];
+}
+
+/** How the brief names what a ticket's author wrote, apart from what the brief itself asks. */
+const request = "what this ticket asks for";
+
+/** How the brief names the tickets after this one, which is how it speaks of what follows a landing. */
+const laterTickets = "later tickets";
+
+/** A line that speaks of them, or of what a ticket runs on, neither of which a change can show. */
+const beyondTheChange = /later tickets|\bruns? on\b/u;
+
+test("every acceptance criterion is settled by reading the change, and what follows a landing is motivation and no criterion", () => {
+  const { motivation, acceptanceCriteria, constraints } =
+    bootstrapReady().brief;
+  for (const criterion of acceptanceCriteria)
+    assert.match(criterion, /\bchange\b/u);
+  for (const line of [...acceptanceCriteria, ...constraints])
+    assert.doesNotMatch(line, beyondTheChange);
+  assert.ok(motivation.some((line) => line.includes(laterTickets)));
+  assert.ok(
+    briefed("Review", "PurposeInstructions").some(
+      (line) => line.includes(laterTickets) && line.includes("no criterion"),
+    ),
+    "the reviewer is told it is none",
+  );
+});
+
+test("what the ticket asks for is a criterion of its own, and the worker is told to make it and the configuration in one change", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some((line) =>
+      line.includes(request),
+    ),
+  );
+  assert.ok(
+    toldLines().some(
+      (line) =>
+        line.includes(request) && line.includes(repositoryConfigurationRoot),
+    ),
+  );
+});
+
+/**
+ * Which lockfile the limit does not reach. A setup line that installs from a
+ * lockfile and writes none, as `npm ci` does, leaves a worker to make the file
+ * by another command, and that file is the one its setup needs.
+ */
+const neededOrWritten = "needs or writes";
+
+test("each role is told that a limit the request puts on what may change does not reach what the configuration asks for", () => {
+  assert.ok(
+    toldLines().some((line) => line.includes("lockfile")),
+    "the worker is asked for a file outside the configuration directory",
+  );
+  for (const purpose of ["Work", "Review"] as const) {
+    const held = briefed(purpose, "AcceptanceAndConstraints");
+    assert.ok(
+      held.some(
+        (line) =>
+          /\blimit\b/u.test(line) &&
+          line.includes(request) &&
+          line.includes(repositoryConfigurationRoot) &&
+          line.includes("does not reach"),
+      ),
+      purpose,
+    );
+    assert.ok(
+      held.some(
+        (line) => line.includes("lockfile") && line.includes(neededOrWritten),
+      ),
+      purpose,
+    );
+  }
+  assert.ok(
+    briefed("Work", "PurposeInstructions").some(
+      (line) =>
+        /\blimit\b/u.test(line) && line.includes(repositoryConfigurationRoot),
+    ),
+  );
+  const focus = briefed("Review", "PurposeInstructions");
+  const unfailed = focus.filter((line) => /\bdo not fail\b/iu.test(line));
+  assert.ok(
+    unfailed.some((line) => line.includes(repositoryConfigurationRoot)),
+    "a reviewer does not fail the change for the configuration",
+  );
+  assert.ok(
+    unfailed.some(
+      (line) =>
+        line.includes("more than the request allowed") &&
+        line.includes("lockfile") &&
+        line.includes(neededOrWritten),
+    ),
+    "nor for being wider than the request's limit",
+  );
+});
+
+/** The names an import reads out of one tree of declaration files. */
+function declaredNames(
+  files: Parameters<typeof repositoryConfigurationImportReadiness>[0]["files"],
+): readonly string[] {
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files,
+  });
+  if (imported.readiness !== "Ready")
+    assert.fail(JSON.stringify(imported.faults));
+  return imported.declarations.map((declaration) => declaration.name);
+}
+
+test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare, so the change is told to delete it", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes(`"${bootstrapConfigurationName}"`) &&
+        line.includes(bootstrapConfigurationPath) &&
+        line.includes("the change deletes that file"),
+    ),
+  );
+  const seeded = {
+    path: bootstrapConfigurationPath,
+    kind: "File" as const,
+    content: bootstrapConfigurationFile({ repository, defaultBranch, image }),
+  };
+  const own = {
+    path: declaredPath,
+    kind: "File" as const,
+    content: declaredFile(atEveryBound),
+  };
+  assert.deepEqual(declaredNames([seeded, own]), [
+    bootstrapConfigurationName,
+    "default",
+  ]);
+  assert.deepEqual(declaredNames([own]), ["default"]);
+});
+
+/** A configuration asking its ticket for the repository's configuration, in a criterion's words or a work line's. */
+const writesConfiguration = /\bwrite the repository's\b.*\bconfiguration\b/u;
+
+test("the seeded document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes("under another name") && writesConfiguration.test(line),
+    ),
+  );
+  const seeded: unknown = JSON.parse(
+    bootstrapConfigurationFile({ repository, defaultBranch, image }),
+  );
+  assert.ok(typeof seeded === "object" && seeded !== null);
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [
+      {
+        path: declaredPath,
+        kind: "File",
+        content: JSON.stringify({ ...seeded, name: "default" }),
+      },
+    ],
+  });
+  if (imported.readiness !== "Ready")
+    assert.fail(JSON.stringify(imported.faults));
+  assert.deepEqual(
+    imported.declarations.map((declaration) => declaration.name),
+    ["default"],
+    "an import takes it as the repository's own",
+  );
+  assert.ok(
+    imported.declarations.every((declaration) =>
+      toldLines(declaration.configuration).some((line) =>
+        writesConfiguration.test(line),
+      ),
+    ),
+    "and it asks its ticket what the criterion says no file left may",
+  );
+});
+
+/** The faults an import refuses a tree for whose one file is `content` at `path`. */
+function refusalOf(path: string, content: string): readonly string[] {
+  const imported = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [{ path, kind: "File", content }],
+  });
+  return imported.readiness === "Refused"
+    ? imported.faults.map((held) => held.fault)
+    : [];
+}
+
+test("the criterion on a declaration's file names where an import looks for one and the keys it takes one by", () => {
+  const envelope: unknown = JSON.parse(
+    bootstrapConfigurationFile({ repository, defaultBranch, image }),
+  );
+  assert.ok(typeof envelope === "object" && envelope !== null);
+  const keys = Object.keys(envelope).map((key) => `"${key}"`);
+  const listed = `exactly the keys ${keys.slice(0, -1).join(", ")} and ${keys.at(-1) ?? ""}`;
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes(repositoryConfigurationRoot) &&
+        line.includes(".json") &&
+        line.includes("directly") &&
+        line.includes(listed),
+    ),
+  );
+  assert.deepEqual(
+    refusalOf(
+      `${repositoryConfigurationRoot}nested/default.json`,
+      declaredFile(atEveryBound),
+    ),
+    ["PathInvalid"],
+    "a declaration below the directory refuses the tree it is in",
+  );
+});
+
+test("the criterion on a declaration's file says the version an import takes, and an import refuses a file of another", () => {
+  assert.ok(
+    bootstrapReady().brief.acceptanceCriteria.some(
+      (line) =>
+        line.includes(".json") && line.includes('"version" is the number 1'),
+    ),
+  );
+  const own: unknown = JSON.parse(declaredFile(atEveryBound));
+  assert.ok(typeof own === "object" && own !== null);
+  assert.deepEqual(
+    refusalOf(declaredPath, JSON.stringify({ ...own, version: 2 })),
+    ["EnvelopeInvalid"],
   );
 });

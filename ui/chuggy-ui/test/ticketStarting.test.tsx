@@ -32,7 +32,7 @@ vi.mock("@tanstack/react-router", () => ({
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
-// jscpd:ignore-end
+// jscpd:ignore-end -- the case's own doubles resume here
 
 /**
  * One agent run on the ticket page from its registration to its worker's run.

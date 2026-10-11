@@ -18,6 +18,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
+import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectLeadFound } from "../../core/projectLead.ts";
 import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
@@ -26,8 +27,10 @@ import type { Tone } from "../../core/tones.ts";
 import { chatPaneRestored } from "../../core/chatPane.ts";
 import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
+import { useProjectAbilities } from "../projectAbilities.tsx";
 import { useSessionHolder } from "../session.tsx";
 import { Button } from "../ui/Button.tsx";
+import { Pill } from "../ui/Pill.tsx";
 import { ChatPaneToggle } from "./ChatPane.tsx";
 import { useChatPane } from "./chatPaneHeld.tsx";
 import { DetailsToggle } from "./DetailsPane.tsx";
@@ -97,6 +100,7 @@ function TopBarNav(props: {
   const lead =
     read.state === "Ready" ? projectLeadFound(read.value) : undefined;
   const inbox = useInboxRows(props.partition);
+  const abilities = useProjectAbilities(props.partition);
   const entries = shellNav({
     partition: props.partition,
     leadStanding:
@@ -104,6 +108,7 @@ function TopBarNav(props: {
         ? undefined
         : { word: lead.state, tone: sessionStateTone(lead.state) },
     inboxCount: inboxCountLabel(inbox.union),
+    abilities,
   });
   return (
     <nav aria-label="Console" className="min-w-0">
@@ -111,6 +116,11 @@ function TopBarNav(props: {
         {entries.map((entry) => (
           <TopBarNavEntry key={entry.id} entry={entry} />
         ))}
+        {projectAbilityRefused(abilities, "mutate") ? (
+          <li className="px-3">
+            <Pill tone="neutral">View only</Pill>
+          </li>
+        ) : null}
       </ul>
     </nav>
   );

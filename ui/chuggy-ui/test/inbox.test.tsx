@@ -35,6 +35,11 @@ import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  abilitiesEvery,
+  abilitiesOver,
+  abilitiesUnrefusing,
+} from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -101,9 +106,14 @@ function servedWithRefusal(url: string): Response {
   return served(url);
 }
 
-function drawInbox(route: (url: string) => Response): ApiDouble {
+/** The inbox over the routes a case names, the abilities read answering as
+ * those routes do unless the case hands a `fetch` of its own over them. */
+function drawInbox(
+  route: (url: string) => Response,
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
+): ApiDouble {
   const api = apiDouble({ operation: operationAt("Pending"), route });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", over(api.fetch));
   render(
     <ScreenHarness
       partition={atlas}
@@ -285,3 +295,21 @@ test("a row says how its last run ended, and never Terminal", async () => {
   expect(screen.getByText("Failed").className).toContain("pill-fail");
   expect(document.body.textContent).not.toContain("Terminal");
 });
+
+test("a reader who may not mutate keeps the row and is offered no answer", async () => {
+  drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
+  await settled();
+  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "revoke" })).toBeNull();
+});
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered the row's answers",
+  async (_said, abilities) => {
+    drawInbox(served, abilitiesOver(abilities));
+    await settled();
+    expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "revoke" })).toBeDefined();
+  },
+);

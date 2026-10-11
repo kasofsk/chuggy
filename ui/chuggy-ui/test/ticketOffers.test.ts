@@ -15,7 +15,11 @@ import type { TicketAction } from "../app/core/ticketActions.ts";
 import {
   offersDispatchByHand,
   ticketOffers,
+  ticketOffersAllowed,
+  ticketOffersStartable,
 } from "../app/core/ticketOffers.ts";
+import type { TicketOffers } from "../app/core/ticketOffers.ts";
+import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const parked = {
@@ -98,4 +102,125 @@ test("the bar says Dispatch is by hand only beside a Dispatch in a project with 
   expect(offersDispatchByHand(withDispatch, undefined)).toBe(false);
   expect(offersDispatchByHand(withoutDispatch, false)).toBe(false);
   expect(offersDispatchByHand({ offers: "Unread" }, false)).toBe(false);
+});
+
+const pending = { ...parked, phase: "Pending" as const };
+
+/** What is left of the offers of a Pending ticket's page and of a parked
+ * one's, as the actions' names and whether the edit screen stands. */
+function allowed(abilities: Parameters<typeof ticketOffersAllowed>[1]): {
+  readonly parked: readonly string[];
+  readonly editable: boolean;
+} {
+  const left = (offers: TicketOffers) => ticketOffersAllowed(offers, abilities);
+  const actions = left(ticketOffers(ready([]), parked, dispatch));
+  const edit = left(ticketOffers(ready([]), pending, undefined));
+  return {
+    parked:
+      actions.offers === "Actions"
+        ? actions.actions.map((action) => action.action)
+        : [],
+    editable: edit.offers === "Actions" && edit.editable,
+  };
+}
+
+test("a reader the read has not answered for, or said yes to, keeps every offer", () => {
+  const every = { parked: ["Dispatch", "Resume", "Revoke"], editable: true };
+  expect(allowed(undefined)).toStrictEqual(every);
+  expect(allowed(abilitiesEvery)).toStrictEqual(every);
+});
+
+test("a reader who may not dispatch loses Dispatch and nothing else", () => {
+  expect(allowed({ ...abilitiesEvery, dispatch: false })).toStrictEqual({
+    parked: ["Resume", "Revoke"],
+    editable: true,
+  });
+});
+
+test("a reader who may not mutate keeps Dispatch and loses every answer and the edit screen", () => {
+  expect(allowed({ ...abilitiesEvery, mutate: false })).toStrictEqual({
+    parked: ["Dispatch"],
+    editable: false,
+  });
+  expect(allowed(abilitiesNone)).toStrictEqual({ parked: [], editable: false });
+});
+
+test("an open action's answers go with the ability to mutate", () => {
+  const open = ticketOffers(
+    ready([
+      {
+        action: "action-one",
+        kind: "FinalizationApproval",
+        authorizingSequence: 42,
+        admits: ["Approve", "Decline"],
+      },
+    ]),
+    parked,
+    dispatch,
+  );
+  expect(ticketOffersAllowed(open, abilitiesEvery)).toStrictEqual(open);
+  expect(ticketOffersAllowed(open, abilitiesNone)).toStrictEqual({
+    offers: "Actions",
+    actions: [],
+    editable: false,
+  });
+});
+
+test("an unread offer stays unread whatever the reader may do", () => {
+  expect(
+    ticketOffersAllowed({ offers: "Unread" }, abilitiesNone),
+  ).toStrictEqual({ offers: "Unread" });
+});
+
+const startable = ticketOffers(ready([]), pending, dispatch);
+
+/** A press that would escalate the ticket is not offered, and the line that
+ * says why stands where it was; the rest of the bar is what it was. */
+test("work with no runner to go to loses Dispatch and nothing else, and says so", () => {
+  expect(ticketOffersStartable(startable, "NoRunner")).toStrictEqual({
+    offers: {
+      offers: "Actions",
+      actions: [
+        {
+          action: "Revoke",
+          mutation: { mutation: "RevokeTicket", ticket: pending.ticket },
+        },
+      ],
+      editable: true,
+    },
+    noRunner: true,
+  });
+});
+
+/** Held is a read not yet back and Clear is a runner, work the cluster runs,
+ * or a read that failed: none of them says the press cannot run. */
+test.each(["Held", "Clear"] as const)(
+  "a runner question standing %s leaves every offer as it was",
+  (runner) => {
+    const left = ticketOffersStartable(startable, runner);
+    expect(left.offers).toBe(startable);
+    expect(left.noRunner).toBe(false);
+  },
+);
+
+/** The line stands in for a Dispatch, so where none was offered there is
+ * nothing for it to stand in for. */
+test("no runner says nothing where no Dispatch was offered", () => {
+  const undispatched = ticketOffers(ready([]), pending, undefined);
+  const refused = ticketOffersAllowed(startable, {
+    ...abilitiesEvery,
+    dispatch: false,
+  });
+  for (const offers of [undispatched, refused, { offers: "Unread" } as const]) {
+    const left = ticketOffersStartable(offers, "NoRunner");
+    expect(left.offers).toBe(offers);
+    expect(left.noRunner).toBe(false);
+  }
+});
+
+/** The words about the hand belong beside a Dispatch, so they go with it. */
+test("a Dispatch that gave way to no runner is not said to be by hand", () => {
+  const left = ticketOffersStartable(startable, "NoRunner").offers;
+  expect(offersDispatchByHand(startable, false)).toBe(true);
+  expect(offersDispatchByHand(left, false)).toBe(false);
 });

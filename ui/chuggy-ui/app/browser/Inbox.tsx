@@ -77,6 +77,7 @@ import type {
   InboxUnion,
 } from "../core/inboxUnion.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   followOperation,
   operationIdBytesCount,
@@ -125,6 +126,7 @@ import {
 } from "./InboxProposals.tsx";
 import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { drawBytes } from "./ports.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import {
   TicketRevokeConfirm,
@@ -350,17 +352,20 @@ function inboxEntryActions(entry: InboxEntry): readonly TicketAction[] {
 
 /** The answers a row offers, Revoke asking under them before it submits. */
 function InboxActions(props: {
+  readonly partition: PartitionIdentity;
   readonly entry: InboxEntry;
   readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const actions = inboxEntryActions(props.entry);
   const revoke = useTicketRevokeAsk(props.answer);
+  const abilities = useProjectAbilities(props.partition);
   const revoking = actions.find((action) => action.action === "Revoke");
   if (actions.length === 0)
     return props.entry.proposals.length > 0 ? null : (
       <span className="text-ink-3">no action can be sent from here yet</span>
     );
+  if (projectAbilityRefused(abilities, "mutate")) return null;
   return (
     <div className="grid gap-2">
       <div className="flex gap-2 items-baseline">
@@ -495,6 +500,7 @@ function InboxRow(props: {
       <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
         <InboxActions
+          partition={props.partition}
           entry={props.entry}
           answer={props.answer}
           onAnswer={props.onAnswer}

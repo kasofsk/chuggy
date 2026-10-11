@@ -5,8 +5,14 @@
  * address and knows nothing about a tenant; the transaction this tab stored
  * before sending them away is what says which tenant and where they were.
  * That transaction is taken once, on the first render, and a matching install
- * goes on to the authorization that proves which accounts are theirs. Any other
- * return the tab started puts the person back where they were, with its word.
+ * goes on to the authorization that proves which accounts are theirs, in this
+ * address's place: a landing gone back to would take the transaction of
+ * whichever install the press had gone on to since. Any other return the tab
+ * started puts the person back where they were, with its word.
+ *
+ * An update this tab cannot match is drawn as a return and asks nothing of
+ * the API: one line, and the way on, which is the page this tab left by where
+ * it stored one and Home where it did not.
  */
 
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -22,13 +28,15 @@ import {
   forgeSetupRequested,
   forgeSetupRoutePath,
   forgeSetupUnexpected,
+  forgeSetupUpdated,
 } from "../core/forgeSetup.ts";
 import type { ForgeSetupDecision } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
 import { Footer } from "./Footer.tsx";
 import { forgeAuthorizeRedirect } from "./forgeAuthorizeRedirect.ts";
 import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
-import { transientStore } from "./ports.ts";
+import { replaceLocation, transientStore } from "./ports.ts";
+import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 
 /** What this page says while it reads where to send the person. */
@@ -42,7 +50,8 @@ async function forgeSetupAnswer(
   navigate: UseNavigateResult<string>,
   decision: ForgeSetupDecision,
 ): Promise<void> {
-  if (decision.decision === "Unexpected") return;
+  if (decision.decision === "Unexpected" || decision.decision === "Updated")
+    return;
   const transaction = decision.transaction;
   if (decision.decision === "Requested") {
     await forgeReturnNavigate(navigate, transaction, forgeSetupRequested);
@@ -57,16 +66,23 @@ async function forgeSetupAnswer(
     });
     return;
   }
-  await forgeAuthorizeRedirect(client, {
-    tenant: transaction.tenant,
-    returnPath: transaction.returnPath,
-  });
+  await forgeAuthorizeRedirect(
+    client,
+    {
+      tenant: transaction.tenant,
+      returnPath: transaction.returnPath,
+      installs: transaction.installs,
+    },
+    replaceLocation,
+  );
 }
 
 function ForgeSetupDrawn(props: {
   readonly decision: ForgeSetupDecision;
+  readonly navigate: UseNavigateResult<string>;
 }): ReactNode {
-  switch (props.decision.decision) {
+  const decision = props.decision;
+  switch (decision.decision) {
     case "Authorize":
       return (
         <Notice
@@ -78,6 +94,29 @@ function ForgeSetupDrawn(props: {
       );
     case "Requested":
       return null;
+    case "Updated": {
+      const press = decision.press;
+      return (
+        <>
+          <Notice tone="info" inline detail={forgeSetupUpdated} />
+          {press === undefined ? (
+            <Link to="/">Home</Link>
+          ) : (
+            <div className="flex">
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  void forgeReturnNavigate(props.navigate, press, undefined);
+                }}
+              >
+                Continue
+              </Button>
+            </div>
+          )}
+        </>
+      );
+    }
     case "Unexpected":
       return (
         <>
@@ -105,7 +144,7 @@ export function ForgeSetupPage(): ReactNode {
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">
         <h1 className="text-md font-strong text-ink-1">Setup</h1>
-        <ForgeSetupDrawn decision={decision} />
+        <ForgeSetupDrawn decision={decision} navigate={navigate} />
       </main>
       <Footer />
     </div>

@@ -11,6 +11,11 @@
  * bundler emits a sheet where it first reaches it; what holds the emitted
  * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
  * build wrote.
+ *
+ * The invite holder is made here, once, before the tree is mounted. Being
+ * made is what takes an invite link's token out of the address, so no frame is
+ * drawn with it in the address bar, and what starts it hearing a fragment that
+ * changes later, for the life of the document.
  */
 
 import "../styles/tokens.css";
@@ -21,19 +26,25 @@ import { QueryClient } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { createSessionHolder } from "../core/sessionHolder.ts";
+import { createInviteHolder } from "../core/inviteHolder.ts";
 import { App } from "./App.tsx";
+import { InviteProvider } from "./InvitePage.tsx";
 import {
-  digest,
-  drawBytes,
-  fetchJson,
-  nowMs,
+  anchorHeard,
+  cookiesRead,
+  cookieWritten,
+  currentAnchor,
+  currentLocation,
   persistentStore,
-  redirect,
-  sleepMs,
-  transientStore,
+  reloadLocation,
+  replaceLocation,
+  replacePath,
 } from "./ports.ts";
-import { SessionProvider, sessionBegin } from "./session.tsx";
+import {
+  SessionProvider,
+  sessionBegin,
+  sessionHolderOpened,
+} from "./session.tsx";
 import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
@@ -47,15 +58,17 @@ const queryClient = new QueryClient({
   },
 });
 
-const holder = createSessionHolder({
-  nowMs,
-  sleepMs,
-  fetchJson,
-  persistent: persistentStore,
-  transient: transientStore,
-  digest,
-  drawBytes,
-  redirect,
+const holder = sessionHolderOpened();
+
+const invite = createInviteHolder({
+  location: currentLocation,
+  anchor: currentAnchor,
+  anchorHeard,
+  replacePath,
+  replaceLocation,
+  cookies: cookiesRead,
+  cookieWrite: cookieWritten,
+  reload: reloadLocation,
 });
 
 themeChoiceApply(document.documentElement, themeChoiceRead(persistentStore));
@@ -69,7 +82,9 @@ if (container === null)
 createRoot(container).render(
   <StrictMode>
     <SessionProvider holder={holder}>
-      <App queryClient={queryClient} />
+      <InviteProvider holder={invite}>
+        <App queryClient={queryClient} />
+      </InviteProvider>
     </SessionProvider>
   </StrictMode>,
 );

@@ -63,6 +63,8 @@ export function SettingsSection(props: {
   readonly about: string;
   readonly editing: boolean;
   readonly editable: boolean;
+  /** A section its reader may only read, which draws no Edit. */
+  readonly readOnly?: boolean;
   readonly savable: boolean;
   readonly notice?: ReactNode;
   readonly footLead: ReactNode;
@@ -78,7 +80,7 @@ export function SettingsSection(props: {
       title={props.title}
       about={props.about}
       meta={
-        props.editing ? undefined : (
+        props.editing || props.readOnly === true ? undefined : (
           <Button
             variant="quiet"
             size="sm"

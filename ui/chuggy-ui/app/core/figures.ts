@@ -326,15 +326,21 @@ export function instantText(at: Date, now: Date): string {
   return instantFullText(at);
 }
 
-/** An instant the clock could not read is an absence, never a printed string. */
-export function instantFigure(stated: string, nowMs: number): Figure {
-  const at = Date.parse(stated);
-  if (!Number.isFinite(at)) return { kind: "Absent", why: "No instant" };
+/** An instant counted in milliseconds, absent where no date holds that many. */
+export function instantFigureAtMs(atMs: number, nowMs: number): Figure {
+  const at = new Date(atMs);
+  if (!Number.isFinite(at.getTime()))
+    return { kind: "Absent", why: "No instant" };
   return {
     kind: "Instant",
-    text: instantText(new Date(at), new Date(nowMs)),
-    iso: new Date(at).toISOString(),
+    text: instantText(at, new Date(nowMs)),
+    iso: at.toISOString(),
   };
+}
+
+/** An instant the clock could not read is an absence, never a printed string. */
+export function instantFigure(stated: string, nowMs: number): Figure {
+  return instantFigureAtMs(Date.parse(stated), nowMs);
 }
 
 /**

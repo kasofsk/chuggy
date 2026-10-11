@@ -5,8 +5,8 @@ import { apiRole, type Migration } from "../shared.ts";
  * and whether that owner is the reader, so an execution waiting on the reader's
  * own runner can say so. It reads the columns that decide it and writes none.
  */
-export const migration049: Migration = {
-  version: 49,
+export const migration051: Migration = {
+  version: 51,
   name: "the API reads an execution's route, owner and fallback",
   statements: [
     `GRANT SELECT(placement,owner,owner_fallback) ON TABLE public.execution TO ${apiRole}`,
