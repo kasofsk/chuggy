@@ -1301,7 +1301,30 @@ function registerPersonalRunners(
   });
 }
 
+/**
+ * The allowlist routes take no body, so they read none: a proxy may forward a
+ * bodyless write as an empty chunked body or under some media type, and a
+ * parser refusing that would refuse the write before it is seen.
+ */
 function registerPersonalRunnerProjects(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  void app.register((scope, _options, registered) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser(
+      "*",
+      { parseAs: "buffer" },
+      (_request, _body, parsed) => {
+        parsed(null, undefined);
+      },
+    );
+    registerPersonalRunnerProjectRoutes(scope, runners);
+    registered();
+  });
+}
+
+function registerPersonalRunnerProjectRoutes(
   app: FastifyInstance,
   runners: PersonalRunnerService,
 ): void {
