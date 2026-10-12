@@ -70,6 +70,8 @@ import {
   type PoolRouted,
 } from "./schedulerPoolsHarness.ts";
 
+/** Who reads the executions; no ticket here is theirs. */
+const reader = asPrincipal("operational-reader");
 const rig = await schedulerRigOpen();
 const apiPool = postgresHarnessRolePool(apiRole);
 const planePool = postgresHarnessRolePool(poolPlaneRole);
@@ -178,6 +180,7 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
+      [],
     ),
     undefined,
   );
@@ -353,8 +356,10 @@ async function poolClaimed(routed: PoolRouted, name: string) {
     await rig.store.attemptInvoked(attempt, schedulerInvocation),
     true,
   );
-  const [pool] = (await roster.registered(routed.project.partition)).pools;
-  assert.ok(pool !== undefined);
+  const [registered] = (await roster.registered(routed.project.partition))
+    .pools;
+  assert.ok(registered !== undefined);
+  const pool = { kind: "Dedicated" as const, ...registered };
   const assignment = `assignment-${randomUUID()}`;
   const bearer = `bearer-${randomUUID()}`;
   assert.notEqual(
@@ -363,6 +368,7 @@ async function poolClaimed(routed: PoolRouted, name: string) {
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       assignment,
       bearer,
+      [],
     ),
     undefined,
   );
@@ -476,6 +482,7 @@ async function poolConcludedStays(
       { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
+      [],
     ),
     undefined,
   );
@@ -628,6 +635,7 @@ test("an execution a pool lost its one attempt of reads as relaunched never, car
   const read = await postgresOperationalReads(apiPool).execution(
     partition,
     routed.execution,
+    reader,
   );
   assert.equal(read?.outcome, "ProcessFailed");
   assert.equal(read.retriesSpent, 1);

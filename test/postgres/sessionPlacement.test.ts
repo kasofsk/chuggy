@@ -13,6 +13,7 @@ import {
   postgresSessionPlacement,
   postgresSessionRoutingPrecondition,
 } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import {
   apiRole,
@@ -33,7 +34,10 @@ import {
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
   sessionRunnerPolledSecsMax,
   type SessionRouting,
@@ -193,13 +197,14 @@ test("a write that changes one kind's route is written, and that route reads bac
   }
 });
 
-test("a runner counts as live for its member and the project only while its last poll is recent", async () => {
+test("a pool counts as live for the project, and for its registering member's inquiries, only while its last poll is recent", async () => {
   const partition = await postgresHarnessProject(harness.store, "runners");
   const member = asPrincipal("https://issuer.invalid#a-member");
   const other = asPrincipal("https://issuer.invalid#another");
   const reads = postgresSessionPlacement(apiPool);
   assert.deepEqual(await reads.runners(partition, member), {
     mine: "Unregistered",
+    inquiry: "Unregistered",
     project: "Unregistered",
   });
   assert.equal(
@@ -221,27 +226,78 @@ test("a runner counts as live for its member and the project only while its last
       [partition.tenant, partition.project, secondsAgo],
     );
   assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Offline",
+    mine: "Unregistered",
+    inquiry: "Offline",
     project: "Offline",
   });
   await polled(1);
   assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Live",
-    project: "Live",
-  });
-  assert.deepEqual(await reads.runners(partition, other), {
     mine: "Unregistered",
+    inquiry: "Live",
     project: "Live",
   });
-  assert.deepEqual(await reads.runners(partition, undefined), {
-    mine: "Unregistered",
-    project: "Live",
-  });
+  for (const elsewhere of [other, undefined])
+    assert.deepEqual(await reads.runners(partition, elsewhere), {
+      mine: "Unregistered",
+      inquiry: "Unregistered",
+      project: "Live",
+    });
   await polled(sessionRunnerPolledSecsMax + 1);
   assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Offline",
+    mine: "Unregistered",
+    inquiry: "Offline",
     project: "Offline",
   });
+});
+
+test("a member's own runner is their personal runner, live only while its last poll is recent and only in a project it serves, and it is no runner of the project's", async () => {
+  const partition = await postgresHarnessProject(harness.store, "mine");
+  const beside = await postgresHarnessProject(harness.store, "mine-beside", {
+    tenant: partition.tenant,
+    project: asProjectId(`project-mine-beside-${randomUUID()}`),
+  });
+  const member = asPrincipal("https://issuer.invalid#a-member");
+  const key = { tenant: partition.tenant, owner: member };
+  const registry = postgresPersonalRunnerRegistry(apiPool);
+  const reads = postgresSessionPlacement(apiPool);
+  assert.equal(
+    await registry.register(
+      {
+        ...key,
+        capabilities: [],
+        clientId: `chuggy-personal-${randomUUID()}`,
+        principal: asPrincipal("https://issuer.invalid#personal-laptop"),
+      },
+      undefined,
+    ),
+    "Registered",
+  );
+  assert.equal((await reads.runners(partition, member)).mine, "Unregistered");
+  assert.equal(await registry.allow(key, partition.project), "Allowed");
+  const polled = async (secondsAgo: number) =>
+    harness.query(
+      `UPDATE personal_runner SET last_polled_at=now()-make_interval(secs=>$3)
+        WHERE tenant=$1 AND owner=$2`,
+      [partition.tenant, member, secondsAgo],
+    );
+  assert.equal((await reads.runners(partition, member)).mine, "Offline");
+  await polled(1);
+  assert.deepEqual(await reads.runners(partition, member), {
+    mine: "Live",
+    inquiry: "Unregistered",
+    project: "Unregistered",
+  });
+  assert.equal((await reads.runners(beside, member)).mine, "Unregistered");
+  for (const elsewhere of [
+    asPrincipal("https://issuer.invalid#another"),
+    undefined,
+  ])
+    assert.equal(
+      (await reads.runners(partition, elsewhere)).mine,
+      "Unregistered",
+    );
+  await polled(sessionRunnerPolledSecsMax + 1);
+  assert.equal((await reads.runners(partition, member)).mine, "Offline");
 });
 
 test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {

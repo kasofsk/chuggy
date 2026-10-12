@@ -1,24 +1,25 @@
 /**
  * Who holds a role in a tenant and its projects, granting or removing one, and
- * giving or taking a tenant's hosted runs, each asked of the authority as the
- * kind it needs.
+ * giving or taking a tenant's hosted runs or personal runners, each asked of
+ * the authority as the kind it needs.
  *
  * A REQUEST REACHES A RELATION THROUGH ONE RECORD PER ROSTER, OR AS HOSTED
- * RUNS. The builders in `./projectGrant.ts` take any relation the model
- * declares, `agents`, `pools` and the `tenant` link included, so these two
- * records and `accessHostedRunsRelation` are the whole of what a role change
- * can write, and `./accessAuthorityHolders.ts` holds the records an
- * authority's holders are written through: no string a request carries
- * reaches a builder any other way.
+ * RUNS OR PERSONAL RUNNERS. The builders in `./projectGrant.ts` take any
+ * relation the model declares, `agents`, `pools` and the `tenant` link
+ * included, so these two records, `accessHostedRunsRelation` and
+ * `accessPersonalRunnersRelation` are the whole of what a role change can
+ * write, and `./accessAuthorityHolders.ts` holds the records an authority's
+ * holders are written through: no string a request carries reaches a builder
+ * any other way.
  *
  * A LIST IS ANSWERED TO WHOEVER HOLDS ONE OF ITS OWN KINDS, and a change asks
  * the kind granting its role, each in one record beside the role's relation,
- * or `GrantHostedExecution` for hosted runs. A caller holding none of a list's
- * kinds is answered as absent, exactly as a tenant or project that does not
- * exist, so nothing here tells the two apart; one answered the list who lacks
- * a change's kind is refused it. The caller's own tenants, in
- * `./accessCallerTenants.ts`, are the one list answered to any caller, because
- * it is about them alone.
+ * `GrantHostedExecution` for hosted runs, or `GrantPersonalRunners` for
+ * personal runners. A caller holding none of a list's kinds is answered as
+ * absent, exactly as a tenant or project that does not exist, so nothing here
+ * tells the two apart; one answered the list who lacks a change's kind is
+ * refused it. The caller's own tenants, in `./accessCallerTenants.ts`, are the
+ * one list answered to any caller, because it is about them alone.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -111,6 +112,7 @@ export const accessTenantListKinds: readonly TenantAccessKind[] = [
   "GrantTenantAdmin",
   "GrantMember",
   "GrantHostedExecution",
+  "GrantPersonalRunners",
   "ManageTenantAuthorities",
   "ManageSiteHeldAuthorities",
 ];
@@ -127,6 +129,9 @@ export const accessProjectListKinds: readonly ProjectAccessKind[] = [
 
 /** The tenant relation a list reports as hosted runs granted, and the one giving or taking them writes under `GrantHostedExecution`. */
 const accessHostedRunsRelation: TenantGrantRelation = "hosted_execution";
+
+/** The tenant relation a list reports as personal runners granted, and the one giving or taking them writes under `GrantPersonalRunners`. */
+const accessPersonalRunnersRelation: TenantGrantRelation = "personal_runners";
 
 /**
  * Who one tuple names: a principal's text, or a subject set, which is no
@@ -262,6 +267,16 @@ export interface AccessPlane {
     tenant: TenantId,
     subject: string,
   ): Promise<AccessChange>;
+  tenantPersonalRunnersGiven(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
+  tenantPersonalRunnersTaken(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
 }
 
 /** What one answer has spent of its bounds, and whether a bound cut it. */
@@ -346,6 +361,7 @@ function accessHoldings(
 const accessTenantRelationsListed: ReadonlySet<string> = new Set([
   ...Object.values(accessTenantRoleRelations),
   accessHostedRunsRelation,
+  accessPersonalRunnersRelation,
 ]);
 
 const accessProjectRelationsListed: ReadonlySet<string> = new Set(
@@ -444,6 +460,7 @@ function accessTenantPerson(
       holding.tenant,
     ),
     hostedRuns: holding.tenant.has(accessHostedRunsRelation),
+    personalRunners: holding.tenant.has(accessPersonalRunnersRelation),
     projects: [...holding.projects.entries()]
       .map(([project, relations]) => ({
         project,
@@ -711,17 +728,14 @@ function accessTenantChanges(
   };
 }
 
-/**
- * Giving and taking a person's hosted runs. The selector's principal is a
- * person here like any other: taking its hosted runs stops hosted dispatch in
- * the tenant, and holding `GrantHostedExecution` is what decides that.
- */
-function accessHostedRunsChanges(
+/** Giving or taking one person's tenant relation, refused to a caller not holding `kind`. */
+function accessTenantGrantChange(
   ports: AccessPlanePorts,
   settings: AccessPlaneSettings,
-): Pick<AccessPlane, "tenantHostedRunsGiven" | "tenantHostedRunsTaken"> {
-  const changed =
-    (verb: "write" | "remove") =>
+  relation: TenantGrantRelation,
+  kind: TenantAccessKind,
+) {
+  return (verb: "write" | "remove") =>
     async (
       caller: Principal,
       tenant: TenantId,
@@ -731,7 +745,7 @@ function accessHostedRunsChanges(
         ports.access,
         caller,
         tenant,
-        "GrantHostedExecution",
+        kind,
       );
       if (refused !== undefined) return refused;
       await ports.grants[verb](
@@ -739,14 +753,51 @@ function accessHostedRunsChanges(
           issuer: settings.issuer,
           subject,
           tenant,
-          relation: accessHostedRunsRelation,
+          relation,
         }),
       );
       return "Changed";
     };
+}
+
+/**
+ * Giving and taking a person's hosted runs. The selector's principal is a
+ * person here like any other: taking its hosted runs stops hosted dispatch in
+ * the tenant, and holding `GrantHostedExecution` is what decides that.
+ */
+function accessHostedRunsChanges(
+  ports: AccessPlanePorts,
+  settings: AccessPlaneSettings,
+): Pick<AccessPlane, "tenantHostedRunsGiven" | "tenantHostedRunsTaken"> {
+  const changed = accessTenantGrantChange(
+    ports,
+    settings,
+    accessHostedRunsRelation,
+    "GrantHostedExecution",
+  );
   return {
     tenantHostedRunsGiven: changed("write"),
     tenantHostedRunsTaken: changed("remove"),
+  };
+}
+
+/** Giving and taking a person's personal runners, decided by holding `GrantPersonalRunners`. */
+function accessPersonalRunnersChanges(
+  ports: AccessPlanePorts,
+  settings: AccessPlaneSettings,
+): Pick<
+  AccessPlane,
+  "tenantPersonalRunnersGiven" | "tenantPersonalRunnersTaken"
+> {
+  const changed = accessTenantGrantChange(
+    ports,
+    settings,
+    accessPersonalRunnersRelation,
+    "GrantPersonalRunners",
+  );
+  return {
+    tenantPersonalRunnersGiven: changed("write"),
+    tenantPersonalRunnersTaken: changed("remove"),
   };
 }
 
@@ -808,5 +859,6 @@ export function accessPlane(
     ...accessTenantChanges(ports, settings),
     ...accessProjectChanges(ports, settings),
     ...accessHostedRunsChanges(ports, settings),
+    ...accessPersonalRunnersChanges(ports, settings),
   };
 }

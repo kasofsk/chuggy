@@ -142,6 +142,7 @@ function ChatPaneStartDoor(props: {
         <ChatPaneHeaderRow>
           <SessionRunnerNotice
             partition={props.partition}
+            session="Thread"
             short={props.header.runner}
           />
         </ChatPaneHeaderRow>

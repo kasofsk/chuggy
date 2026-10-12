@@ -85,6 +85,11 @@ import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
+import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import {
+  projectOwnerFallbackAdministration,
+  type ProjectOwnerFallbackAdministration,
+} from "./interpreter/projectOwnerFallback.ts";
 import {
   postgresSessionPlacement,
   postgresSessionRouteReads,
@@ -293,6 +298,17 @@ export function composeSessionPlacement(
   return sessionPlacementAdministration(
     access,
     postgresSessionPlacement(apiPool),
+  );
+}
+
+/** Wires whether a project's members' personal runners serve them to API-role credentials and the access that gates choosing it. */
+export function composeProjectOwnerFallback(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+): ProjectOwnerFallbackAdministration {
+  return projectOwnerFallbackAdministration(
+    access,
+    postgresProjectOwnerFallback(apiPool),
   );
 }
 

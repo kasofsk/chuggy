@@ -85,6 +85,7 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import type {
+  PersonalRunnerRegistered,
   WorkerPoolRegistered,
   WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
@@ -284,6 +285,7 @@ function serviceWith(
     store: recordingStore(calls),
     placement,
     workerPools: {
+      personal: () => Promise.resolve(undefined),
       registered: () => {
         calls.push("registered");
         return Promise.resolve({ pools: [], truncated: false });
@@ -1569,6 +1571,7 @@ function poolLaunch(
         },
       },
       workerPools: {
+        personal: () => Promise.resolve(undefined),
         registered: (asked) => {
           calls.push(`registered:${asked.project}`);
           return Promise.resolve(page);
@@ -1695,6 +1698,134 @@ test("an authority that cannot answer decides nothing, so the execution is held 
   }
 });
 
+const member = asPrincipal("member-one");
+
+/** `member`'s personal runner, allowlisting the fixture's project unless a case says otherwise. */
+const memberRunner: PersonalRunnerRegistered = {
+  owner: member,
+  principal: asPrincipal("chuggy-personal-one"),
+  capabilities: ["Platform:Linux:Amd64"],
+  allowlist: [partition],
+};
+
+/** An authority answering the scheduler's `Execute`, and the owner's permit and `Read` as a case says. */
+function ownerAccess(permit: boolean, read: boolean): ProjectAccess {
+  return {
+    authorize: (principal, _where, kind) =>
+      Promise.resolve(
+        kind === "Execute" || (kind === "Read" && read)
+          ? memberAuthority(principal)
+          : undefined,
+      ),
+    authorizeTenant: (principal, _tenant, kind) =>
+      Promise.resolve(
+        permit && kind === "RegisterPersonalRunner"
+          ? memberAuthority(principal)
+          : undefined,
+      ),
+    authorizeSite: projectAccessSiteRefused,
+  };
+}
+
+/** A pass over an execution of `member`'s routed to pools, its project allowing a personal runner as `fallback` says, with no pool registered. */
+function ownedLaunch(
+  calls: string[],
+  fallback: "Strict" | "Preferred" | undefined,
+  runner: PersonalRunnerRegistered | undefined,
+  access: ProjectAccess,
+  failing?: "personal" | "registered",
+): Promise<number> {
+  const service = serviceWith(calls, runnable, placedOk);
+  const owned: LogicalExecution = {
+    ...execution,
+    route: "Pool",
+    owner: member,
+    ...(fallback === undefined ? {} : { ownerFallback: fallback }),
+  };
+  return executionSchedulerLaunch(
+    {
+      ...service,
+      store: { ...service.store, unlaunched: () => Promise.resolve([owned]) },
+      workerPools: {
+        personal: (_partition, asked) => {
+          calls.push(`personal:${asked}`);
+          return failing === "personal"
+            ? Promise.reject(new Error("the roster could not be read"))
+            : Promise.resolve(runner);
+        },
+        registered: () =>
+          failing === "registered"
+            ? Promise.reject(new Error("the roster could not be read"))
+            : Promise.resolve({ pools: [], truncated: false }),
+      },
+      access,
+      metrics: schedulerTelemetry(recordingMetrics([])),
+    },
+    epoch,
+  );
+}
+
+const blocked = [
+  "ended:Withdrawn:PlacementIncompatible",
+  "blocked:RequiredCapabilityUnavailable",
+];
+
+test("an owner's execution no pool runs is held while the owner's runner could run it, under either fallback, rather than blocked", async () => {
+  for (const fallback of ["Strict", "Preferred"] as const) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, fallback, memberRunner, ownerAccess(true, true));
+    assert.deepEqual(calls, ["personal:member-one"], fallback);
+  }
+});
+
+test("an owner's execution is blocked where the runner that alone could run it is revoked, does not allowlist its project, or cannot run it", async () => {
+  for (const [why, runner, access] of [
+    ["permit", memberRunner, ownerAccess(false, true)],
+    ["read", memberRunner, ownerAccess(true, false)],
+    [
+      "allowlist",
+      {
+        ...memberRunner,
+        allowlist: [{ ...partition, project: asProjectId("project-two") }],
+      },
+      ownerAccess(true, true),
+    ],
+    [
+      "inventory",
+      { ...memberRunner, capabilities: ["Platform:Linux:Arm64"] },
+      ownerAccess(true, true),
+    ],
+  ] as const) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, "Strict", runner, access);
+    assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
+  }
+});
+
+test("a failed read of the owner's runner fails the pass as a failed read of the project's pools does, rather than holding the execution", async () => {
+  for (const failing of ["registered", "personal"] as const) {
+    const calls: string[] = [];
+    await assert.rejects(
+      ownedLaunch(
+        calls,
+        "Strict",
+        memberRunner,
+        ownerAccess(true, true),
+        failing,
+      ),
+      /the roster could not be read/u,
+      failing,
+    );
+    assert.ok(!calls.some((call) => call.startsWith("ended:")), failing);
+  }
+});
+
+test("an owner's execution whose project names no fallback never reads the owner's runner, and is blocked as before where no pool runs it", async () => {
+  const calls: string[] = [];
+  await ownedLaunch(calls, undefined, memberRunner, ownerAccess(true, true));
+  assert.deepEqual(calls, blocked);
+});
+
 test("an attempt a pool refused is withdrawn and its execution blocked before any lease is reaped, and the refusal is counted", async () => {
   const calls: string[] = [];
   const seen: string[] = [];
@@ -1797,7 +1928,10 @@ function poolOffer(
           return Promise.resolve(placedOk);
         },
       },
-      workerPools: { registered: () => Promise.resolve(page) },
+      workerPools: {
+        personal: () => Promise.resolve(undefined),
+        registered: () => Promise.resolve(page),
+      },
       access,
       metrics: schedulerTelemetry(recordingMetrics(seen)),
     },

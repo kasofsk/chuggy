@@ -188,6 +188,47 @@ test("a stage with no transcript says it is running and offers nothing to open",
   expect(transcriptReads(drawn.reads)).toEqual([]);
 });
 
+/** The reader's own run, routed to runners under Strict, its worker not begun. */
+function ownRunStarting(
+  personalRunner: Record<string, unknown> | undefined,
+): RunPageServed {
+  const starting = runSummary({
+    status: "Launching",
+    outcome: undefined,
+    runTotals: undefined,
+    carrier: "Agent",
+    mine: true,
+    ownerFallback: "Strict",
+  });
+  return {
+    ticket: runningTicket,
+    executions: [starting],
+    execution: { ...starting, attempts: [] },
+    transcripts: [],
+    ...(personalRunner === undefined ? {} : { personalRunner }),
+  };
+}
+
+const ownRunner = {
+  capabilities: ["Platform:Linux:Amd64"],
+  registeredAt: "2026-08-27T00:00:00Z",
+  live: false,
+  executionsLive: false,
+  projects: ["atlas"],
+};
+
+test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {
+  await runPageDrawn(atlas, ownRunStarting(ownRunner));
+  const card = nowCard();
+  expect(card.textContent).toContain("Waiting on your runner · offline");
+  expect(within(card).getByRole("link", { name: "My runner" })).toBeTruthy();
+});
+
+test("the reader's own run says nothing of a runner they do not have", async () => {
+  await runPageDrawn(atlas, ownRunStarting(undefined));
+  expect(nowCard().textContent).not.toContain("Waiting on your runner");
+});
+
 function stillRunning(batch: number): string {
   return JSON.stringify({
     type: "tool_progress",

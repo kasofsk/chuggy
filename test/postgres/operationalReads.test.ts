@@ -48,7 +48,10 @@ import type {
   OperationalReadStore,
 } from "../../src/interpreter/operationsView.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 
+/** Who reads the executions; no ticket here is theirs. */
+const reader = asPrincipal("operational-reader");
 let rig: SchedulerRig;
 let ingress: ReturnType<typeof schedulerIngressPool>;
 
@@ -84,25 +87,34 @@ test("operational reads page scheduler-owned execution state", async () => {
   );
   const durable = await schedulerExecutions(rig, project.partition);
   const reads = postgresOperationalReads(ingress);
-  const page = await reads.executions(project.partition, {
-    limit: 1,
-    ticket: id(project.ticket),
-    selection: { selection: "NonTerminal" },
-  });
+  const page = await reads.executions(
+    project.partition,
+    {
+      limit: 1,
+      ticket: id(project.ticket),
+      selection: { selection: "NonTerminal" },
+    },
+    reader,
+  );
   assert.equal(page.executions.length, 1);
   assert.equal(page.executions[0]?.status, "Queued");
   assert.ok(page.nextAfter !== undefined);
   assert.deepEqual(
-    await reads.executions(project.partition, {
-      limit: 10,
-      ticket: id(project.ticket + 1),
-      selection: { selection: "Selected", states: ["Queued"] },
-    }),
+    await reads.executions(
+      project.partition,
+      {
+        limit: 10,
+        ticket: id(project.ticket + 1),
+        selection: { selection: "Selected", states: ["Queued"] },
+      },
+      reader,
+    ),
     { executions: [] },
   );
   const detail = await reads.execution(
     project.partition,
     asExecutionId(durable[0]?.execution ?? "absent"),
+    reader,
   );
   assert.equal(detail?.ticket, project.ticket);
   assert.deepEqual(detail?.attempts, []);
@@ -131,10 +143,11 @@ test("every execution of one fan-out names the request that spawned it", async (
     schedulerInCluster,
   );
   const reads = postgresOperationalReads(ingress);
-  const page = await reads.executions(project.partition, {
-    limit: 10,
-    ticket: id(project.ticket),
-  });
+  const page = await reads.executions(
+    project.partition,
+    { limit: 10, ticket: id(project.ticket) },
+    reader,
+  );
   assert.equal(page.executions.length, 2);
   assert.deepEqual(
     [...new Set(page.executions.map((each) => each.request))],
@@ -143,6 +156,7 @@ test("every execution of one fan-out names the request that spawned it", async (
   const detail = await reads.execution(
     project.partition,
     page.executions[0]?.execution ?? asExecutionId("absent"),
+    reader,
   );
   assert.equal(detail?.request, project.request);
 });
@@ -165,10 +179,11 @@ test("an evaluation's identity is read back from its columns, counter by counter
   );
   await operationalRegistered(project, request, "operational-identity");
   const reads = postgresOperationalReads(ingress);
-  const page = await reads.executions(project.partition, {
-    limit: 10,
-    ticket: id(project.ticket),
-  });
+  const page = await reads.executions(
+    project.partition,
+    { limit: 10, ticket: id(project.ticket) },
+    reader,
+  );
   const evaluation = page.executions.find(
     (each) => each.identity.type === "EvaluationTask",
   );
@@ -185,6 +200,7 @@ test("an evaluation's identity is read back from its columns, counter by counter
   const detail = await reads.execution(
     project.partition,
     evaluation?.execution ?? asExecutionId("absent"),
+    reader,
   );
   assert.deepEqual(detail?.identity, evaluation?.identity);
 });
@@ -203,7 +219,9 @@ test("an execution reads back empty until its run writes evidence", async () => 
   );
   const placed = await schedulerPlacedAttempt(rig, project, "operational-run");
   const reads = postgresOperationalReads(ingress);
-  const before = await reads.execution(project.partition, placed.execution);
+  const read = () =>
+    reads.execution(project.partition, placed.execution, reader);
+  const before = await read();
   assert.equal(before?.runTotals, undefined);
   assert.equal(before?.attempts[0]?.run, undefined);
   const workerPool = postgresHarnessRolePool(workerPlaneRole);
@@ -243,7 +261,7 @@ test("an execution reads back empty until its run writes evidence", async () => 
   } finally {
     await workerPool.end();
   }
-  const written = await reads.execution(project.partition, placed.execution);
+  const written = await read();
   assert.equal(written?.runTotals?.costUsdMicros, 11);
   const run = written?.attempts[0]?.run;
   assert.equal(run?.transcript?.highWaterBatch, 1);
@@ -299,7 +317,7 @@ async function operationalCheckOutput(
     );
   }
   const reads = postgresOperationalReads(ingress);
-  return (await reads.execution(project.partition, execution))?.result
+  return (await reads.execution(project.partition, execution, reader))?.result
     ?.artifacts;
 }
 
@@ -377,10 +395,14 @@ async function operationalWalked(
   const pages: number[][][] = [];
   let after: ExecutionPageCursor | undefined;
   for (let page = 0; page < pagesMax; page += 1) {
-    const answered = await reads.executions(partition, {
-      ...query,
-      ...(after === undefined ? {} : { after }),
-    });
+    const answered = await reads.executions(
+      partition,
+      {
+        ...query,
+        ...(after === undefined ? {} : { after }),
+      },
+      reader,
+    );
     pages.push(answered.executions.map((row) => [row.ticket, row.task]));
     after = answered.nextAfter;
     if (after === undefined) return pages;
@@ -421,10 +443,11 @@ test("a ticket's executions are read and paged in task order", async () => {
   assert.notDeepEqual(orders.byIdentity, orders.byTask);
 
   const reads = postgresOperationalReads(ingress);
-  const whole = await reads.executions(project.partition, {
-    limit: tasks,
-    ticket: id(project.ticket),
-  });
+  const whole = await reads.executions(
+    project.partition,
+    { limit: tasks, ticket: id(project.ticket) },
+    reader,
+  );
   const history = Array.from({ length: tasks }, (_unused, at) => at + 1);
   assert.deepEqual(
     whole.executions.map((row) => row.task),
@@ -522,6 +545,7 @@ test("an execution's attempts are read in the order they were opened", async () 
   const detail = await postgresOperationalReads(ingress).execution(
     project.partition,
     execution,
+    reader,
   );
   assert.deepEqual(
     detail?.attempts.map((attempt) => attempt.number),
@@ -543,6 +567,7 @@ test("an execution with more attempts than a page reads its newest, in the order
   const detail = await postgresOperationalReads(ingress).execution(
     project.partition,
     execution,
+    reader,
   );
   assert.deepEqual(
     detail?.attempts.map((attempt) => attempt.number),
@@ -595,15 +620,17 @@ test("an execution's summary starts at its first attempt and stays there", async
   const reads = postgresOperationalReads(ingress);
   const summaryOf = async (execution: string) =>
     (
-      await reads.executions(project.partition, {
-        limit: 10,
-        ticket: id(project.ticket),
-      })
+      await reads.executions(
+        project.partition,
+        { limit: 10, ticket: id(project.ticket) },
+        reader,
+      )
     ).executions.find((each) => each.execution === execution);
-  const queued = await reads.executions(project.partition, {
-    limit: 10,
-    ticket: id(project.ticket),
-  });
+  const queued = await reads.executions(
+    project.partition,
+    { limit: 10, ticket: id(project.ticket) },
+    reader,
+  );
   assert.ok(queued.executions.length >= 1);
   assert.deepEqual(
     queued.executions.map((each) => each.startedAt),
@@ -614,7 +641,11 @@ test("an execution's summary starts at its first attempt and stays there", async
     project,
     "operational-started",
   );
-  const opened = await reads.execution(project.partition, placed.execution);
+  const opened = await reads.execution(
+    project.partition,
+    placed.execution,
+    reader,
+  );
   assert.ok(opened?.startedAt !== undefined);
   assert.equal(opened.startedAt, opened.attempts[0]?.openedAt);
   assert.equal(
@@ -651,14 +682,16 @@ test("an execution counts a relaunch where another attempt followed a lost one, 
   const reads = postgresOperationalReads(ingress);
   const counted = async (execution: string) => {
     const listed = (
-      await reads.executions(project.partition, {
-        limit: 10,
-        ticket: id(project.ticket),
-      })
+      await reads.executions(
+        project.partition,
+        { limit: 10, ticket: id(project.ticket) },
+        reader,
+      )
     ).executions.find((each) => each.execution === execution);
     const detail = await reads.execution(
       project.partition,
       asExecutionId(execution),
+      reader,
     );
     return {
       listed: listed?.relaunches,
@@ -698,12 +731,13 @@ async function operationalRunStart(
 ) {
   const reads = postgresOperationalReads(ingress);
   const listed = (
-    await reads.executions(project.partition, {
-      limit: 10,
-      ticket: id(project.ticket),
-    })
+    await reads.executions(
+      project.partition,
+      { limit: 10, ticket: id(project.ticket) },
+      reader,
+    )
   ).executions.find((each) => each.execution === execution);
-  const detail = await reads.execution(project.partition, execution);
+  const detail = await reads.execution(project.partition, execution, reader);
   assert.equal(listed?.runStartedAt, detail?.runStartedAt);
   return {
     status: detail?.status,
@@ -808,10 +842,11 @@ test("a summary names what carries out its stage, read from the revision it pinn
   });
   await operationalRegistered(project, request, label);
   const reads = postgresOperationalReads(ingress);
-  const page = await reads.executions(project.partition, {
-    limit: 10,
-    ticket: id(project.ticket),
-  });
+  const page = await reads.executions(
+    project.partition,
+    { limit: 10, ticket: id(project.ticket) },
+    reader,
+  );
   assert.deepEqual(
     page.executions.map((each) => [each.taskKind, each.carrier]),
     [
@@ -822,6 +857,7 @@ test("a summary names what carries out its stage, read from the revision it pinn
   const detail = await reads.execution(
     project.partition,
     page.executions[1]?.execution ?? asExecutionId("absent"),
+    reader,
   );
   assert.equal(detail?.carrier, "Commands");
 });

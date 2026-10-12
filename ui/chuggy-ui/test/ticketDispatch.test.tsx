@@ -192,7 +192,7 @@ function noRunnerLine(): HTMLElement | null {
   );
 }
 
-/** The page in a project no lead dispatches, the two reads its runner is
+/** The page in a project no lead dispatches, the reads its runner is
  * decided from answering as the case says. */
 async function drawnWithRunner(
   reads: WorkRunnerReads,
@@ -231,6 +231,10 @@ function refusedRead(): Promise<Response> {
 const runnerReadsStartable: readonly (readonly [string, WorkRunnerReads])[] = [
   ["with a runner that is live", { runners: "Live" }],
   ["with a runner that is offline", { runners: "Offline" }],
+  [
+    "with no runner, whose owner's own may take its work",
+    { runners: "Unregistered", mine: "Unregistered", fallback: "Strict" },
+  ],
   [
     "whose work the cluster runs, with no runner",
     { runners: "Unregistered", work: "InCluster" },

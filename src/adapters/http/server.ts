@@ -30,8 +30,10 @@ import {
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
 import {
+  asProjectId,
   asTenantId,
   type Partition,
+  type ProjectId,
   type TenantId,
 } from "../../interpreter/projectStore.ts";
 import type { NativeWeb } from "../../interpreter/nativeWeb.ts";
@@ -94,6 +96,7 @@ import {
   parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
+  parseProjectOwnerFallback,
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
@@ -108,6 +111,7 @@ import {
   parseThreadHide,
   parseThreadMessage,
   parseThreadRename,
+  parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
   parseWorkerPoolTokenRequest,
 } from "./contract.ts";
@@ -186,7 +190,15 @@ import {
   workerPoolRedemptionResponse,
   workerPoolTokenResponse,
   workerPoolsResponse,
+  personalRunnerAllowedResponse,
+  personalRunnerDeregisteredResponse,
+  personalRunnerDisallowedResponse,
+  personalRunnerPermitResponse,
+  personalRunnerRedemptionResponse,
+  personalRunnerResponse,
+  personalRunnerTokenResponse,
   executionPlacementBody,
+  ownerFallbackBody,
   placementReadResponse,
   placementWriteResponse,
   sessionPlacementBody,
@@ -200,8 +212,10 @@ import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
+import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 import { sessionBearerAdmission } from "./sessionBearerScope.ts";
@@ -1204,6 +1218,119 @@ function registerWorkerPools(
   );
 }
 
+/** The project one allowlist route names, read beside its tenant. */
+function personalRunnerProjectOf(request: FastifyRequest): ProjectId {
+  return asProjectId(textField(record(request.params), "project"));
+}
+
+/**
+ * A member's own runner: the token they mint for it in a tenant, its public
+ * redemption, which the token in its body authenticates as a pool's does, and
+ * the caller's own runner read, narrowed or widened by a project, and taken
+ * off. A member's runner is also taken off by its subject, which the tenant's
+ * administrators may do for anyone and a member for themselves.
+ */
+function registerPersonalRunners(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  app.post(
+    nativeHttpRoutes.personalRunnerRegistrationTokens,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      nativeHttpSend(
+        reply,
+        personalRunnerTokenResponse(
+          await runners.mint(
+            principalOf(request),
+            tenantOf(request),
+            parseWorkerPoolTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.post(
+    nativeHttpRoutes.personalRunnerRegistrations,
+    { config: { public: true }, preValidation: requireVersionedJson },
+    async (request, reply) => {
+      nativeHttpSend(
+        reply,
+        personalRunnerRedemptionResponse(
+          await runners.redeem(parsePersonalRunnerRedemption(request.body)),
+        ),
+      );
+    },
+  );
+  app.get(nativeHttpRoutes.personalRunnerPermit, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerPermitResponse(
+        await runners.permitted(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  app.get(nativeHttpRoutes.personalRunner, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerResponse(
+        await runners.runner(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.personalRunner, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDeregisteredResponse(
+        await runners.deregister(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  registerPersonalRunnerProjects(app, runners);
+  app.delete(nativeHttpRoutes.personalRunnerMember, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDeregisteredResponse(
+        await runners.deregisterMember(
+          principalOf(request),
+          tenantOf(request),
+          textField(record(request.params), "subject"),
+        ),
+      ),
+    );
+  });
+}
+
+function registerPersonalRunnerProjects(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  app.put(nativeHttpRoutes.personalRunnerProject, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerAllowedResponse(
+        await runners.allow(
+          principalOf(request),
+          tenantOf(request),
+          personalRunnerProjectOf(request),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.personalRunnerProject, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDisallowedResponse(
+        await runners.disallow(
+          principalOf(request),
+          tenantOf(request),
+          personalRunnerProjectOf(request),
+        ),
+      ),
+    );
+  });
+}
+
 /**
  * What a system outside this one reports of a declared action, `public`
  * because each reporter proves itself by its own scheme. It is registered in a
@@ -2181,16 +2308,37 @@ export function nativeHttpMediaTypeServed(app: FastifyInstance): void {
   });
 }
 
-function registerPlacements(
+/** The registrations of both kinds of runner, each where its service is composed. */
+function registerRunners(
   app: FastifyInstance,
   partitionRoot: string,
+  workerPools: WorkerPoolRegistrationService | undefined,
+  personalRunners: PersonalRunnerService | undefined,
+): void {
+  if (workerPools !== undefined)
+    registerWorkerPools(app, workerPools, partitionRoot);
+  if (personalRunners !== undefined)
+    registerPersonalRunners(app, personalRunners);
+}
+
+function registerPlacements(
+  app: FastifyInstance,
   placement: ExecutionPlacementAdministration | undefined,
   sessionPlacement: SessionPlacementAdministration | undefined,
+  ownerFallback: ProjectOwnerFallbackAdministration | undefined,
 ): void {
+  if (ownerFallback !== undefined)
+    registerPlacement(
+      app,
+      nativeHttpRoutes.ownerFallback,
+      ownerFallback,
+      parseProjectOwnerFallback,
+      ownerFallbackBody,
+    );
   if (placement !== undefined)
     registerPlacement(
       app,
-      `${partitionRoot}/execution-placement`,
+      nativeHttpRoutes.executionPlacement,
       placement,
       parseExecutionPlacement,
       executionPlacementBody,
@@ -2198,11 +2346,23 @@ function registerPlacements(
   if (sessionPlacement !== undefined)
     registerPlacement(
       app,
-      `${partitionRoot}/session-placement`,
+      nativeHttpRoutes.sessionPlacement,
       sessionPlacement,
       parseSessionPlacement,
       sessionPlacementBody,
     );
+}
+
+/** A tenant's forge accounts and a project's repositories, bound and configured. */
+function registerOnboarding(
+  app: FastifyInstance,
+  onboarding: RepositoryOnboarding,
+): void {
+  registerForgeInstallations(app, onboarding);
+  registerProjectRepositories(app, onboarding);
+  registerProjectRepositoryLanding(app, onboarding);
+  registerProjectRepositoryRetirement(app, onboarding);
+  registerProjectRepositoryConfigurations(app, onboarding);
 }
 
 export function createNativeHttpApp(
@@ -2224,6 +2384,8 @@ export function createNativeHttpApp(
   actionReports?: ActionReports,
   actionReach?: TicketActionReaches,
   landings?: TicketLandingReads,
+  personalRunners?: PersonalRunnerService,
+  ownerFallback?: ProjectOwnerFallbackAdministration,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2246,13 +2408,7 @@ export function createNativeHttpApp(
     registerSelectorProposals(app, proposalReviews);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
-  if (onboarding !== undefined) {
-    registerForgeInstallations(app, onboarding);
-    registerProjectRepositories(app, onboarding);
-    registerProjectRepositoryLanding(app, onboarding);
-    registerProjectRepositoryRetirement(app, onboarding);
-    registerProjectRepositoryConfigurations(app, onboarding);
-  }
+  if (onboarding !== undefined) registerOnboarding(app, onboarding);
   registerOperations(app, web);
   registerProjectArtifacts(app, web, limits.projectArtifactUploadBytesMax);
   registerNotifications(app, web);
@@ -2264,9 +2420,8 @@ export function createNativeHttpApp(
   registerThreadWrites(app, web);
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);
-  if (workerPools !== undefined)
-    registerWorkerPools(app, workerPools, partitionRoot);
-  registerPlacements(app, partitionRoot, placement, sessionPlacement);
+  registerRunners(app, partitionRoot, workerPools, personalRunners);
+  registerPlacements(app, placement, sessionPlacement, ownerFallback);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   if (landings !== undefined) registerTicketLandings(app, landings);

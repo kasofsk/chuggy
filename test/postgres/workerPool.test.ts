@@ -42,6 +42,7 @@ import {
   type Principal,
 } from "../../src/interpreter/principal.ts";
 import type {
+  DedicatedPoolIdentity,
   WorkerPoolClaimTerms,
   WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
@@ -210,7 +211,7 @@ async function registered(
   label: string,
   capabilities: readonly string[],
   principal: Principal = asPrincipal(`https://issuer.invalid#pool-${label}`),
-): Promise<WorkerPoolIdentity> {
+): Promise<DedicatedPoolIdentity> {
   assert.equal(
     await registry.register({
       partition,
@@ -224,7 +225,7 @@ async function registered(
   );
   const identified = await registry.identify(principal);
   assert.notEqual(identified, undefined);
-  return identified as WorkerPoolIdentity;
+  return { kind: "Dedicated", ...(identified as WorkerPoolIdentity) };
 }
 
 /** The handles one claim draws, which are opaque to the pool that is given them. */
@@ -249,6 +250,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
       terms,
       unclaimable.assignment,
       unclaimable.bearer,
+      [],
     ),
     undefined,
     "a pool claims nothing whose capability it did not declare",
@@ -267,6 +269,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
     terms,
     drawn.assignment,
     drawn.bearer,
+    [],
   );
   assert.deepEqual(claimed, {
     requirement: {
@@ -284,7 +287,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   assert.deepEqual(held, [{ attempt: wanted.attempt, pool: "claims" }]);
   const second = handles("second");
   assert.equal(
-    await assignments.claim(pool, terms, second.assignment, second.bearer),
+    await assignments.claim(pool, terms, second.assignment, second.bearer, []),
     undefined,
   );
 });
@@ -295,7 +298,7 @@ test("a container claim returns the image its execution's requirement pinned", a
   await poolAttempt(project, "image");
   const drawn = handles("image");
   assert.deepEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
     {
       requirement: {
         mode: "Container",
@@ -329,7 +332,7 @@ test("an execution the scheduler still places is offered to no pool", async () =
   );
   const drawn = handles("in-cluster");
   assert.equal(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
     undefined,
   );
 });
@@ -340,7 +343,7 @@ test("an attempt with no invocation recorded is offered to no pool", async () =>
   await poolAttempt(project, "uninvoked", false);
   const drawn = handles("uninvoked");
   assert.equal(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
     undefined,
   );
 });
@@ -351,7 +354,7 @@ test("a claim binds the attempt to the bearer its harness answers under", async 
   const attempt = await poolAttempt(project, "bearer");
   const drawn = handles("bearer");
   assert.notEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
     undefined,
   );
   const digest = createHash("sha256")
@@ -378,7 +381,13 @@ test("an assignment is renewed, refused and released by the pool holding it", as
   await poolAttempt(project, "renewed");
   const renewed = handles("renewed");
   assert.notEqual(
-    await assignments.claim(mine, terms, renewed.assignment, renewed.bearer),
+    await assignments.claim(
+      mine,
+      terms,
+      renewed.assignment,
+      renewed.bearer,
+      [],
+    ),
     undefined,
   );
   assert.equal(await assignments.held(mine, renewed.assignment), true);
@@ -409,7 +418,7 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
   const released = await poolAttempt(project, "released");
   const handle = handles("released");
   assert.notEqual(
-    await assignments.claim(mine, terms, handle.assignment, handle.bearer),
+    await assignments.claim(mine, terms, handle.assignment, handle.bearer, []),
     undefined,
   );
   assert.equal(await assignments.release(mine, handle.assignment), true);
@@ -437,7 +446,7 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
   assert.equal(await assignments.release(mine, handle.assignment), false);
   const again = handles("again");
   assert.equal(
-    await assignments.claim(mine, terms, again.assignment, again.bearer),
+    await assignments.claim(mine, terms, again.assignment, again.bearer, []),
     undefined,
     "a released attempt is offered to no pool",
   );
@@ -446,13 +455,13 @@ test("a released attempt ends withdrawn under the pool that claimed it, spending
 /** One more attempt of this project opened and claimed by `pool`, and the assignment the claim drew. */
 async function poolHeldBy(
   project: SchedulerProject,
-  pool: WorkerPoolIdentity,
+  pool: DedicatedPoolIdentity,
   label: string,
 ): Promise<string> {
   await poolAttempt(project, label);
   const drawn = handles(label);
   assert.notEqual(
-    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
     undefined,
   );
   return drawn.assignment;
@@ -550,19 +559,26 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution",
         "SELECT",
-        "execution,placement,project,requirement_value,status,tenant",
+        "execution,owner,owner_fallback,placement,project,requirement_value,status,tenant",
       ],
       ["execution", "UPDATE", "placement_backoff_from"],
       [
         "execution_attempt",
         "SELECT",
-        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant",
+        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant",
       ],
       [
         "execution_attempt",
         "UPDATE",
-        "assignment,capability_secret_digest,lease_expires_at,lease_owner,pool,pool_principal,pool_refusal",
+        "assignment,capability_secret_digest,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal",
       ],
+      [
+        "personal_runner",
+        "SELECT",
+        "capabilities,executions_polled_at,owner,principal,tenant",
+      ],
+      ["personal_runner", "UPDATE", "executions_polled_at,last_polled_at"],
+      ["personal_runner_project", "SELECT", "owner,project,tenant"],
       ["project", "SELECT", "lifecycle,project,tenant"],
       ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
       ["schema_migration", "SELECT", "applied_at,name,version"],
@@ -600,11 +616,20 @@ test("deregistration names the client the row holds, goes with that client alone
     }),
     true,
   );
-  const identity = (await registry.identify(principal)) as WorkerPoolIdentity;
+  const identity: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    ...((await registry.identify(principal)) as WorkerPoolIdentity),
+  };
   const attempt = await poolAttempt(project, "orphaned");
   const drawn = handles("orphaned");
   assert.notEqual(
-    await assignments.claim(identity, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(
+      identity,
+      terms,
+      drawn.assignment,
+      drawn.bearer,
+      [],
+    ),
     undefined,
   );
   assert.equal(await registry.clientOf(project.partition, "gone"), clientId);
@@ -652,7 +677,7 @@ async function poolClaimedIn(
   principal?: Principal,
 ): Promise<{
   project: SchedulerProject;
-  identity: WorkerPoolIdentity;
+  identity: DedicatedPoolIdentity;
   claimed: Awaited<ReturnType<typeof poolAttempt>>;
   drawn: { assignment: string; bearer: string };
 }> {
@@ -665,7 +690,13 @@ async function poolClaimedIn(
   const claimed = await poolAttempt(project, pool);
   const drawn = handles(pool);
   assert.notEqual(
-    await assignments.claim(identity, terms, drawn.assignment, drawn.bearer),
+    await assignments.claim(
+      identity,
+      terms,
+      drawn.assignment,
+      drawn.bearer,
+      [],
+    ),
     undefined,
   );
   return { project, identity, claimed, drawn };
@@ -685,7 +716,7 @@ function poolPrincipalFresh(pool: string): Principal {
 async function poolRegisteredAgain(
   project: SchedulerProject,
   pool: string,
-): Promise<WorkerPoolIdentity> {
+): Promise<DedicatedPoolIdentity> {
   return registered(
     project.partition,
     pool,
@@ -1025,7 +1056,10 @@ test("a registration that cannot fence what it takes over is not made", async ()
   assert.deepEqual(
     {
       newer: await registry.identify(principal),
-      older: await registry.identify(identity.principal),
+      older: {
+        kind: "Dedicated",
+        ...(await registry.identify(identity.principal)),
+      },
       attempt: await poolClaimRow(project, claimed.attempt),
     },
     { newer: undefined, older: identity, attempt: before },
@@ -1039,7 +1073,10 @@ test("a registration that cannot fence what it takes over is not made", async ()
  */
 test("a pool that comes back under the same principal keeps what it claimed", async () => {
   const { project, identity, claimed, drawn } = await poolClaimed("restart");
-  const restarted = await registry.identify(identity.principal);
+  const restarted: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    ...((await registry.identify(identity.principal)) as WorkerPoolIdentity),
+  };
   assert.deepEqual(restarted, identity);
   assert.equal(
     await assignments.held(restarted, drawn.assignment),

@@ -44,10 +44,8 @@ import {
   type TicketLanded,
 } from "../../src/interpreter/ticketActionReach.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
-import {
-  ticketReadApp,
-  ticketReadRefusesWhatTheTicketDoes,
-} from "./ticketReadFixtures.ts";
+import { ticketReadRefusesWhatTheTicketDoes } from "./ticketReadFixtures.ts";
+import { callerApp } from "./callerAppFixture.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const caller = asPrincipal("issuer geoff");
@@ -134,7 +132,7 @@ function appOver(access: readonly ProjectAccessKind[], beneath: Beneath) {
     }),
     pacing: { wait: () => new Promise(() => undefined) },
   });
-  return ticketReadApp(caller, { actionReach: reach });
+  return callerApp(caller, { actionReach: reach });
 }
 
 /** What a reader is answered by the route, held to be a success whose body the endpoint's own schema reads back whole. */

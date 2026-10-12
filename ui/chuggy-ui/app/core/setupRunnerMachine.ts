@@ -400,6 +400,7 @@ export function setupRegisterCommand(
     runnerPackageOffered,
     site,
     token,
+    "Pool",
   ).split(" ");
   return [command, ...rest];
 }

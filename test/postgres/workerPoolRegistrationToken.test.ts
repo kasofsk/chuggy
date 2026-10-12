@@ -11,6 +11,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessProject,
   postgresHarnessRolePool,
+  postgresHarnessTokenDigest,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -28,11 +29,6 @@ after(async () => {
   await harness.close();
 });
 
-/** A digest is 64 hex characters or the row refuses it, so each case draws one. */
-function digestOf(label: string): string {
-  return label.padEnd(64, "0");
-}
-
 async function project(name: string): Promise<Partition> {
   return postgresHarnessProject(harness.store, name);
 }
@@ -40,7 +36,7 @@ async function project(name: string): Promise<Partition> {
 test("a token stands for the partition it was minted against", async () => {
   const partition = await project("token-mint");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
-  const digest = digestOf("abc");
+  const digest = postgresHarnessTokenDigest("abc");
   assert.equal(
     await tokens.mint(
       partition,
@@ -61,7 +57,7 @@ test("a token stands for the partition it was minted against", async () => {
 test("a token is spent by the statement that reads it, and once", async () => {
   const partition = await project("token-spend");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
-  const digest = digestOf("bcd");
+  const digest = postgresHarnessTokenDigest("bcd");
   assert.equal(
     await tokens.mint(
       partition,
@@ -88,7 +84,7 @@ test("a token is spent by the statement that reads it, and once", async () => {
 test("a token past its expiry is neither readable nor spendable", async () => {
   const partition = await project("token-expired");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
-  const digest = digestOf("cde");
+  const digest = postgresHarnessTokenDigest("cde");
   assert.equal(
     await tokens.mint(partition, digest, ["linux"], Date.now() - 1_000, minter),
     "Minted",
@@ -100,7 +96,7 @@ test("a token past its expiry is neither readable nor spendable", async () => {
 test("a token given back after its spend is spendable again, unless it has expired", async () => {
   const partition = await project("token-restore");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
-  const digest = digestOf("dee");
+  const digest = postgresHarnessTokenDigest("dee");
   assert.equal(
     await tokens.mint(
       partition,
@@ -124,7 +120,7 @@ test("a token given back after its spend is spendable again, unless it has expir
     undefined,
     "a restored token is still single use",
   );
-  const expired = digestOf("eef");
+  const expired = postgresHarnessTokenDigest("eef");
   assert.equal(
     await tokens.mint(
       partition,
@@ -144,7 +140,7 @@ test("a token names no project this installation holds", async () => {
   assert.equal(
     await tokens.mint(
       { tenant: "absent", project: "absent" } as Partition,
-      digestOf("def"),
+      postgresHarnessTokenDigest("def"),
       [],
       Date.now() + 60_000,
       minter,
@@ -167,7 +163,7 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
   const partition = await project("token-bound");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
   const digest = (ordinal: number) =>
-    digestOf(`b${ordinal.toString(16).padStart(2, "0")}`);
+    postgresHarnessTokenDigest(`b${ordinal.toString(16).padStart(2, "0")}`);
   for (let minted = 0; minted < workerPoolTokensLiveMax; minted += 1)
     assert.equal(
       await tokens.mint(
@@ -183,7 +179,7 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
   assert.equal(
     await tokens.mint(
       partition,
-      digestOf("0e"),
+      postgresHarnessTokenDigest("0e"),
       [],
       Date.now() + 60_000,
       minter,
@@ -195,7 +191,7 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
   assert.equal(
     await tokens.mint(
       partition,
-      digestOf("af"),
+      postgresHarnessTokenDigest("af"),
       [],
       Date.now() + 60_000,
       minter,
@@ -213,7 +209,7 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
   assert.equal(
     await tokens.mint(
       elsewhere,
-      digestOf("07"),
+      postgresHarnessTokenDigest("07"),
       [],
       Date.now() + 60_000,
       minter,
@@ -227,7 +223,7 @@ test("a project holds at most its bound of unspent tokens, and a spent one stays
 test("a spent token whose redemption is in flight survives another mint of the project", async () => {
   const partition = await project("token-inflight");
   const tokens = postgresWorkerPoolRegistrationTokens(api);
-  const inflight = digestOf("1f");
+  const inflight = postgresHarnessTokenDigest("1f");
   assert.equal(
     await tokens.mint(
       partition,
@@ -242,7 +238,7 @@ test("a spent token whose redemption is in flight survives another mint of the p
   assert.equal(
     await tokens.mint(
       partition,
-      digestOf("2e"),
+      postgresHarnessTokenDigest("2e"),
       [],
       Date.now() + 60_000,
       minter,
@@ -267,7 +263,7 @@ test("a mint sweeps the project's expired tokens", async () => {
   assert.equal(
     await tokens.mint(
       partition,
-      digestOf("5a1e"),
+      postgresHarnessTokenDigest("5a1e"),
       [],
       Date.now() - 1_000,
       minter,
@@ -278,7 +274,7 @@ test("a mint sweeps the project's expired tokens", async () => {
   assert.equal(
     await tokens.mint(
       partition,
-      digestOf("f5e5"),
+      postgresHarnessTokenDigest("f5e5"),
       [],
       Date.now() + 60_000,
       minter,
@@ -286,5 +282,8 @@ test("a mint sweeps the project's expired tokens", async () => {
     "Minted",
   );
   assert.equal(await tokensOf(partition), 1);
-  assert.notEqual(await tokens.permitted(digestOf("f5e5")), undefined);
+  assert.notEqual(
+    await tokens.permitted(postgresHarnessTokenDigest("f5e5")),
+    undefined,
+  );
 });

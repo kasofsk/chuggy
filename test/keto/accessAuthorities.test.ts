@@ -156,6 +156,7 @@ test("the defaults read back as groups: the tenant's own administrators and the 
     AdminGranters: only(["TenantAdmins"]),
     MemberGranters: only(["TenantAdmins"]),
     HostedRunsGranters: only(["SiteAdmins"]),
+    PersonalRunnersGranters: only(["TenantAdmins"]),
     AuthorityManagers: only(["TenantAdmins"]),
   });
   const both = only(["TenantAdmins", "ProjectAdmins"]);

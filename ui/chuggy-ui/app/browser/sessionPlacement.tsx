@@ -18,9 +18,14 @@ import { navRoutes } from "../core/shellNav.ts";
 import {
   sessionPlacementPolledMs,
   sessionPlacementShort,
+  sessionRunnerAdded,
   sessionRunnerShortWord,
 } from "../core/sessionRunners.ts";
-import type { SessionRunnerShort } from "../core/sessionRunners.ts";
+import type {
+  SessionRunnerSession,
+  SessionRunnerShort,
+} from "../core/sessionRunners.ts";
+import { settingsRoutes } from "../core/settingsNav.ts";
 import { usePanelResourceSettled } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
 
@@ -99,9 +104,30 @@ export function useSessionPlacementStale(
   };
 }
 
+function SessionRunnerAddLink(props: {
+  readonly partition: PartitionIdentity;
+  readonly session: SessionRunnerSession;
+}): ReactNode {
+  switch (sessionRunnerAdded(props.session)) {
+    case "MyRunner":
+      return (
+        <Link to={settingsRoutes.project.myRunner} params={props.partition}>
+          My runner
+        </Link>
+      );
+    case "Runners":
+      return (
+        <Link to={navRoutes.runners} params={props.partition}>
+          Runners
+        </Link>
+      );
+  }
+}
+
 /** Why no runner can take a turn now, with where one is added where none is. */
 export function SessionRunnerNotice(props: {
   readonly partition: PartitionIdentity;
+  readonly session: SessionRunnerSession;
   readonly short: SessionRunnerShort;
 }): ReactNode {
   return (
@@ -109,9 +135,10 @@ export function SessionRunnerNotice(props: {
       {props.short === "NoRunner" ? (
         <span className="text-ink-3">
           {" · "}
-          <Link to={navRoutes.runners} params={props.partition}>
-            Runners
-          </Link>
+          <SessionRunnerAddLink
+            partition={props.partition}
+            session={props.session}
+          />
         </span>
       ) : null}
     </Notice>

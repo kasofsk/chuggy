@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { ProjectlessFrame } from "../ProjectCreation.tsx";
 import { LeadSettingsPage } from "./LeadSettingsPage.tsx";
+import { MyRunnerPage } from "./MyRunnerPage.tsx";
 import { PlacementSettingsPage } from "./PlacementSettingsPage.tsx";
 import { ProjectPermissionsPage } from "./ProjectPermissionsPage.tsx";
 import { SettingsLayout } from "./SettingsLayout.tsx";
@@ -64,6 +65,11 @@ function workspacePageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/permissions",
       component: TenantPermissionsPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/runner",
+      component: MyRunnerPage,
     }),
   ] as const;
 }

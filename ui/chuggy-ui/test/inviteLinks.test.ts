@@ -43,6 +43,8 @@ const abilities: AccessTenantAbilities = {
   tenant: "acme",
   roles: ["Member"],
   grantHostedRuns: false,
+  grantPersonalRunners: false,
+  administerTenant: false,
   createAccount: false,
   manageAuthorities: false,
   manageSiteHeldAuthorities: false,

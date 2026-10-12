@@ -293,7 +293,7 @@ test.each([
   },
 );
 
-/** A reader who may dispatch, over a project whose two runner reads answer as
+/** A reader who may dispatch, over a project whose runner reads answer as
  * the case says. */
 function dispatcherOver(
   reads: WorkRunnerReads,
@@ -325,6 +325,16 @@ const runnerReads: readonly (readonly [
   [
     "with no runner registered",
     { runners: "Unregistered" },
+    ["No runner", true],
+  ],
+  [
+    "with no runner but the reader's own, which it lets take their work",
+    { runners: "Unregistered", fallback: "Strict" },
+    starting,
+  ],
+  [
+    "with no runner, which lets a reader with none of their own take their work",
+    { runners: "Unregistered", mine: "Unregistered", fallback: "Preferred" },
     ["No runner", true],
   ],
   ["with a runner that is offline", { runners: "Offline" }, starting],

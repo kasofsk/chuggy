@@ -329,7 +329,7 @@ export function RepositoriesPage(): ReactNode {
     (ports) => apiProjectRepositories(ports, partition),
   );
   const returned = useForgeReturned(partition.tenant);
-  const runner = useWorkRunner(partition);
+  const runner = useWorkRunner(partition, "Reader");
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
       <TopBarSlot>

@@ -29,6 +29,7 @@ import {
 } from "../../src/interpreter/agentSession.ts";
 import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
 import type {
+  PersonalRunnerIdentity,
   WorkerPoolAssignments,
   WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
@@ -45,7 +46,10 @@ import {
   memberAuthority,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import {
   workerContractOptionalsSeen,
   workerContractReleasePool,
@@ -72,6 +76,14 @@ const identity: WorkerPoolIdentity = {
   partition,
   pool: "pool-one",
   principal: poolPrincipal,
+};
+
+/** A member's personal runner in the same tenant, known by a token of its own. */
+const runnerToken = "runner-token";
+const runner: PersonalRunnerIdentity = {
+  tenant: partition.tenant,
+  owner: oidcPrincipal(issuer, "a-member"),
+  principal: oidcPrincipal(issuer, "chuggy-personal-one"),
 };
 
 /** The image the one claimed execution pinned, and the name a pool is handed it by. */
@@ -126,6 +138,10 @@ function calls(pinning: readonly string[] = []): {
             : undefined,
         );
       },
+      ownersDeferredTo: () => Promise.resolve([]),
+      claimPersonal: () => Promise.resolve(undefined),
+      allowlisted: () => Promise.resolve([]),
+      polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
         Promise.resolve(
           (made.push(["renew", assignment]), assignment === "live"),
@@ -194,6 +210,7 @@ function sessionCalls(
         answer(
           ["awaiting", max],
           offered.slice(0, max).map((session) => ({
+            project: partition.project,
             session: asSessionId(session),
             kind: "Lead" as const,
             capabilities: [],
@@ -221,10 +238,12 @@ function sessionCalls(
 const issuing = {
   authenticateBearer: (token: string) =>
     Promise.resolve(
-      token === poolToken
+      token === poolToken || token === runnerToken
         ? ({
             authenticated: "Bearer",
-            bearer: { principal: poolPrincipal },
+            bearer: {
+              principal: token === poolToken ? poolPrincipal : runner.principal,
+            },
           } as const)
         : token === "issuer-down"
           ? ({ authenticated: "AuthorityUnavailable" } as const)
@@ -232,17 +251,18 @@ const issuing = {
     ),
 };
 
-/** An authority that permits the one principal, unless the case asks it to fail. */
+/** An authority that permits every principal on a project and in a tenant, unless the case asks it to fail. */
 function authority(answer: "Allow" | "Refuse" | "Outage"): ProjectAccess {
+  const answered = (principal: Principal) => {
+    if (answer === "Outage")
+      throw new ProjectAccessUnavailable("the authority is unreachable");
+    return Promise.resolve(
+      answer === "Allow" ? memberAuthority(principal) : undefined,
+    );
+  };
   return {
-    authorize: (principal: Principal) => {
-      if (answer === "Outage")
-        throw new ProjectAccessUnavailable("the authority is unreachable");
-      return Promise.resolve(
-        answer === "Allow" ? memberAuthority(principal) : undefined,
-      );
-    },
-    authorizeTenant: () => Promise.resolve(undefined),
+    authorize: answered,
+    authorizeTenant: answered,
     authorizeSite: projectAccessSiteRefused,
   };
 }
@@ -262,6 +282,10 @@ function plane(
       deregister: () => Promise.resolve(false),
       identify: (principal) =>
         Promise.resolve(principal === poolPrincipal ? identity : undefined),
+    },
+    personal: {
+      identify: (principal) =>
+        Promise.resolve(principal === runner.principal ? runner : undefined),
     },
     assignments: ports,
     sessions: {
@@ -309,14 +333,14 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(answered.json(), {
     assignments: [
       {
-        assignment: "minted-1",
+        assignment: "minted-2",
         capabilities: ["Platform:Linux:Amd64"],
         image: published,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
         callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-2",
+        bearer: "minted-3",
       },
     ],
     sessions: [],
@@ -325,7 +349,7 @@ test("one poll renews what is held, says what must stop and hands over what it c
   assert.deepEqual(recorded.made, [
     ["renew", "live"],
     ["renew", "gone"],
-    ["claim", "minted-1"],
+    ["claim", "minted-2"],
   ]);
 });
 
@@ -360,7 +384,7 @@ test("a pool wanting more than the plane hands out per poll is claimed the plane
     workerPoolReconciliationSchema.parse(answered.json()).assignments.length,
     1,
   );
-  assert.deepEqual(recorded.made, [["claim", "minted-1"]]);
+  assert.deepEqual(recorded.made, [["claim", "minted-2"]]);
 });
 
 test("a poll that does not say its room, or says it as no count, is refused", async () => {
@@ -420,14 +444,14 @@ test("a pool naming a release from before sessions is answered without a list of
   assert.deepEqual(answered.json(), {
     assignments: [
       {
-        assignment: "minted-1",
+        assignment: "minted-2",
         capabilities: ["Platform:Linux:Amd64"],
         image: published,
         cpuMillis: 500,
         memoryMib: 256,
         deadlineSecs: 600,
         callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-2",
+        bearer: "minted-3",
       },
     ],
     stop: ["gone"],
@@ -1242,4 +1266,102 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
     assert.equal(answered.body, "");
     assert.equal(answered.headers["www-authenticate"], undefined, why);
   }
+});
+
+/** A personal runner's token and the release it speaks. */
+const runnerSpeaking = {
+  authorization: `Bearer ${runnerToken}`,
+  [workerContractHeader]: workerContractRelease,
+};
+
+test("a personal runner is admitted by its owner's permit and renews the executions it names", async () => {
+  const recorded = calls();
+  const sessions = sessionCalls([], ["thread-one"]);
+  const answered = await createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling(["live"], 1, 1),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  const body = workerPoolReconciliationSchema.parse(answered.json());
+  assert.deepEqual(body.assignments, []);
+  assert.deepEqual(body.stop, []);
+  assert.equal(body.sessions.length, 1);
+  assert.deepEqual(recorded.made, [["renew", "live"]]);
+});
+
+test("a personal runner whose owner lost the permit to register one is told it is not there", async () => {
+  const recorded = calls();
+  const sessions = sessionCalls([], ["thread-one"]);
+  const answered = await createPoolPlaneApp(
+    plane(recorded.ports, authority("Refuse"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 1, 1),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 404);
+  assert.deepEqual(sessions.made, [], "a refused runner reached sessions");
+});
+
+test("a personal runner's settlement of an execution reaches the executions it holds", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
+    method: "POST",
+    url: workerPoolSettlementPath("Accepted", "live"),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 204);
+  assert.deepEqual(recorded.made, [["held", "live"]]);
+});
+
+test("a personal runner's session is opened only in a project its owner may still read", async () => {
+  const read: unknown[] = [];
+  const sessions = sessionCalls([], ["thread-one"]);
+  const refusing: ProjectAccess = {
+    ...authority("Allow"),
+    authorize: (principal, asked, access) => {
+      read.push([principal, asked.project, access]);
+      return Promise.resolve(undefined);
+    },
+  };
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, refusing, sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(
+    workerPoolReconciliationSchema.parse(answered.json()).sessions,
+    [],
+  );
+  assert.deepEqual(read, [[runner.owner, asProjectId("project"), "Read"]]);
+  assert.ok(
+    !sessions.made.some((call) => Array.isArray(call) && call[0] === "open"),
+    "a session was opened in a project its owner may not read",
+  );
+});
+
+test("a personal runner polling while its owner's read cannot be answered is told to retry", async () => {
+  const sessions = sessionCalls([], ["thread-one"]);
+  const unanswered: ProjectAccess = {
+    ...authority("Allow"),
+    authorize: () =>
+      Promise.reject(
+        new ProjectAccessUnavailable("the authority is unreachable"),
+      ),
+  };
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, unanswered, sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: runnerSpeaking,
+  });
+  assert.equal(answered.statusCode, 503);
+  assert.equal(answered.body, "");
 });

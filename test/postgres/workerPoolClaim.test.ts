@@ -16,8 +16,16 @@
  * another pool claimed first.
  *
  * THE REGISTRY ADMITS ONE CLASS, so this suite's own database stands the
- * CHECK down to plant the model's others: the claim's own refusal of a
- * personal pool is the term under test, and a CHECK is not that term.
+ * CHECK down to plant a personal pool owning nothing there: a pool's own
+ * refusal of a personal registration is the term under test, and a CHECK is
+ * not that term.
+ *
+ * A PERSONAL POOL WITH AN OWNER IS A MEMBER'S RUNNER, planted as its row and
+ * its allowlist in its partition's tenant and claimed as one. An execution's
+ * owner and its project's fallback are its columns. A runner beside the case's
+ * is live where it makes a poll whose token is open, which is a last poll the
+ * claim reads as recent, and one the case revokes is named to the claim as the
+ * interpreter names an owner it asked.
  *
  * A CASE THE DATABASE CANNOT EXPRESS IS NAMED WITH THE REASON, derived from
  * the case rather than listed, so a case added to the table is planted or
@@ -63,10 +71,12 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import {
   workerPoolReconcile,
-  type WorkerPoolIdentity,
+  type DedicatedPoolIdentity,
+  type PersonalRunnerIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -75,13 +85,17 @@ import {
   workerPoolDemandRouted,
   workerPoolPlatformToken,
   workerPoolPolicyRegistered,
+  type WorkerPoolDemand,
+  type WorkerPoolEnrolment,
   type WorkerPoolPolicy,
+  type WorkerPoolRunner,
 } from "../../src/interpreter/workerPoolAssignment.ts";
 import {
   runnerCaseAssignment,
   runnerCases,
   type RunnerCase,
 } from "../interpreter/runnerCases.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   schedulerClaimFor,
@@ -111,6 +125,11 @@ const assignments = postgresWorkerPoolAssignments(planePool);
 function polling(mint: () => string): WorkerPoolPorts {
   return {
     assignments,
+    access: {
+      authorize: () => Promise.resolve(undefined),
+      authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
+    },
     sessions: {
       store: postgresWorkerPoolSessions(planePool),
       bindings: postgresProjectRepositoryBinding(planePool),
@@ -127,6 +146,90 @@ await rig.harness.query(
 /** How long a claim's lease runs for, past the duration of any case here. */
 const leaseSecs = 300;
 
+/** Whether a pool is planted as a member's runner rather than a registry row. */
+function runnerOwned(pool: WorkerPoolRunner): boolean {
+  return pool.class === "Personal" && pool.dedicatedOwner !== undefined;
+}
+
+/** The policy a pool varies that its row has no column for. */
+function policyUnplanted(pool: WorkerPoolRunner): readonly string[] {
+  const columns: readonly (keyof WorkerPoolPolicy)[] = runnerOwned(pool)
+    ? ["class", "dedicatedOwner", "allowlist"]
+    : ["class"];
+  return (
+    Object.keys(workerPoolPolicyRegistered) as (keyof WorkerPoolPolicy)[]
+  ).filter(
+    (field) =>
+      !columns.includes(field) &&
+      pool[field] !== workerPoolPolicyRegistered[field],
+  );
+}
+
+/** The demand an execution carries columns for: its owner, and whether and how its project allows a personal pool. */
+const demandPlanted: readonly (keyof WorkerPoolDemand)[] = [
+  "personalRunnerAllowed",
+  "ownerOf",
+  "ownerFallback",
+];
+
+/** Why a member's runner cannot be planted as the case states it, or undefined where it can. */
+function runnerUnplanted(
+  { pool, session }: WorkerPoolEnrolment,
+  home: Partition,
+): string | undefined {
+  if (
+    pool.allowlist.some((allowed) => allowed.tenant !== pool.partition.tenant)
+  )
+    return "a member's runner allowlists projects of its own tenant only";
+  if (pool.partition.tenant !== home.tenant)
+    return "a member's runner of another tenant has no project of this one to allowlist";
+  if (
+    session !== undefined &&
+    (session.pool !== pool.pool ||
+      session.partition.tenant !== pool.partition.tenant ||
+      session.partition.project !== pool.partition.project)
+  )
+    return "a member's runner is known by its principal alone, so no poll resolves to another runner under it";
+  if (!pool.enabled)
+    return "a member's runner taken off has no row to claim through";
+  return undefined;
+}
+
+/** Why the pools beside the case's cannot be planted, or undefined where they can. */
+function othersUnplanted(c: RunnerCase): string | undefined {
+  const home = c.placement.partition;
+  const owners = new Set(
+    [c.pool, ...c.others.map(({ pool }) => pool)]
+      .filter(runnerOwned)
+      .map((pool) => `${pool.partition.tenant}/${String(pool.dedicatedOwner)}`),
+  );
+  if (
+    owners.size !==
+    [c.pool, ...c.others.map(({ pool }) => pool)].filter(runnerOwned).length
+  )
+    return "a member has one runner in a tenant";
+  for (const other of c.others) {
+    if (other.pool.class === "Personal" && !runnerOwned(other.pool))
+      return "a personal pool owning nothing beside the case's is no member's runner";
+    const policy = policyUnplanted(other.pool);
+    if (policy.length > 0)
+      return `the pool beside the case's varies ${policy.join(", ")}, which no row carries`;
+    if (runnerOwned(other.pool)) {
+      const reason = runnerUnplanted(other, home);
+      if (reason !== undefined) return reason;
+    } else if (
+      other.pool.revoked ||
+      !other.pool.enabled ||
+      other.pool.partition.tenant !== home.tenant ||
+      other.pool.partition.project !== home.project ||
+      other.pool.pool === c.pool.pool ||
+      other.pool.pool === "pool-other"
+    )
+      return "a pool beside the case's is planted registered in its project under a name of its own";
+  }
+  return undefined;
+}
+
 /** Why the claim cannot be asked a case, or undefined where it can. */
 function inexpressible(c: RunnerCase): string | undefined {
   if (c.session === undefined)
@@ -134,25 +237,27 @@ function inexpressible(c: RunnerCase): string | undefined {
   if (!c.session.leaseOpen)
     return "a poll's lease is its token, verified before any claim is asked for";
   if (c.pool.revoked)
-    return "Execute is the access check's, made on each request before any claim";
-  const policy = (
-    Object.keys(workerPoolPolicyRegistered) as (keyof WorkerPoolPolicy)[]
-  ).filter(
-    (field) =>
-      field !== "class" && c.pool[field] !== workerPoolPolicyRegistered[field],
-  );
+    return "Execute, or a member's permit and Read, is the authority's, asked before any claim";
+  const policy = policyUnplanted(c.pool);
   if (policy.length > 0)
     return `the registry has no column for ${policy.join(", ")}, which every pool holds as registered`;
+  if (runnerOwned(c.pool)) {
+    const reason = runnerUnplanted(
+      { pool: c.pool, session: c.session },
+      c.placement.partition,
+    );
+    if (reason !== undefined) return reason;
+  }
   const demand = (
-    Object.keys(
-      workerPoolDemandRouted,
-    ) as (keyof typeof workerPoolDemandRouted)[]
+    Object.keys(workerPoolDemandRouted) as (keyof WorkerPoolDemand)[]
   ).filter(
-    (field) => c.placement.demand[field] !== workerPoolDemandRouted[field],
+    (field) =>
+      !demandPlanted.includes(field) &&
+      c.placement.demand[field] !== workerPoolDemandRouted[field],
   );
   if (demand.length > 0)
     return `the execution has no column for ${demand.join(", ")}, which every routed execution is pinned with`;
-  return undefined;
+  return othersUnplanted(c);
 }
 
 /** The case's names made concrete in the project planted for it. */
@@ -222,18 +327,34 @@ async function releasedUnder(
   return project;
 }
 
-/** The next execution admitted and opened as an invoked attempt, marked for a pool unless `inCluster`. */
+/** The owner an execution is planted with and the fallback its project named, each NULL where the case's demand has none. */
+interface Owned {
+  readonly owner: string | null;
+  readonly fallback: string | null;
+}
+
+const unowned: Owned = { owner: null, fallback: null };
+
+/** The next execution admitted and opened as an invoked attempt, marked for a pool unless `inCluster`, and owned as `owned` says. */
 async function opened(
   project: SchedulerProject,
   inCluster = false,
+  owned: Owned = unowned,
 ): Promise<{ execution: string; attempt: string }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
     throw new Error("worker pool claim suite: nothing was admitted");
   if (!inCluster)
     await rig.harness.query(
-      `UPDATE execution SET placement='Pool' WHERE tenant=$1 AND project=$2 AND execution=$3`,
-      [project.partition.tenant, project.partition.project, admitted.execution],
+      `UPDATE execution SET placement='Pool',owner=$4,owner_fallback=$5
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        admitted.execution,
+        owned.owner,
+        owned.fallback,
+      ],
     );
   const attempt = await rig.store.openAttempt({
     partition: project.partition,
@@ -250,6 +371,20 @@ async function opened(
   return { execution: admitted.execution, attempt: attempt.attempt.attempt };
 }
 
+/** Makes a project of the case's tenant where it is not the case's own and no case step made it yet. */
+async function projectPlanted(
+  partition: Partition,
+  home: Partition,
+): Promise<void> {
+  if (partition.tenant === home.tenant && partition.project === home.project)
+    return;
+  const found = (await rig.harness.query(
+    `SELECT 1 FROM project WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  )) as readonly unknown[];
+  if (found.length === 0) await rig.harness.store.createProject(partition);
+}
+
 /** Registers one pool, making its project first where it is not the case's own. */
 async function registeredPool(
   partition: Partition,
@@ -259,8 +394,7 @@ async function registeredPool(
   policy: Pick<WorkerPoolPolicy, "class">,
   home: Partition,
 ): Promise<string> {
-  if (partition.tenant !== home.tenant || partition.project !== home.project)
-    await rig.harness.store.createProject(partition);
+  await projectPlanted(partition, home);
   const clientId = `chuggy-pool-${randomUUID()}`;
   assert.equal(
     await registry.register({
@@ -276,14 +410,71 @@ async function registeredPool(
   return clientId;
 }
 
-/** Claims the oldest placeable attempt for a pool that must get one. */
-async function claimedBy(identity: WorkerPoolIdentity, assignment: string) {
-  const claimed = await assignments.claim(
-    identity,
-    { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER },
-    assignment,
-    `bearer-${randomUUID()}`,
+/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise. */
+async function plantedRunner(
+  named: Planted,
+  pool: WorkerPoolRunner,
+  live: boolean,
+  polledSecsAgo: number,
+): Promise<PersonalPlaneIdentity> {
+  const home = named.project.partition;
+  if (pool.dedicatedOwner === undefined)
+    throw new Error("worker pool claim suite: a runner owning nothing");
+  const identity: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: named.partition(pool.partition).tenant,
+    owner: named.principal(pool.dedicatedOwner),
+    principal: named.principal(pool.principal),
+  };
+  await rig.harness.query(
+    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
+      VALUES($1,$2,$3,$4,$5,
+        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END)`,
+    [
+      identity.tenant,
+      identity.owner,
+      pool.capabilities,
+      identity.principal,
+      `chuggy-personal-${randomUUID()}`,
+      live,
+      polledSecsAgo,
+    ],
   );
+  for (const allowed of pool.allowlist) {
+    const project = named.partition(allowed);
+    await projectPlanted(project, home);
+    await rig.harness.query(
+      `INSERT INTO personal_runner_project(tenant,owner,project) VALUES($1,$2,$3)`,
+      [identity.tenant, identity.owner, project.project],
+    );
+  }
+  return identity;
+}
+
+type PersonalPlaneIdentity = PersonalRunnerIdentity & {
+  readonly kind: "Personal";
+};
+
+type PlantedIdentity = DedicatedPoolIdentity | PersonalPlaneIdentity;
+
+/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
+async function claimedBy(
+  identity: PlantedIdentity,
+  assignment: string,
+  home?: Partition,
+) {
+  const terms = { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER };
+  const bearer = `bearer-${randomUUID()}`;
+  const claimed =
+    identity.kind === "Dedicated"
+      ? await assignments.claim(identity, terms, assignment, bearer, [])
+      : await assignments.claimPersonal(
+          identity,
+          terms,
+          assignment,
+          bearer,
+          home === undefined ? [] : [home.project],
+        );
   if (claimed === undefined)
     throw new Error("worker pool claim suite: a planted claim took nothing");
 }
@@ -298,32 +489,67 @@ function declaringAll(requirement: ExecutionRequirement): readonly string[] {
   ];
 }
 
-/** The case's pool as registered, the client it was registered under, and another pool of the project declaring everything. */
+/** The case's pool as planted, the client a registered one was registered under, another pool of the project declaring everything, and the owners the case revokes. */
 interface PlantedPools {
-  readonly pool: WorkerPoolIdentity;
-  readonly clientId: string;
-  readonly other: WorkerPoolIdentity;
+  readonly pool: PlantedIdentity;
+  readonly clientId: string | undefined;
+  readonly other: DedicatedPoolIdentity;
+  readonly ownersRevoked: readonly Principal[];
+}
+
+/** One pool as the case registers it, or a member's runner where it has an owner. */
+async function plantedPool(
+  named: Planted,
+  { pool, session }: WorkerPoolEnrolment,
+  polledSecsAgo: number,
+): Promise<{ identity: PlantedIdentity; clientId: string | undefined }> {
+  if (runnerOwned(pool))
+    return {
+      identity: await plantedRunner(
+        named,
+        pool,
+        session?.leaseOpen === true,
+        polledSecsAgo,
+      ),
+      clientId: undefined,
+    };
+  const identity: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    partition: named.partition(pool.partition),
+    pool: pool.pool,
+    principal: named.principal(pool.principal),
+  };
+  const clientId = await registeredPool(
+    identity.partition,
+    identity.pool,
+    identity.principal,
+    pool.capabilities,
+    pool,
+    named.project.partition,
+  );
+  return { identity, clientId };
 }
 
 async function plantedPools(
   c: RunnerCase,
   named: Planted,
+  polledSecsAgo: number,
 ): Promise<PlantedPools> {
   const home = named.project.partition;
-  const pool: WorkerPoolIdentity = {
-    partition: named.partition(c.pool.partition),
-    pool: c.pool.pool,
-    principal: named.principal(c.pool.principal),
-  };
-  const clientId = await registeredPool(
-    pool.partition,
-    pool.pool,
-    pool.principal,
-    c.pool.capabilities,
-    c.pool,
-    home,
+  const { identity: pool, clientId } = await plantedPool(
+    named,
+    { pool: c.pool, session: c.session },
+    polledSecsAgo,
   );
-  const other: WorkerPoolIdentity = {
+  const ownersRevoked: Principal[] = [];
+  for (const beside of c.others) {
+    await plantedPool(named, beside, polledSecsAgo);
+    const owner = beside.pool.dedicatedOwner;
+    if (runnerOwned(beside.pool) && beside.pool.revoked && owner !== undefined)
+      ownersRevoked.push(named.principal(owner));
+  }
+  const other: DedicatedPoolIdentity = {
+    kind: "Dedicated",
     partition: home,
     pool: "pool-other",
     principal: named.principal(asPrincipal("principal-other")),
@@ -336,7 +562,7 @@ async function plantedPools(
     workerPoolPolicyRegistered,
     home,
   );
-  return { pool, clientId, other };
+  return { pool, clientId, other, ownersRevoked };
 }
 
 /** Moves an execution to a status no attempt is opened under, which only standing its trigger down can plant. */
@@ -357,6 +583,15 @@ async function statusPlanted(
   );
 }
 
+/** The owner and fallback the case's execution is pinned with. */
+function ownedAs(c: RunnerCase, named: Planted): Owned {
+  const { ownerOf, personalRunnerAllowed, ownerFallback } = c.placement.demand;
+  return {
+    owner: ownerOf === undefined ? null : named.principal(ownerOf),
+    fallback: personalRunnerAllowed ? ownerFallback : null,
+  };
+}
+
 /** The case's attempt, opened after the slots its pool holds and the identity another pool bound, and placed as the case says. */
 async function plantedTarget(
   c: RunnerCase,
@@ -364,47 +599,85 @@ async function plantedTarget(
   named: Planted,
   pools: PlantedPools,
 ): Promise<{ execution: string; attempt: string }> {
+  const home = named.project.partition;
+  const owned = ownedAs(c, named);
   for (let slot = 0; slot < held; slot++) {
-    await opened(named.project);
-    await claimedBy(pools.pool, `held-${randomUUID()}`);
+    await opened(
+      named.project,
+      false,
+      pools.pool.kind === "Personal" ? owned : unowned,
+    );
+    await claimedBy(pools.pool, `held-${randomUUID()}`, home);
   }
   if (c.assignmentsBound.includes(runnerCaseAssignment)) {
     await opened(named.project);
     await claimedBy(pools.other, named.assignment);
   }
-  const target = await opened(named.project, c.placement.route === "InCluster");
+  const target = await opened(
+    named.project,
+    c.placement.route === "InCluster",
+    owned,
+  );
   if (c.placement.phase === "Assigned")
     await claimedBy(pools.other, `assigned-${randomUUID()}`);
   if (c.placement.status !== "Launching")
-    await statusPlanted(
-      named.project.partition,
-      target.execution,
-      c.placement.status,
-    );
+    await statusPlanted(home, target.execution, c.placement.status);
   return target;
 }
 
 /** The case's claim, asked under its session; an identity already bound fails the statement, and that binds nothing. */
 async function claimAsked(
-  identity: WorkerPoolIdentity,
+  identity: PlantedIdentity,
   heldMax: number,
   assignment: string,
+  pools: PlantedPools,
+  home: Partition,
 ): Promise<unknown> {
+  const terms = { leaseSecs, heldMax };
+  const bearer = `bearer-${randomUUID()}`;
   try {
-    return await assignments.claim(
-      identity,
-      { leaseSecs, heldMax },
-      assignment,
-      `bearer-${randomUUID()}`,
-    );
+    return identity.kind === "Dedicated"
+      ? await assignments.claim(
+          identity,
+          terms,
+          assignment,
+          bearer,
+          pools.ownersRevoked,
+        )
+      : await assignments.claimPersonal(identity, terms, assignment, bearer, [
+          home.project,
+        ]);
   } catch (error) {
     if ((error as { code?: unknown }).code !== "23505") throw error;
     return undefined;
   }
 }
 
-/** Whether the case's claim took its execution's attempt, from the rows the case planted. */
-async function claimTook(c: RunnerCase, label: string): Promise<boolean> {
+/** The identity the case's poll is asked under: its pool's own, or the runner its principal names. */
+function sessionIdentity(
+  c: RunnerCase,
+  named: Planted,
+  pools: PlantedPools,
+): PlantedIdentity {
+  const session = c.session;
+  if (session === undefined) throw new Error("an inexpressible case");
+  const principal = named.principal(session.principal);
+  return pools.pool.kind === "Personal"
+    ? { ...pools.pool, principal }
+    : {
+        kind: "Dedicated",
+        partition: named.partition(session.partition),
+        pool: session.pool,
+        principal,
+      };
+}
+
+/** Whether the case's claim took its execution's attempt, from the rows the case planted, a live runner's last poll `polledSecsAgo` before now. */
+async function claimTook(
+  c: RunnerCase,
+  label: string,
+  polledSecsAgo = 0,
+): Promise<boolean> {
   const session = c.session;
   if (session === undefined) throw new Error("an inexpressible case");
   const bystanders =
@@ -413,34 +686,33 @@ async function claimTook(c: RunnerCase, label: string): Promise<boolean> {
     c,
     await releasedUnder(label, c.placement.requirement, bystanders + 1),
   );
-  const pools = await plantedPools(c, named);
+  const pools = await plantedPools(c, named, polledSecsAgo);
   const target = await plantedTarget(c, session.held, named, pools);
-  if (!c.pool.enabled)
+  if (!c.pool.enabled && pools.pool.kind === "Dedicated")
     assert.equal(
       await registry.deregister(
         pools.pool.partition,
         pools.pool.pool,
-        pools.clientId,
+        pools.clientId ?? "",
       ),
       true,
     );
+  const home = named.project.partition;
+  const identity = sessionIdentity(c, named, pools);
   const claimed = await claimAsked(
-    {
-      partition: named.partition(session.partition),
-      pool: session.pool,
-      principal: named.principal(session.principal),
-    },
+    identity,
     session.heldMax,
     named.assignment,
+    pools,
+    home,
   );
-  const home = named.project.partition;
   const [bound] = (await rig.harness.query(
     `SELECT pool, assignment FROM execution_attempt
       WHERE tenant=$1 AND project=$2 AND attempt=$3`,
     [home.tenant, home.project, target.attempt],
   )) as readonly { pool: string | null; assignment: string | null }[];
-  const took =
-    bound?.pool === session.pool && bound.assignment === named.assignment;
+  const holder = identity.kind === "Dedicated" ? identity.pool : identity.owner;
+  const took = bound?.pool === holder && bound.assignment === named.assignment;
   assert.equal(
     claimed !== undefined,
     took,
@@ -458,6 +730,7 @@ for (const c of runnerCases) {
       workerPoolCanAssign(
         c.placement,
         { pool: c.pool, session: c.session },
+        [{ pool: c.pool, session: c.session }, ...c.others],
         runnerCaseAssignment,
         new Set(c.assignmentsBound),
       ),
@@ -467,6 +740,33 @@ for (const c of runnerCases) {
     assert.equal(await claimTook(c, `claim-${String(label)}`), c.canAssign);
   });
 }
+
+test("a runner's poll for executions keeps a pool deferring to it for the liveness window and no longer", async () => {
+  const deferring = runnerCases.find(
+    (c) =>
+      c.name ===
+      "a dedicated pool is assigned nothing of an owner's whose personal pool is polling",
+  );
+  assert.ok(deferring !== undefined && !deferring.canAssign);
+  assert.equal(
+    await claimTook(
+      deferring,
+      "claim-live-inside",
+      sessionRunnerPolledSecsMax - 30,
+    ),
+    false,
+    "a poll inside the window",
+  );
+  assert.equal(
+    await claimTook(
+      deferring,
+      "claim-live-outside",
+      sessionRunnerPolledSecsMax + 30,
+    ),
+    true,
+    "a poll older than the window",
+  );
+});
 
 test("the claim is asked cases it takes and cases it refuses", () => {
   const asked = runnerCases.filter((c) => inexpressible(c) === undefined);
@@ -495,8 +795,9 @@ async function pollingPool(
   project: SchedulerProject,
   label: string,
   requirement: ExecutionRequirement,
-): Promise<WorkerPoolIdentity> {
-  const identity: WorkerPoolIdentity = {
+): Promise<DedicatedPoolIdentity> {
+  const identity: DedicatedPoolIdentity = {
+    kind: "Dedicated",
     partition: project.partition,
     pool: label,
     principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
@@ -611,11 +912,11 @@ test("a claim made while the same pool's last is still open waits for it and cou
   const gate = new Promise<void>((resolve) => (open = resolve));
   const first = postgresWorkerPoolAssignments(
     heldAtCommit(planePool, reach, gate),
-  ).claim(pool, terms, `first-${randomUUID()}`, `bearer-${randomUUID()}`);
+  ).claim(pool, terms, `first-${randomUUID()}`, `bearer-${randomUUID()}`, []);
   await reached;
   let settled = false;
   const second = assignments
-    .claim(pool, terms, `second-${randomUUID()}`, `bearer-${randomUUID()}`)
+    .claim(pool, terms, `second-${randomUUID()}`, `bearer-${randomUUID()}`, [])
     .finally(() => (settled = true));
   while (!settled && !(await advisoryWaiting())) await delay(10);
   open();
@@ -647,6 +948,7 @@ test("a registration made while an older one's claim is still open waits for it 
     { leaseSecs, heldMax: 1 },
     `fenced-${randomUUID()}`,
     `bearer-${randomUUID()}`,
+    [],
   );
   await reached;
   let settled = false;

@@ -50,8 +50,9 @@ import {
   workerPoolReconciliationUnsessioned,
   workerPoolSessionsRead,
   workerPoolSettled,
+  type PersonalRunnerPlaneRegistry,
+  type PoolPlaneIdentity,
   type WorkerPoolAssignments,
-  type WorkerPoolIdentity,
   type WorkerPoolMint,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
@@ -86,6 +87,7 @@ export interface PoolPlaneService {
   readonly authentication: PrincipalAuthentication;
   readonly access: ProjectAccess;
   readonly registry: WorkerPoolRegistry;
+  readonly personal: PersonalRunnerPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
   readonly settings: WorkerPoolPollSettings;
@@ -97,6 +99,7 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
   return {
     assignments: service.assignments,
     sessions: service.sessions,
+    access: service.access,
     mint: service.mint,
   };
 }
@@ -107,7 +110,7 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
  * pool that should stop, and the other is a pool that should ask again.
  */
 type PoolCaller =
-  | { readonly caller: "Pool"; readonly identity: WorkerPoolIdentity }
+  | { readonly caller: "Pool"; readonly identity: PoolPlaneIdentity }
   | { readonly caller: "InvalidToken" }
   | { readonly caller: "Unknown" }
   | { readonly caller: "Unavailable" };
@@ -130,10 +133,11 @@ async function poolCaller(
     return { caller: "InvalidToken" };
   if (authenticated.authenticated === "AuthorityUnavailable")
     return { caller: "Unavailable" };
-  let identity: WorkerPoolIdentity | undefined;
+  let identity: PoolPlaneIdentity | undefined;
   try {
     identity = await workerPoolAdmitted(
       service.registry,
+      service.personal,
       service.access,
       authenticated.bearer.principal,
     );
@@ -173,7 +177,7 @@ function poolPlaneRoute(
   handler: (
     request: FastifyRequest,
     reply: FastifyReply,
-    identity: WorkerPoolIdentity,
+    identity: PoolPlaneIdentity,
   ) => Promise<unknown>,
 ): void {
   planeRouteServed(
@@ -218,17 +222,24 @@ function poolAssignmentsRoute(
         workerPoolHeldNamedMax(service.settings, sessionsRead),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
-      const polled = await workerPoolPoll(
-        poolPorts(service),
-        identity,
-        {
-          held: query.data[workerPoolPollQuery.held],
-          wanted: query.data[workerPoolPollQuery.wanted],
-          wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
-          readsSessions: sessionsRead,
-        },
-        service.settings,
-      );
+      let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
+      try {
+        polled = await workerPoolPoll(
+          poolPorts(service),
+          identity,
+          {
+            held: query.data[workerPoolPollQuery.held],
+            wanted: query.data[workerPoolPollQuery.wanted],
+            wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
+            readsSessions: sessionsRead,
+          },
+          service.settings,
+        );
+      } catch (failure) {
+        if (failure instanceof ProjectAccessUnavailable)
+          return poolRefused(reply, "Unavailable");
+        throw failure;
+      }
       if (polled.polled === "HeldOverBound") return reply.code(400).send();
       return reply
         .code(200)
@@ -268,7 +279,7 @@ async function poolOutcomeAnswered(
   service: PoolPlaneService,
   request: FastifyRequest,
   reply: FastifyReply,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   outcome: AssignmentOutcome["outcome"],
 ): Promise<unknown> {
   const assignment = poolAssignmentNamed(request);

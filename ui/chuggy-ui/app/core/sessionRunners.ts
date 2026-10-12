@@ -3,10 +3,10 @@
  * nothing where the route is the cluster's or a runner is live, and otherwise
  * the one word for why none can take the turn now.
  *
- * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's thread and their inquiries
- * run only on a runner they registered, and the lead on any of the project's,
- * so the placement read answers both standings and each surface passes the one
- * its turns would wait on.
+ * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's thread runs only on their
+ * own personal runner, their inquiries on a pool they registered, and the lead
+ * on any of the project's, so the placement read answers each standing and
+ * each surface passes the one its turns would wait on.
  */
 
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
@@ -49,6 +49,26 @@ export function sessionRefusedNoRunner(result: ApiResult<unknown>): boolean {
   return result.outcome === "Rejected" && result.code === noRunnerCode;
 }
 
+/** The session a notice speaks for: a member's thread, their inquiry, or the lead. */
+export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead";
+
+/** Where a reader adds the runner a session's turn waits on. */
+export type SessionRunnerAdded = "MyRunner" | "Runners";
+
+/** A thread runs only on its member's own runner, so it is added on their own
+ * page; an inquiry and the lead run on a project's pools. */
+export function sessionRunnerAdded(
+  session: SessionRunnerSession,
+): SessionRunnerAdded {
+  switch (session) {
+    case "Thread":
+      return "MyRunner";
+    case "Inquiry":
+    case "Lead":
+      return "Runners";
+  }
+}
+
 export function sessionRunnerShortWord(short: SessionRunnerShort): string {
   switch (short) {
     case "NoRunner":
@@ -59,13 +79,15 @@ export function sessionRunnerShortWord(short: SessionRunnerShort): string {
 }
 
 /** Why no runner can take one session's turn, from a placement read: the
- * session's own route and the runners the caller says its turns wait on. */
+ * session's own route and the runners the caller says its turns wait on. A
+ * server that does not read those runners' standing says nothing of them. */
 export function sessionPlacementShort(
   read: SessionPlacementResponse | undefined,
   session: "thread" | "lead",
   runners: keyof SessionPlacementResponse["runners"],
 ): SessionRunnerShort | undefined {
-  return read === undefined
+  const standing = read?.runners[runners];
+  return read === undefined || standing === undefined
     ? undefined
-    : sessionRunnerShort(read[session].route, read.runners[runners]);
+    : sessionRunnerShort(read[session].route, standing);
 }

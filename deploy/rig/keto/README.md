@@ -17,6 +17,11 @@ still declared under a changed meaning — a `develop` that no longer implies
 `read` — passes readiness, so a change to the deployed model is still read
 against `.chug/tasks/keto/namespaces.ts` by hand.
 
+The `Tenant` namespace's `personal_runners` and `personal_runners_granters`
+relations, and the `register_personal_runner` and `grant_personal_runners`
+permits over them, are applied to the deployed model before the images that
+ask for them roll out, since until then no new pod is ready.
+
 ## Before migration 26
 
 Link every project a person was granted on before
@@ -58,7 +63,10 @@ defaults predate `tenant_creators` its holders are added through the access
 plane by whoever may change the site's authorities. A project already holding
 one is given nothing likewise, so on a project whose defaults predate
 `viewer_granters` its holders are added by whoever may change the project's
-authorities.
+authorities. A tenant holds its `site` link and is given nothing either, so on
+a tenant whose defaults predate `personal_runners_granters` nobody gives
+personal runners until whoever may change the tenant's authorities adds its
+holders.
 
 Once given, the holders are a request's to change: the access plane adds and
 removes a holder of each authority for a caller who may manage it. A project,
@@ -125,12 +133,13 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `CHUG_API_KETO_WRITE_URL` names Keto's **write** port. The access plane,
 `src/roots/accessPlane.ts`, grants and removes a person's `admins` and
 `members` on a tenant and `admins`, `developers`, `dispatchers` and `viewers`
-on a project, gives and takes a person's `hosted_execution`, and adds and removes
-the holders of each authority beside them, each for a caller holding the kind
-that grants it. Redeeming an invite link writes the tenant role and project
-roles the link carries, for whoever presents its token signed in and whatever
-kind they hold, since its maker held the kinds when they made it. Its invitation of a person into a tenant of their own writes
-that tenant's first `admins` and its defaults, and, where asked, its
+on a project, gives and takes a person's `hosted_execution` and
+`personal_runners`, and adds and removes the holders of each authority beside
+them, each for a caller holding the kind that grants it. Redeeming an invite
+link writes the tenant role and project roles the link carries, for whoever
+presents its token signed in and whatever kind they hold, since its maker held
+the kinds when they made it. Its invitation of a person into a tenant of their
+own writes that tenant's first `admins` and its defaults, and, where asked, its
 administrators among the site's `account_creators`, for a caller the site
 permits `CreateTenant`. Every other grant is the operator's, through
 `src/roots/provisionProjectAccess.ts`, which reaches that port and nothing else
@@ -151,9 +160,9 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
 into the permits a route asks for: `admins`, `developers`, `dispatchers`,
-`viewers`, `agents` and `pools` are the project's, and `admins`, `members` and
-`hosted_execution` are the tenant's. A grant with `CHUG_PROVISION_PROJECT`
-absent is a tenant grant, and one whose relation is `tenant` names the tenant
+`viewers`, `agents` and `pools` are the project's, and `admins`, `members`,
+`hosted_execution` and `personal_runners` are the tenant's. A grant with
+`CHUG_PROVISION_PROJECT` absent is a tenant grant, and one whose relation is `tenant` names the tenant
 the project inherits from rather than a person — the one arm that reads no
 issuer or subject. A person's project grant writes that `tenant` link beside
 it, so the tenant's administrators administer the project, as they do every

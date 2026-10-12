@@ -15,6 +15,7 @@ import {
   projectAccessTenantNamespace,
   projectAccessTenantObject,
   type SiteAccessKind,
+  type TenantAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import {
   allProjectGrantRelations,
@@ -118,6 +119,14 @@ const siteAdministratorKinds: readonly SiteAccessKind[] = [
   "ManageSiteAuthorities",
 ];
 
+/** Every tenant kind the tenant's administrators hold under its defaults, the kinds their role gives aside. */
+const tenantAdministratorKinds: readonly TenantAccessKind[] = [
+  "GrantTenantAdmin",
+  "GrantMember",
+  "GrantPersonalRunners",
+  "ManageTenantAuthorities",
+];
+
 test("the defaults give each role exactly the authority they say, and nobody else any", async () => {
   const partition = ketoHarnessPartition("authority-defaults");
   await defaulted(partition);
@@ -159,7 +168,7 @@ test("the defaults give each role exactly the authority they say, and nobody els
     await ketoHarnessAuthorityHeld(tenantAdministrator, partition),
     {
       site: [],
-      tenant: ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"],
+      tenant: tenantAdministratorKinds,
       project: ketoHarnessProjectAuthorities,
     },
   );
@@ -205,7 +214,7 @@ test("a tenant with no site tuple is not managed from the site, and the site's a
     await ketoHarnessAuthorityHeld(tenantAdministrator, partition),
     {
       site: [],
-      tenant: ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"],
+      tenant: tenantAdministratorKinds,
       project: ketoHarnessProjectAuthorities,
     },
   );

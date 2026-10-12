@@ -383,6 +383,9 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many registered pools one project's listing answers with, in name order. */
 export const workerPoolsAnsweredMax = 64;
 
+/** How many projects one personal runner's allowlist may name, which its read answers whole. */
+export const personalRunnerProjectsMax = 64;
+
 /** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
 export const ticketLandingsAnsweredMax = 8;
 
@@ -496,11 +499,18 @@ export const nativeHttpRoutes = {
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
+  ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,
   hostedRuns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/hosted-runs`,
   abilities: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/abilities`,
   workerPools: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pools`,
   workerPoolRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/worker-pool-registration-tokens`,
   workerPoolRegistrations: `${nativeHttpBasePath}/worker-pool-registrations`,
+  personalRunnerRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-registration-tokens`,
+  personalRunnerRegistrations: `${nativeHttpBasePath}/personal-runner-registrations`,
+  personalRunnerPermit: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-permit`,
+  personalRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner`,
+  personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
+  personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
   actionReports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/actions/:action/reports`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,

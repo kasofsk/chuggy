@@ -106,6 +106,7 @@ test("a relation the namespace does not declare is refused", () => {
     "admins",
     "hosted_execution",
     "members",
+    "personal_runners",
   ]);
 });
 
@@ -159,7 +160,7 @@ test("the site starts with its administrators making accounts and tenants, and n
   ]);
 });
 
-test("a tenant starts linked to the site, its own administrators granting and managing, and the site's granting hosted runs", () => {
+test("a tenant starts linked to the site, its own administrators granting its roles and personal runners and managing, and the site's granting hosted runs", () => {
   const tenant = asTenantId(request.tenant);
   const object = `${projectAccessTenantNamespace}:${projectAccessTenantObject(tenant)}`;
   const site = `${projectAccessSiteNamespace}:${projectAccessSiteObject}`;
@@ -170,6 +171,7 @@ test("a tenant starts linked to the site, its own administrators granting and ma
       `${object}#authority_managers@${object}#admins`,
       `${object}#hosted_execution_granters@${site}#admins`,
       `${object}#member_granters@${object}#admins`,
+      `${object}#personal_runners_granters@${object}#admins`,
       `${object}#site@${site}`,
     ].sort(),
   );

@@ -20,6 +20,8 @@ import {
   apiConfiguration,
   apiConfigureProjectRepository,
   apiCreateProjectRepository,
+  apiDeregisterMemberRunner,
+  apiDeregisterPersonalRunner,
   apiDispatchView,
   apiExecutions,
   apiForgeApps,
@@ -32,6 +34,9 @@ import {
   apiLeadTranscript,
   apiNativeActions,
   apiOpenThread,
+  apiOwnerFallback,
+  apiPersonalRunnerPermit,
+  apiPersonalRunnerServes,
   apiProject,
   apiProjectAbilities,
   apiProjectInventory,
@@ -49,6 +54,7 @@ import {
   apiTicketActionReach,
   apiTicketDispatchView,
   apiTicketNativeActions,
+  apiWriteOwnerFallback,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
   projectInventoryPagesMax,
@@ -695,6 +701,40 @@ test("each forge route is one path, and each write spends an identity", async ()
 
 /** The tenant fills a template rather than being pasted into a path, so a
  * tenant that looks like a path is still one segment. */
+/**
+ * A member's own runner hangs from the tenant, and one project it serves from
+ * the runner, so a project named like a path is still one segment; the
+ * project's fallback hangs from the partition beside its placement.
+ */
+test("a member's runner and a project's fallback are each asked at their own address", async () => {
+  const held = recordingRequests((url) =>
+    url.endsWith("/owner-fallback")
+      ? { fallback: "Strict", administers: true }
+      : url.endsWith("/personal-runner-permit")
+        ? { granted: true }
+        : {},
+  );
+  await apiOwnerFallback(held.ports, partition);
+  await apiWriteOwnerFallback(held.ports, partition, {});
+  await apiPersonalRunnerPermit(held.ports, "acme");
+  await apiPersonalRunnerServes(held.ports, partition, true);
+  await apiPersonalRunnerServes(held.ports, partition, false);
+  await apiDeregisterPersonalRunner(held.ports, "acme");
+  await apiDeregisterMemberRunner(held.ports, "acme", "sub/ject");
+  const tenantPath = `${nativeHttpBasePath}/tenants/acme`;
+  expect(
+    held.requests.map((request) => `${request.init.method} ${request.url}`),
+  ).toStrictEqual([
+    `GET ${partitionPath}/owner-fallback`,
+    `PUT ${partitionPath}/owner-fallback`,
+    `GET ${tenantPath}/personal-runner-permit`,
+    `PUT ${tenantPath}/personal-runner/projects/at%20las`,
+    `DELETE ${tenantPath}/personal-runner/projects/at%20las`,
+    `DELETE ${tenantPath}/personal-runner`,
+    `DELETE ${tenantPath}/personal-runners/sub%2Fject`,
+  ]);
+});
+
 test("a tenant that looks like a path stays one segment", async () => {
   const held = recordingRequests(forgeBody);
   await apiForgeInstallations(held.ports, "ac/me");

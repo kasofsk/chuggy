@@ -29,7 +29,7 @@ const url = "/api/v1/tenants/acme/projects/atlas/session-placement";
 const authorized = { authorization: "Bearer valid" };
 const json = { "content-type": "application/vnd.chuggy.v1+json" };
 
-/** A store whose lead is the project's own Pool row, asking runners after the member it was asked about. */
+/** A store whose lead is the project's own Pool row, asking runners after the member it was asked about, each standing apart from the others. */
 function storeRecording(
   written: SessionRoutes[],
   answered: PlacementWrite = "Written",
@@ -44,7 +44,8 @@ function storeRecording(
     runners: (_partition, member) =>
       Promise.resolve({
         mine: member === caller ? "Live" : "Unregistered",
-        project: "Live",
+        inquiry: member === caller ? "Offline" : "Unregistered",
+        project: "Unregistered",
       }),
     write: (_partition, placement) => {
       written.push(placement);
@@ -74,7 +75,7 @@ function appOver(
   );
 }
 
-test("a reader reads each kind's route and source and the runners each would run on, and chooses nothing", async () => {
+test("a reader reads each kind's route and source and the runners each would run on, their inquiry's pool apart from their own runner, and chooses nothing", async () => {
   await using app = appOver(["Read"], true);
   const found = await app.inject({ url, headers: authorized });
   assert.equal(found.statusCode, 200);
@@ -82,7 +83,7 @@ test("a reader reads each kind's route and source and the runners each would run
     thread: { route: "InCluster", source: "Default" },
     lead: { route: "Pool", source: "Project" },
     choices: [],
-    runners: { mine: "Live", project: "Live" },
+    runners: { mine: "Live", inquiry: "Offline", project: "Unregistered" },
   });
 });
 

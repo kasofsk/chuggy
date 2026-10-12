@@ -143,14 +143,27 @@ import type {
   WorkerPoolTokenMinted,
   WorkerPoolTokenRedeemed,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
+import type {
+  PersonalRunnerAllowed,
+  PersonalRunnerCredentials,
+  PersonalRunnerDeregistered,
+  PersonalRunnerDisallowed,
+  PersonalRunnerRead,
+  PersonalRunnerTokenRedeemed,
+} from "../../interpreter/personalRunnerRegistration.ts";
 import type { ExecutionPlacementView } from "../../interpreter/executionPlacement.ts";
 import type {
   PlacementRead,
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
+import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
   ExecutionPlacementResponse,
+  PersonalRunnerCredentialsResponse,
+  PersonalRunnerPermitResponse,
+  PersonalRunnerResponse,
+  ProjectOwnerFallbackResponse,
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
@@ -1025,7 +1038,11 @@ export function sessionPlacementBody(
     thread: view.routes.Thread,
     lead: view.routes.Lead,
     choices: [...view.choices],
-    runners: view.runners,
+    runners: {
+      mine: view.runners.mine,
+      inquiry: view.runners.inquiry,
+      project: view.runners.project,
+    },
   };
 }
 
@@ -1108,6 +1125,165 @@ export function workerPoolRedemptionResponse(
       );
     case "Registered":
       return response(201, workerPoolCredentialsBody(result.value));
+    default:
+      return assertNever(result);
+  }
+}
+
+/** What a registration that lost a race for the same member is answered, its token given back to retry with. */
+function personalRunnerConflict(): NativeHttpResponse {
+  return response(
+    409,
+    nativeHttpError(
+      "RegistrationConflict",
+      "The member's runner was registered again meanwhile; try again.",
+    ),
+  );
+}
+
+/** A write that answers nothing but that it was made. */
+function noContent(): NativeHttpResponse {
+  return {
+    status: 204,
+    headers: { "cache-control": "no-store" },
+    body: undefined,
+  };
+}
+
+/** A personal mint, answered as a pool's but bounded per member rather than per project. */
+export function personalRunnerTokenResponse(
+  result: WorkerPoolTokenMinted,
+): NativeHttpResponse {
+  if (result.result !== "LimitReached") return workerPoolTokenResponse(result);
+  return response(
+    409,
+    nativeHttpError(
+      "TokenLimitReached",
+      "The caller already holds their bound of live registration tokens in this tenant.",
+    ),
+  );
+}
+
+function personalRunnerCredentialsBody(
+  credentials: PersonalRunnerCredentials,
+): PersonalRunnerCredentialsResponse {
+  return {
+    kind: "Personal",
+    tenant: credentials.tenant,
+    owner: credentials.owner,
+    capabilities: [...credentials.capabilities],
+    tokenUrl: credentials.tokenUrl,
+    audience: credentials.audience,
+    planeUrl: credentials.planeUrl,
+    ...(credentials.registryHost === undefined
+      ? {}
+      : { registryHost: credentials.registryHost }),
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+  };
+}
+
+/** A personal redemption, answered with the runner's file once and naming its capability refusal as a pool's does. */
+export function personalRunnerRedemptionResponse(
+  result: PersonalRunnerTokenRedeemed,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+    case "CapabilityNotPermitted":
+      return workerPoolRedemptionResponse(result);
+    case "Conflict":
+      return personalRunnerConflict();
+    case "Registered":
+      return response(201, personalRunnerCredentialsBody(result.value));
+    default:
+      return assertNever(result);
+  }
+}
+
+/** The caller's own runner, or the miss a member with none is answered. */
+export function personalRunnerResponse(
+  result: PersonalRunnerRead,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        capabilities: [...result.value.capabilities],
+        registeredAt: result.value.registeredAt,
+        ...(result.value.polledAt === undefined
+          ? {}
+          : { polledAt: result.value.polledAt }),
+        live: result.value.live,
+        executionsLive: result.value.executionsLive,
+        projects: [...result.value.projects],
+      } satisfies PersonalRunnerResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+export function personalRunnerPermitResponse(
+  granted: boolean,
+): NativeHttpResponse {
+  return response(200, { granted } satisfies PersonalRunnerPermitResponse);
+}
+
+export function ownerFallbackBody(
+  view: ProjectOwnerFallbackView,
+): ProjectOwnerFallbackResponse {
+  return {
+    ...(view.fallback === undefined ? {} : { fallback: view.fallback }),
+    administers: view.administers,
+  };
+}
+
+/** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */
+export function personalRunnerAllowedResponse(
+  result: PersonalRunnerAllowed,
+): NativeHttpResponse {
+  switch (result) {
+    case "Allowed":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "AllowlistLimitReached",
+          "The runner already allows its bound of projects.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+export function personalRunnerDisallowedResponse(
+  result: PersonalRunnerDisallowed,
+): NativeHttpResponse {
+  switch (result) {
+    case "Removed":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A runner taken off, one there is not, or one registered again while it was being taken off. */
+export function personalRunnerDeregisteredResponse(
+  result: PersonalRunnerDeregistered,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deregistered":
+      return noContent();
+    case "NotFound":
+      return notFound();
+    case "Moved":
+      return personalRunnerConflict();
     default:
       return assertNever(result);
   }

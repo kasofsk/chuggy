@@ -198,6 +198,7 @@ export function ketoHarnessSomeone(label: string): Principal {
 const ketoHarnessTenantRoleKinds: readonly TenantAccessKind[] = [
   "AdministerTenant",
   "ExecuteHosted",
+  "RegisterPersonalRunner",
 ];
 
 /** The kinds asked of a relation saying who may grant or manage, at each level. */

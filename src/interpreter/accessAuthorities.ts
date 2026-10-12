@@ -111,6 +111,7 @@ export const accessTenantAuthorityRelations: Readonly<
   AdminGranters: "admin_granters",
   MemberGranters: "member_granters",
   HostedRunsGranters: "hosted_execution_granters",
+  PersonalRunnersGranters: "personal_runners_granters",
   AuthorityManagers: "authority_managers",
 };
 

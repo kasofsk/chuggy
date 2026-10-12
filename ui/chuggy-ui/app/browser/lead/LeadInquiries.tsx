@@ -150,24 +150,32 @@ function LeadAskNotice(props: {
       return <Notice tone="parked" inline detail={ask.word} />;
     case "NoRunner":
       return (
-        <SessionRunnerNotice partition={props.partition} short="NoRunner" />
+        <SessionRunnerNotice
+          partition={props.partition}
+          session="Inquiry"
+          short="NoRunner"
+        />
       );
     case "Failed":
       return <Notice tone="danger" inline detail={`Failed · ${ask.reason}`} />;
   }
 }
 
-/** Why the asker's own runner cannot take a question now, unless the last
+/** Why no pool the asker registered can take a question now, unless the last
  * press was refused, which says why in its own word. */
 function LeadAskRunner(props: {
   readonly partition: PartitionIdentity;
   readonly ask: InquiryAsk;
 }): ReactNode {
-  const runner = useSessionRunnerShort(props.partition, "lead", "mine");
+  const runner = useSessionRunnerShort(props.partition, "lead", "inquiry");
   return runner === undefined ||
     props.ask.ask === "Refused" ||
     props.ask.ask === "NoRunner" ? null : (
-    <SessionRunnerNotice partition={props.partition} short={runner} />
+    <SessionRunnerNotice
+      partition={props.partition}
+      session="Inquiry"
+      short={runner}
+    />
   );
 }
 

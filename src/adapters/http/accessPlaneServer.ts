@@ -1,14 +1,14 @@
 /**
  * The access plane's server: a tenant's and a project's people, granting and
- * removing their roles, giving and taking a person's hosted runs, inviting a
- * person by their GitHub account into a tenant or into one of their own, the
- * site's tenants, and what the caller may do, who holds each authority and
- * adding and removing its holders at the site, a tenant or a project, each for
- * a caller the authority says holds the kind it needs. A tenant's invite links
- * are made, listed and revoked the same way, and so are the site's workspace
- * links, and either is redeemed by any caller signed in, who needs no kind
- * because the link's maker held them. The tenants a caller is written into are
- * answered to any caller signed in, about them alone.
+ * removing their roles, giving and taking a person's hosted runs and personal
+ * runners, inviting a person by their GitHub account into a tenant or into one
+ * of their own, the site's tenants, and what the caller may do, who holds each
+ * authority and adding and removing its holders at the site, a tenant or a
+ * project, each for a caller the authority says holds the kind it needs. A
+ * tenant's invite links are made, listed and revoked the same way, and so are
+ * the site's workspace links, and either is redeemed by any caller signed in,
+ * who needs no kind because the link's maker held them. The tenants a caller is
+ * written into are answered to any caller signed in, about them alone.
  *
  * IT ANSWERS ITS CALLERS AS THE PUBLIC API DOES, because the console reads
  * both with the same code. A caller's body is read as the API's media type,
@@ -345,6 +345,40 @@ function accessHostedRunsRoutes(
       accessChanged(
         reply,
         await service.plane.tenantHostedRunsTaken(
+          caller,
+          accessTenantOf(request),
+          accessSubjectOf(request),
+        ),
+      ),
+  );
+}
+
+function accessPersonalRunnersRoutes(
+  app: FastifyInstance,
+  service: AccessPlaneService,
+): void {
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantPersonalRunnersGrant",
+    async (request, reply, caller) =>
+      accessChanged(
+        reply,
+        await service.plane.tenantPersonalRunnersGiven(
+          caller,
+          accessTenantOf(request),
+          accessSubjectOf(request),
+        ),
+      ),
+  );
+  accessPlaneRoute(
+    app,
+    service,
+    "tenantPersonalRunnersRemoval",
+    async (request, reply, caller) =>
+      accessChanged(
+        reply,
+        await service.plane.tenantPersonalRunnersTaken(
           caller,
           accessTenantOf(request),
           accessSubjectOf(request),
@@ -960,6 +994,7 @@ export function createAccessPlaneApp(
   accessTenantRoutes(app, service);
   accessProjectRoutes(app, service);
   accessHostedRunsRoutes(app, service);
+  accessPersonalRunnersRoutes(app, service);
   accessInvitationRoute(app, service);
   accessInviteLinkMakingRoutes(app, service);
   accessWorkspaceLinkMakingRoutes(app, service);

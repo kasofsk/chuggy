@@ -227,6 +227,8 @@ export const executionSummary: ExecutionSummary = {
   registeredAt: instant,
   carrier: "Agent",
   terminalAt: instant,
+  ownerFallback: "Strict",
+  mine: true,
 };
 
 export const versionedExecutionSummary: ExecutionSummary = {

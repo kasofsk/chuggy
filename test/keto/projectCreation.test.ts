@@ -349,7 +349,12 @@ test("a created tenant and project give their creator and the site's administrat
   assert.equal((await permittedCreate(creator, request)).result, "Created");
   assert.deepEqual(await ketoHarnessAuthorityHeld(creator, request), {
     site: [],
-    tenant: ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"],
+    tenant: [
+      "GrantTenantAdmin",
+      "GrantMember",
+      "GrantPersonalRunners",
+      "ManageTenantAuthorities",
+    ],
     project: ketoHarnessProjectAuthorities,
   });
   assert.deepEqual(
@@ -412,7 +417,7 @@ test("a repeat after the grants are recorded restores no default removed in betw
     await grants.remove(grant);
   const removed = {
     site: [],
-    tenant: ["ManageTenantAuthorities"],
+    tenant: ["GrantPersonalRunners", "ManageTenantAuthorities"],
     project: [
       "GrantDeveloper",
       "GrantDispatcher",

@@ -68,6 +68,7 @@ import type {
 } from "./setupSite.ts";
 import { siteRead, stood } from "./setupStood.ts";
 import type { Asking } from "./setupStood.ts";
+import { workRunnerUnnamed } from "./workRunnerFixture.ts";
 
 /** Every step of a site as it is said, in order. */
 async function column(
@@ -776,7 +777,12 @@ test("for every route a project's work can take and every standing its runners c
       project.runner = runner;
       const step = (await column(site))[4];
       const reads = await siteRead(site);
-      const console = workRunner(settled(reads.work), settled(reads.placement));
+      const console = workRunner(
+        settled(reads.work),
+        settled(reads.placement),
+        workRunnerUnnamed,
+        "Reader",
+      );
       expect(step?.[0] === "todo", `${route} ${runner}`).toBe(
         console === "NoRunner",
       );

@@ -54,6 +54,7 @@ import {
   composeForgeRepositoryMinting,
   composeNativeWeb,
   composeExecutionPlacement,
+  composeProjectOwnerFallback,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -150,6 +151,15 @@ import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
+import {
+  postgresPersonalRunnerRegistrationTokens,
+  postgresPersonalRunnerRegistry,
+} from "../adapters/postgres/personalRunner.ts";
+import {
+  personalRunnerService,
+  type PersonalRunnerService,
+} from "../interpreter/personalRunnerRegistration.ts";
+import type { WorkerPoolClients } from "../interpreter/workerPool.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import {
   checkedProjectGrantSettings,
@@ -212,9 +222,10 @@ const ketoWriteUrlVariable = "CHUG_API_KETO_WRITE_URL";
 const hydraAdminUrlVariable = "CHUG_API_HYDRA_ADMIN_URL";
 const ketoTimeoutVariable = "CHUG_API_KETO_TIMEOUT_MS";
 /**
- * Where a registered pool reaches this deployment, which a redemption answers
- * so a runner's file is written whole: required wherever pools are registered,
- * the registry host only where the deployment names one of its own.
+ * Where a registered runner, a pool or a member's personal one, reaches this
+ * deployment, which a redemption answers so a runner's file is written whole:
+ * required wherever runners are registered, the registry host only where the
+ * deployment names one of its own.
  */
 const poolTokenUrlVariable = "CHUG_API_POOL_TOKEN_URL";
 const poolPlaneUrlVariable = "CHUG_API_POOL_PLANE_URL";
@@ -335,22 +346,57 @@ function nativeWorkerPools(
     directory: postgresWorkerPoolDirectory(pool),
     minting: {
       tokens: postgresWorkerPoolRegistrationTokens(pool),
-      draw: () => randomBytes(32).toString("base64url"),
-      digest: (token) => createHash("sha256").update(token).digest("hex"),
-      nowMs: () => Date.now(),
+      ...nativeRegistrationTokenDrawing,
     },
     ports: {
       registry: postgresWorkerPoolRegistry(pool),
-      clients: hydraWorkerPoolClients({
-        adminUrl: requiredEnvironment(hydraAdminUrlVariable),
-        audience: requiredEnvironment(oidcAudienceVariable),
-        requestTimeoutMs: positiveEnvironment(
-          ketoTimeoutVariable,
-          projectAccessTimeoutMsDefault,
-        ),
-      }),
+      clients: nativeRunnerClients(),
       grants,
       clientId: () => `chuggy-pool-${randomUUID()}`,
+    },
+  });
+}
+
+/** How a runner's registration token is drawn and digested, and the clock it expires by, the same for a pool's and a member's. */
+const nativeRegistrationTokenDrawing = {
+  draw: () => randomBytes(32).toString("base64url"),
+  digest: (token: string) => createHash("sha256").update(token).digest("hex"),
+  nowMs: () => Date.now(),
+};
+
+/** The issuer's client registration every runner's client, a pool's or a member's, is made through. */
+function nativeRunnerClients(): WorkerPoolClients {
+  return hydraWorkerPoolClients({
+    adminUrl: requiredEnvironment(hydraAdminUrlVariable),
+    audience: requiredEnvironment(oidcAudienceVariable),
+    requestTimeoutMs: positiveEnvironment(
+      ketoTimeoutVariable,
+      projectAccessTimeoutMsDefault,
+    ),
+  });
+}
+
+/**
+ * A member's own runner, composed where the issuer's admin port is named, as a
+ * pool's registration is. It writes no relation, so it needs no write address
+ * at the authority; its client ids are prefixed apart from a pool's.
+ */
+function nativePersonalRunners(
+  pool: pg.Pool,
+  access: ProjectAccess,
+): PersonalRunnerService | undefined {
+  if (process.env[hydraAdminUrlVariable] === undefined) return undefined;
+  return personalRunnerService({
+    access,
+    site: workerPoolSite(),
+    minting: {
+      tokens: postgresPersonalRunnerRegistrationTokens(pool),
+      ...nativeRegistrationTokenDrawing,
+    },
+    ports: {
+      registry: postgresPersonalRunnerRegistry(pool),
+      clients: nativeRunnerClients(),
+      clientId: () => `chuggy-personal-${randomUUID()}`,
     },
   });
 }
@@ -1487,6 +1533,8 @@ async function main(): Promise<void> {
     nativeActionReports(pools, reporters),
     nativeActionReach(pools, access, forge.credentials),
     nativeTicketLandings(pools, access, artifacts),
+    nativePersonalRunners(pool, access),
+    composeProjectOwnerFallback(pool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

@@ -168,7 +168,7 @@ export function tenantPersonChangeNote(
 }
 
 /** One role held or not, on the workspace or on one of its projects, or
- * hosted runs held or not. */
+ * hosted runs or personal runners held or not. */
 export type TenantPersonChange =
   | {
       readonly scope: "Tenant";
@@ -181,7 +181,8 @@ export type TenantPersonChange =
       readonly role: AccessProjectRole;
       readonly held: boolean;
     }
-  | { readonly scope: "HostedRuns"; readonly held: boolean };
+  | { readonly scope: "HostedRuns"; readonly held: boolean }
+  | { readonly scope: "PersonalRunners"; readonly held: boolean };
 
 /** Two removals are asked first: the reader's own workspace admin, after which
  * the list is no longer theirs to read, and hosted runs from a subject that is
@@ -223,10 +224,27 @@ export function tenantHostedRunsOffered(
   return abilities?.grantHostedRuns ?? false;
 }
 
+/** Whether the reader may give and take personal runners, which a reader
+ * whose abilities were not read may not. */
+export function tenantPersonalRunnersOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return abilities?.grantPersonalRunners ?? false;
+}
+
+/** Whether the reader may take a member's own runner off, which only an
+ * administrator of the workspace may, and a reader whose abilities were not
+ * read may not. */
+export function tenantRunnerRemovalOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return abilities?.administerTenant ?? false;
+}
+
 /** What a person holds in a workspace, or an invite link carries into one. */
 export type TenantHeld = Pick<
   AccessTenantPerson,
-  "tenantRoles" | "hostedRuns" | "projects"
+  "tenantRoles" | "hostedRuns" | "personalRunners" | "projects"
 >;
 
 /** The roles held on one of the workspace's projects. */
@@ -274,6 +292,9 @@ export function tenantPersonProjectDrawn(
 /** What hosted runs are called wherever a person holds them or may be given them. */
 export const tenantHostedRunsLabel = "Hosted runs";
 
+/** What personal runners are called wherever a person holds them or may be given them. */
+export const tenantPersonalRunnersLabel = "Personal runners";
+
 /** The list's people, and apart from them its subjects the plane says are no
  * account, each in the list's order. */
 export interface TenantPeopleParted {
@@ -296,13 +317,14 @@ export function tenantPeopleCountLine(count: number): string {
 }
 
 /** What is held in the workspace, as the words a row draws: each role in the
- * roster's order, then hosted runs. */
+ * roster's order, then hosted runs, then personal runners. */
 export function tenantHeldWords(held: TenantHeld): readonly string[] {
   return [
     ...accessTenantRoles
       .filter((role) => held.tenantRoles.includes(role))
       .map(tenantRoleLabel),
     ...(held.hostedRuns ? [tenantHostedRunsLabel] : []),
+    ...(held.personalRunners ? [tenantPersonalRunnersLabel] : []),
   ];
 }
 
@@ -350,6 +372,8 @@ export function tenantPersonEditOffered(
 ): boolean {
   return (
     tenantHostedRunsOffered(abilities) ||
+    tenantPersonalRunnersOffered(abilities) ||
+    tenantRunnerRemovalOffered(abilities) ||
     accessTenantRoles.some((role) => tenantRoleOffered(abilities, role)) ||
     projects.some((project) =>
       accessProjectRoles.some((role) =>
@@ -372,7 +396,8 @@ function tenantPersonBoxDrawn(box: TenantPersonBox): boolean {
 }
 
 /** The workspace's boxes in a person's editor: each role, then hosted runs,
- * one the reader may not change drawn only where it is held. */
+ * then personal runners, one the reader may not change drawn only where it is
+ * held. */
 export function tenantPersonWorkspaceBoxes(
   abilities: AccessTenantAbilities | undefined,
   person: AccessTenantPerson,
@@ -391,7 +416,12 @@ export function tenantPersonWorkspaceBoxes(
     change: { scope: "HostedRuns", held: person.hostedRuns },
     offered: tenantHostedRunsOffered(abilities),
   };
-  return [...roles, hostedRuns].filter(tenantPersonBoxDrawn);
+  const personalRunners: TenantPersonBox = {
+    label: tenantPersonalRunnersLabel,
+    change: { scope: "PersonalRunners", held: person.personalRunners },
+    offered: tenantPersonalRunnersOffered(abilities),
+  };
+  return [...roles, hostedRuns, personalRunners].filter(tenantPersonBoxDrawn);
 }
 
 /** One project's box for one role in a person's editor, absent where the
@@ -418,6 +448,7 @@ export function tenantPersonProjectBox(
 function tenantPersonChangeNamed(change: TenantPersonChange): string {
   switch (change.scope) {
     case "HostedRuns":
+    case "PersonalRunners":
       return change.scope;
     case "Tenant":
       return `${change.scope} ${change.role}`;

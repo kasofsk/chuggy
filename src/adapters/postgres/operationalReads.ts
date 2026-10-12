@@ -37,6 +37,8 @@ import {
   type ResultArtifactResource,
 } from "../../interpreter/operationsView.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
+import type { Principal } from "../../interpreter/principal.ts";
+import { asWorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import {
   asAttemptId,
   asClusterId,
@@ -96,6 +98,8 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly run_started_at: string | null;
   readonly terminal_at: string | null;
   readonly result_manifest: string | null;
+  readonly owner_fallback: string | null;
+  readonly mine: boolean;
 }
 
 interface AttemptViewRow {
@@ -242,6 +246,10 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     ...(row.terminal_at === null
       ? {}
       : { terminalAt: asPublicInstant(row.terminal_at) }),
+    ...(row.owner_fallback === null
+      ? {}
+      : { ownerFallback: asWorkerPoolOwnerFallback(row.owner_fallback) }),
+    mine: row.mine,
   };
 }
 
@@ -321,6 +329,7 @@ async function executionRows(
   pool: pg.Pool,
   partition: Partition,
   query: ExecutionListQuery,
+  reader: Principal,
 ): Promise<readonly ExecutionViewRow[]> {
   const afterTicket = query.after?.ticket ?? null;
   const afterTask = query.after?.task ?? null;
@@ -354,6 +363,9 @@ async function executionRows(
                    AND a.execution=e.execution AND a.state IN ('Placing','Running')
                  ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
                e.result_manifest,
+               CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
+                    THEN e.owner_fallback END AS owner_fallback,
+               coalesce(e.owner=${reader},false) AS mine,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
             ON c.tenant=e.tenant AND c.project=e.project
@@ -380,8 +392,9 @@ async function executionPage(
   pool: pg.Pool,
   partition: Partition,
   query: ExecutionListQuery,
+  reader: Principal,
 ): Promise<ExecutionPage> {
-  const rows = await executionRows(pool, partition, query);
+  const rows = await executionRows(pool, partition, query, reader);
   const page = rows.slice(0, query.limit);
   const summaries = page.map(executionSummary);
   const next = rows.length > query.limit ? summaries.at(-1) : undefined;
@@ -411,6 +424,7 @@ async function oneExecution(
   pool: pg.Pool,
   partition: Partition,
   execution: ExecutionId,
+  reader: Principal,
 ): Promise<ExecutionViewRow | undefined> {
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
@@ -442,6 +456,9 @@ async function oneExecution(
                    AND a.execution=e.execution AND a.state IN ('Placing','Running')
                  ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
                e.result_manifest,
+               CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
+                    THEN e.owner_fallback END AS owner_fallback,
+               coalesce(e.owner=${reader},false) AS mine,
                v.name AS version_name,v.number::text AS version_number
           FROM execution e JOIN configuration_revision c
             ON c.tenant=e.tenant AND c.project=e.project
@@ -524,6 +541,40 @@ async function resultResource(
   };
 }
 
+/** One execution whole: its summary, its attempts, and its result where it has one. */
+async function executionResource(
+  pool: pg.Pool,
+  partition: Partition,
+  execution: ExecutionId,
+  reader: Principal,
+): Promise<ExecutionResource | undefined> {
+  const row = await oneExecution(pool, partition, execution, reader);
+  if (row === undefined) return undefined;
+  const result =
+    row.result_manifest === null
+      ? undefined
+      : await resultResource(
+          pool,
+          partition,
+          row.result_manifest,
+          row.canonical,
+        );
+  if (row.result_manifest !== null && result === undefined)
+    throw new Error("operational read: execution result is absent");
+  const summary = executionSummary(row);
+  return {
+    ...executionSummaryTotalled(
+      executionSummaryLabelled(
+        summary,
+        await postgresWorkerCatalog(pool, executionSummaryImages([summary])),
+      ),
+      await postgresExecutionRunTotals(pool, partition, [execution]),
+    ),
+    attempts: await attempts(pool, partition, execution),
+    ...(result === undefined ? {} : { result }),
+  } satisfies ExecutionResource;
+}
+
 export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
   return {
     status: async (partition) => {
@@ -561,36 +612,9 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
         ),
       };
     },
-    executions: (partition, query) => executionPage(pool, partition, query),
-    execution: async (partition, execution) => {
-      const row = await oneExecution(pool, partition, execution);
-      if (row === undefined) return undefined;
-      const result =
-        row.result_manifest === null
-          ? undefined
-          : await resultResource(
-              pool,
-              partition,
-              row.result_manifest,
-              row.canonical,
-            );
-      if (row.result_manifest !== null && result === undefined)
-        throw new Error("operational read: execution result is absent");
-      const summary = executionSummary(row);
-      return {
-        ...executionSummaryTotalled(
-          executionSummaryLabelled(
-            summary,
-            await postgresWorkerCatalog(
-              pool,
-              executionSummaryImages([summary]),
-            ),
-          ),
-          await postgresExecutionRunTotals(pool, partition, [execution]),
-        ),
-        attempts: await attempts(pool, partition, execution),
-        ...(result === undefined ? {} : { result }),
-      } satisfies ExecutionResource;
-    },
+    executions: (partition, query, reader) =>
+      executionPage(pool, partition, query, reader),
+    execution: (partition, execution, reader) =>
+      executionResource(pool, partition, execution, reader),
   };
 }

@@ -108,7 +108,12 @@ async function heldBy(
 
 const tenantAdministration: KetoHarnessAuthority = {
   site: [],
-  tenant: ["GrantTenantAdmin", "GrantMember", "ManageTenantAuthorities"],
+  tenant: [
+    "GrantTenantAdmin",
+    "GrantMember",
+    "GrantPersonalRunners",
+    "ManageTenantAuthorities",
+  ],
   project: ketoHarnessProjectAuthorities,
 };
 
@@ -191,8 +196,8 @@ test("a default holder removed after a run is left removed by the next", async (
   assert.deepEqual(
     (await heldBy(tenant))["administrator"]?.map((held) => held.tenant),
     [
-      ["GrantTenantAdmin", "ManageTenantAuthorities"],
-      ["GrantTenantAdmin", "ManageTenantAuthorities"],
+      ["GrantTenantAdmin", "GrantPersonalRunners", "ManageTenantAuthorities"],
+      ["GrantTenantAdmin", "GrantPersonalRunners", "ManageTenantAuthorities"],
     ],
   );
 });

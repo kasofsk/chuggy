@@ -61,6 +61,8 @@ import {
   type PhysicalAttempt,
 } from "../../interpreter/executionScheduler.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import { asPrincipal } from "../../interpreter/principal.ts";
+import { asWorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import {
   asProjectId,
   asRecoveryEpoch,
@@ -82,6 +84,8 @@ export interface ExecutionRow {
   readonly project: string;
   readonly execution: string;
   readonly placement: string;
+  readonly owner: string | null;
+  readonly owner_fallback: string | null;
   readonly ticket: string;
   readonly task: string;
   readonly task_kind: string;
@@ -250,6 +254,10 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     partition: schedulerRowPartition(row),
     execution: asExecutionId(row.execution),
     route: executionRowRoute(row.placement),
+    ...(row.owner === null ? {} : { owner: asPrincipal(row.owner) }),
+    ...(row.owner_fallback === null
+      ? {}
+      : { ownerFallback: asWorkerPoolOwnerFallback(row.owner_fallback) }),
     ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
     task: asTaskId(projectRowCounter(row.task, "execution task")),
     taskKind: executionRowTaskKind(row.task_kind),

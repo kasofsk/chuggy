@@ -22,6 +22,7 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { attemptInvocationBytesMax } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
+import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   postgresWorkerPlaneAuthority,
@@ -560,6 +561,60 @@ test("a pool's bearer fetches the task the scheduler recorded, and the bearer it
         { leaseSecs, heldMax: 1 },
         `assignment-${randomUUID()}`,
         bearer,
+        [],
+      ),
+      undefined,
+    );
+    answers.push(await fetchedTask(bearer));
+    answers.push(await fetchedTask(placing.capability.secret));
+  });
+  assert.deepEqual(answers, [
+    { status: 200, body: pushedTask(placement) },
+    { status: 401, body: { action: "stop" } },
+  ]);
+});
+
+test("a personal runner's bearer fetches the task of the execution it claimed, as a pool's does", async () => {
+  const { project } = await admittedProject("task-personal");
+  const owner = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const principal = asPrincipal(
+    `https://issuer.invalid#personal-${randomUUID()}`,
+  );
+  const key = { tenant: project.partition.tenant, owner };
+  const personal = postgresPersonalRunnerRegistry(apiPool);
+  assert.equal(
+    await personal.register(
+      {
+        ...key,
+        capabilities: ["Platform:Linux:Amd64", "Agent:Claude"],
+        clientId: `chuggy-personal-${randomUUID()}`,
+        principal,
+      },
+      undefined,
+    ),
+    "Registered",
+  );
+  assert.equal(await personal.allow(key, project.partition.project), "Allowed");
+  const bearer = `bearer-${randomUUID()}`;
+  const answers: { status: number; body: unknown }[] = [];
+  const placement = await launched(project, async (placing) => {
+    await rig.harness.query(
+      `UPDATE execution SET placement='Pool',owner=$4,owner_fallback='Strict'
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      [
+        placing.partition.tenant,
+        placing.partition.project,
+        placing.execution,
+        owner,
+      ],
+    );
+    assert.notEqual(
+      await postgresWorkerPoolAssignments(poolPlanePool).claimPersonal(
+        { ...key, principal },
+        { leaseSecs, heldMax: 1 },
+        `assignment-${randomUUID()}`,
+        bearer,
+        [project.partition.project],
       ),
       undefined,
     );

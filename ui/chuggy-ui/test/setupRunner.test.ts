@@ -231,6 +231,7 @@ test("the registration token is one word of register's arguments, which are the 
     runnerPackageOffered,
     machineSite,
     token,
+    "Pool",
   ).split(" ");
   expect(machine.box.ran.filter((run) => boxActOf(run) === "register")).toEqual(
     [[command, ...words]],

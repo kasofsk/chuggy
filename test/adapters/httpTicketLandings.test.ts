@@ -31,10 +31,8 @@ import {
   type TicketLandingRecord,
 } from "../../src/interpreter/ticketLandings.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
-import {
-  ticketReadApp,
-  ticketReadRefusesWhatTheTicketDoes,
-} from "./ticketReadFixtures.ts";
+import { ticketReadRefusesWhatTheTicketDoes } from "./ticketReadFixtures.ts";
+import { callerApp } from "./callerAppFixture.ts";
 
 const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const caller = asPrincipal("issuer geoff");
@@ -126,7 +124,7 @@ function appOver(
       },
     },
   });
-  return ticketReadApp(caller, { landings });
+  return callerApp(caller, { landings });
 }
 
 const notFound = {

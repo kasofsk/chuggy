@@ -216,6 +216,7 @@ const projectGroups = [
       "People /acme/atlas/settings/workspace/people",
       "Accounts /acme/atlas/settings/workspace/accounts",
       "Permissions /acme/atlas/settings/workspace/permissions",
+      "My runner /acme/atlas/settings/workspace/runner",
     ],
   ],
 ];
@@ -227,6 +228,7 @@ const workspaceGroups = [
       "People /tenants/acme/settings/people",
       "Accounts /tenants/acme/settings/accounts",
       "Permissions /tenants/acme/settings/permissions",
+      "My runner /tenants/acme/settings/runner",
     ],
   ],
 ];

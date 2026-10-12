@@ -95,13 +95,18 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
-/** The command that registers the machine a package was installed on, with this console and a minted token. */
+/** Whose a registered machine is: one of the project's pools, or the reader's own. */
+export type RunnerKind = "Pool" | "Personal";
+
+/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's or as the reader's own. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,
   token: string,
+  kind: RunnerKind,
 ): string {
-  return `${installed.program} register --api ${origin} --token=${token}`;
+  const personal = kind === "Personal" ? " --personal" : "";
+  return `${installed.program} register${personal} --api ${origin} --token=${token}`;
 }
 
 /** Where `Add runner` is drawn: in the panel's head, or under the line an empty roster is said in. */

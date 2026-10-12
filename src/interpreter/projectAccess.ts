@@ -84,6 +84,8 @@ export const allTenantAccessKinds = [
   "GrantTenantAdmin",
   "GrantMember",
   "GrantHostedExecution",
+  "RegisterPersonalRunner",
+  "GrantPersonalRunners",
   "ManageTenantAuthorities",
   "ManageSiteHeldAuthorities",
 ] as const;
@@ -143,6 +145,8 @@ export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   GrantTenantAdmin: "grant_admin",
   GrantMember: "grant_member",
   GrantHostedExecution: "grant_hosted_execution",
+  RegisterPersonalRunner: "register_personal_runner",
+  GrantPersonalRunners: "grant_personal_runners",
   ManageTenantAuthorities: "manage_authorities",
   ManageSiteHeldAuthorities: "manage_site_held_authorities",
 };

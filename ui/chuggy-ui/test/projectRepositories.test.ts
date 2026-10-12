@@ -59,6 +59,7 @@ import {
   executionPlacementBody,
   workRunnerAnswered,
   workRunnerFailed,
+  workRunnerUnnamed,
   workRunnerUnread,
 } from "./workRunnerFixture.ts";
 
@@ -684,7 +685,10 @@ function bindStep(
   runners: Parameters<typeof workRunner>[1],
 ): RepositoryNextStep | undefined {
   const note = boundNote({ result: "Bootstrapped", revision: "r1" });
-  return repositoryNextStep(note.ticketOffered, workRunner(placement, runners));
+  return repositoryNextStep(
+    note.ticketOffered,
+    workRunner(placement, runners, workRunnerUnnamed, "Reader"),
+  );
 }
 
 const toRunners = workRunnerAnswered(executionPlacementBody("Pool"));

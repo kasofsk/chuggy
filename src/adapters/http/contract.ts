@@ -41,6 +41,7 @@ import {
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
+  projectOwnerFallbackSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -51,6 +52,7 @@ import {
 } from "../../interpreter/agentSession.ts";
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type { SessionRoutes } from "../../interpreter/sessionPlacement.ts";
+import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
@@ -150,6 +152,10 @@ const nativeActionCursorSchema = inventoryCursorSchema.extend({
 });
 
 import {
+  personalRunnerRedemptionSchema,
+  type PersonalRunnerRedemptionRequest,
+} from "../../contract/requests.ts";
+import {
   workerPoolRedemptionSchema,
   workerPoolRegistrationTokenRequestSchema,
   type WorkerPoolRedemptionRequest,
@@ -181,6 +187,12 @@ export function parseWorkerPoolRedemption(
   body: unknown,
 ): WorkerPoolRedemptionRequest {
   return workerPoolRedemptionSchema.parse(body);
+}
+
+export function parsePersonalRunnerRedemption(
+  body: unknown,
+): PersonalRunnerRedemptionRequest {
+  return personalRunnerRedemptionSchema.parse(body);
 }
 
 export function parseRepositoryConfigurationImport(
@@ -265,6 +277,13 @@ export function parseProjectRepositoryLanding(body: unknown): {
 export function parseExecutionPlacement(body: unknown): ExecutionRoutes {
   const parsed = executionPlacementSchema.parse(body);
   return { Work: parsed.work, Evaluation: parsed.evaluation };
+}
+
+/** A project's fallback as the wire carries it, absent where it names none. */
+export function parseProjectOwnerFallback(
+  body: unknown,
+): WorkerPoolOwnerFallback | undefined {
+  return projectOwnerFallbackSchema.parse(body).fallback;
 }
 
 /** One session placement as the wire carries it, keyed by the session kind each route is for. */

@@ -10,7 +10,11 @@ import type {
 /** Routes fixed per routed kind, an inquiry following the lead as the definer has it. */
 export function sessionRoutesAt(
   routes: Partial<Record<SessionRouteKind, PlacementRoute>> = {},
-  runners: SessionRunners = { mine: "Unregistered", project: "Unregistered" },
+  runners: SessionRunners = {
+    mine: "Unregistered",
+    inquiry: "Unregistered",
+    project: "Unregistered",
+  },
 ): SessionRouteReads {
   return {
     route: (_partition, kind) =>

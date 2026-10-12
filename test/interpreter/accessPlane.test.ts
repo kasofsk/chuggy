@@ -93,6 +93,7 @@ async function acme(memory: AccessMemory = accessMemory()) {
     as("alice", "admins"),
     as("bo", "members"),
     as("bo", "hosted_execution"),
+    as("priya", "personal_runners"),
     as("elsewhere", "members", "https://other.invalid"),
     on("priya", web, "admins"),
     on("bo", web, "developers"),
@@ -117,6 +118,7 @@ test("a tenant's administrator reads every holder with the roles the tuples say,
         mine: true,
         tenantRoles: ["Admin"],
         hostedRuns: false,
+        personalRunners: false,
         projects: [],
       },
       {
@@ -124,6 +126,7 @@ test("a tenant's administrator reads every holder with the roles the tuples say,
         mine: false,
         tenantRoles: ["Member"],
         hostedRuns: true,
+        personalRunners: false,
         projects: [
           { project: "api", roles: ["Dispatcher"] },
           { project: "web", roles: ["Developer"] },
@@ -134,6 +137,7 @@ test("a tenant's administrator reads every holder with the roles the tuples say,
         mine: false,
         tenantRoles: [],
         hostedRuns: false,
+        personalRunners: true,
         projects: [{ project: "web", roles: ["Admin"] }],
       },
     ],
@@ -665,6 +669,63 @@ test("hosted runs are given and taken under `GrantHostedExecution`, each twice c
     subject: "Principal",
     principal: accessFixturePrincipal("zed"),
   });
+});
+
+test("personal runners are given and taken under `GrantPersonalRunners`, each twice changing no more than once, and the list reports them apart from hosted runs", async () => {
+  const { memory, plane } = await acme();
+  const sid = accessFixturePrincipal("sid");
+  accessGiven(memory, sid, [
+    { on: "Tenant", tenant, kind: "GrantPersonalRunners" },
+  ]);
+  const zed = async () =>
+    (await plane.tenantPeople(sid, tenant))?.people.find(
+      (person) => person.subject === "zed",
+    );
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantPersonalRunnersGiven(sid, tenant, "zed"),
+      "Changed",
+      round,
+    );
+  assert.equal((await zed())?.personalRunners, true);
+  assert.equal((await zed())?.hostedRuns, false);
+  for (const round of ["first", "second"])
+    assert.equal(
+      await plane.tenantPersonalRunnersTaken(sid, tenant, "zed"),
+      "Changed",
+      round,
+    );
+  assert.equal(await zed(), undefined);
+  assert.deepEqual(
+    memory.changes.map(([verb, grant]) => [verb, grant.relation]),
+    [
+      ["write", "personal_runners"],
+      ["write", "personal_runners"],
+      ["remove", "personal_runners"],
+      ["remove", "personal_runners"],
+    ],
+  );
+  assert.deepEqual(memory.changes[0]?.[1].holder, {
+    subject: "Principal",
+    principal: accessFixturePrincipal("zed"),
+  });
+});
+
+test("personal runners are refused a caller answered the list who lacks `GrantPersonalRunners`, and absent to a caller not answered it, and nothing is written", async () => {
+  const { memory, plane } = await acme();
+  const mo = accessFixturePrincipal("mo");
+  accessGiven(memory, mo, [{ on: "Tenant", tenant, kind: "GrantMember" }]);
+  for (const change of [
+    plane.tenantPersonalRunnersGiven(mo, tenant, "bo"),
+    plane.tenantPersonalRunnersTaken(mo, tenant, "bo"),
+  ])
+    assert.equal(await change, "Refused");
+  for (const change of [
+    plane.tenantPersonalRunnersGiven(priya, tenant, "bo"),
+    plane.tenantPersonalRunnersTaken(priya, tenant, "bo"),
+  ])
+    assert.equal(await change, "Absent");
+  assert.deepEqual(memory.changes, []);
 });
 
 test("hosted runs are refused a tenant's administrator who lacks `GrantHostedExecution`, and absent to a caller not answered the list, and nothing is written", async () => {

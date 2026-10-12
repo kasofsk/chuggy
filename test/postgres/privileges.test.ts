@@ -974,7 +974,7 @@ const schedulerWritePrivileges = [
     table_name: "execution",
     privilege_type: "INSERT",
     columns:
-      "account,cluster,configuration_digest,configuration_revision,execution,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
+      "account,cluster,configuration_digest,configuration_revision,execution,owner,owner_fallback,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
   },
   {
     table_name: "execution",
@@ -986,7 +986,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant,workload",
+      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
@@ -1071,7 +1071,7 @@ test("the scheduler's write surface is exactly the columns execution and capacit
   );
 });
 
-test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool what it declared, and where each project runs", async () => {
+test("the scheduler reads execution and capacity, of the project only its lifecycle, of a pool or a member's runner what it declared, who first drafted a ticket, and where each project runs", async () => {
   const read = (await harness.query(
     `SELECT table_name AS relation,
             string_agg(column_name, ',' ORDER BY column_name) AS columns
@@ -1086,6 +1086,7 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "admitted_worker",
       "capacity_account",
       "configuration_revision",
+      "draft_revision",
       "execution",
       "execution_attempt",
       "execution_cluster",
@@ -1097,8 +1098,11 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
       "execution_result_source",
       "execution_routing",
       "input_bundle_reference",
+      "personal_runner",
+      "personal_runner_project",
       "project",
       "project_execution_placement",
+      "project_owner_fallback",
       "recovery_epoch",
       "scheduler_incident",
       "schema_migration",
@@ -1116,6 +1120,14 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   assert.equal(
     read.find((row) => row.relation === "worker_pool")?.columns,
     "capabilities,class,pool,principal,project,tenant",
+  );
+  assert.equal(
+    read.find((row) => row.relation === "personal_runner")?.columns,
+    "capabilities,owner,principal,tenant",
+  );
+  assert.equal(
+    read.find((row) => row.relation === "draft_revision")?.columns,
+    "authoring_version,authority_kind,authority_subject,project,tenant,ticket",
   );
 });
 
@@ -1250,6 +1262,26 @@ test("the API reads a worker's artifact reservations and writes none", async () 
     assert.match(
       (await harness.attemptAs(apiRole, write)) ?? "",
       postgresHarnessDenial("worker_artifact_reservation"),
+      write,
+    );
+});
+
+test("the API reads an execution's route, owner and fallback and writes none of them", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      apiRole,
+      "SELECT placement,owner,owner_fallback FROM execution",
+    ),
+    undefined,
+  );
+  for (const write of [
+    "UPDATE execution SET placement='Pool'",
+    "UPDATE execution SET owner=NULL",
+    "UPDATE execution SET owner_fallback=NULL",
+  ])
+    assert.match(
+      (await harness.attemptAs(apiRole, write)) ?? "",
+      postgresHarnessDenial("execution"),
       write,
     );
 });

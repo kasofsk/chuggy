@@ -28,7 +28,23 @@
  * sessions states its room for them apart, and what it holds is told apart by
  * the rows each kind lives in, so each kind is renewed, bounded and claimed on
  * its own; `./workerPoolSessions.ts` says what claiming one opens. Such a poll
- * is also what a member's runner reads as live by, so only it is recorded.
+ * is what a member's runner reads as live for a session by, so only it is
+ * recorded as one; a personal runner's poll that could take an execution is
+ * recorded apart, as what a pool's claim reads it as live by.
+ *
+ * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL. It is admitted by its row
+ * in its tenant and its owner's standing permit to register one, since no
+ * relation names its principal, and it claims its owner's executions in the
+ * projects it allowlists that allow one, as its sessions are claimed: the
+ * authority is asked whether its owner may still read each project before
+ * anything is claimed, so an outage fails the poll with nothing claimed.
+ *
+ * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNER as the owner's fallback
+ * says, and a runner the authority revoked is none of the owner's, as the
+ * model's `ownerRunners` reads it. The claim cannot ask the authority, so the
+ * owners it would defer to are read first and asked, and the claim is told
+ * which of them are revoked; an owner past the bound is not asked, and is
+ * deferred to as though their runner stood.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -42,7 +58,7 @@ export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Partition, ProjectId } from "./projectStore.ts";
 import {
   workerPoolImageHosted,
   type WorkerPoolImageHosts,
@@ -58,10 +74,15 @@ import {
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
+  PersonalRunnerIdentity,
+  PoolPlaneIdentity,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 export type {
+  DedicatedPoolIdentity,
+  PersonalRunnerIdentity,
+  PoolPlaneIdentity,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -117,7 +138,7 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
-  /** The person whose token registered the pool, whose own threads and inquiries are the only ones it is handed; a pool no person registered is handed leads alone. */
+  /** The person whose token registered the pool, whose own inquiries are the only ones it is handed; a pool no person registered is handed leads alone. */
   readonly registeredBy?: Principal;
 }
 
@@ -173,30 +194,58 @@ export interface WorkerPoolDirectory {
   listed(partition: Partition): Promise<WorkerPoolListing>;
 }
 
-/** The registry as the scheduler reads it, which is a project's pools and nothing a registration or a poll writes. */
+/** The registry as the scheduler reads it, which is a project's pools, a member's personal runner, and nothing a registration or a poll writes. */
 export interface WorkerPoolRoster {
   registered(partition: Partition): Promise<WorkerPoolRosterPage>;
+  personal(
+    partition: Partition,
+    owner: Principal,
+  ): Promise<PersonalRunnerRegistered | undefined>;
+}
+
+/** One member's personal runner as the scheduler reads it: who it is, what it declared, and the projects it allowlists. */
+export interface PersonalRunnerRegistered {
+  readonly owner: Principal;
+  readonly principal: Principal;
+  readonly capabilities: readonly string[];
+  readonly allowlist: readonly Partition[];
+}
+
+/** The lookup a poll resolves a member's personal runner by: its row, in a tenant, by the principal its client resolves to. */
+export interface PersonalRunnerPlaneRegistry {
+  identify(principal: Principal): Promise<PersonalRunnerIdentity | undefined>;
 }
 
 /**
- * The pool one authenticated principal acts as, and nothing where the authority
- * says it may not: `Execute` on the project is the permit, and revoking a pool
- * is therefore a revocation like any other and needs no row deleted here. An
- * authority that
- * could not answer throws `ProjectAccessUnavailable` through this function
- * rather than resolving to `undefined`, because a pool told it is not allowed
- * stops where a pool told to retry comes back.
+ * The pool or personal runner one authenticated principal acts as, and nothing
+ * where the authority says it may not: a pool's permit is `Execute` on its
+ * project and a personal runner's is its owner's `RegisterPersonalRunner` in
+ * its tenant, so revoking either is a revocation like any other and needs no
+ * row deleted here. An authority that could not answer throws
+ * `ProjectAccessUnavailable` through this function rather than resolving to
+ * `undefined`, because a pool told it is not allowed stops where a pool told
+ * to retry comes back.
  */
 export async function workerPoolAdmitted(
   registry: WorkerPoolRegistry,
+  personal: PersonalRunnerPlaneRegistry,
   access: ProjectAccess,
   principal: Principal,
-): Promise<WorkerPoolIdentity | undefined> {
-  const identity = await registry.identify(principal);
-  if (identity === undefined) return undefined;
-  return (await workerPoolExecutes(access, identity.partition, principal))
-    ? identity
-    : undefined;
+): Promise<PoolPlaneIdentity | undefined> {
+  const pool = await registry.identify(principal);
+  if (pool !== undefined)
+    return (await workerPoolExecutes(access, pool.partition, principal))
+      ? { ...pool, kind: "Dedicated" }
+      : undefined;
+  const runner = await personal.identify(principal);
+  if (runner === undefined) return undefined;
+  return (await access.authorizeTenant(
+    runner.owner,
+    runner.tenant,
+    "RegisterPersonalRunner",
+  )) === undefined
+    ? undefined
+    : { ...runner, kind: "Personal" };
 }
 
 /** Whether the authority permits a pool's principal to run its project's work, which is the one question a pool is admitted or revoked by. */
@@ -246,35 +295,63 @@ export interface WorkerPoolClaimTerms {
 }
 
 /**
- * The durable side of an assignment's whole life, every call scoped to the
- * pool's current registration and to what that registration claimed. None of
- * them names an execution or a task, because a pool that could read one would
- * learn the tenant's ticket structure.
+ * The most owners one poll asks the authority about before a pool claims. Each
+ * poll asks a window of the waiting owners drawn afresh, so an owner outside
+ * this poll's is deferred to by this poll's claim alone and is in a later
+ * poll's window by the same chance as any other.
  */
-export interface WorkerPoolAssignments {
+export const workerPoolOwnersAskedMax = 16;
+
+/** The calls one kind of caller holds and settles what it claimed through, each scoped to its current registration and to what that registration claimed. */
+export interface WorkerPoolExecutionHolds<Identity> {
+  renew(
+    identity: Identity,
+    assignment: string,
+    leaseSecs: number,
+  ): Promise<boolean>;
+  refuse(
+    identity: Identity,
+    assignment: string,
+    evidence: string,
+  ): Promise<boolean>;
+  release(identity: Identity, assignment: string): Promise<boolean>;
+  held(identity: Identity, assignment: string): Promise<boolean>;
+  /** The images pinned by the assignments this registration may still renew, at most `heldMax` of them. */
+  heldImages(identity: Identity, heldMax: number): Promise<readonly string[]>;
+}
+
+/**
+ * The durable side of an assignment's whole life, for whichever caller the
+ * pool plane admitted. None of its calls names an execution or a task, because
+ * a pool that could read one would learn the tenant's ticket structure.
+ */
+export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlaneIdentity> {
+  /** One claim by a pool, deferring to no runner of the owners named revoked. */
   claim(
     identity: WorkerPoolIdentity,
     terms: WorkerPoolClaimTerms,
     assignment: string,
     bearer: string,
+    ownersRevoked: readonly Principal[],
   ): Promise<WorkerPoolClaimed | undefined>;
-  renew(
+  /** At most `max` of the owners whose personal runners a claim by this pool would defer to, in an order `rotation` draws, so a fresh rotation draws a fresh window. */
+  ownersDeferredTo(
     identity: WorkerPoolIdentity,
+    max: number,
+    rotation: string,
+  ): Promise<readonly Principal[]>;
+  /** One claim by a personal runner, in one of `projects` alone. */
+  claimPersonal(
+    identity: PersonalRunnerIdentity,
+    terms: WorkerPoolClaimTerms,
     assignment: string,
-    leaseSecs: number,
-  ): Promise<boolean>;
-  refuse(
-    identity: WorkerPoolIdentity,
-    assignment: string,
-    evidence: string,
-  ): Promise<boolean>;
-  release(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
-  held(identity: WorkerPoolIdentity, assignment: string): Promise<boolean>;
-  /** The images pinned by the assignments this registration may still renew, at most `heldMax` of them. */
-  heldImages(
-    identity: WorkerPoolIdentity,
-    heldMax: number,
-  ): Promise<readonly string[]>;
+    bearer: string,
+    projects: readonly ProjectId[],
+  ): Promise<WorkerPoolClaimed | undefined>;
+  /** The projects a personal runner's current registration allowlists. */
+  allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
+  /** Records a personal runner's poll as one that could take an execution, under its current registration alone. */
+  polled(identity: PersonalRunnerIdentity): Promise<void>;
 }
 
 export interface WorkerPoolPollSettings {
@@ -297,10 +374,11 @@ export interface WorkerPoolPollSettings {
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** Everything a poll reaches: each kind's durable side, and where an assignment's name is drawn. */
+/** Everything a poll reaches: each kind's durable side, the authority an owner is asked of, and where an assignment's name is drawn. */
 export interface WorkerPoolPorts {
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
+  readonly access: ProjectAccess;
   readonly mint: WorkerPoolMint;
 }
 
@@ -345,9 +423,15 @@ export interface WorkerPoolHolding {
  * pool's is the stop flag, so asked-to-stop and already-gone are one answer
  * and a pool need not tell them apart.
  */
-async function workerPoolHeldReconciled(
-  renewing: Pick<WorkerPoolAssignments, "renew">,
-  identity: WorkerPoolIdentity,
+async function workerPoolHeldReconciled<Identity>(
+  renewing: {
+    renew(
+      identity: Identity,
+      assignment: string,
+      leaseSecs: number,
+    ): Promise<boolean>;
+  },
+  identity: Identity,
   held: readonly string[],
   leaseSecs: number,
 ): Promise<string[]> {
@@ -388,23 +472,97 @@ function workerPoolClaimedPlacement(
   }
 }
 
+/** Whether a personal runner's owner still holds both what admits it and `Read` of `partition`, which is the model's runner not revoked for an execution there. */
+export async function workerPoolOwnerStands(
+  access: ProjectAccess,
+  owner: Principal,
+  partition: Partition,
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(
+      owner,
+      partition.tenant,
+      "RegisterPersonalRunner",
+    )) !== undefined &&
+    (await access.authorize(owner, partition, "Read")) !== undefined
+  );
+}
+
+/** One claim's binding, decided for whichever caller the plane admitted with what the authority answered first. */
+type WorkerPoolClaimMade = (
+  assignment: string,
+  bearer: string,
+) => Promise<WorkerPoolClaimed | undefined>;
+
+/**
+ * How this caller claims: a pool deferring to no revoked owner's runner, and a
+ * personal runner in the projects its owner may still read. Every answer is
+ * the authority's before anything is claimed.
+ */
+async function workerPoolClaimMade(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  settings: WorkerPoolPollSettings,
+): Promise<WorkerPoolClaimMade> {
+  const { access, assignments } = ports;
+  switch (identity.kind) {
+    case "Dedicated": {
+      const owners = await assignments.ownersDeferredTo(
+        identity,
+        workerPoolOwnersAskedMax,
+        ports.mint(),
+      );
+      const revoked: Principal[] = [];
+      for (const owner of owners)
+        if (!(await workerPoolOwnerStands(access, owner, identity.partition)))
+          revoked.push(owner);
+      return (assignment, bearer) =>
+        assignments.claim(identity, settings, assignment, bearer, revoked);
+    }
+    case "Personal": {
+      const projects: ProjectId[] = [];
+      for (const project of await assignments.allowlisted(identity))
+        if (
+          (await access.authorize(
+            identity.owner,
+            { tenant: identity.tenant, project },
+            "Read",
+          )) !== undefined
+        )
+          projects.push(project);
+      return (assignment, bearer) =>
+        projects.length === 0
+          ? Promise.resolve(undefined)
+          : assignments.claimPersonal(
+              identity,
+              settings,
+              assignment,
+              bearer,
+              projects,
+            );
+    }
+  }
+}
+
 /**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
- * in the same statement. A pool with no room asks for none and none is
- * claimed, so a full pool's poll costs no row a pool with room could take.
+ * in the same statement. A caller with no room asks for none and none is
+ * claimed, so a full pool's poll costs no row a pool with room could take and
+ * no question of the authority.
  */
 async function workerPoolClaims(
-  assignments: WorkerPoolAssignments,
-  identity: WorkerPoolIdentity,
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  mint: WorkerPoolMint,
   wanted: number,
 ): Promise<WorkerPoolAssignment[]> {
   const claimed: WorkerPoolAssignment[] = [];
+  if (wanted <= 0) return claimed;
+  const claim = await workerPoolClaimMade(ports, identity, settings);
   for (let taken = 0; taken < wanted; taken += 1) {
-    const assignment = mint();
-    const bearer = mint();
-    const row = await assignments.claim(identity, settings, assignment, bearer);
+    const assignment = ports.mint();
+    const bearer = ports.mint();
+    const row = await claim(assignment, bearer);
     if (row === undefined) break;
     claimed.push({
       assignment,
@@ -422,7 +580,7 @@ async function workerPoolClaims(
 /** The sessions one pass claims, which is none on a plane that names no API for a session to reach. */
 function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
   wanted: number,
 ): Promise<WorkerPoolSessionAssignment[]> {
@@ -430,6 +588,7 @@ function workerPoolSessionsClaimed(
   if (apiUrl === undefined) return Promise.resolve([]);
   return workerPoolSessionClaims(
     ports.sessions,
+    ports.access,
     identity,
     {
       leaseSecs: settings.leaseSecs,
@@ -453,7 +612,7 @@ function workerPoolSessionsClaimed(
  */
 export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
   asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
   settings: WorkerPoolPollSettings,
@@ -474,10 +633,9 @@ export async function workerPoolReconcile(
   ];
   return {
     assignments: await workerPoolClaims(
-      ports.assignments,
+      ports,
       identity,
       settings,
-      ports.mint,
       Math.min(
         asked.wanted,
         settings.assignmentsPerPollMax,
@@ -512,7 +670,7 @@ export type WorkerPoolPolled =
  */
 async function workerPoolHoldingRead(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
 ): Promise<WorkerPoolHolding> {
   if (!asked.readsSessions) return { jobs: asked.held, sessions: [] };
@@ -524,16 +682,41 @@ async function workerPoolHoldingRead(
 }
 
 /**
+ * Records this poll as the caller's last of each kind of work it could take: a
+ * session, reading them with room for one or holding one from a plane that
+ * names the API a session reaches, and, for a personal runner, an execution,
+ * with room for one or holding one, which is what a pool's claim reads it as
+ * live by.
+ */
+async function workerPoolPollRecorded(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  asked: WorkerPoolAsked,
+  holding: WorkerPoolHolding,
+  settings: WorkerPoolPollSettings,
+): Promise<void> {
+  if (
+    settings.sessionApiUrl !== undefined &&
+    asked.readsSessions &&
+    (asked.wantedSessions > 0 || holding.sessions.length > 0)
+  )
+    await ports.sessions.store.polled(identity);
+  if (
+    identity.kind === "Personal" &&
+    (asked.wanted > 0 || holding.jobs.length > 0)
+  )
+    await ports.assignments.polled(identity);
+}
+
+/**
  * The long poll: reconciliation until it has something to say or until the
  * bounded wait runs out, where an empty answer is correct and the pool asks
  * again. A held list longer than a kind's bound is refused whole, since a cut
- * one reads as a pool that let go of work it still runs, and only a pool that
- * can take a session, reading them with room for one or holding one, from a
- * plane that names the API a session reaches, is recorded as polling.
+ * one reads as a pool that let go of work it still runs.
  */
 export async function workerPoolPoll(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolPolled> {
@@ -552,12 +735,7 @@ export async function workerPoolPoll(
     holding.sessions.length > settings.sessionsHeldMax
   )
     return { polled: "HeldOverBound" };
-  if (
-    settings.sessionApiUrl !== undefined &&
-    asked.readsSessions &&
-    (asked.wantedSessions > 0 || holding.sessions.length > 0)
-  )
-    await ports.sessions.store.polled(identity);
+  await workerPoolPollRecorded(ports, identity, asked, holding, settings);
   const rooms = {
     wanted: asked.wanted,
     wantedSessions: asked.readsSessions ? asked.wantedSessions : 0,
@@ -589,22 +767,21 @@ export async function workerPoolPoll(
   return { polled: "Answered", answer };
 }
 
-/**
- * One settlement a pool reports, made against the kind the assignment is: an
- * accepted one is already leased and needs no write, a refusal is recorded
- * against its attempt, and an unavailable releases it.
- */
-export async function workerPoolSettled(
-  ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+/** One settlement against the side `assignment` is held on, whichever kind of caller holds it. */
+function workerPoolSettledOn<Identity>(
+  settling: {
+    held(identity: Identity, assignment: string): Promise<boolean>;
+    refuse(
+      identity: Identity,
+      assignment: string,
+      evidence: string,
+    ): Promise<boolean>;
+    release(identity: Identity, assignment: string): Promise<boolean>;
+  },
+  identity: Identity,
   assignment: string,
   offered: AssignmentOutcome,
 ): Promise<boolean> {
-  const settling: Pick<WorkerPoolAssignments, "held" | "refuse" | "release"> = (
-    await ports.sessions.store.among(identity, [assignment])
-  ).has(assignment)
-    ? ports.sessions.store
-    : ports.assignments;
   switch (offered.outcome) {
     case "Accepted":
       return settling.held(identity, assignment);
@@ -615,10 +792,33 @@ export async function workerPoolSettled(
   }
 }
 
+/**
+ * One settlement a pool reports, made against the kind the assignment is: an
+ * accepted one is already leased and needs no write, a refusal is recorded
+ * against its attempt, and an unavailable releases it.
+ */
+export async function workerPoolSettled(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  assignment: string,
+  offered: AssignmentOutcome,
+): Promise<boolean> {
+  if (
+    (await ports.sessions.store.among(identity, [assignment])).has(assignment)
+  )
+    return workerPoolSettledOn(
+      ports.sessions.store,
+      identity,
+      assignment,
+      offered,
+    );
+  return workerPoolSettledOn(ports.assignments, identity, assignment, offered);
+}
+
 /** The images pinned by what this registration may still renew of either kind, each kind to its own bound. */
 export async function workerPoolHeldImages(
   ports: WorkerPoolPorts,
-  identity: WorkerPoolIdentity,
+  identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
 ): Promise<readonly string[]> {
   return [

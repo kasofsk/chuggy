@@ -599,19 +599,21 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
   }
 });
 
-/** An inquiry runs on the asker's own runner where the lead runs on runners,
- * so the box says theirs, whatever the project's others do. */
+/** An inquiry runs on a pool the asker registered where the lead runs on
+ * runners, so the box says that pool's standing, whatever the asker's own
+ * personal runner or the project's other pools do. */
 test.each([
   ["Pool", "Unregistered", "No runner"],
   ["Pool", "Offline", "Runner offline"],
   ["Pool", "Live", undefined],
   ["InCluster", "Unregistered", undefined],
 ] as const)(
-  "a box over a lead on %s with the asker's runner %s says %s",
-  async (lead, mine, said) => {
+  "a box over a lead on %s with the asker's pool %s says %s",
+  async (lead, inquiry, said) => {
+    const mine = inquiry === "Live" ? "Unregistered" : "Live";
     await drawInquiries({
       listing: () => ({ inquiries: [] }),
-      placement: sessionPlacementBody({ lead, mine, project: "Live" }),
+      placement: sessionPlacementBody({ lead, mine, inquiry, project: "Live" }),
     });
     const words = ["No runner", "Runner offline"].filter(
       (word) => screen.queryByText(word) !== null,
@@ -626,7 +628,7 @@ test("a question refused for no runner says so once, with the Runners page", asy
   await drawInquiries({
     listing: () => ({ inquiries: [] }),
     asked: () => refusal("NoRunner", 403),
-    placement: sessionPlacementBody({ lead: "Pool", mine: "Unregistered" }),
+    placement: sessionPlacementBody({ lead: "Pool", inquiry: "Unregistered" }),
   });
   expect(screen.getAllByText("No runner")).toHaveLength(1);
   await turned(() => {

@@ -1,7 +1,8 @@
 /**
- * One person's roles and hosted runs, changed in the dialog their row's Edit
- * opens: a box for each workspace role and for hosted runs, and the
- * workspace's projects as a grid. A box is drawn where the reader may change
+ * One person's roles, hosted runs and personal runners, changed in the dialog
+ * their row's Edit opens: a box for each workspace role, for hosted runs and
+ * for personal runners, and the workspace's projects as a grid; and, for a
+ * reader who gives personal runners, taking the person's own runner off. A box is drawn where the reader may change
  * it or the person holds it, and is pressable only where the reader may. A
  * press sends one grant or one removal and reads the list and the abilities
  * again. A change the plane took draws its box as changed until they are
@@ -21,9 +22,11 @@ import type {
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import {
   apiGrantHostedRuns,
+  apiGrantPersonalRunners,
   apiGrantProjectRole,
   apiGrantTenantRole,
   apiRemoveHostedRuns,
+  apiRemovePersonalRunners,
   apiRemoveProjectRole,
   apiRemoveTenantRole,
 } from "../../core/accessRoutes.ts";
@@ -32,6 +35,7 @@ import {
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
   tenantPersonName,
+  tenantRunnerRemovalOffered,
   tenantPersonProjectBox,
   tenantPersonProjectDrawn,
   tenantPersonQuestion,
@@ -47,6 +51,7 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
+import { TenantPersonRunner } from "./TenantPersonRunner.tsx";
 import { TenantProjectsGrid } from "./TenantProjectsGrid.tsx";
 
 function tenantPersonChangeSent(
@@ -59,6 +64,10 @@ function tenantPersonChangeSent(
     return change.held
       ? apiRemoveHostedRuns(ports, tenant, subject)
       : apiGrantHostedRuns(ports, tenant, subject);
+  if (change.scope === "PersonalRunners")
+    return change.held
+      ? apiRemovePersonalRunners(ports, tenant, subject)
+      : apiGrantPersonalRunners(ports, tenant, subject);
   if (change.scope === "Tenant")
     return change.held
       ? apiRemoveTenantRole(ports, tenant, subject, change.role)
@@ -199,6 +208,7 @@ function TenantPersonAsked(props: {
 }
 
 function TenantPersonEditorBody(props: {
+  readonly tenant: string;
   readonly person: AccessTenantPerson;
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
@@ -212,6 +222,13 @@ function TenantPersonEditorBody(props: {
         changing={changing}
       />
       <TenantPersonAsked changing={changing} />
+      {tenantRunnerRemovalOffered(abilities) ? (
+        <TenantPersonRunner
+          tenant={props.tenant}
+          subject={person.subject}
+          name={tenantPersonName(person).name}
+        />
+      ) : null}
       <TenantProjectsGrid
         projects={props.projects.filter((project) =>
           tenantPersonProjectDrawn(abilities, person, project),
@@ -273,6 +290,7 @@ export function TenantPersonEditor(props: {
       }
     >
       <TenantPersonEditorBody
+        tenant={props.tenant}
         person={props.person}
         projects={props.projects}
         abilities={props.abilities}

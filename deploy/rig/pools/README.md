@@ -19,8 +19,10 @@ and `Lead`, and its `projectRoutes`, over the project's own session placement;
 an inquiry runs where the lead does. A turn keeps the route it was admitted
 on, so a placement changed later moves the next turn admitted and never one
 already queued, and the cluster places and claims only turns admitted
-`InCluster`. A member with no runner registered on the project is refused a
-turn on `Pool` as `NoRunner`, and a `Pool` turn no runner takes within
+`InCluster`. On `Pool` a thread is taken only by its member's personal runner,
+an inquiry by a pool its member registered on the project, and the lead by any
+of the project's pools. A member with no such runner for their thread or
+inquiry is refused a turn on `Pool` as `NoRunner`, and a `Pool` turn no runner takes within
 `sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is withdrawn
 by the scheduler.
 
@@ -30,6 +32,14 @@ its inputs and its credentials (`GET /v1/task`,
 `src/adapters/http/workerPlaneServer.ts`). The scheduler records that task for
 an attempt routed to a pool after the same policy check as one it places, and
 does not place it: the pool claims it.
+
+A project's owner fallback lets a member's personal runner take a `Pool`
+execution of a ticket that member wrote; until an administrator writes it, no
+personal runner takes the project's work. Under `Strict` no pool takes such an
+execution while its owner has a runner serving the project and able to run it,
+and under `Preferred` none takes it while that runner is live; otherwise it
+reaches the pools as before. An execution keeps the fallback it was registered
+under, so changing or removing it moves only what registers after.
 
 **A pool's refusal is final.** The scheduler withdraws the refused attempt
 without spending the retry budget and blocks the execution; it does not offer
@@ -98,6 +108,23 @@ policy rather than a control:
 `deploy/rig/isolation/README.md` is the other half of this and does not replace
 it: it bounds what work running *on the rig* reaches. A registered pool is a
 host the rig does not run and those controls say nothing about.
+
+## Personal runners
+
+A personal runner is a member's own machine, and it takes nothing but that
+member's threads and, under the owner fallback, their executions, in the
+projects they allowlist and may still read. A member holds at most one in a
+tenant, and none until the tenant gives them personal runners, which a new
+tenant's administrators may (an older tenant: `deploy/rig/keto/README.md`,
+Default authority holders). The member mints a single-use token for the
+tenant, under My runner in the console's workspace settings or with
+`POST /api/v1/tenants/:tenant/personal-runner-registration-tokens`, and
+redeems it on the machine with the runner's `register --personal`. The runner
+serves no project until its owner adds one. Registering again replaces the
+runner and keeps the projects it serves; removing it, by its owner or a tenant
+administrator, takes them with it. A personal runner holds no relation and is
+admitted only while its owner keeps the permit, and the forge credentials it
+is given are for the project of work it holds.
 
 ## The order an operator writes in
 

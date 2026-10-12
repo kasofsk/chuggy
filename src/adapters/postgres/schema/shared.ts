@@ -94,6 +94,25 @@ export const poolSessionHeldFunction = "pool_session_attempt_held";
 export const poolSessionRefuseFunction = "refuse_pool_session_attempt";
 export const poolSessionReleaseFunction = "release_pool_session_attempt";
 export const poolSessionImagesFunction = "pool_session_images";
+export const personalSessionsAwaitingFunction =
+  "personal_sessions_awaiting_claim";
+export const personalSessionOpenFunction = "open_personal_session_attempt";
+export const personalSessionAssignmentsFunction =
+  "personal_session_assignments";
+export const personalSessionHoldingFunction =
+  "personal_session_attempt_holding";
+export const personalSessionRenewFunction = "renew_personal_session_attempt";
+export const personalSessionHeldFunction = "personal_session_attempt_held";
+export const personalSessionRefuseFunction = "refuse_personal_session_attempt";
+export const personalSessionReleaseFunction =
+  "release_personal_session_attempt";
+export const personalSessionImagesFunction = "personal_session_images";
+export const personalRunnerFenceFunction = "fence_personal_runner_attempts";
+export const personalExecutionReleaseFunction =
+  "release_personal_execution_assignment";
+/** Whether the capabilities a runner declares run an execution's requirement. */
+export const workerPoolInventoryFunction = "worker_pool_inventory_matches";
+export const projectOwnerFallbackSetFunction = "set_project_owner_fallback";
 /** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
 export const sessionClaimableSinceFunction = "session_turn_claimable_since";
 export const configurationImporterRole = "chuggy_configuration_importer";

@@ -16,6 +16,7 @@ export function sessionPlacementBody(
     readonly thread?: PlacementRoute;
     readonly lead?: PlacementRoute;
     readonly mine?: SessionRunnerStanding;
+    readonly inquiry?: SessionRunnerStanding;
     readonly project?: SessionRunnerStanding;
   } = {},
 ): SessionPlacementResponse {
@@ -23,6 +24,10 @@ export function sessionPlacementBody(
     thread: { route: input.thread ?? "Pool", source: "Default" },
     lead: { route: input.lead ?? "Pool", source: "Default" },
     choices: ["Pool"],
-    runners: { mine: input.mine ?? "Live", project: input.project ?? "Live" },
+    runners: {
+      mine: input.mine ?? "Live",
+      inquiry: input.inquiry ?? "Live",
+      project: input.project ?? "Live",
+    },
   };
 }

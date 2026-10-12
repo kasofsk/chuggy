@@ -617,6 +617,14 @@ export const sessionRunnerStandings = [
 export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 
 /**
+ * When a pool other than its owner's personal runner may take an owned
+ * execution, in a project that lets personal runners serve their owners:
+ * never while the owner has one for it, or only while that runner is not live.
+ */
+export const ownerFallbacks = ["Strict", "Preferred"] as const;
+export type OwnerFallback = (typeof ownerFallbacks)[number];
+
+/**
  * What a door answers a caller holding no hosted-runs grant on the project's
  * tenant with. A console shows its own words in place of the control refused,
  * so the code is shared rather than spelled at each end.
@@ -639,7 +647,7 @@ export type ProjectArtifactUploadRefusalCode =
   (typeof projectArtifactUploadRefusalCodes)[number];
 
 /**
- * What a door answers a caller with no runner registered on the project, where
+ * What a door answers a caller with no runner that would take their turn, where
  * the turn would be offered to runners; shared for the same reason.
  */
 export const noRunnerCode = "NoRunner";

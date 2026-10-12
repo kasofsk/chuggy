@@ -112,6 +112,7 @@ export function inviteLinkAccess(link: AccessInviteLink): InviteLinkAccess {
   const held: TenantHeld = {
     tenantRoles: [link.role],
     hostedRuns: false,
+    personalRunners: false,
     projects: link.projects,
   };
   return {
