@@ -301,6 +301,30 @@ test("a project is added to and removed from the caller's own allowlist", async 
   ]);
 });
 
+test("an allowlist write reaches the service however a bodyless request is framed on its way in", async () => {
+  const calls: string[] = [];
+  await using app = runnersApp(calls);
+  for (const method of ["PUT", "DELETE"] as const)
+    for (const framing of [
+      { "transfer-encoding": "chunked" },
+      { "content-type": "application/octet-stream" },
+      { "content-type": nativeHttpMediaType },
+    ]) {
+      const answered = await app.inject({
+        method,
+        url: allowed("acme", "atlas"),
+        headers: { ...bearer, ...framing },
+        payload: "",
+      });
+      assert.equal(
+        answered.statusCode,
+        204,
+        `${method} ${JSON.stringify(framing)}`,
+      );
+    }
+  assert.equal(calls.length, 6);
+});
+
 test("a runner is taken off by its owner, or by its member's subject", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
