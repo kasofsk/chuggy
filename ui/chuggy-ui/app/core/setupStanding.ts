@@ -13,7 +13,8 @@
  * repository, since the portal app's listing is what the console offers a
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
- * goes to runners. Which repositories the worker app lacks and whether work
+ * goes to runners, and the person's own runner only where their chats in it
+ * do. Which repositories the worker app lacks and whether work or a chat
  * waits on a runner are the console's own deciders, so this program and the
  * pages do not say different things. Beside its few words each step that is
  * not done carries what it lacks as a member of a closed set, which is what
@@ -40,7 +41,7 @@ import {
   repositoriesWorkerless,
   repositoryLabel,
 } from "./projectRepositories.ts";
-import { sessionRunnerShort } from "./sessionRunners.ts";
+import { sessionPlacementShort, sessionRunnerShort } from "./sessionRunners.ts";
 import {
   setupBindingMeant,
   setupLanding,
@@ -108,8 +109,12 @@ export type SetupLack =
     }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
-  | { readonly lacks: "Runner" }
-  | { readonly lacks: "RunnerLive" }
+  /** `own` where the person's own runner is lacking too, which `runner` sets up beside the project's. */
+  | { readonly lacks: "Runner"; readonly own: boolean }
+  | { readonly lacks: "RunnerLive"; readonly own: boolean }
+  /** `pooled` where the project's work goes to runners, which `runner` registers a machine for where it holds no registration of the project. */
+  | { readonly lacks: "Own"; readonly pooled: boolean }
+  | { readonly lacks: "OwnLive"; readonly pooled: boolean }
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
@@ -529,29 +534,54 @@ export function setupHosted(route: PlacementRoute): boolean {
   return sessionRunnerShort(route, "Unregistered") === undefined;
 }
 
-/** Done where the cluster runs the project's work or a runner of it is live; waiting where one is registered and is not running. */
+/**
+ * Done where the project's work has a runner live or the cluster runs it, and
+ * the person's chats in it have their own runner live or the cluster runs
+ * them; waiting where a runner is registered and is not running. The
+ * project's runner is said first, and the person's own once it is done.
+ */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
-  const lacking: SetupLack = { lacks: "Runner" };
   const work = reads.work;
   if (work.read !== "Got")
     return none
-      ? setupUndone("runner", "todo", "", lacking)
+      ? setupUndone("runner", "todo", "", { lacks: "Runner", own: true })
       : setupUnread("runner", "work", setupFateOf(work));
-  const route = work.value.work.route;
-  if (setupHosted(route))
-    return setupDone("runner", "the cluster runs its work");
   const read = reads.placement;
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
+  const route = work.value.work.route;
+  const mine = sessionPlacementShort(read.value, "thread", "mine");
+  const own = mine !== undefined;
   switch (sessionRunnerShort(route, read.value.runners.project)) {
-    case undefined:
-      return setupDone("runner", "live");
     case "RunnerOffline":
       return setupUndone("runner", "waiting", "registered, not running", {
         lacks: "RunnerLive",
+        own,
       });
     case "NoRunner":
-      return setupUndone("runner", "todo", "", lacking);
+      return setupUndone("runner", "todo", "", { lacks: "Runner", own });
+    case undefined:
+      break;
+  }
+  const pooled = !setupHosted(route);
+  const said = pooled ? "live" : "the cluster runs its work";
+  switch (mine) {
+    case undefined:
+      return setupDone("runner", said);
+    case "RunnerOffline":
+      return setupUndone(
+        "runner",
+        "waiting",
+        `${said}; your own runner is set up for it, not running`,
+        { lacks: "OwnLive", pooled },
+      );
+    case "NoRunner":
+      return setupUndone(
+        "runner",
+        "todo",
+        `${said}; your own runner is not set up for it`,
+        { lacks: "Own", pooled },
+      );
   }
 }
 

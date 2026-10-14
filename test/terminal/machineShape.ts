@@ -63,6 +63,20 @@ export const machineFiles = {
 /** The header a stand-in runner names itself in, so a write is known to be its own and not the program's. */
 export const machineSender = "x-stand-in-sender";
 
+/** One part of a pool file's name, as the package writes it, which the unit it installs for that file is named by too. */
+export function machineNamePart(text: string): string {
+  return [...new TextEncoder().encode(text)]
+    .map((octet) =>
+      /[A-Za-z0-9-]/u.test(String.fromCharCode(octet))
+        ? String.fromCharCode(octet)
+        : `_${octet.toString(16).padStart(2, "0")}`,
+    )
+    .join("");
+}
+
+/** Where a stand-in is told the path it was run by, which is how the package's stand-in finds its own manifest. */
+export const machineRunAs = "STAND_IN_RUN_AS";
+
 /** A command a shell runs that is the stand-in script run under `name`, keeping the number it was started with. */
 export function machineWrapper(
   node: string,
@@ -70,5 +84,5 @@ export function machineWrapper(
   state: string,
   name: string,
 ): string {
-  return `#!/bin/sh\nexec '${node}' '${script}' '${state}' '${name}' "$@"\n`;
+  return `#!/bin/sh\nexport ${machineRunAs}="$0"\nexec '${node}' '${script}' '${state}' '${name}' "$@"\n`;
 }

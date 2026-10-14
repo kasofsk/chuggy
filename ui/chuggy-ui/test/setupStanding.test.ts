@@ -799,7 +799,7 @@ test("for every route a project's work can take and every standing its runners c
   });
 });
 
-test("a project whose work the cluster runs is set up with no runner, and waits on no read of its runners", async () => {
+test("a project whose work the cluster runs needs no runner of its own, and its step waits only on where the person's chats in it run", async () => {
   const site = setupSiteAt("Landed");
   for (const held of site.projects) {
     held.work = "InCluster";
@@ -810,8 +810,64 @@ test("a project whose work the cluster runs is set up with no runner, and waits 
     hosted,
     ["done", "ticket 1 is done"],
   ]);
-  site.fates.set("placement", "Failed");
+  site.own.clear();
+  expect((await column(site))[4]).toEqual([
+    "todo",
+    "the cluster runs its work; your own runner is not set up for it",
+  ]);
+  for (const held of site.projects) held.threads = "InCluster";
   expect((await column(site))[4]).toEqual(hosted);
+  site.fates.set("placement", "Failed");
+  expect((await column(site))[4]).toEqual([
+    "unread",
+    "its runners were not answered (Fault)",
+  ]);
+});
+
+test("where the person's chats run on runners the runner step is done only once the project's runner and their own serving it are both live, and the project's is said first", async () => {
+  const said: Record<string, readonly unknown[]> = {};
+  for (const runner of sessionRunnerStandings)
+    for (const mine of sessionRunnerStandings) {
+      const { site, project } = saidRunnable();
+      project.runner = runner;
+      if (mine === "Unregistered") site.own.clear();
+      else
+        site.own.set("acme", { projects: ["widgets"], live: mine === "Live" });
+      const step = (await stood(site)).steps[4];
+      said[`${runner} ${mine}`] = [step?.state, step?.detail, step?.lacks];
+    }
+  const own = (lacks: "Own" | "OwnLive") => ({ lacks, pooled: true });
+  expect(said).toEqual({
+    "Unregistered Unregistered": ["todo", "", { lacks: "Runner", own: true }],
+    "Unregistered Offline": ["todo", "", { lacks: "Runner", own: true }],
+    "Unregistered Live": ["todo", "", { lacks: "Runner", own: false }],
+    "Offline Unregistered": [
+      "waiting",
+      "registered, not running",
+      { lacks: "RunnerLive", own: true },
+    ],
+    "Offline Offline": [
+      "waiting",
+      "registered, not running",
+      { lacks: "RunnerLive", own: true },
+    ],
+    "Offline Live": [
+      "waiting",
+      "registered, not running",
+      { lacks: "RunnerLive", own: false },
+    ],
+    "Live Unregistered": [
+      "todo",
+      "live; your own runner is not set up for it",
+      own("Own"),
+    ],
+    "Live Offline": [
+      "waiting",
+      "live; your own runner is set up for it, not running",
+      own("OwnLive"),
+    ],
+    "Live Live": ["done", "live", undefined],
+  });
 });
 
 /** A site with GitHub connected, holding the repositories a case names. */

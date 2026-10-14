@@ -15,12 +15,17 @@
  * case moves one read to another fate by naming it in `fates`.
  *
  * It also answers what `runner` asks: whether the caller administers a
- * project, the pools registered for it, and the one write, the mint of a
- * registration token, which only an administrator is answered and only while
- * the project holds fewer unredeemed tokens than its bound. A token is redeemed
- * once, by whoever holds it, for a pool's credentials; every token and every
- * credential handed out is kept, so a suite can search what a run printed for
- * any of them.
+ * project, the pools registered for it, and the mint of a registration token,
+ * which only an administrator is answered and only while the project holds
+ * fewer unredeemed tokens than its bound. A token is redeemed once, by whoever
+ * holds it, for a pool's credentials; every token and every credential handed
+ * out is kept, so a suite can search what a run printed for any of them. The
+ * caller's own runner in a workspace is answered likewise: whether the
+ * workspace lets them register one, the mint of a token for it, which only a
+ * caller it lets is answered, its redemption, which keeps the projects one
+ * registered before served, and a project added to what it serves. Where
+ * their chats in a project run on runners, the session placement says theirs
+ * as it stands for that project.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
@@ -64,8 +69,9 @@ export interface SetupSiteProject {
   /** Whether the caller is shown the project's lead settings. */
   settled: boolean;
   repositories: SetupSiteRepository[];
-  /** Where the project's work runs. */
+  /** Where the project's work runs, and where the caller's chats in it run. */
   work: PlacementRoute;
+  threads: PlacementRoute;
   runner: SessionRunnerStanding;
   /** Most lately moved first. */
   tickets: SetupSiteTicket[];
@@ -94,8 +100,19 @@ export type SetupSiteRead =
   | "drafts"
   | "landings";
 
-/** What only `runner` asks, which a case moves likewise; `mint` is the one write. */
-export type SetupSiteRunnerAsk = "abilities" | "pools" | "mint";
+/** The caller's principal, which their own runner is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
+export const setupSiteMember =
+  "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
+
+/** What only `runner` asks, which a case moves likewise; `mint`, `ownMint` and `serves` are writes. */
+export type SetupSiteRunnerAsk =
+  "abilities" | "pools" | "mint" | "permit" | "own" | "ownMint" | "serves";
+
+/** The caller's own runner in a workspace: the projects it serves, and whether it has polled lately, which is what the site sees as live. */
+export interface SetupSiteOwn {
+  projects: string[];
+  live: boolean;
+}
 
 /** How a read is answered where a case says other than what the site holds. */
 export type SetupSiteFate =
@@ -111,8 +128,15 @@ export interface SetupSite {
   /** The repositories an installation grants, by installation, where a case says other than every repository of the workspace's projects on its account. */
   grants: Map<string, string[]>;
   fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
-  /** Every registration token and every pool credential the site handed out, in order. */
+  /** Every registration token and every runner credential the site handed out, in order. */
   readonly secrets: string[];
+  /** The caller's subject, which a runner of their own is registered under. */
+  readonly member: string;
+  /** Whether each workspace lets the caller register a runner of their own, where a case says one does not. */
+  readonly withheld: Set<string>;
+  /** The caller's own runner, by workspace, and the tokens minted for one that nobody has redeemed, each with its workspace. */
+  readonly own: Map<string, SetupSiteOwn>;
+  readonly ownTokens: Map<string, string>;
   /** What each mint that was answered asked for. */
   readonly mints: SetupSiteMint[];
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
@@ -148,6 +172,7 @@ export function setupSiteProject(
     settled: true,
     repositories: [],
     work: "Pool",
+    threads: "Pool",
     runner: "Unregistered",
     tickets: [],
     drafts: [],
@@ -168,6 +193,10 @@ export function setupSiteEmpty(): SetupSite {
     grants: new Map(),
     fates: new Map(),
     secrets: [],
+    member: setupSiteMember,
+    withheld: new Set(),
+    own: new Map(),
+    ownTokens: new Map(),
     mints: [],
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
@@ -270,6 +299,11 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
       configured: reached("Configured"),
     });
   if (reached("Offline")) project.runner = reached("Live") ? "Live" : "Offline";
+  if (reached("Live"))
+    site.own.set(setupSiteWorkspace, {
+      projects: [setupSiteProjectName],
+      live: true,
+    });
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
   if (stage === "Landed") project.tickets.push({ ticket: 1, phase: "Done" });
@@ -401,12 +435,25 @@ function bindings(
   return [...held, ...padding];
 }
 
-function placement(project: SetupSiteProject): SessionPlacementResponse {
+/** The caller's own runner as a project's session placement says it: registered only where it serves the project. */
+function mine(
+  site: SetupSite,
+  project: SetupSiteProject,
+): SessionRunnerStanding {
+  const own = site.own.get(project.tenant);
+  if (own?.projects.includes(project.project) !== true) return "Unregistered";
+  return own.live ? "Live" : "Offline";
+}
+
+function placement(
+  site: SetupSite,
+  project: SetupSiteProject,
+): SessionPlacementResponse {
   return {
-    thread: { route: "Pool", source: "Default" },
+    thread: { route: project.threads, source: "Default" },
     lead: { route: "Pool", source: "Default" },
-    choices: ["Pool"],
-    runners: { mine: project.runner, project: project.runner },
+    choices: ["InCluster", "Pool"],
+    runners: { mine: mine(site, project), project: project.runner },
   };
 }
 
@@ -510,6 +557,89 @@ export function setupSiteRedeemed(
   };
 }
 
+/** A redemption of a token minted for the caller's own runner: their one runner in its workspace, registered anew and keeping the projects one before it served, which has not polled. */
+export function setupSiteOwnRedeemed(
+  site: SetupSite,
+  token: string,
+): SetupSiteAnswer {
+  const tenant = site.ownTokens.get(token);
+  if (tenant === undefined) return refused();
+  site.ownTokens.delete(token);
+  site.own.set(tenant, {
+    projects: site.own.get(tenant)?.projects ?? [],
+    live: false,
+  });
+  return {
+    status: 201,
+    body: {
+      kind: "Personal",
+      tenant,
+      owner: site.member,
+      capabilities: ["Platform:Linux:Amd64"],
+      tokenUrl: "https://auth.example/oauth2/token",
+      audience: "https://chuggy.example/pool",
+      planeUrl: "https://pool.chuggy.example/",
+      clientId: `personal-${site.member}`,
+      clientSecret: drawn(site, "credential"),
+    },
+  };
+}
+
+/** A token for the caller's own runner in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
+function ownMinted(
+  site: SetupSite,
+  tenant: string,
+  body: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "ownMint");
+  if (fate !== undefined) return fate;
+  if (site.withheld.has(tenant)) return refused();
+  const held = [...site.ownTokens.values()].filter((of) => of === tenant);
+  if (held.length >= setupSiteTokensMax)
+    return {
+      status: 409,
+      body: { error: { code: "TokenLimitReached", message: "At its bound." } },
+    };
+  site.mints.push(JSON.parse(body ?? "{}") as SetupSiteMint);
+  const token = drawn(site, "ownregistration");
+  site.ownTokens.set(token, tenant);
+  return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
+}
+
+/** A project added to what the caller's own runner serves, where they have one and are shown the project. */
+function served(
+  site: SetupSite,
+  tenant: string,
+  named: string | undefined,
+): SetupSiteAnswer {
+  const fate = fated(site, "serves");
+  if (fate !== undefined) return fate;
+  const own = site.own.get(tenant);
+  const project = projectOf(site, tenant, named);
+  if (own === undefined || project === undefined) return refused();
+  if (!own.projects.includes(project.project))
+    own.projects.push(project.project);
+  return { status: 204, body: undefined };
+}
+
+/** The caller's own runner in a workspace as its read answers it, or not found where they have none. */
+function ownAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
+  const own = site.own.get(tenant);
+  return (
+    fated(site, "own") ??
+    (own === undefined
+      ? refused()
+      : answered({
+          capabilities: ["Platform:Linux:Amd64"],
+          registeredAt: "2026-10-09T00:00:00Z",
+          ...(own.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
+          live: own.live,
+          executionsLive: own.live,
+          projects: own.projects.toSorted(),
+        }))
+  );
+}
+
 /** The pools as the roster read answers them, padded past what one read holds where a case cut it. */
 function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
   return (
@@ -580,6 +710,8 @@ function landings(
 
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
+const ownMintPath = "/personal-runner-registration-tokens";
+const ownRedeemPath = "/api/v1/personal-runner-registrations";
 
 function projectAnswered(
   site: SetupSite,
@@ -605,7 +737,7 @@ function projectAnswered(
     case "/execution-placement":
       return fated(site, "work") ?? answered(work(project));
     case "/session-placement":
-      return fated(site, "placement") ?? answered(placement(project));
+      return fated(site, "placement") ?? answered(placement(site, project));
     case "/abilities":
       return abilities(site, project);
     case "/worker-pools":
@@ -673,13 +805,18 @@ function projectOf(
   );
 }
 
-/** A write within a workspace, which is the mint for a project the caller is shown or nothing the site answers. */
+/** A write within a workspace: the mint for a project the caller is shown, the mint for a runner of their own, a project added to what theirs serves, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
   rest: string,
   sent: SetupSiteSent,
 ): SetupSiteAnswer | undefined {
+  if (sent.method === "POST" && rest === ownMintPath)
+    return ownMinted(site, tenant, sent.body);
+  const serving = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
+  if (sent.method === "PUT" && serving !== null)
+    return served(site, tenant, serving[1]);
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
   if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
   const project = projectOf(site, tenant, within[1]);
@@ -695,6 +832,11 @@ function tenantAnswered(
   const administers = site.tenants.some(
     (held) => held.tenant === tenant && held.administer,
   );
+  if (rest === "/personal-runner-permit")
+    return (
+      fated(site, "permit") ?? answered({ granted: !site.withheld.has(tenant) })
+    );
+  if (rest === "/personal-runner") return ownAnswered(site, tenant);
   const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
   if (listing !== null)
     return administers
@@ -751,8 +893,8 @@ function inventory(site: SetupSite, cursor: string | null): SetupSiteAnswer {
 /**
  * What the site answers a request of `target`, a path with its query: a read
  * unless `sent` says otherwise. Nothing is answered where the path is none of
- * the reads the program makes, or the request is a write that is neither the
- * mint nor a redemption.
+ * the reads the program makes, or the request is a write that is none of the
+ * ones it or a runner makes.
  */
 export function setupSiteAnswered(
   site: SetupSite,
@@ -762,6 +904,12 @@ export function setupSiteAnswered(
   const url = new URL(target, "http://site.invalid");
   if (sent.method === "POST" && url.pathname === redeemPath)
     return redeemed(site, sent.body);
+  if (sent.method === "POST" && url.pathname === ownRedeemPath)
+    return setupSiteOwnRedeemed(
+      site,
+      (JSON.parse(sent.body ?? "{}") as { readonly token?: string }).token ??
+        "",
+    );
   const tenant = /^\/api\/v1\/tenants\/([^/]+)(\/.*)$/u.exec(url.pathname);
   const named = decodeURIComponent(tenant?.[1] ?? "");
   const rest = tenant?.[2] ?? "";

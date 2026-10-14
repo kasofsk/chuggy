@@ -15,6 +15,8 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxLogin,
+  boxOwnFile,
+  boxOwnUnitName,
   boxPoolFile,
   boxPoolName,
   boxPools,
@@ -24,11 +26,18 @@ import {
   boxUnits,
   boxVersion,
 } from "./setupRunnerBox.ts";
+import { setupSiteMember } from "./setupSite.ts";
 
 const guide = runnerPackageOffered.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
 export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
+export const rosterOwn = boxOwnFile("acme", setupSiteMember);
+export const rosterOwnUnit = boxOwnUnitName("acme", setupSiteMember);
+
+/** The workspace's People page, where an admin lets a person register a runner of their own. */
+export const rosterPeople =
+  "https://chuggy.example/tenants/acme/settings/people";
 
 /** What `loginctl` says where turning lingering on wants a password. */
 export const rosterLingerRefusal =
@@ -43,6 +52,8 @@ const acts: readonly SetupRunnerAct[] = [
   "Register",
   "Check",
   "Service",
+  "RegisterOwn",
+  "ServiceOwn",
   "Reload",
   "Start",
   "Restart",
@@ -60,6 +71,9 @@ export const runnerStops: {
     { stop: "Unread", read: "pools", outcome: "Cut" },
     { stop: "Unread", read: "placement", outcome: "Refused" },
     { stop: "Unread", read: "pools", outcome: "Refused" },
+    { stop: "Unread", read: "threads", outcome: "Refused" },
+    { stop: "Unread", read: "permit", outcome: "Fault" },
+    { stop: "Unread", read: "own", outcome: "Fault" },
   ],
   NotAdmin: [{ stop: "NotAdmin" }],
   Serviceless: [{ stop: "Serviceless", guide }],
@@ -91,7 +105,7 @@ export const runnerStops: {
     },
   ],
   SettingsUnread: [{ stop: "SettingsUnread", path: boxSettings, guide }],
-  LoginMissing: [{ stop: "LoginMissing", path: boxLogin, guide }],
+  LoginMissing: [{ stop: "LoginMissing", path: boxLogin }],
   Npmless: [{ stop: "Npmless" }],
   Unwritten: [{ stop: "Unwritten", path: boxSettings }],
   Act: [
@@ -122,6 +136,12 @@ export const runnerStops: {
     { stop: "Unseen", act: "Install", path: rosterCommand },
     { stop: "Unseen", act: "Register", path: boxPools },
     { stop: "Unseen", act: "Service", path: `${boxUnits}/${rosterUnit}` },
+    { stop: "Unseen", act: "RegisterOwn", path: boxPools },
+    {
+      stop: "Unseen",
+      act: "ServiceOwn",
+      path: `${boxUnits}/${rosterOwnUnit}`,
+    },
   ],
   MintRefused: [
     { stop: "MintRefused", outcome: "Absent", lapseMins: 60 },
@@ -166,6 +186,23 @@ export const runnerStops: {
     { stop: "NotLive", waitedSecs: 90, registered: true },
     { stop: "NotLive", waitedSecs: 5, registered: false },
   ],
+  PermitWithheld: [
+    { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
+    { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
+  ],
+  OwnMintRefused: [
+    { stop: "OwnMintRefused", outcome: "Absent", lapseMins: 60 },
+    { stop: "OwnMintRefused", outcome: "Conflict", lapseMins: 60 },
+    { stop: "OwnMintRefused", outcome: "Fault", lapseMins: 60 },
+  ],
+  ServesRefused: [
+    { stop: "ServesRefused", outcome: "Absent" },
+    { stop: "ServesRefused", outcome: "Fault" },
+  ],
+  OwnNotLive: [
+    { stop: "OwnNotLive", waitedSecs: 90, here: true },
+    { stop: "OwnNotLive", waitedSecs: 90, here: false },
+  ],
 };
 
 export const runnerNotes: {
@@ -174,13 +211,25 @@ export const runnerNotes: {
   })[];
 } = {
   Engine: [{ note: "Engine", engine: "docker" }],
-  Package: [
-    { note: "Package", command: rosterCommand, version: boxVersion },
-    { note: "Package", command: rosterCommand, version: undefined },
+  Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
+  Outdated: [
+    {
+      note: "Outdated",
+      command: rosterCommand,
+      version: "0.3.0",
+      least: "0.4.0",
+    },
+    {
+      note: "Outdated",
+      command: rosterCommand,
+      version: undefined,
+      least: "0.4.0",
+    },
   ],
   Installed: [
     { note: "Installed", command: rosterCommand, version: boxVersion },
   ],
+  Replaced: [{ note: "Replaced", command: rosterCommand, version: boxVersion }],
   Settings: [{ note: "Settings", path: boxSettings }],
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
@@ -195,6 +244,17 @@ export const runnerNotes: {
   ],
   Unit: [{ note: "Unit", unit: rosterUnit }],
   UnitWritten: [{ note: "UnitWritten", unit: rosterUnit }],
+  ProjectLive: [{ note: "ProjectLive" }],
+  Hosted: [{ note: "Hosted" }],
+  Own: [{ note: "Own", path: rosterOwn }],
+  OwnGone: [{ note: "OwnGone", path: rosterOwn }],
+  OwnRegistered: [{ note: "OwnRegistered", path: rosterOwn }],
+  OwnElsewhere: [{ note: "OwnElsewhere" }],
+  OwnUnit: [{ note: "OwnUnit", unit: rosterOwnUnit }],
+  OwnUnitWritten: [{ note: "OwnUnitWritten", unit: rosterOwnUnit }],
+  Serves: [{ note: "Serves" }],
+  ServesAdded: [{ note: "ServesAdded" }],
+  OwnLive: [{ note: "OwnLive" }],
   Linger: [{ note: "Linger" }],
   LingerOn: [
     { note: "LingerOn", read: true },
@@ -213,12 +273,15 @@ export interface RosterPlaces {
   readonly login: string;
   readonly pool: string;
   readonly unit: string;
+  readonly own: string;
+  readonly ownUnit: string;
   readonly engine?: SetupEngine;
 }
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
-  const { command, settings, login, pool, unit, engine = "docker" } = places;
+  const { command, settings, login, pool, unit, own, ownUnit } = places;
+  const engine = places.engine ?? "docker";
   return {
     found: {
       engine: `found: ${engine} answers you without a password`,
@@ -231,9 +294,18 @@ export function rosterLines(places: RosterPlaces) {
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
       live: "found: the site sees a runner of acme/widgets live",
+      own: `found: this machine is registered as your own runner, in ${own}`,
+      ownUnit: `found: your own runner's service is installed: ${ownUnit}`,
+      ownRunning: `found: ${ownUnit} is enabled and running`,
+      serves: "found: your own runner serves acme/widgets",
+      ownLive:
+        "found: the site sees your own runner live, so your chats in acme/widgets run on it",
+      elsewhere:
+        "found: your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in acme/widgets run on that machine",
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
+      replaced: `did: replaced the runner package with chuggy-linux ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,
@@ -241,6 +313,11 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
+      own: `did: registered this machine as your own runner, in ${own}`,
+      ownUnit: `did: installed your own runner's service, ${ownUnit}`,
+      ownStarted: `did: started ${ownUnit}, which also starts when you log in`,
+      ownRestarted: `did: restarted ${ownUnit}, so it runs as it is now registered and installed`,
+      serves: "did: added acme/widgets to the projects your own runner serves",
     },
   } as const;
 }

@@ -6,7 +6,8 @@
  * A case says how the machine's commands answer and which of them it has, and
  * reads back every command that was run, with its words, what it was given to
  * read and whether it led a session of its own. The site sees a runner live
- * once a service of the machine's is up and polls, as it would the real one.
+ * once its service on the machine is up and polls, as it would the real one:
+ * a pool's as the project's runner, and the person's own as theirs.
  * The commands that would ask for a password are stood in for too, so one
  * that was run is found and not merely missing.
  */
@@ -21,7 +22,11 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { machineFiles, machineWrapper } from "./machineShape.ts";
+import {
+  machineFiles,
+  machineNamePart,
+  machineWrapper,
+} from "./machineShape.ts";
 import type {
   MachineCall,
   MachineKnobs,
@@ -65,7 +70,7 @@ export interface Machine {
 function knobsFirst(prefix: string): MachineKnobs {
   return {
     prefix,
-    version: "0.3.0",
+    version: "0.4.0",
     pool: "shame",
     engines: { docker: true, podman: true },
     services: true,
@@ -86,7 +91,7 @@ function lines(path: string): readonly string[] {
     : [];
 }
 
-/** Makes `home` a machine a runner could be put on, and has `installation` see a runner live once a service here is up and polls. */
+/** Makes `home` a machine a runner could be put on, and has `installation` see a runner live once its service here is up and polls. */
 export function machineStoodIn(home: Home, installation: StandIn): Machine {
   const state = join(home.beside, "machine");
   const prefix = join(home.beside, "prefix");
@@ -116,10 +121,20 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
   chmodSync(login, 0o600);
   for (const name of [...programs, ...machineAskers]) has(name);
   installation.seen = () => {
-    const up = Object.values(read().units).some((unit) => unit.active);
-    if (!up || !knobs.polls) return;
-    for (const project of installation.world.projects)
-      if (project.pools.includes(knobs.pool)) project.runner = "Live";
+    if (!knobs.polls) return;
+    const world = installation.world;
+    for (const [name, unit] of Object.entries(read().units)) {
+      if (!unit.active) continue;
+      if (name.endsWith(`.${knobs.pool}.service`))
+        for (const project of world.projects)
+          if (project.pools.includes(knobs.pool)) project.runner = "Live";
+      for (const [tenant, own] of world.own)
+        if (
+          name ===
+          `chuggy-linux-${machineNamePart(tenant)}.${machineNamePart(world.member)}.service`
+        )
+          own.live = true;
+    }
   };
   return {
     settings: join(config, "chuggy-linux", "runner.json"),

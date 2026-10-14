@@ -841,9 +841,10 @@ function setupNoteLines(
 
 /**
  * A run of `runner`: everything it found and did, in the order it met them,
- * then the checklist as the next command where a runner is live or none is
- * needed, and otherwise the stop, whose rule names the command to run once
- * what stopped it is mended.
+ * each runner it waited on seen live among them, then the checklist as the
+ * next command where those runners are live or none is needed, and otherwise
+ * the stop, whose rule names the command to run once what stopped it is
+ * mended.
  */
 function setupRunnerLines(
   report: Extract<SetupReport, { readonly report: "Runner" }>,
@@ -859,11 +860,7 @@ function setupRunnerLines(
   ];
   switch (report.ended.ended) {
     case "Live":
-      return [
-        ...head,
-        ["found", `the site sees a runner of ${named} live`],
-        setupNextLine(of, "Status"),
-      ];
+      return [...head, setupNextLine(of, "Status")];
     case "Hosted":
       return [
         ...head,
@@ -878,7 +875,6 @@ function setupRunnerLines(
       return [
         ...head,
         ...setupStopSaid(stop),
-        ...(stop.rule === undefined ? [] : [["rule", stop.rule] as const]),
         ...setupStopRule(stop, setupCommandOf(of, stop.again)),
       ];
     }

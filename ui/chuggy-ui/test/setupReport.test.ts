@@ -918,16 +918,12 @@ test("whichever report an entry makes, the run it ends part-way says it as the r
   ).toEqual(["Declined"]);
 });
 
-test("a runner the site sees live, and a project whose work needs none, end on the checklist for that project and tell the person nothing", () => {
+test("runners the site sees live, and a project whose work and chats need none, end on the checklist for that project and tell the person nothing, the runners seen live being among what the run found", () => {
   const quiet = roster.Runner.filter(
     (one) => one.ended.ended !== "Stopped" && one.workspace === "acme",
   ).map((one) => ({ ...one, notes: [] }));
   expect(quiet.map((one) => setupReportLines(one, machineScript))).toEqual([
-    [
-      `site: ${site}, signed in`,
-      "found: the site sees a runner of acme/widgets live",
-      `${next} ${flags}`,
-    ],
+    [`site: ${site}, signed in`, `${next} ${flags}`],
     [
       `site: ${site}, signed in`,
       "found: chuggy's cluster runs the work of acme/widgets, so it needs no runner",

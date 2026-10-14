@@ -4,16 +4,17 @@
  *
  * The machine is the record of the machine's things: whether a container
  * engine answers this user, where the runner package is, what its settings
- * name, whether it is registered for a project, whether its service is there
- * and running. Nothing of that is kept by this program, so every run reads it
- * again. The names are the runner package's own, since it has no command that
- * says them: where it keeps its settings, its Claude login, a pool file and a
- * unit, and how it names a pool file for a project and the unit for a pool
- * file. A settings file is read for the engine and the Claude login it names
- * and for nothing else, and a pool file and a Claude login are never read at
- * all, only looked for. The package is installed by the console's own install
- * command, under the person's own prefix where the machine's is not theirs to
- * write.
+ * name, whether it is registered for a project or as the person's own runner,
+ * whether a service is there and running. Nothing of that is kept by this
+ * program, so every run reads it again. The names are the runner package's
+ * own, since it has no command that says them: where it keeps its settings,
+ * its Claude login, its registrations and its units, how it names a pool file
+ * for a project and the file of the person's own runner for a workspace, and
+ * the unit for either. A settings file is read for the engine and the Claude
+ * login it names and for nothing else, and a registration and a Claude login
+ * are never read at all, only looked for. The package is installed by the
+ * console's own install command, under the person's own prefix where the
+ * machine's is not theirs to write.
  */
 
 import { z } from "zod";
@@ -21,6 +22,7 @@ import { z } from "zod";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import { runnerPackageOffered, runnerRegisterCommand } from "./runners.ts";
+import type { RunnerKind } from "./runners.ts";
 import { SetupMachineError } from "./setupPorts.ts";
 import type {
   SetupChildEnded,
@@ -316,6 +318,22 @@ const setupVersionSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+[0-9A-Za-z.+-]*$/u),
 });
 
+/** The first version of the runner package whose `register` takes `--personal`, which is the oldest a run can use. */
+export const setupPackageLeast = "0.4.0";
+
+function setupVersionParts(version: string): readonly number[] {
+  return version.split(/[.+-]/u, 3).map(Number);
+}
+
+/** Whether a package found is one a run can use: its version read, and none older than the least. */
+export function setupPackageCurrent(found: SetupPackageFound): boolean {
+  if (found.version === undefined) return false;
+  const had = setupVersionParts(found.version);
+  const least = setupVersionParts(setupPackageLeast);
+  const at = had.findIndex((part, index) => part !== least[index]);
+  return at < 0 || (had[at] ?? 0) > (least[at] ?? 0);
+}
+
 function setupCommandIn(prefix: string): string {
   return setupPath(prefix, "bin", setupProgram);
 }
@@ -347,7 +365,7 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own. */
+/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
@@ -363,9 +381,11 @@ export async function setupPackageProbed(
     prefix !== undefined &&
     ports.disk.writable(setupPath(prefix, "lib", "node_modules")) &&
     ports.disk.writable(setupPath(prefix, "bin"));
-  const found =
-    (prefix === undefined ? undefined : setupPackageIn(ports, prefix)) ??
-    setupPackageIn(ports, places.own);
+  const held = [
+    prefix === undefined ? undefined : setupPackageIn(ports, prefix),
+    setupPackageIn(ports, places.own),
+  ].filter((there) => there !== undefined);
+  const found = held.find(setupPackageCurrent) ?? held[0];
   return { found, prefix, mine };
 }
 
@@ -390,28 +410,30 @@ export function setupInstallCommand(
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
 }
 
-/** The console's own register command, word for word, run as the installed command by its whole path. */
+/** The console's own register command, word for word, as a pool's or as the person's own, run as the installed command by its whole path. */
 export function setupRegisterCommand(
   command: string,
   site: string,
   token: string,
+  kind: RunnerKind,
 ): readonly string[] {
   const [, ...rest] = runnerRegisterCommand(
     runnerPackageOffered,
     site,
     token,
-    "Pool",
+    kind,
   ).split(" ");
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project, which is a file's name and not yet whether the site knows it. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project and one as the person's own runner in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
   readonly held: boolean;
+  readonly own: boolean;
 }
 
-/** One part of a pool file's name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
+/** One part of a registration's file name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
 function setupPoolNamePart(text: string): string {
   return [...new TextEncoder().encode(text)]
     .map((octet) => {
@@ -433,9 +455,13 @@ const setupPoolFileSuffix = ".json";
 /** A pool's name as the package takes one, which a pool file's name carries as itself. */
 const setupPoolNamed = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
 
-/** A registration of this machine as a pool of the project, by the file it left and the pool's name. */
-export interface SetupPoolFile {
+/** A registration of this machine, by the file it left. */
+export interface SetupFile {
   readonly path: string;
+}
+
+/** A registration of this machine as a pool of the project, by the file it left and the pool's name. */
+export interface SetupPoolFile extends SetupFile {
   readonly pool: string;
 }
 
@@ -460,28 +486,58 @@ export function setupPoolFiles(
     });
 }
 
+/** Every octet of a name part said as itself or by its number, and no `.`, which parts the name. */
+const setupNamePart = /^(?:[A-Za-z0-9-]|_[0-9a-f]{2})+$/u;
+
+/**
+ * The files this machine has of the person's own runner in a workspace, found
+ * by their names and never opened, in the order of those names. The package
+ * names one for the workspace and the member, beside the pool files, and the
+ * member is not known here, so a file is one of these by its first part and
+ * by its second being one whole part, which no pool file's rest is.
+ */
+export function setupOwnFiles(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  tenant: string,
+): readonly SetupFile[] {
+  const prefix = `${setupPoolNamePart(tenant)}.`;
+  return ports.disk
+    .names(places.pools)
+    .toSorted()
+    .flatMap((name) => {
+      if (!name.startsWith(prefix) || !name.endsWith(setupPoolFileSuffix))
+        return [];
+      const member = name.slice(prefix.length, -setupPoolFileSuffix.length);
+      const path = setupPath(places.pools, name);
+      return setupNamePart.test(member) && ports.disk.kind(path) === "File"
+        ? [{ path }]
+        : [];
+    });
+}
+
 /** Looks at the machine as `runner` would before it did anything, and changes nothing; a Mac is asked nothing at all. */
 export async function setupRunnerHere(
   ports: SetupPorts,
   partition: PartitionIdentity,
 ): Promise<SetupRunnerHere> {
   if (ports.surroundings.platform !== setupRunnerPlatform)
-    return { room: { room: "Mac" }, held: false };
+    return { room: { room: "Mac" }, held: false, own: false };
   const places = setupRunnerPlaces(ports.surroundings);
   const settings = setupSettingsRead(ports, places);
   const room = await setupRunnerRoom(
     ports,
     settings.settings === "Read" ? settings : undefined,
   );
+  const open = room.room === "Open";
   return {
     room,
-    held:
-      room.room === "Open" &&
-      setupPoolFiles(ports, places, partition).length > 0,
+    held: open && setupPoolFiles(ports, places, partition).length > 0,
+    own: open && setupOwnFiles(ports, places, partition.tenant).length > 0,
   };
 }
 
-/** The service of a pool file, as the package names it and where it writes it. */
+/** The service of a registration's file, as the package names it and where it writes it. */
 export interface SetupUnit {
   readonly name: string;
   readonly path: string;
@@ -489,7 +545,7 @@ export interface SetupUnit {
 
 export function setupUnitOf(
   places: SetupRunnerPlaces,
-  file: SetupPoolFile,
+  file: SetupFile,
 ): SetupUnit {
   const base = file.path.slice(
     file.path.lastIndexOf("/") + 1,
@@ -501,13 +557,13 @@ export function setupUnitOf(
 
 /** The commands of the installed package and of the machine's service manager that `runner` runs. */
 export const setupRunnerCommands = {
-  check: (command: string, file: SetupPoolFile): readonly string[] => [
+  check: (command: string, file: SetupFile): readonly string[] => [
     command,
     "doctor",
     "--pool",
     file.path,
   ],
-  service: (command: string, file: SetupPoolFile): readonly string[] => [
+  service: (command: string, file: SetupFile): readonly string[] => [
     command,
     "install-service",
     "--pool",

@@ -8,7 +8,8 @@
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
  * package's own lines, the files it writes under the home it is run in, and a
- * registration redeemed at the site it is pointed to. It answers from what a
+ * registration, a pool's or with `--personal` the person's own, redeemed at
+ * the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
  * here reaches anything of the machine it runs on.
  */
@@ -23,7 +24,13 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { machineFiles, machineSender, machineWrapper } from "./machineShape.ts";
+import {
+  machineFiles,
+  machineNamePart,
+  machineRunAs,
+  machineSender,
+  machineWrapper,
+} from "./machineShape.ts";
 import type {
   MachineAct,
   MachineCall,
@@ -107,17 +114,6 @@ function npm(): number {
   return said(0, "\nadded 12 packages in 3s\n");
 }
 
-/** One part of a pool file's name, as the package writes it. */
-function part(text: string): string {
-  return [...new TextEncoder().encode(text)]
-    .map((octet) =>
-      /[A-Za-z0-9-]/u.test(String.fromCharCode(octet))
-        ? String.fromCharCode(octet)
-        : `_${octet.toString(16).padStart(2, "0")}`,
-    )
-    .join("");
-}
-
 function unitOf(file: string): string {
   const base = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
   return `chuggy-linux-${base}.service`;
@@ -126,31 +122,71 @@ function unitOf(file: string): string {
 const units = join(config, "systemd", "user");
 const requestMsMax = 10_000;
 
-/** A registration: the token redeemed at the site it names, and the pool's credentials kept in the file the package names for it. */
+/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's own for the workspace and the member. */
+function fileOf(held: {
+  readonly tenant: string;
+  readonly project?: string;
+  readonly owner?: string;
+}): string {
+  const name =
+    held.owner === undefined
+      ? `${machineNamePart(held.tenant)}.${machineNamePart(held.project ?? "")}.${knobs.pool}.json`
+      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.json`;
+  return join(config, "chuggy", "pools", name);
+}
+
+/** Whether the package this was run from knows `--personal`, which its manifest says by its version. */
+function takesPersonal(): boolean {
+  const prefix = dirname(dirname(process.env[machineRunAs] ?? ""));
+  const manifest = join(
+    prefix,
+    "lib",
+    "node_modules",
+    "chuggy-linux",
+    "package.json",
+  );
+  const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
+  const version = /"version":"(\d+)\.(\d+)\./u.exec(text);
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 4;
+}
+
+/** A registration, a pool's or with `--personal` the person's own: the token redeemed at the site it names, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
-  const [, flag, api = "", word = ""] = argv;
+  const personal = argv[1] === "--personal";
+  if (personal && !takesPersonal())
+    return said(1, "", "error: unknown option '--personal'\n");
+  const [flag, api = "", word = ""] = argv.slice(personal ? 2 : 1);
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))
     return said(2, "", "--token is not a registration token\n");
-  const answer = await fetch(`${api}/api/v1/worker-pool-registrations`, {
-    method: "POST",
-    headers: { "content-type": "application/json", [machineSender]: "runner" },
-    body: JSON.stringify({ token, pool: knobs.pool, capabilities: [] }),
-    signal: AbortSignal.timeout(requestMsMax),
-  });
+  const answer = await fetch(
+    `${api}/api/v1/${personal ? "personal-runner" : "worker-pool"}-registrations`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [machineSender]: "runner",
+      },
+      body: JSON.stringify(
+        personal
+          ? { token, capabilities: [] }
+          : { token, pool: knobs.pool, capabilities: [] },
+      ),
+      signal: AbortSignal.timeout(requestMsMax),
+    },
+  );
   if (answer.status !== 201)
     return said(
       1,
       "",
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
-  const pool = (await answer.json()) as { tenant: string; project: string };
-  const file = join(
-    config,
-    "chuggy",
-    "pools",
-    `${part(pool.tenant)}.${part(pool.project)}.${knobs.pool}.json`,
-  );
+  const pool = (await answer.json()) as {
+    tenant: string;
+    project?: string;
+    owner?: string;
+  };
+  const file = fileOf(pool);
   const unit = unitOf(file);
   const wrote = existsSync(file) ? "replaced" : "wrote";
   written(file, JSON.stringify(pool));
