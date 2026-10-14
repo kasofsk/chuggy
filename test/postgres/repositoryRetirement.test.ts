@@ -1,7 +1,8 @@
 /**
  * A retired binding against a real server: the column, the widened
- * immutability trigger, the one-way door, and the two elections that stop
- * seeing a retired row while every read that names one still answers it.
+ * immutability trigger, the one-way door, the two elections that stop seeing
+ * a retired row while every read that names one still answers it, and the
+ * repository a retirement releases to any other project.
  */
 
 import assert from "node:assert/strict";
@@ -19,13 +20,18 @@ import {
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import type { Partition } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
 import { repositoryBindingsPerImportMax } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   fixtureBindRepository,
   fixtureBoundRepository,
 } from "./repositoryBindingFixture.ts";
 import {
+  postgresHarnessEpoch,
   postgresHarnessOpen,
   postgresHarnessPartition,
   postgresHarnessUrl,
@@ -44,10 +50,25 @@ after(async () => {
 });
 
 /** A project, made once, that a case binds into. */
-async function fixtureProject(label: string): Promise<Partition> {
-  const partition = postgresHarnessPartition(label);
+async function fixtureProject(
+  label: string,
+  partition = postgresHarnessPartition(label),
+): Promise<Partition> {
   await harness.store.createProject(partition);
   return partition;
+}
+
+/** Every project's binding of one repository, oldest first, as its project and whether it is retired. */
+async function fixtureHolders(
+  repository: string,
+): Promise<readonly (readonly [string, boolean])[]> {
+  return (
+    await harness.query(
+      `SELECT project, retired_at IS NOT NULL AS retired FROM project_repository
+        WHERE repository=$1 ORDER BY bound_at, tenant, project`,
+      [repository],
+    )
+  ).map((row) => [String(row["project"]), row["retired"] === true] as const);
 }
 
 async function bindAt(partition: Partition, label: string): Promise<string> {
@@ -295,4 +316,133 @@ test("the API's own role holds the retirement door", async () => {
     ),
     undefined,
   );
+});
+
+/**
+ * Retirement releases the repository: a project binding it while another holds
+ * it live is refused, and once that one retires it the bind is a fresh one.
+ * Both kinds of other project are walked, a sibling in the tenant and a
+ * stranger outside it, and the importer's listing names the live one alone.
+ */
+test("a repository one project retired is bound by another, in its tenant or another", async () => {
+  const tenant = asTenantId(`tenant-release-${randomUUID()}`);
+  const first = await fixtureProject("release-first", {
+    tenant,
+    project: asProjectId(`project-release-first-${randomUUID()}`),
+  });
+  const sibling = await fixtureProject("release-sibling", {
+    tenant,
+    project: asProjectId(`project-release-sibling-${randomUUID()}`),
+  });
+  const stranger = await fixtureProject("release-stranger");
+  const repository = await bindAt(first, "release");
+  assert.equal(await rebind(sibling, repository), "RepositoryBoundElsewhere");
+
+  assert.equal((await retire(first, repository)).outcome, "Retired");
+  assert.equal(await rebind(sibling, repository), "Bound");
+  assert.equal(await rebind(stranger, repository), "RepositoryBoundElsewhere");
+
+  assert.equal((await retire(sibling, repository)).outcome, "Retired");
+  assert.equal(await rebind(stranger, repository), "Bound");
+  assert.deepEqual(await fixtureHolders(repository), [
+    [first.project, true],
+    [sibling.project, true],
+    [stranger.project, false],
+  ]);
+  const listed = await postgresRepositoryBindingListing(pool).bindings(
+    repositoryBindingsPerImportMax,
+  );
+  assert.deepEqual(
+    listed
+      .filter((bound) => String(bound.repository) === repository)
+      .map((bound) => bound.partition),
+    [stranger],
+  );
+});
+
+test("a project that retired a repository another project now holds is refused it and stays retired", async () => {
+  const mine = await fixtureProject("release-reclaim-mine");
+  const theirs = await fixtureProject("release-reclaim-theirs");
+  const repository = await bindAt(mine, "release-reclaim");
+  assert.equal((await retire(mine, repository)).outcome, "Retired");
+  assert.equal(await rebind(theirs, repository), "Bound");
+
+  assert.equal(await rebind(mine, repository), "RepositoryBoundElsewhere");
+  assert.deepEqual(await fixtureHolders(repository), [
+    [mine.project, true],
+    [theirs.project, false],
+  ]);
+});
+
+test("a project reinstates its retired binding once the project that bound the repository since has retired it", async () => {
+  const mine = await fixtureProject("release-return-mine");
+  const theirs = await fixtureProject("release-return-theirs");
+  const repository = await bindAt(mine, "release-return");
+  const named = asRepositoryId(repository);
+  const landing = postgresProjectRepositoryLanding(pool);
+  const boundAt = (await landing.landing(mine, named))?.boundAt;
+  assert.equal((await retire(mine, repository)).outcome, "Retired");
+  assert.equal(await rebind(theirs, repository), "Bound");
+  assert.equal((await retire(theirs, repository)).outcome, "Retired");
+
+  assert.equal(await rebind(mine, repository), "Bound");
+  assert.equal((await landing.landing(mine, named))?.boundAt, boundAt);
+  assert.deepEqual(await fixtureHolders(repository), [
+    [mine.project, false],
+    [theirs.project, true],
+  ]);
+  assert.equal(await rebind(theirs, repository), "RepositoryBoundElsewhere");
+});
+
+/**
+ * The rule the door asks is the schema's own, so a writer that skips the door
+ * meets it too. A second live binding, and a retired one cleared beside a live
+ * one, are refused only while the index stands; a live binding beside retired
+ * ones is admitted only while it is partial.
+ */
+test("the schema holds one live binding of a repository beside any number of retired ones", async () => {
+  const first = await fixtureProject("release-schema-first");
+  const second = await fixtureProject("release-schema-second");
+  const third = await fixtureProject("release-schema-third");
+  const repository = `repository-release-schema-${randomUUID()}`;
+  const epoch = await postgresHarnessEpoch(harness.store);
+  const bound = (partition: Partition, retired: boolean) =>
+    harness.query(
+      `INSERT INTO project_repository
+         (tenant,project,repository,recovery_epoch,retired_at)
+       VALUES ($1,$2,$3,$4,CASE WHEN $5::boolean THEN now() END)`,
+      [partition.tenant, partition.project, repository, epoch, retired],
+    );
+  const where = (partition: Partition) => [
+    partition.tenant,
+    partition.project,
+    repository,
+  ];
+
+  await bound(first, false);
+  await assert.rejects(
+    () => bound(second, false),
+    /project_repository_one_live/u,
+  );
+  await bound(second, true);
+  await harness.query(
+    `UPDATE project_repository SET retired_at=now()
+      WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    where(first),
+  );
+  await bound(third, false);
+  await assert.rejects(
+    () =>
+      harness.query(
+        `UPDATE project_repository SET retired_at=NULL
+          WHERE tenant=$1 AND project=$2 AND repository=$3`,
+        where(second),
+      ),
+    /project_repository_one_live/u,
+  );
+  assert.deepEqual(await fixtureHolders(repository), [
+    [first.project, true],
+    [second.project, true],
+    [third.project, false],
+  ]);
 });

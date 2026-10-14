@@ -488,7 +488,7 @@ test("a change proposal names its request and its permit, under an identity noth
   );
 });
 
-test("a project binds multiple repositories while each repository keeps one owner", async () => {
+test("a project binds multiple repositories while each repository keeps one live owner", async () => {
   const unbound = await postgresHarnessProject(
     rig.harness.store,
     "constraints-exclusive",
@@ -499,7 +499,7 @@ test("a project binds multiple repositories while each repository keeps one owne
        VALUES ($1,$2,$3,$4)`,
       [unbound.tenant, unbound.project, project.repository, project.epoch],
     ),
-    /project_repository_is_exclusive/u,
+    /project_repository_one_live/u,
   );
   const second = finalizerIdentity("repository-second");
   await rig.harness.query(
