@@ -382,22 +382,23 @@ test("the bindings are drawn by the account and name they are under", async () =
 });
 
 /**
- * A retired binding keeps its row and its page for the tickets that named it;
- * the one word beside its name is what says a ticket may no longer name it,
- * and it is the word of the button that retired it.
+ * A retired binding is not listed. A project whose every binding is retired
+ * binds nothing, and reads so, with Add under the line as for any empty
+ * roster.
  */
-test("a retired binding is drawn Unbound and a live one carries no word", async () => {
+test("a retired binding is not listed, and a project with only retired ones reads no repository bound", async () => {
   await drawPage({
+    claimed: twoAccounts,
     bound: {
       repositories: [
         { ...bindings.repositories[0], retiredAt: "2026-09-14T00:00:00Z" },
       ],
     },
   });
-  const row = within(sectionOf("Repositories")).getByRole("rowheader", {
-    name: /kasofsk\/chuggy/,
-  });
-  expect(row.textContent).toBe("kasofsk/chuggyUnbound");
+  const section = sectionOf("Repositories");
+  expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
+  expect(within(section).getByText("No repository bound")).toBeDefined();
+  expect(addButtons()).toHaveLength(2);
 });
 
 /** A binding is a row and a page, and the row is the only way to the page. */
@@ -1988,7 +1989,6 @@ test("only a live binding the project holds nothing for draws Deferred and offer
   expect(bindingRowsText()).toStrictEqual([
     "kasofsk/chuggyDeferredRetry",
     "gdoteof/scratch",
-    "kasofsk/oldUnbound",
   ]);
 });
 
@@ -2056,7 +2056,7 @@ test("a refused retry draws its refusal and stales nothing", async () => {
   expect(raised).toStrictEqual([]);
 });
 
-/** The listing is what draws a binding retired, so the one refusal that changes it redraws it. */
+/** A retired binding leaves the listing, so the one refusal that finds it retired reads the listing again. */
 test("a retry that meets the binding retired stales the bindings the page drew", async () => {
   await drawPage({
     bound: unconfigured,
@@ -2468,7 +2468,7 @@ test.each(headOnly)(
 
 const retiredAt = "2026-09-14T00:00:00Z";
 
-/** A live binding above a retired one, which Unbind is drawn on and is not. */
+/** A live binding above a retired one, which is not listed. */
 const liveAndRetired = {
   repositories: [
     bindings.repositories[0],
@@ -2494,13 +2494,10 @@ function unbindOffers(): readonly (readonly [string | null, boolean])[] {
     });
 }
 
-const unbindOffered = [
-  ["kasofsk/chuggy", true],
-  ["kasofsk/oldUnbound", false],
-];
+const unbindOffered = [["kasofsk/chuggy", true]];
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered Unbind on each live binding and on no retired one",
+  "a reader the abilities read %s is offered Unbind on each binding listed",
   async (_said, abilities) => {
     await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
     expect(unbindOffers()).toStrictEqual(unbindOffered);
@@ -2514,10 +2511,7 @@ test.each([
   ["may not administer", { ...abilitiesEvery, administer: false }],
 ])("a reader who %s is offered no Unbind", async (_who, abilities) => {
   await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
-  expect(unbindOffers()).toStrictEqual([
-    ["kasofsk/chuggy", false],
-    ["kasofsk/oldUnbound", false],
-  ]);
+  expect(unbindOffers()).toStrictEqual([["kasofsk/chuggy", false]]);
   expect(
     within(sectionOf("Repositories"))
       .getAllByRole("columnheader")
@@ -2563,7 +2557,7 @@ test("a cancelled unbind sends nothing and leaves the row as it was", async () =
   expect(unbindOffers()).toStrictEqual(unbindOffered);
 });
 
-test("a confirmed unbind retires that repository by address and redraws its row Unbound", async () => {
+test("a confirmed unbind retires that repository by address and takes its row off the listing", async () => {
   const [live, retired] = liveAndRetired.repositories;
   const sent = await drawPage({
     bound: liveAndRetired,
@@ -2591,10 +2585,9 @@ test("a confirmed unbind retires that repository by address and redraws its row 
     },
   ]);
   expect(unbindAsked()).toBeNull();
-  expect(unbindOffers()).toStrictEqual([
-    ["kasofsk/chuggyUnbound", false],
-    ["kasofsk/oldUnbound", false],
-  ]);
+  const section = sectionOf("Repositories");
+  expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
+  expect(within(section).getByText("No repository bound")).toBeDefined();
 });
 
 /** A contended retirement is the route's to answer again, and a binding it

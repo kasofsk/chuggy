@@ -258,13 +258,13 @@ test("a repository this project does not bind draws nothing but Not bound", asyn
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
-/** A retired binding keeps its page for the tickets that named it, and the
- * page says beside its name what its row says. */
+/** A retired binding's page, reached by its address, says beside its name
+ * that it is unbound; a live one's says nothing. */
 test.each([
   ["a retired", "2026-09-14T00:00:00Z", "Repositories/kasofsk/chuggyUnbound"],
   ["a live", undefined, "Repositories/kasofsk/chuggy"],
 ])(
-  "%s binding's top bar says beside its name what its row says",
+  "%s binding's top bar says beside its name whether it is unbound",
   async (_which, retiredAt, drawn) => {
     await drawPage({
       bound: [
