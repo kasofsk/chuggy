@@ -203,10 +203,10 @@ export type ProjectRepositoryRetirementOutcome =
   | { readonly outcome: "Unavailable" };
 
 /**
- * One binding retired. It is a port of its own rather than a method on the
- * landing, because a landing is a setting a project edits back and forth and a
- * retirement is the end of the binding: nothing here clears one, which is what
- * makes the fact reliable to read.
+ * One binding retired, which frees its repository for another project to bind.
+ * It is a port of its own rather than a method on the landing, because a
+ * landing is a setting a project edits back and forth and a retirement moves
+ * one way: nothing here clears one, and only a bind reinstates it.
  */
 export interface ProjectRepositoryRetirementStore {
   retire(

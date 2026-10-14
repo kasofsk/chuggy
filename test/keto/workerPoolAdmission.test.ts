@@ -20,10 +20,8 @@ import {
   projectPrincipalGrant,
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
-import {
-  asRecoveryEpoch,
-  type Partition,
-} from "../../src/interpreter/projectStore.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import {
   workerPoolAdmitted,
   type PersonalRunnerIdentity,
@@ -220,11 +218,11 @@ test("a personal runner holds no permit of any project its owner serves, so a pr
   const minting = forgeCredentialMinting(
     access,
     {
-      binding: (bound) =>
+      landing: () =>
         Promise.resolve({
-          partition: bound,
           repository,
-          recoveryEpoch: asRecoveryEpoch("epoch"),
+          boundAt: "2026-10-01T00:00:00Z",
+          landing: asRepositoryLanding("Push"),
         }),
     },
     {

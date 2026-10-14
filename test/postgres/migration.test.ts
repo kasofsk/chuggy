@@ -47,6 +47,7 @@ import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-
 import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-parked-overrides.ts";
 import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-selector-attempt-revision.ts";
 import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-workspace-links.ts";
+import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-retirement-releases-repository.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -9943,6 +9944,65 @@ test("047 lets a link name no tenant, keeping every tenant link that stood, and 
     assert.deepEqual(
       await links.workspaceSpend("2".repeat(64), "other", asTenantId("w-47")),
       { spent: "Taken" },
+    );
+  });
+});
+
+/** Every binding standing, as the rows 052 must leave as they were. */
+async function bindingsStanding052(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT tenant,project,repository,bound_at,retired_at
+         FROM project_repository ORDER BY tenant,project,repository`,
+    )
+  ).rows;
+}
+
+/** One bind into `project` through the door, answering its outcome. */
+async function boundThrough052(
+  subject: pg.Pool,
+  project: string,
+  repository: string,
+): Promise<string | undefined> {
+  return (
+    await subject.query<{ outcome: string }>(
+      `SELECT bind_project_repository('tenant-52',$1,$2,'epoch-52',$3,
+         'Administrator','operator-52') AS outcome`,
+      [project, repository, `operation-52-${project}-${repository}`],
+    )
+  ).rows[0]?.outcome;
+}
+
+test("052 keeps every binding that stood and releases a retired one's repository to another project", async () => {
+  await migrationDatabase("retirement_releases", async (subject) => {
+    await installationBefore(subject, migration052.version);
+    await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-52')`);
+    await subject.query(tenantSeed("tenant-52"));
+    await subject.query(
+      `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
+       VALUES('tenant-52','project-52','Active',0,1),
+             ('tenant-52','other-52','Active',0,1)`,
+    );
+    await subject.query(
+      `INSERT INTO project_repository
+         (tenant,project,repository,recovery_epoch,retired_at)
+       VALUES('tenant-52','project-52','live-52','epoch-52',NULL),
+             ('tenant-52','project-52','retired-52','epoch-52',now())`,
+    );
+    assert.equal(
+      await boundThrough052(subject, "other-52", "retired-52"),
+      "RepositoryBoundElsewhere",
+    );
+    const stood = await bindingsStanding052(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration052.version));
+    assert.deepEqual(await bindingsStanding052(subject), stood);
+    assert.equal(
+      await boundThrough052(subject, "other-52", "live-52"),
+      "RepositoryBoundElsewhere",
+    );
+    assert.equal(
+      await boundThrough052(subject, "other-52", "retired-52"),
+      "Bound",
     );
   });
 });

@@ -492,8 +492,8 @@ export function composeConfigurationImporterCredentials(
 
 /**
  * The minting service the API answers its credential route with: `Execute` on
- * the project, then the project's own binding for the repository named, then
- * one token for that repository alone.
+ * the project, then the project's own live binding for the repository named,
+ * then one token for that repository alone.
  */
 export function composeForgeCredentialMinting(
   apiPool: pg.Pool,
@@ -502,7 +502,7 @@ export function composeForgeCredentialMinting(
 ): ForgeCredentialMinting {
   return forgeCredentialMinting(
     access,
-    postgresProjectRepositoryBinding(apiPool),
+    postgresProjectRepositoryLanding(apiPool),
     tokens,
   );
 }
@@ -853,6 +853,7 @@ export function composeNativeWeb(
       ? undefined
       : {
           bindings: postgresProjectRepositoryBinding(apiPool),
+          landing: postgresProjectRepositoryLanding(apiPool),
           snapshots: repositoryConfigurationSnapshots,
           store: authoring,
         },

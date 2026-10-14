@@ -8,10 +8,11 @@
  * by the files exactly as before. A deployment composing no minting source is
  * therefore the deployment this tree already had.
  *
- * A REPOSITORY THIS PROJECT DOES NOT BIND IS NOT FOUND. The service authorizes
- * `Execute` on the project and then asks the binding read for the repository the
- * caller named, so a member of one project cannot mint for another's
- * repository, and a bound repository whose owner no installation covers is
+ * A REPOSITORY THIS PROJECT DOES NOT BIND LIVE IS NOT FOUND. The service
+ * authorizes `Execute` on the project and then reads its binding of the
+ * repository the caller named, so a member of one project cannot mint for
+ * another's repository, nor for one their own project retired and another may
+ * since have bound; a bound repository whose owner no installation covers is
  * `NotFound` rather than an outage. The caller's own tenant goes to the mint
  * beside the repository, so a binding that reached across tenants mints nothing
  * even though the binding itself stands.
@@ -42,7 +43,7 @@ import type {
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
-import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
+import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 
 /** One host's minting source, which answers for the repositories that host holds. */
 export interface MintedCredentialHost {
@@ -172,10 +173,15 @@ export interface ForgeCredentialMinting {
   ): Promise<ForgeCredentialMinted>;
 }
 
-/** Exposes minting only through current `Execute` access to a project that binds the repository. */
+/**
+ * Exposes minting only through current `Execute` access to a project that binds
+ * the repository live. It reads the binding through the door that answers its
+ * retirement, because the read in-flight work names its repository through
+ * answers a retired binding as though it stood.
+ */
 export function forgeCredentialMinting(
   access: ProjectAccess,
-  bindings: ProjectRepositoryBindingRead,
+  bindings: Pick<ProjectRepositoryLandingStore, "landing">,
   tokens: ForgeRepositoryTokens,
 ): ForgeCredentialMinting {
   return {
@@ -184,8 +190,9 @@ export function forgeCredentialMinting(
         (await access.authorize(principal, partition, "Execute")) === undefined
       )
         return { result: "NotFound" };
-      const bound = await bindings.binding(partition, request.repository);
-      if (bound === undefined) return { result: "NotFound" };
+      const bound = await bindings.landing(partition, request.repository);
+      if (bound === undefined || bound.retiredAt !== undefined)
+        return { result: "NotFound" };
       const minted = await tokens.token(
         bound.repository,
         partition.tenant,

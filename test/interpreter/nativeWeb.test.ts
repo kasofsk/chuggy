@@ -14,6 +14,7 @@ import {
   nativeActionPageLimitMax,
   nativeWeb,
   oidcPrincipal,
+  type NativeRepositoryConfigurationImportPorts,
   type NativeWeb,
   type NativeReadStore,
   type NativeSubmission,
@@ -36,7 +37,7 @@ import {
   asGitObjectId,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import type { RepositoryConfigurationImportPorts } from "../../src/interpreter/repositoryConfiguration.ts";
+import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
@@ -216,7 +217,7 @@ function readStore(calls: string[]): NativeReadStore {
 function boundary(
   allowed: boolean,
   backlog: ExecutionBacklogGuard = openExecutionBacklogGuard,
-  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  repositoryConfigurationImports?: NativeRepositoryConfigurationImportPorts,
   initialization?: ReturnType<AuthoringStore["initializeDraft"]>,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
@@ -414,10 +415,31 @@ test("draft initialization bounds missing, unavailable, and incomplete configura
   }
 });
 
+/** The point read of every binding, live unless it is given the instant it retired at. */
+function repositoryImportLanding(
+  calls: string[],
+  retiredAt?: string,
+): NativeRepositoryConfigurationImportPorts["landing"] {
+  return {
+    landing: (_partition, repository) => {
+      calls.push(`landing:${String(repository)}`);
+      return Promise.resolve({
+        repository,
+        boundAt: "2026-10-01T00:00:00Z",
+        landing: asRepositoryLanding("Push"),
+        ...(retiredAt === undefined ? {} : { retiredAt }),
+      });
+    },
+  };
+}
+
+/** The import's ports over one binding, live unless it is given the instant it retired at. */
 function repositoryImportPorts(
   calls: string[],
-): RepositoryConfigurationImportPorts {
+  retiredAt?: string,
+): NativeRepositoryConfigurationImportPorts {
   return {
+    landing: repositoryImportLanding(calls, retiredAt),
     bindings: {
       binding: (foundPartition, forRepository) => {
         calls.push(`binding:${String(forRepository)}`);
@@ -628,10 +650,33 @@ test("repository imports authorize, pin one snapshot, then persist ready declara
   );
   assert.deepEqual(subject.calls, ["authorize:Mutate"]);
   assert.deepEqual(calls, [
+    `landing:${repository}`,
     `binding:${repository}`,
     `snapshot:${commit}`,
     "import:1",
   ]);
+});
+
+test("a repository import naming a repository this project retired is answered as one it never bound", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls, "2026-10-14T00:00:00Z"),
+  );
+  const repository = asRepositoryId("repository-retired");
+  assert.deepEqual(
+    await subject.web.importRepositoryConfigurations(principal, partition, {
+      repository,
+      commit: asGitObjectId("a".repeat(40)),
+    }),
+    { result: "RepositoryAbsent" },
+  );
+  assert.deepEqual(
+    calls,
+    [`landing:${repository}`],
+    "nothing is read from the repository",
+  );
 });
 
 test("repository imports conceal denial before reading any outer port", async () => {
@@ -702,7 +747,11 @@ test("repository imports refuse invalid declarations without writing", async () 
     { repository, commit: asGitObjectId("c".repeat(40)) },
   );
   assert.equal(result.result, "DeclarationsRefused");
-  assert.deepEqual(calls, [`binding:${repository}`, "snapshot:invalid"]);
+  assert.deepEqual(calls, [
+    `landing:${repository}`,
+    `binding:${repository}`,
+    "snapshot:invalid",
+  ]);
 });
 
 test("operational resources authorize before scheduler or artifact reads", async () => {

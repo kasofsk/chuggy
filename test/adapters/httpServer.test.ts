@@ -61,10 +61,8 @@ import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts"
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
-import {
-  asRepositoryId,
-  type RepositoryBinding,
-} from "../../src/interpreter/finalizer.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
@@ -771,11 +769,12 @@ function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
       authorizeSite: projectAccessSiteRefused,
     },
     {
-      binding: (_partition, repository) =>
+      landing: (_partition, repository) =>
         Promise.resolve({
-          partition: { tenant: asTenantId("elsewhere") },
           repository,
-        } as RepositoryBinding),
+          boundAt: "2026-10-01T00:00:00Z",
+          landing: asRepositoryLanding("Push"),
+        }),
     },
     mintedRepositoryTokens({
       forge: asForgeId("github"),

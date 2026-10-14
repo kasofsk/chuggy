@@ -56,7 +56,10 @@ import {
   type ProjectAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  asRepositoryLanding,
+  type ProjectRepositoryLandingStore,
+} from "../../src/interpreter/repositoryBinding.ts";
 import {
   asProjectId,
   asTenantId,
@@ -112,26 +115,21 @@ function fixtureAccess(
   };
 }
 
-/**
- * The binding read, answering a row recorded under a tenant of its own. The
- * caller's partition is the one that must reach the mint, so a fixture whose
- * row agreed with the caller could not tell the two apart.
- */
+/** The point read of one binding, live unless it is given the instant it retired at. */
 function fixtureBindings(
   bound: RepositoryId | undefined,
-): ProjectRepositoryBindingRead {
+  retiredAt?: string,
+): Pick<ProjectRepositoryLandingStore, "landing"> {
   return {
-    binding: (_partition, repository) =>
+    landing: (_partition, repository) =>
       Promise.resolve(
         bound !== undefined && repository === bound
-          ? ({
-              partition: {
-                tenant: asTenantId("elsewhere"),
-                project: asProjectId("crossed"),
-              },
+          ? {
               repository: bound,
-              recoveryEpoch: "epoch",
-            } as RepositoryBinding)
+              boundAt: "2026-10-01T00:00:00Z",
+              landing: asRepositoryLanding("Push"),
+              ...(retiredAt === undefined ? {} : { retiredAt }),
+            }
           : undefined,
       ),
   };
@@ -399,6 +397,42 @@ test("a caller without the permit and a repository this project does not bind ar
     { result: "NotFound" },
   );
   assert.deepEqual(asked, [], "neither refusal reaches the forge");
+});
+
+test("a repository this project retired is not found exactly as one it never bound", async () => {
+  const asked: RepositoryId[] = [];
+  const tokens = fixtureTokens(
+    { minted: "Token", token: fixtureToken, expiresAtMs: 1_000 },
+    asked,
+  );
+  const request = {
+    repository: fixtureRepository,
+    permissions: "write",
+  } as const;
+  assert.deepEqual(
+    await forgeCredentialMinting(
+      fixtureAccess("Authorized"),
+      fixtureBindings(fixtureRepository),
+      tokens,
+    ).mint(fixturePrincipal, fixturePartition, request),
+    {
+      result: "Authorized",
+      value: { token: fixtureToken, expiresAtMs: 1_000 },
+    },
+  );
+  assert.deepEqual(
+    await forgeCredentialMinting(
+      fixtureAccess("Authorized"),
+      fixtureBindings(fixtureRepository, "2026-10-14T00:00:00Z"),
+      tokens,
+    ).mint(fixturePrincipal, fixturePartition, request),
+    { result: "NotFound" },
+  );
+  assert.deepEqual(
+    asked,
+    [fixtureRepository],
+    "only the live binding reaches the forge",
+  );
 });
 
 test("a forge refusal is not found and a forge outage is a wait", async () => {
