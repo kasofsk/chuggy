@@ -12,6 +12,7 @@
 
 import { expect, test } from "vitest";
 
+import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
@@ -32,8 +33,16 @@ import type {
   SetupStanding,
   SetupStep,
 } from "../app/core/setupStanding.ts";
-import { setupSiteAt, setupSiteStages } from "./setupSite.ts";
-import type { SetupSiteStage } from "./setupSite.ts";
+import { saidLandingTicket, saidRunnable } from "./setupSaid.ts";
+import {
+  setupSiteAt,
+  setupSiteBootstrap,
+  setupSiteLanded,
+  setupSiteOpened,
+  setupSiteProposed,
+  setupSiteStages,
+} from "./setupSite.ts";
+import type { SetupSite, SetupSiteStage } from "./setupSite.ts";
 import { nextOf, stoodSite } from "./setupStood.ts";
 
 const chosen: SetupChoice = {
@@ -59,6 +68,7 @@ function lacking(
     remote: undefined,
     found: [],
     steps,
+    unmerged: undefined,
     ...given,
   };
 }
@@ -360,6 +370,99 @@ test("with every step done, setup is said to be done in the ticket step's own wo
     });
   }
 });
+
+const pullRequest = "https://github.com/acme-org/widgets/pull/2";
+
+/** Setup said to be done in the ticket step's words, naming the pull request to merge where there is one. */
+function closing(detail: string, unmerged?: string): SetupThing {
+  const merge =
+    unmerged === undefined
+      ? ""
+      : ` Its pull request, ${unmerged}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`;
+  return {
+    thing: "Done",
+    tell: `chuggy is set up for acme/widgets: ${detail}.${merge} The next ticket is made at ${pages}/tickets/new.`,
+  };
+}
+
+/** A site set up to a done first ticket with `landings`, its repository holding only the bootstrap unless `own`. */
+function doneWith(
+  landings: readonly TicketLandingResponse[],
+  own = false,
+): SetupSite {
+  const site = setupSiteAt("Landed");
+  site.projects[0]?.landings.set(1, landings);
+  return own ? site : setupSiteBootstrap(site);
+}
+
+/** A site with everything but the ticket done and ticket 6 being landed with `landings`, its repository holding only the bootstrap unless `own`. */
+function landingWith(
+  landings: readonly TicketLandingResponse[],
+  own = false,
+): SetupSite {
+  const { site, project } = saidRunnable();
+  project.tickets.push(saidLandingTicket(6));
+  project.landings.set(6, landings);
+  return own ? site : setupSiteBootstrap(site);
+}
+
+test("where the repository holds only the bootstrap, setup done on a ticket whose pull request stands closes on that pull request, by its address, as the one to merge so later tickets run on the repository's own configuration", async () => {
+  expect(
+    (await nextOf(doneWith([setupSiteOpened(pullRequest)]))).thing,
+  ).toEqual(closing("ticket 1 is done", pullRequest));
+  expect(
+    (await nextOf(landingWith([setupSiteProposed(pullRequest)]))).thing,
+  ).toEqual(closing("ticket 6 opened a pull request", pullRequest));
+  const older = setupSiteProposed("https://github.com/acme-org/widgets/pull/1");
+  expect(
+    (await nextOf(doneWith([older, setupSiteOpened(pullRequest)]))).thing,
+  ).toEqual(closing("ticket 1 is done", pullRequest));
+});
+
+test("where the repository holds its own configuration, setup done closes as it always has, whatever pull request the ticket opened", async () => {
+  expect(
+    (await nextOf(doneWith([setupSiteOpened(pullRequest)], true))).thing,
+  ).toEqual(closing("ticket 1 is done"));
+  expect(
+    (await nextOf(landingWith([setupSiteProposed(pullRequest)], true))).thing,
+  ).toEqual(closing("ticket 6 opened a pull request"));
+});
+
+test("where the repository holds only the bootstrap and no pull request of the ticket stands unmerged, setup done closes as it always has: none opened, one pushed, one that landed or says it merged, one failed or invalidated", async () => {
+  const opened = setupSiteOpened(pullRequest);
+  const proposal = {
+    url: pullRequest,
+    headRef: "chug/ticket",
+    baseRef: "main",
+  };
+  const unstanding: readonly (readonly TicketLandingResponse[])[] = [
+    [],
+    [setupSiteLanded],
+    [{ ...setupSiteLanded, proposal }],
+    [{ ...setupSiteLanded, proposal: { ...proposal, merge: "Merged" } }],
+    [{ ...opened, proposal: { ...proposal, merge: "Merged" } }],
+    [{ ...opened, state: "Failed" }],
+    [{ ...opened, state: "Invalidated" }],
+    [opened, setupSiteLanded],
+  ];
+  for (const landings of unstanding)
+    expect(
+      (await nextOf(doneWith(landings))).thing,
+      JSON.stringify(landings),
+    ).toEqual(closing("ticket 1 is done"));
+  expect(
+    (await nextOf(landingWith([{ ...setupSiteLanded, proposal }]))).thing,
+  ).toEqual(closing("ticket 6 landed"));
+});
+
+test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
+  "the done ticket's landings answered as %s leave setup done, closing as it always has, and stop nothing",
+  async (fate) => {
+    const site = doneWith([setupSiteOpened(pullRequest)]);
+    site.fates.set("landings", fate);
+    expect((await nextOf(site)).thing).toEqual(closing("ticket 1 is done"));
+  },
+);
 
 const offered = (tell: string): SetupThing => ({
   thing: "Offer",

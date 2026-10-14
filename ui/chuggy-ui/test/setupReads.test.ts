@@ -33,6 +33,7 @@ import type { SetupChoice } from "../app/core/setupReads.ts";
 import {
   setupSiteAccount,
   setupSiteAt,
+  setupSiteBootstrap,
   setupSiteClaim,
   setupSiteEmpty,
   setupSiteHeld,
@@ -595,6 +596,26 @@ test("the landings of a ticket being landed are read, and of no other ticket", a
     ...grants,
     `GET ${project}/tickets/3/landings`,
   ]);
+});
+
+test("the landings of the ticket that is done are read only where the repository meant holds only the bootstrap", async () => {
+  expect(await sentFor(setupSiteBootstrap(setupSiteAt("Landed")))).toEqual([
+    ...reads,
+    ...grants,
+    `GET ${project}/tickets/1/landings`,
+  ]);
+  expect(await sentFor(setupSiteAt("Landed"))).toEqual([...reads, ...grants]);
+  expect(await sentFor(setupSiteBootstrap(setupSiteAt("Moving")))).toEqual([
+    ...reads,
+    ...grants,
+  ]);
+  const beside = setupSiteAt("Landed");
+  beside.projects[0]?.repositories.push({
+    repository: "https://github.com/acme-org/gadgets",
+    configured: true,
+    bootstrapped: true,
+  });
+  expect(await sentFor(beside)).toEqual([...reads, ...grants]);
 });
 
 test("a read that hangs on one that was not got is never sent", async () => {

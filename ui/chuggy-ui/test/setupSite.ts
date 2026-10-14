@@ -35,6 +35,7 @@ import type {
   ExecutionPlacementResponse,
   ForgeInstallationResponse,
   ForgeRepositoryResponse,
+  ProjectRepositoryConfigurationsHeldResponse,
   ProjectRepositoryListedResponse,
   SelectorProjectSettingsResponse,
   SessionPlacementResponse,
@@ -49,8 +50,10 @@ import type {
 
 export interface SetupSiteRepository {
   readonly repository: string;
+  /** Whether the project holds a configuration for it: the repository's own, or the bootstrap where `bootstrapped` says so. */
   readonly configured: boolean;
   readonly retired?: boolean;
+  readonly bootstrapped?: boolean;
 }
 
 export interface SetupSiteTicket {
@@ -227,6 +230,11 @@ export function setupSiteProposed(url: string): TicketLandingResponse {
   };
 }
 
+/** A landing that ended by opening a pull request at `url`, which is how a ticket landed by pull request is done. */
+export function setupSiteOpened(url: string): TicketLandingResponse {
+  return { ...setupSiteProposed(url), state: "Proposed" };
+}
+
 /** A landing pushed straight to its branch: landed, with no pull request to show. */
 export const setupSiteLanded: TicketLandingResponse = {
   cycle: 1,
@@ -307,6 +315,16 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
   if (stage === "Landed") project.tickets.push({ ticket: 1, phase: "Done" });
+  return site;
+}
+
+/** `site` with every repository that holds a configuration holding only the bootstrap, as one that declares none of its own does. */
+export function setupSiteBootstrap(site: SetupSite): SetupSite {
+  for (const project of site.projects)
+    project.repositories = project.repositories.map((held) => ({
+      ...held,
+      bootstrapped: true,
+    }));
   return site;
 }
 
@@ -402,6 +420,15 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
   };
 }
 
+/** What the project holds for a repository it holds a configuration for. */
+function configurations(
+  repository: SetupSiteRepository,
+): ProjectRepositoryConfigurationsHeldResponse {
+  return repository.bootstrapped === true
+    ? { result: "Bootstrapped", revision: "bootstrap-widgets" }
+    : { result: "Imported", count: 1 };
+}
+
 function binding(
   repository: SetupSiteRepository,
 ): ProjectRepositoryListedResponse {
@@ -413,6 +440,9 @@ function binding(
       ? { retiredAt: "2026-08-27T00:00:00Z" }
       : {}),
     configured: repository.configured,
+    ...(repository.configured
+      ? { configurationsHeld: configurations(repository) }
+      : {}),
   };
 }
 
