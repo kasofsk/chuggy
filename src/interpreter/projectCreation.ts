@@ -34,8 +34,7 @@ import {
   projectAuthorityDefaults,
   projectRelationGrant,
   projectTenantGrant,
-  tenantAdministratorGrant,
-  tenantAuthorityDefaults,
+  tenantMakerGrants,
   type ProjectGrant,
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
@@ -142,8 +141,8 @@ export function projectCreationNameFault(
 }
 
 /**
- * The grants an accepted creation writes: the tenant's administrator and
- * defaults only where it made the tenant, the project's link and defaults, and
+ * The grants an accepted creation writes: the tenant's maker's grants only
+ * where it made the tenant, the project's link and defaults, and
  * the site's selector as a developer where the site names one.
  */
 export function projectCreationGrants(
@@ -153,12 +152,7 @@ export function projectCreationGrants(
   selector?: Principal,
 ): readonly ProjectGrant[] {
   return [
-    ...(tenantCreated
-      ? [
-          tenantAdministratorGrant(principal, partition.tenant),
-          ...tenantAuthorityDefaults(partition.tenant),
-        ]
-      : []),
+    ...(tenantCreated ? tenantMakerGrants(principal, partition.tenant) : []),
     projectTenantGrant(partition),
     ...projectAuthorityDefaults(partition),
     ...(selector === undefined

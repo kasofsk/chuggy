@@ -1,7 +1,8 @@
 /**
  * The site inviting a person into a tenant of their own: their account found or
  * created as the tenant invitation finds or creates it, then made the tenant's
- * administrator with the defaults every tenant starts with.
+ * administrator, holding personal runners, with the defaults every tenant
+ * starts with.
  *
  * A TENANT IS FREE OR ALREADY THIS PERSON'S. One the account carrying the
  * credential administers is the same invitation sent again, and is written
@@ -50,8 +51,7 @@ import {
 } from "./projectAccess.ts";
 import type { TenantClaims } from "./projectCreation.ts";
 import {
-  tenantAdministratorGrant,
-  tenantAuthorityDefaults,
+  tenantMakerGrants,
   type ProjectGrant,
   type ProjectGrantWriter,
 } from "./projectGrant.ts";
@@ -118,7 +118,7 @@ async function accessOwnerInvitationStanding(
     : undefined;
 }
 
-/** Every tuple the invitation writes, the administrator's first: the person administering, the tenant's defaults, and its administrators among the site's account creators where asked. */
+/** Every tuple the invitation writes, the administrator's first: the person administering and holding personal runners, the tenant's defaults, and its administrators among the site's account creators where asked. */
 export function accessOwnerInvitationGrants(
   issuer: string,
   tenant: TenantId,
@@ -126,8 +126,7 @@ export function accessOwnerInvitationGrants(
   createAccounts: boolean,
 ): readonly ProjectGrant[] {
   return [
-    tenantAdministratorGrant(oidcPrincipal(issuer, subject), tenant),
-    ...tenantAuthorityDefaults(tenant),
+    ...tenantMakerGrants(oidcPrincipal(issuer, subject), tenant),
     ...(createAccounts
       ? [
           {

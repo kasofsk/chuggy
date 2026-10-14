@@ -91,6 +91,19 @@ async function owning(
   };
 }
 
+/** `subject` holding personal runners in the tenant made for them. */
+function personalRunnersOf(subject: string) {
+  return {
+    namespace: "Tenant",
+    object: projectAccessTenantObject(owned),
+    relation: "personal_runners",
+    holder: {
+      subject: "Principal",
+      principal: accessFixturePrincipal(subject),
+    },
+  };
+}
+
 /** The writes an invitation of `subject` is expected to make, in order. */
 function writesOf(subject: string, createAccounts = true) {
   return accessOwnerInvitationGrants(
@@ -101,7 +114,7 @@ function writesOf(subject: string, createAccounts = true) {
   ).map((grant) => ["write", grant] as const);
 }
 
-test("a free tenant and a GitHub account nothing holds make one account, the administrator, the tenant's defaults and the account creators, the administrator first", async () => {
+test("a free tenant and a GitHub account nothing holds make one account, the administrator holding personal runners, the tenant's defaults and the account creators, the administrator first", async () => {
   const { memory, directory, invite } = await owning();
   const subject = directorySubject(0);
   assert.deepEqual(await invite(), {
@@ -119,6 +132,7 @@ test("a free tenant and a GitHub account nothing holds make one account, the adm
   ]);
   assert.deepEqual(memory.changes, [
     ["write", tenantAdministratorGrant(accessFixturePrincipal(subject), owned)],
+    ["write", personalRunnersOf(subject)],
     ...tenantAuthorityDefaults(owned).map((grant) => ["write", grant]),
     [
       "write",
@@ -135,6 +149,22 @@ test("a free tenant and a GitHub account nothing holds make one account, the adm
       },
     ],
   ]);
+});
+
+test("the person invited into a tenant of their own holds personal runners in it, with and without account creation", async () => {
+  for (const createAccounts of [true, false]) {
+    const { memory, invite } = await owning();
+    assert.equal(
+      (await invite({ ...sent, createAccounts })).invited,
+      "Invited",
+    );
+    assert.deepEqual(
+      memory.changes.filter(
+        ([, grant]) => grant.relation === "personal_runners",
+      ),
+      [["write", personalRunnersOf(directorySubject(0))]],
+    );
+  }
 });
 
 test("not asking for account creation writes nothing on the site, and asks no `ManageSiteAuthorities`", async () => {

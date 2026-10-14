@@ -116,7 +116,8 @@ member's threads and, under the owner fallback, their executions, in the
 projects they allowlist and may still read. A member holds at most one in a
 tenant, and none until the tenant gives them personal runners, which a new
 tenant's administrators may (an older tenant: `deploy/rig/keto/README.md`,
-Default authority holders). The member mints a single-use token for the
+Default authority holders), save the person a tenant is made for, who holds
+them from its making. The member mints a single-use token for the
 tenant, under My runner in the console's workspace settings or with
 `POST /api/v1/tenants/:tenant/personal-runner-registration-tokens`, and
 redeems it on the machine with the runner's `register --personal`. The runner

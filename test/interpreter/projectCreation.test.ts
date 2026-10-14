@@ -12,6 +12,7 @@ import {
 import {
   memberAuthority,
   ProjectAccessUnavailable,
+  projectAccessTenantObject,
   type ProjectAccess,
   type SiteAccessKind,
 } from "../../src/interpreter/projectAccess.ts";
@@ -147,9 +148,18 @@ const created: ProjectCreationAnswer = {
   operation: request.operation,
 };
 
+/** The creator holding personal runners in the tenant it made. */
+const personalRunners: ProjectGrant = {
+  namespace: "Tenant",
+  object: projectAccessTenantObject(partition.tenant),
+  relation: "personal_runners",
+  holder: { subject: "Principal", principal },
+};
+
 /** What a creation that made its tenant writes, in order. */
 const madeTenant: readonly ProjectGrant[] = [
   tenantAdministratorGrant(principal, partition.tenant),
+  personalRunners,
   ...tenantAuthorityDefaults(partition.tenant),
   projectTenantGrant(partition),
   ...projectAuthorityDefaults(partition),
@@ -347,7 +357,7 @@ test("a reservation is exact: a tenant extending a reserved name is not reserved
   }
 });
 
-test("a creation's tuples are its administrator and the tenant's defaults where it made the tenant, then the link, the project's defaults and the selector", () => {
+test("a creation's tuples are its administrator holding personal runners and the tenant's defaults where it made the tenant, then the link, the project's defaults and the selector", () => {
   const selector = asPrincipal("issuer selector");
   const developing = projectRelationGrant(selector, partition, "developers");
   assert.deepEqual(
@@ -366,13 +376,39 @@ test("a creation's tuples are its administrator and the tenant's defaults where 
     projectCreationGrants(principal, partition, false),
     madeProject,
   );
-  assert.equal(
-    madeTenant.filter(
-      (grant) =>
-        grant.holder.subject === "Principal" &&
-        grant.holder.principal === principal,
-    ).length,
-    1,
+  assert.deepEqual(
+    madeTenant
+      .filter(
+        (grant) =>
+          grant.holder.subject === "Principal" &&
+          grant.holder.principal === principal,
+      )
+      .map((grant) => grant.relation),
+    ["admins", "personal_runners"],
+  );
+});
+
+test("a creation that makes its tenant writes its creator into personal runners, and one under a tenant that stands writes no such tuple", async () => {
+  const making = creationWith(created);
+  await making.service.create(principal, request);
+  assert.deepEqual(
+    making.lists
+      .flat()
+      .filter((grant) => grant.relation === "personal_runners"),
+    [personalRunners],
+  );
+  const standing = creationWith({ ...created, tenantCreated: false });
+  standing.access.grantTenant({
+    tenant: partition.tenant,
+    principal,
+    access: new Set(["AdministerTenant"]),
+  });
+  await standing.service.create(principal, request);
+  assert.equal(standing.lists.length, 1);
+  assert.ok(
+    standing.lists
+      .flat()
+      .every((grant) => grant.relation !== "personal_runners"),
   );
 });
 
