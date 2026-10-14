@@ -138,7 +138,7 @@ const unreleased =
 const unknown =
   "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
 const invalid =
-  "the configuration this named is not one the project will run, or it hands the work off where this brief opens a pull request";
+  "the configuration is not one the project will run, as written or as overridden";
 const pending = "the operation is still pending after the attempt budget";
 const fencedOut = "the ticket's authoring changed after this was submitted";
 

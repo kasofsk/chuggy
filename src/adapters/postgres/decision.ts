@@ -73,6 +73,7 @@ import type { ExecutionTaskKind } from "../../interpreter/executionScheduler.ts"
 import {
   asCanonicalConfiguration,
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
   parseDraftAuthoring,
   type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
@@ -671,11 +672,7 @@ async function decisionReleaseOutcome(
     fence.overrides,
   );
   if (readiness.readiness === "Incomplete")
-    return releaseRefused(
-      readiness.fault === "BriefNamesNoRepository"
-        ? "BriefNamesNoRepository"
-        : "ConfigurationInvalid",
-    );
+    return releaseRefused(draftReleaseRefusalCode(readiness.fault));
   if (decision.outcome.outcome === "Journaled" && !(await releaseFence(true)))
     throw new Error(
       "release fence changed while held by its deciding transaction",
@@ -778,8 +775,8 @@ async function overridesChangeTicket(
 
 /**
  * The outcome an overrides change earns behind the project's lock: refused
- * `TicketChanged` off its fence, `ConfigurationInvalid` where the effective
- * configuration is not ready and `OverridesMoveDefinition` where the
+ * `TicketChanged` off its fence, under `draftReleaseRefusalCode` where the
+ * effective configuration is not ready and `OverridesMoveDefinition` where the
  * definition it resolves is not the one the ticket holds. Any other outcome
  * is answered as it came.
  */

@@ -602,6 +602,32 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     Answered: true,
     Cancelled: true,
   };
+  const freshness: Record<
+    ProjectOperationalStatus["schedulerFreshness"],
+    true
+  > = { Unknown: true };
+  const verdicts: Record<ExecutionResultResource["verdict"], true> = {
+    Pass: true,
+    Fail: true,
+  };
+  const dispatchResults: Record<DispatchViewPage["result"], true> = {
+    Page: true,
+    Reset: true,
+  };
+  const batches: Record<NotificationBatch["result"], true> = {
+    Events: true,
+    Reset: true,
+  };
+  assert.deepEqual(sorted(executionTaskKinds), keysOf(kinds));
+  assert.deepEqual(sorted(outputRenderers), keysOf(renderers));
+  assert.deepEqual(sorted(operationStates), keysOf(states));
+  assert.deepEqual(sorted(schedulerFreshnesses), keysOf(freshness));
+  assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
+  assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
+  assert.deepEqual(sorted(notificationResults), keysOf(batches));
+});
+
+test("the refusal code roster is exhaustive over its union", () => {
   const refusals: Record<RefusalCode, true> = {
     TicketAlreadyExists: true,
     DependenciesNotFound: true,
@@ -623,34 +649,13 @@ test("the rosters with no runtime list are exhaustive over their unions", () => 
     ExecutionSourceUnreadable: true,
     ExecutionSourceDenied: true,
     BriefNamesNoRepository: true,
+    BriefChecksUncommanded: true,
+    ConfigurationFromAnotherRepository: true,
     TicketCapacityReached: true,
     FinalizationRequestClosed: true,
     OverridesMoveDefinition: true,
   };
-  const freshness: Record<
-    ProjectOperationalStatus["schedulerFreshness"],
-    true
-  > = { Unknown: true };
-  const verdicts: Record<ExecutionResultResource["verdict"], true> = {
-    Pass: true,
-    Fail: true,
-  };
-  const dispatchResults: Record<DispatchViewPage["result"], true> = {
-    Page: true,
-    Reset: true,
-  };
-  const batches: Record<NotificationBatch["result"], true> = {
-    Events: true,
-    Reset: true,
-  };
-  assert.deepEqual(sorted(executionTaskKinds), keysOf(kinds));
-  assert.deepEqual(sorted(outputRenderers), keysOf(renderers));
-  assert.deepEqual(sorted(operationStates), keysOf(states));
   assert.deepEqual(sorted(operationRefusalCodes), keysOf(refusals));
-  assert.deepEqual(sorted(schedulerFreshnesses), keysOf(freshness));
-  assert.deepEqual(sorted(resultVerdicts), keysOf(verdicts));
-  assert.deepEqual(sorted(dispatchViewResults), keysOf(dispatchResults));
-  assert.deepEqual(sorted(notificationResults), keysOf(batches));
 });
 
 test("the output content encoding roster is exhaustive over its union", () => {

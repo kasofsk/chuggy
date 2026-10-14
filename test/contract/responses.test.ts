@@ -961,6 +961,8 @@ test("every refusal an update earns is answered on the wire, the machine's with 
     { type: "AuthoringChanged" },
     { type: "ConfigurationInvalid" },
     { type: "BriefNamesNoRepository" },
+    { type: "BriefChecksUncommanded" },
+    { type: "ConfigurationFromAnotherRepository" },
   ];
   for (const refusal of refusals) {
     const body = operationResponse(refusedOperation(refusal)).body;

@@ -634,6 +634,10 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Remote refused credentials";
     case "BriefNamesNoRepository":
       return "Brief names no repository";
+    case "BriefChecksUncommanded":
+      return "No check stage for brief checks";
+    case "ConfigurationFromAnotherRepository":
+      return "Configuration from another repository";
     case "TicketCapacityReached":
       return "Ticket capacity reached";
     case "FinalizationRequestClosed":

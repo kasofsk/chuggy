@@ -377,6 +377,46 @@ test("a parked ticket's overrides are held to the ones it holds, not to the conf
   );
 });
 
+test("a parked ticket whose brief and configuration do not pair is refused under that fault, whatever is offered", () => {
+  const paired = {
+    configuration: canonicalConfigurationOf(document),
+    configurationRepository: undefined,
+    authoring,
+    brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+  };
+  const unpaired = [
+    [
+      {
+        ...paired,
+        brief: asDraftBrief({
+          ...briefBeforeImages,
+          checks: ["npm test"],
+          repository: "repository-one",
+        }),
+      },
+      "BriefChecksUncommanded",
+    ],
+    [
+      { ...paired, brief: asDraftBrief(briefBeforeImages) },
+      "BriefNamesNoRepository",
+    ],
+    [
+      { ...paired, configurationRepository: asRepositoryId("repository-two") },
+      "ConfigurationFromAnotherRepository",
+    ],
+  ] as const;
+  for (const [ticket, code] of unpaired)
+    for (const offered of [{}, { practices: [] }])
+      assert.deepEqual(
+        parkedOverridesVerdict(ticket, undefined, offered),
+        { verdict: "Refused", code },
+        code,
+      );
+  assert.deepEqual(parkedOverridesVerdict(paired, undefined, {}), {
+    verdict: "Admitted",
+  });
+});
+
 test("an agent named where the requirement is a container capability moves the definition, though the contract offers the mode", () => {
   const ticket = {
     configuration: canonicalConfigurationOf({

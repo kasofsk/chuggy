@@ -29,6 +29,7 @@ import { executionRequirementConfigurationIsValid } from "./executionRequirement
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
+import type { BoundaryRefusalCode } from "./refusal.ts";
 import {
   authoredTaskConfigurationReadiness,
   briefsAnyAgent,
@@ -51,21 +52,44 @@ export type ReleaseConfiguration = Readonly<Record<string, unknown>> & {
 } & AuthoredTaskConfiguration;
 
 /**
- * Why one configuration is not releasable. `BriefChecksUncommanded`,
- * `BriefNamesNoRepository` and `ConfigurationFromAnotherRepository` are faults
- * about the pairing rather than the document, either document alone being fine:
- * a configuration commanding no check stage contradicts a brief that appends
- * check lines to it, a brief naming no repository has nothing to pair with, and
- * a configuration imported from a repository contradicts a brief working in a
- * different one.
+ * The faults about the pairing of a brief and a configuration rather than
+ * either document, either alone being fine: a configuration commanding no check
+ * stage contradicts a brief that appends check lines to it, a brief naming no
+ * repository has nothing to pair with, and a configuration imported from a
+ * repository contradicts a brief working in a different one. A revision of the
+ * brief mends each, so each is refused under its own code rather than as the
+ * configuration's.
  */
+export const releasePairingFaults = [
+  "BriefChecksUncommanded",
+  "BriefNamesNoRepository",
+  "ConfigurationFromAnotherRepository",
+] as const satisfies readonly BoundaryRefusalCode[];
+export type ReleasePairingFault = (typeof releasePairingFaults)[number];
+
+/** Why one configuration is not releasable: a fault of the document, or of its pairing with a brief. */
 export type ReleaseConfigurationFault =
   | "ReleaseShapeInvalid"
   | "WorkerUndeclared"
-  | "BriefChecksUncommanded"
-  | "BriefNamesNoRepository"
-  | "ConfigurationFromAnotherRepository"
-  | TaskConfigurationFault;
+  | TaskConfigurationFault
+  | ReleasePairingFault;
+
+export type DraftReleaseRefusalCode =
+  ReleasePairingFault | "ConfigurationInvalid";
+
+/**
+ * What a release refused for one fault is answered with: a pairing fault under
+ * its own code, and a fault of the configuration document, which no revision of
+ * the brief mends, as `ConfigurationInvalid`.
+ */
+export function draftReleaseRefusalCode(
+  fault: ReleaseConfigurationFault,
+): DraftReleaseRefusalCode {
+  return (
+    releasePairingFaults.find((pairing) => pairing === fault) ??
+    "ConfigurationInvalid"
+  );
+}
 
 export type ReleaseConfigurationReadiness =
   | {

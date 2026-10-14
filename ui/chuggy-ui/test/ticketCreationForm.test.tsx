@@ -482,7 +482,7 @@ const releasedAndConfirmed = (version: number): readonly string[] => [
   "GET ?after=11&limit=1&minimumSequence=42",
 ];
 
-const refusedNote = `the configuration this named is not one the project will run, or it hands the work off where this brief opens a pull request — ${draftUnreleased}`;
+const refusedNote = `the configuration is not one the project will run, as written or as overridden — ${draftUnreleased}`;
 
 /** The form over a door, and what was sent since the case last asked. */
 function drawHeld(

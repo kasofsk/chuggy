@@ -1137,7 +1137,7 @@ async function projectReleases(partition: Partition, label: string) {
 async function assertRefusalLeftBehind(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
   submission: Submission,
-  code = "ConfigurationInvalid",
+  code: string,
 ): Promise<void> {
   assert.deepEqual(
     await harness.query(
@@ -1163,10 +1163,11 @@ async function assertRefusalLeftBehind(
 async function assertReleaseRefused(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
   label: string,
+  code: string,
 ): Promise<void> {
   const { submission, result } = await releaseDecision(fixture, label);
   assert.equal(result.decided.decided, "Refused");
-  await assertRefusalLeftBehind(fixture, submission);
+  await assertRefusalLeftBehind(fixture, submission, code);
 }
 
 /** Appends one check line to a fixture's brief, as a ticket carrying one has. */
@@ -1183,7 +1184,11 @@ async function appendFixtureCheck(
 test("a brief that appends check lines refuses release against a configuration commanding none", async () => {
   const fixture = await draftFixture();
   await appendFixtureCheck(fixture);
-  await assertReleaseRefused(fixture, "checks-uncommanded");
+  await assertReleaseRefused(
+    fixture,
+    "checks-uncommanded",
+    "BriefChecksUncommanded",
+  );
 });
 
 test("a configuration commanding a check stage releases a brief that appends to it", async () => {
@@ -1322,7 +1327,11 @@ test("a release is refused for a configuration imported from another repository"
   );
   const refused = await release(elsewhere);
   assert.equal(refused.decided, "Refused");
-  await assertRefusalLeftBehind(elsewhere, refused.submission);
+  await assertRefusalLeftBehind(
+    elsewhere,
+    refused.submission,
+    "ConfigurationFromAnotherRepository",
+  );
 
   assert.equal(
     (
