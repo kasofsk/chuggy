@@ -24,7 +24,13 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { machineFiles, machineSender, machineWrapper } from "./machineShape.ts";
+import {
+  machineFiles,
+  machineNamePart,
+  machineRunAs,
+  machineSender,
+  machineWrapper,
+} from "./machineShape.ts";
 import type {
   MachineAct,
   MachineCall,
@@ -108,17 +114,6 @@ function npm(): number {
   return said(0, "\nadded 12 packages in 3s\n");
 }
 
-/** One part of a pool file's name, as the package writes it. */
-function part(text: string): string {
-  return [...new TextEncoder().encode(text)]
-    .map((octet) =>
-      /[A-Za-z0-9-]/u.test(String.fromCharCode(octet))
-        ? String.fromCharCode(octet)
-        : `_${octet.toString(16).padStart(2, "0")}`,
-    )
-    .join("");
-}
-
 function unitOf(file: string): string {
   const base = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
   return `chuggy-linux-${base}.service`;
@@ -135,14 +130,31 @@ function fileOf(held: {
 }): string {
   const name =
     held.owner === undefined
-      ? `${part(held.tenant)}.${part(held.project ?? "")}.${knobs.pool}.json`
-      : `${part(held.tenant)}.${part(held.owner)}.json`;
+      ? `${machineNamePart(held.tenant)}.${machineNamePart(held.project ?? "")}.${knobs.pool}.json`
+      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.json`;
   return join(config, "chuggy", "pools", name);
+}
+
+/** Whether the package this was run from knows `--personal`, which its manifest says by its version. */
+function takesPersonal(): boolean {
+  const prefix = dirname(dirname(process.env[machineRunAs] ?? ""));
+  const manifest = join(
+    prefix,
+    "lib",
+    "node_modules",
+    "chuggy-linux",
+    "package.json",
+  );
+  const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
+  const version = /"version":"(\d+)\.(\d+)\./u.exec(text);
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 4;
 }
 
 /** A registration, a pool's or with `--personal` the person's own: the token redeemed at the site it names, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
   const personal = argv[1] === "--personal";
+  if (personal && !takesPersonal())
+    return said(1, "", "error: unknown option '--personal'\n");
   const [flag, api = "", word = ""] = argv.slice(personal ? 2 : 1);
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))

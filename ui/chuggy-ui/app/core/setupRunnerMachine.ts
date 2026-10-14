@@ -318,6 +318,22 @@ const setupVersionSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+[0-9A-Za-z.+-]*$/u),
 });
 
+/** The first version of the runner package whose `register` takes `--personal`, which is the oldest a run can use. */
+export const setupPackageLeast = "0.4.0";
+
+function setupVersionParts(version: string): readonly number[] {
+  return version.split(/[.+-]/u, 3).map(Number);
+}
+
+/** Whether a package found is one a run can use: its version read, and none older than the least. */
+export function setupPackageCurrent(found: SetupPackageFound): boolean {
+  if (found.version === undefined) return false;
+  const had = setupVersionParts(found.version);
+  const least = setupVersionParts(setupPackageLeast);
+  const at = had.findIndex((part, index) => part !== least[index]);
+  return at < 0 || (had[at] ?? 0) > (least[at] ?? 0);
+}
+
 function setupCommandIn(prefix: string): string {
   return setupPath(prefix, "bin", setupProgram);
 }
@@ -349,7 +365,7 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own. */
+/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
@@ -365,9 +381,11 @@ export async function setupPackageProbed(
     prefix !== undefined &&
     ports.disk.writable(setupPath(prefix, "lib", "node_modules")) &&
     ports.disk.writable(setupPath(prefix, "bin"));
-  const found =
-    (prefix === undefined ? undefined : setupPackageIn(ports, prefix)) ??
-    setupPackageIn(ports, places.own);
+  const held = [
+    prefix === undefined ? undefined : setupPackageIn(ports, prefix),
+    setupPackageIn(ports, places.own),
+  ].filter((there) => there !== undefined);
+  const found = held.find(setupPackageCurrent) ?? held[0];
   return { found, prefix, mine };
 }
 

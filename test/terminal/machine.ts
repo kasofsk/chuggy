@@ -22,7 +22,11 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import { machineFiles, machineWrapper } from "./machineShape.ts";
+import {
+  machineFiles,
+  machineNamePart,
+  machineWrapper,
+} from "./machineShape.ts";
 import type {
   MachineCall,
   MachineKnobs,
@@ -66,7 +70,7 @@ export interface Machine {
 function knobsFirst(prefix: string): MachineKnobs {
   return {
     prefix,
-    version: "0.3.0",
+    version: "0.4.0",
     pool: "shame",
     engines: { docker: true, podman: true },
     services: true,
@@ -125,7 +129,10 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
         for (const project of world.projects)
           if (project.pools.includes(knobs.pool)) project.runner = "Live";
       for (const [tenant, own] of world.own)
-        if (name === `chuggy-linux-${tenant}.${world.member}.service`)
+        if (
+          name ===
+          `chuggy-linux-${machineNamePart(tenant)}.${machineNamePart(world.member)}.service`
+        )
           own.live = true;
     }
   };

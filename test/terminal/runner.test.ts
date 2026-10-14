@@ -45,6 +45,7 @@ import {
   machineStoodIn,
 } from "./machine.ts";
 import type { Machine } from "./machine.ts";
+import { machineNamePart } from "./machineShape.ts";
 import {
   dialect,
   making,
@@ -78,8 +79,8 @@ const other = "1001";
 const mint =
   "program POST /api/v1/tenants/acme/projects/widgets/worker-pool-registration-tokens";
 const redemption = "runner POST /api/v1/worker-pool-registrations";
-const ownFile = `acme.${setupSiteMember}.json`;
-const ownUnit = `chuggy-linux-acme.${setupSiteMember}.service`;
+const ownFile = `acme.${machineNamePart(setupSiteMember)}.json`;
+const ownUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.service`;
 const ownMint =
   "program POST /api/v1/tenants/acme/personal-runner-registration-tokens";
 const ownRedemption = "runner POST /api/v1/personal-runner-registrations";
@@ -403,7 +404,7 @@ test("a second run where both runners are live and the person's own serves the p
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says a workspace admin gives it on the People page, and the run its rule names finishes the job", async () => {
+test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
   const on = await stood("Pool");
   on.installation.world.withheld.add("acme");
   const withheld = await ran(on);
@@ -411,8 +412,8 @@ test("a workspace that does not let the person register a runner of their own st
   assert.deepEqual(withheld.lines.slice(-5), [
     lines(on).found.live,
     "found: the workspace does not let you register a runner of your own",
-    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, ${on.installation.site}/tenants/acme/settings/people. Tell me once they have.`,
-    `${again}once the person says a workspace admin has let them register a runner of their own.`,
+    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+    `${again}once the person says Personal runners is on for them in the workspace.`,
     "next: stop",
   ]);
   assert.deepEqual(on.installation.writes, [mint, redemption]);
@@ -465,6 +466,53 @@ test("the person's own runner registered on another machine is not replaced: thi
   assert.equal(registrations(on).length, 1);
   assert.ok(!existsSync(join(on.machine.pools, ownFile)));
   assert.ok(!existsSync(join(on.machine.units, ownUnit)));
+});
+
+test("a machine whose project's runner was set up on a package too old to register the person's own has it installed again by the same command, its service restarted onto the new one, and the run finishes the job", async () => {
+  const on = await setUp();
+  const { found, did } = lines(on);
+  const installs = () => words(on, "npm").filter((argv) => argv[0] === "i");
+  const [install] = installs();
+  writeFileSync(
+    join(
+      on.machine.prefix,
+      "lib",
+      "node_modules",
+      "chuggy-linux",
+      "package.json",
+    ),
+    JSON.stringify({ name: "chuggy-linux", version: "0.3.0" }),
+  );
+  for (const project of on.installation.world.projects)
+    project.threads = "Pool";
+  cleared(on);
+  const done = await ran(on);
+  assert.equal(done.code, 0, done.stdout);
+  const command = join(on.machine.prefix, "bin", "chuggy-linux");
+  assert.deepEqual(done.lines, [
+    `site: ${on.installation.site}, signed in`,
+    found.engine,
+    found.settings,
+    found.login,
+    `found: the runner package is installed: chuggy-linux 0.3.0, at ${command}, and chuggy setup needs 0.4.0 or later`,
+    did.replaced,
+    found.pool,
+    found.check,
+    did.unit,
+    found.linger,
+    did.restarted,
+    found.live,
+    did.own,
+    did.ownUnit,
+    did.ownStarted,
+    did.serves,
+    found.ownLive,
+    next,
+  ]);
+  assert.deepEqual(installs(), [install]);
+  assert.equal(acts(on).filter((act) => act === "restart").length, 1);
+  assert.deepEqual(on.installation.writes, [ownMint, ownRedemption, serves]);
+  unasked(on);
 });
 
 test("with no Claude login the run changes nothing and says what the runner needs: the login claude setup-token makes, saved alone and readable only by the person, and the run its rule names once it is there finishes the job", async () => {
@@ -753,7 +801,7 @@ test("where the machine's own prefix is not this person's to write, the package 
     const own = join(on.machine.own, "bin", "chuggy-linux");
     assert.ok(
       done.lines.includes(
-        `did: installed the runner package, chuggy-linux 0.3.0, at ${own}`,
+        `did: installed the runner package, chuggy-linux 0.4.0, at ${own}`,
       ),
       done.stdout,
     );

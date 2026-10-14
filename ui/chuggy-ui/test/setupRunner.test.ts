@@ -319,7 +319,46 @@ test("a second run where both runners are live and the person's own serves the p
   expect(times(machine, "service")).toBe(0);
 });
 
-test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says where an admin gives it, and the run named again finishes the job", async () => {
+test("a package older than the first whose register takes --personal, or of a version that cannot be read, is installed again by the same command, the service written before it is restarted onto the new one, and the run goes on to the person's own runner", async () => {
+  const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
+  const words = runnerPackageOffered.installCommand.split(" ");
+  for (const [held, said] of [
+    [JSON.stringify({ version: "0.3.0" }), "chuggy-linux 0.3.0"],
+    ["{", "chuggy-linux"],
+  ] as const) {
+    const machine = await fresh();
+    await ran(machine);
+    machine.box.paths.set(manifest, held);
+    for (const project of machine.world.projects) project.threads = "Pool";
+    machine.box.acts.length = 0;
+    expect((await ran(machine)).lines, said).toEqual([
+      signedIn,
+      found.engine,
+      found.settings,
+      found.login,
+      `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs 0.4.0 or later${held === "{" ? " and could not read its version" : ""}`,
+      did.replaced,
+      found.pool,
+      found.check,
+      did.unit,
+      found.linger,
+      did.restarted,
+      live,
+      did.own,
+      did.ownUnit,
+      did.ownStarted,
+      did.serves,
+      found.ownLive,
+      next,
+    ]);
+    expect(
+      machine.box.ran.filter((run) => boxActOf(run) === "install"),
+    ).toEqual([words, words]);
+    expect(times(machine, "restart"), said).toBe(1);
+  }
+});
+
+test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
   const machine = await both();
   machine.world.withheld.add("acme");
   const withheld = await ran(machine);
@@ -328,9 +367,9 @@ test("a workspace that does not let the person register a runner of their own st
     did.started,
     live,
     "found: the workspace does not let you register a runner of your own",
-    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, ${machineSite}/tenants/acme/settings/people. Tell me once they have.`,
+    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${machineSite}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
     again(
-      "once the person says a workspace admin has let them register a runner of their own",
+      "once the person says Personal runners is on for them in the workspace",
     ),
     stop,
   ]);
@@ -485,11 +524,11 @@ test("the package is installed by the console's own command word for word where 
       [...words.slice(0, -1), "--prefix", boxOwn, ...words.slice(-1)],
     ]);
     expect(done.lines[3], sealed).toBe(
-      `did: installed the runner package, chuggy-linux 0.3.0, at ${boxOwn}/bin/chuggy-linux`,
+      `did: installed the runner package, chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
     );
     expect(done.lines.slice(-2), sealed).toEqual([live, next]);
     expect((await ran(machine)).lines[4], sealed).toBe(
-      `found: the runner package is installed: chuggy-linux 0.3.0, at ${boxOwn}/bin/chuggy-linux`,
+      `found: the runner package is installed: chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
     );
   }
 });
@@ -770,9 +809,13 @@ test("with no package and an npm that does not answer the run stops before anyth
   });
   expect(machine.box.acts).toEqual(["services", "docker"]);
   machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!/usr/bin/env node");
+  machine.box.paths.set(
+    `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
+    JSON.stringify({ version: "0.4.0" }),
+  );
   const done = await ran(machine);
   expect(done.lines[3]).toBe(
-    `found: the runner package is installed: chuggy-linux, at ${boxOwn}/bin/chuggy-linux`,
+    `found: the runner package is installed: chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
   );
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(times(machine, "install")).toBe(0);
@@ -835,7 +878,7 @@ test("a program that could not be started, one that never ended and one that end
   );
 });
 
-test("an act that ended well and left nothing where it makes its thing is said as that, and nothing is built on it", async () => {
+test("an act that ended well and left nothing where it makes its thing, or an install that left a package older than the least, is said as that, and nothing is built on it", async () => {
   const unseen: readonly (readonly [BoxAct, string])[] = [
     [
       "install",
@@ -858,6 +901,19 @@ test("an act that ended well and left nothing where it makes its thing is said a
     expect(done.lines.at(-4), act).toBe(`found: ${said}`);
     expect(machine.box.acts.at(-1), act).toBe(act);
   }
+  const old = await fresh();
+  old.box.answers.set("install", () => {
+    old.box.paths.set(command, "#!/usr/bin/env node");
+    old.box.paths.set(
+      `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`,
+      JSON.stringify({ version: "0.3.0" }),
+    );
+    return exited(0, "done\n");
+  });
+  const done = await ran(old);
+  expect(done.exit).toBe(1);
+  expect(done.lines.at(-4)).toBe(`found: ${unseen[0]?.[1] ?? ""}`);
+  expect(old.box.acts.at(-1)).toBe("install");
 });
 
 const killed: readonly BoxAct[] = [

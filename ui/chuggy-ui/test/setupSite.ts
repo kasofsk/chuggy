@@ -100,8 +100,9 @@ export type SetupSiteRead =
   | "drafts"
   | "landings";
 
-/** The caller's subject, which their own runner is registered under. */
-export const setupSiteMember = "0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
+/** The caller's principal, which their own runner is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
+export const setupSiteMember =
+  "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
 /** What only `runner` asks, which a case moves likewise; `mint`, `ownMint` and `serves` are writes. */
 export type SetupSiteRunnerAsk =

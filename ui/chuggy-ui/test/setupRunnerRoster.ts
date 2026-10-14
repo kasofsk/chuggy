@@ -211,13 +211,25 @@ export const runnerNotes: {
   })[];
 } = {
   Engine: [{ note: "Engine", engine: "docker" }],
-  Package: [
-    { note: "Package", command: rosterCommand, version: boxVersion },
-    { note: "Package", command: rosterCommand, version: undefined },
+  Package: [{ note: "Package", command: rosterCommand, version: boxVersion }],
+  Outdated: [
+    {
+      note: "Outdated",
+      command: rosterCommand,
+      version: "0.3.0",
+      least: "0.4.0",
+    },
+    {
+      note: "Outdated",
+      command: rosterCommand,
+      version: undefined,
+      least: "0.4.0",
+    },
   ],
   Installed: [
     { note: "Installed", command: rosterCommand, version: boxVersion },
   ],
+  Replaced: [{ note: "Replaced", command: rosterCommand, version: boxVersion }],
   Settings: [{ note: "Settings", path: boxSettings }],
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
@@ -293,6 +305,7 @@ export function rosterLines(places: RosterPlaces) {
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
+      replaced: `did: replaced the runner package with chuggy-linux ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,

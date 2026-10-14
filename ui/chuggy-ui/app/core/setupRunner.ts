@@ -78,6 +78,8 @@ import {
   setupLingerCommand,
   setupLingerRead,
   setupOwnFiles,
+  setupPackageCurrent,
+  setupPackageLeast,
   setupPackageProbed,
   setupPoolFiles,
   setupRegisterCommand,
@@ -352,15 +354,18 @@ interface Packaged {
   readonly installed: boolean;
 }
 
+/** The runner package a run can use: the one found, or one installed by the console's command where none is found, or where the one found is older than the least or of a version that cannot be read. */
 async function setupPackageHad(
   run: Run,
   machine: Machine,
 ): Promise<Packaged | Halt> {
   const found = machine.probe.found;
-  if (found !== undefined) {
+  if (found !== undefined && setupPackageCurrent(found)) {
     run.notes.push({ note: "Package", ...found });
     return { command: found.command, installed: false };
   }
+  if (found !== undefined)
+    run.notes.push({ note: "Outdated", ...found, least: setupPackageLeast });
   const acted = await setupActed(
     run,
     "Install",
@@ -368,13 +373,16 @@ async function setupPackageHad(
   );
   if (halted(acted)) return acted;
   const after = (await setupPackageProbed(run.ports, run.places)).found;
-  if (after === undefined)
+  if (after === undefined || !setupPackageCurrent(after))
     return halt({
       stop: "Unseen",
       act: "Install",
       path: setupInstallCommandPath(run.places, machine.probe),
     });
-  run.notes.push({ note: "Installed", ...after });
+  run.notes.push({
+    note: found === undefined ? "Installed" : "Replaced",
+    ...after,
+  });
   return { command: after.command, installed: true };
 }
 

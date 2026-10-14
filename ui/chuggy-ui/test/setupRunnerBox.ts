@@ -33,7 +33,8 @@ export const boxOwn = `${boxHome}/.local`;
 export const boxPoolName = "shame";
 /** What the Claude login file holds, which nothing may read or print. */
 export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
-export const boxVersion = "0.3.0";
+/** The version an install puts here. */
+export const boxVersion = "0.4.0";
 
 /** Everything the command runs on the machine, by what it is for. */
 export type BoxAct =
@@ -164,7 +165,7 @@ export function boxDisk(box: RunnerBox): SetupDiskPort {
 }
 
 /** One part of a pool file's name, as the package writes it. */
-function part(text: string): string {
+export function boxNamePart(text: string): string {
   return [...new TextEncoder().encode(text)]
     .map((octet) =>
       /[A-Za-z0-9-]/u.test(String.fromCharCode(octet))
@@ -176,20 +177,20 @@ function part(text: string): string {
 
 /** The pool file the package writes for a project on this machine, and the unit it writes for that file. */
 export function boxPoolFile(tenant: string, project: string): string {
-  return `${boxPools}/${part(tenant)}.${part(project)}.${boxPoolName}.json`;
+  return `${boxPools}/${boxNamePart(tenant)}.${boxNamePart(project)}.${boxPoolName}.json`;
 }
 
 export function boxUnitName(tenant: string, project: string): string {
-  return `chuggy-linux-${part(tenant)}.${part(project)}.${boxPoolName}.service`;
+  return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(project)}.${boxPoolName}.service`;
 }
 
 /** The file the package writes for the person's own runner in a workspace, named for it and the member, and the unit it writes for that file. */
 export function boxOwnFile(tenant: string, member: string): string {
-  return `${boxPools}/${part(tenant)}.${part(member)}.json`;
+  return `${boxPools}/${boxNamePart(tenant)}.${boxNamePart(member)}.json`;
 }
 
 export function boxOwnUnitName(tenant: string, member: string): string {
-  return `chuggy-linux-${part(tenant)}.${part(member)}.service`;
+  return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(member)}.service`;
 }
 
 function unitOf(file: string): string {
@@ -235,6 +236,16 @@ function installed(box: RunnerBox, command: readonly string[]): void {
   );
 }
 
+/** Whether the package a command is run from is new enough to know `--personal`, as its manifest says. */
+function boxTakesPersonal(box: RunnerBox, program: string): boolean {
+  const prefix = program.slice(0, -"/bin/chuggy-linux".length);
+  const manifest = box.paths.get(
+    `${prefix}/lib/node_modules/chuggy-linux/package.json`,
+  );
+  const version = /"version":"(\d+)\.(\d+)\./u.exec(manifest ?? "");
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 4;
+}
+
 interface BoxWorld {
   readonly site: () => SetupSite;
   readonly origin: string;
@@ -246,8 +257,10 @@ function registered(
   world: BoxWorld,
   command: readonly string[],
 ): SetupChildEnded {
-  const [, , ...words] = command;
+  const [program = "", , ...words] = command;
   const personal = words[0] === "--personal";
+  if (personal && !boxTakesPersonal(box, program))
+    return exited(1, "", "error: unknown option '--personal'\n");
   const [flag, api, token = ""] = personal ? words.slice(1) : words;
   if (flag !== "--api" || api !== world.origin || !token.startsWith("--token="))
     return exited(2, "", "register needs --api and --token\n");

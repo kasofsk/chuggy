@@ -414,7 +414,7 @@ test("with neither a runner of the project nor one of the person's own, the offe
 test("with the project's work provided for and no runner of the person's own serving it, a machine that could take one is offered as theirs, said as a second runner of the work too where the work's runner is elsewhere, and otherwise they are sent to the My runner page", () => {
   const chats =
     "Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet.";
-  const yours = `${chats} I can make this machine yours: that puts here the runner package, chuggy-linux, where it is not here yet, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given acme/widgets to serve instead.`;
+  const yours = `${chats} I can make this machine yours: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given acme/widgets to serve instead.`;
   expect(here({ lacks: "Own", pooled: false }, roomy)).toEqual(
     offered(`${yours} Tell me yes to go ahead.`),
   );

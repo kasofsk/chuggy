@@ -519,14 +519,25 @@ test("a user the package bars from docker is told the package's reason and who t
   );
 });
 
+test("a package older than the least, or of a version that cannot be read, is said as found beside the version chuggy setup needs, and the one put in its place as replacing it", () => {
+  expect(
+    [...runnerNotes.Outdated, ...runnerNotes.Replaced].map((note) =>
+      setupRunnerNoteSaid(note, "acme/widgets").join(": "),
+    ),
+  ).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later`,
+    `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later and could not read its version`,
+    `did: replaced the runner package with chuggy-linux 0.4.0, at ${rosterCommand}`,
+  ]);
+});
+
 test("each thing a run found is said as found and each thing it did as did, in words that name the path, the program or the service", () => {
   const lines = (kind: keyof typeof runnerNotes) =>
     runnerNotes[kind].map((note) =>
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     );
   expect(lines("Package")).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}`,
-    `found: the runner package is installed: chuggy-linux, at ${rosterCommand}`,
+    `found: the runner package is installed: chuggy-linux 0.4.0, at ${rosterCommand}`,
   ]);
   expect(lines("PoolGone")).toEqual([
     `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,
@@ -555,7 +566,9 @@ test("each thing a run found is said as found and each thing it did as did, in w
   expect(words).toEqual({
     Engine: ["found"],
     Package: ["found"],
+    Outdated: ["found"],
     Installed: ["did"],
+    Replaced: ["did"],
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
@@ -604,16 +617,16 @@ test("the person's own runner is said as theirs, apart from the project's: found
   ]);
 });
 
-test("a workspace that does not let the person register a runner of their own is said with the project's work as it stands, the page an admin gives it on, and nothing to try again until they have", () => {
+test("a workspace that does not let the person register a runner of their own is said with the project's work as it stands, the page and the press an admin turns it on with, the person being one where they are, and nothing to try again until it is on", () => {
   const [runner, cluster] = runnerStops.PermitWithheld.map((stop) =>
     setupRunnerStopSaid(stop, "acme/widgets"),
   );
   const own =
-    "Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, https://chuggy.example/tenants/acme/settings/people. Tell me once they have.";
+    "Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, https://chuggy.example/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.";
   expect(runner).toEqual({
     found: "the workspace does not let you register a runner of your own",
     tell: `The runner for the work on acme/widgets is set up and live. ${own}`,
-    when: "once the person says a workspace admin has let them register a runner of their own",
+    when: "once the person says Personal runners is on for them in the workspace",
     again: "Runner",
   });
   expect(cluster?.tell).toBe(

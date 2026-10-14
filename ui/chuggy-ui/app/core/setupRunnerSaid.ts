@@ -96,9 +96,15 @@ export type SetupChildFailed =
 export type SetupRunnerNote =
   | { readonly note: "Engine"; readonly engine: SetupEngine }
   | {
-      readonly note: "Package" | "Installed";
+      readonly note: "Package" | "Installed" | "Replaced";
       readonly command: string;
       readonly version: string | undefined;
+    }
+  | {
+      readonly note: "Outdated";
+      readonly command: string;
+      readonly version: string | undefined;
+      readonly least: string;
     }
   | { readonly note: "Settings"; readonly path: string }
   | {
@@ -447,10 +453,20 @@ export function setupRunnerNoteSaid(
         "found",
         `the runner package is installed: ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
       ];
+    case "Outdated":
+      return [
+        "found",
+        `the runner package is installed: ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}, and chuggy setup needs ${note.least} or later${note.version === undefined ? " and could not read its version" : ""}`,
+      ];
     case "Installed":
       return [
         "did",
         `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
+      ];
+    case "Replaced":
+      return [
+        "did",
+        `replaced the runner package with ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
       ];
     case "Settings":
       return ["found", `the runner's settings are in ${note.path}`];
@@ -885,8 +901,8 @@ function setupOwnSaid(
     case "PermitWithheld":
       return {
         found: "the workspace does not let you register a runner of your own",
-        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, ${stop.people}. Tell me once they have.`,
-        when: "once the person says a workspace admin has let them register a runner of their own",
+        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${stop.people}, with Edit on your row. Tell me once it is on.`,
+        when: "once the person says Personal runners is on for them in the workspace",
         again: "Runner",
       };
     case "OwnMintRefused":

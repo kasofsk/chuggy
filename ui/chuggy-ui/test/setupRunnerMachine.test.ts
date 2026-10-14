@@ -39,6 +39,7 @@ import type { SetupMachine } from "./setupMachine.ts";
 import {
   boxHome,
   boxLogin,
+  boxNamePart,
   boxOwn,
   boxOwnFile,
   boxOwnUnitName,
@@ -155,18 +156,19 @@ test("a pool file's service is named as the package names it, which the registra
 });
 
 test("the files of the person's own runner in a workspace are the files named for it and one whole part beside the pool files, found by name and never opened", () => {
+  const member = boxNamePart(setupSiteMember);
   const machine = pooled([
-    `acme.${setupSiteMember}.json`,
+    `acme.${member}.json`,
     "acme.widgets.shame.json",
     "acme.a_2eb.json",
     "acme.a.b.json",
     "acme..json",
-    `acme.${setupSiteMember}.json.1234.draft`,
-    `globex.${setupSiteMember}.json`,
-    `acme_2ex.${setupSiteMember}.json`,
+    `acme.${member}.json.1234.draft`,
+    `globex.${member}.json`,
+    `acme_2ex.${member}.json`,
   ]);
   expect(setupOwnFiles(machine.ports(), places, "acme")).toEqual([
-    { path: `${boxPools}/acme.${setupSiteMember}.json` },
+    { path: `${boxPools}/acme.${member}.json` },
     { path: `${boxPools}/acme.a_2eb.json` },
   ]);
   expect(machine.box.read).toEqual([]);
@@ -316,6 +318,36 @@ test("the package is found under the prefix npm names or under the person's own,
     found: { command: `${boxOwn}/bin/chuggy-linux`, version: undefined },
     prefix: undefined,
     mine: false,
+  });
+});
+
+test("where the machine's prefix and the person's own both hold the package, the one a run can use is found, and the machine's where both or neither can be used", async () => {
+  const found = async (machineWide: string, theirs: string) => {
+    const machine = packaged(JSON.stringify({ version: machineWide }));
+    machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!");
+    machine.box.paths.set(
+      `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
+      JSON.stringify({ version: theirs }),
+    );
+    return (await setupPackageProbed(machine.ports(), places)).found;
+  };
+  const own = `${boxOwn}/bin/chuggy-linux`;
+  const machineWide = `${boxPrefix}/bin/chuggy-linux`;
+  expect(await found("0.3.0", "0.4.0")).toEqual({
+    command: own,
+    version: "0.4.0",
+  });
+  expect(await found("0.4.0", "0.10.0")).toEqual({
+    command: machineWide,
+    version: "0.4.0",
+  });
+  expect(await found("0.3.9", "0.2.0")).toEqual({
+    command: machineWide,
+    version: "0.3.9",
+  });
+  expect(await found("0.3.0", "1.0.0-rc.1")).toEqual({
+    command: own,
+    version: "1.0.0-rc.1",
   });
 });
 
@@ -484,7 +516,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
 
   const registered = pooled(["acme.widgets.shame.json"]);
   expect(await here(registered)).toMatchObject({ held: true, own: false });
-  registered.box.paths.set(`${boxPools}/acme.${setupSiteMember}.json`, "{}");
+  registered.box.paths.set(boxOwnFile("acme", setupSiteMember), "{}");
   expect(await here(registered)).toMatchObject({ held: true, own: true });
   registered.box.engines.docker = "No";
   expect(await here(registered)).toMatchObject({ held: false, own: false });

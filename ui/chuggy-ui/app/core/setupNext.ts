@@ -256,7 +256,7 @@ function setupOwnMend(
         );
   if (here?.room.room === "Open")
     return setupOffer(
-      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
+      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
       at,
     );
   return setupHand(
