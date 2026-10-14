@@ -23,6 +23,8 @@ import type {
 import type { ApiResult } from "./apiRequest.ts";
 import {
   repositoryConfigurationsNote,
+  repositoryIgnoredDetail,
+  repositoryIgnoredLabel,
   repositoryRefusalStatus,
 } from "./projectRepositories.ts";
 
@@ -153,11 +155,16 @@ export interface RepositoryCreatedRow {
   readonly ticketOffered: boolean;
 }
 
-/** Every step the create took, in the order it took them. */
+/** Every step the create took, in the order it took them, and what under
+ * `.chug/` the configuration step read none of where it names any. */
 export function repositoryCreatedRows(
   created: ProjectRepositoryCreatedResponse,
 ): readonly RepositoryCreatedRow[] {
   const configurations = repositoryConfigurationsNote(created.configurations);
+  const ignored =
+    created.configurations.result === "Deferred"
+      ? undefined
+      : created.configurations.ignored;
   return [
     {
       label: "Seed",
@@ -174,5 +181,14 @@ export function repositoryCreatedRows(
       detail: configurations.status,
       ticketOffered: configurations.ticketOffered,
     },
+    ...(ignored === undefined
+      ? []
+      : [
+          {
+            label: repositoryIgnoredLabel,
+            detail: repositoryIgnoredDetail(ignored),
+            ticketOffered: false,
+          },
+        ]),
   ];
 }

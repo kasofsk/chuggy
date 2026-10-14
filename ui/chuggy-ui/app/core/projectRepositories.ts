@@ -15,6 +15,7 @@ import type {
   ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
+  RepositoryConfigurationIgnoredResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
   ForgeAppName,
@@ -401,11 +402,40 @@ export const repositoryDeferrals: Readonly<
   StepFailed: { status: "Step failed", retry: true },
 };
 
-/** The one line a bind or a create leaves, and whether it offers a first
- * ticket as the next step. */
+/** The line a bind or a create leaves, whether it offers a first ticket as
+ * the next step, and the line under it naming what under `.chug/` the step
+ * read none of. */
 export interface RepositoryNote {
   readonly status: string;
   readonly ticketOffered: boolean;
+  readonly ignored?: string;
+}
+
+/** What the entries a configuration step read none of are called wherever
+ * they are drawn. */
+export const repositoryIgnoredLabel = "Not configurations";
+
+/** The entries a configuration step read none of as a line's detail: the
+ * first it names, and how many more there are. */
+export function repositoryIgnoredDetail(
+  ignored: RepositoryConfigurationIgnoredResponse,
+): string {
+  const [first, ...rest] = ignored.paths;
+  if (first === undefined) return "entries in .chug/";
+  if (ignored.truncated) return `${first} and ${String(rest.length + 1)}+ more`;
+  return rest.length === 0 ? first : `${first} and ${String(rest.length)} more`;
+}
+
+/** The line under a step's own naming what it read none of, where there is
+ * anything. */
+function repositoryConfigurationsNoteIgnored(
+  ignored: RepositoryConfigurationIgnoredResponse | undefined,
+): { readonly ignored?: string } {
+  return ignored === undefined
+    ? {}
+    : {
+        ignored: `${repositoryIgnoredLabel} · ${repositoryIgnoredDetail(ignored)}`,
+      };
 }
 
 /** What a repository's configuration step came to as a line, which offers a
@@ -415,9 +445,17 @@ export function repositoryConfigurationsNote(
 ): RepositoryNote {
   switch (configurations.result) {
     case "Imported":
-      return { status: "Configurations imported", ticketOffered: true };
+      return {
+        status: "Configurations imported",
+        ticketOffered: true,
+        ...repositoryConfigurationsNoteIgnored(configurations.ignored),
+      };
     case "Bootstrapped":
-      return { status: "Default configuration added", ticketOffered: true };
+      return {
+        status: "Default configuration added",
+        ticketOffered: true,
+        ...repositoryConfigurationsNoteIgnored(configurations.ignored),
+      };
     case "Deferred":
       return {
         status: repositoryDeferrals[configurations.reason].status,

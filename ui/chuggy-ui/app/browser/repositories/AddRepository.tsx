@@ -447,13 +447,39 @@ function AddRepositoryBody(props: {
         />
       ) : null}
       {binding.note === undefined ? null : (
-        <Notice tone="info" inline detail={binding.note.status} role="status">
-          <RepositoryNextStep
-            partition={partition}
-            ticketOffered={binding.note.ticketOffered}
-            runner={props.runner}
-          />
-        </Notice>
+        <AddRepositoryNote
+          partition={partition}
+          note={binding.note}
+          runner={props.runner}
+        />
+      )}
+    </>
+  );
+}
+
+/** The line a bind left, with its next step, and the line under it naming what
+ * under `.chug/` its configuration step read none of. */
+function AddRepositoryNote(props: {
+  readonly partition: PartitionIdentity;
+  readonly note: RepositoryNote;
+  readonly runner: WorkRunner;
+}): ReactNode {
+  return (
+    <>
+      <Notice tone="info" inline detail={props.note.status} role="status">
+        <RepositoryNextStep
+          partition={props.partition}
+          ticketOffered={props.note.ticketOffered}
+          runner={props.runner}
+        />
+      </Notice>
+      {props.note.ignored === undefined ? null : (
+        <Notice
+          tone="parked"
+          inline
+          detail={props.note.ignored}
+          role="status"
+        />
       )}
     </>
   );

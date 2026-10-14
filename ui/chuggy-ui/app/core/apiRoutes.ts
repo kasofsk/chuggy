@@ -88,6 +88,7 @@ import type {
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
+  RepositoryConfigurationImportedResponse,
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
@@ -1340,12 +1341,12 @@ export function apiCreateConfiguration(
   );
 }
 
-/** A refused import is a rejection, so its faults arrive in `Rejected`'s body. */
+/** A refused import is a rejection, so its faults, or what a commit declaring none holds instead, arrive in `Rejected`'s body. */
 export function apiImportRepositoryConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: z.infer<typeof repositoryConfigurationImportSchema>,
-): Promise<ApiResult<{ readonly imported: true }>> {
+): Promise<ApiResult<RepositoryConfigurationImportedResponse>> {
   return apiRead(
     ports,
     {

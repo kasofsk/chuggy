@@ -36,6 +36,7 @@ import {
   repositoriesDrawn,
   repositoryDeferrals,
   repositoryGrantLines,
+  repositoryIgnoredDetail,
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
@@ -428,6 +429,42 @@ test("a new binding names the repository and what its configurations came to, an
       status: `kasofsk/chuggy · ${repositoryDeferrals[reason].status}`,
       ticketOffered: false,
     });
+});
+
+/** The entries a step read none of are a line of their own, naming the first
+ * and counting the rest, and a count past what the answer names is a floor. */
+test("a new binding names what under `.chug/` its step read none of on a line of its own", () => {
+  const chug = ".chug/";
+  expect(
+    boundNote({
+      result: "Bootstrapped",
+      revision: "r1",
+      ignored: { paths: [`${chug}project.yaml`], truncated: false },
+    }),
+  ).toStrictEqual({
+    status: "kasofsk/chuggy · Default configuration added",
+    ticketOffered: true,
+    ignored: `Not configurations · ${chug}project.yaml`,
+  });
+  expect(
+    boundNote({
+      result: "Imported",
+      count: 1,
+      ignored: {
+        paths: [`${chug}evaluators/`, `${chug}project.yaml`, `${chug}tasks/`],
+        truncated: false,
+      },
+    }).ignored,
+  ).toBe(`Not configurations · ${chug}evaluators/ and 2 more`);
+  expect(
+    repositoryIgnoredDetail({
+      paths: [`${chug}evaluators/`, `${chug}project.yaml`],
+      truncated: true,
+    }),
+  ).toBe(`${chug}evaluators/ and 2+ more`);
+  expect(repositoryIgnoredDetail({ paths: [], truncated: true })).toBe(
+    `entries in ${chug}`,
+  );
 });
 
 test("each refusal is the one line the picker draws under itself", () => {

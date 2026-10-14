@@ -112,6 +112,34 @@ test("every step the create took is a row of its own", () => {
   ]);
 });
 
+/** What under `.chug/` the configuration step read none of is a row of its
+ * own after the step's, and only where it names any. */
+test("what the configuration step read none of follows its row", () => {
+  const chug = ".chug/";
+  expect(
+    repositoryCreatedRows(
+      created({
+        configurations: {
+          result: "Imported",
+          count: 1,
+          ignored: { paths: [`${chug}project.yaml`], truncated: false },
+        },
+      }),
+    ).slice(2),
+  ).toEqual([
+    {
+      label: "Configurations",
+      detail: "Configurations imported",
+      ticketOffered: true,
+    },
+    {
+      label: "Not configurations",
+      detail: `${chug}project.yaml`,
+      ticketOffered: false,
+    },
+  ]);
+});
+
 /** The envelope carries a code and a message and nothing else, so which app is
  * missing is read out of the message against the roster's own words. */
 test("a missing claim names the app the message names", () => {
