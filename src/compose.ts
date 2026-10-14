@@ -853,6 +853,7 @@ export function composeNativeWeb(
       ? undefined
       : {
           bindings: postgresProjectRepositoryBinding(apiPool),
+          landing: postgresProjectRepositoryLanding(apiPool),
           snapshots: repositoryConfigurationSnapshots,
           store: authoring,
         },

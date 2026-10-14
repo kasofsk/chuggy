@@ -3,7 +3,7 @@
  * immutability trigger, the one-way door, the two elections that stop seeing
  * a retired row while every read that names one still answers it, the
  * repository a retirement releases to any other project, and the member mint
- * that stops answering it.
+ * and member import that stop answering it.
  */
 
 import assert from "node:assert/strict";
@@ -19,12 +19,22 @@ import {
   postgresRepositoryBindingListing,
 } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
-import { composeForgeCredentialMinting } from "../../src/compose.ts";
-import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  composeForgeCredentialMinting,
+  composeNativeWeb,
+} from "../../src/compose.ts";
+import {
+  asGitObjectId,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  memberAuthority,
+  type ProjectAccess,
+} from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   asTenantId,
@@ -37,7 +47,9 @@ import {
 } from "./repositoryBindingFixture.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
+  postgresHarnessConfiguration,
   postgresHarnessEpoch,
+  postgresHarnessKeying,
   postgresHarnessOpen,
   postgresHarnessPartition,
   postgresHarnessRolePool,
@@ -401,6 +413,13 @@ test("a project reinstates its retired binding once the project that bound the r
   assert.equal(await rebind(theirs, repository), "RepositoryBoundElsewhere");
 });
 
+/** A member every question of standing is answered for, so a case turns on the binding alone. */
+const fixtureMember: ProjectAccess = {
+  authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+  authorizeTenant: () => Promise.resolve(undefined),
+  authorizeSite: projectAccessSiteRefused,
+};
+
 /**
  * The member mint as the API composes it, under the API's own role: a project
  * that retired a repository is answered as one that never bound it, and stays
@@ -412,22 +431,14 @@ test("the member mint refuses a repository its project retired, and after anothe
   const repository = await bindAt(mine, "release-mint");
   const asApi = postgresHarnessRolePool(apiRole);
   try {
-    const minting = composeForgeCredentialMinting(
-      asApi,
-      {
-        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
-        authorizeTenant: () => Promise.resolve(undefined),
-        authorizeSite: projectAccessSiteRefused,
-      },
-      {
-        token: () =>
-          Promise.resolve({
-            minted: "Token",
-            token: asForgeInstallationToken("ghs-release-mint"),
-            expiresAtMs: 1_000,
-          }),
-      },
-    );
+    const minting = composeForgeCredentialMinting(asApi, fixtureMember, {
+      token: () =>
+        Promise.resolve({
+          minted: "Token",
+          token: asForgeInstallationToken("ghs-release-mint"),
+          expiresAtMs: 1_000,
+        }),
+    });
     const minted = async (partition: Partition) =>
       (
         await minting.mint(asPrincipal("release-mint"), partition, {
@@ -442,6 +453,72 @@ test("the member mint refuses a repository its project retired, and after anothe
     assert.deepEqual(
       [await minted(mine), await minted(theirs)],
       ["NotFound", "Authorized"],
+    );
+  } finally {
+    await asApi.end();
+  }
+});
+
+/**
+ * The member import as the API composes it, under the API's own role and over a
+ * repository holding one declaration: a project that retired the repository is
+ * answered as one that never bound it, and stays so once another project binds
+ * it, which imports from it.
+ */
+test("the member import refuses a repository its project retired, and after another binds it", async () => {
+  const mine = await fixtureProject("release-import-mine");
+  const theirs = await fixtureProject("release-import-theirs");
+  const repository = await bindAt(mine, "release-import");
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const web = composeNativeWeb(
+      asApi,
+      postgresHarnessKeying(),
+      fixtureMember,
+      postgresExecutionBacklogGuard(asApi),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        snapshot: () =>
+          Promise.resolve({
+            read: "Snapshot",
+            files: [
+              {
+                path: [".chug", "configurations", "work.json"].join("/"),
+                kind: "File",
+                content: JSON.stringify({
+                  version: 1,
+                  name: "work",
+                  configuration: JSON.parse(
+                    postgresHarnessConfiguration,
+                  ) as unknown,
+                }),
+              },
+            ],
+          }),
+      },
+    );
+    const imported = async (partition: Partition) =>
+      (
+        await web.importRepositoryConfigurations(
+          asPrincipal("release-import"),
+          partition,
+          {
+            repository: asRepositoryId(repository),
+            commit: asGitObjectId("c".repeat(40)),
+          },
+        )
+      ).result;
+    assert.equal(await imported(mine), "Imported");
+    assert.equal((await retire(mine, repository)).outcome, "Retired");
+    assert.equal(await imported(mine), "RepositoryAbsent");
+    assert.equal(await rebind(theirs, repository), "Bound");
+    assert.deepEqual(
+      [await imported(mine), await imported(theirs)],
+      ["RepositoryAbsent", "Imported"],
     );
   } finally {
     await asApi.end();

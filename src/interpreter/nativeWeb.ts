@@ -173,6 +173,7 @@ import {
   workerErrorPath,
 } from "../contract/http.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
   importRepositoryConfigurations,
   type RepositoryConfigurationImportOutcome,
@@ -930,15 +931,31 @@ function nativeConfigurationMethods(
   };
 }
 
+/**
+ * What a member's import is composed from: the import's own ports, and the
+ * binding door that answers a binding's retirement, which the import's binding
+ * read does not.
+ */
+export interface NativeRepositoryConfigurationImportPorts extends RepositoryConfigurationImportPorts {
+  readonly landing: Pick<ProjectRepositoryLandingStore, "landing">;
+}
+
+/**
+ * Imports only from a repository this project binds live, so a member cannot
+ * read one their project retired, which another may since have bound.
+ */
 function nativeRepositoryConfigurationImportMethod(
   access: ProjectAccess,
-  ports?: RepositoryConfigurationImportPorts,
+  ports?: NativeRepositoryConfigurationImportPorts,
 ): NativeWeb["importRepositoryConfigurations"] {
   return async (principal, partition, source) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     if (ports === undefined)
       return { result: "Unavailable", unavailable: "Repository" };
+    const bound = await ports.landing.landing(partition, source.repository);
+    if (bound === undefined || bound.retiredAt !== undefined)
+      return { result: "RepositoryAbsent" };
     return importRepositoryConfigurations({
       partition,
       repository: source.repository,
@@ -2243,7 +2260,7 @@ export function nativeWeb(
   operationalReads?: OperationalReadStore,
   outputContents?: OutputContentPort,
   selectorContexts?: SelectorOperationalContextRead,
-  repositoryConfigurationImports?: RepositoryConfigurationImportPorts,
+  repositoryConfigurationImports?: NativeRepositoryConfigurationImportPorts,
   runEvidenceReads?: RunEvidenceReadStore,
   runEvidenceContents?: RunEvidenceContentPort,
   leads?: NativeLeadPorts,
