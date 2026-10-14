@@ -70,6 +70,7 @@ export const ticketCarried = {
   releasedAt: instant,
   changedAt: asPublicInstant("2026-08-27T00:00:00Z"),
   revokedDependencies: [],
+  openDependencies: [],
 };
 
 export const authoring = {

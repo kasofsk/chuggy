@@ -194,6 +194,7 @@ test("a project read and a ticket read parse as the contract names them", () => 
     changedAt: ticketCarried.changedAt,
     revision: 1,
     revokedDependencies: [],
+    openDependencies: [],
   });
   assert.equal(
     ticketResponseSchema.parse(
@@ -228,6 +229,7 @@ test("a ticket is always dated by its change and may be undated by its release",
         changedAt: ticketCarried.changedAt,
         revision: 1,
         revokedDependencies: [],
+        openDependencies: [],
       }).body,
     ).releasedAt,
     undefined,

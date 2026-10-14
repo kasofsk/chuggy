@@ -27,6 +27,7 @@ import {
   type ProjectResource,
   ticketEscalationResource,
   type TicketNativeAction,
+  type TicketDependencyResource,
   type TicketPhaseFilter,
   type TicketResource,
 } from "../../interpreter/nativeWeb.ts";
@@ -97,6 +98,14 @@ interface TicketProjectionRow {
    * names none.
    */
   readonly revoked_dependencies: string[] | null;
+  /**
+   * The same release's dependencies that are neither Done nor Revoked, as a
+   * JSON array of each one's ticket and phase, ascending: the wait that can
+   * still end beside `revoked_dependencies`, the wait that cannot. A Pending
+   * ticket alone names any, because a ticket in any other phase had every
+   * dependency Done before it was dispatched.
+   */
+  readonly open_dependencies: string | null;
 }
 
 /**
@@ -292,6 +301,33 @@ function ticketResourceChangedAt(
   return nativeReadInstant(value);
 }
 
+/**
+ * Each open dependency's ticket and phase, both narrowed as the row's own are,
+ * so a value this layer cannot spell raises rather than being dropped.
+ */
+function ticketResourceOpenDependencies(
+  value: string | null,
+): readonly TicketDependencyResource[] {
+  if (value === null) return [];
+  const parsed: unknown = JSON.parse(value);
+  if (!Array.isArray(parsed))
+    throw new Error("native read: open dependencies are not an array");
+  return parsed.map((each: unknown) => {
+    const { ticket, phase } = (each ?? {}) as {
+      readonly ticket?: unknown;
+      readonly phase?: unknown;
+    };
+    if (typeof ticket !== "string" || typeof phase !== "string")
+      throw new Error(
+        "native read: an open dependency is not a ticket and phase",
+      );
+    return {
+      ticket: asTicketId(projectRowCounter(ticket, "open dependency")),
+      phase: projectionPhase(phase),
+    };
+  });
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const kind = projectionEscalation(row.escalation);
   return {
@@ -315,6 +351,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
     revokedDependencies: (row.revoked_dependencies ?? []).map((dependency) =>
       asTicketId(projectRowCounter(dependency, "revoked dependency")),
     ),
+    openDependencies: ticketResourceOpenDependencies(row.open_dependencies),
   };
 }
 
@@ -459,7 +496,14 @@ async function readTicketsByActivity(
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase='Revoked'
                      AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                   AS revoked_dependencies
+                   AS revoked_dependencies,
+                 (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
+                                  ORDER BY d.ticket)
+                    FROM ticket_projection d
+                   WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                     AND d.phase NOT IN ('Done','Revoked')
+                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                   AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
@@ -504,7 +548,14 @@ async function readTicketsByIdentity(
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                 AS revoked_dependencies
+                 AS revoked_dependencies,
+               (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
+                                ORDER BY d.ticket)
+                  FROM ticket_projection d
+                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                   AND d.phase NOT IN ('Done','Revoked')
+                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                 AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
@@ -553,7 +604,14 @@ async function readTicketRow(
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
                    AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
-                 AS revoked_dependencies
+                 AS revoked_dependencies,
+               (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
+                                ORDER BY d.ticket)
+                  FROM ticket_projection d
+                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                   AND d.phase NOT IN ('Done','Revoked')
+                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                 AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq

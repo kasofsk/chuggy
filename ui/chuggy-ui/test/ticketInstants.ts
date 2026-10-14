@@ -10,4 +10,5 @@ export const ticketInstants = {
   releasedAt: "2026-08-26T00:00:00Z",
   changedAt: "2026-08-27T00:00:00Z",
   revokedDependencies: [],
+  openDependencies: [],
 };
