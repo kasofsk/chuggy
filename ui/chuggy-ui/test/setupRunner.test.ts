@@ -153,6 +153,21 @@ const { found, did } = rosterLines({
   ownUnit,
 });
 
+/** What a run finds of the project's runner on a machine that has it all. */
+const projectFound = [
+  signedIn,
+  found.engine,
+  found.settings,
+  found.login,
+  found.package,
+  found.pool,
+  found.check,
+  found.unit,
+  found.linger,
+  found.running,
+  live,
+];
+
 test("on a machine with an engine and a Claude login and nothing else, runner installs, writes the settings, registers, checks, installs and starts the service, and ends on the checklist once the site sees the runner live", async () => {
   const machine = await fresh();
   expect(await ran(machine)).toEqual({
@@ -207,20 +222,7 @@ test("a second run on a machine that has everything finds each thing as it is, d
   machine.sent.length = 0;
   expect(await ran(machine)).toEqual({
     exit: 0,
-    lines: [
-      signedIn,
-      found.engine,
-      found.settings,
-      found.login,
-      found.package,
-      found.pool,
-      found.check,
-      found.unit,
-      found.linger,
-      found.running,
-      live,
-      next,
-    ],
+    lines: [...projectFound, next],
   });
   expect(machine.box.acts).toEqual([
     "services",
@@ -295,17 +297,7 @@ test("a second run where both runners are live and the person's own serves the p
   expect(await ran(machine)).toEqual({
     exit: 0,
     lines: [
-      signedIn,
-      found.engine,
-      found.settings,
-      found.login,
-      found.package,
-      found.pool,
-      found.check,
-      found.unit,
-      found.linger,
-      found.running,
-      live,
+      ...projectFound,
       found.own,
       found.ownUnit,
       found.ownRunning,
