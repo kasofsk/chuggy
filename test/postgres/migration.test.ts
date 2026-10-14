@@ -149,10 +149,7 @@ import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
-import {
-  allBoundaryRefusalCodes,
-  allRefusalCodes,
-} from "../../src/interpreter/refusal.ts";
+import { allRefusalCodes } from "../../src/interpreter/refusal.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -10008,6 +10005,9 @@ test("052 keeps every binding that stood and releases a retired one's repository
       await boundThrough052(subject, "other-52", "retired-52"),
       "Bound",
     );
+  });
+});
+
 /** The codes 053 admits, which 043's constraint refused. */
 const pairingRefusals053: readonly string[] = [
   "BriefChecksUncommanded",
@@ -10036,13 +10036,12 @@ test("053 settles a release under the pairing fault it was refused for, and keep
         null,
         code,
       );
-    for (const code of allBoundaryRefusalCodes)
-      if (!pairingRefusals053.includes(code))
-        assert.equal(
-          await commandsRefuse(subject, ++ordinal, code, null),
-          null,
-          code,
-        );
+    for (const code of [...commandsBoundaryRefusals, "OverridesMoveDefinition"])
+      assert.equal(
+        await commandsRefuse(subject, ++ordinal, code, null),
+        null,
+        code,
+      );
     assert.ok((await postgresMigrate(subject)).includes(migration053.version));
     for (const code of pairingRefusals053)
       assert.equal(
