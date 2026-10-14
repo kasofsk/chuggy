@@ -2,13 +2,13 @@
  * The project's repositories: what it binds, and what it could bind from the
  * tenant's own connected accounts.
  *
- * The bindings below are what a ticket may name, except a retired one, which
- * is drawn Unbound and keeps its row and its page for the tickets that named
- * it; a binding is added from what those installations grant rather than from
- * a typed address. A live binding the project holds no configuration for is
- * drawn as deferred, with its configuration step offered again on its row.
- * Each live binding offers Unbind unless the abilities read refuses this
- * reader `administer`, which is the permit the retirement route asks.
+ * The bindings below are the live ones, which are what a ticket may name; a
+ * retired one is not listed, and its page is reached only by its address. A
+ * binding is added from what those installations grant rather than from a
+ * typed address. A binding the project holds no configuration for
+ * is drawn as deferred, with its configuration step offered again on its row.
+ * Each binding offers Unbind unless the abilities read refuses this reader
+ * `administer`, which is the permit the retirement route asks.
  * The line under Add and Create says why either is withheld, or that a
  * connected account lacks the worker app. The accounts are the tenant's, and
  * the step that line names is taken from here where this reader can take it:
@@ -57,7 +57,6 @@ import {
   repositoryAddOpened,
   repositoryLabel,
   repositoryOffersLine,
-  repositoryUnbound,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
@@ -95,7 +94,6 @@ import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
-import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
@@ -123,10 +121,7 @@ function BindingRow(props: {
               {repositoryLabel(binding.repository)}
             </Link>
           </Tooltip>
-          {binding.retiredAt === undefined ? undefined : (
-            <Pill tone="retired">{repositoryUnbound}</Pill>
-          )}
-          {binding.retiredAt !== undefined || binding.configured ? null : (
+          {binding.configured ? null : (
             <BindingConfigurations
               partition={props.partition}
               repository={binding.repository}
@@ -139,12 +134,10 @@ function BindingRow(props: {
       </td>
       {props.unbinding === undefined ? null : (
         <td className="text-end">
-          {binding.retiredAt === undefined ? (
-            <UnbindPress
-              repository={binding.repository}
-              unbinding={props.unbinding}
-            />
-          ) : null}
+          <UnbindPress
+            repository={binding.repository}
+            unbinding={props.unbinding}
+          />
         </td>
       )}
     </tr>
@@ -152,20 +145,18 @@ function BindingRow(props: {
 }
 
 /**
- * The listing's unbinding, where it has a column of them: some binding is live
- * and the abilities read did not refuse this reader the permit it asks.
+ * The listing's unbinding, where it has a column of them: the abilities read
+ * did not refuse this reader the permit it asks.
  */
 function useBindingUnbinding(
   partition: PartitionIdentity,
-  bindings: readonly ProjectRepositoryListedResponse[],
 ): RepositoryUnbinding | undefined {
   const unbinding = useRepositoryUnbinding(partition);
   const refused = projectAbilityRefused(
     useProjectAbilities(partition),
     "administer",
   );
-  const live = bindings.some((binding) => binding.retiredAt === undefined);
-  return refused || !live ? undefined : unbinding;
+  return refused ? undefined : unbinding;
 }
 
 /** The bindings, or the line that says there are none, with the one thing to
@@ -176,7 +167,7 @@ function BindingTable(props: {
   readonly action: ReactNode;
 }): ReactNode {
   const nowMs = useNowMs();
-  const unbinding = useBindingUnbinding(props.partition, props.bindings);
+  const unbinding = useBindingUnbinding(props.partition);
   if (props.bindings.length === 0)
     return props.action === undefined ? (
       <EmptyState label="No repository bound" />
@@ -297,7 +288,9 @@ function RepositoriesSection(props: {
   readonly unready: ReactNode;
   readonly runner: WorkRunner;
 }): ReactNode {
-  const bindings = props.bindings;
+  const bindings = props.bindings?.filter(
+    (binding) => binding.retiredAt === undefined,
+  );
   const picker = usePicker(props.returned);
   const leads = repositoryAddLeads({
     bindings,

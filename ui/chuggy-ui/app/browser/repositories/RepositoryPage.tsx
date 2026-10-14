@@ -1,7 +1,7 @@
 /**
  * One bound repository: how a finished ticket in it lands, what runs after
  * evaluation, and what it declares under `.chug/configurations`. A retired
- * binding's page says Unbound beside its name, as its row does.
+ * binding, which the listing does not draw, says Unbound beside its name.
  *
  * Only what a reader can act on is drawn. A revision's digest, its parent, the
  * practices it names and the instructions it counts are the configuration's own

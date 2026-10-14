@@ -443,7 +443,7 @@ test("each refusal is the one line the picker draws under itself", () => {
 });
 
 /** A retired binding is the one refusal Retry cannot outlast, so it alone
- * withdraws it, and it is called what its row calls it. */
+ * withdraws it, and it is called what its page calls it. */
 test("a configuration step asked for again draws its outcome, or the refusal it met", () => {
   const configured = (
     configurations: ProjectRepositoryConfigurationsResponse,
