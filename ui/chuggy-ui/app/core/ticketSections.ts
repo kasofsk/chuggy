@@ -8,10 +8,11 @@
  * `Revoked` sits in `Stopped` rather than beside Done because a reader
  * scanning for what went wrong is looking for it there.
  *
- * `UpNext` IS EVERY PENDING TICKET, IN THE READ'S OWN ORDER, AND NOT THE
- * UNBLOCKED FRONTIER. The project read carries each Pending ticket's open
- * dependencies and the phase of each, which is what that frontier would be
- * drawn from, but this section does not read them: Pending is its heading.
+ * `UpNext` IS EVERY PENDING TICKET, NEAREST TO DISPATCHABLE FIRST, AND NOT THE
+ * UNBLOCKED FRONTIER. Each Pending ticket's open dependencies order the
+ * section (`upNextOrder.ts`), so the frontier rises to its top, but they do not
+ * decide membership: a blocked ticket is still what follows the work it waits
+ * on, and the rows are a window that cannot say what is unblocked outside it.
  */
 
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
