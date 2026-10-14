@@ -224,6 +224,17 @@ test("a project that binds no repository says so rather than that nothing is rea
   expect(read.outcome === "Ok" && read.value.context).toBe("NoRepository");
 });
 
+/** An unbound repository is no repository to a new ticket, so the way out is
+ * the Repositories page rather than a configuration. */
+test("a project whose every binding is retired says it binds no repository", async () => {
+  const held = project(
+    () => ({ configurations: [creationSummary("r4", "Incomplete")] }),
+    bindings({ ...imported(chuggy), retiredAt: "2026-09-14T00:00:00Z" }),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(read.outcome === "Ok" && read.value.context).toBe("NoRepository");
+});
+
 test("a walk that runs out of budget knows nothing about the project", async () => {
   const held = project(() => ({
     configurations: [creationSummary("r4", "Incomplete")],

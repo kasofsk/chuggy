@@ -1,6 +1,7 @@
 /**
  * One bound repository: how a finished ticket in it lands, what runs after
- * evaluation, and what it declares under `.chug/configurations`.
+ * evaluation, and what it declares under `.chug/configurations`. A retired
+ * binding's page says Unbound beside its name, as its row does.
  *
  * Only what a reader can act on is drawn. A revision's digest, its parent, the
  * practices it names and the instructions it counts are the configuration's own
@@ -13,7 +14,10 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiProjectRepositories } from "../../core/apiRoutes.ts";
-import { repositoryLabel } from "../../core/projectRepositories.ts";
+import {
+  repositoryLabel,
+  repositoryUnbound,
+} from "../../core/projectRepositories.ts";
 import { projectRepositoryBound } from "../../core/repositoryLanding.ts";
 import {
   readProjectConfigurations,
@@ -27,6 +31,7 @@ import { TopBarSlot } from "../shell/slots.tsx";
 import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Panel } from "../ui/Panel.tsx";
+import { Pill } from "../ui/Pill.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
 import { RepositoryLandingSection } from "./RepositoryLandingSection.tsx";
@@ -101,6 +106,9 @@ export function RepositoryPage(): ReactNode {
         <h1 className="text-md font-strong text-ink-1 truncate">
           {repositoryLabel(repository)}
         </h1>
+        {binding?.retiredAt === undefined ? null : (
+          <Pill tone="retired">{repositoryUnbound}</Pill>
+        )}
       </TopBarSlot>
       <PanelUnready state={bindings} />
       {bindings.state === "Ready" && binding === undefined ? (

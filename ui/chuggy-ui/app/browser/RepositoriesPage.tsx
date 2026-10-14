@@ -3,10 +3,12 @@
  * tenant's own connected accounts.
  *
  * The bindings below are what a ticket may name, except a retired one, which
- * is drawn as retired because it is still bound and no longer read; a binding
- * is added from what those installations grant rather than from a typed
- * address. A live binding the project holds no configuration for is drawn as
- * deferred, with its configuration step offered again on its row.
+ * is drawn Unbound and keeps its row and its page for the tickets that named
+ * it; a binding is added from what those installations grant rather than from
+ * a typed address. A live binding the project holds no configuration for is
+ * drawn as deferred, with its configuration step offered again on its row.
+ * Each live binding offers Unbind unless the abilities read refuses this
+ * reader `administer`, which is the permit the retirement route asks.
  * The line under Add and Create says why either is withheld, or that a
  * connected account lacks the worker app. The accounts are the tenant's, and
  * the step that line names is taken from here where this reader can take it:
@@ -48,12 +50,14 @@ import {
   forgeWorkerInstallations,
 } from "../core/forgeInstallation.ts";
 import type { ForgeReturnWord } from "../core/forgeReturn.ts";
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   repositoryAddClosedPath,
   repositoryAddLeads,
   repositoryAddOpened,
   repositoryLabel,
   repositoryOffersLine,
+  repositoryUnbound,
 } from "../core/projectRepositories.ts";
 import type {
   RepositoryOffersLine,
@@ -64,6 +68,7 @@ import { usePanelResource, usePanelTenantResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { currentAnchor, currentPath } from "./ports.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import {
   AddRepository,
   projectRepositoriesResource,
@@ -77,6 +82,12 @@ import {
 } from "./repositories/ForgeReturned.tsx";
 import { forgeAppsResource, InstallLink } from "./repositories/InstallLink.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
+import {
+  UnbindAsked,
+  UnbindPress,
+  useRepositoryUnbinding,
+} from "./repositories/UnbindRepository.tsx";
+import type { RepositoryUnbinding } from "./repositories/UnbindRepository.tsx";
 import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -96,6 +107,8 @@ function BindingRow(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryListedResponse;
   readonly nowMs: number;
+  /** The listing's unbinding, where it has a column of them. */
+  readonly unbinding: RepositoryUnbinding | undefined;
 }): ReactNode {
   const binding = props.binding;
   return (
@@ -111,7 +124,7 @@ function BindingRow(props: {
             </Link>
           </Tooltip>
           {binding.retiredAt === undefined ? undefined : (
-            <Pill tone="retired">Retired</Pill>
+            <Pill tone="retired">{repositoryUnbound}</Pill>
           )}
           {binding.retiredAt !== undefined || binding.configured ? null : (
             <BindingConfigurations
@@ -124,8 +137,35 @@ function BindingRow(props: {
       <td>
         <Figure figure={instantFigure(binding.boundAt, props.nowMs)} />
       </td>
+      {props.unbinding === undefined ? null : (
+        <td className="text-end">
+          {binding.retiredAt === undefined ? (
+            <UnbindPress
+              repository={binding.repository}
+              unbinding={props.unbinding}
+            />
+          ) : null}
+        </td>
+      )}
     </tr>
   );
+}
+
+/**
+ * The listing's unbinding, where it has a column of them: some binding is live
+ * and the abilities read did not refuse this reader the permit it asks.
+ */
+function useBindingUnbinding(
+  partition: PartitionIdentity,
+  bindings: readonly ProjectRepositoryListedResponse[],
+): RepositoryUnbinding | undefined {
+  const unbinding = useRepositoryUnbinding(partition);
+  const refused = projectAbilityRefused(
+    useProjectAbilities(partition),
+    "administer",
+  );
+  const live = bindings.some((binding) => binding.retiredAt === undefined);
+  return refused || !live ? undefined : unbinding;
 }
 
 /** The bindings, or the line that says there are none, with the one thing to
@@ -136,6 +176,7 @@ function BindingTable(props: {
   readonly action: ReactNode;
 }): ReactNode {
   const nowMs = useNowMs();
+  const unbinding = useBindingUnbinding(props.partition, props.bindings);
   if (props.bindings.length === 0)
     return props.action === undefined ? (
       <EmptyState label="No repository bound" />
@@ -146,24 +187,33 @@ function BindingTable(props: {
       </div>
     );
   return (
-    <Table caption="Bound repositories">
-      <thead>
-        <tr>
-          <th scope="col">Repository</th>
-          <th scope="col">Bound</th>
-        </tr>
-      </thead>
-      <tbody>
-        {props.bindings.map((binding) => (
-          <BindingRow
-            key={binding.repository}
-            partition={props.partition}
-            binding={binding}
-            nowMs={nowMs}
-          />
-        ))}
-      </tbody>
-    </Table>
+    <>
+      <Table caption="Bound repositories">
+        <thead>
+          <tr>
+            <th scope="col">Repository</th>
+            <th scope="col">Bound</th>
+            {unbinding === undefined ? null : (
+              <th scope="col">
+                <span className="visually-hidden">Unbind</span>
+              </th>
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {props.bindings.map((binding) => (
+            <BindingRow
+              key={binding.repository}
+              partition={props.partition}
+              binding={binding}
+              nowMs={nowMs}
+              unbinding={unbinding}
+            />
+          ))}
+        </tbody>
+      </Table>
+      {unbinding === undefined ? null : <UnbindAsked unbinding={unbinding} />}
+    </>
   );
 }
 

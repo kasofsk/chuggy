@@ -42,6 +42,7 @@ import {
   projectRepositoryConfiguredSchema,
   projectRepositoryCreatedSchema,
   projectRepositoryLandingWrittenSchema,
+  projectRepositoryRetiredSchema,
   projectResponseSchema,
   repositoryConfigurationImportedSchema,
   selectorHistoryResponseSchema,
@@ -109,6 +110,7 @@ import type {
   projectRepositoryConfigureSchema,
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
+  projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   selectorProposalReviewSchema,
@@ -383,6 +385,23 @@ export function apiWriteProjectRepositoryLanding(
       body: written,
     },
     (value) => projectRepositoryLandingWrittenSchema.parse(value).repository,
+  );
+}
+
+/** One binding retired, answered with the row it left. */
+export function apiRetireProjectRepository(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  request: z.infer<typeof projectRepositoryRetirementSchema>,
+): Promise<ApiResult<ProjectRepositoryResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiSegments(partition, "repositories", "retirement"),
+      body: request,
+    },
+    (value) => projectRepositoryRetiredSchema.parse(value).repository,
   );
 }
 

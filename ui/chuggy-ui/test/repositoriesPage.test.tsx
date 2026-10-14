@@ -45,6 +45,7 @@ import type { StreamServer } from "./streamDouble.ts";
 import { leadPartition } from "./leadFixture.ts";
 import {
   abilitiesEvery,
+  abilitiesNone,
   abilitiesOver,
   abilitiesUnrefusing,
   unanswered,
@@ -295,7 +296,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     if (url.includes("/forge-installations/"))
       return Promise.resolve(granting(url, init?.signal));
     if (url.includes("/forge-installations")) return Promise.resolve(listing());
-    const written = sent.some((one) => one.method === "POST");
+    const written = sent.some((one) => one.method !== "GET");
     return Promise.resolve(answer(written ? rebound : bound));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
@@ -381,10 +382,11 @@ test("the bindings are drawn by the account and name they are under", async () =
 });
 
 /**
- * A retired binding is still bound, so it is still a row and still a page; the
- * one word beside its name is what says a ticket may no longer name it.
+ * A retired binding keeps its row and its page for the tickets that named it;
+ * the one word beside its name is what says a ticket may no longer name it,
+ * and it is the word of the button that retired it.
  */
-test("a retired binding is drawn as retired and a live one carries no word", async () => {
+test("a retired binding is drawn Unbound and a live one carries no word", async () => {
   await drawPage({
     bound: {
       repositories: [
@@ -395,7 +397,7 @@ test("a retired binding is drawn as retired and a live one carries no word", asy
   const row = within(sectionOf("Repositories")).getByRole("rowheader", {
     name: /kasofsk\/chuggy/,
   });
-  expect(row.textContent).toBe("kasofsk/chuggyRetired");
+  expect(row.textContent).toBe("kasofsk/chuggyUnbound");
 });
 
 /** A binding is a row and a page, and the row is the only way to the page. */
@@ -1986,7 +1988,7 @@ test("only a live binding the project holds nothing for draws Deferred and offer
   expect(bindingRowsText()).toStrictEqual([
     "kasofsk/chuggyDeferredRetry",
     "gdoteof/scratch",
-    "kasofsk/oldRetired",
+    "kasofsk/oldUnbound",
   ]);
 });
 
@@ -2063,7 +2065,7 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   });
   const raised = invalidationsAfterDraw();
   await retryFirst();
-  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyRetired");
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyUnbound");
   expect(raised).toStrictEqual([bindingsKey]);
 });
 
@@ -2463,3 +2465,177 @@ test.each(headOnly)(
     expect(addButtons()).toHaveLength(1);
   },
 );
+
+const retiredAt = "2026-09-14T00:00:00Z";
+
+/** A live binding above a retired one, which Unbind is drawn on and is not. */
+const liveAndRetired = {
+  repositories: [
+    bindings.repositories[0],
+    {
+      repository: retiredUrl,
+      boundAt: "2026-09-11T00:00:00Z",
+      landing: { mode: "Push" },
+      configured: true,
+      retiredAt,
+    },
+  ],
+};
+
+/** Each binding's row by what its name cell draws, and whether it offers Unbind. */
+function unbindOffers(): readonly (readonly [string | null, boolean])[] {
+  return within(sectionOf("Repositories"))
+    .getAllByRole("row")
+    .flatMap((row) => {
+      const named = within(row).queryByRole("rowheader");
+      if (named === null) return [];
+      const offers = within(row).queryByRole("button", { name: "Unbind" });
+      return [[named.textContent, offers !== null] as const];
+    });
+}
+
+const unbindOffered = [
+  ["kasofsk/chuggy", true],
+  ["kasofsk/oldUnbound", false],
+];
+
+test.each(abilitiesUnrefusing)(
+  "a reader the abilities read %s is offered Unbind on each live binding and on no retired one",
+  async (_said, abilities) => {
+    await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
+    expect(unbindOffers()).toStrictEqual(unbindOffered);
+  },
+);
+
+/** A viewer is refused every door and a member every door but administering;
+ * either is offered no Unbind, nor a column standing empty for it. */
+test.each([
+  ["may only view", abilitiesNone],
+  ["may not administer", { ...abilitiesEvery, administer: false }],
+])("a reader who %s is offered no Unbind", async (_who, abilities) => {
+  await drawPage({ bound: liveAndRetired, over: abilitiesOver(abilities) });
+  expect(unbindOffers()).toStrictEqual([
+    ["kasofsk/chuggy", false],
+    ["kasofsk/oldUnbound", false],
+  ]);
+  expect(
+    within(sectionOf("Repositories"))
+      .getAllByRole("columnheader")
+      .map((head) => head.textContent),
+  ).toStrictEqual(["Repository", "Bound"]);
+});
+
+/** The question Unbind asks, which names the repository its press was on. */
+function unbindAsked(): HTMLElement | null {
+  return screen.queryByRole("group", { name: "Unbind kasofsk/chuggy?" });
+}
+
+/** Unbind pressed on the live row, and the question's own press after it. */
+async function unbindAnswered(answer: "Cancel" | "Unbind"): Promise<void> {
+  fireEvent.click(
+    within(sectionOf("Repositories")).getByRole("button", { name: "Unbind" }),
+  );
+  await settled();
+  fireEvent.click(
+    within(
+      screen.getByRole("group", { name: "Unbind kasofsk/chuggy?" }),
+    ).getByRole("button", { name: answer }),
+  );
+  await settled();
+}
+
+test("Unbind asks first, naming the repository and what unbinding ends and leaves", async () => {
+  await drawPage({ bound: liveAndRetired });
+  fireEvent.click(
+    within(sectionOf("Repositories")).getByRole("button", { name: "Unbind" }),
+  );
+  await settled();
+  expect(unbindAsked()?.textContent).toBe(
+    "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.CancelUnbind",
+  );
+});
+
+test("a cancelled unbind sends nothing and leaves the row as it was", async () => {
+  const sent = await drawPage({ bound: liveAndRetired });
+  await unbindAnswered("Cancel");
+  expect(unbindAsked()).toBeNull();
+  expect(sent.filter((one) => one.method !== "GET")).toStrictEqual([]);
+  expect(unbindOffers()).toStrictEqual(unbindOffered);
+});
+
+test("a confirmed unbind retires that repository by address and redraws its row Unbound", async () => {
+  const [live, retired] = liveAndRetired.repositories;
+  const sent = await drawPage({
+    bound: liveAndRetired,
+    rebound: { repositories: [{ ...live, retiredAt }, retired] },
+    posted: () =>
+      answer({
+        repository: {
+          repository: boundUrl,
+          boundAt: "2026-09-11T00:00:00Z",
+          landing: { mode: "Push" },
+          retiredAt,
+        },
+      }),
+  });
+  await unbindAnswered("Unbind");
+  expect(
+    sent
+      .filter((one) => one.method !== "GET")
+      .map(({ method, url, body }) => ({ method, url, body })),
+  ).toStrictEqual([
+    {
+      method: "PUT",
+      url: `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories/retirement`,
+      body: { repository: boundUrl },
+    },
+  ]);
+  expect(unbindAsked()).toBeNull();
+  expect(unbindOffers()).toStrictEqual([
+    ["kasofsk/chuggyUnbound", false],
+    ["kasofsk/oldUnbound", false],
+  ]);
+});
+
+/** A contended retirement is the route's to answer again, and a binding it
+ * cannot find is the same miss as a project the reader may not administer. */
+test.each([
+  ["the route deferred it", deferred, "Deferring"],
+  ["the route found no binding", () => answer({}, 404), "Not found"],
+])(
+  "an unbind refused because %s is said under its question, and the row is left as it was",
+  async (_why, posted, word) => {
+    await drawPage({ bound: liveAndRetired, posted });
+    const raised = invalidationsAfterDraw();
+    await unbindAnswered("Unbind");
+    const said = unbindAsked()?.nextElementSibling;
+    expect(said?.getAttribute("role")).toBe("status");
+    expect(said?.textContent).toBe(word);
+    expect(raised).toStrictEqual([]);
+    expect(unbindOffers()).toStrictEqual(unbindOffered);
+  },
+);
+
+/** Binding a retired repository again is a bind the route answers, so the
+ * picker offers it as any repository this project does not bind. */
+test("the picker offers a repository whose binding is retired, marks a live one Bound, and binds the retired one when pressed", async () => {
+  const sent = await drawPage({
+    bound: {
+      repositories: [
+        bindings.repositories[0],
+        { ...liveAndRetired.repositories[1], repository: freeUrl },
+      ],
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBound",
+    "gdoteof/scratch",
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "gdoteof/scratch" }));
+  await settled();
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    repository: freeUrl,
+  });
+});

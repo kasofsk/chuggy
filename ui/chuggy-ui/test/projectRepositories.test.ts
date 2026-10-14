@@ -42,6 +42,8 @@ import {
   repositoryRosterPolledMs,
   repositoryRosterRereadMs,
   repositoryRosterRereadsMax,
+  repositoryUnbindNote,
+  repositoryUnbindQuestion,
   repositoryWorkerLine,
   repositoryWorkerReading,
   type InstallationGrant,
@@ -108,6 +110,24 @@ test("a row is marked bound by the address the binding names", () => {
     [],
   );
   expect(choices.map((choice) => choice.bound)).toEqual([true, false]);
+});
+
+/** A retired binding is bound again by the same press that binds any other,
+ * so its row is offered unmarked. */
+test("a row whose binding is retired is not marked bound", () => {
+  const binding = {
+    repository: "https://forge.test/kasofsk/chuggy",
+    boundAt: "2026-09-11T00:00:00Z",
+    landing: { mode: "Push" as const },
+  };
+  const marked = (retiredAt: string | undefined): readonly boolean[] =>
+    repositoryChoices(
+      repositoriesDrawn([], [reachable({})]),
+      [retiredAt === undefined ? binding : { ...binding, retiredAt }],
+      [],
+    ).map((choice) => choice.bound);
+  expect(marked(undefined)).toEqual([true]);
+  expect(marked("2026-09-14T00:00:00Z")).toEqual([false]);
 });
 
 const elsewhere = reachable({
@@ -422,7 +442,8 @@ test("each refusal is the one line the picker draws under itself", () => {
   repositoryRefusalsDrawn(status);
 });
 
-/** A retired binding is the one refusal Retry cannot outlast, so it alone withdraws it. */
+/** A retired binding is the one refusal Retry cannot outlast, so it alone
+ * withdraws it, and it is called what its row calls it. */
 test("a configuration step asked for again draws its outcome, or the refusal it met", () => {
   const configured = (
     configurations: ProjectRepositoryConfigurationsResponse,
@@ -468,7 +489,7 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
       code: "RepositoryRetired",
       body: undefined,
     }),
-  ).toStrictEqual({ status: "Retired", retry: false });
+  ).toStrictEqual({ status: "Unbound", retry: false });
   expect(
     repositoryConfigureStatus({
       outcome: "Conflict",
@@ -488,6 +509,47 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
     status: "Not found",
     retry: true,
   });
+});
+
+/** The question is drawn under a row of its own, so it names the repository
+ * the press was on. */
+test("Unbind asks by the repository's name, and says what it ends and what it leaves", () => {
+  expect(
+    repositoryUnbindQuestion("https://forge.test/kasofsk/chuggy.git"),
+  ).toStrictEqual({
+    question: "Unbind kasofsk/chuggy?",
+    line: "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.",
+  });
+});
+
+test("an unbind the route retired leaves nothing to say, and a refusal is its word", () => {
+  expect(
+    repositoryUnbindNote({
+      outcome: "Ok",
+      value: {
+        repository: "https://forge.test/kasofsk/chuggy",
+        boundAt: "2026-09-11T00:00:00Z",
+        landing: { mode: "Push" },
+        retiredAt: "2026-09-14T00:00:00Z",
+      },
+    }),
+  ).toBeUndefined();
+  expect(
+    repositoryUnbindNote({
+      outcome: "Retryable",
+      code: "RepositoryRetirementContended",
+      retryAfterSeconds: 1,
+    }),
+  ).toBe("Deferring");
+  expect(repositoryUnbindNote({ outcome: "Absent" })).toBe("Not found");
+  expect(
+    repositoryUnbindNote({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  ).toBe("Refused");
 });
 
 /**
