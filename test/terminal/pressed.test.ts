@@ -36,6 +36,7 @@ const drawnIn: Readonly<Record<keyof typeof setupPressed, string>> = {
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
   runner: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
+  myRunner: "ui/chuggy-ui/app/browser/settings/MyRunnerPage.tsx",
   ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };

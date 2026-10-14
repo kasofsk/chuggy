@@ -18,6 +18,7 @@ import {
   setupLingerByHand,
   setupLingerCommand,
   setupLingerRead,
+  setupOwnFiles,
   setupPackageProbed,
   setupPoolFilePrefix,
   setupPoolFiles,
@@ -39,6 +40,8 @@ import {
   boxHome,
   boxLogin,
   boxOwn,
+  boxOwnFile,
+  boxOwnUnitName,
   boxPoolFile,
   boxPools,
   boxPrefix,
@@ -48,6 +51,7 @@ import {
   boxVersion,
   exited,
 } from "./setupRunnerBox.ts";
+import { setupSiteMember } from "./setupSite.ts";
 
 const surroundings = {
   platform: "linux",
@@ -143,9 +147,30 @@ test("a pool file's service is named as the package names it, which the registra
     path: "/home/geoff/.config/systemd/user/chuggy-linux-scoop.second.shame.service",
   });
   expect(
-    setupUnitOf(places, { path: boxPoolFile("acme", "widgets"), pool: "shame" })
-      .name,
+    setupUnitOf(places, { path: boxPoolFile("acme", "widgets") }).name,
   ).toBe(boxUnitName("acme", "widgets"));
+  expect(
+    setupUnitOf(places, { path: boxOwnFile("acme", setupSiteMember) }).name,
+  ).toBe(boxOwnUnitName("acme", setupSiteMember));
+});
+
+test("the files of the person's own runner in a workspace are the files named for it and one whole part beside the pool files, found by name and never opened", () => {
+  const machine = pooled([
+    `acme.${setupSiteMember}.json`,
+    "acme.widgets.shame.json",
+    "acme.a_2eb.json",
+    "acme.a.b.json",
+    "acme..json",
+    `acme.${setupSiteMember}.json.1234.draft`,
+    `globex.${setupSiteMember}.json`,
+    `acme_2ex.${setupSiteMember}.json`,
+  ]);
+  expect(setupOwnFiles(machine.ports(), places, "acme")).toEqual([
+    { path: `${boxPools}/acme.${setupSiteMember}.json` },
+    { path: `${boxPools}/acme.a_2eb.json` },
+  ]);
+  expect(machine.box.read).toEqual([]);
+  expect(setupOwnFiles(setupMachine().ports(), places, "acme")).toEqual([]);
 });
 
 test("the commands run on the machine are the package's and the service manager's own, each word a word", () => {
@@ -452,14 +477,17 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect(await here(bare)).toEqual({
     room: { room: "Open", engine: "docker" },
     held: false,
+    own: false,
   });
   expect(bare.box.paths).toEqual(before);
   expect(bare.box.acts).toEqual(["services", "docker"]);
 
   const registered = pooled(["acme.widgets.shame.json"]);
-  expect((await here(registered)).held).toBe(true);
+  expect(await here(registered)).toMatchObject({ held: true, own: false });
+  registered.box.paths.set(`${boxPools}/acme.${setupSiteMember}.json`, "{}");
+  expect(await here(registered)).toMatchObject({ held: true, own: true });
   registered.box.engines.docker = "No";
-  expect((await here(registered)).held).toBe(false);
+  expect(await here(registered)).toMatchObject({ held: false, own: false });
 
   const named = setupMachine();
   named.box.paths.set(
@@ -484,13 +512,18 @@ test("what the bare command reads of the machine changes nothing: whether a runn
       how: { barred: "Named", settings: boxSettings },
     },
     held: false,
+    own: false,
   });
   expect(barred.box.acts).toEqual(["services"]);
 
   const mac = pooled(["acme.widgets.shame.json"]);
   mac.box.paths.set(boxSettings, JSON.stringify({ claudeTokenFile: boxLogin }));
   mac.platform = "darwin";
-  expect(await here(mac)).toEqual({ room: { room: "Mac" }, held: false });
+  expect(await here(mac)).toEqual({
+    room: { room: "Mac" },
+    held: false,
+    own: false,
+  });
   expect(mac.box.ran).toEqual([]);
   expect(mac.box.read).toEqual([]);
 });

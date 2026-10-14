@@ -158,17 +158,31 @@ const mends: {
     ),
   ],
   Runner: [
-    { lacks: "Runner" },
+    { lacks: "Runner", own: false },
     hand(
       `Open ${pages}/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
       "once the person says the runner is running",
     ),
   ],
   RunnerLive: [
-    { lacks: "RunnerLive" },
+    { lacks: "RunnerLive", own: false },
     hand(
       "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
       "once the person says the runner is running",
+    ),
+  ],
+  Own: [
+    { lacks: "Own", pooled: true },
+    hand(
+      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to its projects on that page. Tell me once it is running.`,
+      "once the person says their own runner is running and serves the project",
+    ),
+  ],
+  OwnLive: [
+    { lacks: "OwnLive", pooled: true },
+    hand(
+      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running. Start it on its machine and tell me once it is running.",
+      "once the person says their own runner is running",
     ),
   ],
   Ticket: [
@@ -226,7 +240,7 @@ test("nothing a step can lack is mended by a command: each is told, waits on the
     );
     expect(next.when, lack.lacks).toMatch(/^(once|if|when) the person /u);
   }
-  expect(pageless).toEqual(["RunnerLive"]);
+  expect(pageless).toEqual(["RunnerLive", "OwnLive"]);
 });
 
 test("a runner that is registered and not running is started on its machine, and the tell says nothing of any page, since no page of the console says whether one is live", () => {
@@ -278,7 +292,7 @@ test("a name is written into an address so that the address is still one address
     workspace: "two words",
     project: "a/b?c#d",
   };
-  expect(told({ lacks: "Runner" }, { choice })).toContain(
+  expect(told({ lacks: "Runner", own: false }, { choice })).toContain(
     `Open ${stoodSite}/two%20words/a%2Fb%3Fc%23d/runners and press`,
   );
   expect(told({ lacks: "Project" }, { choice })).toContain(
@@ -329,11 +343,14 @@ test("a step the site would not show, or sent only part of, is a state the perso
 test("with every step done, setup is said to be done in the ticket step's own words, and nothing is named but where the next ticket is made", () => {
   for (const detail of ["ticket 4 landed", "ticket 4 opened a pull request"]) {
     const steps: readonly SetupStep[] = [
-      ...lacking({ lacks: "Runner" }).steps.slice(0, 1),
+      ...lacking({ lacks: "Runner", own: false }).steps.slice(0, 1),
       { step: "ticket", state: "done", detail, lacks: undefined },
     ];
     expect(
-      setupNext(lacking({ lacks: "Runner" }, { steps }), setupAnswersNone),
+      setupNext(
+        lacking({ lacks: "Runner", own: false }, { steps }),
+        setupAnswersNone,
+      ),
     ).toEqual({
       carried: setupAnswersNone,
       thing: {
@@ -357,35 +374,88 @@ function here(
   lack: SetupLack,
   room: SetupRunnerRoom,
   held = false,
+  own = false,
 ): SetupThing {
-  const looked: SetupRunnerHere = { room, held };
+  const looked: SetupRunnerHere = { room, held, own };
   return setupNext(lacking(lack), setupAnswersNone, looked).thing;
 }
 
 const roomy: SetupRunnerRoom = { room: "Open", engine: "docker" };
+
+/** The lacks of the runner's step, which `runner` mends. */
+const runnerKinds: readonly string[] = [
+  "Runner",
+  "RunnerLive",
+  "Own",
+  "OwnLive",
+];
 const runnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 
 test("with no runner yet and a machine that could take one, the person is told once what runner would put here, and the command waits on their yes", () => {
-  expect(here({ lacks: "Runner" }, roomy)).toEqual(
+  expect(here({ lacks: "Runner", own: false }, roomy)).toEqual(
     offered(
       `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
     ),
   );
-  expect(here({ lacks: "Runner" }, roomy, true)).toEqual(
-    here({ lacks: "Runner" }, roomy),
+  expect(here({ lacks: "Runner", own: false }, roomy, true)).toEqual(
+    here({ lacks: "Runner", own: false }, roomy),
+  );
+});
+
+test("with neither a runner of the project nor one of the person's own, the offer says two services of theirs are put here: one for the work on the project's tickets, one for their own chats", () => {
+  expect(here({ lacks: "Runner", own: true }, roomy)).toEqual(
+    offered(
+      `${runnerIs}. I can make this machine one. That puts here the runner package, chuggy-linux, and two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, which run only on a runner of your own. Both run on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${pages}/runners, where you press Add runner.`,
+    ),
+  );
+});
+
+test("with the project's work provided for and no runner of the person's own serving it, a machine that could take one is offered as theirs, said as a second runner of the work too where the work's runner is elsewhere, and otherwise they are sent to the My runner page", () => {
+  const chats =
+    "Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet.";
+  const yours = `${chats} I can make this machine yours: that puts here the runner package, chuggy-linux, where it is not here yet, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given acme/widgets to serve instead.`;
+  expect(here({ lacks: "Own", pooled: false }, roomy)).toEqual(
+    offered(`${yours} Tell me yes to go ahead.`),
+  );
+  expect(here({ lacks: "Own", pooled: true }, roomy, true)).toEqual(
+    offered(`${yours} Tell me yes to go ahead.`),
+  );
+  expect(here({ lacks: "Own", pooled: true }, roomy)).toEqual(
+    offered(
+      `${yours} The work on acme/widgets has a runner elsewhere, and this machine is made one of it too, a second service of yours. Tell me yes to go ahead.`,
+    ),
+  );
+  expect(here({ lacks: "Own", pooled: false }, { room: "Mac" })).toEqual(
+    hand(
+      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet; chuggy setup cannot make this machine one. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to its projects on that page. Tell me once it is running.`,
+      "once the person says their own runner is running and serves the project",
+    ),
+  );
+});
+
+test("the person's own runner registered and not running is offered to be started here only where this machine holds a registration of it, and is otherwise theirs to start where it is", () => {
+  expect(here({ lacks: "OwnLive", pooled: false }, roomy, false, true)).toEqual(
+    offered(
+      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in. Tell me yes to go ahead.",
+    ),
+  );
+  expect(here({ lacks: "OwnLive", pooled: true }, roomy)).toEqual(
+    mends.OwnLive[1],
   );
 });
 
 test("where this machine could not take a runner the person is told why instead, and nothing is offered: a Mac, user services that do not answer, no engine", () => {
   const running = "once the person says the runner is running";
-  expect(here({ lacks: "Runner" }, { room: "Mac" })).toEqual(
+  expect(here({ lacks: "Runner", own: false }, { room: "Mac" })).toEqual(
     hand(
       `${runnerIs}. This machine is a Mac and chuggy has no runner for a Mac yet, so it cannot be one. A runner needs a machine with Linux · Node 24 · Docker or Podman: on one, open ${pages}/runners, press Add runner and do what it shows there. Tell me once the runner is running.`,
       running,
     ),
   );
-  expect(here({ lacks: "Runner" }, { room: "Serviceless" })).toEqual(
+  expect(
+    here({ lacks: "Runner", own: false }, { room: "Serviceless" }),
+  ).toEqual(
     hand(
       `${runnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. Open ${pages}/runners and press Add runner, then do what it shows on the machine that will run the work. Tell me once the runner is running.`,
       running,
@@ -393,7 +463,7 @@ test("where this machine could not take a runner the person is told why instead,
   );
   expect(
     here(
-      { lacks: "Runner" },
+      { lacks: "Runner", own: false },
       {
         room: "Engineless",
         asked: [
@@ -418,7 +488,7 @@ test("a user the runner package bars from docker is told the package's reason an
   const instead = `For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`;
   expect(
     here(
-      { lacks: "Runner" },
+      { lacks: "Runner", own: false },
       {
         room: "DockerBarred",
         user: "1001",
@@ -433,7 +503,7 @@ test("a user the runner package bars from docker is told the package's reason an
   );
   expect(
     here(
-      { lacks: "Runner" },
+      { lacks: "Runner", own: false },
       {
         room: "DockerBarred",
         user: "1001",
@@ -449,44 +519,56 @@ test("a user the runner package bars from docker is told the package's reason an
 });
 
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
-  expect(here({ lacks: "RunnerLive" }, roomy, true)).toEqual(
+  expect(here({ lacks: "RunnerLive", own: false }, roomy, true)).toEqual(
     offered(
       "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.",
     ),
   );
   for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)
-    expect(here({ lacks: "RunnerLive" }, room), room.room).toEqual(
+    expect(here({ lacks: "RunnerLive", own: false }, room), room.room).toEqual(
       mends.RunnerLive[1],
     );
+  expect(here({ lacks: "RunnerLive", own: true }, roomy, true)).toMatchObject({
+    tell: expect.stringMatching(
+      / Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too\. Tell me yes to go ahead\.$/u,
+    ) as unknown,
+  });
 });
 
 test("what the machine showed moves no step but the runner's", () => {
   for (const [kind, [lack, told]] of Object.entries(mends))
-    if (kind !== "Runner" && kind !== "RunnerLive")
+    if (!runnerKinds.includes(kind))
       expect(here(lack, roomy, true), kind).toEqual(told);
 });
 
 test("the machine is looked at only where the runner's step is the first not done and the project is chosen", () => {
   const due = (lack: SetupLack, given?: Partial<SetupStanding>) =>
     setupRunnerDue(lacking(lack, given));
-  expect(due({ lacks: "Runner" })).toEqual({
+  expect(due({ lacks: "Runner", own: false })).toEqual({
     tenant: "acme",
     project: "widgets",
   });
-  expect(due({ lacks: "RunnerLive" })).toEqual({
-    tenant: "acme",
-    project: "widgets",
-  });
+  for (const lack of [
+    { lacks: "RunnerLive", own: false },
+    { lacks: "Own", pooled: true },
+    { lacks: "OwnLive", pooled: false },
+  ] as const)
+    expect(due(lack), lack.lacks).toEqual({
+      tenant: "acme",
+      project: "widgets",
+    });
   for (const [kind, [lack]] of Object.entries(mends))
-    if (kind !== "Runner" && kind !== "RunnerLive")
-      expect(due(lack), kind).toBeUndefined();
+    if (!runnerKinds.includes(kind)) expect(due(lack), kind).toBeUndefined();
   expect(due(unread({ fate: "Refused" }))).toBeUndefined();
   expect(
-    due({ lacks: "Runner" }, { choice: { ...chosen, project: undefined } }),
+    due(
+      { lacks: "Runner", own: false },
+      { choice: { ...chosen, project: undefined } },
+    ),
   ).toBeUndefined();
   expect(
     due(
-      { lacks: "Runner" },
+      { lacks: "Runner", own: false },
       {
         choice: {
           choice: "Open",
@@ -500,9 +582,16 @@ test("the machine is looked at only where the runner's step is the first not don
   ).toBeUndefined();
   const behind: readonly SetupStep[] = [
     { step: "github", state: "todo", detail: "", lacks: { lacks: "Account" } },
-    { step: "runner", state: "todo", detail: "", lacks: { lacks: "Runner" } },
+    {
+      step: "runner",
+      state: "todo",
+      detail: "",
+      lacks: { lacks: "Runner", own: false },
+    },
   ];
-  expect(due({ lacks: "Runner" }, { steps: behind })).toBeUndefined();
+  expect(
+    due({ lacks: "Runner", own: false }, { steps: behind }),
+  ).toBeUndefined();
 });
 
 /** The step that decides what is next at each stage of a site set up one thing at a time: the first that is not done. */

@@ -5,9 +5,10 @@
  * does.
  *
  * The runner package's own rules are written here a second time on purpose,
- * from the package and not from the program: how a pool file and its unit are
- * named, what `register`, `doctor` and `install-service` print, and that a
- * registration is a redemption at the site. A case that moved one of them in
+ * from the package and not from the program: how a pool file, the file of the
+ * person's own runner and their units are named, what `register`, `doctor`
+ * and `install-service` print, and that a registration is a redemption at the
+ * site. A case that moved one of them in
  * the program alone finds this box disagreeing with it. What a case wants to
  * go otherwise it names in `answers`, and the box then does nothing for that
  * act and answers as told.
@@ -16,7 +17,7 @@
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded, SetupDiskPort } from "../app/core/setupPorts.ts";
 import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
-import { setupSiteRedeemed } from "./setupSite.ts";
+import { setupSiteOwnRedeemed, setupSiteRedeemed } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
 export const boxHome = "/home/person";
@@ -51,7 +52,7 @@ export type BoxAct =
   | "linger"
   | "lingerOn";
 
-/** The acts that change the machine or the site, in the order a first run does them. */
+/** The acts that change the machine or the site, in the order a first run does them for the project's runner. */
 export const boxActs = [
   "install",
   "register",
@@ -182,6 +183,15 @@ export function boxUnitName(tenant: string, project: string): string {
   return `chuggy-linux-${part(tenant)}.${part(project)}.${boxPoolName}.service`;
 }
 
+/** The file the package writes for the person's own runner in a workspace, named for it and the member, and the unit it writes for that file. */
+export function boxOwnFile(tenant: string, member: string): string {
+  return `${boxPools}/${part(tenant)}.${part(member)}.json`;
+}
+
+export function boxOwnUnitName(tenant: string, member: string): string {
+  return `chuggy-linux-${part(tenant)}.${part(member)}.service`;
+}
+
 function unitOf(file: string): string {
   const base = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
   return `chuggy-linux-${base}.service`;
@@ -230,27 +240,35 @@ interface BoxWorld {
   readonly origin: string;
 }
 
+/** A registration, as a pool's or with `--personal` as the person's own: the token redeemed at the site, and the file the package names for what it answered. */
 function registered(
   box: RunnerBox,
   world: BoxWorld,
   command: readonly string[],
 ): SetupChildEnded {
-  const [, , flag, api, token = ""] = command;
+  const [, , ...words] = command;
+  const personal = words[0] === "--personal";
+  const [flag, api, token = ""] = personal ? words.slice(1) : words;
   if (flag !== "--api" || api !== world.origin || !token.startsWith("--token="))
     return exited(2, "", "register needs --api and --token\n");
-  const answer = setupSiteRedeemed(
-    world.site(),
-    token.slice("--token=".length),
-    boxPoolName,
-  );
+  const redeemed = token.slice("--token=".length);
+  const answer = personal
+    ? setupSiteOwnRedeemed(world.site(), redeemed)
+    : setupSiteRedeemed(world.site(), redeemed, boxPoolName);
   if (answer.status !== 201)
     return exited(
       1,
       "",
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
-  const pool = answer.body as { tenant: string; project: string };
-  const file = boxPoolFile(pool.tenant, pool.project);
+  const held = answer.body as {
+    tenant: string;
+    project?: string;
+    owner?: string;
+  };
+  const file = personal
+    ? boxOwnFile(held.tenant, held.owner ?? "")
+    : boxPoolFile(held.tenant, held.project ?? "");
   const unit = unitOf(file);
   const serves = box.paths.has(`${boxUnits}/${unit}`);
   const wrote = box.paths.has(file) ? "replaced" : "wrote";
@@ -295,7 +313,16 @@ function served(box: RunnerBox, file: string): SetupChildEnded {
   );
 }
 
-/** A service that came up polls, which is when the site sees a runner of every project this machine is registered for as live. */
+/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner, that runner. */
+function polled(world: BoxWorld, name: string): void {
+  const site = world.site();
+  for (const [tenant, own] of site.own)
+    if (name === boxOwnUnitName(tenant, site.member)) own.live = true;
+  if (!name.endsWith(`.${boxPoolName}.service`)) return;
+  for (const project of site.projects)
+    if (project.pools.includes(boxPoolName)) project.runner = "Live";
+}
+
 function up(box: RunnerBox, world: BoxWorld, name: string, enable: boolean) {
   if (!box.paths.has(`${boxUnits}/${name}`))
     return exited(
@@ -307,9 +334,7 @@ function up(box: RunnerBox, world: BoxWorld, name: string, enable: boolean) {
   box.units.set(name, unit);
   unit.enabled ||= enable;
   unit.active = box.stays;
-  if (unit.active && box.polls)
-    for (const project of world.site().projects)
-      if (project.pools.includes(boxPoolName)) project.runner = "Live";
+  if (unit.active && box.polls) polled(world, name);
   return exited(0);
 }
 

@@ -8,7 +8,8 @@
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
  * package's own lines, the files it writes under the home it is run in, and a
- * registration redeemed at the site it is pointed to. It answers from what a
+ * registration, a pool's or with `--personal` the person's own, redeemed at
+ * the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
  * here reaches anything of the machine it runs on.
  */
@@ -126,31 +127,54 @@ function unitOf(file: string): string {
 const units = join(config, "systemd", "user");
 const requestMsMax = 10_000;
 
-/** A registration: the token redeemed at the site it names, and the pool's credentials kept in the file the package names for it. */
+/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's own for the workspace and the member. */
+function fileOf(held: {
+  readonly tenant: string;
+  readonly project?: string;
+  readonly owner?: string;
+}): string {
+  const name =
+    held.owner === undefined
+      ? `${part(held.tenant)}.${part(held.project ?? "")}.${knobs.pool}.json`
+      : `${part(held.tenant)}.${part(held.owner)}.json`;
+  return join(config, "chuggy", "pools", name);
+}
+
+/** A registration, a pool's or with `--personal` the person's own: the token redeemed at the site it names, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
-  const [, flag, api = "", word = ""] = argv;
+  const personal = argv[1] === "--personal";
+  const [flag, api = "", word = ""] = argv.slice(personal ? 2 : 1);
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))
     return said(2, "", "--token is not a registration token\n");
-  const answer = await fetch(`${api}/api/v1/worker-pool-registrations`, {
-    method: "POST",
-    headers: { "content-type": "application/json", [machineSender]: "runner" },
-    body: JSON.stringify({ token, pool: knobs.pool, capabilities: [] }),
-    signal: AbortSignal.timeout(requestMsMax),
-  });
+  const answer = await fetch(
+    `${api}/api/v1/${personal ? "personal-runner" : "worker-pool"}-registrations`,
+    {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        [machineSender]: "runner",
+      },
+      body: JSON.stringify(
+        personal
+          ? { token, capabilities: [] }
+          : { token, pool: knobs.pool, capabilities: [] },
+      ),
+      signal: AbortSignal.timeout(requestMsMax),
+    },
+  );
   if (answer.status !== 201)
     return said(
       1,
       "",
       "the registration token is unknown, spent or expired; mint another in chuggy's console\n",
     );
-  const pool = (await answer.json()) as { tenant: string; project: string };
-  const file = join(
-    config,
-    "chuggy",
-    "pools",
-    `${part(pool.tenant)}.${part(pool.project)}.${knobs.pool}.json`,
-  );
+  const pool = (await answer.json()) as {
+    tenant: string;
+    project?: string;
+    owner?: string;
+  };
+  const file = fileOf(pool);
   const unit = unitOf(file);
   const wrote = existsSync(file) ? "replaced" : "wrote";
   written(file, JSON.stringify(pool));

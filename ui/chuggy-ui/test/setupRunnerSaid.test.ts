@@ -28,9 +28,12 @@ import { boxLogin, boxPools, boxSettings, boxUnits } from "./setupRunnerBox.ts";
 import {
   rosterCommand,
   rosterLingerRefusal,
+  rosterOwn,
+  rosterOwnUnit,
   rosterPool,
   rosterUnit,
   runnerNotes,
+  runnerNotesAll,
   runnerStops,
   runnerStopsAll,
 } from "./setupRunnerRoster.ts";
@@ -73,6 +76,21 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     [
       "the site does not show you acme/widgets or which runners it has",
       0,
+      "Runner",
+    ],
+    [
+      "the site does not show you acme/widgets or where your chats in it run",
+      0,
+      "Runner",
+    ],
+    [
+      "the site did not say of acme/widgets whether you may register a runner of your own (Fault)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site did not say of acme/widgets whether you have a runner of your own (Fault)",
+      1,
       "Runner",
     ],
   ],
@@ -155,6 +173,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
+      "registering this machine as your own runner ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "installing your own runner's service ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
       "reloading your services ended with exit 1, saying: it said why",
       1,
       "Runner",
@@ -219,6 +247,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       `installing the runner's service ended well, and what it makes is not at ${boxUnits}/${rosterUnit}`,
+      1,
+      "Runner",
+    ],
+    [
+      `registering this machine as your own runner ended well, and what it makes is not at ${boxPools}`,
+      1,
+      "Runner",
+    ],
+    [
+      `installing your own runner's service ended well, and what it makes is not at ${boxUnits}/${rosterOwnUnit}`,
       1,
       "Runner",
     ],
@@ -292,6 +330,59 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
   ],
+  PermitWithheld: [
+    [
+      "the workspace does not let you register a runner of your own",
+      0,
+      "Runner",
+    ],
+    [
+      "the workspace does not let you register a runner of your own",
+      0,
+      "Runner",
+    ],
+  ],
+  OwnMintRefused: [
+    [
+      "the site made no registration token for your own runner (Absent)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site made no registration token for your own runner (Conflict)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site made no registration token for your own runner (Fault)",
+      1,
+      "Runner",
+    ],
+  ],
+  ServesRefused: [
+    [
+      "the site did not add acme/widgets to the projects your own runner serves (Absent)",
+      1,
+      "Runner",
+    ],
+    [
+      "the site did not add acme/widgets to the projects your own runner serves (Fault)",
+      1,
+      "Runner",
+    ],
+  ],
+  OwnNotLive: [
+    [
+      "your own runner's service is running, and after 90 s the site still sees no runner of yours serving acme/widgets live",
+      1,
+      "Runner",
+    ],
+    [
+      "after 90 s the site still sees no runner of yours serving acme/widgets live",
+      0,
+      "Runner",
+    ],
+  ],
 };
 
 test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
@@ -301,14 +392,13 @@ test("every stop is said by what was found, exits zero where it waits on the per
 
 test("every stop tells the person one thing that ends on what they are to tell the agent, and waits on a condition a rule can carry", () => {
   for (const stop of runnerStopsAll) {
-    const { tell, when, rule } = setupRunnerStopSaid(stop, "acme/widgets");
+    const { tell, when } = setupRunnerStopSaid(stop, "acme/widgets");
     const kind = JSON.stringify(stop);
     expect(tell, kind).toMatch(
       /^[A-Zc].* [Tt]ell me (?:once|if|when) [^.]+\.$/u,
     );
     expect(when, kind).toMatch(/^(?:once|if|when) \S/u);
     expect(when, kind).not.toMatch(/\.$/u);
-    expect(rule === undefined, kind).toBe(stop.stop !== "LoginMissing");
   }
 });
 
@@ -329,6 +419,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
     "Npmless",
     "Serviceless",
     "SettingsUnread",
+    "threads Refused",
     "work Refused",
   ]);
   expect(
@@ -336,6 +427,8 @@ test("only a stop made before the run's first act says nothing was changed, whic
       "so I cannot say the runner is set up. What was done before stays done.",
     ),
   ).toEqual([
+    "own Fault",
+    "permit Fault",
     "placement Fault",
     "placement Refused",
     "pools Cut",
@@ -472,12 +565,70 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Checked: ["found"],
     Unit: ["found"],
     UnitWritten: ["did"],
+    ProjectLive: ["found"],
+    Hosted: ["found"],
+    Own: ["found"],
+    OwnGone: ["found"],
+    OwnRegistered: ["did"],
+    OwnElsewhere: ["found"],
+    OwnUnit: ["found"],
+    OwnUnitWritten: ["did"],
+    Serves: ["found"],
+    ServesAdded: ["did"],
+    OwnLive: ["found"],
     Linger: ["found"],
     LingerOn: ["did"],
     Running: ["found"],
     Enabled: ["did"],
     Started: ["did"],
     Restarted: ["did"],
+  });
+});
+
+test("the person's own runner is said as theirs, apart from the project's: found on this machine, on another, or registered here, and the project found among what it serves or added", () => {
+  const lines = runnerNotesAll
+    .filter((note) => /^(?:Own|Serves|ProjectLive|Hosted)/u.test(note.note))
+    .map((note) => setupRunnerNoteSaid(note, "acme/widgets").join(": "));
+  expect(lines).toEqual([
+    "found: the site sees a runner of acme/widgets live",
+    "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
+    `found: this machine is registered as your own runner, in ${rosterOwn}`,
+    `found: ${rosterOwn} registered this machine as your own runner, and the site has no runner of yours`,
+    `did: registered this machine as your own runner, in ${rosterOwn}`,
+    "found: your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in acme/widgets run on that machine",
+    `found: your own runner's service is installed: ${rosterOwnUnit}`,
+    `did: installed your own runner's service, ${rosterOwnUnit}`,
+    "found: your own runner serves acme/widgets",
+    "did: added acme/widgets to the projects your own runner serves",
+    "found: the site sees your own runner live, so your chats in acme/widgets run on it",
+  ]);
+});
+
+test("a workspace that does not let the person register a runner of their own is said with the project's work as it stands, the page an admin gives it on, and nothing to try again until they have", () => {
+  const [runner, cluster] = runnerStops.PermitWithheld.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  const own =
+    "Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, https://chuggy.example/tenants/acme/settings/people. Tell me once they have.";
+  expect(runner).toEqual({
+    found: "the workspace does not let you register a runner of your own",
+    tell: `The runner for the work on acme/widgets is set up and live. ${own}`,
+    when: "once the person says a workspace admin has let them register a runner of their own",
+    again: "Runner",
+  });
+  expect(cluster?.tell).toBe(
+    `chuggy's cluster runs the work on acme/widgets. ${own}`,
+  );
+});
+
+test("with no Claude login the person is told what login the runner needs, where, and that only they may read it, and nothing forbids the agent from walking them through it", () => {
+  const [missing] = runnerStops.LoginMissing;
+  if (missing === undefined) throw new Error("no LoginMissing in the roster");
+  expect(setupRunnerStopSaid(missing, "acme/widgets")).toEqual({
+    found: `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
+    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+    when: "once the person says the runner's Claude login is on this machine",
+    again: "Runner",
   });
 });
 

@@ -7,8 +7,10 @@
  * and what is pressed there, and the checklist is read again only once the
  * person says the step is done. The runner's step changes the machine, so it
  * is offered and never run unasked: the person is told what `runner` would
- * put here, and the command is named under a rule that waits on their yes;
- * where the machine could not take a runner, they are told that instead.
+ * put here, a service for the project's work and one for their own chats or
+ * whichever of the two is lacking, and the command is named under a rule that
+ * waits on their yes; where the machine could not take a runner, they are
+ * told that instead.
  * `setupMend` is where each thing a step can lack is turned into its next
  * thing; the slice that gives a step its command changes that step's line
  * there and nowhere else. A tell says of a page only what is pressed there:
@@ -59,6 +61,7 @@ export const setupPressed = {
   add: "Add",
   retry: "Retry",
   runner: "Add runner",
+  myRunner: "Register runner",
   ticket: "Create ticket",
   dispatch: "Dispatch",
 } as const;
@@ -194,14 +197,19 @@ const setupRunnerIs =
 
 const setupRunnerRunning = "once the person says the runner is running";
 
+/** What `runner` also does where the person's own runner is lacking beside the project's. */
+const setupOwnToo =
+  " Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too.";
+
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
+  own: boolean,
 ): SetupThing {
   return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.`,
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
         at,
       )
     : setupHand(
@@ -210,17 +218,70 @@ function setupRunnerLiveMend(
       );
 }
 
+/** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's own where that is lacking too. */
+function setupRunnerPut(own: boolean): string {
+  const put = `That puts here the runner package, ${runnerPackageOffered.program}, and`;
+  return own
+    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, which run only on a runner of your own. Both run on this machine in containers, on your Claude plan.`
+    : `${put} a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan.`;
+}
+
+/**
+ * The person's own runner lacking where the project's work has what it needs.
+ * `runner` makes this machine theirs, or has the one they have elsewhere serve
+ * the project; it registers this machine for the project's work too where the
+ * work goes to runners and this machine holds no registration of the project,
+ * and the person is told so.
+ */
+function setupOwnMend(
+  lack: Extract<SetupLack, { readonly lacks: "Own" | "OwnLive" }>,
+  at: SetupAt,
+  here: SetupRunnerHere | undefined,
+): SetupThing {
+  const named = `${at.workspace}/${at.project}`;
+  const chats = `Your chats in ${named} run only on a runner of your own`;
+  const besides =
+    lack.pooled && here?.held !== true
+      ? ` The work on ${named} has a runner elsewhere, and this machine is made one of it too, a second service of yours.`
+      : "";
+  if (lack.lacks === "OwnLive")
+    return here?.own === true
+      ? setupOffer(
+          `${chats}, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in.${besides} Tell me yes to go ahead.`,
+          at,
+        )
+      : setupHand(
+          `${chats}, and yours is registered and is not running. Start it on its machine and tell me once it is running.`,
+          "once the person says their own runner is running",
+        );
+  if (here?.room.room === "Open")
+    return setupOffer(
+      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
+      at,
+    );
+  return setupHand(
+    `${chats}, and none of yours serves it yet${here === undefined ? "" : "; chuggy setup cannot make this machine one"}. On a machine that can be one, open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.myRunner} and do what it shows; where you already have one, add ${at.project} to its projects on that page. Tell me once it is running.`,
+    "once the person says their own runner is running and serves the project",
+  );
+}
+
 /**
  * No runner yet. Where this machine could take one the person is told what
  * `runner` would put here before it may be run; where it could not, why not;
  * and where the machine was not looked at, the console's own page.
  */
 function setupRunnerMend(
-  lack: Extract<SetupLack, { readonly lacks: "Runner" | "RunnerLive" }>,
+  lack: Extract<
+    SetupLack,
+    { readonly lacks: "Runner" | "RunnerLive" | "Own" | "OwnLive" }
+  >,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
 ): SetupThing {
-  if (lack.lacks === "RunnerLive") return setupRunnerLiveMend(at, here);
+  if (lack.lacks === "Own" || lack.lacks === "OwnLive")
+    return setupOwnMend(lack, at, here);
+  if (lack.lacks === "RunnerLive")
+    return setupRunnerLiveMend(at, here, lack.own);
   const page = setupPage(at, navRoutes.runners);
   const pressed = `press ${setupPressed.runner}`;
   const elsewhere = `Open ${page} and ${pressed}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`;
@@ -231,7 +292,7 @@ function setupRunnerMend(
       return setupHand(elsewhere, setupRunnerRunning);
     case "Open":
       return setupOffer(
-        `${setupRunnerIs}. I can make this machine one. That puts here the runner package, ${runnerPackageOffered.program}, and a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan. Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
+        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.own)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
         at,
       );
     case "Mac":
@@ -355,6 +416,8 @@ function setupMend(
       return setupRepositoryMend(lack, at, mine);
     case "Runner":
     case "RunnerLive":
+    case "Own":
+    case "OwnLive":
       return setupRunnerMend(lack, at, here);
     case "Ticket":
     case "Release":
@@ -414,6 +477,14 @@ function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
   };
 }
 
+/** What the runner's step can lack, each of which `runner` mends. */
+const setupRunnerLacks: readonly SetupLack["lacks"][] = [
+  "Runner",
+  "RunnerLive",
+  "Own",
+  "OwnLive",
+];
+
 /** The project whose runner step is the one next, which is when the machine is looked at before the next thing is named. */
 export function setupRunnerDue(
   standing: SetupStanding,
@@ -421,7 +492,7 @@ export function setupRunnerDue(
   if (standing.choice.choice === "Open") return undefined;
   const { workspace, project } = standing.choice;
   const lacks = standing.steps.find((step) => step.lacks !== undefined)?.lacks;
-  if (lacks?.lacks !== "Runner" && lacks?.lacks !== "RunnerLive")
+  if (lacks === undefined || !setupRunnerLacks.includes(lacks.lacks))
     return undefined;
   return workspace === undefined || project === undefined
     ? undefined

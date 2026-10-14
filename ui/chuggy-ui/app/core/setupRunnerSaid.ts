@@ -33,9 +33,17 @@ export type SetupDockerBarred =
   | { readonly barred: "Named"; readonly settings: string }
   | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
 
-/** The things `runner` runs another program to do. */
+/** The things `runner` runs another program to do; `RegisterOwn` and `ServiceOwn` are of the person's own runner. */
 export type SetupRunnerAct =
-  "Install" | "Register" | "Check" | "Service" | "Reload" | "Start" | "Restart";
+  | "Install"
+  | "Register"
+  | "Check"
+  | "Service"
+  | "RegisterOwn"
+  | "ServiceOwn"
+  | "Reload"
+  | "Start"
+  | "Restart";
 
 /**
  * What the runner package's `register` says where it refuses, by the words of
@@ -105,6 +113,17 @@ export type SetupRunnerNote =
   /** `warned` is the first line of the check that passed with a warning, where one did. */
   | { readonly note: "Checked"; readonly warned: string | undefined }
   | { readonly note: "Unit" | "UnitWritten"; readonly unit: string }
+  | { readonly note: "ProjectLive" }
+  /** The project's work runs on the cluster, said where the person's own runner is set up all the same. */
+  | { readonly note: "Hosted" }
+  | {
+      readonly note: "Own" | "OwnGone" | "OwnRegistered";
+      readonly path: string;
+    }
+  /** The site has a runner of the person's own and this machine holds no registration of it. */
+  | { readonly note: "OwnElsewhere" }
+  | { readonly note: "OwnUnit" | "OwnUnitWritten"; readonly unit: string }
+  | { readonly note: "Serves" | "ServesAdded" | "OwnLive" }
   | { readonly note: "Linger" }
   | { readonly note: "LingerOn"; readonly read: boolean }
   /** `Enabled` is a service found running and set by this run to start at login, where `Started` is one this run started. */
@@ -155,7 +174,8 @@ export function setupCheckFirst(
 }
 
 /** A read of the site `runner` makes, by what it is of. */
-export type SetupRunnerRead = "work" | "placement" | "pools";
+export type SetupRunnerRead =
+  "work" | "threads" | "placement" | "pools" | "permit" | "own";
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
@@ -175,10 +195,11 @@ export type SetupRunnerStop =
       readonly how: SetupDockerBarred;
     }
   | {
-      readonly stop: "SettingsUnread" | "LoginMissing";
+      readonly stop: "SettingsUnread";
       readonly path: string;
       readonly guide: string;
     }
+  | { readonly stop: "LoginMissing"; readonly path: string }
   | { readonly stop: "Npmless" }
   | { readonly stop: "Unwritten"; readonly path: string }
   | {
@@ -219,9 +240,27 @@ export type SetupRunnerStop =
       readonly stop: "NotLive";
       readonly waitedSecs: number;
       readonly registered: boolean;
+    }
+  | {
+      /** The workspace does not let the person register a runner of their own; `work` is what the project's work has, said as set up. */
+      readonly stop: "PermitWithheld";
+      readonly people: string;
+      readonly work: "Runner" | "Cluster";
+    }
+  | {
+      readonly stop: "OwnMintRefused";
+      readonly outcome: ApiFailure["outcome"];
+      readonly lapseMins: number;
+    }
+  | { readonly stop: "ServesRefused"; readonly outcome: ApiFailure["outcome"] }
+  | {
+      /** `here` where the person's own runner is this machine, and not where it is another. */
+      readonly stop: "OwnNotLive";
+      readonly waitedSecs: number;
+      readonly here: boolean;
     };
 
-/** How a run of `runner` ended: the site sees a runner live, the project needs none, or it stopped. */
+/** How a run of `runner` ended: the site sees live each runner the project's work and the person's chats in it run on, the cluster runs both, or it stopped. */
 export type SetupRunnerEnded =
   | { readonly ended: "Live" }
   | { readonly ended: "Hosted" }
@@ -233,8 +272,6 @@ export interface SetupRunnerStopSaid {
   readonly tell: string;
   readonly when: string;
   readonly again: "Runner" | "Status";
-  /** What an agent is told besides, where a stop tempts it to do what it must not. */
-  readonly rule?: string;
 }
 
 /** A note as its word and its text. */
@@ -296,6 +333,108 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
   }
 }
 
+type SetupOwnNote = Extract<
+  SetupRunnerNote,
+  {
+    readonly note:
+      | "ProjectLive"
+      | "Hosted"
+      | "Own"
+      | "OwnGone"
+      | "OwnRegistered"
+      | "OwnElsewhere"
+      | "OwnUnit"
+      | "OwnUnitWritten"
+      | "Serves"
+      | "ServesAdded"
+      | "OwnLive";
+  }
+>;
+
+/** What the site sees of the project's runner, and what a run found and did of the person's own. */
+function setupOwnNoteSaid(
+  note: SetupOwnNote,
+  project: string,
+): SetupRunnerNoteSaid {
+  switch (note.note) {
+    case "ProjectLive":
+      return ["found", `the site sees a runner of ${project} live`];
+    case "Hosted":
+      return [
+        "found",
+        `chuggy's cluster runs the work of ${project}, so that work needs no runner`,
+      ];
+    case "Own":
+      return [
+        "found",
+        `this machine is registered as your own runner, in ${note.path}`,
+      ];
+    case "OwnGone":
+      return [
+        "found",
+        `${note.path} registered this machine as your own runner, and the site has no runner of yours`,
+      ];
+    case "OwnRegistered":
+      return [
+        "did",
+        `registered this machine as your own runner, in ${note.path}`,
+      ];
+    case "OwnElsewhere":
+      return [
+        "found",
+        `your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in ${project} run on that machine`,
+      ];
+    case "OwnUnit":
+      return ["found", `your own runner's service is installed: ${note.unit}`];
+    case "OwnUnitWritten":
+      return ["did", `installed your own runner's service, ${note.unit}`];
+    case "Serves":
+      return ["found", `your own runner serves ${project}`];
+    case "ServesAdded":
+      return ["did", `added ${project} to the projects your own runner serves`];
+    case "OwnLive":
+      return [
+        "found",
+        `the site sees your own runner live, so your chats in ${project} run on it`,
+      ];
+  }
+}
+
+type SetupPoolNote = Extract<
+  SetupRunnerNote,
+  { readonly note: "Pool" | "PoolGone" | "Registered" | "Checked" }
+>;
+
+function setupPoolNoteSaid(
+  note: SetupPoolNote,
+  project: string,
+): SetupRunnerNoteSaid {
+  switch (note.note) {
+    case "Pool":
+      return [
+        "found",
+        `this machine is registered as a runner of ${project}, in ${note.path}`,
+      ];
+    case "PoolGone":
+      return [
+        "found",
+        `${note.path} registered this machine as ${note.pool}, and the site lists no runner of ${project} by that name`,
+      ];
+    case "Registered":
+      return [
+        "did",
+        `registered this machine as a runner of ${project}, in ${note.path}`,
+      ];
+    case "Checked":
+      return [
+        "found",
+        note.warned === undefined
+          ? "the runner's own check passed"
+          : `the runner's own check passed, with a warning: ${note.warned}`,
+      ];
+  }
+}
+
 export function setupRunnerNoteSaid(
   note: SetupRunnerNote,
   project: string,
@@ -323,27 +462,10 @@ export function setupRunnerNoteSaid(
     case "Login":
       return ["found", `the runner's Claude login is in ${note.path}`];
     case "Pool":
-      return [
-        "found",
-        `this machine is registered as a runner of ${project}, in ${note.path}`,
-      ];
     case "PoolGone":
-      return [
-        "found",
-        `${note.path} registered this machine as ${note.pool}, and the site lists no runner of ${project} by that name`,
-      ];
     case "Registered":
-      return [
-        "did",
-        `registered this machine as a runner of ${project}, in ${note.path}`,
-      ];
     case "Checked":
-      return [
-        "found",
-        note.warned === undefined
-          ? "the runner's own check passed"
-          : `the runner's own check passed, with a warning: ${note.warned}`,
-      ];
+      return setupPoolNoteSaid(note, project);
     case "Unit":
     case "UnitWritten":
     case "Linger":
@@ -353,6 +475,18 @@ export function setupRunnerNoteSaid(
     case "Started":
     case "Restarted":
       return setupServiceNoteSaid(note);
+    case "ProjectLive":
+    case "Hosted":
+    case "Own":
+    case "OwnGone":
+    case "OwnRegistered":
+    case "OwnElsewhere":
+    case "OwnUnit":
+    case "OwnUnitWritten":
+    case "Serves":
+    case "ServesAdded":
+    case "OwnLive":
+      return setupOwnNoteSaid(note, project);
   }
 }
 
@@ -361,6 +495,7 @@ const setupUnchanged = "so nothing was changed on this machine";
 /** Why a Mac is not a machine a runner is put on, said wherever one is met. */
 export const setupMacNone = "chuggy has no runner for a Mac yet";
 const setupTryAgain = "if the person asks to try again";
+const setupLookAgain = "if the person asks to look again";
 const setupElsewhere =
   "once the person says a runner is running on another machine";
 
@@ -448,12 +583,15 @@ function setupDockerBarredSaid(
 
 const setupReadsSaid: Readonly<Record<SetupRunnerRead, string>> = {
   work: "where its work runs",
+  threads: "where your chats in it run",
   placement: "how its runners stand",
   pools: "which runners it has",
+  permit: "whether you may register a runner of your own",
+  own: "whether you have a runner of your own",
 };
 
-/** The read a run makes before it looks at the machine, which makes it the one read a stop at can say nothing was changed. */
-const setupReadFirst: SetupRunnerRead = "work";
+/** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
+const setupReadsFirst: readonly SetupRunnerRead[] = ["work", "threads"];
 
 /** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
 const setupUnknown =
@@ -467,7 +605,7 @@ function setupUnreadSaid(
   if (stop.outcome === "Refused")
     return {
       found: `the site does not show you ${project} or ${what}`,
-      tell: `The chuggy site does not show you what a runner for ${project} is set up from, ${stop.read === setupReadFirst ? setupUnchanged : setupUnknown}. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
+      tell: `The chuggy site does not show you what a runner for ${project} is set up from, ${setupReadsFirst.includes(stop.read) ? setupUnchanged : setupUnknown}. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
       when: "if the person says their access has changed",
       again: "Runner",
     };
@@ -484,6 +622,8 @@ const setupActs: Readonly<Record<SetupRunnerAct, string>> = {
   Register: "registering this machine",
   Check: "the runner's own check",
   Service: "installing the runner's service",
+  RegisterOwn: "registering this machine as your own runner",
+  ServiceOwn: "installing your own runner's service",
   Reload: "reloading your services",
   Start: "starting the runner's service",
   Restart: "restarting the runner's service",
@@ -618,10 +758,9 @@ function setupMachineSaid(
     case "LoginMissing":
       return {
         found: `the runner has no Claude login on this machine: nothing is at ${stop.path}`,
-        tell: `The runner needs a Claude login of its own on this machine, in ${stop.path}, and chuggy setup cannot make that yet, ${setupUnchanged}. The runner's guide says how it is made by hand: ${stop.guide}. Tell me once it is there.`,
+        tell: `The runner needs a Claude login of its own on this machine, and there is none at ${stop.path}, ${setupUnchanged}. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${stop.path} and readable only by you (mode 600). Tell me once it is there.`,
         when: "once the person says the runner's Claude login is on this machine",
         again: "Runner",
-        rule: "Never make, read or print a Claude login yourself: it is a secret, and one made from this conversation would be shown in it.",
       };
     case "Npmless":
       return {
@@ -698,9 +837,81 @@ function setupServiceSaid(
           ? `the runner's service is running, and after ${String(stop.waitedSecs)} s the site still sees no runner of ${project} live`
           : `the runner's service is running, and after ${String(stop.waitedSecs)} s the site lists no runner of ${project}`,
         tell: "The runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
-        when: "if the person asks to look again",
+        when: setupLookAgain,
         again: "Runner",
       };
+  }
+}
+
+/** A mint of the person's own registration token the site refused, by why. */
+function setupOwnMintSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "OwnMintRefused" }>,
+): SetupRunnerStopSaid {
+  const found = `the site made no registration token for your own runner (${stop.outcome})`;
+  if (stop.outcome === "Absent")
+    return {
+      found,
+      tell: "The chuggy site would not make a registration for a runner of your own: the workspace lets only members it chooses register one. Tell me once a workspace admin has let you.",
+      when: "once the person says a workspace admin has let them register a runner of their own",
+      again: "Runner",
+    };
+  if (stop.outcome === "Conflict")
+    return {
+      found,
+      tell: `chuggy already holds as many unused registrations for your own runner as it keeps at once, so it made no more. Each lapses by itself within ${String(stop.lapseMins)} minutes of being made. Tell me when you want me to try again.`,
+      when: setupTryAgain,
+      again: "Runner",
+    };
+  return {
+    found,
+    tell: `The chuggy site did not make a registration for your own runner, so this machine is not your own runner yet. ${setupPickedUp}`,
+    when: setupTryAgain,
+    again: "Runner",
+  };
+}
+
+/** Where the person's own runner stopped short: the workspace has not let them have one, the site would not register or serve it, or it is not seen live. */
+function setupOwnSaid(
+  stop: Extract<
+    SetupRunnerStop,
+    {
+      readonly stop:
+        "PermitWithheld" | "OwnMintRefused" | "ServesRefused" | "OwnNotLive";
+    }
+  >,
+  project: string,
+): SetupRunnerStopSaid {
+  switch (stop.stop) {
+    case "PermitWithheld":
+      return {
+        found: "the workspace does not let you register a runner of your own",
+        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on a runner of your own, and the workspace does not let you register one yet: a workspace admin gives you that on its People page, ${stop.people}. Tell me once they have.`,
+        when: "once the person says a workspace admin has let them register a runner of their own",
+        again: "Runner",
+      };
+    case "OwnMintRefused":
+      return setupOwnMintSaid(stop);
+    case "ServesRefused":
+      return {
+        found: `the site did not add ${project} to the projects your own runner serves (${stop.outcome})`,
+        tell: `The chuggy site did not add ${project} to the projects your own runner serves, so your chats there have no runner yet. ${setupPickedUp}`,
+        when: setupTryAgain,
+        again: "Runner",
+      };
+    case "OwnNotLive":
+      return stop.here
+        ? {
+            found: `your own runner's service is running, and after ${String(stop.waitedSecs)} s the site still sees no runner of yours serving ${project} live`,
+            tell: "Your own runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+            when: setupLookAgain,
+            again: "Runner",
+          }
+        : {
+            found: `after ${String(stop.waitedSecs)} s the site still sees no runner of yours serving ${project} live`,
+            tell: `Your own runner is registered on another machine, which your chats in ${project} run on, and the chuggy site does not see it running. Start it on that machine, and tell me once it is running.`,
+            when: "once the person says their own runner is running on its machine",
+            again: "Runner",
+          };
   }
 }
 
@@ -744,6 +955,11 @@ export function setupRunnerStopSaid(
     case "Inactive":
     case "NotLive":
       return setupServiceSaid(stop, project);
+    case "PermitWithheld":
+    case "OwnMintRefused":
+    case "ServesRefused":
+    case "OwnNotLive":
+      return setupOwnSaid(stop, project);
   }
 }
 
@@ -759,7 +975,10 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "LoginMissing":
     case "Npmless":
     case "LingerAsks":
+    case "PermitWithheld":
       return 0;
+    case "OwnNotLive":
+      return stop.here ? 1 : 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;
     case "SettingsUnread":
@@ -770,6 +989,8 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "CheckFailed":
     case "Inactive":
     case "NotLive":
+    case "OwnMintRefused":
+    case "ServesRefused":
       return 1;
   }
 }

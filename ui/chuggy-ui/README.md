@@ -175,13 +175,16 @@ apps on the account that owns it are granted that repository, which is read
 from each of the two installations' own listings and from no other.
 The runner's step is the one the program does. For any other step that is the
 first not done, a `tell:` line says what mends it, a console page and what to
-press there wherever a page is what does, and `next:` is `stop`. At the
-runner's step it looks at the machine and changes nothing. Where a runner could
-be put there, one `tell:` says what `runner` would put on the machine and the
-`rule:` names that command for once she says yes; where one could not (a Mac,
-user services that do not answer, no container engine that answers her without
-a password, or none the runner package takes from her user) the `tell:` says
-that instead.
+press there wherever a page is what does, and `next:` is `stop`. The runner's
+step is done once the project's work has a runner the site sees live, or runs
+on the cluster, and her chats in it have her own runner serving it live, or run
+on the cluster too. At that step it looks at the machine and changes nothing.
+Where a runner could be put there, one `tell:` says what `runner` would put on
+the machine, a service for the project's work and one for her own chats or
+whichever of the two is lacking, and the `rule:` names that command for once
+she says yes; where one could not (a Mac, user services that do not answer, no
+container engine that answers her without a password, or none the runner
+package takes from her user) the `tell:` says that instead.
 
 With one workspace and one project there is nothing to choose. Otherwise
 `--workspace` and `--project` name them, and every command the program prints
@@ -203,7 +206,12 @@ take it is said as that, with its path, and the sign-in is not spent.
 
 `runner --workspace <w> --project <p>` sets a runner up for that project on the
 Linux machine it is run on, and is done once the site sees the runner live;
-`--wait-secs` bounds that wait. The machine is the record of the machine's
+then, where her chats in the project run on runners, it makes the same machine
+her own runner, as the console's My runner page does, adds the project to what
+it serves, and is done once the site sees that live too. `--wait-secs` bounds
+each wait. One package, one settings file and one Claude login serve both
+services. Her own runner the site already has is kept: where this machine holds
+no registration of it, it is on another machine and is only given the project. The machine is the record of the machine's
 things and the site of the site's, and the program keeps neither: every act is
 preceded by the probe that would show it done, so the command is run again
 after any failure and picks up where things stand. In order it has the runner
@@ -212,14 +220,16 @@ her home directory where npm's own is not hers to write; the package's
 settings written, with its guide's values, where there are none; the machine
 registered; the package's own check passed; its service installed; her
 services set to outlive a logout; and the service enabled and started. For a
-registration it mints a registration token, which is the one write it sends a
-site, and hands it to the package's `register` as one word of its arguments
-and nowhere else. Every try mints one, so a registration the package refuses
+registration it mints a registration token, a write, and hands it to the
+package's `register` as one word of its arguments and nowhere else; her own
+runner is registered the same way, with `--personal`, where the workspace
+lets her, and adding the project to what it serves is the other write. Every try mints one, so a registration the package refuses
 for the machine's processor or its name is not offered again as the machine
 stands.
 It takes no password: a child has no terminal to ask on, and what wants one is
 told to her to do herself. It does not make the runner's Claude login, and
-stops where there is none. The runner package takes docker from one user of a
+stops where there is none, saying it is the login `claude setup-token` makes,
+saved alone in the file it names and readable only by her. The runner package takes docker from one user of a
 machine only, so docker is asked of that user alone and podman of any other,
 and a user left with no engine is stopped before anything is changed. Nothing
 a child prints is printed as it came: a failure, or a check that passed with a
