@@ -10,9 +10,11 @@
 #             $subject    what the verdict line should name
 #             $scratch    the per-run database, empty on a caller's server
 #             $container  where a scratch database lives
+#             $run_id     what every name the run makes carries
+#             postgres_name_check     for each name the caller builds
 #             postgres_drop_scratch   for the caller's EXIT trap
 #   exits     2 through the caller's shell when no server can be had
-#   claims    its working names — the knobs below, $pg_prefix, $waited,
+#   claims    its working names — the knobs below, $pg_prefix, $pg_name, $waited,
 #             $endpoint — in the sourcing gate's namespace
 #
 # THE SERVER IS A CONTAINER THE SOURCING GATES OWN. It is started under a name
@@ -25,6 +27,14 @@
 # EACH RUN GETS ITS OWN DATABASE inside that container, dropped when the run
 # ends via the trap the caller installs. Two runs share nothing, and a crashed
 # run leaves no state the next one inherits.
+#
+# EVERY NAME A RUN MAKES CARRIES $run_id: its pid and a part drawn at random
+# for it. A pid is unique on a machine and a shared server is not one, so two
+# runs in their own containers, or two sharing one docker daemon, can hold the
+# same pid; the random part is what keeps their names apart, and the pid makes a
+# database a killed run left behind attributable to it. A name longer than a
+# PostgreSQL identifier is truncated, and a truncated name is one two runs can
+# collide under, so a name that would not fit is a could-not-run.
 #
 # A CALLER-SUPPLIED SERVER IS USED WITHOUT A CONTAINER SCRATCH DATABASE.
 # CHUG_PG_URL skips the container: the gates did not start that server, so they
@@ -50,6 +60,8 @@
 #   CHUG_PG_IMAGE      the image to start
 #   CHUG_PG_PORT       the host port to publish it on
 #   CHUG_PG_READY_SECS how long to wait for the server to answer
+#   CHUG_PG_RUN_PID    a seam, the suites' alone: the pid $run_id carries, so
+#                      two runs can be made to hold the same one
 #
 # The container outlives the run so the next one is warm. To remove it:
 #   docker rm -f chuggy-check-postgres
@@ -62,6 +74,8 @@ password="chuggy-check"
 scratch=""
 # How long one connect attempt may hang before the wait asks again.
 probe_attempt_ms=1000
+# The longest identifier PostgreSQL keeps whole.
+identifier_bytes_max=63
 
 # Whether the URL names a server that answers, printing the host and port that
 # were tried: a message may carry those, and not the rest of a URL, which is a
@@ -114,6 +128,18 @@ postgres_acquire() { # <message prefix>
 		echo "$pg_prefix: LINTER ERROR — no node, so nothing can run"
 		exit 2
 	fi
+
+	run_id="$(node -e '
+const { randomBytes } = require("node:crypto");
+process.stdout.write(`${process.argv[1].replace(/[^0-9]/gu, "")}_${randomBytes(6).toString("hex")}`);
+' "${CHUG_PG_RUN_PID:-$$}")"
+	case "$run_id" in
+		[0-9]*_????????????) ;;
+		*)
+			echo "$pg_prefix: LINTER ERROR — could not draw a name for this run"
+			exit 2
+			;;
+	esac
 
 	if [ -n "${CHUG_PG_URL:-}" ]; then
 		base_url="$CHUG_PG_URL"
@@ -170,13 +196,23 @@ postgres_acquire() { # <message prefix>
 		done
 
 		base_url="postgres://postgres:$password@127.0.0.1:$port/postgres"
-		scratch="chuggy_check_$$"
+		postgres_name_check "chuggy_check_${run_id}"
+		scratch="chuggy_check_${run_id}"
 		if ! docker exec "$container" psql -q -U postgres -c "CREATE DATABASE $scratch" >/dev/null 2>&1; then
 			echo "$pg_prefix: LINTER ERROR — could not create the scratch database"
 			exit 2
 		fi
 		base_url="postgres://postgres:$password@127.0.0.1:$port/$scratch"
 	fi
+}
+
+postgres_name_check() { # <name>...
+	for pg_name in "$@"; do
+		if [ "${#pg_name}" -gt "$identifier_bytes_max" ]; then
+			echo "$pg_prefix: LINTER ERROR — $pg_name is longer than PostgreSQL keeps a name whole"
+			exit 2
+		fi
+	done
 }
 
 postgres_drop_scratch() {
