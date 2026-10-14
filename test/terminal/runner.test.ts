@@ -589,7 +589,7 @@ test("a machine that could not take a runner, or lacks what this program cannot 
       (on) => {
         on.machine.has("npm", false);
       },
-      "found: the runner package is not installed, and npm did not answer",
+      "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
     ],
   ];
   for (const [lack, found] of lacks) {

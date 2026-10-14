@@ -145,7 +145,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   Npmless: [
     [
-      "the runner package is not installed, and npm did not answer",
+      "the runner package is not installed at a version chuggy setup can use, and npm did not answer",
       0,
       "Runner",
     ],

@@ -780,7 +780,8 @@ function setupMachineSaid(
       };
     case "Npmless":
       return {
-        found: "the runner package is not installed, and npm did not answer",
+        found:
+          "the runner package is not installed at a version chuggy setup can use, and npm did not answer",
         tell: `The runner package is installed with npm, and npm did not answer on this machine, ${setupUnchanged}. npm comes with Node. Tell me once npm runs here.`,
         when: "once the person says npm runs on this machine",
         again: "Runner",

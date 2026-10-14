@@ -318,8 +318,8 @@ async function setupMachineProbed(run: Run): Promise<Machine | Halt> {
     return halt({ stop: "LoginMissing", path: login });
   notes.push({ note: "Login", path: login });
   const probe = await setupPackageProbed(ports, places);
-  if (probe.found === undefined && probe.prefix === undefined)
-    return halt({ stop: "Npmless" });
+  const usable = probe.found !== undefined && setupPackageCurrent(probe.found);
+  if (!usable && probe.prefix === undefined) return halt({ stop: "Npmless" });
   return { engine: room.engine, settings, login, probe };
 }
 

@@ -784,27 +784,30 @@ test("settings that cannot be written stop the run with the package installed an
   expect(second.lines.slice(-2)).toEqual([live, next]);
 });
 
-test("with no package and an npm that does not answer the run stops before anything is changed, and a package under the person's own prefix is found without npm", async () => {
+test("with no package, or one older than chuggy setup needs, and an npm that does not answer the run stops before anything is changed, and a package under the person's own prefix is found without npm", async () => {
   const machine = await fresh();
   machine.box.prefix = undefined;
-  expect(await ran(machine)).toEqual({
+  const stopped = await ran(machine);
+  expect(stopped).toEqual({
     exit: 0,
     lines: [
       signedIn,
       found.engine,
       found.login,
-      "found: the runner package is not installed, and npm did not answer",
+      "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
       "tell: The runner package is installed with npm, and npm did not answer on this machine, so nothing was changed on this machine. npm comes with Node. Tell me once npm runs here.",
       again("once the person says npm runs on this machine"),
       stop,
     ],
   });
   expect(machine.box.acts).toEqual(["services", "docker"]);
+  const manifest = `${boxOwn}/lib/node_modules/chuggy-linux/package.json`;
   machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!/usr/bin/env node");
-  machine.box.paths.set(
-    `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
-    JSON.stringify({ version: "0.4.0" }),
-  );
+  machine.box.paths.set(manifest, JSON.stringify({ version: "0.3.0" }));
+  const old = await ran(machine);
+  expect(old.lines.slice(3, 5)).toEqual(stopped.lines.slice(3, 5));
+  expect(times(machine, "install")).toBe(0);
+  machine.box.paths.set(manifest, JSON.stringify({ version: "0.4.0" }));
   const done = await ran(machine);
   expect(done.lines[3]).toBe(
     `found: the runner package is installed: chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
@@ -1848,7 +1851,7 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-2)).toEqual([offer, stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. Tell me yes to go ahead.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first. Tell me yes to go ahead.";
   expect(offered.lines.at(-3)).toBe(holds);
   const started = await ran(here);
   expect(started.lines.slice(-3)).toEqual([did.started, live, next]);

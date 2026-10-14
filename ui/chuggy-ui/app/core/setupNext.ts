@@ -201,6 +201,9 @@ const setupRunnerRunning = "once the person says the runner is running";
 const setupOwnToo =
   " Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too.";
 
+/** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
+const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I put the newer one in its place first.`;
+
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
   at: SetupAt,
@@ -209,7 +212,7 @@ function setupRunnerLiveMend(
 ): SetupThing {
   return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.${setupPackageNewer}${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
         at,
       )
     : setupHand(
@@ -247,7 +250,7 @@ function setupOwnMend(
   if (lack.lacks === "OwnLive")
     return here?.own === true
       ? setupOffer(
-          `${chats}, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in.${besides} Tell me yes to go ahead.`,
+          `${chats}, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
           at,
         )
       : setupHand(
