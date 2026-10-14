@@ -242,6 +242,27 @@ export function tenantAdministratorGrant(
   };
 }
 
+/**
+ * The tuples a tenant's maker is written into when the making writes its first
+ * administrator: that administrator, holding personal runners, then the
+ * defaults every tenant starts with.
+ */
+export function tenantMakerGrants(
+  principal: Principal,
+  tenant: TenantId,
+): readonly ProjectGrant[] {
+  return [
+    tenantAdministratorGrant(principal, tenant),
+    {
+      namespace: projectAccessTenantNamespace,
+      object: projectAccessTenantObject(tenant),
+      relation: "personal_runners" satisfies TenantGrantRelation,
+      holder: { subject: "Principal", principal },
+    },
+    ...tenantAuthorityDefaults(tenant),
+  ];
+}
+
 /** One derived principal's relation on one project. */
 export function projectRelationGrant(
   principal: Principal,

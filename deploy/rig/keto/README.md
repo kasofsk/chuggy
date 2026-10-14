@@ -55,7 +55,10 @@ is held as tuples beside the roles. A creation writes its own: a new tenant's,
 and each new project's. So does the access plane's invitation of a person into
 a tenant of their own, `POST /access/v1/site/workspaces`, for the tenant it
 names; `GET` at the same path lists to whoever may make one every tenant an
-`admins` tuple or its `site` link holds, with its administrators. The site, and every tenant and project that existed
+`admins` tuple or its `site` link holds, with its administrators. Either making
+of a tenant also writes its first administrator into its `personal_runners`,
+which no role carries, so an administrator added later holds personal runners
+only when given them. The site, and every tenant and project that existed
 before, are given theirs by an operator, in this order. Until the site has an
 administrator and its defaults, nobody holds `CreateAccount` or `CreateTenant`.
 A site already holding an authority tuple is given nothing, so on a site whose

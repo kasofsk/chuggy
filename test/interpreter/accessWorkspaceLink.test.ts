@@ -309,6 +309,29 @@ test("using a workspace link writes exactly the site's invitation's grants for t
   }
 });
 
+test("the person a workspace link makes a workspace for holds personal runners in it", async () => {
+  const { memory, service } = await sited();
+  const made = await workspaceMinted(service);
+  const workspace = asTenantId("zed-works");
+  assert.equal(
+    (await service.redeemed(zed, made.token, workspace)).outcome,
+    "Redeemed",
+  );
+  assert.deepEqual(
+    memory.batches
+      .flat()
+      .filter((grant) => grant.relation === "personal_runners"),
+    [
+      tenantPrincipalGrant({
+        issuer: accessFixtureIssuer,
+        subject: "zed",
+        tenant: workspace,
+        relation: "personal_runners",
+      }),
+    ],
+  );
+});
+
 test("a grant that faults gives the link back open and naming nothing, and the name is then free for another link", async () => {
   const { memory, links, service } = await sited();
   const first = await workspaceMinted(service);
