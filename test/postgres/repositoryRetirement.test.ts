@@ -1,8 +1,9 @@
 /**
  * A retired binding against a real server: the column, the widened
  * immutability trigger, the one-way door, the two elections that stop seeing
- * a retired row while every read that names one still answers it, and the
- * repository a retirement releases to any other project.
+ * a retired row while every read that names one still answers it, the
+ * repository a retirement releases to any other project, and the member mint
+ * that stops answering it.
  */
 
 import assert from "node:assert/strict";
@@ -19,7 +20,11 @@ import {
 } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { apiRole } from "../../src/adapters/postgres/schema/shared.ts";
+import { composeForgeCredentialMinting } from "../../src/compose.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   asTenantId,
@@ -30,10 +35,12 @@ import {
   fixtureBindRepository,
   fixtureBoundRepository,
 } from "./repositoryBindingFixture.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
   postgresHarnessEpoch,
   postgresHarnessOpen,
   postgresHarnessPartition,
+  postgresHarnessRolePool,
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
@@ -392,6 +399,53 @@ test("a project reinstates its retired binding once the project that bound the r
     [theirs.project, true],
   ]);
   assert.equal(await rebind(theirs, repository), "RepositoryBoundElsewhere");
+});
+
+/**
+ * The member mint as the API composes it, under the API's own role: a project
+ * that retired a repository is answered as one that never bound it, and stays
+ * so once another project binds it, which mints for that project alone.
+ */
+test("the member mint refuses a repository its project retired, and after another binds it", async () => {
+  const mine = await fixtureProject("release-mint-mine");
+  const theirs = await fixtureProject("release-mint-theirs");
+  const repository = await bindAt(mine, "release-mint");
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const minting = composeForgeCredentialMinting(
+      asApi,
+      {
+        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+        authorizeTenant: () => Promise.resolve(undefined),
+        authorizeSite: projectAccessSiteRefused,
+      },
+      {
+        token: () =>
+          Promise.resolve({
+            minted: "Token",
+            token: asForgeInstallationToken("ghs-release-mint"),
+            expiresAtMs: 1_000,
+          }),
+      },
+    );
+    const minted = async (partition: Partition) =>
+      (
+        await minting.mint(asPrincipal("release-mint"), partition, {
+          repository: asRepositoryId(repository),
+          permissions: "write",
+        })
+      ).result;
+    assert.equal(await minted(mine), "Authorized");
+    assert.equal((await retire(mine, repository)).outcome, "Retired");
+    assert.equal(await minted(mine), "NotFound");
+    assert.equal(await rebind(theirs, repository), "Bound");
+    assert.deepEqual(
+      [await minted(mine), await minted(theirs)],
+      ["NotFound", "Authorized"],
+    );
+  } finally {
+    await asApi.end();
+  }
 });
 
 /**
