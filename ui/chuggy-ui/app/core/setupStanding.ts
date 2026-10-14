@@ -44,6 +44,7 @@ import {
 import { sessionPlacementShort, sessionRunnerShort } from "./sessionRunners.ts";
 import {
   setupBindingMeant,
+  setupBootstrapped,
   setupLanding,
   setupPartition,
   setupProjectListed,
@@ -53,6 +54,7 @@ import type {
   SetupGrant,
   SetupRead,
   SetupReads,
+  SetupTicketLandings,
 } from "./setupReads.ts";
 import { setupRepositoryOwner, setupRepositoryRead } from "./setupRemote.ts";
 import type { SetupRemote } from "./setupRemote.ts";
@@ -140,6 +142,8 @@ export interface SetupStanding {
   readonly found: readonly string[];
   /** One a step in order, or none where which project is meant is still open. */
   readonly steps: readonly SetupStep[];
+  /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
+  readonly unmerged: string | undefined;
 }
 
 function setupDone(step: SetupStepName, detail: string): SetupStep {
@@ -602,17 +606,41 @@ function setupProposed(landing: TicketLandingResponse): boolean {
   }
 }
 
+/** The ticket setup is done on, as the ticket step says it, and the address of its pull request where one stands unmerged. */
+interface SetupTicketDone {
+  readonly detail: string;
+  readonly unmerged: string | undefined;
+}
+
+/** The pull request of a ticket's landings that stands and is not merged, from landings got whole: none where one of them landed, or where the newest that stands says it merged. */
+function setupUnmerged(
+  held: SetupTicketLandings | undefined,
+): string | undefined {
+  if (held?.landings.read !== "Got" || !held.landings.whole) return undefined;
+  const landings = held.landings.value;
+  if (landings.some((landing) => landing.state === "Landed")) return undefined;
+  const proposal = landings.findLast(setupProposed)?.proposal;
+  return proposal?.merge === "Merged" ? undefined : proposal?.url;
+}
+
 /** The ticket setup is done on, where a read that was got shows one, said as what was read of it: a ticket that is done, or a landing that landed or whose pull request stands. */
-function setupTicketLanded(reads: SetupReads): string | undefined {
+function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
   const [done] = reads.landed.read === "Got" ? reads.landed.value : [];
-  if (done !== undefined) return `ticket ${String(done.ticket)} is done`;
+  if (done !== undefined)
+    return {
+      detail: `ticket ${String(done.ticket)} is done`,
+      unmerged: setupUnmerged(reads.doneLandings),
+    };
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
     const ticket = `ticket ${String(held.ticket)}`;
     if (held.landings.value.some((landing) => landing.state === "Landed"))
-      return `${ticket} landed`;
+      return { detail: `${ticket} landed`, unmerged: undefined };
     if (held.landings.value.some(setupProposed))
-      return `${ticket} opened a pull request`;
+      return {
+        detail: `${ticket} opened a pull request`,
+        unmerged: setupUnmerged(held),
+      };
   }
   return undefined;
 }
@@ -667,9 +695,12 @@ function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
 }
 
 /** Done where a ticket has landed; waiting where one is on its way, escalated, or a draft not yet released. */
-function setupTicketStep(reads: SetupReads, none: boolean): SetupStep {
-  const landed = setupTicketLanded(reads);
-  if (landed !== undefined) return setupDone("ticket", landed);
+function setupTicketStep(
+  reads: SetupReads,
+  none: boolean,
+  done: SetupTicketDone | undefined,
+): SetupStep {
+  if (done !== undefined) return setupDone("ticket", done.detail);
   if (none) return setupUndone("ticket", "todo", "", { lacks: "Ticket" });
   const unread = setupTicketUnread(reads);
   if (unread !== undefined) return unread;
@@ -732,7 +763,8 @@ export function setupStanding(reads: SetupReads): SetupStanding {
     remote: reads.remote,
     found: setupRemoteFound(reads),
   };
-  if (reads.choice.choice === "Open") return { ...standing, steps: [] };
+  if (reads.choice.choice === "Open")
+    return { ...standing, steps: [], unmerged: undefined };
   const workspace = setupWorkspaceStep(reads, reads.choice.workspace);
   const project = setupProjectStep(
     reads,
@@ -741,6 +773,7 @@ export function setupStanding(reads: SetupReads): SetupStanding {
     workspace.state === "done",
   );
   const none = workspace.state === "todo" || project.state === "todo";
+  const done = setupTicketDone(reads);
   return {
     ...standing,
     steps: [
@@ -749,7 +782,10 @@ export function setupStanding(reads: SetupReads): SetupStanding {
       setupGithubStep(reads, workspace.state === "todo", none),
       setupRepositoryStep(reads, none),
       setupRunnerStep(reads, none),
-      setupTicketStep(reads, none),
+      setupTicketStep(reads, none, done),
     ],
+    unmerged: setupBootstrapped(reads.repositories)
+      ? done?.unmerged
+      : undefined,
   };
 }

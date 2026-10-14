@@ -12,7 +12,10 @@
  * the one named, or the one the folder's remote is added to and no other is.
  * What an installation grants is read only for the two apps on the account
  * that owns the project's repository, since each listing costs the site a
- * request to the forge.
+ * request to the forge. The landings of a ticket that is done are read only
+ * where the repository meant holds nothing but the bootstrap, since only
+ * there is its pull request the one that writes the repository's own
+ * configuration.
  * The list of projects is read a page at a time for a bounded count of pages,
  * and is whole only where the last page read named no next. A name is taken
  * from it without a question only where it is whole; a project named in full
@@ -177,7 +180,7 @@ export interface SetupGrant {
   readonly listed: SetupRead<readonly ForgeRepositoryResponse[]>;
 }
 
-/** The landings of one ticket that was being landed when the tickets were read. */
+/** The landings of one ticket, as they were read. */
 export interface SetupTicketLandings {
   readonly ticket: number;
   readonly landings: SetupRead<readonly TicketLandingResponse[]>;
@@ -203,7 +206,10 @@ export interface SetupReads {
   /** The tickets on their way, most lately moved first. */
   readonly moving: SetupRead<readonly TicketResponse[]>;
   readonly drafts: SetupRead<readonly DraftResponse[]>;
+  /** The landings of each ticket that was being landed, up to the bound. */
   readonly landings: readonly SetupTicketLandings[];
+  /** The landings of the ticket that is done, where the repository meant holds only the bootstrap; none otherwise. */
+  readonly doneLandings: SetupTicketLandings | undefined;
 }
 
 /** The phases a ticket is in between its release and its end, a revoked one being neither on its way nor done. */
@@ -552,6 +558,21 @@ export function setupLanding(
     : [];
 }
 
+async function setupTicketLandingsRead(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): Promise<SetupTicketLandings> {
+  return {
+    ticket,
+    landings: setupGot(
+      await apiTicketLandings(ports, partition, ticket),
+      (answered) => answered.landings,
+      (answered) => !answered.truncated,
+    ),
+  };
+}
+
 async function setupLandingsRead(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -560,15 +581,22 @@ async function setupLandingsRead(
   return Promise.all(
     setupLanding(moving)
       .slice(0, setupLandingsMax)
-      .map(async (ticket) => ({
-        ticket: ticket.ticket,
-        landings: setupGot(
-          await apiTicketLandings(ports, partition, ticket.ticket),
-          (answered) => answered.landings,
-          (answered) => !answered.truncated,
-        ),
-      })),
+      .map((ticket) =>
+        setupTicketLandingsRead(ports, partition, ticket.ticket),
+      ),
   );
+}
+
+/** The done ticket's landings, asked only where the repository meant holds only the bootstrap, so a project with its own configuration is asked nothing more. */
+async function setupDoneLandingsRead(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  project: SetupProjectReads,
+): Promise<SetupTicketLandings | undefined> {
+  const [done] = project.landed.read === "Got" ? project.landed.value : [];
+  if (done === undefined || !setupBootstrapped(project.repositories))
+    return undefined;
+  return setupTicketLandingsRead(ports, partition, done.ticket);
 }
 
 /** Whether the list of projects, as far as it was got, names the one a workspace and a project name together. */
@@ -621,6 +649,11 @@ export function setupBindingMeant(
   );
 }
 
+/** Whether the repository meant holds only the bootstrap a project is authored while the repository declares no configuration of its own. */
+export function setupBootstrapped(read: SetupRepositories): boolean {
+  return setupBindingMeant(read)?.configurationsHeld?.result === "Bootstrapped";
+}
+
 /**
  * What each app's installation on the account that owns the repository meant
  * grants. Nothing is asked where no repository is meant, its address names no
@@ -666,7 +699,8 @@ async function setupChosenRead(
   inventory: SetupReads["inventory"],
   candidates: readonly SetupCandidate[],
 ): Promise<
-  SetupProjectReads & Pick<SetupReads, "installations" | "grants" | "landings">
+  SetupProjectReads &
+    Pick<SetupReads, "installations" | "grants" | "landings" | "doneLandings">
 > {
   const partition = setupPartition(choice, inventory);
   const held = candidates.find(
@@ -688,7 +722,7 @@ async function setupChosenRead(
       ? setupProjectUnasked
       : setupProjectRead(ports, partition, held),
   ]);
-  const [grants, landings] = await Promise.all([
+  const [grants, landings, doneLandings] = await Promise.all([
     setupGrantsRead(
       ports,
       partition?.tenant,
@@ -698,8 +732,11 @@ async function setupChosenRead(
     partition === undefined
       ? []
       : setupLandingsRead(ports, partition, project.moving),
+    partition === undefined
+      ? undefined
+      : setupDoneLandingsRead(ports, partition, project),
   ]);
-  return { ...project, installations, grants, landings };
+  return { ...project, installations, grants, landings, doneLandings };
 }
 
 /**
@@ -729,7 +766,8 @@ async function setupInventoryRead(
 /**
  * Reads where a person stands: their projects, then which of them is meant,
  * then that project's own reads at once, then the landings of whatever was
- * being landed. A read that hangs on one that was not got is not asked.
+ * being landed, and of the ticket that is done where the repository holds
+ * only the bootstrap. A read that hangs on one that was not got is not asked.
  */
 export async function readSetup(
   ports: ApiPorts,

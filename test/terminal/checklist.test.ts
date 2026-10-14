@@ -41,6 +41,8 @@ import {
 } from "../../ui/chuggy-ui/test/setupSaid.ts";
 import {
   setupSiteAt,
+  setupSiteBootstrap,
+  setupSiteOpened,
   setupSiteProject,
   setupSiteRepositoryAddress,
   setupSiteStages,
@@ -155,6 +157,39 @@ test("a site set up one thing further at a time, from nothing to a landed first 
     if (stage === "Landed") assert.deepEqual(said(done, "rule"), []);
     else assert.deepEqual(await ruled(done), [], stage);
   }
+});
+
+test("where the repository holds only the bootstrap, a run set up to a done ticket whose pull request is still to merge closes on that pull request, having read the done ticket's landings, and a run where it holds its own reads none and closes as it did", async () => {
+  const session = await signed();
+  const { installation } = session;
+  const url = "https://github.com/acme-org/widgets/pull/2";
+  const world = (): SetupSite => {
+    const landed = setupSiteAt("Landed");
+    landed.projects[0]?.landings.set(1, [setupSiteOpened(url)]);
+    return landed;
+  };
+  const closing = (merge: string) =>
+    `chuggy is set up for acme/widgets: ticket 1 is done.${merge} The next ticket is made at ${installation.site}/acme/widgets/tickets/new.`;
+  const landings = `GET ${installation.site}/api/v1/tenants/acme/projects/widgets/tickets/1/landings`;
+  const bootstrapped = await read(session, setupSiteBootstrap(world()));
+  assert.equal(bootstrapped.code, 0, bootstrapped.stdout);
+  assert.deepEqual(steps(bootstrapped), saidStages.Landed);
+  assert.deepEqual(said(bootstrapped, "tell"), [
+    closing(
+      ` Its pull request, ${url}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`,
+    ),
+  ]);
+  assert.deepEqual(said(bootstrapped, "rule"), []);
+  assert.equal(bootstrapped.lines.at(-1), "next: stop");
+  assert.ok(
+    installation.asked.includes(landings),
+    installation.asked.join("\n"),
+  );
+  installation.asked.length = 0;
+  const own = await read(session, world());
+  assert.equal(own.code, 0, own.stdout);
+  assert.deepEqual(said(own, "tell"), [closing("")]);
+  assert.ok(!installation.asked.includes(landings));
 });
 
 /** Every request either server was sent that is not a read, as its method and address. */

@@ -470,13 +470,17 @@ function setupCarried(
     : { workspace: choice.workspace, project: undefined };
 }
 
-/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed. */
+/** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with the pull request to merge where one writes the repository's own configuration. */
 function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
   const ticket = standing.steps.find((step) => step.step === "ticket");
   const how = ticket === undefined ? "" : `: ${ticket.detail}`;
+  const merge =
+    standing.unmerged === undefined
+      ? ""
+      : ` Its pull request, ${standing.unmerged}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`;
   return {
     thing: "Done",
-    tell: `chuggy is set up for ${at.workspace}/${at.project}${how}. The next ticket is made at ${setupPage(at, navRoutes.ticketNew)}.`,
+    tell: `chuggy is set up for ${at.workspace}/${at.project}${how}.${merge} The next ticket is made at ${setupPage(at, navRoutes.ticketNew)}.`,
   };
 }
 
