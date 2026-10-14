@@ -258,6 +258,32 @@ test("a repository this project does not bind draws nothing but Not bound", asyn
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
+/** A retired binding keeps its page for the tickets that named it, and the
+ * page says beside its name what its row says. */
+test.each([
+  ["a retired", "2026-09-14T00:00:00Z", "Repositories/kasofsk/chuggyUnbound"],
+  ["a live", undefined, "Repositories/kasofsk/chuggy"],
+])(
+  "%s binding's top bar says beside its name what its row says",
+  async (_which, retiredAt, drawn) => {
+    await drawPage({
+      bound: [
+        {
+          repository: chuggy,
+          boundAt: "2026-09-11T00:00:00Z",
+          landing: { mode: "Push" },
+          configured: true,
+          ...(retiredAt === undefined ? {} : { retiredAt }),
+        },
+      ],
+    });
+    expect(
+      screen.getByRole("heading", { name: "kasofsk/chuggy" }).parentElement
+        ?.textContent,
+    ).toBe(drawn);
+  },
+);
+
 test("a saved landing is written against the mode the page read", async () => {
   const sent = await drawPage({
     written: [answer({ repository: binding("PullRequest") })],

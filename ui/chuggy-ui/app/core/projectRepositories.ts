@@ -1,5 +1,6 @@
 /**
- * What a project binds, what it could bind, and what one bind came to.
+ * What a project binds, what it could bind, and what one bind or one unbind
+ * came to.
  *
  * A binding names a repository by the address the forge listing gives it, so
  * "already bound" is decided by that address and by nothing derived from it,
@@ -103,8 +104,8 @@ export function repositoriesDrawn(
 }
 
 /** One repository the picker draws, whether the latest reading still lists
- * it, whether this project holds it, and whether the worker app was read not
- * to grant it. */
+ * it, whether this project binds it live, and whether the worker app was read
+ * not to grant it. */
 export interface RepositoryChoice {
   readonly repository: ForgeRepositoryResponse;
   readonly listed: boolean;
@@ -113,7 +114,9 @@ export interface RepositoryChoice {
 }
 
 /** The picker's rows: what it has drawn of the portal installations' grants,
- * marked against the bindings and against what the worker app lacks. */
+ * marked against the live bindings and against what the worker app lacks. A
+ * retired binding marks nothing, because binding its repository again is a
+ * bind the route answers. */
 export function repositoryChoices(
   drawn: readonly RepositoryDrawn[],
   bound: readonly ProjectRepositoryResponse[],
@@ -122,13 +125,20 @@ export function repositoryChoices(
   return drawn.map(({ repository, listed }) => ({
     repository,
     listed,
-    bound: bound.some((held) => held.repository === repository.url),
+    bound: bound.some(
+      (held) =>
+        held.repository === repository.url && held.retiredAt === undefined,
+    ),
     workerless: workerless.includes(repository.url),
   }));
 }
 
 /** What a row says once the latest reading no longer lists it. */
 export const repositoryUnlisted = "Unlisted";
+
+/** What a retired binding is called wherever one is drawn, which is the word
+ * of the button that retires one. */
+export const repositoryUnbound = "Unbound";
 
 /** The line the picker draws when a listing is not all of what an installation holds. */
 export const repositoriesTruncated = "More than shown";
@@ -436,10 +446,40 @@ export function repositoryConfigureStatus(
   }
   if (result.outcome === "Conflict")
     return result.code === "RepositoryRetired"
-      ? { status: "Retired", retry: false }
+      ? { status: repositoryUnbound, retry: false }
       : { status: "Conflict", retry: true };
   if (result.outcome === "Rejected") return { status: "Refused", retry: true };
   return { status: repositoryRefusalStatus(result), retry: true };
+}
+
+/** What Unbind asks before it is sent: the question its confirm is named by,
+ * and the line drawn above the press that sends it. */
+export interface RepositoryUnbindQuestion {
+  readonly question: string;
+  readonly line: string;
+}
+
+/** The question names the repository, what a new ticket can no longer do with
+ * it, what stays of the tickets that named it, and that it is not gone. */
+export function repositoryUnbindQuestion(
+  repository: string,
+): RepositoryUnbindQuestion {
+  const label = repositoryLabel(repository);
+  return {
+    question: `Unbind ${label}?`,
+    line: `New tickets can't name ${label}. Existing tickets and their history stay. It can be added again, here or to another project.`,
+  };
+}
+
+/** What an unbind leaves to be said: nothing where the route retired the
+ * binding, and the word its refusal is drawn as otherwise. */
+export function repositoryUnbindNote(
+  result: ApiResult<ProjectRepositoryResponse>,
+): string | undefined {
+  if (result.outcome === "Ok") return undefined;
+  if (result.outcome === "Rejected") return "Refused";
+  if (result.outcome === "Conflict") return "Conflict";
+  return repositoryRefusalStatus(result);
 }
 
 export type RepositoryBindOutcome =

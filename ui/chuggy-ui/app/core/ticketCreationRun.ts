@@ -72,6 +72,7 @@ import {
   creationConfigurationsDecided,
   creationConfigurationsOffered,
   creationReleaseMutation,
+  creationRepositories,
 } from "./ticketCreation.ts";
 import type { CreationOffer, CreationOfferListed } from "./ticketCreation.ts";
 import { ticketUpdateMutation } from "./ticketEdit.ts";
@@ -239,8 +240,8 @@ async function creationOffersRead(
 
 /**
  * What a project offering nothing is, with the ways of finding nothing kept
- * apart: the budget ran out, nothing is bound to declare one, or nothing
- * declared is ready.
+ * apart: the budget ran out, no live binding is there to declare one, or
+ * nothing declared is ready.
  */
 function creationContextUnoffered(
   repositories: readonly ProjectRepositoryResponse[],
@@ -253,7 +254,9 @@ function creationContextUnoffered(
     };
   return {
     context:
-      repositories.length === 0 ? "NoRepository" : "NoReadyConfiguration",
+      creationRepositories(repositories).length === 0
+        ? "NoRepository"
+        : "NoReadyConfiguration",
   };
 }
 
