@@ -290,6 +290,16 @@ export const ticketResponseSchema = z.object({
    * and the only exit is revoking this ticket too.
    */
   revokedDependencies: page(ticketNumberSchema),
+  /**
+   * Which of this ticket's dependencies are neither Done nor Revoked, each
+   * with the phase it is at, ascending: the wait that can still end, where
+   * `revokedDependencies` is the wait that cannot, so the two never name one
+   * dependency. Only a Pending ticket carries any, because a ticket in any
+   * other phase had every dependency Done before it was dispatched.
+   */
+  openDependencies: page(
+    z.strictObject({ ticket: ticketNumberSchema, phase: z.enum(phaseRoster) }),
+  ),
   brief: briefResponseSchema.optional(),
   /**
    * The configuration the ticket's last release or update pinned, which is

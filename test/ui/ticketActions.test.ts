@@ -128,6 +128,7 @@ test("what the console offers is what the two predicates enable", () => {
         changedAt: "2026-08-27T00:00:00Z",
         revision: 1,
         revokedDependencies: [],
+        openDependencies: [],
       }).map((one) => one.action),
     );
     assert.equal(offered.has("Revoke"), revocableIn(graph, id), phase);

@@ -133,6 +133,7 @@ function servedWeb(
         changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
         revision: 1,
         revokedDependencies: [],
+        openDependencies: [],
       }),
     execution: () => Promise.resolve(undefined),
     executions: notFound,
@@ -297,6 +298,7 @@ test("a live change arrives as the kind's own GET representation", async () => {
       changedAt: "2026-01-01T00:00:04Z",
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
   );
 });

@@ -103,6 +103,7 @@ function fakeTicket(calls: string[]): NativeWeb["ticket"] {
       changedAt: asPublicInstant("2026-01-01T00:00:04Z"),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     });
   };
 }
@@ -1122,6 +1123,7 @@ test("ticket phase filters and detail are parsed before NativeWeb", async () => 
     changedAt: "2026-01-01T00:00:04Z",
     revision: 1,
     revokedDependencies: [],
+    openDependencies: [],
   });
   assert.equal(
     (await app.inject({ url: `${root}?phase=Unknown`, headers })).statusCode,

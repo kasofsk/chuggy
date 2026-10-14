@@ -33,6 +33,7 @@ const ticketFieldOwnReadOnly = {
   releasedAt: false,
   escalation: false,
   revokedDependencies: false,
+  openDependencies: false,
   brief: true,
   configurationRevision: true,
   configurationVersion: true,

@@ -254,6 +254,7 @@ test("project reads page by ticket identity and enforce a minimum sequence", asy
       changedAt: seededEntryAt(3),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
   ]);
 });
@@ -371,6 +372,7 @@ test("project reads filter before paging", async () => {
       changedAt: seededEntryAt(2),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
   ]);
   assert.equal(nonTerminal.project.nextAfter, 2);
@@ -394,6 +396,7 @@ test("project reads filter before paging", async () => {
       changedAt: seededEntryAt(4),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
     {
       ticket: 5,
@@ -407,6 +410,7 @@ test("project reads filter before paging", async () => {
       changedAt: seededEntryAt(5),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
   ]);
 });
@@ -429,6 +433,7 @@ test("a selected-phase filter answers the terminal tickets alone", async () => {
       changedAt: seededEntryAt(1),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
     {
       ticket: 3,
@@ -437,6 +442,7 @@ test("a selected-phase filter answers the terminal tickets alone", async () => {
       changedAt: seededEntryAt(3),
       revision: 1,
       revokedDependencies: [],
+      openDependencies: [],
     },
   ]);
 });
@@ -458,6 +464,7 @@ test("a ticket read carries the detail its project page carries", async () => {
     changedAt: seededEntryAt(4),
     revision: 1,
     revokedDependencies: [],
+    openDependencies: [],
   });
   const walled = await reads.ticket(partition, id(5));
   assert.deepEqual(walled?.escalation, {
@@ -828,6 +835,93 @@ test("revoked dependencies are ascending in the detail read and in both pages", 
         : undefined,
       [[4, [1, 2]]],
       `the ${order} page answers the pair ascending, and no other ticket any`,
+    );
+  }
+});
+
+/**
+ * Ticket 6 stays Pending on one dependency in each phase, named descending so
+ * an answer in release order is told apart from the ascending one the read
+ * promises; ticket 7 names none, and ticket 8 is past Pending on three.
+ */
+async function seedOpenDependencies(label: string): Promise<Partition> {
+  const partition = await postgresHarnessProject(subject.harness.store, label);
+  await subject.harness.query(
+    "UPDATE project SET head=8 WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
+  for (const [ticket, phase, escalation, deps] of [
+    [1, "Done", "NoEscalation", []],
+    [2, "Work", "NoEscalation", []],
+    [3, "Pending", "NoEscalation", []],
+    [4, "Escalated", "EvaluationFailureEscalated", []],
+    [5, "Revoked", "NoEscalation", []],
+    [6, "Pending", "NoEscalation", [5, 4, 3, 2, 1]],
+    [7, "Pending", "NoEscalation", []],
+    [8, "Work", "NoEscalation", [1, 2, 3]],
+  ] as const) {
+    await seedEntry(
+      partition,
+      `${label}-${String(ticket)}`,
+      ticket,
+      seededRelease(ticket, ticket, deps),
+    );
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,escalation)
+       VALUES ($1,$2,$3,$4,$3,$5)`,
+      [partition.tenant, partition.project, ticket, phase, escalation],
+    );
+  }
+  return partition;
+}
+
+test("a Pending ticket names its open dependencies and their phases, apart from the revoked", async () => {
+  const partition = await seedOpenDependencies("native-open-phases");
+  const reads = postgresNativeReads(subject.pool);
+  const waiting = await reads.ticket(partition, id(6));
+  assert.ok(waiting !== undefined);
+  assert.deepEqual(
+    waiting.openDependencies,
+    [
+      { ticket: 2, phase: "Work" },
+      { ticket: 3, phase: "Pending" },
+      { ticket: 4, phase: "Escalated" },
+    ],
+    "neither the Done nor the Revoked one is open, and the rest are ascending",
+  );
+  assert.deepEqual(
+    waiting.revokedDependencies,
+    [5],
+    "the Revoked one is the wait that cannot end, and is named there alone",
+  );
+  assert.deepEqual(
+    (await reads.ticket(partition, id(7)))?.openDependencies,
+    [],
+    "a ticket naming no dependency waits on none",
+  );
+  assert.deepEqual(
+    (await reads.ticket(partition, id(8)))?.openDependencies,
+    [],
+    "a ticket past Pending waits on nothing, whatever its release named",
+  );
+});
+
+test("open dependencies are the same in the detail read and in both pages", async () => {
+  const partition = await seedOpenDependencies("native-open-reads");
+  const reads = postgresNativeReads(subject.pool);
+  const detail = await reads.ticket(partition, id(6));
+  assert.ok(detail !== undefined);
+  assert.equal(detail.openDependencies.length, 3);
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 8, order });
+    assert.deepEqual(
+      page.result === "Found"
+        ? page.project.tickets
+            .filter((each) => each.openDependencies.length > 0)
+            .map((each) => [each.ticket, each.openDependencies])
+        : undefined,
+      [[6, detail.openDependencies]],
+      `the ${order} page answers what the detail read does, and no other ticket any`,
     );
   }
 });

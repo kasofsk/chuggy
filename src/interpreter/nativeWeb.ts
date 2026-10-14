@@ -313,6 +313,12 @@ export function ticketEscalationResource(
   };
 }
 
+/** A dependency a ticket waits on, and the phase that dependency is at. */
+export interface TicketDependencyResource {
+  readonly ticket: TicketId;
+  readonly phase: Phase;
+}
+
 /**
  * The escalation is present exactly when the ticket is parked on the desk, and
  * the brief exactly when it was authored with one. Its two
@@ -339,6 +345,14 @@ export interface TicketResource {
    * the same wait — is waiting on nothing.
    */
   readonly revokedDependencies: readonly TicketId[];
+  /**
+   * Which of this ticket's own dependencies are neither Done nor Revoked,
+   * each with its phase, ascending: the wait that can still end, where
+   * `revokedDependencies` is the wait that cannot, so no dependency is in both.
+   * Only a Pending ticket is read for them, because a ticket in any other
+   * phase had every dependency Done before it was dispatched.
+   */
+  readonly openDependencies: readonly TicketDependencyResource[];
   readonly brief?: DraftBrief;
   /** The configuration the ticket's last release or update pinned, which is what it runs under. */
   readonly configurationRevision?: ConfigurationRevisionId;

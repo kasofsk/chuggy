@@ -209,6 +209,7 @@ test("recent ticket pages expose only an opaque continuation cursor", () => {
           changedAt: asPublicInstant("2026-01-01T00:00:07Z"),
           revision: 1,
           revokedDependencies: [],
+          openDependencies: [],
         },
       ],
       nextRecentActivityAfter: { sequence: 7, ticket: id(2) },

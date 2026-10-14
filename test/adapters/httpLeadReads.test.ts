@@ -242,6 +242,7 @@ function readStore(ticketVersion: number): NativeReadStore {
         changedAt: asPublicInstant("2026-09-02T00:00:00Z"),
         revision: 1,
         revokedDependencies: [],
+        openDependencies: [],
       }),
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),

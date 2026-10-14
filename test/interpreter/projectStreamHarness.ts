@@ -266,6 +266,7 @@ export const streamTicketCarried = {
   releasedAt: "2026-01-01T00:00:00Z",
   changedAt: "2026-01-01T00:00:01Z",
   revokedDependencies: [],
+  openDependencies: [],
 };
 
 export function fakeReader(): FakeReader {
