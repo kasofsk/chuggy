@@ -15,6 +15,9 @@
  * The last activity annotation is the same tier for a different reason: that
  * it draws the relative reading and carries the absolute one on hover is a
  * fact about `Figure`'s tooltip, not about `activityAt` itself.
+ *
+ * The order each section draws its cards in is here too: the selection is
+ * proved in the core, and only a drawn table proves the section draws it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -238,6 +241,8 @@ test("a row whose index was truncated draws no chip for its execution", () => {
     executionOutcome: undefined,
     runsOn: undefined,
     activityAt: "2026-08-26T00:00:00Z",
+    openDependencies: [],
+    revokedDependencies: [],
   };
   render(<TicketRowExecutionCell row={row} />);
   expect(screen.getByText(cellExecutionUnread)).toBeDefined();
@@ -376,3 +381,72 @@ test.each(abilitiesUnrefusing)(
     expect(newTicketOffers()).toBe(1);
   },
 );
+
+function titlesIn(section: string): readonly (string | null)[] {
+  return within(screen.getByRole("region", { name: section }))
+    .getAllByRole("listitem")
+    .map((card) => card.querySelector("a")?.textContent ?? null);
+}
+
+function pending(
+  number: number,
+  openDependencies: readonly unknown[],
+  revokedDependencies: readonly number[] = [],
+): unknown {
+  return {
+    ticket: number,
+    title: `Pending ${String(number)}`,
+    phase: "Pending",
+    sequence: 1,
+    ...ticketInstants,
+    openDependencies,
+    revokedDependencies,
+  };
+}
+
+/** Served in the reverse of the order they are drawn in. */
+test("up next is drawn nearest to dispatchable first", async () => {
+  await drawTableWith(
+    [
+      pending(21, [], [12]),
+      pending(22, [{ ticket: 23, phase: "Pending" }]),
+      pending(23, [{ ticket: 11, phase: "Work" }]),
+      pending(24, []),
+      ticket,
+    ],
+    [execution],
+  );
+  expect(titlesIn("Up next")).toEqual([
+    "Pending 24",
+    "Pending 23",
+    "Pending 22",
+    "Pending 21",
+  ]);
+});
+
+/** Each pair leads with the row the up-next order would sink, so a section
+ * drawn in that order rather than the read's would be drawn reversed. */
+test("every other section is drawn in the read's order", async () => {
+  const blocking = { openDependencies: [{ ticket: 99, phase: "Pending" }] };
+  const sunk = { revokedDependencies: [98] };
+  await drawTableWith(
+    [
+      { ...escalated, ...blocking },
+      { ...escalated, ticket: 14, title: "Escalated second" },
+      { ...ticket, ...sunk },
+      { ...ticket, ticket: 15, title: "Working second" },
+      { ...finished, ...blocking },
+      { ...finished, ticket: 16, title: "Finished second" },
+      { ...finished, ...sunk, ticket: 17, title: "Revoked", phase: "Revoked" },
+      { ...finished, ticket: 18, title: "Revoked second", phase: "Revoked" },
+    ],
+    [execution],
+  );
+  expect(titlesIn("Needs you")).toEqual([
+    "Escalated ticket",
+    "Escalated second",
+  ]);
+  expect(titlesIn("In progress")).toEqual([title, "Working second"]);
+  expect(titlesIn("Done")).toEqual(["Finished ticket", "Finished second"]);
+  expect(titlesIn("Failed or revoked")).toEqual(["Revoked", "Revoked second"]);
+});

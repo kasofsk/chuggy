@@ -41,6 +41,8 @@ import type {
 } from "./projectExecutionIndex.ts";
 import { ticketBadgeLabel, ticketSectionOf } from "./ticketSections.ts";
 import type { TicketSection } from "./ticketSections.ts";
+import { upNextOrdered } from "./upNextOrder.ts";
+import type { UpNextOpenDependency } from "./upNextOrder.ts";
 
 export const projectTableExecutionReads = [
   "Joined",
@@ -61,6 +63,8 @@ export interface ProjectTableRow {
   readonly executionOutcome: ExecutionOutcome | undefined;
   readonly runsOn: Label | undefined;
   readonly activityAt: string;
+  readonly openDependencies: readonly UpNextOpenDependency[];
+  readonly revokedDependencies: readonly number[];
 }
 
 /** What the task was placed on, named where the catalog names it: a container
@@ -129,6 +133,8 @@ export function projectTableRow(
       ticket.changedAt,
       execution?.terminalAt ?? execution?.registeredAt,
     ),
+    openDependencies: ticket.openDependencies,
+    revokedDependencies: ticket.revokedDependencies,
   };
 }
 
@@ -168,9 +174,12 @@ export function projectTableRows(
   );
 }
 
+/** A section's rows in the read's order, but for "Up next", which is drawn
+ * nearest to dispatchable first. */
 export function projectTableRowsIn(
   rows: readonly ProjectTableRow[],
   section: TicketSection,
 ): readonly ProjectTableRow[] {
-  return rows.filter((row) => row.section === section);
+  const held = rows.filter((row) => row.section === section);
+  return section === "UpNext" ? upNextOrdered(held) : held;
 }
