@@ -1694,7 +1694,7 @@ export type ProjectRepositoryCreatedResponse = z.infer<
 /**
  * One repository a project binds, when it was bound, and how a ticket in it
  * lands. `retiredAt` is present only on a binding that has been retired, which
- * is one still bound and still readable by name but no longer elected.
+ * is one no longer bound or elected, kept so its history reads by name.
  */
 export const projectRepositoryResponseSchema = z.object({
   repository: z.string().min(1),
