@@ -22,12 +22,16 @@
 # of a suite share its database, which is what exercises the partitioning the
 # store claims. The worker count moves throughput, not verdicts.
 #
-# EVERY DATABASE THIS RUN MAKES IS NAMED INSIDE THE ONE IT CONNECTS TO. A pid
-# is unique on a machine and a shared server is not one: two attempts running
-# this gate in their own containers can hold the same pid, and then one run's
-# CREATE lands on the other's database or its DROP takes it away. The connected
-# database is the one name a caller has already given this run alone — which is
-# also what makes a database left behind by a killed run attributable to it.
+# EVERY NAME THIS RUN MAKES CARRIES ITS OWN RUN ID AND THE DATABASE IT
+# CONNECTS TO. The run id is the pid and a part drawn at random for the run,
+# from `_postgres.sh`: two runs on one server — in containers of their own, so
+# holding the same pid, or on one host and one TMPDIR — never agree on a
+# database, a template, a clone or a scratch directory, so neither's CREATE lands
+# on the other's database and neither's DROP takes one away. The connected
+# database is the name a caller has already given this run's server, and the pid
+# makes what a killed run left behind attributable to it. Every database name is
+# checked against the length PostgreSQL keeps whole before any is made, so one
+# the server would truncate into another's is a could-not-run.
 #
 # NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire the server, to
 # prepare the template or to clone a suite's database means the suite did not
@@ -35,7 +39,8 @@
 # the worker carrying it runs the rest of its list first.
 #
 # Env: CHUG_PG_URL, CHUG_PG_IMAGE, CHUG_PG_PORT, CHUG_PG_READY_SECS — read by
-# `.chug/tasks/_postgres.sh`; CHUG_PG_WORKERS — worker count from 1 through 16.
+# `.chug/tasks/_postgres.sh`, as is the seam CHUG_PG_RUN_PID, the suite's alone;
+# CHUG_PG_WORKERS — worker count from 1 through 16.
 # The role in CHUG_PG_URL must be able to create and drop sibling databases.
 #
 # Usage: .chug/tasks/check-postgres.sh
@@ -76,7 +81,6 @@ if [ "$workers" -gt "$suite_count" ]; then workers="$suite_count"; fi
 . "$here/_postgres.sh"
 postgres_acquire "check-postgres"
 
-run_id="$(printf '%s' "$$" | tr -cd '0-9')"
 # The database this run connects to, as the first half of every name it makes.
 # A name the server would truncate is one two runs could collide under, so a
 # long one is carried in part and a digest of the whole distinguishes it.
@@ -131,12 +135,6 @@ interrupted() {
 trap interrupted INT TERM HUP
 trap 'cleanup || true' EXIT
 
-databases="$template"
-if ! node --experimental-strip-types "$database_helper" prepare "$base_url" "$template"; then
-	echo "check-postgres: LINTER ERROR — could not prepare the template database"
-	exit 2
-fi
-
 worker=1
 while [ "$worker" -le "$workers" ]; do
 	: >"$work/$worker.suites"
@@ -151,17 +149,27 @@ done
 
 # Every name the run can make, taken before a worker starts: the cleanup drops
 # what a killed run was part way through, and a name it never reached is a drop
-# of a database that is not there.
+# of a database that is not there. One that would not fit is never handed to it,
+# because the server would drop the name it truncates to.
+names="$template"
 worker=1
 while [ "$worker" -le "$workers" ]; do
 	dealt="$(grep -c '' "$work/$worker.suites" || true)"
 	position=1
 	while [ "$position" -le "$dealt" ]; do
-		databases="${run_scope}_w${worker}_s${position} $databases"
+		names="${run_scope}_w${worker}_s${position} $names"
 		position=$((position + 1))
 	done
 	worker=$((worker + 1))
 done
+# shellcheck disable=SC2086 # database names are generated words.
+postgres_name_check $names
+databases="$names"
+
+if ! node --experimental-strip-types "$database_helper" prepare "$base_url" "$template"; then
+	echo "check-postgres: LINTER ERROR — could not prepare the template database"
+	exit 2
+fi
 
 worker=1
 while [ "$worker" -le "$workers" ]; do

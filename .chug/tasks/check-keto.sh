@@ -24,13 +24,20 @@
 # can catch does not leave it up; one left by a kill is refused by the next
 # run, which names the port it holds.
 #
+# THE DATABASE IT MAKES CARRIES THE RUN ID `_postgres.sh` DRAWS: the pid and a
+# part drawn at random for the run. Two runs on one server — in containers of
+# their own, so holding the same pid — never prepare, use or drop the same
+# database, and the pid makes one a killed run left behind attributable to it.
+# A name PostgreSQL would truncate is a could-not-run.
+#
 # NO SERVER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire either, or to
 # migrate the database, means the suites did not execute and exits two. A suite
 # that goes red is a finding and exits one.
 #
 # Env: CHUG_KETO_READ_URL, CHUG_KETO_WRITE_URL, CHUG_KETO_IMAGE,
 # CHUG_KETO_READ_PORT, CHUG_KETO_WRITE_PORT, CHUG_KETO_READY_SECS — read by
-# `.chug/tasks/_keto.sh`; CHUG_PG_URL and the rest — by `.chug/tasks/_postgres.sh`.
+# `.chug/tasks/_keto.sh`; CHUG_PG_URL and the rest — by `.chug/tasks/_postgres.sh`,
+# as is the seam CHUG_PG_RUN_PID, the suite's alone.
 #
 # Usage: .chug/tasks/check-keto.sh
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
@@ -80,8 +87,8 @@ trap 'cleanup' EXIT
 keto_acquire "check-keto"
 postgres_acquire "check-keto"
 
-run_id="$(printf '%s' "$$" | tr -cd '0-9')"
 database="chuggy_keto_${run_id}"
+postgres_name_check "$database"
 database_helper="$root/.chug/tasks/postgres-databases.ts"
 
 made=1

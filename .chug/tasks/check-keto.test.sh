@@ -30,6 +30,11 @@
 # the adapter. The cases drive an authority that is ready and lacks one of the
 # namespaces, and require a could-not-run.
 #
+# THE DATABASE A RUN MAKES IS ASSERTED THROUGH THE HELPER LOG. Two runs are
+# made to hold the same pid through the gate's seam and pointed at one server,
+# and their logs are required to share no name; two of different pids are held
+# to the same, so the pid cannot be read as what keeps them apart.
+#
 # Run:  .chug/tasks/check-keto.test.sh
 set -eu
 
@@ -446,6 +451,49 @@ check "the clean line names both servers it used" 0 "$RC" \
 OUT="$CHUG_PG_HELPER_LOG"
 check "a green run prepares one database and drops it" 0 0 "prepare chuggy_keto_"
 check "a green run removes its database" 0 0 "drop chuggy_keto_"
+
+# --- Two runs holding one pid on one server share no database ---------------
+
+fixture
+passing_suite "$R/test/keto/one.test.ts"
+git -C "$R" add -A
+FIRST_LOG="$WORK/.helper-first"
+SECOND_LOG="$WORK/.helper-second"
+: >"$FIRST_LOG"
+: >"$SECOND_LOG"
+keto_double Project Tenant Site
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$FIRST_LOG" CHUG_PG_RUN_PID=4242
+FIRST_RC="$RC"
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$SECOND_LOG" CHUG_PG_RUN_PID=4242
+SECOND_RC="$RC"
+keto_double_stop
+check "the second of two runs holding one pid is clean" 0 "$SECOND_RC" "1 suite(s) clean"
+OUT="$FIRST_LOG"
+check "the first of two runs holding one pid prepares under it" 0 "$FIRST_RC" "prepare chuggy_keto_4242_"
+names_shared "$FIRST_LOG" "$SECOND_LOG"
+check "two runs holding one pid prepare and drop no database in common" 0 0 "the runs share no name"
+names_unfit "$FIRST_LOG"
+refute "and the database is one PostgreSQL keeps whole" 0 0 "truncated:"
+
+# --- Two runs of different pids share no database either ---------------------
+
+: >"$FIRST_LOG"
+: >"$SECOND_LOG"
+keto_double Project Tenant Site
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$FIRST_LOG" CHUG_PG_RUN_PID=4242
+FIRST_RC="$RC"
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$SECOND_LOG" CHUG_PG_RUN_PID=4343
+SECOND_RC="$RC"
+keto_double_stop
+check "a run of another pid is clean" 0 "$SECOND_RC" "1 suite(s) clean"
+OUT="$FIRST_LOG"
+check "a run of one pid prepares under it" 0 "$FIRST_RC" "prepare chuggy_keto_4242_"
+names_shared "$FIRST_LOG" "$SECOND_LOG"
+check "two runs of different pids prepare and drop no database in common" 0 0 "the runs share no name"
 
 # --- A container started from another model is started again -----------------
 #

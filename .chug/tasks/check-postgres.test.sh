@@ -16,10 +16,16 @@
 # script either.
 #
 # THE NAMES THE RUN MAKES ARE ASSERTED THROUGH THE HELPER LOG, and what they
-# have to carry is the database the URL named — `ignored`, in every case here.
-# A run whose names stopped depending on that would still create and drop
-# consistently, and would still collide with another run of the same pid on a
-# server they share, which is the whole of what naming them this way is for.
+# have to carry is the database the URL named — `ignored`, in every case here —
+# and a run id no other run holds. Two runs are made to hold the same pid
+# through the gate's seam and pointed at one server, and their logs are required
+# to share no name, created or dropped; a run whose names rested on the pid
+# would still create and drop consistently, and only this pair tells it apart.
+# Two runs of different pids are held to the same, so the pid cannot be read as
+# what keeps them apart. The longest names the gate can make — the highest
+# worker against a connected database long enough to be digested — are
+# required to fit, and a pid long enough that they cannot is a could-not-run
+# that makes nothing.
 #
 # THE SPELLINGS OF A UNIX SOCKET ARE DRIVEN SEPARATELY, because only the empty
 # authority leaves an empty host in the URL: the others put the path where a
@@ -231,5 +237,72 @@ OUT="$MOVES"
 check "a worker clones a database per suite and drops it when the suite ends" 0 0 \
 	"clone_w1_s1 drop_w1_s1 clone_w1_s2 drop_w1_s2"
 check "the other worker does the same for the suite it was dealt" 0 0 "clone_w2_s1 drop_w2_s1"
+
+# --- Two runs holding one pid on one server share no name -------------------
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+passing_suite "$R/test/postgres/two.test.ts"
+git -C "$R" add -A
+FIRST_LOG="$WORK/.helper-first"
+SECOND_LOG="$WORK/.helper-second"
+: >"$FIRST_LOG"
+: >"$SECOND_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$FIRST_LOG" CHUG_PG_RUN_PID=4242
+check "the first of two runs holding one pid is clean" 0 "$RC" "2 suite(s) clean"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$SECOND_LOG" CHUG_PG_RUN_PID=4242
+check "the second of two runs holding one pid is clean" 0 "$RC" "2 suite(s) clean"
+OUT="$SECOND_LOG"
+check "the pid the seam holds is the one the names carry" 0 0 "prepare ignored_4242_"
+names_shared "$FIRST_LOG" "$SECOND_LOG"
+check "two runs holding one pid make and drop no name in common" 0 0 "the runs share no name"
+
+# --- Two runs of different pids share no name either -------------------------
+
+: >"$FIRST_LOG"
+: >"$SECOND_LOG"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$FIRST_LOG" CHUG_PG_RUN_PID=4242
+check "a run of one pid is clean" 0 "$RC" "2 suite(s) clean"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$SECOND_LOG" CHUG_PG_RUN_PID=4343
+check "a run of another pid is clean" 0 "$RC" "2 suite(s) clean"
+names_shared "$FIRST_LOG" "$SECOND_LOG"
+check "two runs of different pids make and drop no name in common" 0 0 "the runs share no name"
+
+# --- The longest names the gate makes are ones PostgreSQL keeps whole --------
+#
+# One suite more than the most workers there can be, so the highest worker is
+# dealt one and the first is dealt a second, against a connected database whose
+# name has to be digested to fit.
+
+LONG_DATABASE="a_connected_database_named_long_enough_that_the_gate_has_to_digest_it_whole"
+LONG_URL="${ANSWERS%/ignored}/$LONG_DATABASE"
+fixture
+suite=1
+while [ "$suite" -le 17 ]; do
+	passing_suite "$R/test/postgres/s$suite.test.ts"
+	suite=$((suite + 1))
+done
+git -C "$R" add -A
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$LONG_URL" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_WORKERS=16
+check "a run at the most workers is clean" 0 "$RC" "17 suite(s) clean against the server CHUG_PG_URL names with 16 worker(s)"
+OUT="$HELPER_LOG"
+check "the highest worker clones a database" 0 0 "_w16_s1 "
+check "the first worker clones a second" 0 0 "_w1_s2 "
+names_unfit "$HELPER_LOG"
+check "every name the run made was checked" 0 0 "18 name(s) checked"
+refute "and none is longer than PostgreSQL keeps whole" 0 0 "truncated:"
+
+fixture
+passing_suite "$R/test/postgres/one.test.ts"
+git -C "$R" add -A
+HELPER_LOG="$WORK/.helper"
+: >"$HELPER_LOG"
+run_gate "$R" "CHUG_PG_URL=$LONG_URL" "CHUG_PG_HELPER_LOG=$HELPER_LOG" \
+	CHUG_PG_RUN_PID=4242424242424242424242424242
+check "a name that would be truncated is a could-not-run" 2 "$RC" "longer than PostgreSQL keeps a name whole"
+OUT="$HELPER_LOG"
+refute "and nothing is made or dropped under it" 0 0 "_t"
 
 done_ "check-postgres.test.sh"

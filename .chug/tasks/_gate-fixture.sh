@@ -22,6 +22,8 @@
 #             database_helper_double          a stand-in for
 #                       `postgres-databases.ts` in a fixture checkout, logging
 #                       every call to $CHUG_PG_HELPER_LOG
+#             names_shared / names_unfit   what two runs' helper logs, or one
+#                       run's, say about the names they made, into $OUT
 #   expects   $SUT      the gate under test, for run_gate
 #   exits     2 through the sourcing suite when the socket never opens
 
@@ -100,4 +102,33 @@ const [command, , ...databases] = process.argv.slice(2);
 appendFileSync(process.env.CHUG_PG_HELPER_LOG, `${command} ${databases.join(" ")}\n`);
 if (process.env.CHUG_PG_HELPER_FAIL === command) process.exitCode = 1;
 TS
+}
+
+helper_names() { # <helper log> — every database name it was handed, one to a line
+	awk '{ for (field = 2; field <= NF; field++) print $field }' "$1" | sort -u
+}
+
+# Whether two runs made or dropped a name in common, as a line in $OUT. A run
+# that made none shares none trivially, and says so instead.
+names_shared() { # <helper log> <helper log>
+	helper_names "$1" >"$WORK/.names-first"
+	helper_names "$2" >"$WORK/.names-second"
+	OUT="$WORK/.shared"
+	if [ ! -s "$WORK/.names-first" ] || [ ! -s "$WORK/.names-second" ]; then
+		echo "a run made no name" >"$OUT"
+	elif comm -12 "$WORK/.names-first" "$WORK/.names-second" | grep -q ''; then
+		comm -12 "$WORK/.names-first" "$WORK/.names-second" | sed 's/^/both runs named /' >"$OUT"
+	else
+		echo "the runs share no name" >"$OUT"
+	fi
+}
+
+# Every name a run handed the helper that PostgreSQL would truncate, as lines in
+# $OUT, beside the count it checked.
+names_unfit() { # <helper log>
+	OUT="$WORK/.unfit"
+	helper_names "$1" | awk '
+		length($0) > 63 { print "truncated: " $0 }
+		END { print NR " name(s) checked" }
+	' >"$OUT"
 }
