@@ -23,6 +23,7 @@ import {
   forgeRefusalMessageCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
+  repositoryConfigurationIgnoredAnsweredMax,
   digestSchema,
   dispatchViewSchemaVersion,
   identitySchema,
@@ -990,8 +991,37 @@ export type ConfigurationsResponse = z.infer<
   typeof configurationsResponseSchema
 >;
 
+/**
+ * What under `.chug/` a configuration import read none of, a directory named
+ * once with its trailing slash. `truncated` says there is more than `paths`
+ * names.
+ */
+export const repositoryConfigurationIgnoredSchema = z.object({
+  paths: z
+    .array(z.string().min(1))
+    .max(repositoryConfigurationIgnoredAnsweredMax),
+  truncated: z.boolean(),
+});
+export type RepositoryConfigurationIgnoredResponse = z.infer<
+  typeof repositoryConfigurationIgnoredSchema
+>;
+
+/** The field an answer names what it ignored in, which is absent where it ignored nothing. */
+const repositoryConfigurationIgnoredShape = {
+  ignored: repositoryConfigurationIgnoredSchema.optional(),
+};
+
 export const repositoryConfigurationImportedSchema = z.object({
   imported: z.literal(true),
+  ...repositoryConfigurationIgnoredShape,
+});
+export type RepositoryConfigurationImportedResponse = z.infer<
+  typeof repositoryConfigurationImportedSchema
+>;
+
+/** A commit declaring no configurations, refused beside what its `.chug/` holds instead. */
+export const repositoryConfigurationsAbsentSchema = z.object({
+  ...repositoryConfigurationIgnoredShape,
 });
 
 export const repositoryConfigurationRefusalSchema = z.object({
@@ -1598,27 +1628,35 @@ export const bootstrapConfigurationName = "bootstrap";
  * declared into it, or the bootstrap revision its tickets are released under
  * while it declares none.
  */
+const projectRepositoryImportedSchema = z.object({
+  result: z.literal("Imported"),
+  count: countSchema,
+});
+const projectRepositoryBootstrappedSchema = z.object({
+  result: z.literal("Bootstrapped"),
+  revision: identitySchema,
+});
 export const projectRepositoryConfigurationsHeldSchema = z.discriminatedUnion(
   "result",
-  [
-    z.object({ result: z.literal("Imported"), count: countSchema }),
-    z.object({ result: z.literal("Bootstrapped"), revision: identitySchema }),
-  ],
+  [projectRepositoryImportedSchema, projectRepositoryBootstrappedSchema],
 );
 export type ProjectRepositoryConfigurationsHeldResponse = z.infer<
   typeof projectRepositoryConfigurationsHeldSchema
 >;
 
 /**
- * What a bound repository's own configurations came to. It is beside the
- * binding and not part of it: the binding is durable whatever this says, so a
- * `Deferred` is a step to run again through the configuration route rather than
- * a repository that is not bound.
+ * What a bound repository's own configurations came to, and what under `.chug/`
+ * a step that read the head read none of. It is beside the binding and not part
+ * of it, so a `Deferred` is a step to run again through the configuration route
+ * rather than a repository that is not bound.
  */
 export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
   "result",
   [
-    ...projectRepositoryConfigurationsHeldSchema.options,
+    projectRepositoryImportedSchema.extend(repositoryConfigurationIgnoredShape),
+    projectRepositoryBootstrappedSchema.extend(
+      repositoryConfigurationIgnoredShape,
+    ),
     z.object({
       result: z.literal("Deferred"),
       reason: z.enum(projectRepositoryConfigurationDeferrals),

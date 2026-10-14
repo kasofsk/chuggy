@@ -41,9 +41,15 @@ import {
   type RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import {
+  repositoryConfigurationIgnoredAnsweredMax,
+  textCodePointsCount,
+} from "../contract/http.ts";
+import {
   repositoryDeclarationContent,
+  repositoryDeclarationPathCharsMax,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
+  type RepositoryDeclarationListing,
 } from "./repositoryDeclaration.ts";
 import {
   repositoryDeclarationUnavailableOutcome,
@@ -56,15 +62,68 @@ import {
 } from "./repositoryReadEvidence.ts";
 export * from "./repositoryConfigurationIdentity.ts";
 
+/**
+ * What under `.chug/` a configuration import read none of, a directory named
+ * once with its trailing slash. `truncated` says there is more than `paths`
+ * names.
+ */
+export interface RepositoryConfigurationIgnored {
+  readonly paths: readonly string[];
+  readonly truncated: boolean;
+}
+
+/** The `ignored` a read or an outcome carries, which is none where nothing was named. */
+export function repositoryConfigurationIgnoredField(
+  ignored: RepositoryConfigurationIgnored | undefined,
+): { readonly ignored?: RepositoryConfigurationIgnored } {
+  return ignored === undefined ? {} : { ignored };
+}
+
+/**
+ * What one commit's `.chug/` holds that its configuration import reads none
+ * of: each entry directly under it but the configuration directory, and each
+ * file `skipped` names there for not being JSON. It is nothing where there is
+ * nothing to name, and where `.chug/` went unlisted, which says nothing either
+ * way.
+ */
+export function repositoryConfigurationIgnored(input: {
+  readonly listing: RepositoryDeclarationListing;
+  readonly skipped: readonly string[];
+}): RepositoryConfigurationIgnored | undefined {
+  if (input.listing.listed === "Unlisted") return undefined;
+  const directory = repositoryConfigurationRoot.slice(0, -1);
+  const outside =
+    input.listing.listed === "Entries"
+      ? input.listing.entries
+          .filter((entry) => !(entry.directory && entry.path === directory))
+          .map((entry) => (entry.directory ? `${entry.path}/` : entry.path))
+      : [];
+  const found = [...outside, ...input.skipped];
+  const named = found
+    .filter(
+      (path) => textCodePointsCount(path) <= repositoryDeclarationPathCharsMax,
+    )
+    .sort();
+  const truncated =
+    input.listing.listed === "Overflowed" ||
+    named.length < found.length ||
+    named.length > repositoryConfigurationIgnoredAnsweredMax;
+  const paths = named.slice(0, repositoryConfigurationIgnoredAnsweredMax);
+  return paths.length === 0 && !truncated ? undefined : { paths, truncated };
+}
+
 /** What reading an immutable repository view found before its declarations are interpreted. */
 export type RepositoryConfigurationSnapshotRead =
   | {
       readonly read: "Snapshot";
       readonly files: readonly RepositoryDeclarationFile[];
+      readonly ignored?: RepositoryConfigurationIgnored;
     }
+  | { readonly read: "Absent"; readonly absent: "Commit" }
   | {
       readonly read: "Absent";
-      readonly absent: "Commit" | "ConfigurationDirectory";
+      readonly absent: "ConfigurationDirectory";
+      readonly ignored?: RepositoryConfigurationIgnored;
     }
   | ({ readonly read: "Unavailable" } & RepositoryDeclarationUnavailable)
   | {
@@ -182,9 +241,11 @@ export interface RepositoryConfigurationImportPorts {
 export type RepositoryConfigurationImportOutcome =
   | { readonly result: "NotFound" }
   | { readonly result: "RepositoryAbsent" }
+  | { readonly result: "SnapshotAbsent"; readonly absent: "Commit" }
   | {
       readonly result: "SnapshotAbsent";
-      readonly absent: "Commit" | "ConfigurationDirectory";
+      readonly absent: "ConfigurationDirectory";
+      readonly ignored?: RepositoryConfigurationIgnored;
     }
   | ({ readonly result: "Unavailable" } & RepositoryDeclarationUnavailable)
   | {
@@ -197,7 +258,11 @@ export type RepositoryConfigurationImportOutcome =
     }
   | { readonly result: "IdentityConflict" }
   | { readonly result: "StaleBinding" }
-  | { readonly result: "Imported"; readonly declarations: number };
+  | {
+      readonly result: "Imported";
+      readonly declarations: number;
+      readonly ignored?: RepositoryConfigurationIgnored;
+    };
 
 /** Imports the declarations at one exact repository commit under an already-resolved authority. */
 export async function importRepositoryConfigurations(input: {
@@ -218,7 +283,13 @@ export async function importRepositoryConfigurations(input: {
   });
   switch (snapshot.read) {
     case "Absent":
-      return { result: "SnapshotAbsent", absent: snapshot.absent };
+      return snapshot.absent === "Commit"
+        ? { result: "SnapshotAbsent", absent: "Commit" }
+        : {
+            result: "SnapshotAbsent",
+            absent: "ConfigurationDirectory",
+            ...repositoryConfigurationIgnoredField(snapshot.ignored),
+          };
     case "Unavailable":
       return repositoryDeclarationUnavailableOutcome(snapshot);
     case "Refused":
@@ -242,6 +313,7 @@ export async function importRepositoryConfigurations(input: {
           return {
             result: "Imported",
             declarations: readiness.declarations.length,
+            ...repositoryConfigurationIgnoredField(snapshot.ignored),
           };
         case "IdentityConflict":
           return { result: "IdentityConflict" };
@@ -324,8 +396,8 @@ export type BoundRepositoryActionImportSkip = Exclude<
 
 /**
  * Why one bound repository could not be imported. Every term is a variant or an
- * integer but a refused declaration's `path`, which is the tree path `ls-tree`
- * answered and is the one text here a forge supplied.
+ * integer but a tree path `ls-tree` answered, which is the one text here a
+ * forge supplied.
  */
 export type BoundRepositoryImportFailure<
   Outcome = RepositoryConfigurationImportOutcome,
@@ -351,8 +423,13 @@ export type BoundRepositoryImportResult<
       readonly result: "Imported";
       readonly commit: GitObjectId;
       readonly declarations: number;
+      readonly ignored?: RepositoryConfigurationIgnored;
     }
-  | { readonly result: "Skipped"; readonly why: Skip }
+  | {
+      readonly result: "Skipped";
+      readonly why: Skip;
+      readonly ignored?: RepositoryConfigurationIgnored;
+    }
   | {
       readonly result: "Failed";
       readonly failure: BoundRepositoryImportFailure<Outcome>;
@@ -457,15 +534,20 @@ function boundRepositoryImportResult(
   outcome: RepositoryConfigurationImportOutcome,
 ): BoundRepositoryImportResult {
   if (outcome.result === "Imported")
-    return { result: "Imported", commit, declarations: outcome.declarations };
-  if (outcome.result === "SnapshotAbsent")
     return {
-      result: "Skipped",
-      why:
-        outcome.absent === "Commit"
-          ? "CommitAbsent"
-          : "ConfigurationDirectoryAbsent",
+      result: "Imported",
+      commit,
+      declarations: outcome.declarations,
+      ...repositoryConfigurationIgnoredField(outcome.ignored),
     };
+  if (outcome.result === "SnapshotAbsent")
+    return outcome.absent === "Commit"
+      ? { result: "Skipped", why: "CommitAbsent" }
+      : {
+          result: "Skipped",
+          why: "ConfigurationDirectoryAbsent",
+          ...repositoryConfigurationIgnoredField(outcome.ignored),
+        };
   return { result: "Failed", failure: { failure: "Import", outcome } };
 }
 
@@ -589,19 +671,25 @@ function boundRepositoryImportFailureHeld(
   }
 }
 
+/** What under `.chug/` a line says its import read none of, which is nothing where it names none. */
+function boundRepositoryImportLineIgnored(
+  ignored: RepositoryConfigurationIgnored | undefined,
+): string {
+  return ignored === undefined ? "" : `; ignored: ${JSON.stringify(ignored)}`;
+}
+
 /**
  * One result as the words a line ends in. Every term is a variant of the run's
- * own types or a held integer but a refused declaration's path, which
- * `JSON.stringify` escapes.
+ * own types or a held integer but a tree path, which `JSON.stringify` escapes.
  */
 function boundRepositoryImportLineWords(
   result: BoundRepositoryImportResult<string, BoundRepositoryImportOutcome>,
 ): string {
   switch (result.result) {
     case "Imported":
-      return `imported at ${result.commit}`;
+      return `imported at ${result.commit}${boundRepositoryImportLineIgnored(result.ignored)}`;
     case "Skipped":
-      return `skipped: ${result.why}`;
+      return `skipped: ${result.why}${boundRepositoryImportLineIgnored(result.ignored)}`;
     case "Failed":
       return `failed: ${JSON.stringify(boundRepositoryImportFailureHeld(result.failure))}`;
     default:

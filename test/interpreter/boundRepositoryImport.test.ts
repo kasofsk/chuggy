@@ -57,9 +57,11 @@ import {
   type BoundRepositoryImportPorts,
   type BoundRepositoryImportResult,
   type RepositoryBindingListed,
+  type RepositoryConfigurationIgnored,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import type { RepositoryDeclarationSnapshotRead } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 import {
   allCredentialMintCauses,
@@ -478,6 +480,79 @@ test("a refused declaration's path reaches its line escaped and not raw", () => 
 
   assert.equal(line.includes("\n"), false);
   assert.match(line, /one\\nfailed/u);
+});
+
+const ignoredAtHead: RepositoryConfigurationIgnored = {
+  paths: [`${repositoryDeclarationRoot}project.yaml`],
+  truncated: false,
+};
+
+test("what an import read none of under `.chug/` is its binding's result, imported or skipped", async () => {
+  const atlas = listed("atlas", "atlas");
+  const { ports } = fixture({
+    bindings: [atlas, listed("beacon", "beacon")],
+    snapshots: (repository) =>
+      repository === atlas.repository
+        ? { read: "Snapshot", files: [], ignored: ignoredAtHead }
+        : {
+            read: "Absent",
+            absent: "ConfigurationDirectory",
+            ignored: ignoredAtHead,
+          },
+  });
+
+  const { imports } = await importBoundRepositories({ authority, ports });
+
+  assert.deepEqual(
+    imports.map((bound) => bound.result),
+    [
+      {
+        result: "Imported",
+        commit: head,
+        declarations: 0,
+        ignored: ignoredAtHead,
+      },
+      {
+        result: "Skipped",
+        why: "ConfigurationDirectoryAbsent",
+        ignored: ignoredAtHead,
+      },
+    ],
+  );
+});
+
+test("a line names what its import read none of under `.chug/`, escaped and not raw", () => {
+  const ignored: RepositoryConfigurationIgnored = {
+    paths: [`${repositoryDeclarationRoot}one\nfailed: acme/atlas`],
+    truncated: true,
+  };
+  const imported = boundRepositoryImportLine(
+    reported({ result: "Imported", commit: head, declarations: 1, ignored }),
+  );
+  const skipped = boundRepositoryImportLine(
+    reported({
+      result: "Skipped",
+      why: "ConfigurationDirectoryAbsent",
+      ignored,
+    }),
+  );
+
+  assert.equal(
+    imported,
+    `acme/atlas ${atlasRepository} imported at ${head}; ignored: ${JSON.stringify(ignored)}`,
+  );
+  assert.equal(
+    skipped,
+    `acme/atlas ${atlasRepository} skipped: ConfigurationDirectoryAbsent; ignored: ${JSON.stringify(ignored)}`,
+  );
+  for (const line of [imported, skipped]) {
+    assert.equal(line.includes("\n"), false);
+    assert.match(line, /one\\nfailed/u);
+  }
+  assert.equal(
+    boundRepositoryImportLine(importedAtHead),
+    `acme/atlas ${atlasRepository} imported at ${head}`,
+  );
 });
 
 function actionFile(action: string) {

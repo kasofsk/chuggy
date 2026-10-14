@@ -32,6 +32,7 @@ import { repositoryActionRoot } from "../../src/interpreter/repositoryAction.ts"
 import { repositoryConfigurationRoot } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   repositoryDeclarationFileCharsMax,
+  repositoryDeclarationRoot,
   repositoryDeclarationsMax,
 } from "../../src/interpreter/repositoryDeclaration.ts";
 import {
@@ -191,7 +192,7 @@ test("symlinks and nested declarations reach the pure parser unchanged", async (
   );
 });
 
-test("non-JSON files beside declarations are ignored", async (t) => {
+test("non-JSON files beside declarations are ignored, and named as ignored", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureWrite(
     fixture,
@@ -215,6 +216,84 @@ test("non-JSON files beside declarations are ignored", async (t) => {
           content: "work\n",
         },
       ],
+      ignored: {
+        paths: [`${repositoryConfigurationRoot}README.md`],
+        truncated: false,
+      },
+    },
+  );
+});
+
+/** A tree whose `.chug/` holds a format no import reads, beside whatever `configurations` it is given. */
+function fixtureOtherFormat(fixture: Fixture): void {
+  const chug = repositoryDeclarationRoot;
+  fixtureWrite(fixture, `${chug}project.yaml`, "version: 2\n");
+  fixtureWrite(fixture, `${chug}workloads/build.yaml`, "build\n");
+  fixtureWrite(fixture, `${chug}workloads/test.yaml`, "test\n");
+  fixtureWrite(fixture, `${chug}evaluators/review.yaml`, "review\n");
+  fixtureWrite(fixture, "README.md", "outside\n");
+}
+
+test("what else `.chug/` holds is named beside the configurations, each directory once and nothing outside it", async (t) => {
+  const chug = repositoryDeclarationRoot;
+  const fixture = fixtureOpen(t);
+  fixtureOtherFormat(fixture);
+  const bare = fixtureCommit(fixture, "another format");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}notes.txt`, "notes\n");
+  const declared = fixtureCommit(fixture, "and a declaration");
+  const port = fixturePort(fixture);
+  const repository = fixtureBinding(fixture.remote);
+  const others = [
+    `${chug}evaluators/`,
+    `${chug}project.yaml`,
+    `${chug}workloads/`,
+  ];
+
+  assert.deepEqual(
+    await port.snapshot({ repository, commit: asGitObjectId(bare) }),
+    {
+      read: "Absent",
+      absent: "ConfigurationDirectory",
+      ignored: { paths: others, truncated: false },
+    },
+  );
+  const read = await port.snapshot({
+    repository,
+    commit: asGitObjectId(declared),
+  });
+  assert.deepEqual(read.read === "Snapshot" ? read.ignored : read, {
+    paths: [`${repositoryConfigurationRoot}notes.txt`, ...others].sort(),
+    truncated: false,
+  });
+  assert.deepEqual(
+    await port.actionSnapshot({ repository, commit: asGitObjectId(bare) }),
+    { read: "Snapshot", files: [] },
+  );
+});
+
+test("a `.chug/` too large to list is said to be, and refuses none of the configurations beside it", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  for (let index = 0; index <= repositoryDeclarationsMax * 2; index += 1)
+    fixtureWrite(
+      fixture,
+      `${repositoryDeclarationRoot}${String(index).padStart(240, "0")}.yaml`,
+      "",
+    );
+  const commit = fixtureCommit(fixture, "a crowded directory");
+
+  const read = await fixturePort(fixture).snapshot({
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId(commit),
+  });
+  assert.deepEqual(
+    read.read === "Snapshot"
+      ? { files: read.files.map((file) => file.path), ignored: read.ignored }
+      : read,
+    {
+      files: [`${repositoryConfigurationRoot}work.json`],
+      ignored: { paths: [], truncated: true },
     },
   );
 });

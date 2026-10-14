@@ -106,10 +106,12 @@ import {
 } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type {
+  RepositoryConfigurationIgnored,
   RepositoryConfigurationsImported,
   RepositoryConfigurationSnapshotRead,
   RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import type { RepositoryDeclarationSnapshotRequest } from "../../src/interpreter/repositoryDeclarationSnapshot.ts";
 import type {
   ForgeRepositoryCreated,
@@ -1435,6 +1437,51 @@ test("a repository declaring no configurations is authored the bootstrap", async
     configurations: { result: "Bootstrapped", revision: "bootstrap" },
   });
   assert.deepEqual(wrote.authored, ["bootstrap"]);
+});
+
+const ignoredAtHead: RepositoryConfigurationIgnored = {
+  paths: [
+    `${repositoryDeclarationRoot}project.yaml`,
+    `${repositoryDeclarationRoot}workloads/`,
+  ],
+  truncated: false,
+};
+
+test("a bind says what under `.chug/` its step read none of, beside the bootstrap and beside an import", async () => {
+  const bootstrapped = await fixtureBound({
+    configurations: {
+      head: branchHead,
+      snapshot: {
+        read: "Absent",
+        absent: "ConfigurationDirectory",
+        ignored: ignoredAtHead,
+      },
+      image: workerImage,
+    },
+  });
+  assert.deepEqual(bootstrapped.bound, {
+    result: "Bound",
+    repository,
+    landing: { mode: "Push" },
+    configurations: {
+      result: "Bootstrapped",
+      revision: "bootstrap",
+      ignored: ignoredAtHead,
+    },
+  });
+  const imported = await fixtureBound({
+    configurations: {
+      head: branchHead,
+      snapshot: { read: "Snapshot", files: [], ignored: ignoredAtHead },
+      image: workerImage,
+    },
+  });
+  assert.deepEqual(imported.bound, {
+    result: "Bound",
+    repository,
+    landing: { mode: "Push" },
+    configurations: { result: "Imported", count: 0, ignored: ignoredAtHead },
+  });
 });
 
 /** A branch neither fixture default is, so a constant fed in its place is visible. */

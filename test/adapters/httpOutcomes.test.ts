@@ -32,6 +32,7 @@ import {
   submissionResponse,
 } from "../../src/adapters/http/outcomes.ts";
 import { draftsResponseSchema } from "../../src/contract/responses.ts";
+import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -83,6 +84,61 @@ test("repository import outcomes distinguish retry, refusal, and conflict", () =
       declarations: 1,
     }).status,
     200,
+  );
+});
+
+test("a commit declaring no configurations is a refusal of its own, naming what `.chug/` holds instead", () => {
+  const ignored = {
+    paths: [`${repositoryDeclarationRoot}project.yaml`],
+    truncated: false,
+  };
+  const absent = repositoryConfigurationImportResponse({
+    result: "SnapshotAbsent",
+    absent: "ConfigurationDirectory",
+    ignored,
+  });
+  assert.equal(absent.status, 422);
+  assert.deepEqual(absent.body, {
+    error: {
+      code: "RepositoryConfigurationsAbsent",
+      message: "The commit declares no configurations.",
+    },
+    ignored,
+  });
+  assert.deepEqual(
+    repositoryConfigurationImportResponse({
+      result: "SnapshotAbsent",
+      absent: "ConfigurationDirectory",
+    }).body,
+    {
+      error: {
+        code: "RepositoryConfigurationsAbsent",
+        message: "The commit declares no configurations.",
+      },
+    },
+  );
+  const commitAbsent = repositoryConfigurationImportResponse({
+    result: "SnapshotAbsent",
+    absent: "Commit",
+  });
+  assert.equal(commitAbsent.status, 404);
+  assert.deepEqual(commitAbsent.body, {
+    error: { code: "NotFound", message: "Resource not found." },
+  });
+  assert.deepEqual(
+    repositoryConfigurationImportResponse({
+      result: "Imported",
+      declarations: 1,
+      ignored,
+    }).body,
+    { imported: true, ignored },
+  );
+  assert.deepEqual(
+    repositoryConfigurationImportResponse({
+      result: "Imported",
+      declarations: 1,
+    }).body,
+    { imported: true },
   );
 });
 

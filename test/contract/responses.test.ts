@@ -77,11 +77,14 @@ import {
   projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
   projectRepositoryRetiredSchema,
+  projectRepositoryConfigurationsHeldSchema,
   projectRepositoryConfigurationsSchema,
   projectRepositoryConfiguredSchema,
   projectRepositoryResponseSchema,
   projectResponseSchema,
+  repositoryConfigurationImportedSchema,
   repositoryConfigurationRefusalsSchema,
+  repositoryConfigurationsAbsentSchema,
   runConfigurationResponseSchema,
   runErrorResponseSchema,
   runTranscriptResponseSchema,
@@ -96,6 +99,7 @@ import {
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
+import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import { projectRepositoryConfigurationDeferrals } from "../../src/contract/rosters.ts";
 import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
@@ -114,6 +118,7 @@ import {
   forgeRepositoriesAnsweredMax,
   nativeHttpPageItemsMax,
   projectRepositoriesAnsweredMax,
+  repositoryConfigurationIgnoredAnsweredMax,
   runModelCharsMax,
   runTranscriptPageBatchesMax,
   selectorHandoffNoteBytesMax,
@@ -2031,12 +2036,23 @@ test("each onboarding listing refuses one row past the bound it answers under", 
   );
 });
 
+const ignoredAtHead = {
+  paths: [".chug/actions/", ".chug/tasks/"],
+  truncated: true,
+};
+
 test("every configuration outcome a bind reports parses as the schema answers it", () => {
   const outcomes: readonly ProjectRepositoryConfigurationsResult[] = [
     { result: "Imported", count: 0 },
+    { result: "Imported", count: 1, ignored: ignoredAtHead },
     {
       result: "Bootstrapped",
       revision: asConfigurationRevisionId("bootstrap"),
+    },
+    {
+      result: "Bootstrapped",
+      revision: asConfigurationRevisionId("bootstrap"),
+      ignored: ignoredAtHead,
     },
     ...projectRepositoryConfigurationDeferrals.map(
       (reason) => ({ result: "Deferred", reason }) as const,
@@ -2055,6 +2071,67 @@ test("every configuration outcome a bind reports parses as the schema answers it
       configurations,
     );
   }
+});
+
+/** A console that predates `ignored` read a bind's configurations with the held arms and `Deferred`, and so drops it. */
+test("a console reading a bind's configurations as they stood before `ignored` still reads the rest", () => {
+  const bound = projectRepositoryBindResponse(partition, {
+    result: "Bound",
+    repository: onboardingRepository,
+    landing: { mode: "Push" },
+    configurations: {
+      result: "Bootstrapped",
+      revision: asConfigurationRevisionId("bootstrap"),
+      ignored: ignoredAtHead,
+    },
+  }).body as { readonly configurations: unknown };
+  assert.deepEqual(
+    projectRepositoryConfigurationsHeldSchema.parse(bound.configurations),
+    { result: "Bootstrapped", revision: "bootstrap" },
+  );
+  assert.throws(() =>
+    projectRepositoryConfigurationsSchema.parse({
+      result: "Imported",
+      count: 1,
+      ignored: {
+        paths: Array.from(
+          { length: repositoryConfigurationIgnoredAnsweredMax + 1 },
+          (_, index) => String(index),
+        ),
+        truncated: true,
+      },
+    }),
+  );
+});
+
+test("an import answers what it read none of beside what it imported, and beside a commit declaring none", () => {
+  assert.deepEqual(
+    repositoryConfigurationImportedSchema.parse(
+      repositoryConfigurationImportResponse({
+        result: "Imported",
+        declarations: 1,
+        ignored: ignoredAtHead,
+      }).body,
+    ),
+    { imported: true, ignored: ignoredAtHead },
+  );
+  const absent = repositoryConfigurationImportResponse({
+    result: "SnapshotAbsent",
+    absent: "ConfigurationDirectory",
+    ignored: ignoredAtHead,
+  });
+  assert.deepEqual(
+    classify(absent.status, () => undefined, absent.body),
+    {
+      outcome: "Rejected",
+      code: "RepositoryConfigurationsAbsent",
+      status: 422,
+      body: absent.body,
+    },
+  );
+  assert.deepEqual(repositoryConfigurationsAbsentSchema.parse(absent.body), {
+    ignored: ignoredAtHead,
+  });
 });
 
 /** One created repository as the route answers it, whichever part a case varies. */

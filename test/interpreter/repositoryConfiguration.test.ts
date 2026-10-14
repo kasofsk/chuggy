@@ -6,15 +6,22 @@ import {
   asGitObjectId,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
+import { repositoryConfigurationIgnoredAnsweredMax } from "../../src/contract/http.ts";
 import {
   importRepositoryConfigurationPartitions,
+  importRepositoryConfigurations,
+  repositoryConfigurationIgnored,
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
   type ProjectRepositoryBindingRead,
+  type RepositoryConfigurationIgnored,
   type RepositoryConfigurationImportOutcome,
   type RepositoryConfigurationImportPorts,
+  type RepositoryConfigurationSnapshotRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
+  repositoryDeclarationPathCharsMax,
+  repositoryDeclarationRoot,
   repositoryDeclarationsMax,
   type RepositoryDeclarationFile,
 } from "../../src/interpreter/repositoryDeclaration.ts";
@@ -322,4 +329,183 @@ test("each of one project's repositories imports against its own binding", async
   ]);
   assert.deepEqual(asked, [repository, other, unbound]);
   assert.deepEqual(imported, [`${repository}:epoch-one`, `${other}:epoch-two`]);
+});
+
+const chug = repositoryDeclarationRoot;
+
+test("what an import reads none of is every entry under `.chug/` but the configuration directory, and each file in it that is not JSON", () => {
+  assert.deepEqual(
+    repositoryConfigurationIgnored({
+      listing: {
+        listed: "Entries",
+        entries: [
+          { path: `${chug}workloads`, directory: true },
+          { path: repositoryConfigurationRoot.slice(0, -1), directory: true },
+          { path: `${chug}project.yaml`, directory: false },
+        ],
+      },
+      skipped: [`${repositoryConfigurationRoot}README.md`],
+    }),
+    {
+      paths: [
+        `${repositoryConfigurationRoot}README.md`,
+        `${chug}project.yaml`,
+        `${chug}workloads/`,
+      ],
+      truncated: false,
+    },
+  );
+  assert.deepEqual(
+    repositoryConfigurationIgnored({
+      listing: {
+        listed: "Entries",
+        entries: [
+          { path: repositoryConfigurationRoot.slice(0, -1), directory: false },
+        ],
+      },
+      skipped: [],
+    }),
+    { paths: [repositoryConfigurationRoot.slice(0, -1)], truncated: false },
+  );
+});
+
+test("an import that read everything under `.chug/`, or could not list it, names nothing", () => {
+  const configurations = {
+    path: repositoryConfigurationRoot.slice(0, -1),
+    directory: true,
+  };
+  assert.equal(
+    repositoryConfigurationIgnored({
+      listing: { listed: "Entries", entries: [configurations] },
+      skipped: [],
+    }),
+    undefined,
+  );
+  assert.equal(
+    repositoryConfigurationIgnored({
+      listing: { listed: "Entries", entries: [] },
+      skipped: [],
+    }),
+    undefined,
+  );
+  assert.equal(
+    repositoryConfigurationIgnored({
+      listing: { listed: "Unlisted" },
+      skipped: [`${repositoryConfigurationRoot}README.md`],
+    }),
+    undefined,
+  );
+});
+
+test("what an import reads none of is bounded, and says where it names less than there is", () => {
+  const many = Array.from(
+    { length: repositoryConfigurationIgnoredAnsweredMax + 1 },
+    (_, index) => ({
+      path: `${chug}${String(index).padStart(3, "0")}.yaml`,
+      directory: false,
+    }),
+  );
+  const bounded = repositoryConfigurationIgnored({
+    listing: { listed: "Entries", entries: many },
+    skipped: [],
+  });
+  assert.deepEqual(bounded, {
+    paths: many
+      .slice(0, repositoryConfigurationIgnoredAnsweredMax)
+      .map(({ path }) => path),
+    truncated: true,
+  });
+  const exact = repositoryConfigurationIgnored({
+    listing: { listed: "Entries", entries: many.slice(1) },
+    skipped: [],
+  });
+  assert.equal(exact?.truncated, false);
+  assert.equal(exact.paths.length, repositoryConfigurationIgnoredAnsweredMax);
+
+  const long = `${chug}${"x".repeat(repositoryDeclarationPathCharsMax)}`;
+  assert.deepEqual(
+    repositoryConfigurationIgnored({
+      listing: {
+        listed: "Entries",
+        entries: [
+          { path: long, directory: false },
+          { path: `${chug}project.yaml`, directory: false },
+        ],
+      },
+      skipped: [],
+    }),
+    { paths: [`${chug}project.yaml`], truncated: true },
+  );
+  assert.deepEqual(
+    repositoryConfigurationIgnored({
+      listing: { listed: "Overflowed" },
+      skipped: [`${repositoryConfigurationRoot}README.md`],
+    }),
+    { paths: [`${repositoryConfigurationRoot}README.md`], truncated: true },
+  );
+  assert.deepEqual(
+    repositoryConfigurationIgnored({
+      listing: { listed: "Overflowed" },
+      skipped: [],
+    }),
+    { paths: [], truncated: true },
+  );
+});
+
+/** One import of `repository` at `commit` against a snapshot that answers `read`. */
+function importAgainst(
+  read: RepositoryConfigurationSnapshotRead,
+): Promise<RepositoryConfigurationImportOutcome> {
+  const partition = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("one"),
+  };
+  return importRepositoryConfigurations({
+    partition,
+    repository,
+    commit,
+    authority: {
+      kind: asAuthorityKind("Service"),
+      subject: asAuthoritySubject("configuration-mirror-importer"),
+    },
+    ports: {
+      bindings: boundRepositories(new Map([[repository, "epoch"]]), []),
+      snapshots: { snapshot: () => Promise.resolve(read) },
+      store: {
+        importRepositoryConfigurations: () =>
+          Promise.resolve({ imported: "Imported" }),
+      },
+    },
+  });
+}
+
+test("an import says what it read none of beside what it imported, and beside a commit declaring none", async () => {
+  const ignored: RepositoryConfigurationIgnored = {
+    paths: [`${chug}project.yaml`],
+    truncated: false,
+  };
+  assert.deepEqual(
+    await importAgainst({
+      read: "Snapshot",
+      files: [declaration("review")],
+      ignored,
+    }),
+    { result: "Imported", declarations: 1, ignored },
+  );
+  assert.deepEqual(
+    await importAgainst({
+      read: "Absent",
+      absent: "ConfigurationDirectory",
+      ignored,
+    }),
+    { result: "SnapshotAbsent", absent: "ConfigurationDirectory", ignored },
+  );
+  assert.deepEqual(
+    await importAgainst({ read: "Absent", absent: "ConfigurationDirectory" }),
+    { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+  );
+  assert.deepEqual(await importAgainst({ read: "Snapshot", files: [] }), {
+    result: "Imported",
+    declarations: 0,
+  });
 });
