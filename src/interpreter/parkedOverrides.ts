@@ -13,8 +13,11 @@
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import {
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
   type CanonicalConfiguration,
+  type DraftReleaseRefusalCode,
   type ReleaseAuthoring,
+  type ReleaseConfigurationFault,
 } from "./authoring.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
@@ -35,35 +38,46 @@ export type ParkedOverridesVerdict =
   | { readonly verdict: "Admitted" }
   | {
       readonly verdict: "Refused";
-      readonly code: "ConfigurationInvalid" | "OverridesMoveDefinition";
+      readonly code: DraftReleaseRefusalCode | "OverridesMoveDefinition";
     };
 
-/** The digest of the definition one set of overrides resolves, or none where the configuration it makes is not ready. */
+/** The digest of the definition one set of overrides resolves, or the fault where the configuration it makes is not ready. */
 function parkedOverridesDefinitionDigest(
   ticket: ParkedTicketResolution,
   overrides: ConfigurationOverrides | undefined,
-): string | undefined {
+):
+  | { readonly resolved: "Resolved"; readonly digest: string }
+  | {
+      readonly resolved: "Unready";
+      readonly fault: ReleaseConfigurationFault;
+    } {
   const readiness = draftReleaseReadiness(
     ticket.configuration,
     ticket.brief,
     ticket.configurationRepository,
     overrides,
   );
-  if (readiness.readiness === "Incomplete") return undefined;
-  return materialDigest(
-    ticketDefinitionMaterial({
-      authoring: ticket.authoring,
-      configuration: readiness.configuration,
-      ...(ticket.brief === undefined ? {} : { brief: ticket.brief }),
-    }),
-  );
+  if (readiness.readiness === "Incomplete")
+    return { resolved: "Unready", fault: readiness.fault };
+  return {
+    resolved: "Resolved",
+    digest: materialDigest(
+      ticketDefinitionMaterial({
+        authoring: ticket.authoring,
+        configuration: readiness.configuration,
+        ...(ticket.brief === undefined ? {} : { brief: ticket.brief }),
+      }),
+    ),
+  };
 }
 
 /**
- * Judges the offered overrides as a release judges a draft's, then holds the
- * definition they resolve to the one the held overrides resolve. Held
- * overrides the running code cannot resolve give nothing to hold the offer
- * to, and the offer is refused as one that moves the definition.
+ * Judges the offered overrides as a release judges a draft's, refusing them
+ * under the code a release would be refused with — so a pairing fault, which
+ * no override reaches, names the ticket rather than blaming the offer — then
+ * holds the definition they resolve to the one the held overrides resolve.
+ * Held overrides the running code cannot resolve give nothing to hold the
+ * offer to, and the offer is refused as one that moves the definition.
  */
 export function parkedOverridesVerdict(
   ticket: ParkedTicketResolution,
@@ -71,9 +85,10 @@ export function parkedOverridesVerdict(
   offered: ConfigurationOverrides,
 ): ParkedOverridesVerdict {
   const moved = parkedOverridesDefinitionDigest(ticket, offered);
-  if (moved === undefined)
-    return { verdict: "Refused", code: "ConfigurationInvalid" };
-  return moved === parkedOverridesDefinitionDigest(ticket, held)
+  if (moved.resolved === "Unready")
+    return { verdict: "Refused", code: draftReleaseRefusalCode(moved.fault) };
+  const kept = parkedOverridesDefinitionDigest(ticket, held);
+  return kept.resolved === "Resolved" && kept.digest === moved.digest
     ? { verdict: "Admitted" }
     : { verdict: "Refused", code: "OverridesMoveDefinition" };
 }

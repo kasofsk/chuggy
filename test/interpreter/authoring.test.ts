@@ -10,11 +10,15 @@ import {
   draftPageLimitDefault,
   draftInitializationPolicy,
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
+  releasePairingFaults,
   type CanonicalConfiguration,
+  type ReleaseConfigurationFault,
 } from "../../src/interpreter/authoring.ts";
+import { allTaskConfigurationFaults } from "../../src/interpreter/taskConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { approvalRequiredField } from "../../src/interpreter/finalizerPreparation.ts";
@@ -373,6 +377,18 @@ test("the configuration's own refusals are answered before the repository's", ()
     uncommanded,
     "and before a configuration read in another repository",
   );
+});
+
+test("a release is refused under a pairing fault's own code, and as ConfigurationInvalid for a fault of the document", () => {
+  for (const fault of releasePairingFaults)
+    assert.equal(draftReleaseRefusalCode(fault), fault);
+  const documentFaults: readonly ReleaseConfigurationFault[] = [
+    "ReleaseShapeInvalid",
+    "WorkerUndeclared",
+    ...allTaskConfigurationFaults,
+  ];
+  for (const fault of documentFaults)
+    assert.equal(draftReleaseRefusalCode(fault), "ConfigurationInvalid", fault);
 });
 
 test("release readiness names briefing and practice refusals", () => {

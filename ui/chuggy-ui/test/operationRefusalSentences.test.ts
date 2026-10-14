@@ -70,6 +70,10 @@ const samples: {
   ExecutionSourceUnreadable: { type: "ExecutionSourceUnreadable" },
   ExecutionSourceDenied: { type: "ExecutionSourceDenied" },
   BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
+  BriefChecksUncommanded: { type: "BriefChecksUncommanded" },
+  ConfigurationFromAnotherRepository: {
+    type: "ConfigurationFromAnotherRepository",
+  },
   TicketCapacityReached: { type: "TicketCapacityReached" },
   FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
   OverridesMoveDefinition: { type: "OverridesMoveDefinition" },
@@ -154,10 +158,16 @@ test("a finalization that is not current names its work cycle and generation", (
   );
 });
 
-test("the refusal two release contradictions share names each of them", () => {
+test("a release refused for its pairing names the brief, and one refused for its configuration does not", () => {
   const sentence = operationRefusalSentence(samples.ConfigurationInvalid);
   expect(sentence).toContain("configuration");
-  expect(sentence).toContain("pull request");
+  expect(sentence).not.toContain("brief");
+  for (const code of [
+    "BriefNamesNoRepository",
+    "BriefChecksUncommanded",
+    "ConfigurationFromAnotherRepository",
+  ] as const)
+    expect(operationRefusalSentence(samples[code])).toContain("brief");
 });
 
 /** The three only an update reaches promise no edit the ticket page does not offer. */

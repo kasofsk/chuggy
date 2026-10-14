@@ -143,7 +143,7 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
     case "AuthoringChanged":
       return "the ticket's authoring changed after this was submitted";
     case "ConfigurationInvalid":
-      return "the configuration this named is not one the project will run, or it hands the work off where this brief opens a pull request";
+      return "the configuration is not one the project will run, as written or as overridden";
     case "TicketChanged":
       return "the ticket changed after this was submitted";
     case "SelectionChanged":
@@ -154,6 +154,10 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the remote declined the credential this project holds for the repository";
     case "BriefNamesNoRepository":
       return "the brief names no repository; revise it to name one the project binds";
+    case "BriefChecksUncommanded":
+      return "the configuration has no check stage; remove the brief's checks or name a configuration with one";
+    case "ConfigurationFromAnotherRepository":
+      return "the configuration was imported from another repository; name one from the brief's repository";
     case "TicketCapacityReached":
       return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
     case "FinalizationRequestClosed":

@@ -10,7 +10,8 @@ import {
 
 /**
  * The refusals the boundary decides rather than `decide`: a release whose
- * revision or configuration moved or that the deployment has no room for, a
+ * revision or configuration moved, whose configuration will not run or does
+ * not pair with its brief, or that the deployment has no room for, a
  * dispatch whose fence did, a submission whose authorizing row closed, a
  * parked ticket's overrides that would move its definition, and a source
  * nobody could read. Each is a fact about rows, a remote or the
@@ -24,6 +25,8 @@ export type BoundaryRefusalCode =
   | "ExecutionSourceUnreadable"
   | "ExecutionSourceDenied"
   | "BriefNamesNoRepository"
+  | "BriefChecksUncommanded"
+  | "ConfigurationFromAnotherRepository"
   | "TicketCapacityReached"
   | "FinalizationRequestClosed"
   | "OverridesMoveDefinition";
@@ -37,6 +40,8 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "BriefChecksUncommanded",
+  "ConfigurationFromAnotherRepository",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",

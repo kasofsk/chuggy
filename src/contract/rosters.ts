@@ -286,6 +286,8 @@ export const operationBoundaryRefusalCodes = [
   "ExecutionSourceUnreadable",
   "ExecutionSourceDenied",
   "BriefNamesNoRepository",
+  "BriefChecksUncommanded",
+  "ConfigurationFromAnotherRepository",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",

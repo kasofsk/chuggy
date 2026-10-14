@@ -48,6 +48,7 @@ import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-
 import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-selector-attempt-revision.ts";
 import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-workspace-links.ts";
 import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-retirement-releases-repository.ts";
+import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-release-pairing-refusals.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -148,7 +149,10 @@ import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
-import { allRefusalCodes } from "../../src/interpreter/refusal.ts";
+import {
+  allBoundaryRefusalCodes,
+  allRefusalCodes,
+} from "../../src/interpreter/refusal.ts";
 
 function databaseUrl(database: string): string {
   const url = new URL(postgresHarnessUrl());
@@ -10004,5 +10008,47 @@ test("052 keeps every binding that stood and releases a retired one's repository
       await boundThrough052(subject, "other-52", "retired-52"),
       "Bound",
     );
+/** The codes 053 admits, which 043's constraint refused. */
+const pairingRefusals053: readonly string[] = [
+  "BriefChecksUncommanded",
+  "ConfigurationFromAnotherRepository",
+];
+
+test("053 settles a release under the pairing fault it was refused for, and keeps every code that stood", async () => {
+  await migrationDatabase("release_pairing_refusals", async (subject) => {
+    await installationBefore(subject, migration053.version);
+    await subject.query(deletionPartition);
+    let ordinal = 0;
+    for (const code of pairingRefusals053)
+      assert.match(
+        String(await commandsRefuse(subject, ordinal + 1, code, null)),
+        /decision_input_outcome_is_known/u,
+        code,
+      );
+    for (const [code, value] of commandsRefusals)
+      assert.equal(
+        await commandsRefuse(
+          subject,
+          ++ordinal,
+          code,
+          commandsRefusal(code, value),
+        ),
+        null,
+        code,
+      );
+    for (const code of allBoundaryRefusalCodes)
+      if (!pairingRefusals053.includes(code))
+        assert.equal(
+          await commandsRefuse(subject, ++ordinal, code, null),
+          null,
+          code,
+        );
+    assert.ok((await postgresMigrate(subject)).includes(migration053.version));
+    for (const code of pairingRefusals053)
+      assert.equal(
+        await commandsRefuse(subject, ++ordinal, code, null),
+        null,
+        code,
+      );
   });
 });
