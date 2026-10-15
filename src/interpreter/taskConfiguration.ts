@@ -19,19 +19,48 @@
  * whole verdict, and an attempt whose commands changed nothing still declares
  * a commit, so a repository's command must fail rather than produce an empty
  * candidate.
+ *
+ * WHAT A DOCUMENT MAY BE IS `src/contract/configurationDocument.ts`'S, which
+ * decides acceptance here and is what the API publishes. This module names the
+ * fault a refusal reports: the first field, in the contract's order, whose
+ * shape is wrong, and only where every shape holds the first fault of the
+ * content, an empty brief before the practices and the practices before any
+ * line.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 
-import { textCodePointsCount } from "../contract/http.ts";
 import {
-  briefingLineCharsMax,
-  commandLinesMax,
-} from "../contract/workerTask.ts";
+  configurationAgentEvaluationSchema,
+  configurationAuthoritySchema,
+  configurationBriefedWorkSchema,
+  configurationBriefSchema,
+  configurationCommandedEvaluationSchema,
+  configurationCommandedWorkSchema,
+  configurationContentFaults,
+  configurationEvaluationsSchema,
+  configurationLineSchema,
+  configurationLinePattern,
+  configurationPracticesSchema,
+  configurationPurposeSchema,
+  configurationTaskSchema,
+  configurationWorkerSchema,
+  type ConfigurationContentFault,
+  type configurationLegacyWorkerSchema,
+  type configurationWorkerModeSchema,
+} from "../contract/configurationDocument.ts";
+
+/** The practice roster and the list bounds, surfaced where a configuration is read. */
+export {
+  allPracticeIds,
+  briefingLinesMax,
+  evaluationBlocksMax,
+  type PracticeId,
+} from "../contract/configurationDocument.ts";
 
 /** The claim a ticket makes about itself, which both roles are briefed with unchanged. */
 export type TicketBrief = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationHeaderSchema>["brief"]
+  z.output<typeof configurationBriefSchema>
 >;
 
 /**
@@ -41,13 +70,24 @@ export type TicketBrief = TaskConfigurationReadonly<
  * apart.
  */
 export type PurposeBlock = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationPurposeSchema>
+  z.output<typeof configurationPurposeSchema>
 > & { readonly checks?: undefined; readonly commands?: undefined };
 
-/** What one indexed evaluation stage briefs an agent with, beyond the shared brief. */
+/**
+ * What one indexed evaluation stage briefs an agent with, beyond the shared
+ * brief. Its practices are held as names, which composing a briefing resolves
+ * against the catalog it is handed.
+ */
 export type AgentEvaluationBlock = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationAgentEvaluationSchema>
-> & { readonly checks?: undefined; readonly commands?: undefined };
+  Omit<
+    z.output<typeof configurationAgentEvaluationSchema>,
+    "checks" | "practices"
+  >
+> & {
+  readonly practices: readonly string[];
+  readonly checks?: undefined;
+  readonly commands?: undefined;
+};
 
 /** One check stage the worker runs itself: command lines, and no agent to brief. */
 export interface CommandEvaluationBlock {
@@ -125,7 +165,7 @@ export function briefsAnyAgent(
 
 /** One agent invocation, the only worker execution mode currently admitted. */
 export type SingleAgentWorkerMode = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationWorkerModeSchema>
+  z.output<typeof configurationWorkerModeSchema>
 >;
 
 /**
@@ -140,39 +180,39 @@ export interface CommandsWorkerMode {
 /** How the worker executes a task, discriminated so each mode owns its options. */
 export type WorkerMode = SingleAgentWorkerMode | CommandsWorkerMode;
 
+/** What every worker carries whichever way it names its agent. */
+type WorkerFields = TaskConfigurationReadonly<
+  Pick<z.output<typeof configurationLegacyWorkerSchema>, "setup" | "files">
+>;
+
 /** Runtime inputs whose canonical authored bytes travel with every task invocation. */
-export type ModeWorkerConfiguration = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationWorkerSchema>
-> & { readonly mode: WorkerMode };
+export type ModeWorkerConfiguration = WorkerFields & {
+  readonly mode: WorkerMode;
+};
 
 /** The worker shape retained by immutable configurations that predate modes. */
-export type LegacyClaudeWorkerConfiguration = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationWorkerSchema>
-> & { readonly arguments: readonly string[] };
+export type LegacyClaudeWorkerConfiguration = WorkerFields & {
+  readonly arguments: readonly string[];
+};
 
 export type WorkerConfiguration =
   ModeWorkerConfiguration | LegacyClaudeWorkerConfiguration;
 
-/** The authored part of a task configuration, before storage supplies its immutable pin. */
+/**
+ * The authored part of a task configuration, before storage supplies its
+ * immutable pin. Its practices are held as names, as a stage's are.
+ */
 export type AuthoredTaskConfiguration = TaskConfigurationReadonly<
-  z.output<typeof taskConfigurationSchema>
->;
-
-/** The blessed practice identities accepted in authored configuration. */
-export type PracticeId =
-  "RegressionCoverage" | "ChangedCallPaths" | "AcceptanceCriteria";
-
-/** Every accepted practice identity in stable rendering order. */
-export const allPracticeIds: readonly PracticeId[] = [
-  "RegressionCoverage",
-  "ChangedCallPaths",
-  "AcceptanceCriteria",
-];
-
-/** The most lines one authored list may carry. */
-export const briefingLinesMax = 8;
-
-export const evaluationBlocksMax = 64;
+  Omit<
+    z.output<typeof configurationTaskSchema>,
+    "practices" | "work" | "evaluations" | "worker"
+  >
+> & {
+  readonly practices: readonly string[];
+  readonly work: WorkBlock;
+  readonly evaluations?: readonly EvaluationBlock[];
+  readonly worker?: WorkerConfiguration;
+};
 
 /** Why an authored document cannot supply the briefing contract. */
 export type TaskConfigurationFault =
@@ -192,13 +232,7 @@ export type TaskConfigurationFault =
   | "EvaluationFieldUnknown"
   | "AuthorityInvalid"
   | "WorkerInvalid"
-  | "EmptyBrief"
-  | "UnknownPractice"
-  | "DuplicatePractice"
-  | "EmptyLine"
-  | "TextTooLong"
-  | "TextUnreadable"
-  | "TooManyLines";
+  | ConfigurationContentFault;
 
 /** Every authored fault, so a suite and an evidence label iterate rather than restate. */
 export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
@@ -251,284 +285,110 @@ type BriefingTextFault = Extract<
   "EmptyLine" | "TextTooLong" | "TextUnreadable" | "TooManyLines"
 >;
 
-const briefingFirstPrintable = 0x20;
-const briefingFirstUpperControl = 0x7f;
-const briefingLastUpperControl = 0x9f;
-
-const workerEntriesMax = 64;
-const workerContentCharsMax = 65_536;
+/** The faults a line or a list of lines earns. */
+const briefingTextFaults: readonly BriefingTextFault[] = [
+  "EmptyLine",
+  "TextTooLong",
+  "TextUnreadable",
+  "TooManyLines",
+];
 
 /** Whether a line carries what a briefing cannot print: half a character, or a control character. */
 export function taskConfigurationLineUnreadable(line: string): boolean {
-  if (!line.isWellFormed()) return true;
-  for (const character of line) {
-    const code = character.codePointAt(0) ?? 0;
-    if (
-      code < briefingFirstPrintable ||
-      (code >= briefingFirstUpperControl && code <= briefingLastUpperControl)
-    )
-      return true;
-  }
-  return false;
+  return !configurationLinePattern.test(line);
 }
 
 /** Returns the bounded text fault one authored line earns, if any. */
 export function taskConfigurationLineFault(
   line: string,
 ): BriefingTextFault | undefined {
-  if (line.length === 0) return "EmptyLine";
-  if (textCodePointsCount(line) > briefingLineCharsMax) return "TextTooLong";
-  return taskConfigurationLineUnreadable(line) ? "TextUnreadable" : undefined;
-}
-
-function authoredTaskConfigurationStringArray(
-  value: unknown,
-): readonly string[] | undefined {
-  return Array.isArray(value) && value.every((line) => typeof line === "string")
-    ? value
-    : undefined;
+  const parsed = configurationLineSchema.safeParse(line);
+  if (parsed.success) return undefined;
+  const message = parsed.error.issues[0]?.message;
+  const fault = briefingTextFaults.find((known) => known === message);
+  if (fault === undefined)
+    throw new Error(`task configuration: a line was refused as ${message}`);
+  return fault;
 }
 
 type TaskConfigurationReadonly<Value> = Value extends object
   ? { readonly [Key in keyof Value]: TaskConfigurationReadonly<Value[Key]> }
   : Value;
 
-type TaskConfigurationDefined<Value> = {
-  [
-    Key in keyof Value as undefined extends Value[Key] ? never : Key
-  ]: Value[Key];
-} & {
-  [Key in keyof Value as undefined extends Value[Key] ? Key : never]?: Exclude<
-    Value[Key],
-    undefined
-  >;
+type TaskConfigurationIssue = z.core.$ZodIssue;
+
+/** What one field of a document says of itself: the fault its shape earns, or the issues its content earns. */
+type TaskConfigurationReading =
+  | { readonly reading: "Shape"; readonly fault: TaskConfigurationFault }
+  | {
+      readonly reading: "Content";
+      readonly issues: readonly TaskConfigurationIssue[];
+    };
+
+/** No issue at all, which is what a field the document leaves out reads as. */
+const taskConfigurationAbsent: TaskConfigurationReading = {
+  reading: "Content",
+  issues: [],
 };
 
-/** Strips unknown keys and omits optional fields whose supplied value is undefined. */
-function taskConfigurationObject<Shape extends z.ZodRawShape>(shape: Shape) {
-  return z
-    .object(shape)
-    .transform(
-      (value) =>
-        Object.fromEntries(
-          Object.entries(value).filter(([, field]) => field !== undefined),
-        ) as TaskConfigurationDefined<typeof value>,
-    );
-}
-
-function taskConfigurationParsed<Value>(
-  schema: z.ZodType<Value>,
+function taskConfigurationRecord(
   value: unknown,
-): Value | undefined {
-  const parsed = schema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
+): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
-const taskConfigurationNamesSchema = z
-  .array(
-    z
-      .string()
-      .refine((value) => taskConfigurationLineFault(value) === undefined),
-  )
-  .max(briefingLinesMax);
+/** The issues `schema` raises against `value`, each placed at its path from the document's root. */
+function taskConfigurationIssues(
+  schema: z.ZodType,
+  value: unknown,
+  at: readonly PropertyKey[],
+): readonly TaskConfigurationIssue[] {
+  const parsed = schema.safeParse(value);
+  return parsed.success
+    ? []
+    : parsed.error.issues.map((issue) => ({
+        ...issue,
+        path: [...at, ...issue.path],
+      }));
+}
 
-const taskConfigurationAuthoritySchema = taskConfigurationObject({
-  tools: taskConfigurationNamesSchema.optional(),
-  credentials: taskConfigurationNamesSchema.optional(),
-  network: z.boolean().optional(),
-  filesystem: z.enum(["None", "ReadWorkspace", "WriteWorkspace"]).optional(),
-  mayCompleteTask: z.boolean().optional(),
-});
+/** The content fault an issue names, where it names one: never under an authority, which is a narrowing and has no content. */
+function taskConfigurationContentFault(
+  issue: TaskConfigurationIssue,
+): ConfigurationContentFault | undefined {
+  return issue.path.includes("authority")
+    ? undefined
+    : configurationContentFaults.find((fault) => fault === issue.message);
+}
 
-const taskConfigurationPurposeShape = {
-  instructions: z.array(z.string()),
-  authority: taskConfigurationAuthoritySchema.optional(),
-};
-const taskConfigurationPurposeSchema = taskConfigurationObject(
-  taskConfigurationPurposeShape,
-);
+/** A field's issues read as its first shape fault, named by `fault`, or else as its content. */
+function taskConfigurationReading(
+  issues: readonly TaskConfigurationIssue[],
+  fault: (issue: TaskConfigurationIssue) => TaskConfigurationFault,
+): TaskConfigurationReading {
+  const shape = issues.find(
+    (issue) => taskConfigurationContentFault(issue) === undefined,
+  );
+  return shape === undefined
+    ? { reading: "Content", issues }
+    : { reading: "Shape", fault: fault(shape) };
+}
 
-const taskConfigurationHeaderSchema = z.object({
-  brief: z.object({
-    motivation: z.array(z.string()),
-    acceptanceCriteria: z.array(z.string()),
-    constraints: z.array(z.string()),
-  }),
-  practices: z.array(z.string()),
-  work: z.unknown().transform((value, context) => {
-    const parsed = authoredTaskConfigurationWorkBlock(value);
-    if (parsed.parsed === "Block") return parsed.block;
-    context.addIssue({ code: "custom", message: parsed.fault });
-    return z.NEVER;
-  }),
-  review: taskConfigurationPurposeSchema,
-});
-
-function taskConfigurationHeaderFault(
-  path: readonly PropertyKey[],
+function taskConfigurationBriefFault(
+  issue: TaskConfigurationIssue,
 ): TaskConfigurationFault {
-  if (path[0] === "brief") {
-    switch (path[1] ?? "") {
-      case "motivation":
-        return "MotivationInvalid";
-      case "acceptanceCriteria":
-        return "AcceptanceCriteriaInvalid";
-      case "constraints":
-        return "ConstraintsInvalid";
-      default:
-        return "BriefingShapeMissing";
-    }
-  }
-  switch (path[0] ?? "") {
-    case "practices":
-      return "PracticesInvalid";
-    case "review":
-      return "ReviewInvalid";
+  switch (issue.path[1] ?? "") {
+    case "motivation":
+      return "MotivationInvalid";
+    case "acceptanceCriteria":
+      return "AcceptanceCriteriaInvalid";
+    case "constraints":
+      return "ConstraintsInvalid";
     default:
       return "BriefingShapeMissing";
   }
-}
-
-const taskConfigurationAgentEvaluationSchema = taskConfigurationObject({
-  ...taskConfigurationPurposeShape,
-  practices: z.array(z.string()),
-  purpose: z.enum(["Review", "Check"]).default("Review"),
-});
-
-const taskConfigurationWorkerFields = {
-  setup: z.array(z.string()).max(workerEntriesMax),
-  files: z
-    .array(
-      z.object({
-        path: z.string(),
-        content: z
-          .string()
-          .refine(
-            (value) => textCodePointsCount(value) <= workerContentCharsMax,
-          ),
-      }),
-    )
-    .max(workerEntriesMax),
-};
-const taskConfigurationWorkerSchema = z.object(taskConfigurationWorkerFields);
-const taskConfigurationWorkerArguments = z
-  .array(z.string())
-  .max(workerEntriesMax);
-const taskConfigurationWorkerModeSchema = z.discriminatedUnion("agent", [
-  z
-    .object({
-      type: z.literal("SingleAgent"),
-      agent: z.literal("Claude"),
-      arguments: taskConfigurationWorkerArguments,
-      model: z.undefined().optional(),
-    })
-    .transform(({ type, agent, arguments: args }) => ({
-      type,
-      agent,
-      arguments: args,
-    })),
-  z.object({
-    type: z.literal("SingleAgent"),
-    agent: z.literal("Codex"),
-    arguments: taskConfigurationWorkerArguments,
-    model: z
-      .string()
-      .refine((value) => value.length > 0 && value.length <= 128),
-  }),
-]);
-
-function authoredWorkerConfiguration(
-  value: unknown,
-): WorkerConfiguration | undefined {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return undefined;
-  const record = value as Record<string, unknown>;
-  const mode = authoredWorkerMode(record["mode"]);
-  const modePresent = Object.hasOwn(record, "mode");
-  const legacyArguments = authoredTaskConfigurationStringArray(
-    record["arguments"],
-  );
-  const fields = taskConfigurationParsed(taskConfigurationWorkerSchema, record);
-  if (
-    (modePresent && mode === undefined) ||
-    (!modePresent && legacyArguments === undefined) ||
-    (mode !== undefined && legacyArguments !== undefined) ||
-    (legacyArguments?.length ?? 0) > workerEntriesMax ||
-    fields === undefined
-  )
-    return undefined;
-  return {
-    ...(mode === undefined ? { arguments: legacyArguments ?? [] } : { mode }),
-    ...fields,
-  };
-}
-
-function authoredWorkerMode(value: unknown): WorkerMode | undefined {
-  return taskConfigurationParsed(taskConfigurationWorkerModeSchema, value);
-}
-
-/** One parsed stage, or the fault that names why it is not one. */
-type BlockParsed<Block> =
-  | { readonly parsed: "Block"; readonly block: Block }
-  | { readonly parsed: "Refused"; readonly fault: TaskConfigurationFault };
-
-/** Every parsed evaluation stage, or the first fault one of them earned. */
-type EvaluationBlocksParsed =
-  | { readonly parsed: "Blocks"; readonly blocks: readonly EvaluationBlock[] }
-  | { readonly parsed: "Refused"; readonly fault: TaskConfigurationFault };
-
-function authoredTaskConfigurationAgentEvaluationBlock(
-  value: unknown,
-): BlockParsed<EvaluationBlock> {
-  const block = taskConfigurationParsed(
-    taskConfigurationAgentEvaluationSchema,
-    value,
-  );
-  return block === undefined
-    ? { parsed: "Refused", fault: "EvaluationsInvalid" }
-    : { parsed: "Block", block };
-}
-
-/** Every field a commanded check entry is made of, so any other is refused rather than dropped. */
-const commandEvaluationFields: readonly string[] = ["purpose", "checks"];
-
-/** Every field a commanded work entry is made of, read the same way. */
-const commandWorkFields: readonly string[] = ["commands"];
-
-/**
- * Whether a commanded entry carries a field its kind has no place for. A stage
- * runs shell under whatever narrowing it was given, and a dropped narrowing is
- * the one reading of an authored line nobody asked for.
- */
-function authoredTaskConfigurationFieldUnknown(
-  record: Record<string, unknown>,
-  fields: readonly string[],
-): boolean {
-  return !Object.keys(record).every((key) => fields.includes(key));
-}
-
-/** The command lines a commanded entry names, or undefined where it names no list. */
-function authoredTaskConfigurationCommandLines(
-  value: unknown,
-): readonly string[] | undefined {
-  const lines = authoredTaskConfigurationStringArray(value);
-  return lines === undefined ||
-    lines.length === 0 ||
-    lines.length > commandLinesMax
-    ? undefined
-    : lines;
-}
-
-/** One commanded check stage, whose every field is one this kind has a place for. */
-function authoredTaskConfigurationCommandEvaluationBlock(
-  record: Record<string, unknown>,
-): BlockParsed<EvaluationBlock> {
-  if (authoredTaskConfigurationFieldUnknown(record, commandEvaluationFields))
-    return { parsed: "Refused", fault: "EvaluationFieldUnknown" };
-  const checks = authoredTaskConfigurationCommandLines(record["checks"]);
-  return checks === undefined
-    ? { parsed: "Refused", fault: "ChecksInvalid" }
-    : { parsed: "Block", block: { purpose: "Check", checks } };
 }
 
 /**
@@ -536,213 +396,228 @@ function authoredTaskConfigurationCommandEvaluationBlock(
  * with instructions. Naming both or neither says neither, and a commanded work
  * stage has no place for an agent's narrowing.
  */
-function authoredTaskConfigurationWorkBlock(
+function taskConfigurationWorkReading(
   value: unknown,
-): BlockParsed<WorkBlock> {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return { parsed: "Refused", fault: "WorkInvalid" };
-  const record = value as Record<string, unknown>;
+): TaskConfigurationReading {
+  const record = taskConfigurationRecord(value);
+  if (record === undefined) return { reading: "Shape", fault: "WorkInvalid" };
   const commanded = Object.hasOwn(record, "commands");
-  const briefed = record["instructions"] !== undefined;
-  if (commanded === briefed)
-    return { parsed: "Refused", fault: "WorkKindAmbiguous" };
-  if (!commanded) {
-    const block = taskConfigurationParsed(
-      taskConfigurationPurposeSchema,
-      record,
+  if (commanded === (record["instructions"] !== undefined))
+    return { reading: "Shape", fault: "WorkKindAmbiguous" };
+  if (!commanded)
+    return taskConfigurationReading(
+      taskConfigurationIssues(configurationBriefedWorkSchema, record, ["work"]),
+      () => "WorkInvalid",
     );
-    return block === undefined
-      ? { parsed: "Refused", fault: "WorkInvalid" }
-      : { parsed: "Block", block };
-  }
-  if (authoredTaskConfigurationFieldUnknown(record, commandWorkFields))
-    return { parsed: "Refused", fault: "WorkFieldUnknown" };
-  const commands = authoredTaskConfigurationCommandLines(record["commands"]);
-  return commands === undefined
-    ? { parsed: "Refused", fault: "CommandsInvalid" }
-    : { parsed: "Block", block: { commands } };
+  const issues = taskConfigurationIssues(
+    configurationCommandedWorkSchema,
+    record,
+    ["work"],
+  );
+  return issues.some((issue) => issue.code === "unrecognized_keys")
+    ? { reading: "Shape", fault: "WorkFieldUnknown" }
+    : taskConfigurationReading(issues, () => "CommandsInvalid");
 }
 
 /**
  * Whether an entry says which kind of stage it is. A check stage names its
  * commands or briefs an agent, and naming both or neither says neither.
  */
-function authoredTaskConfigurationEvaluationKindFault(
+function taskConfigurationEvaluationKindAmbiguous(
   record: Record<string, unknown>,
-): TaskConfigurationFault | undefined {
+): boolean {
   const commanded = Object.hasOwn(record, "checks");
   const briefed =
     record["instructions"] !== undefined || record["practices"] !== undefined;
-  if (commanded && (briefed || record["purpose"] !== "Check"))
-    return "EvaluationKindAmbiguous";
-  return record["purpose"] === "Check" && !commanded && !briefed
-    ? "EvaluationKindAmbiguous"
-    : undefined;
+  return commanded
+    ? briefed || record["purpose"] !== "Check"
+    : record["purpose"] === "Check" && !briefed;
 }
 
-function authoredTaskConfigurationEvaluationBlock(
+function taskConfigurationEvaluationReading(
   value: unknown,
-): BlockParsed<EvaluationBlock> {
-  if (typeof value !== "object" || value === null || Array.isArray(value))
-    return { parsed: "Refused", fault: "EvaluationsInvalid" };
-  const record = value as Record<string, unknown>;
-  const kindFault = authoredTaskConfigurationEvaluationKindFault(record);
-  if (kindFault !== undefined) return { parsed: "Refused", fault: kindFault };
-  return Object.hasOwn(record, "checks")
-    ? authoredTaskConfigurationCommandEvaluationBlock(record)
-    : authoredTaskConfigurationAgentEvaluationBlock(value);
-}
-
-function authoredTaskConfigurationEvaluationBlocks(
-  value: unknown,
-): EvaluationBlocksParsed {
-  if (
-    !Array.isArray(value) ||
-    value.length === 0 ||
-    value.length > evaluationBlocksMax
-  )
-    return { parsed: "Refused", fault: "EvaluationsInvalid" };
-  const blocks: EvaluationBlock[] = [];
-  for (const entry of value) {
-    const parsed = authoredTaskConfigurationEvaluationBlock(entry);
-    if (parsed.parsed === "Refused") return parsed;
-    blocks.push(parsed.block);
-  }
-  return { parsed: "Blocks", blocks };
-}
-
-function authoredTaskConfigurationValidated(
-  input: Omit<AuthoredTaskConfiguration, "brief"> & TicketBrief,
-): AuthoredTaskConfigurationReadiness {
-  if (input.motivation.length === 0 && input.acceptanceCriteria.length === 0)
-    return { readiness: "Incomplete", fault: "EmptyBrief" };
-  const practicesFault = authoredTaskConfigurationPracticesFault(
-    input.practices,
+  stage: number,
+): TaskConfigurationReading {
+  const record = taskConfigurationRecord(value);
+  if (record === undefined)
+    return { reading: "Shape", fault: "EvaluationsInvalid" };
+  if (taskConfigurationEvaluationKindAmbiguous(record))
+    return { reading: "Shape", fault: "EvaluationKindAmbiguous" };
+  const at = ["evaluations", stage];
+  if (!Object.hasOwn(record, "checks"))
+    return taskConfigurationReading(
+      taskConfigurationIssues(configurationAgentEvaluationSchema, record, at),
+      () => "EvaluationsInvalid",
+    );
+  const issues = taskConfigurationIssues(
+    configurationCommandedEvaluationSchema,
+    record,
+    at,
   );
-  if (practicesFault !== undefined)
-    return { readiness: "Incomplete", fault: practicesFault };
-  for (const evaluation of input.evaluations ?? []) {
-    if (evaluation.checks !== undefined) continue;
-    const fault = authoredTaskConfigurationPracticesFault(evaluation.practices);
-    if (fault !== undefined) return { readiness: "Incomplete", fault };
+  return issues.some((issue) => issue.code === "unrecognized_keys")
+    ? { reading: "Shape", fault: "EvaluationFieldUnknown" }
+    : taskConfigurationReading(issues, () => "ChecksInvalid");
+}
+
+/** The evaluation stages, where the list's own bounds are read before any stage, and stages in order. */
+function taskConfigurationEvaluationsReading(
+  value: unknown,
+): TaskConfigurationReading {
+  if (value === undefined) return taskConfigurationAbsent;
+  const listed = taskConfigurationIssues(
+    configurationEvaluationsSchema,
+    value,
+    [],
+  );
+  if (!Array.isArray(value) || listed.some((issue) => issue.path.length === 0))
+    return { reading: "Shape", fault: "EvaluationsInvalid" };
+  const issues: TaskConfigurationIssue[] = [];
+  for (const [stage, entry] of value.entries()) {
+    const reading = taskConfigurationEvaluationReading(entry, stage);
+    if (reading.reading === "Shape") return reading;
+    issues.push(...reading.issues);
   }
-  const textFault = taskConfigurationLinesFault([
-    input.motivation,
-    input.acceptanceCriteria,
-    input.constraints,
-    input.work.commands === undefined
-      ? input.work.instructions
-      : input.work.commands,
-    input.review.instructions,
-    ...(input.evaluations ?? []).map((evaluation) =>
-      evaluation.checks === undefined
-        ? evaluation.instructions
-        : evaluation.checks,
+  return { reading: "Content", issues };
+}
+
+/** A field every issue of which is its own one fault, which is how a narrowing and a worker are read. */
+function taskConfigurationWholeReading(
+  schema: z.ZodType,
+  value: unknown,
+  fault: TaskConfigurationFault,
+): TaskConfigurationReading {
+  return value === undefined || schema.safeParse(value).success
+    ? taskConfigurationAbsent
+    : { reading: "Shape", fault };
+}
+
+/** Each field's reading, in the order the contract states the fields and an import names the first fault in. */
+function taskConfigurationReadings(
+  record: Record<string, unknown>,
+): readonly TaskConfigurationReading[] {
+  return [
+    taskConfigurationReading(
+      taskConfigurationIssues(configurationBriefSchema, record["brief"], [
+        "brief",
+      ]),
+      taskConfigurationBriefFault,
     ),
-  ]);
-  if (textFault !== undefined)
-    return { readiness: "Incomplete", fault: textFault };
-  const { motivation, acceptanceCriteria, constraints, ...configuration } =
-    input;
-  return {
-    readiness: "Ready",
-    configuration: {
-      brief: { motivation, acceptanceCriteria, constraints },
-      ...configuration,
-    },
-  };
+    taskConfigurationReading(
+      taskConfigurationIssues(
+        configurationPracticesSchema,
+        record["practices"],
+        ["practices"],
+      ),
+      () => "PracticesInvalid",
+    ),
+    taskConfigurationWorkReading(record["work"]),
+    taskConfigurationReading(
+      taskConfigurationIssues(configurationPurposeSchema, record["review"], [
+        "review",
+      ]),
+      () => "ReviewInvalid",
+    ),
+    taskConfigurationEvaluationsReading(record["evaluations"]),
+    taskConfigurationWholeReading(
+      configurationAuthoritySchema,
+      record["authority"],
+      "AuthorityInvalid",
+    ),
+    taskConfigurationWholeReading(
+      configurationWorkerSchema,
+      record["worker"],
+      "WorkerInvalid",
+    ),
+  ];
 }
 
-function taskConfigurationLinesFault(
-  lists: readonly (readonly string[])[],
-): BriefingTextFault | undefined {
-  for (const lines of lists) {
-    if (lines.length > briefingLinesMax) return "TooManyLines";
-    for (const line of lines) {
-      const fault = taskConfigurationLineFault(line);
-      if (fault !== undefined) return fault;
-    }
+/** The brief's lists in the order their lines are read. */
+const taskConfigurationBriefLists: readonly PropertyKey[] = [
+  "motivation",
+  "acceptanceCriteria",
+  "constraints",
+];
+
+/**
+ * Where one content issue falls in the order its fault is named in, compared
+ * position by position. A brief that is empty comes first, then the practices
+ * and each stage's practices, then every list of lines; within a list, the
+ * list's own bound comes before any of its entries.
+ */
+function taskConfigurationContentRank(
+  path: readonly PropertyKey[],
+): readonly number[] {
+  const within = (
+    list: readonly number[],
+    rest: readonly PropertyKey[],
+  ): readonly number[] => [
+    ...list,
+    rest.length === 0 ? 0 : 1,
+    ...rest.map(Number),
+  ];
+  const [field, key, part] = path;
+  if (field === "brief")
+    return key === undefined
+      ? [0]
+      : within([3, taskConfigurationBriefLists.indexOf(key)], path.slice(2));
+  if (field === "practices") return within([1], path.slice(1));
+  if (field === "work") return within([3, 3], path.slice(2));
+  if (field === "review") return within([3, 4], path.slice(2));
+  const stage = Number(key);
+  return part === "practices"
+    ? within([2, stage], path.slice(3))
+    : within([3, 5 + stage], path.slice(3));
+}
+
+function taskConfigurationRankCompared(
+  left: readonly number[],
+  right: readonly number[],
+): number {
+  for (const [index, position] of left.entries()) {
+    const other = right[index];
+    if (other === undefined) return 1;
+    if (position !== other) return position - other;
   }
-  return undefined;
+  return left.length - right.length;
 }
 
-function authoredTaskConfigurationPracticesFault(
-  practices: readonly string[],
-): TaskConfigurationFault | undefined {
-  if (practices.length > allPracticeIds.length) return "TooManyLines";
-  const seen = new Set<string>();
-  for (const practice of practices) {
-    if (seen.has(practice)) return "DuplicatePractice";
-    seen.add(practice);
-    if (!allPracticeIds.some((known) => known === practice))
-      return "UnknownPractice";
-  }
-  return undefined;
-}
-
-const taskConfigurationSchema = taskConfigurationObject({
-  ...taskConfigurationHeaderSchema.shape,
-  evaluations: z
-    .unknown()
-    .transform((value, context) => {
-      if (value === undefined) return undefined;
-      const parsed = authoredTaskConfigurationEvaluationBlocks(value);
-      if (parsed.parsed === "Blocks") return parsed.blocks;
-      context.addIssue({ code: "custom", message: parsed.fault });
-      return z.NEVER;
-    })
-    .optional(),
-  authority: taskConfigurationAuthoritySchema.optional(),
-  worker: z
-    .unknown()
-    .transform((value, context) => {
-      if (value === undefined) return undefined;
-      const worker = authoredWorkerConfiguration(value);
-      if (worker !== undefined) return worker;
-      context.addIssue({ code: "custom", message: "WorkerInvalid" });
-      return z.NEVER;
-    })
-    .optional(),
-});
-
-/** The fault a block's own parser named, or the field's when the issue is zod's. */
-function taskConfigurationNamedFault(
-  issue: z.core.$ZodIssue | undefined,
-  named: TaskConfigurationFault,
-): TaskConfigurationFault {
-  return (
-    allTaskConfigurationFaults.find((fault) => fault === issue?.message) ??
-    named
+/** The first fault a document's content earns, once every field's shape holds. */
+function taskConfigurationContentFirst(
+  issues: readonly TaskConfigurationIssue[],
+): ConfigurationContentFault | undefined {
+  const [first] = [...issues].sort((left, right) =>
+    taskConfigurationRankCompared(
+      taskConfigurationContentRank(left.path),
+      taskConfigurationContentRank(right.path),
+    ),
   );
+  return first === undefined ? undefined : taskConfigurationContentFault(first);
 }
 
+/** The fault a document earns, or undefined where it earns none. */
 function taskConfigurationFault(
-  issue: z.core.$ZodIssue | undefined,
-): TaskConfigurationFault {
-  switch (issue?.path[0] ?? "") {
-    case "work":
-      return taskConfigurationNamedFault(issue, "WorkInvalid");
-    case "evaluations":
-      return taskConfigurationNamedFault(issue, "EvaluationsInvalid");
-    case "authority":
-      return "AuthorityInvalid";
-    case "worker":
-      return "WorkerInvalid";
-    default:
-      return taskConfigurationHeaderFault(issue?.path ?? []);
+  value: unknown,
+): TaskConfigurationFault | undefined {
+  const record = taskConfigurationRecord(value);
+  if (record === undefined) return "BriefingShapeMissing";
+  const content: TaskConfigurationIssue[] = [];
+  for (const reading of taskConfigurationReadings(record)) {
+    if (reading.reading === "Shape") return reading.fault;
+    content.push(...reading.issues);
   }
+  return taskConfigurationContentFirst(content);
 }
 
 /** Parses the authored fields shared by every task a configuration revision briefs. */
 export function authoredTaskConfigurationReadiness(
   value: unknown,
 ): AuthoredTaskConfigurationReadiness {
-  const parsed = taskConfigurationSchema.safeParse(value);
-  if (!parsed.success)
-    return {
-      readiness: "Incomplete",
-      fault: taskConfigurationFault(parsed.error.issues[0]),
-    };
-  const { brief, ...configuration } = parsed.data;
-  return authoredTaskConfigurationValidated({ ...brief, ...configuration });
+  const parsed = configurationTaskSchema.safeParse(value);
+  if (parsed.success) return { readiness: "Ready", configuration: parsed.data };
+  const fault = taskConfigurationFault(value);
+  if (fault === undefined)
+    throw new Error(
+      `task configuration: refused with no fault named: ${parsed.error.message}`,
+    );
+  return { readiness: "Incomplete", fault };
 }

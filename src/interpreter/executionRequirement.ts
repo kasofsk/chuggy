@@ -1,8 +1,17 @@
-/** Every operating system a platform names, so a suite iterates rather than restates. */
-export const allOperatingSystems = ["Linux", "MacOS"] as const;
+import type { z } from "zod";
+
+import {
+  allArchitectures,
+  allExecutionCapabilities,
+  allOperatingSystems,
+  executionRequirementSchema,
+  releaseConfigurationHeaderSchema,
+  type executionRequirementsSchema,
+} from "../contract/configurationDocument.ts";
+
+/** The platform and capability rosters, surfaced where a requirement is materialized. */
+export { allArchitectures, allExecutionCapabilities, allOperatingSystems };
 export type OperatingSystem = (typeof allOperatingSystems)[number];
-/** Every architecture a platform names, so a suite iterates rather than restates. */
-export const allArchitectures = ["Amd64", "Arm64"] as const;
 export type Architecture = (typeof allArchitectures)[number];
 export type ExecutionTaskKind = "Work" | "Evaluation";
 export type ExecutionTaskKindKey = ExecutionTaskKind | `Evaluation:${number}`;
@@ -12,11 +21,6 @@ export interface Platform {
 }
 export type NativeDriver =
   "XcodeBuild" | "XcodeTesting" | "IosSimulatorTesting";
-/** Every execution capability, so a suite iterates rather than restates. */
-export const allExecutionCapabilities = [
-  "Agent:Claude",
-  "Agent:Codex",
-] as const;
 export type ExecutionCapability = (typeof allExecutionCapabilities)[number];
 
 export type ContainerExecutionRequirement = Readonly<
@@ -76,115 +80,9 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-function hasOnlyKeys(
-  value: Record<string, unknown>,
-  allowed: readonly string[],
-): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
-}
-
-function memberOf<Member extends string>(
-  roster: readonly Member[],
-  value: unknown,
-): Member | undefined {
-  return roster.find((known) => known === value);
-}
-
-function capabilityRequirement(
-  item: Record<string, unknown>,
-): CapabilityExecutionRequirement | undefined {
-  if (
-    !hasOnlyKeys(item, [
-      "mode",
-      "operatingSystem",
-      "architecture",
-      "capabilities",
-    ])
-  )
-    return undefined;
-  const operatingSystem = memberOf(
-    allOperatingSystems,
-    item["operatingSystem"],
-  );
-  const architecture = memberOf(allArchitectures, item["architecture"]);
-  const capabilities = item["capabilities"];
-  if (
-    operatingSystem === undefined ||
-    architecture === undefined ||
-    !Array.isArray(capabilities) ||
-    capabilities.length === 0 ||
-    !capabilities.every(
-      (capability) =>
-        memberOf(allExecutionCapabilities, capability) !== undefined,
-    ) ||
-    new Set(capabilities).size !== capabilities.length
-  )
-    return undefined;
-  return {
-    mode: "ContainerCapability",
-    operatingSystem,
-    architecture,
-    capabilities,
-  };
-}
-
 function requirement(value: unknown): ExecutionRequirement | undefined {
-  const item = record(value);
-  if (item?.["mode"] === "Container") {
-    if (
-      !hasOnlyKeys(item, ["mode", "operatingSystem", "architecture", "image"])
-    )
-      return undefined;
-    const operatingSystem = memberOf(
-      allOperatingSystems,
-      item["operatingSystem"],
-    );
-    const architecture = memberOf(allArchitectures, item["architecture"]);
-    const image = item["image"];
-    if (
-      operatingSystem !== undefined &&
-      architecture !== undefined &&
-      typeof image === "string" &&
-      image.length > 0
-    )
-      return { mode: "Container", operatingSystem, architecture, image };
-  }
-  if (item?.["mode"] === "ContainerCapability")
-    return capabilityRequirement(item);
-  if (item?.["mode"] === "Native") {
-    if (
-      !hasOnlyKeys(item, [
-        "mode",
-        "architecture",
-        "driver",
-        "xcodeVersionMin",
-        "sdkVersionMin",
-      ])
-    )
-      return undefined;
-    const architecture = memberOf(allArchitectures, item["architecture"]);
-    const driver = item["driver"];
-    const xcodeVersionMin = item["xcodeVersionMin"];
-    const sdkVersionMin = item["sdkVersionMin"];
-    if (
-      architecture !== undefined &&
-      (driver === "XcodeBuild" ||
-        driver === "XcodeTesting" ||
-        driver === "IosSimulatorTesting") &&
-      Number.isSafeInteger(xcodeVersionMin) &&
-      Number(xcodeVersionMin) > 0 &&
-      Number.isSafeInteger(sdkVersionMin) &&
-      Number(sdkVersionMin) > 0
-    )
-      return {
-        mode: "Native",
-        architecture,
-        driver,
-        xcodeVersionMin: Number(xcodeVersionMin),
-        sdkVersionMin: Number(sdkVersionMin),
-      };
-  }
-  return undefined;
+  const parsed = executionRequirementSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function asExecutionRequirement(value: unknown): ExecutionRequirement {
@@ -252,28 +150,10 @@ function requirementForAgent(
 export function executionAgentCapability(
   configuration: unknown,
 ): ExecutionCapability | undefined {
-  const root = record(configuration);
-  const authored = record(root?.["configuration"] ?? configuration);
-  const worker = record(authored?.["worker"]);
+  const worker = record(record(configuration)?.["worker"]);
   const mode = record(worker?.["mode"]);
   const agent = mode?.["type"] === "SingleAgent" ? mode["agent"] : undefined;
   return agent === "Claude" || agent === "Codex" ? `Agent:${agent}` : undefined;
-}
-
-function requirementMap(
-  value: unknown,
-  validKey: (key: string) => boolean,
-): Readonly<Record<string, ExecutionRequirement>> | undefined {
-  if (value === undefined) return {};
-  const source = record(value);
-  if (source === undefined) return undefined;
-  const result: Record<string, ExecutionRequirement> = {};
-  for (const [key, candidate] of Object.entries(source)) {
-    const parsed = requirement(candidate);
-    if (!validKey(key) || parsed === undefined) return undefined;
-    result[key] = parsed;
-  }
-  return result;
 }
 
 /**
@@ -330,50 +210,20 @@ function platformDefaultMatchesLegacy(
   );
 }
 
+/**
+ * The requirements a configuration states, held to the two rules its shape
+ * cannot say: the platform default is the image field's requirement, and every
+ * other default refines it.
+ */
 function configuredRequirements(
-  value: unknown,
+  configured: z.output<typeof executionRequirementsSchema>,
   legacy: ExecutionRequirement,
   stageQualifiedEvaluation: boolean,
   capability: ExecutionCapability | undefined,
 ): RequirementConfiguration | undefined {
-  const configured = record(value);
-  if (
-    configured === undefined ||
-    !hasOnlyKeys(configured, [
-      "platformDefault",
-      "platformDefaultVersion",
-      "ticketDefault",
-      "taskKindDefaults",
-    ])
-  )
-    return undefined;
-  const platformDefault = requirement(configured?.["platformDefault"]);
-  const platformDefaultVersion = configured?.["platformDefaultVersion"];
-  if (
-    platformDefault === undefined ||
-    !Number.isSafeInteger(platformDefaultVersion) ||
-    Number(platformDefaultVersion) < 1
-  )
-    return undefined;
+  const { platformDefault, ticketDefault, taskKindDefaults = {} } = configured;
   if (!platformDefaultMatchesLegacy(platformDefault, legacy, capability))
     return undefined;
-  const ticketDefault =
-    configured?.["ticketDefault"] === undefined
-      ? undefined
-      : requirement(configured["ticketDefault"]);
-  if (
-    configured?.["ticketDefault"] !== undefined &&
-    ticketDefault === undefined
-  )
-    return undefined;
-  const taskKindDefaults = requirementMap(
-    configured?.["taskKindDefaults"],
-    (key) =>
-      key === "Work" ||
-      key === "Evaluation" ||
-      /^Evaluation:[1-9][0-9]*$/u.test(key),
-  ) as Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>> | undefined;
-  if (taskKindDefaults === undefined) return undefined;
   const candidates = [ticketDefault, ...Object.values(taskKindDefaults)];
   if (
     candidates.some(
@@ -384,7 +234,7 @@ function configuredRequirements(
     return undefined;
   return {
     platformDefault,
-    platformDefaultVersion: Number(platformDefaultVersion),
+    platformDefaultVersion: configured.platformDefaultVersion,
     ...(ticketDefault === undefined ? {} : { ticketDefault }),
     taskKindDefaults,
     stageQualifiedEvaluation,
@@ -394,35 +244,30 @@ function configuredRequirements(
 function parsedConfiguration(
   value: unknown,
 ): RequirementConfiguration | undefined {
-  const root = record(value);
-  if (
-    root === undefined ||
-    root["version"] !== 1 ||
-    typeof root["image"] !== "string" ||
-    root["image"] === ""
-  )
-    return undefined;
+  const parsed = releaseConfigurationHeaderSchema.safeParse(value);
+  if (!parsed.success) return undefined;
   const legacy: ExecutionRequirement = {
     mode: "Container",
     operatingSystem: "Linux",
     architecture: "Amd64",
-    image: root["image"],
+    image: parsed.data.image,
   };
-  const capability = executionAgentCapability(value);
-  if (root["executionRequirements"] !== undefined)
+  const stageQualifiedEvaluation = record(value)?.["evaluations"] !== undefined;
+  if (parsed.data.executionRequirements !== undefined)
     return configuredRequirements(
-      root["executionRequirements"],
+      parsed.data.executionRequirements,
       legacy,
-      root["evaluations"] !== undefined,
-      capability,
+      stageQualifiedEvaluation,
+      executionAgentCapability(value),
     );
   return {
     platformDefault: legacy,
     platformDefaultVersion: 1,
-    stageQualifiedEvaluation: root["evaluations"] !== undefined,
+    stageQualifiedEvaluation,
   };
 }
 
+/** Whether a release reads a configuration's version, its image and where its tasks run. */
 export function executionRequirementConfigurationIsValid(
   value: unknown,
 ): boolean {

@@ -59,6 +59,7 @@
 
 import { z } from "zod";
 
+import type { releaseConfigurationSchema } from "../contract/configurationDocument.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
 import {
@@ -122,7 +123,8 @@ export const conflictManifestBytesMax = 262_144;
 export const handoffReservedDirectory = ".git";
 
 /** The pinned revision's field saying whether a person must approve a candidate before it is promoted. */
-export const approvalRequiredField = "finalizationApprovalRequired";
+export const approvalRequiredField =
+  "finalizationApprovalRequired" satisfies keyof typeof releaseConfigurationSchema.shape;
 
 /** Brands an opaque project-owned artifact identity. */
 export function asProjectArtifactId(value: string): ProjectArtifactId {

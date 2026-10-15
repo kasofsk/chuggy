@@ -37,6 +37,7 @@ const documentRouteNames = [
   "agenticRefusals",
   "configuration",
   "configurationImports",
+  "configurationSchema",
   "configurations",
   "contract",
   "dispatchView",

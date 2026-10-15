@@ -1,7 +1,8 @@
 import {
-  repositoryConfigurationNameCharsMax,
-  textCodePointsCount,
-} from "../contract/http.ts";
+  repositoryConfigurationNameSchema,
+  repositoryConfigurationRoot,
+} from "../contract/configurationDocument.ts";
+import { repositoryConfigurationNameCharsMax } from "../contract/http.ts";
 import { isRepositoryDeclarationPath } from "./repositoryDeclaration.ts";
 declare const repositoryConfigurationNameBrand: unique symbol;
 declare const repositoryConfigurationPathBrand: unique symbol;
@@ -23,18 +24,13 @@ export interface ConfigurationVersion {
   readonly number: number;
 }
 
-/** The configuration name bound, surfaced where every branding of one reads it. */
-export { repositoryConfigurationNameCharsMax };
-export const repositoryConfigurationRoot = ".chug/configurations/";
+/** The configuration name bound and the directory an import reads, surfaced where every branding of one reads them. */
+export { repositoryConfigurationNameCharsMax, repositoryConfigurationRoot };
 
 export function asRepositoryConfigurationName(
   value: unknown,
 ): RepositoryConfigurationName | undefined {
-  return typeof value === "string" &&
-    value.length > 0 &&
-    textCodePointsCount(value) <= repositoryConfigurationNameCharsMax &&
-    value.isWellFormed() &&
-    /^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u.test(value)
+  return repositoryConfigurationNameSchema.safeParse(value).success
     ? (value as RepositoryConfigurationName)
     : undefined;
 }

@@ -4,6 +4,7 @@ import net from "node:net";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import { imageMediaTypes } from "../../src/contract/http.ts";
 import {
@@ -983,6 +984,20 @@ test("health is separate from authenticated product routes", async () => {
   const contract = await app.inject({ url: "/api/v1/contract" });
   assert.equal(contract.statusCode, 200);
   assert.equal(contract.headers["cache-control"], "no-cache");
+  assert.deepEqual(calls, []);
+});
+
+test("the schema of a configuration file is a public read served as a JSON Schema", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls, false);
+  const found = await app.inject({ url: "/api/v1/configuration-schema" });
+  assert.equal(found.statusCode, 200);
+  assert.equal(found.headers["cache-control"], "no-cache");
+  assert.match(
+    String(found.headers["content-type"]),
+    /^application\/schema\+json\b/u,
+  );
+  assert.deepEqual(found.json(), configurationDocumentJsonSchema());
   assert.deepEqual(calls, []);
 });
 

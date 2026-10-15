@@ -45,6 +45,7 @@ const partitionReplace = { PUT: "Partition" } as const;
 /** Every route in the route table, and what each admits a session bearer to. */
 export const sessionBearerRouteClasses = {
   contract: "Public",
+  configurationSchema: "Public",
   installation: "Public",
   workerPoolRegistrations: "Public",
   personalRunnerRegistrations: "Public",

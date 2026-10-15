@@ -21,6 +21,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
+import { nativeHttpRoutes } from "../../src/contract/http.ts";
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
@@ -496,6 +498,48 @@ test("each role is told that a limit the request puts on what may change does no
         line.includes(neededOrWritten),
     ),
     "nor for being wider than the request's limit",
+  );
+});
+
+test("the worker is told where the format is published, and that evaluations run in order and stop at a failure", () => {
+  const told = briefed("Work", "PurposeInstructions");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("JSON Schema") &&
+        line.includes(`GET ${nativeHttpRoutes.configurationSchema} `),
+    ),
+  );
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("in the order listed") &&
+        line.includes("a failed stage ends evaluation") &&
+        line.includes("Check stage goes before a Review"),
+    ),
+  );
+});
+
+/** The fields the published schema names in a configuration. */
+function publishedConfigurationFields(): readonly string[] {
+  const published = configurationDocumentJsonSchema() as {
+    readonly properties?: {
+      readonly configuration?: { readonly properties?: object };
+    };
+  };
+  return Object.keys(published.properties?.configuration?.properties ?? {});
+}
+
+test("the worker is told of every field the published schema names in a configuration, and what becomes of one it does not", () => {
+  const told = toldLines().join("\n");
+  const fields = publishedConfigurationFields();
+  assert.ok(fields.includes("outputs"));
+  for (const field of fields) assert.ok(told.includes(field), field);
+  assert.ok(
+    toldLines().some(
+      (line) =>
+        line.includes("does not name") && line.includes("kept and ignored"),
+    ),
   );
 });
 

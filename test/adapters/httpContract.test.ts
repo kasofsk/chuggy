@@ -36,6 +36,7 @@ import { id } from "../domain/fixtures.ts";
 /** Every route, in the order the route table names them. */
 const routesInOrder = [
   "/api/v1/contract",
+  "/api/v1/configuration-schema",
   "/api/v1/installation",
   "/api/v1/forge/github",
   "/api/v1/tenants/:tenant/forge-authorizations",
