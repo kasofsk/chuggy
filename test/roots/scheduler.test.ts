@@ -24,6 +24,7 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
+import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
@@ -1305,13 +1306,21 @@ function processCapturedPod(name: string): unknown {
 /**
  * What happens while the worker plane does not admit the scheduler: the image
  * fault still blocks and the pod is still deleted, and the text that could not
- * be stored is a line on stderr naming the attempt and the fault.
+ * be stored, the kubelet's message with it, is a line on stderr naming the
+ * attempt and the fault.
  */
 test("an image fault whose text the worker plane never takes still blocks, and says so on stderr", async () => {
+  const pod = processCapturedPod("pull-missing-tag") as {
+    readonly status: {
+      readonly containerStatuses: readonly {
+        readonly state: { readonly waiting: { readonly message: string } };
+      }[];
+    };
+  };
+  const said = pod.status.containerStatuses[0]?.state.waiting.message ?? "";
+  assert.ok(said.includes("not found"));
   const found = JSON.parse(
-    await schedulerProgram(
-      processProgram(true, {}, false, processCapturedPod("lacks-git")),
-    ),
+    await schedulerProgram(processProgram(true, {}, false, pod)),
   ) as ProcessRan;
   const read = found.asked.find(
     (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
@@ -1325,10 +1334,11 @@ test("an image fault whose text the worker plane never takes still blocks, and s
     ),
   );
   assert.ok(found.asked.includes(`DELETE ${namespaceUrl}/pods/${name}`));
+  const text = `${kubernetesImageFaultTexts.ImageUnpullable}\nThe cluster said: ${said}`;
   assert.deepEqual(
     found.told.filter((line) => line.startsWith("execution scheduler:")),
     [
-      "execution scheduler: tenant/project attempt attempt-one blocked ImageLacksGit, and its error text was not stored: the worker plane could not be reached\n",
+      `execution scheduler: tenant/project attempt attempt-one blocked ImageUnpullable, and its error text was not stored: the worker plane could not be reached: ${JSON.stringify(text)}\n`,
     ],
   );
 });

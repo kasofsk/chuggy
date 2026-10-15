@@ -12,23 +12,26 @@
  * as the job's.
  *
  * A STATUS NAMES AN IMAGE FAULT ONLY WHERE THE CONTRACT SAYS IT DOES. A pull
- * the kubelet could not make, a start the container runtime could not make,
- * and an exit with one of `workerImageFaultStatuses` are the image's; every
- * other state, from running to a crash or a kill, is no fault here, and the
- * attempt's lease is still what collects it.
+ * the kubelet could not make, a start that failed finding the shell the job's
+ * command names, and an exit with one of `workerImageFaultStatuses` are the
+ * image's; every other state, from running to a crash, a kill or a start that
+ * failed for another cause, is no fault here, and the attempt's lease is still
+ * what collects it.
  *
  * A PULL IS THE IMAGE'S AT ONCE ONLY WHERE NO RETRY CAN CHANGE IT. A name that
  * is not one, and a registry that answered that the image is not there or not
  * this puller's to have, are settled. Every other failure — an outage, a rate
  * limit, a host that does not resolve or answer — can pass, so it is the
  * image's only once the pod has stood for `kubernetesPullFailureDwellSecs`,
- * which is why a reading is given the time it is made at.
+ * which is why a reading is given the time it is made at. Age settles only a
+ * failed pull and never a back-off, whose message names no cause, so the text
+ * a person reads says why.
  *
  * A KUBELET'S MESSAGE IS KEPT FOR A PULL AND A START, AND BOUNDED. Each is a
  * fault whose label cannot say its cause: a missing tag and a refused
  * credential are both unpullable, and a shell that is absent and one that is
- * not executable both fail to start. The message is the kubelet's own words
- * about the image, never anything a workload wrote.
+ * not executable both fail the runtime's lookup of it. The message is the
+ * kubelet's own words about the image, never anything a workload wrote.
  *
  * `test/fixtures/kubernetesPods/` holds the statuses this reads, each captured
  * from a kubelet running the worker's own pod document into one fault.
@@ -38,6 +41,7 @@ import { z } from "zod";
 import {
   workerImageFaults,
   workerImageFaultStatuses,
+  workerJobCommand,
   type WorkerImageFault,
 } from "../../contract/workerEnvironment.ts";
 
@@ -88,6 +92,9 @@ export const kubernetesPullFailures: ReadonlySet<string> = new Set([
 /** The waiting reason for an image name the kubelet could not parse, which no pull retries. */
 export const kubernetesPullNameInvalid = "InvalidImageName";
 
+/** The waiting reason for a pull that just failed, whose message says why, unlike the back-off after it. */
+export const kubernetesPullFailed = "ErrImagePull";
+
 /**
  * The words a pull's message carries when the registry refused the image for
  * good: it is not there, or it is not this puller's to have. They are read in
@@ -114,6 +121,12 @@ const kubernetesPullRefusal = new RegExp(
 
 /** The terminated reason a container gets when the container runtime could not start its command. */
 export const kubernetesStartFailure = "StartError";
+
+/**
+ * What runc's start failure says when its lookup of the job command's shell
+ * failed, which a shell that is absent and one that is not executable both give.
+ */
+export const kubernetesShellLookupFailure = `stat ${workerJobCommand[0]}: `;
 
 const kubernetesContainerStatusSchema = z.object({
   name: z.string(),
@@ -215,7 +228,9 @@ function kubernetesJobFault(
     kubernetesPullFailures.has(waiting.reason)
   )
     return kubernetesJobPullSettled(waiting.reason, waiting.message) ||
-      (pulledSecs !== undefined && pulledSecs >= kubernetesPullFailureDwellSecs)
+      (waiting.reason === kubernetesPullFailed &&
+        pulledSecs !== undefined &&
+        pulledSecs >= kubernetesPullFailureDwellSecs)
       ? {
           fault: "Image",
           image: "ImageUnpullable",
@@ -225,11 +240,13 @@ function kubernetesJobFault(
   const terminated = state?.terminated;
   if (terminated === undefined) return undefined;
   if (terminated.reason === kubernetesStartFailure)
-    return {
-      fault: "Image",
-      image: "ImageLacksShell",
-      ...kubernetesPodMessage(terminated.message),
-    };
+    return terminated.message?.includes(kubernetesShellLookupFailure) === true
+      ? {
+          fault: "Image",
+          image: "ImageLacksShell",
+          ...kubernetesPodMessage(terminated.message),
+        }
+      : undefined;
   const image = kubernetesStatusFault(terminated.exitCode);
   return image === undefined ? undefined : { fault: "Image", image };
 }

@@ -97,7 +97,7 @@ test("a job that ended while a sidecar still runs is read by its own container, 
   });
 });
 
-test("an image whose /bin/sh the runtime could not start reads as lacking a shell, keeping the start failure's words", () => {
+test("an image whose /bin/sh the runtime could not find or execute reads as lacking a shell, keeping the start failure's words", () => {
   for (const [name, said] of [
     ["lacks-shell", "no such file or directory"],
     ["shell-unexecutable", "permission denied"],
@@ -147,13 +147,17 @@ const pullsRefused = [
   "pull-private",
 ];
 
-/** Pulls that failed for a cause that can pass, and pulls whose back-off hides their cause. */
+/** Pulls that failed for a cause that can pass. */
 const pullsPassing = [
   "pull-unavailable",
   "pull-rate-limited",
   "pull-no-such-host",
   "pull-refused",
   "pull-timeout",
+];
+
+/** Back-offs after a failed pull, whose message names no cause, of a cause that can pass and of one that cannot. */
+const pullsBackedOff = [
   "pull-unavailable-backoff",
   "pull-missing-digest-backoff",
 ];
@@ -187,6 +191,18 @@ test("a pull that can still succeed is nothing until the pod is as old as the dw
 
 /** The kubelet's first wait before it pulls an image again, doubled after each failure. */
 const kubeletPullBackOffFirstSecs = 10;
+
+test("a back-off is nothing however old its pod, so the text a person reads waits for a pull that says why", () => {
+  for (const name of pullsBackedOff) {
+    for (const afterSecs of [0, kubernetesPullFailureDwellSecs, 1_000_000]) {
+      assert.deepEqual(
+        readCaptured(name, afterSecs),
+        { fault: "None" },
+        `${name} at ${String(afterSecs)}`,
+      );
+    }
+  }
+});
 
 test("the pull dwell outlasts the kubelet's first few retries of a pull", () => {
   let retried = 0;
@@ -435,4 +451,26 @@ test("a pod with no creation time never ages a passing pull into a fault, and a 
     });
   }
   assert.equal(pullRead("not found", 0, false).fault, "Image");
+});
+
+test("a start that failed for any cause but the shell's lookup is no fault", () => {
+  for (const message of [
+    'failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: error mounting "proc" to rootfs at "/proc": permission denied',
+    "failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to apply cgroup configuration: cannot enter cgroupv2",
+    "failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error loading seccomp filter into kernel: invalid argument",
+    "exec /bin/sh: operation not permitted",
+    "",
+  ]) {
+    assert.deepEqual(
+      kubernetesPodFault(
+        podWith(copied, {
+          terminated: { exitCode: 128, reason: "StartError", message },
+        }),
+        containers,
+        0,
+      ),
+      { fault: "None" },
+      message,
+    );
+  }
 });

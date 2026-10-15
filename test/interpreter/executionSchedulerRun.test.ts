@@ -2119,7 +2119,13 @@ test("a fault whose text could not be stored still blocks, and the text's absenc
     {
       observed: 1,
       notices: [
-        { notice: "ErrorUnwritten", attempt, fault: "ImageLacksGit", why },
+        {
+          notice: "ErrorUnwritten",
+          attempt,
+          fault: "ImageLacksGit",
+          text: "text",
+          why,
+        },
       ],
     },
   );

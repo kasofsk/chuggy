@@ -117,9 +117,11 @@
  * `PlacementUnavailable` without spending the budget, because no change to the
  * ticket mends it, and the pass reports it for an operator. The pod is
  * cancelled after the durable move, so a pass that stops between them leaves an
- * ended attempt the cleanup removes. That is one backend request per placed
- * attempt, bounded by `attemptsPerPassMax` and taken one at a time, as the
- * session pass observes its pods.
+ * ended attempt the cleanup removes. Each placed attempt costs one observation,
+ * and one that faulted the further requests its error text and its cancel take,
+ * which for a cluster are its bearer Secret's read, the worker plane's write and
+ * the pod's delete; all are bounded by `attemptsPerPassMax` and taken one at a
+ * time, as the session pass observes its pods.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
@@ -215,6 +217,7 @@ export type SchedulerPassNotice =
       readonly notice: "ErrorUnwritten";
       readonly attempt: FencedAttempt;
       readonly fault: WorkerImageFault;
+      readonly text: string;
       readonly why: string;
     };
 
@@ -1020,6 +1023,7 @@ async function schedulerObserveOne(
           notice: "ErrorUnwritten",
           attempt,
           fault: workload.fault,
+          text: workload.text,
           why: written.why,
         });
       await service.placement.cancel(attempt);

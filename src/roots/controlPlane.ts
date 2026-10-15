@@ -283,7 +283,7 @@ function schedulerProcessNoticeLine(notice: SchedulerPassNotice): string {
     case "SiteFault":
       return `${where} withdrawn, its pod failed on the site: ${notice.why}\n`;
     case "ErrorUnwritten":
-      return `${where} blocked ${notice.fault}, and its error text was not stored: ${notice.why}\n`;
+      return `${where} blocked ${notice.fault}, and its error text was not stored: ${notice.why}: ${JSON.stringify(notice.text)}\n`;
   }
 }
 
