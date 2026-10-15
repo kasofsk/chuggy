@@ -97,10 +97,14 @@ test("a job that ended while a sidecar still runs is read by its own container, 
   });
 });
 
-test("an image whose /bin/sh the runtime could not find or execute reads as lacking a shell, keeping the start failure's words", () => {
+test("an image whose /bin/sh the runtime's lookup refused, absent, without the execute bit or in an unsearchable /bin, reads as lacking a shell, keeping the start failure's words", () => {
   for (const [name, said] of [
-    ["lacks-shell", "no such file or directory"],
-    ["shell-unexecutable", "permission denied"],
+    ["lacks-shell", 'exec: "/bin/sh": stat /bin/sh: no such file or directory'],
+    ["shell-unexecutable", 'exec: "/bin/sh": permission denied'],
+    [
+      "shell-unsearchable-bin",
+      'exec: "/bin/sh": stat /bin/sh: permission denied',
+    ],
   ] as const) {
     const fault = capturedFault(name);
     assert.ok(
@@ -451,6 +455,22 @@ test("a pod with no creation time never ages a passing pull into a fault, and a 
     });
   }
   assert.equal(pullRead("not found", 0, false).fault, "Image");
+});
+
+test("a /bin/sh that is a directory fails the same lookup, and reads as lacking a shell", () => {
+  const fault = kubernetesPodFault(
+    podWith(copied, {
+      terminated: {
+        exitCode: 128,
+        reason: "StartError",
+        message:
+          'failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/bin/sh": is a directory',
+      },
+    }),
+    containers,
+    0,
+  );
+  assert.ok(fault.fault === "Image" && fault.image === "ImageLacksShell");
 });
 
 test("a start that failed for any cause but the shell's lookup is no fault", () => {

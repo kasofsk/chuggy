@@ -4,7 +4,7 @@
   "metadata": {
     "name": "capture-unexecutable-shell",
     "namespace": "chuggy-work",
-    "creationTimestamp": "2026-10-15T07:39:46Z"
+    "creationTimestamp": "2026-10-15T08:38:00Z"
   },
   "spec": {
     "initContainers": [
@@ -30,19 +30,19 @@
     "conditions": [
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T07:39:47Z",
+        "lastTransitionTime": "2026-10-15T08:38:01Z",
         "status": "True",
         "type": "PodReadyToStartContainers"
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T07:39:50Z",
+        "lastTransitionTime": "2026-10-15T08:38:04Z",
         "status": "True",
         "type": "Initialized"
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T07:39:46Z",
+        "lastTransitionTime": "2026-10-15T08:38:00Z",
         "message": "containers with unready status: [worker]",
         "reason": "ContainersNotReady",
         "status": "False",
@@ -50,7 +50,7 @@
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T07:39:46Z",
+        "lastTransitionTime": "2026-10-15T08:38:00Z",
         "message": "containers with unready status: [worker]",
         "reason": "ContainersNotReady",
         "status": "False",
@@ -58,16 +58,16 @@
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T07:39:46Z",
+        "lastTransitionTime": "2026-10-15T08:38:00Z",
         "status": "True",
         "type": "PodScheduled"
       }
     ],
     "containerStatuses": [
       {
-        "containerID": "containerd://6e4b2c898481d39a023c4fa5b19ba60e780eb71433f93bbd51db29784ecf7c18",
+        "containerID": "containerd://91da2ffb15f867a34a673422837e3a8fe76b7efbc3db3d49116175bfa852d51e",
         "image": "docker.io/library/stand-in-unexecutable-shell:1",
-        "imageID": "sha256:0cb6631cfefe13d50e732887deb42a761c4303bd6f338d0d8490bf870dbb1961",
+        "imageID": "sha256:d74d3cf91a25444a11d32a575134b3f98273431021ba8ab505e88909db949cdc",
         "lastState": {},
         "name": "worker",
         "ready": false,
@@ -75,10 +75,10 @@
         "started": false,
         "state": {
           "terminated": {
-            "containerID": "containerd://6e4b2c898481d39a023c4fa5b19ba60e780eb71433f93bbd51db29784ecf7c18",
+            "containerID": "containerd://91da2ffb15f867a34a673422837e3a8fe76b7efbc3db3d49116175bfa852d51e",
             "exitCode": 128,
-            "finishedAt": "2026-10-15T07:39:51Z",
-            "message": "failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"/bin/sh\": stat /bin/sh: permission denied",
+            "finishedAt": "2026-10-15T08:38:04Z",
+            "message": "failed to create containerd task: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: \"/bin/sh\": permission denied",
             "reason": "StartError",
             "startedAt": "1970-01-01T00:00:00Z"
           }
@@ -113,15 +113,15 @@
         ]
       }
     ],
-    "hostIP": "172.27.0.5",
+    "hostIP": "172.17.0.5",
     "hostIPs": [
       {
-        "ip": "172.27.0.5"
+        "ip": "172.17.0.5"
       }
     ],
     "initContainerStatuses": [
       {
-        "containerID": "containerd://cb0616b4e5d582b5c7944a57a83df95d310d3d7a286093e70d419e7d6a9025b9",
+        "containerID": "containerd://0ac7faad772fc23a3c321fc98af46064ae77cb40ad98f195024407d66cdb35bf",
         "image": "docker.io/library/stand-in-runtime:1",
         "imageID": "sha256:8ff236c764ef139a49faf57aa2aa2c09a339dec2b1c62b025f6061194bfb30bd",
         "lastState": {},
@@ -131,11 +131,11 @@
         "started": false,
         "state": {
           "terminated": {
-            "containerID": "containerd://cb0616b4e5d582b5c7944a57a83df95d310d3d7a286093e70d419e7d6a9025b9",
+            "containerID": "containerd://0ac7faad772fc23a3c321fc98af46064ae77cb40ad98f195024407d66cdb35bf",
             "exitCode": 0,
-            "finishedAt": "2026-10-15T07:39:47Z",
+            "finishedAt": "2026-10-15T08:38:00Z",
             "reason": "Completed",
-            "startedAt": "2026-10-15T07:39:47Z"
+            "startedAt": "2026-10-15T08:38:00Z"
           }
         },
         "volumeMounts": [
@@ -146,7 +146,7 @@
         ]
       },
       {
-        "containerID": "containerd://c01491dda8ddc31fbdf5f4505275768493a19496e66add41cd34a3106c01df36",
+        "containerID": "containerd://49048c1f98fbcf1c729437ce71b4f5606febc43e83e90bdb9a75a51eaf4c54dd",
         "image": "docker.io/library/postgres:18-alpine",
         "imageID": "sha256:b07129cc272f688c98f5b343138a0a52fa45b3d82f50d7a53ff441330624cd2e",
         "lastState": {},
@@ -156,7 +156,7 @@
         "started": true,
         "state": {
           "running": {
-            "startedAt": "2026-10-15T07:39:47Z"
+            "startedAt": "2026-10-15T08:38:01Z"
           }
         },
         "volumeMounts": [
@@ -168,13 +168,13 @@
       }
     ],
     "phase": "Running",
-    "podIP": "10.42.0.18",
+    "podIP": "10.42.0.4",
     "podIPs": [
       {
-        "ip": "10.42.0.18"
+        "ip": "10.42.0.4"
       }
     ],
     "qosClass": "Burstable",
-    "startTime": "2026-10-15T07:39:46Z"
+    "startTime": "2026-10-15T08:38:00Z"
   }
 }

@@ -29,8 +29,8 @@
  *
  * A KUBELET'S MESSAGE IS KEPT FOR A PULL AND A START, AND BOUNDED. Each is a
  * fault whose label cannot say its cause: a missing tag and a refused
- * credential are both unpullable, and a shell that is absent and one that is
- * not executable both fail the runtime's lookup of it. The message is the
+ * credential are both unpullable, and a shell that is absent and one without
+ * the execute bit both fail the runtime's lookup of it. The message is the
  * kubelet's own words about the image, never anything a workload wrote.
  *
  * `test/fixtures/kubernetesPods/` holds the statuses this reads, each captured
@@ -123,10 +123,11 @@ const kubernetesPullRefusal = new RegExp(
 export const kubernetesStartFailure = "StartError";
 
 /**
- * What runc's start failure says when its lookup of the job command's shell
- * failed, which a shell that is absent and one that is not executable both give.
+ * How runc's start failure opens the error of its lookup of the job command's
+ * shell, which a shell that is absent, one without the execute bit, a directory
+ * and one in a directory the job's user cannot search all give.
  */
-export const kubernetesShellLookupFailure = `stat ${workerJobCommand[0]}: `;
+export const kubernetesShellLookupFailure = `exec: ${JSON.stringify(workerJobCommand[0])}: `;
 
 const kubernetesContainerStatusSchema = z.object({
   name: z.string(),
