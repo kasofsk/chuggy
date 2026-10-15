@@ -100,7 +100,7 @@ import { postgresSessionRoutingPrecondition } from "../adapters/postgres/session
 import { postgresSessionLaunchPrecondition } from "../adapters/postgres/workerPoolSessions.ts";
 import type { SessionRouting } from "../interpreter/sessionPlacement.ts";
 import type { SessionLaunchFacts } from "../interpreter/workerPoolSessions.ts";
-import type { AdmittedWorker } from "../interpreter/workerCatalog.ts";
+import type { OfferedWorker } from "../interpreter/workerCatalog.ts";
 import {
   currentRuntimeSchemaContract,
   postgresRuntimeSchema,
@@ -590,7 +590,7 @@ export interface SchedulerProcessRootConfig {
     SessionLaunchFacts,
     "bounds" | "model" | "deadlineSecs"
   >;
-  readonly workerCatalog: readonly AdmittedWorker[];
+  readonly workerCatalog: readonly OfferedWorker[];
   readonly additional?: readonly RuntimePrecondition[];
 }
 

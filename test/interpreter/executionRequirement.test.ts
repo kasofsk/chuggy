@@ -23,6 +23,9 @@ const container = (
   architecture: "Amd64" as const,
   image,
 });
+/** Two well-formed digest references, which a configuration's image has to be. */
+const pinnedImage = `pinned-worker@sha256:${"842a".repeat(16)}`;
+const otherImage = `other-worker@sha256:${"de14".repeat(16)}`;
 const codexWorker = {
   mode: {
     type: "SingleAgent" as const,
@@ -53,12 +56,12 @@ test("legacy release image materializes the identical Linux container default", 
 test("a single-agent mode keeps the image its configuration pins", () => {
   const configuration = {
     version: 1,
-    image: "pinned-worker@sha256:842a",
+    image: pinnedImage,
     worker: codexWorker,
   };
   assert.deepEqual(
     materializeExecutionRequirement(configuration, "Work").value,
-    container("pinned-worker@sha256:842a"),
+    container(pinnedImage),
   );
   assert.equal(
     executionAgentCapability(configuration),
@@ -70,17 +73,17 @@ test("a single-agent mode keeps the image its configuration pins", () => {
 test("a single-agent mode keeps a pinned image the execution requirements state", () => {
   const configuration = {
     version: 1,
-    image: "pinned-worker@sha256:842a",
+    image: pinnedImage,
     worker: codexWorker,
     executionRequirements: {
-      platformDefault: container("pinned-worker@sha256:842a"),
+      platformDefault: container(pinnedImage),
       platformDefaultVersion: 3,
-      taskKindDefaults: { Work: container("other-worker@sha256:de14") },
+      taskKindDefaults: { Work: container(otherImage) },
     },
   };
   assert.equal(executionRequirementConfigurationIsValid(configuration), true);
   assert.deepEqual(materializeExecutionRequirement(configuration, "Work"), {
-    value: container("other-worker@sha256:de14"),
+    value: container(otherImage),
     source: "TaskKindDefault",
     platformDefaultVersion: 3,
   });
@@ -89,9 +92,9 @@ test("a single-agent mode keeps a pinned image the execution requirements state"
 test("a platform default naming another image than the legacy field is refused", () => {
   const stale = {
     version: 1,
-    image: "pinned-worker@sha256:842a",
+    image: pinnedImage,
     executionRequirements: {
-      platformDefault: container("other-worker@sha256:de14"),
+      platformDefault: container(otherImage),
       platformDefaultVersion: 1,
     },
   };
@@ -106,7 +109,7 @@ test("a platform default naming another image than the legacy field is refused",
       ...stale,
       worker: codexWorker,
       executionRequirements: {
-        platformDefault: container("pinned-worker@sha256:842a"),
+        platformDefault: container(pinnedImage),
         platformDefaultVersion: 1,
       },
     }),

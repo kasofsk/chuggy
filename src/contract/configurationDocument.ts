@@ -35,6 +35,8 @@ import {
 } from "./http.ts";
 import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
+import { workerRuntimeDirectory } from "./workerEnvironment.ts";
+import { workerImageCharsMax } from "./workerPool.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
@@ -389,6 +391,39 @@ export const configurationTaskSchema = configurationDocumentObject(
   configurationTaskShape,
 );
 
+/**
+ * The oldest glibc an image may hold for chuggy's runtime to load in it, as the
+ * runtime's build states its floor in `images/worker/Dockerfile`, which
+ * `test/deploy/workerImage.test.ts` holds this to.
+ */
+export const configurationImageGlibcVersionMin = "2.28";
+
+/** A registry host as a reference names one: domain components joined by dots, with an optional port. */
+const configurationImageHost =
+  "[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?";
+
+/** One path component: lowercase letters and digits, separated within by `.`, `_`, `__` or dashes. */
+const configurationImageComponent = "[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*";
+
+/**
+ * A container image reference as the distribution grammar spells one: an
+ * optional registry host, lowercase path components joined by `/`, an optional
+ * tag and an optional sha256 digest. The bound is checked first and stops the
+ * pattern being tried on a text past it.
+ */
+export const configurationImageSchema = z
+  .string()
+  .max(workerImageCharsMax, { abort: true })
+  .regex(
+    new RegExp(
+      `^(?:${configurationImageHost}/)?${configurationImageComponent}(?:/${configurationImageComponent})*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$`,
+      "u",
+    ),
+  )
+  .describe(
+    `A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. A digest is recommended and not required. chuggy holds none of the project's registry logins.`,
+  );
+
 const configurationPlatformShape = {
   operatingSystem: z.enum(allOperatingSystems),
   architecture: z.enum(allArchitectures),
@@ -399,7 +434,7 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
   z.strictObject({
     mode: z.literal("Container"),
     ...configurationPlatformShape,
-    image: z.string().min(1),
+    image: configurationImageSchema,
   }),
   z.strictObject({
     mode: z.literal("ContainerCapability"),
@@ -448,7 +483,7 @@ export const executionRequirementsSchema = z
 /** What a release reads before any task field: the version, the image, and where tasks run. */
 export const releaseConfigurationHeaderSchema = z.object({
   version: z.literal(releaseConfigurationVersion),
-  image: z.string().min(1),
+  image: configurationImageSchema,
   executionRequirements: executionRequirementsSchema.optional(),
 });
 

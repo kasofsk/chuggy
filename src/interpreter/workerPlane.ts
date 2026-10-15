@@ -37,7 +37,7 @@ export const workerContractAccepted: WorkerContractRange = {
   max: workerContractServed(),
 };
 
-/** The versions in which a runner launches sessions, which is where a pool is handed one and a pool-held task names what it is launched with. */
+/** The versions in which a runner launches sessions, which is where a pool-held task names what it is launched with. */
 export const workerContractRunnerSessions: WorkerContractRange = {
   min: { major: 1, minor: 3 },
   max: workerContractAccepted.max,
@@ -46,12 +46,6 @@ export const workerContractRunnerSessions: WorkerContractRange = {
 /** The versions in which a live post of a turn its member stopped is answered with that turn, which a runner of an earlier one has no reading of. */
 export const workerContractLiveStops: WorkerContractRange = {
   min: { major: 1, minor: 5 },
-  max: workerContractAccepted.max,
-};
-
-/** The versions in which a pool reads a job assignment's runtime. A pool of an earlier one would refuse an answer naming it, and starts its image's own entrypoint. */
-export const workerContractRunnerRuntime: WorkerContractRange = {
-  min: { major: 1, minor: 7 },
   max: workerContractAccepted.max,
 };
 

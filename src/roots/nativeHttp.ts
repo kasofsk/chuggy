@@ -277,9 +277,9 @@ const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
  * The worker image a bootstrap configuration commands, and the repository a
  * personal account's is copied from. Both are optional and each withholds one
  * thing — a deployment naming no image authors no bootstrap, and one naming no
- * template creates for organizations only — and the image is not looked up
- * here, the api holding no admitted list, so an image the rig will not run
- * fails at placement where every other refused image does.
+ * template creates for organizations only — and the image is held only to the
+ * reference grammar here, so an image chuggy's runtime cannot run in fails
+ * where every other such image does, when its job starts.
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
@@ -895,7 +895,8 @@ function forgeRepositoriesMax(): number {
 
 /**
  * The image a bootstrap configuration commands, or nothing where this
- * deployment names none; one its briefing cannot name is refused here.
+ * deployment names none; one its briefing cannot name, or no configuration
+ * could, is refused here.
  */
 function bootstrapWorkerImage(): string | undefined {
   const image = process.env[bootstrapWorkerImageVariable];
@@ -903,7 +904,7 @@ function bootstrapWorkerImage(): string | undefined {
   const fault = bootstrapImageFault(image);
   if (fault !== undefined)
     throw new Error(
-      `${bootstrapWorkerImageVariable} cannot be named in a briefing: ${fault}`,
+      `${bootstrapWorkerImageVariable} cannot be named by a bootstrap configuration: ${fault}`,
     );
   return image;
 }

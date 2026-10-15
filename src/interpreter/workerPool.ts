@@ -30,13 +30,13 @@
  * in-cluster attempt. A per-execution profile is a requirement change, and
  * this contract already has the field waiting for it.
  *
- * A SESSION IS THE SAME CHANNEL'S SECOND KIND. A pool whose release reads
- * sessions states its room for them apart, and what it holds is told apart by
- * the rows each kind lives in, so each kind is renewed, bounded and claimed on
- * its own; `./workerPoolSessions.ts` says what claiming one opens. Such a poll
- * is what a member's runner reads as live for a session by, so only it is
- * recorded as one; a personal runner's poll that could take an execution is
- * recorded apart, as what a pool's claim reads it as live by.
+ * A SESSION IS THE SAME CHANNEL'S SECOND KIND. A pool states its room for
+ * sessions apart, and what it holds is told apart by the rows each kind lives
+ * in, so each kind is renewed, bounded and claimed on its own;
+ * `./workerPoolSessions.ts` says what claiming one opens. A poll that could take
+ * a session is what a member's runner reads as live for a session by, so only
+ * it is recorded as one; a personal runner's poll that could take an execution
+ * is recorded apart, as what a pool's claim reads it as live by.
  *
  * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL. It is admitted by its row
  * in its tenant and its owner's standing permit to register one, since no
@@ -75,10 +75,7 @@ import {
   type WorkerPoolClass,
 } from "./workerPoolAssignment.ts";
 import {
-  contractVersionAccepted,
   workerContractAccepted,
-  workerContractRunnerRuntime,
-  workerContractRunnerSessions,
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
@@ -100,48 +97,21 @@ import {
 } from "./workerPoolSessions.ts";
 
 /**
- * The worker contract versions the pool plane serves, from the one whose
- * `Unavailable` carries nothing. An earlier pool names a wait on it, which the
- * strict outcome schema refuses, so its unavailable would be answered 400 and
- * its attempt would wait out its lease rather than conclude.
+ * The worker contract versions the pool plane serves, from the first in which
+ * a pool reads a job assignment's runtime. An earlier pool starts the image's
+ * own entrypoint, which an image a project chose need not have, so it is
+ * refused at its poll rather than handed work it would run without chuggy.
  */
 export const workerPoolContractAccepted: WorkerContractRange = {
-  min: { major: 1, minor: 2 },
+  min: { major: 1, minor: 7 },
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, and whether its release reads sessions and a job's runtime at all. */
+/** What one poll asks: what the pool holds, and its room for executions and for sessions. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
-  readonly readsSessions: boolean;
-  readonly readsRuntime: boolean;
-}
-
-/** Whether a pool naming `release` reads `sessions`, which an earlier pool's strict schema refuses and so is never handed. */
-export function workerPoolSessionsRead(release: string | undefined): boolean {
-  return contractVersionAccepted(workerContractRunnerSessions, release);
-}
-
-/** Whether a pool naming `release` reads a job assignment's `runtime`, which an earlier pool's strict schema refuses and so is never handed. */
-export function workerPoolRuntimeRead(release: string | undefined): boolean {
-  return contractVersionAccepted(workerContractRunnerRuntime, release);
-}
-
-/** A reconciliation as a pool from before sessions reads it. */
-export type WorkerPoolReconciliationUnsessioned = Omit<
-  WorkerPoolReconciliation,
-  "sessions"
->;
-
-/** The answer to a pool that reads no sessions, which asked for none, so a session handed to it is a fault rather than a list to drop. */
-export function workerPoolReconciliationUnsessioned(
-  reconciled: WorkerPoolReconciliation,
-): WorkerPoolReconciliationUnsessioned {
-  if (reconciled.sessions.length > 0)
-    throw new Error("a pool that reads no sessions was handed one");
-  return { assignments: reconciled.assignments, stop: reconciled.stop };
 }
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
@@ -418,14 +388,11 @@ function workerPoolCheckedSettings(settings: WorkerPoolPollSettings): void {
       );
 }
 
-/** The most a poll's `held` may name, which is both kinds' bounds where the pool reads sessions and its executions' alone where it does not. */
+/** The most a poll's `held` may name, which is both kinds' bounds. */
 export function workerPoolHeldNamedMax(
   settings: WorkerPoolPollSettings,
-  readsSessions: boolean,
 ): number {
-  return readsSessions
-    ? settings.heldMax + settings.sessionsHeldMax
-    : settings.heldMax;
+  return settings.heldMax + settings.sessionsHeldMax;
 }
 
 /** What a pool holds, told apart by kind, since each kind is renewed through its own rows and bounded by its own setting. */
@@ -561,13 +528,12 @@ async function workerPoolClaimMade(
   }
 }
 
-/** The runtime an assignment names, by the host a pool pulls it from, where the attempt kept one and the pool's release reads it. */
+/** The runtime an assignment names, by the host a pool pulls it from, where the attempt kept one. */
 function workerPoolClaimedRuntime(
   row: WorkerPoolClaimed,
-  readsRuntime: boolean,
   imageHosts: WorkerPoolImageHosts,
 ): Pick<WorkerPoolAssignment, "runtime"> {
-  return readsRuntime && row.runtime !== undefined
+  return row.runtime !== undefined
     ? { runtime: workerPoolImageHosted(row.runtime, imageHosts) }
     : {};
 }
@@ -583,7 +549,6 @@ async function workerPoolClaims(
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
   wanted: number,
-  readsRuntime: boolean,
 ): Promise<WorkerPoolAssignment[]> {
   const claimed: WorkerPoolAssignment[] = [];
   if (wanted <= 0) return claimed;
@@ -596,7 +561,7 @@ async function workerPoolClaims(
     claimed.push({
       assignment,
       ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
-      ...workerPoolClaimedRuntime(row, readsRuntime, settings.imageHosts),
+      ...workerPoolClaimedRuntime(row, settings.imageHosts),
       cpuMillis: settings.cpuMillis,
       memoryMib: settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,
@@ -644,7 +609,7 @@ export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
-  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions" | "readsRuntime">,
+  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const stop = [
@@ -671,7 +636,6 @@ export async function workerPoolReconcile(
         settings.assignmentsPerPollMax,
         settings.heldMax - holding.jobs.length,
       ),
-      asked.readsRuntime,
     ),
     sessions: await workerPoolSessionsClaimed(
       ports,
@@ -695,16 +659,12 @@ export type WorkerPoolPolled =
     }
   | { readonly polled: "HeldOverBound" };
 
-/**
- * What the pool holds, told apart by kind. A pool that reads no sessions was
- * never handed one, so everything it holds is an execution's.
- */
+/** What the pool holds, told apart by kind. */
 async function workerPoolHoldingRead(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
 ): Promise<WorkerPoolHolding> {
-  if (!asked.readsSessions) return { jobs: asked.held, sessions: [] };
   const sessions = await ports.sessions.store.among(identity, asked.held);
   return {
     jobs: asked.held.filter((assignment) => !sessions.has(assignment)),
@@ -714,10 +674,9 @@ async function workerPoolHoldingRead(
 
 /**
  * Records this poll as the caller's last of each kind of work it could take: a
- * session, reading them with room for one or holding one from a plane that
- * names the API a session reaches, and, for a personal runner, an execution,
- * with room for one or holding one, which is what a pool's claim reads it as
- * live by.
+ * session, with room for one or holding one from a plane that names the API a
+ * session reaches, and, for a personal runner, an execution, with room for one
+ * or holding one, which is what a pool's claim reads it as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -728,7 +687,6 @@ async function workerPoolPollRecorded(
 ): Promise<void> {
   if (
     settings.sessionApiUrl !== undefined &&
-    asked.readsSessions &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)
   )
     await ports.sessions.store.polled(identity);
@@ -767,16 +725,11 @@ export async function workerPoolPoll(
   )
     return { polled: "HeldOverBound" };
   await workerPoolPollRecorded(ports, identity, asked, holding, settings);
-  const rooms = {
-    wanted: asked.wanted,
-    wantedSessions: asked.readsSessions ? asked.wantedSessions : 0,
-    readsRuntime: asked.readsRuntime,
-  };
   let answer = await workerPoolReconcile(
     ports,
     identity,
     holding,
-    rooms,
+    asked,
     settings,
   );
   for (
@@ -792,7 +745,7 @@ export async function workerPoolPoll(
       ports,
       identity,
       holding,
-      rooms,
+      asked,
       settings,
     );
   }

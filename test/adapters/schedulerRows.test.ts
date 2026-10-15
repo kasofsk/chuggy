@@ -19,11 +19,14 @@ import {
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { suppliedExecutionPolicy } from "../../src/adapters/supplied/schedulerPorts.ts";
 
+/** A well-formed digest reference, which a configuration's image has to be. */
+const pinnedImage = `registry.invalid/worker@sha256:${"842a".repeat(16)}`;
+
 const pinned = {
   mode: "Container",
   operatingSystem: "Linux",
   architecture: "Amd64",
-  image: "registry.invalid/worker@sha256:842a",
+  image: pinnedImage,
 };
 
 function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
@@ -69,7 +72,7 @@ test("a registration under a single-agent worker asks for that agent", () => {
   const execution = executionRowLogical(
     rowOf({
       version: 1,
-      image: "registry.invalid/worker@sha256:842a",
+      image: pinnedImage,
       worker: { mode: { type: "SingleAgent", agent: "Claude" } },
     }),
   );
@@ -80,7 +83,7 @@ test("a registration under a single-agent worker asks for that agent", () => {
 test("a registration whose ticket overrides the worker's mode asks for the agent it will run", () => {
   const configuration = {
     version: 1,
-    image: "registry.invalid/worker@sha256:842a",
+    image: pinnedImage,
     worker: { mode: { type: "SingleAgent", agent: "Claude" } },
   };
   const codex = {
@@ -104,9 +107,8 @@ test("a registration whose ticket overrides the worker's mode asks for the agent
 
 test("a registration under a worker that names no agent asks for none", () => {
   assert.equal(
-    executionRowLogical(
-      rowOf({ version: 1, image: "registry.invalid/worker@sha256:842a" }),
-    ).agentCapability,
+    executionRowLogical(rowOf({ version: 1, image: pinnedImage }))
+      .agentCapability,
     undefined,
   );
 });
@@ -133,7 +135,7 @@ test("the placement a row stores is the route its execution carries, and one no 
   );
 });
 
-test("an attempt whose ticket overrides the worker's mode to an agent its image lacks is denied, as a configuration naming that agent is", async () => {
+test("an attempt whose ticket overrides the worker's mode to another agent is admitted as a configuration naming that agent is, whatever its image's entry publishes", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([
       [
@@ -154,7 +156,7 @@ test("an attempt whose ticket overrides the worker's mode to an agent its image 
       routes: { Work: "InCluster", Evaluation: "InCluster" },
       projectRoutes: new Map(),
     },
-    imagesAdmitted: [
+    imagesOffered: [
       {
         image: pinned.image,
         operatingSystem: "Linux",
@@ -178,19 +180,15 @@ test("an attempt whose ticket overrides the worker's mode to an agent its image 
   const overridden = await policy.profileFor(
     executionRowLogical(rowOf(configured(claude), { worker: { mode: codex } })),
   );
-  assert.deepEqual(overridden, {
-    resolved: "Denied",
-    reason: "ExecutionPolicyDenied",
-  });
+  assert.equal(overridden.resolved, "Profile");
   assert.deepEqual(
     overridden,
     await policy.profileFor(executionRowLogical(rowOf(configured(codex)))),
   );
-  assert.equal(
-    (await policy.profileFor(executionRowLogical(rowOf(configured(claude)))))
-      .resolved,
-    "Profile",
-    "the configuration's own agent is admitted",
+  assert.deepEqual(
+    overridden,
+    await policy.profileFor(executionRowLogical(rowOf(configured(claude)))),
+    "the agent chuggy's runtime brings is admitted as the image's own is",
   );
 });
 

@@ -1,5 +1,5 @@
 /**
- * The label an admitted image is published under, and the rule a deployment's
+ * The label an offered image is published under, and the rule a deployment's
  * catalog entry has to satisfy to carry one.
  *
  * A LABEL SITS BESIDE THE IMAGE AND NEVER INSIDE IT. An execution requirement
@@ -10,7 +10,7 @@
  *
  * A NAME IS A REPOSITORY CONFIGURATION NAME, spelled by that module's own rule
  * rather than by a copy of it. A version is only bounded text: it is whatever
- * the release that admitted the image calls itself, and no reader picks an
+ * the release that offered the image calls itself, and no reader picks an
  * entry out of a list by it.
  */
 
@@ -24,8 +24,8 @@ export interface Worker {
   readonly version: string;
 }
 
-/** One entry of a deployment's admitted-images list that named itself. */
-export interface AdmittedWorker extends Worker {
+/** One entry of a deployment's offered-images list, under the label it names. */
+export interface OfferedWorker extends Worker {
   readonly image: string;
 }
 
@@ -33,8 +33,8 @@ export interface AdmittedWorker extends Worker {
 export { workerImageCharsMax };
 export const workerVersionCharsMax = 64;
 
-/** The most entries one deployment's admitted-images list may carry. */
-export const admittedImagesMax = 100;
+/** The most entries one deployment's offered-images list may carry. */
+export const offeredImagesMax = 100;
 
 export function asWorkerName(value: unknown): string | undefined {
   return asRepositoryConfigurationName(value);

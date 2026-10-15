@@ -40,7 +40,7 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import {
-  admittedImagesMax,
+  offeredImagesMax,
   workerImageCharsMax,
   workerVersionCharsMax,
 } from "../../src/interpreter/workerCatalog.ts";
@@ -57,7 +57,19 @@ writeFileSync(tokenFile, "cluster-token-value\n");
 
 const workerImage = "registry.invalid/worker:1";
 
-const images = [workerImage];
+/** The one image this deployment offers, under the label the catalog publishes. */
+const offeredWorker = {
+  image: workerImage,
+  name: "chuggy-worker",
+  version: "1",
+};
+
+const images = [offeredWorker];
+
+/** That image as the execution policy offers it, published with no capabilities. */
+const imagesOffered = [
+  { image: workerImage, operatingSystem: "Linux", architecture: "Amd64" },
+];
 
 const resources = {
   cpuRequest: "500m",
@@ -118,7 +130,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_WORKER_CREDENTIAL_MOUNTS: "{}",
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
   CHUG_SCHEDULER_WORKER_RUNTIME: runtimeImage,
-  CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
+  CHUG_SCHEDULER_OFFERED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
   CHUG_SCHEDULER_SESSION_RESOURCES: JSON.stringify(resources),
@@ -222,9 +234,9 @@ const parsed = {
       routes: { Work: "InCluster", Evaluation: "InCluster" },
       projectRoutes: {},
     },
-    imagesAdmitted: images,
+    imagesOffered,
   },
-  workerCatalog: [],
+  workerCatalog: images,
   runtimeFacts: {},
   sessions: {
     apiBaseUrl: "https://cluster.invalid:6443",
@@ -598,26 +610,26 @@ test("a route this tree does not name, or a project's route for a kind it does n
   }
 });
 
-/** What one admitted-images list parses into: the images admitted and the catalog. */
-interface AdmittedImagesParsed {
+/** What one offered-images list parses into: the images offered and the catalog. */
+interface OfferedImagesParsed {
   readonly parsed?: {
-    readonly policy: { readonly imagesAdmitted: readonly unknown[] };
+    readonly policy: { readonly imagesOffered: readonly unknown[] };
     readonly workerCatalog: readonly unknown[];
   };
   readonly refused?: string;
 }
 
-async function parsedAdmittedImages(
-  admitted: readonly unknown[],
-): Promise<AdmittedImagesParsed> {
+async function parsedOfferedImages(
+  offered: readonly unknown[],
+): Promise<OfferedImagesParsed> {
   return JSON.parse(
     await schedulerProgram(
       parseProgram({
         ...environment,
-        CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(admitted),
+        CHUG_SCHEDULER_OFFERED_IMAGES: JSON.stringify(offered),
       }),
     ),
-  ) as AdmittedImagesParsed;
+  ) as OfferedImagesParsed;
 }
 
 const namedWorker = {
@@ -626,36 +638,52 @@ const namedWorker = {
   version: "3",
 };
 
-test("a bare admitted image is admitted and named in no catalog", async () => {
-  const found = await parsedAdmittedImages([workerImage]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [workerImage]);
-  assert.deepEqual(found.parsed?.workerCatalog, []);
-});
-
-test("a named admitted image is admitted and published to the catalog", async () => {
-  const found = await parsedAdmittedImages([namedWorker]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [namedWorker.image]);
-  assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
-});
-
-test("both shapes mix, and admission never learns which entry was named", async () => {
-  const found = await parsedAdmittedImages([workerImage, namedWorker]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
-    workerImage,
-    namedWorker.image,
+test("an offered image is offered on Linux and Amd64 and published to the catalog", async () => {
+  const found = await parsedOfferedImages([namedWorker]);
+  assert.deepEqual(found.parsed?.policy.imagesOffered, [
+    {
+      image: namedWorker.image,
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+    },
   ]);
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });
 
-test("an admitted image publishes the execution capabilities it provides", async () => {
+test("an entry that is a bare image naming no label is refused", async () => {
+  const found = await parsedOfferedImages([workerImage, namedWorker]);
+  assert.match(found.refused ?? "", /OFFERED_IMAGES/u);
+  assert.equal(found.parsed, undefined);
+});
+
+test("the old name of the list is read nowhere, so a deployment naming only it is refused", async () => {
+  const renamed = Object.fromEntries(
+    Object.entries(environment).map(([name, value]) => [
+      name === "CHUG_SCHEDULER_OFFERED_IMAGES"
+        ? "CHUG_SCHEDULER_ADMITTED_IMAGES"
+        : name,
+      value,
+    ]),
+  );
+  const found = JSON.parse(
+    await schedulerProgram(parseProgram(renamed)),
+  ) as OfferedImagesParsed;
+  assert.match(
+    found.refused ?? "",
+    /CHUG_SCHEDULER_OFFERED_IMAGES is required/u,
+  );
+  assert.equal(found.parsed, undefined);
+});
+
+test("an offered image publishes the execution capabilities it provides", async () => {
   const capable = {
     ...namedWorker,
     operatingSystem: "Linux",
     architecture: "Arm64",
     capabilities: ["Agent:Claude", "Agent:Codex"],
   };
-  const found = await parsedAdmittedImages([capable]);
-  assert.deepEqual(found.parsed?.policy.imagesAdmitted, [
+  const found = await parsedOfferedImages([capable]);
+  assert.deepEqual(found.parsed?.policy.imagesOffered, [
     {
       image: capable.image,
       operatingSystem: capable.operatingSystem,
@@ -666,16 +694,16 @@ test("an admitted image publishes the execution capabilities it provides", async
   assert.deepEqual(found.parsed?.workerCatalog, [namedWorker]);
 });
 
-test("an admitted-images list naming one image twice is refused", async () => {
-  const found = await parsedAdmittedImages([
-    workerImage,
+test("an offered-images list naming one image twice is refused", async () => {
+  const found = await parsedOfferedImages([
+    { ...namedWorker, image: workerImage, version: "2" },
     { ...namedWorker, image: workerImage },
   ]);
-  assert.match(found.refused ?? "", /admits the image .* twice/u);
+  assert.match(found.refused ?? "", /offers the image .* twice/u);
 });
 
-test("an admitted-images list spelling one worker label twice is refused", async () => {
-  const found = await parsedAdmittedImages([
+test("an offered-images list spelling one worker label twice is refused", async () => {
+  const found = await parsedOfferedImages([
     { ...namedWorker, image: workerImage },
     namedWorker,
   ]);
@@ -689,36 +717,44 @@ test("an admitted-images list spelling one worker label twice is refused", async
 });
 
 test("a worker name outside the configuration name rule is refused", async () => {
-  const found = await parsedAdmittedImages([
+  const found = await parsedOfferedImages([
     { ...namedWorker, name: "-worker" },
   ]);
   assert.match(found.refused ?? "", /is not a worker name/u);
 });
 
 test("a worker version longer than its bound is refused", async () => {
-  const found = await parsedAdmittedImages([
+  const found = await parsedOfferedImages([
     { ...namedWorker, version: "v".repeat(workerVersionCharsMax + 1) },
   ]);
   assert.match(found.refused ?? "", /is not a worker version/u);
 });
 
 test("a named image longer than the column that holds it is refused", async () => {
-  const found = await parsedAdmittedImages([
+  const found = await parsedOfferedImages([
     { ...namedWorker, image: "i".repeat(workerImageCharsMax + 1) },
   ]);
-  assert.match(found.refused ?? "", /ADMITTED_IMAGES/u);
+  assert.match(found.refused ?? "", /OFFERED_IMAGES/u);
   assert.equal(found.parsed, undefined);
 });
 
-test("an admitted-images list longer than its bound is refused", async () => {
-  const found = await parsedAdmittedImages(
-    Array.from(
-      { length: admittedImagesMax + 1 },
-      (_, at) => `registry.invalid/worker:${String(at)}`,
-    ),
-  );
-  assert.match(found.refused ?? "", /ADMITTED_IMAGES/u);
-  assert.equal(found.parsed, undefined);
+test("an offered-images list that is empty, or longer than its bound, is refused", async () => {
+  for (const offered of [
+    [],
+    Array.from({ length: offeredImagesMax + 1 }, (_, at) => ({
+      ...namedWorker,
+      image: `registry.invalid/worker:${String(at)}`,
+      version: String(at),
+    })),
+  ]) {
+    const found = await parsedOfferedImages(offered);
+    assert.match(
+      found.refused ?? "",
+      /OFFERED_IMAGES/u,
+      String(offered.length),
+    );
+    assert.equal(found.parsed, undefined);
+  }
 });
 
 /** What one worker-sidecars document parses into, or the refusal naming it. */
@@ -1114,7 +1150,7 @@ function processProgram(
           profile: { profile: 'standard', runtimeVersion: '1' },
           grant: ${JSON.stringify(grant)},
         }]]),
-        routing: { routes: { Work: 'InCluster', Evaluation: 'InCluster' }, projectRoutes: new Map() }, imagesAdmitted: ${JSON.stringify(images)},
+        routing: { routes: { Work: 'InCluster', Evaluation: 'InCluster' }, projectRoutes: new Map() }, imagesOffered: ${JSON.stringify(imagesOffered)},
       }),
       configurations: {
         configuration: async () => ({ read: 'Configuration', configuration }),

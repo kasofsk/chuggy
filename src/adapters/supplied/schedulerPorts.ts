@@ -40,43 +40,48 @@ export interface SuppliedExecutionProfile {
 
 /**
  * The execution policy a deployment states: what each kind of logical task may
- * do, where it runs, and the admitted runtimes used to admit exact images or
- * resolve capabilities.
+ * do, where it runs, and the images it offers a requirement stated as
+ * capabilities.
  */
 export interface SuppliedExecutionPolicyConfig {
   readonly profiles: ReadonlyMap<ExecutionTaskKind, SuppliedExecutionProfile>;
   readonly routing: ExecutionRouting;
-  readonly imagesAdmitted: readonly (string | SuppliedRuntime)[];
+  readonly imagesOffered: readonly SuppliedOfferedImage[];
 }
 
 /**
- * One image a deployment admits, where omitting the capabilities says nothing
- * about what its worker provides — admitted before a deployment published
+ * One image a deployment offers, where omitting the capabilities says nothing
+ * about what its worker provides — offered before a deployment published
  * any — and leaves that unknown rather than nothing. An empty list is the
  * opposite statement, which no deployment means, so it is refused where the
  * policy is composed.
  */
-export interface SuppliedRuntime {
+export interface SuppliedOfferedImage {
   readonly image: string;
   readonly operatingSystem: OperatingSystem;
   readonly architecture: Architecture;
   readonly capabilities?: readonly ExecutionCapability[];
 }
 
-function suppliedRuntime(runtime: string | SuppliedRuntime): SuppliedRuntime {
-  return typeof runtime === "string"
-    ? { image: runtime, operatingSystem: "Linux", architecture: "Amd64" }
-    : runtime;
-}
-
 /**
  * What an entry that declares no capabilities is taken to provide when a
  * requirement asks for a worker by capability. There is no image to fall back
- * on in that case, and every image admitted before capabilities were declared
+ * on in that case, and every image offered before capabilities were declared
  * is a Claude worker.
  */
 const suppliedUndeclaredCapabilities: readonly ExecutionCapability[] = [
   "Agent:Claude",
+];
+
+/**
+ * The agents chuggy's runtime provides. The runtime is mounted into every
+ * job's container whatever image it runs, so these are what this site declares
+ * of every image: `siteAdmits` in `model/execution_requirement.qnt`, under
+ * `CapabilitiesDeclared`.
+ */
+const suppliedRuntimeCapabilities: readonly ExecutionCapability[] = [
+  "Agent:Claude",
+  "Agent:Codex",
 ];
 
 /** What a deployment states about the workspace its worker image runs in. */
@@ -84,26 +89,18 @@ export interface SuppliedRuntimeFactsConfig {
   readonly workspace?: string;
 }
 
-/** Refuses a policy that grants nothing, and any grant this tree's vocabulary does not name. */
+/** Refuses a policy that grants or offers nothing, and any grant this tree's vocabulary does not name. */
 export function checkedSuppliedExecutionPolicyConfig(
   config: SuppliedExecutionPolicyConfig,
 ): SuppliedExecutionPolicyConfig {
   if (config.profiles.size === 0)
     throw new RangeError("supplied execution policy grants no task kind");
-  if (config.imagesAdmitted.length === 0)
-    throw new RangeError("supplied execution policy admits no image");
+  if (config.imagesOffered.length === 0)
+    throw new RangeError("supplied execution policy offers no image");
+  if (config.imagesOffered.some((offered) => offered.image.length === 0))
+    throw new RangeError("supplied execution policy offers an empty image");
   if (
-    config.imagesAdmitted.some(
-      (runtime) =>
-        (typeof runtime === "string" ? runtime : runtime.image).length === 0,
-    )
-  )
-    throw new RangeError("supplied execution policy admits an empty image");
-  if (
-    config.imagesAdmitted.some(
-      (runtime) =>
-        typeof runtime !== "string" && runtime.capabilities?.length === 0,
-    )
+    config.imagesOffered.some((offered) => offered.capabilities?.length === 0)
   )
     throw new RangeError(
       "supplied execution policy publishes an empty capability list",
@@ -121,38 +118,31 @@ export function checkedSuppliedExecutionPolicyConfig(
 }
 
 /**
- * Whether this site runs the image an execution pins, and whether that image
- * provides the agent its configuration names. The pin is what runs: an entry
- * that declares its capabilities is refused for an agent it does not provide,
- * and an entry that declares none is admitted as the author's choice, because
- * a deployment that never said what an image provides has not said it does not
- * provide this.
+ * Whether this site runs an execution's pinned image for the agent its
+ * configuration names, which it does for any image and any agent the runtime
+ * provides: chuggy's runtime brings the agent and checks the image when its
+ * job starts, and the images a deployment offers have no part in it.
  */
 function suppliedPinnedAdmission(
-  runtimes: readonly SuppliedRuntime[],
-  image: string,
   capability: ExecutionCapability | undefined,
 ): { readonly denied: ProfileResolved } | Record<string, never> {
-  const denied = {
-    denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
-  } as const;
-  const entry = runtimes.find((runtime) => runtime.image === image);
-  if (entry === undefined) return denied;
-  if (capability === undefined || entry.capabilities === undefined) return {};
-  return entry.capabilities.includes(capability) ? {} : denied;
+  return capability === undefined ||
+    suppliedRuntimeCapabilities.includes(capability)
+    ? {}
+    : { denied: { resolved: "Denied", reason: "ExecutionPolicyDenied" } };
 }
 
 /**
- * The admitted entry that serves a requirement stated as capabilities, taken
+ * The offered entry that serves a requirement stated as capabilities, taken
  * from the end of the list: a version is bounded text no reader orders, so the
  * order a deployment wrote its entries in is the only account of which of them
- * is the most recently admitted.
+ * is the most recently offered.
  */
 function suppliedCapabilityAdmission(
-  runtimes: readonly SuppliedRuntime[],
+  offered: readonly SuppliedOfferedImage[],
   requirement: CapabilityExecutionRequirement,
 ): { readonly denied: ProfileResolved } | { readonly image: string } {
-  const runtime = runtimes.findLast(
+  const entry = offered.findLast(
     (candidate) =>
       candidate.operatingSystem === requirement.operatingSystem &&
       candidate.architecture === requirement.architecture &&
@@ -162,36 +152,31 @@ function suppliedCapabilityAdmission(
         ),
       ),
   );
-  return runtime === undefined
+  return entry === undefined
     ? {
         denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
       }
-    : { image: runtime.image };
+    : { image: entry.image };
 }
 
 /**
  * Whether this site runs what the execution's pinned requirement names. A
- * native requirement is refused by capability rather than by policy: no image
- * list can admit one, and the reason a caller reads should say which of the two
- * it ran into.
+ * native requirement is refused by capability rather than by policy: no
+ * container image runs one, and the reason a caller reads should say which of
+ * the two it ran into.
  */
 function suppliedAdmission(
   config: SuppliedExecutionPolicyConfig,
   execution: LogicalExecution,
 ): { readonly denied: ProfileResolved } | { readonly image?: string } {
   const requirement = execution.requirement;
-  const runtimes = config.imagesAdmitted.map(suppliedRuntime);
   if (requirement.mode === "Native")
     return {
       denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
     };
   return requirement.mode === "Container"
-    ? suppliedPinnedAdmission(
-        runtimes,
-        requirement.image,
-        execution.agentCapability,
-      )
-    : suppliedCapabilityAdmission(runtimes, requirement);
+    ? suppliedPinnedAdmission(execution.agentCapability)
+    : suppliedCapabilityAdmission(config.imagesOffered, requirement);
 }
 
 /** Admits what this site runs, then resolves the profile it states for this kind of logical task. */

@@ -4,8 +4,8 @@
  *
  * A RETIRED IMAGE IS THE CASE THAT MATTERS. A publication that cleared the
  * table first would satisfy every assertion about the images this release
- * admits and silently strip the label off every execution that ran on an image
- * an earlier release admitted — which is the whole reason rows are never
+ * offers and silently strip the label off every execution that ran on an image
+ * an earlier release offered — which is the whole reason rows are never
  * deleted, and is what the retention case here is for.
  *
  * AND RETENTION IS WHY A LABEL IS NOT UNIQUE ACROSS THE TABLE. Rows outlive the
@@ -25,8 +25,8 @@ import {
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import {
-  admittedImagesMax,
-  type AdmittedWorker,
+  offeredImagesMax,
+  type OfferedWorker,
   type Worker,
 } from "../../src/interpreter/workerCatalog.ts";
 import { id } from "../domain/fixtures.ts";
@@ -93,7 +93,7 @@ async function publishedAt(image: string): Promise<string> {
 }
 
 /** Publishes one catalog as a scheduler boot does, refusing to pass a failure off as met. */
-async function publish(workers: readonly AdmittedWorker[]): Promise<void> {
+async function publish(workers: readonly OfferedWorker[]): Promise<void> {
   assert.equal(
     (
       await postgresWorkerCatalogPrecondition(scheduler, workers).check(
@@ -145,7 +145,7 @@ test("a republication moves published_at forward, it being the last one", async 
 });
 
 test("a list longer than its bound is refused where the statement is built", () => {
-  const overlong = Array.from({ length: admittedImagesMax + 1 }, (_, at) => ({
+  const overlong = Array.from({ length: offeredImagesMax + 1 }, (_, at) => ({
     image: `registry.invalid/catalog-overlong:${String(at)}`,
     name: "catalog-overlong",
     version: String(at),
