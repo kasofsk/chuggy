@@ -47,7 +47,11 @@ import {
   releaseConfigurationReadiness,
   type CanonicalConfiguration,
 } from "./authoring.ts";
-import { textCodePointsCount } from "../contract/http.ts";
+import {
+  configurationDocumentVersion,
+  releaseConfigurationVersion,
+} from "../contract/configurationDocument.ts";
+import { nativeHttpRoutes, textCodePointsCount } from "../contract/http.ts";
 import { bootstrapConfigurationName } from "../contract/responses.ts";
 import {
   briefingLineCharsMax,
@@ -102,14 +106,15 @@ const bootstrapWorkerMode = {
 } as const;
 
 /**
- * The shape of a declaration, in the letters `N`, `C`, `I`, `S`, `E` and `L`
- * stand for, and the bounds its import refuses past.
+ * The least a declaration holds, in the letters `N`, `C`, `I`, `S`, `E` and
+ * `L` stand for, the bounds its import refuses past, and where the whole
+ * format is published.
  */
 function bootstrapFormatInstructions(image: string): readonly string[] {
   return [
-    `Each file there is one JSON object and nothing more: {"version":1,"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; every object here takes exactly the keys shown and no others.`,
-    `C is {"version":1,"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
-    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer.`,
+    `Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them. What follows is the least a file needs; the whole format, with authority, executionRequirements, work.commands, a Codex mode naming a model and agent-briefed Check stages, is the JSON Schema at GET ${nativeHttpRoutes.configurationSchema} on the chuggy API, and a key it does not name is refused or dropped.`,
+    `C is {"version":${String(releaseConfigurationVersion)},"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
+    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer. Evaluations run in the order listed and a failed stage ends evaluation, so a cheap Check stage goes before a Review.`,
     `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
     "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file.",
     bootstrapImageLine(image),
@@ -143,7 +148,7 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
     ],
     acceptanceCriteria: [
       "The change does what this ticket asks for.",
-      `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", whose "version" is the number 1, and the change leaves at least one such file.`,
+      `Every file under ${repositoryConfigurationRoot} whose name ends in .json sits directly in that directory and is one JSON object with exactly the keys "version", "name" and "configuration", whose "version" is the number ${String(configurationDocumentVersion)}, and the change leaves at least one such file.`,
       `No file the change leaves under ${repositoryConfigurationRoot} has the "name" "${bootstrapConfigurationName}". That name is this configuration's own, and ${bootstrapConfigurationPath}, in a repository that has it, is this configuration: the change deletes that file. Nor does the change leave this configuration there under another name: no file it leaves holds a configuration that, like this one, asks every ticket to write the repository's configuration.`,
     ],
     constraints: [
@@ -159,7 +164,7 @@ function bootstrapConfigurationValue(
   input: BootstrapConfigurationInput,
 ): unknown {
   return {
-    version: 1,
+    version: releaseConfigurationVersion,
     image: input.image,
     worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
     brief: bootstrapBrief(input),
@@ -206,7 +211,11 @@ export function bootstrapConfigurationFile(
 ): string {
   const configuration: unknown = JSON.parse(bootstrapConfiguration(input));
   return `${JSON.stringify(
-    { version: 1, name: bootstrapConfigurationName, configuration },
+    {
+      version: configurationDocumentVersion,
+      name: bootstrapConfigurationName,
+      configuration,
+    },
     undefined,
     2,
   )}\n`;

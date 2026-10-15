@@ -21,6 +21,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { nativeHttpRoutes } from "../../src/contract/http.ts";
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
@@ -496,6 +497,25 @@ test("each role is told that a limit the request puts on what may change does no
         line.includes(neededOrWritten),
     ),
     "nor for being wider than the request's limit",
+  );
+});
+
+test("the worker is told where the whole format is published, and that evaluations run in order and stop at a failure", () => {
+  const told = briefed("Work", "PurposeInstructions");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("JSON Schema") &&
+        line.includes(`GET ${nativeHttpRoutes.configurationSchema} `),
+    ),
+  );
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("in the order listed") &&
+        line.includes("a failed stage ends evaluation") &&
+        line.includes("Check stage goes before a Review"),
+    ),
   );
 });
 
