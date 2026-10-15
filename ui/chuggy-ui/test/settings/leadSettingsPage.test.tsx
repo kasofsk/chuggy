@@ -37,6 +37,8 @@ import {
   turned,
 } from "../screenHarness.tsx";
 import { leadBody, leadPartition } from "../leadFixture.ts";
+import { sessionPlacementBody } from "../sessionPlacementFixture.ts";
+import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
 import { styleless } from "../styleless.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
@@ -133,6 +135,8 @@ interface SettingsScript {
   readonly history?: unknown;
   /** What the lead route answers, a lead of its own where the case says none. */
   readonly lead?: unknown;
+  /** Where the lead runs and the runners it waits on, live where unsaid. */
+  readonly placement?: SessionPlacementResponse;
 }
 
 /** The page over a server whose answer to the write the case decides, whose
@@ -156,6 +160,10 @@ async function drawSettings(
       return Promise.resolve(answer(script.history ?? { revisions: [] }));
     if (url.endsWith("/lead"))
       return Promise.resolve(answer(script.lead ?? leadBody(1, 1)));
+    if (url.endsWith("/session-placement"))
+      return Promise.resolve(
+        answer(script.placement ?? sessionPlacementBody()),
+      );
     reads += 1;
     return Promise.resolve(answer(read));
   }) as unknown as typeof fetch;
@@ -210,6 +218,36 @@ test("a project with no lead is told above the settings that its tickets are dis
   await drawSettings({ lead: { lead: "None" } });
   expect(screen.getByText("No lead")).toBeDefined();
   expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
+});
+
+/** The page says why there is no lead as the lead page does, so the two never
+ * disagree about one project. */
+test("a project with no lead is told above the settings why, as the lead page says it", async () => {
+  await drawSettings({
+    lead: { lead: "None", absence: { reason: "NotNeeded" } },
+  });
+  expect(screen.getByText("No lead")).toBeDefined();
+  expect(screen.getByText("Opens when a ticket is released")).toBeDefined();
+  expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
+  cleanup();
+  await drawSettings({ lead: { lead: "None", absence: { reason: "Paused" } } });
+  expect(screen.getByText("Selector paused")).toBeDefined();
+});
+
+/** A refusal for no live runner is left to the runner notice, which says it
+ * with where one is added, as on the lead page. */
+test("a project with no lead and no runner is told so with where one is added", async () => {
+  await drawSettings({
+    lead: {
+      lead: "None",
+      absence: { reason: "RunnerOffline", since: "2026-09-02T09:30:00Z" },
+    },
+    placement: sessionPlacementBody({ project: "Unregistered" }),
+  });
+  expect(screen.getByText("No lead")).toBeDefined();
+  expect(screen.queryByText(/No live runner/u)).toBeNull();
+  expect(screen.getByText("No runner")).toBeDefined();
+  expect(screen.getByText("Runners")).toBeDefined();
 });
 
 test("a project with a lead is told nothing of the hand", async () => {

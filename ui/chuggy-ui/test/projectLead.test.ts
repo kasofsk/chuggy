@@ -9,11 +9,13 @@ import type { LeadReadResponse } from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   projectLeadAbsenceLine,
+  projectLeadDispatches,
   projectLeadFound,
   projectLeadPanelState,
   projectLeadPresent,
 } from "../app/core/projectLead.ts";
 import { leadBody } from "./leadFixture.ts";
+import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 
 const lead = leadBody(1, 1);
 const none: LeadReadResponse = { lead: "None" };
@@ -100,30 +102,73 @@ test("a project with no lead says why under the line, and since when where it wa
   ).toBe(`Hosted runs not granted · since ${day} ${clock}`);
 });
 
-/** The runner notice beside the line says why no runner can take the lead's
- * turn, and links to where one is added, so the refusal saying it again is left
- * out; every other reason is not about runners and stays. */
-test("a refusal for no live runner is left to the runner notice where one is drawn", () => {
+/**
+ * Once the placement says where the project's runners stand, a refusal for no
+ * live runner is left out: the runner notice beside the line says it where none
+ * is live, and where one is, or the lead runs hosted, the refusal is one the
+ * next selector pass clears. Only a placement not yet read leaves it standing.
+ */
+test("a refusal for no live runner is drawn only until the placement has said where the runners stand", () => {
   const offline = ready({
     lead: "None",
     absence: { reason: "RunnerOffline", since: sinceIso },
   });
-  expect(
-    projectLeadAbsenceLine(offline, sameDayMs, "NoRunner"),
-  ).toBeUndefined();
-  expect(
-    projectLeadAbsenceLine(offline, sameDayMs, "RunnerOffline"),
-  ).toBeUndefined();
+  for (const placement of [
+    sessionPlacementBody({ project: "Unregistered" }),
+    sessionPlacementBody({ project: "Offline" }),
+    sessionPlacementBody({ project: "Live" }),
+    sessionPlacementBody({ lead: "InCluster", project: "Offline" }),
+  ])
+    expect(
+      projectLeadAbsenceLine(offline, sameDayMs, placement),
+      JSON.stringify(placement),
+    ).toBeUndefined();
+  expect(projectLeadAbsenceLine(offline, sameDayMs, undefined)).toMatch(
+    /^No live runner · since /u,
+  );
+  const live = sessionPlacementBody({ project: "Live" });
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "Paused" } }),
       sameDayMs,
-      "NoRunner",
+      live,
     ),
   ).toBe("Selector paused");
-  expect(projectLeadAbsenceLine(ready(none), sameDayMs, "NoRunner")).toBe(
+  expect(
+    projectLeadAbsenceLine(
+      ready({
+        lead: "None",
+        absence: { reason: "HostedRunsNotGranted", since: sinceIso },
+      }),
+      sameDayMs,
+      live,
+    ),
+  ).toMatch(/^Hosted runs not granted · since /u);
+  expect(projectLeadAbsenceLine(ready(none), sameDayMs, live)).toBe(
     "Tickets are dispatched by hand",
   );
+});
+
+/** A lead that has not opened only because nothing has needed one yet is one
+ * that will dispatch; every other reason, or none given, leaves it to a press. */
+test("a lead dispatches where one stands or nothing has needed one yet, and not otherwise", () => {
+  expect(projectLeadDispatches(ready(lead))).toBe(true);
+  expect(
+    projectLeadDispatches(
+      ready({ lead: "None", absence: { reason: "NotNeeded" } }),
+    ),
+  ).toBe(true);
+  for (const absence of [
+    { reason: "Paused" },
+    { reason: "RunnerOffline", since: sinceIso },
+    { reason: "HostedRunsNotGranted", since: sinceIso },
+  ] as const)
+    expect(projectLeadDispatches(ready({ lead: "None", absence }))).toBe(false);
+  expect(projectLeadDispatches(ready(none))).toBe(false);
+  expect(projectLeadDispatches({ state: "Pending" })).toBeUndefined();
+  expect(
+    projectLeadDispatches({ state: "Failed", reason: "no" }),
+  ).toBeUndefined();
 });
 
 test("a server that gives no reason reads as tickets run by hand, and a lead or no read draws no line", () => {

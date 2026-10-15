@@ -937,6 +937,19 @@ test("a project refused for no live runner leaves it to the runner notice", asyn
   expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
 });
 
+/** A placement saying the project's runners are live makes a kept refusal for
+ * none one the next selector pass clears, so neither it nor a notice is drawn. */
+test("a refusal for no live runner is not drawn where the placement says the runners are live", async () => {
+  leadlessServed(opening, {
+    lead: "None",
+    absence: { reason: "RunnerOffline", since: "2026-09-02T09:30:00Z" },
+  });
+  await mountLead();
+  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  expect(screen.queryByText(/No live runner/u)).toBeNull();
+  expect(screen.queryByText("Runner offline")).toBeNull();
+});
+
 /** A project this reader is not shown says there is no lead here for them to
  * read, and nothing about how its tickets run: it may have a lead dispatching
  * them. */

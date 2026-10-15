@@ -2,24 +2,26 @@
  * Whether a project has a lead, from the one read that says: the lead route
  * answers the lead itself, or that the project has none.
  *
- * A PROJECT WITH NO LEAD HAS NOT BEEN DISPATCHED BY THE SELECTOR. The
- * selector opens a project's lead at its first decision there and dispatches
- * through it, so where the read says there is none, the project's tickets wait
- * for somebody to press Dispatch. The selector's settings say how a lead would
- * dispatch, not whether this project has one; the read's `absence` says why
- * there is none, where the server is one that says.
+ * A PROJECT WITH NO LEAD HAS NOT BEEN DISPATCHED BY THE SELECTOR YET. The
+ * selector opens a project's lead at the first decision that needs one and
+ * dispatches through it, so the read's `absence` says whether one will open
+ * (`NotNeeded`, until a released ticket waits on a decision) or why none can,
+ * and while none can the project's tickets run where somebody presses
+ * Dispatch. A server that gives no reason says only that there is no lead. The
+ * selector's settings say how a lead would dispatch, not whether this project
+ * has one.
  */
 
 import type {
   LeadReadResponse,
   LeadResponse,
 } from "../../../../src/contract/responses.ts";
+import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
 import type { SessionKind } from "../../../../src/contract/rosters.ts";
 
 import { leadAbsenceLabel } from "./codeLabels.ts";
 import { instantText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
-import type { SessionRunnerShort } from "./sessionRunners.ts";
 
 /** The session kind a lead's change frames carry. */
 export const projectLeadSessionKind: SessionKind = "Lead";
@@ -63,21 +65,35 @@ export function projectLeadPanelState(
 }
 
 /**
- * The line under a lead page with no lead: why the read says there is none,
- * with since when where a refusal stands, or how its tickets run where the
- * server gives no reason. Nothing until a read has said there is no lead, and
- * nothing for `RunnerOffline` where `runner` already says why no runner can
- * take the lead's turn.
+ * Whether a lead dispatches the project's tickets, or will open to: unknown
+ * until a read has said, and false only where none stands and the read says
+ * why none can open, or gives no reason at all.
+ */
+export function projectLeadDispatches(
+  state: PanelState<LeadReadResponse>,
+): boolean | undefined {
+  if (state.state !== "Ready") return undefined;
+  if ("session" in state.value) return true;
+  return state.value.absence?.reason === "NotNeeded";
+}
+
+/**
+ * The line under a page's `No lead`: why the read says there is none, with
+ * since when where a refusal stands, or how its tickets run where the server
+ * gives no reason. Nothing until a read has said there is no lead, and nothing
+ * for `RunnerOffline` once `placement` says where the project's runners stand,
+ * since the runner notice drawn beside the line says it where none is live, and
+ * where one is, or the lead runs hosted, the next selector pass clears it.
  */
 export function projectLeadAbsenceLine(
   state: PanelState<LeadReadResponse>,
   nowMs: number,
-  runner: SessionRunnerShort | undefined,
+  placement: SessionPlacementResponse | undefined,
 ): string | undefined {
   if (state.state !== "Ready" || "session" in state.value) return undefined;
   const absence = state.value.absence;
   if (absence === undefined) return "Tickets are dispatched by hand";
-  if (absence.reason === "RunnerOffline" && runner !== undefined)
+  if (absence.reason === "RunnerOffline" && placement !== undefined)
     return undefined;
   const label = leadAbsenceLabel(absence.reason);
   return "since" in absence

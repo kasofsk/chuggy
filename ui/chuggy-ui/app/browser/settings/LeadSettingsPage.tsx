@@ -42,7 +42,11 @@ import type {
 import { usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
-import { useLead } from "../LeadPage.tsx";
+import { useLead, useLeadAbsenceLine } from "../LeadPage.tsx";
+import {
+  SessionRunnerNotice,
+  useSessionRunnerShort,
+} from "../sessionPlacement.tsx";
 import {
   selectorSettingsResource,
   selectorSettingsSaved,
@@ -209,17 +213,30 @@ function SelectorSettingsHistory(props: {
 }
 
 /** What stands above the settings where the project has no lead: they say how
- * a lead would dispatch, and there is none here to do it. */
+ * a lead would dispatch, and there is none here to do it, for the reason and
+ * with the runner notice the lead page draws. */
 function SelectorSettingsUnled(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
-  if (projectLeadPresent(useLead(props.partition)) !== false) return null;
+  const nowMs = useNowMs();
+  const read = useLead(props.partition);
+  const line = useLeadAbsenceLine(props.partition, read, nowMs);
+  const runner = useSessionRunnerShort(props.partition, "lead", "project");
+  if (projectLeadPresent(read) !== false) return null;
   return (
     <Notice
       tone="info"
       heading="No lead"
-      detail="Tickets are dispatched by hand"
-    />
+      {...(line === undefined ? {} : { detail: line })}
+    >
+      {runner === undefined ? null : (
+        <SessionRunnerNotice
+          partition={props.partition}
+          session="Lead"
+          short={runner}
+        />
+      )}
+    </Notice>
   );
 }
 

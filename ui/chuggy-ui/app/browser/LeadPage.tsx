@@ -78,6 +78,7 @@ import {
 } from "./selectorSettingsWriting.ts";
 import {
   SessionRunnerNotice,
+  useSessionPlacement,
   useSessionRunnerShort,
 } from "./sessionPlacement.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
@@ -124,6 +125,21 @@ export function useLead(
   const present = projectLeadPresent(state);
   if (present !== undefined && present === absent) setAbsent(!present);
   return state;
+}
+
+/** The line beside a page's `No lead`, over the lead read the page holds and
+ * the placement its runner notice is drawn from. */
+export function useLeadAbsenceLine(
+  partition: PartitionIdentity,
+  read: PanelState<LeadReadResponse>,
+  nowMs: number,
+): string | undefined {
+  const placement = useSessionPlacement(partition);
+  return projectLeadAbsenceLine(
+    read,
+    nowMs,
+    placement.state === "Ready" ? placement.value : undefined,
+  );
 }
 
 /** The bar's own title, where the session stands, why no runner can take its
@@ -371,6 +387,7 @@ export function LeadPage(): ReactNode {
   const state = projectLeadPanelState(read);
   const inquiries = useInquiryBoxes();
   const runner = useSessionRunnerShort(partition, "lead", "project");
+  const absence = useLeadAbsenceLine(partition, read, nowMs);
   if (state.state === "Absent") {
     const action =
       runner === undefined ? undefined : (
@@ -380,7 +397,6 @@ export function LeadPage(): ReactNode {
           short={runner}
         />
       );
-    const absence = projectLeadAbsenceLine(read, nowMs, runner);
     return (
       <>
         <LeadSelectorStrip partition={partition} />
