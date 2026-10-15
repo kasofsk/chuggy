@@ -22,7 +22,13 @@ import test from "node:test";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
 
-import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
+import {
+  configurationDocumentJsonSchema,
+  configurationImageGlibcVersionMin,
+  configurationImageSchema,
+} from "../../src/contract/configurationDocument.ts";
+import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
+import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
@@ -278,6 +284,30 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
   ],
   [
     declared({ ...configuration, image: "" }),
+    "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    declared({ ...configuration, image: "Worker:v1" }),
+    "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    declared({
+      ...configuration,
+      image: `worker:${"v".repeat(workerImageCharsMax)}`,
+    }),
+    "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    declared({
+      ...configuration,
+      executionRequirements: {
+        platformDefault: containerRequirement,
+        platformDefaultVersion: 1,
+        taskKindDefaults: {
+          Work: { ...containerRequirement, image: "worker//v1" },
+        },
+      },
+    }),
     "ConfigurationInvalid:ReleaseShapeInvalid",
   ],
   [
@@ -696,4 +726,107 @@ test("the outputs shape the schema shows is the one their reader takes, and appr
   assert.deepEqual(publishedField("finalizationApprovalRequired", "anyOf", 0), {
     type: "boolean",
   });
+});
+
+/** References the distribution grammar spells, each a shape a project's image is named by. */
+const imageReferencesWellFormed = [
+  "worker:v1",
+  "ubuntu",
+  "node:24-bookworm",
+  `node@sha256:${"a".repeat(64)}`,
+  `registry.chuggy.internal/chuggy/worker@sha256:${"a".repeat(64)}`,
+  `ghcr.io/owner/repo_x__y-z.w:Tag_1.0@sha256:${"0".repeat(64)}`,
+  "localhost:5000/team/app:dev",
+  "Registry.Example/app",
+];
+
+/** Texts no reference spells, each refused for one term of the grammar. */
+const imageReferencesIllFormed = [
+  "",
+  "Worker:v1",
+  "team/App",
+  "team//app",
+  "/app",
+  "app/",
+  "app:",
+  "app:-dev",
+  "app:dev:more",
+  `app:${"t".repeat(129)}`,
+  `app@sha256:${"a".repeat(63)}`,
+  `app@sha256:${"A".repeat(64)}`,
+  `app@sha512:${"a".repeat(64)}`,
+  "app___x",
+  "app.-x",
+  "-host.example/app",
+  "host-.example/app",
+  "app dev",
+  `a${"b".repeat(workerImageCharsMax)}`,
+];
+
+test("an image is a reference the distribution grammar spells, and the published schema answers each as the import does", () => {
+  const imageTakes = new Ajv2020({ strict: true }).compile(
+    configurationImageSchema.toJSONSchema(),
+  );
+  for (const image of imageReferencesWellFormed) {
+    assert.equal(
+      configurationImageSchema.safeParse(image).success,
+      true,
+      image,
+    );
+    assert.equal(imageTakes(image), true, image);
+  }
+  for (const image of imageReferencesIllFormed) {
+    assert.equal(
+      configurationImageSchema.safeParse(image).success,
+      false,
+      image,
+    );
+    assert.equal(imageTakes(image), false, image);
+  }
+});
+
+/** The image property a published configuration states at the release header and at the platform default's container requirement. */
+interface PublishedImages {
+  readonly properties: {
+    readonly configuration: {
+      readonly properties: {
+        readonly image: unknown;
+        readonly executionRequirements: {
+          readonly properties: {
+            readonly platformDefault: {
+              readonly oneOf: readonly {
+                readonly properties: { readonly image?: unknown };
+              }[];
+            };
+          };
+        };
+      };
+    };
+  };
+}
+
+test("the published schema says of both images that any one works that holds the runtime's needs, and that a digest is not required", () => {
+  const published: unknown = configurationDocumentJsonSchema();
+  const configuration = (published as PublishedImages).properties.configuration
+    .properties;
+  const header = configuration.image as {
+    readonly maxLength: number;
+    readonly pattern: string;
+    readonly description: string;
+  };
+  assert.deepEqual(
+    configuration.executionRequirements.properties.platformDefault.oneOf[0]
+      ?.properties.image,
+    header,
+  );
+  assert.equal(header.maxLength, workerImageCharsMax);
+  assert.equal(typeof header.pattern, "string");
+  for (const said of [
+    "Any image works",
+    `read-only at ${workerRuntimeDirectory}`,
+    `glibc ${configurationImageGlibcVersionMin} or later`,
+    "A digest is recommended and not required",
+    "chuggy holds none of the project's registry logins",
+  ])
+    assert.ok(header.description.includes(said), said);
 });

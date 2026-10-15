@@ -7,12 +7,17 @@
  * THE PIN'S RELEASE IS HELD TO THE RANGE THE PLANES ACCEPT, which is what a
  * pod's every request is refused against. Raising a plane's floor past it turns
  * this red until the core moves to a release above it.
+ *
+ * THE GLIBC A PROJECT'S IMAGE IS TOLD IT NEEDS IS THE FLOOR THE RUNTIME'S
+ * BUILD READS OFF ITS OWN BINARIES, so a runtime that comes to need a newer one
+ * turns this red until what a project is told says so.
  */
 
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
+import { configurationImageGlibcVersionMin } from "../../src/contract/configurationDocument.ts";
 import { workerContractVersionOf } from "../../src/contract/workerContract.ts";
 import { workerWorkspaceVariable } from "../../src/contract/workerEnvironment.ts";
 import {
@@ -72,6 +77,17 @@ function dockerStages(text: string): DockerStage[] {
   return stages;
 }
 
+/** The default one build argument declares, quoted as this file quotes each it declares. */
+function dockerArgumentDefault(text: string, name: string): string | undefined {
+  const declared = dockerInstructions(text)
+    .map((instruction) =>
+      new RegExp(`^ARG ${name}="([^"]*)"$`, "u").exec(instruction),
+    )
+    .filter((found) => found !== null);
+  assert.ok(declared.length <= 1, `${name} is declared more than once`);
+  return declared[0]?.[1];
+}
+
 /** The environment a built target carries, the last stage by default, over every stage it is built from. */
 function imageEnvironment(text: string, target?: string): Map<string, string> {
   const stages = dockerStages(text);
@@ -115,4 +131,16 @@ test("each image names the workspace a work pod reads", () => {
       `${image} names no workspace`,
     );
   }
+});
+
+test("the glibc a configuration's image is told it needs is the runtime's own floor", () => {
+  const floor = dockerArgumentDefault(
+    readFileSync(dockerfilePath, "utf8"),
+    "RUNTIME_VERSION_FLOOR",
+  );
+  assert.ok(floor !== undefined, "the runtime's build states no floor");
+  const glibc = floor
+    .split(" ")
+    .filter((version) => version.startsWith("GLIBC_"));
+  assert.deepEqual(glibc, [`GLIBC_${configurationImageGlibcVersionMin}`]);
 });

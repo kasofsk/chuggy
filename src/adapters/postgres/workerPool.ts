@@ -49,10 +49,11 @@
  * name rather than by registration, which is never less than the model's count
  * for the current one.
  *
- * AN IMAGE A CLAIM HANDS OUT IS ONE THE SITE ADMITTED. A claim sees an attempt
- * only once its invocation is recorded, and the scheduler records one only
- * after `schedulerPrepare` resolved the execution's profile, which refuses a
- * pinned image the site does not admit as `ExecutionPolicyDenied`.
+ * AN ATTEMPT A CLAIM HANDS OUT IS ONE THE SITE ADMITTED. A claim sees an
+ * attempt only once its invocation is recorded, and the scheduler records one
+ * only after `schedulerPrepare` resolved the execution's profile, which refuses
+ * a pinned image for an agent chuggy's runtime does not provide as
+ * `ExecutionPolicyDenied`.
  *
  * A RELEASE ENDS THE ATTEMPT, AND NO CLAIM IS MADE OF IT AGAIN. A pool that
  * answers that it cannot run what it claimed withdraws the attempt through

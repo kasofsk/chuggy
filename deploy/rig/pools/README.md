@@ -48,8 +48,8 @@ as final: the execution concludes as a failed process.
 
 ## How a pool pulls
 
-An assignment names the image its execution pinned, by digest. A job's
-assignment to a pool whose release reads a runtime
+An assignment names the image its execution pinned, as its configuration
+names it. A job's assignment to a pool whose release reads a runtime
 (`workerContractRunnerRuntime` in `src/interpreter/workerPlane.ts`) also names
 the runtime image its attempt was opened under, where the attempt kept one.
 Where either reference's host is a key of the pool plane's

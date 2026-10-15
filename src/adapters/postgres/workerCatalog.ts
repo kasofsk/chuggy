@@ -1,10 +1,11 @@
 /**
- * The worker catalog: what a scheduler publishes of its own admitted-images
- * list at boot, and what a read decorates an image with afterwards.
+ * The worker catalog: what a scheduler publishes of its own offered-images
+ * list at boot, and what a read decorates an image with afterwards. It labels
+ * an image and admits none: `admitted_worker` is only the table's name.
  *
- * A PUBLICATION IS ONE STATEMENT AND IT DELETES NOTHING. Every named entry is
+ * A PUBLICATION IS ONE STATEMENT AND IT DELETES NOTHING. Every entry is
  * written by image in a single insert, so a boot either publishes the whole
- * list or none of it, and an image this release no longer admits keeps the row
+ * list or none of it, and an image this release no longer offers keeps the row
  * it was last published under, `published_at` and all.
  *
  * THE LIST BOUND IS REFUSED AT COMPOSITION rather than inside the check, which
@@ -16,8 +17,8 @@ import type pg from "pg";
 
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import {
-  admittedImagesMax,
-  type AdmittedWorker,
+  offeredImagesMax,
+  type OfferedWorker,
   type Worker,
 } from "../../interpreter/workerCatalog.ts";
 
@@ -45,14 +46,14 @@ export async function postgresWorkerCatalog(
   );
 }
 
-/** Publishes this deployment's named images before its loop reads anything. */
+/** Publishes this deployment's offered images before its loop reads anything. */
 export function postgresWorkerCatalogPrecondition(
   pool: pg.Pool,
-  workers: readonly AdmittedWorker[],
+  workers: readonly OfferedWorker[],
 ): RuntimePrecondition {
-  if (workers.length > admittedImagesMax)
+  if (workers.length > offeredImagesMax)
     throw new RangeError(
-      `a worker catalog publishes at most ${String(admittedImagesMax)} named images`,
+      `a worker catalog publishes at most ${String(offeredImagesMax)} named images`,
     );
   const images = workers.map((worker) => worker.image);
   const names = workers.map((worker) => worker.name);

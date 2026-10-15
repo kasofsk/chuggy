@@ -66,12 +66,12 @@ image that configuration commands is a setting, and a deployment naming none
 authors no bootstrap:
 
 ```
-CHUG_API_BOOTSTRAP_WORKER_IMAGE=<a digest reference the scheduler admits>
+CHUG_API_BOOTSTRAP_WORKER_IMAGE=<an image reference, best pinned by digest>
 ```
 
-It is not checked against the scheduler's admitted images — the API does not
-hold that list — so an image the rig will not run is refused at placement with
-`ExecutionPolicyDenied` rather than here.
+The API refuses to start on one that is no image reference. It checks nothing
+else of the image: one chuggy's runtime cannot run in stops its ticket when the
+job starts, with a reason naming what the image lacks.
 
 The step runs after the binding row exists and never refuses one. The bind's
 answer carries `configurations`, which is an import, a bootstrap, or a

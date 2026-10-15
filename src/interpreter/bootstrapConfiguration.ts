@@ -34,6 +34,10 @@
  * ITS STAGES RUN AS THE AGENT IT TELLS ITS WORKER TO DECLARE, so the
  * configuration a bootstrap ticket hands over runs on the worker it ran on.
  *
+ * IT TELLS ITS WORKER WHAT AN IMAGE NEEDS. The image a deployment names is one
+ * the repository may replace by any it builds or chooses, and the worker
+ * choosing one has nothing else to learn chuggy's runtime's needs from.
+ *
  * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
  * and a reference name are bounded where each is branded, the image by
  * `bootstrapImageFault` where a deployment names it, and the rest of every
@@ -49,6 +53,8 @@ import {
 } from "./authoring.ts";
 import {
   configurationDocumentVersion,
+  configurationImageGlibcVersionMin,
+  configurationImageSchema,
   releaseConfigurationVersion,
 } from "../contract/configurationDocument.ts";
 import { nativeHttpRoutes, textCodePointsCount } from "../contract/http.ts";
@@ -58,6 +64,7 @@ import {
   commandLinesMax,
 } from "../contract/workerTask.ts";
 import type { GitRefName, RepositoryId } from "./finalizer.ts";
+import { workerRuntimeDirectory } from "../contract/workerEnvironment.ts";
 import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.ts";
 import {
   briefingLinesMax,
@@ -91,11 +98,20 @@ function bootstrapImageLine(image: string): string {
 export const bootstrapImageCharsMax =
   briefingLineCharsMax - textCodePointsCount(bootstrapImageLine(""));
 
-/** Why a bootstrap configuration cannot name this image, if it cannot. */
+/**
+ * Why a bootstrap configuration cannot name this image, if it cannot: its line
+ * is past what a briefing holds, or it is no image reference a configuration
+ * may name.
+ */
 export function bootstrapImageFault(
   image: string,
-): ReturnType<typeof taskConfigurationLineFault> {
-  return taskConfigurationLineFault(bootstrapImageLine(image));
+): ReturnType<typeof taskConfigurationLineFault> | "ImageReferenceInvalid" {
+  return (
+    taskConfigurationLineFault(bootstrapImageLine(image)) ??
+    (configurationImageSchema.safeParse(image).success
+      ? undefined
+      : "ImageReferenceInvalid")
+  );
 }
 
 /** The agent every briefed stage runs as. */
@@ -106,19 +122,20 @@ const bootstrapWorkerMode = {
 } as const;
 
 /**
- * One simple declaration, in the letters `N`, `C`, `I`, `S`, `E` and `L`
- * stand for, the bounds its import refuses past, and where every key chuggy
- * reads is published.
+ * What a worker is asked to do, then one simple declaration, in the letters
+ * `N`, `C`, `I`, `S`, `E` and `L` stand for, the bounds its import refuses
+ * past, where every key chuggy reads is published, and what an image needs.
  */
-function bootstrapFormatInstructions(image: string): readonly string[] {
+function bootstrapWorkInstructions(image: string): readonly string[] {
   return [
-    `Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
+    `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there. Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
     `C is {"version":${String(releaseConfigurationVersion)},"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
     `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer. Evaluations run in the order listed and a failed stage ends evaluation, so a cheap Check stage goes before a Review.`,
     `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty.`,
     `The JSON Schema at GET ${nativeHttpRoutes.configurationSchema} on the chuggy API names every key chuggy reads, among them authority, executionRequirements, work.commands, the model of a Codex mode, outputs and finalizationApprovalRequired, and shows Check stages that brief an agent. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`,
-    "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file.",
     bootstrapImageLine(image),
+    `I may instead be any image the repository builds or chooses, best one it already builds for its CI with what its checks need added. chuggy mounts its runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD, so the image needs /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++ (a current Debian or Ubuntu, not Alpine or musl), and a $HOME, workspace and temporary directory uid 1000 can write; a ticket on an image lacking one stops with a reason naming it.`,
+    "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
   ];
 }
 
@@ -171,10 +188,7 @@ function bootstrapConfigurationValue(
     brief: bootstrapBrief(input),
     practices: [],
     work: {
-      instructions: [
-        `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there.`,
-        ...bootstrapFormatInstructions(input.image),
-      ],
+      instructions: bootstrapWorkInstructions(input.image),
     },
     review: { instructions: bootstrapReviewInstructions },
     evaluations: [

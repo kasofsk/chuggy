@@ -7,11 +7,11 @@
  * text to parsed data — which is what lets a suite drive every refusal without
  * a process to set variables on.
  *
- * EVERY SITE DECISION ARRIVES AS DATA AND NONE IS DECIDED HERE. Admitted worker
+ * EVERY SITE DECISION ARRIVES AS DATA AND NONE IS DECIDED HERE. Offered worker
  * images, resource budgets, the namespace, the service account, the node
  * selector and both security contexts are read and handed on unread; what this
  * module decides is whether a deployment named them at all, whether the
- * admitted-images list names one image, or one worker label, twice, and
+ * offered-images list names one image, or one worker label, twice, and
  * whether the runtime every worker pod is started from is pinned by digest.
  *
  * A BOUND IS EITHER THE DEFAULT OR AN OVERRIDE OF ONE THAT EXISTS. The three
@@ -43,7 +43,7 @@ import type { KubernetesWorkerLaunchConfig } from "../adapters/kubernetes/worker
 import type {
   SuppliedExecutionPolicyConfig,
   SuppliedExecutionProfile,
-  SuppliedRuntime,
+  SuppliedOfferedImage,
   SuppliedRuntimeFactsConfig,
 } from "../adapters/supplied/schedulerPorts.ts";
 import {
@@ -90,12 +90,12 @@ import type {
 } from "../interpreter/sessionPlacement.ts";
 import { repositoryConfigurationNameCharsMax } from "../interpreter/repositoryConfigurationIdentity.ts";
 import {
-  admittedImagesMax,
   asWorkerName,
   asWorkerVersion,
+  offeredImagesMax,
   workerImageCharsMax,
   workerVersionCharsMax,
-  type AdmittedWorker,
+  type OfferedWorker,
 } from "../interpreter/workerCatalog.ts";
 import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
 import { workerPoolImagePinned } from "../interpreter/workerPoolImagePull.ts";
@@ -119,7 +119,7 @@ export interface SchedulerCommandConfig {
   readonly finalizer: FinalizerConfig;
   readonly workers: KubernetesWorkerLaunchConfig;
   readonly policy: SuppliedExecutionPolicyConfig;
-  readonly workerCatalog: readonly AdmittedWorker[];
+  readonly workerCatalog: readonly OfferedWorker[];
   readonly runtimeFacts: SuppliedRuntimeFactsConfig;
   readonly sessions: KubernetesSessionLaunchConfig;
   readonly sessionScheduler: SessionSchedulerConfig;
@@ -244,89 +244,79 @@ const schedulerTaskKinds = Object.keys(
 ) as readonly ExecutionTaskKind[];
 
 /**
- * One admitted image, either the bare reference a deployment has always written
- * or the same reference labelled. A bare entry is admitted and unnamed, so a
- * deployment adopts labels one image at a time.
+ * One image a deployment offers, under the label the catalog shows it by: what
+ * a requirement stated as capabilities is resolved to, and nothing a pinned
+ * image is held to. An entry that publishes no capabilities is offered on Linux
+ * and Amd64 as the Claude worker every entry was before any published them.
  */
-const schedulerAdmittedImageSchema = z.union([
-  schedulerTextSchema,
-  z
-    .strictObject({
-      image: schedulerTextSchema.max(workerImageCharsMax),
-      name: z.string().refine((value) => asWorkerName(value) !== undefined, {
-        message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
+const schedulerOfferedImageSchema = z
+  .strictObject({
+    image: schedulerTextSchema.max(workerImageCharsMax),
+    name: z.string().refine((value) => asWorkerName(value) !== undefined, {
+      message: `is not a worker name of at most ${String(repositoryConfigurationNameCharsMax)} characters`,
+    }),
+    version: z
+      .string()
+      .refine((value) => asWorkerVersion(value) !== undefined, {
+        message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
       }),
-      version: z
-        .string()
-        .refine((value) => asWorkerVersion(value) !== undefined, {
-          message: `is not a worker version of at most ${String(workerVersionCharsMax)} characters`,
-        }),
-      operatingSystem: z.enum(["Linux", "MacOS"]).optional(),
-      architecture: z.enum(["Amd64", "Arm64"]).optional(),
-      capabilities: z
-        .array(z.enum(["Agent:Claude", "Agent:Codex"]))
-        .max(2)
-        .refine((values) => new Set(values).size === values.length, {
-          message: "contains a duplicate capability",
-        })
-        .optional(),
-    })
-    .refine(
-      (entry) =>
-        entry.capabilities !== undefined ||
-        (entry.operatingSystem === undefined &&
-          entry.architecture === undefined),
-      { message: "names a platform without publishing capabilities" },
-    )
-    .refine(
-      (entry) =>
-        (entry.operatingSystem === undefined) ===
-        (entry.architecture === undefined),
-      { message: "must name both operating system and architecture" },
-    ),
-]);
+    operatingSystem: z.enum(["Linux", "MacOS"]).optional(),
+    architecture: z.enum(["Amd64", "Arm64"]).optional(),
+    capabilities: z
+      .array(z.enum(["Agent:Claude", "Agent:Codex"]))
+      .max(2)
+      .refine((values) => new Set(values).size === values.length, {
+        message: "contains a duplicate capability",
+      })
+      .optional(),
+  })
+  .refine(
+    (entry) =>
+      entry.capabilities !== undefined ||
+      (entry.operatingSystem === undefined && entry.architecture === undefined),
+    { message: "names a platform without publishing capabilities" },
+  )
+  .refine(
+    (entry) =>
+      (entry.operatingSystem === undefined) ===
+      (entry.architecture === undefined),
+    { message: "must name both operating system and architecture" },
+  );
 
-type SchedulerAdmittedImage = z.infer<typeof schedulerAdmittedImageSchema>;
+type SchedulerOfferedImage = z.infer<typeof schedulerOfferedImageSchema>;
 
-/** The image one entry admits, whichever of the two shapes it was written in. */
-function schedulerAdmittedImage(entry: SchedulerAdmittedImage): string {
-  return typeof entry === "string" ? entry : entry.image;
-}
-
-function schedulerRuntime(
-  entry: SchedulerAdmittedImage,
-): string | SuppliedRuntime {
-  if (typeof entry === "string" || entry.capabilities === undefined)
-    return schedulerAdmittedImage(entry);
+function schedulerPolicyOffered(
+  entry: SchedulerOfferedImage,
+): SuppliedOfferedImage {
   return {
     image: entry.image,
     operatingSystem: entry.operatingSystem ?? "Linux",
     architecture: entry.architecture ?? "Amd64",
-    capabilities: entry.capabilities,
+    ...(entry.capabilities === undefined
+      ? {}
+      : { capabilities: entry.capabilities }),
   };
 }
 
 /**
- * Refuses a list that admits one image twice or spells one label twice. Both
+ * Refuses a list that offers one image twice or spells one label twice. Both
  * are settled here rather than at the catalog, because a deployment that means
  * two things by one image has no reading a later boot could recover.
  */
 function schedulerImagesAreDistinct(
-  entries: readonly SchedulerAdmittedImage[],
+  entries: readonly SchedulerOfferedImage[],
   ctx: z.RefinementCtx,
 ): void {
   const images = new Set<string>();
   const labels = new Set<string>();
   for (const [index, entry] of entries.entries()) {
-    const image = schedulerAdmittedImage(entry);
-    if (images.has(image))
+    if (images.has(entry.image))
       ctx.addIssue({
         code: "custom",
         path: [index],
-        message: `admits the image ${image} twice`,
+        message: `offers the image ${entry.image} twice`,
       });
-    images.add(image);
-    if (typeof entry === "string") continue;
+    images.add(entry.image);
     const label = JSON.stringify([entry.name, entry.version]);
     if (labels.has(label))
       ctx.addIssue({
@@ -339,9 +329,9 @@ function schedulerImagesAreDistinct(
 }
 
 const schedulerImagesSchema = z
-  .array(schedulerAdmittedImageSchema)
+  .array(schedulerOfferedImageSchema)
   .min(1)
-  .max(admittedImagesMax)
+  .max(offeredImagesMax)
   .superRefine(schedulerImagesAreDistinct);
 
 const schedulerResourcesSchema = z.strictObject({
@@ -546,17 +536,15 @@ const schedulerSessionBoundKinds: {
   budgetUsd: z.number().finite().min(kubernetesSessionBudgetUsdMin),
 };
 
-/** Only the entries that named themselves, which are the ones a boot publishes. */
+/** The label every offered entry names itself by, which a boot publishes. */
 function schedulerWorkerCatalog(
-  admitted: readonly SchedulerAdmittedImage[],
-): readonly AdmittedWorker[] {
-  return admitted
-    .filter((entry) => typeof entry !== "string")
-    .map((entry) => ({
-      image: entry.image,
-      name: entry.name,
-      version: entry.version,
-    }));
+  offered: readonly SchedulerOfferedImage[],
+): readonly OfferedWorker[] {
+  return offered.map((entry) => ({
+    image: entry.image,
+    name: entry.name,
+    version: entry.version,
+  }));
 }
 
 /**
@@ -598,7 +586,7 @@ function schedulerProjectRoutes<Override>(
 /** The execution policy this deployment states, one profile, grant and route per task kind. */
 function schedulerPolicy(
   environment: SchedulerEnvironment,
-  admitted: readonly SchedulerAdmittedImage[],
+  offered: readonly SchedulerOfferedImage[],
 ): SuppliedExecutionPolicyConfig {
   const parsed = schedulerJson(
     environment,
@@ -620,7 +608,7 @@ function schedulerPolicy(
   return {
     profiles,
     routing: schedulerPolicyRouting(parsed),
-    imagesAdmitted: admitted.map(schedulerRuntime),
+    imagesOffered: offered.map(schedulerPolicyOffered),
   };
 }
 
@@ -865,9 +853,9 @@ export function schedulerCommandConfig(
   environment: SchedulerEnvironment,
 ): SchedulerCommandConfig {
   const workspace = schedulerOptional(environment, "WORKER_WORKSPACE");
-  const admitted = schedulerJson(
+  const offered = schedulerJson(
     environment,
-    "ADMITTED_IMAGES",
+    "OFFERED_IMAGES",
     schedulerImagesSchema,
   );
   const workers = schedulerWorkers(environment);
@@ -911,8 +899,8 @@ export function schedulerCommandConfig(
       finalizerDefaults,
     ),
     workers,
-    policy: schedulerPolicy(environment, admitted),
-    workerCatalog: schedulerWorkerCatalog(admitted),
+    policy: schedulerPolicy(environment, offered),
+    workerCatalog: schedulerWorkerCatalog(offered),
     runtimeFacts: workspace === undefined ? {} : { workspace },
     sessions: schedulerSessions(environment, schedulerPodSite(workers)),
     sessionScheduler: schedulerBounds(

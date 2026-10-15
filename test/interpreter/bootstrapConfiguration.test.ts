@@ -21,8 +21,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
+import {
+  configurationDocumentJsonSchema,
+  configurationImageGlibcVersionMin,
+} from "../../src/contract/configurationDocument.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
+import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
@@ -354,6 +358,20 @@ test("an image a briefing line cannot carry is a fault before it is a configurat
   );
 });
 
+test("an image a briefing line carries that is no image reference is a fault too", () => {
+  for (const malformed of [
+    "Worker:v1",
+    "worker:",
+    "registry.invalid//worker",
+    `worker@sha256:${"b".repeat(63)}`,
+  ])
+    assert.equal(
+      bootstrapImageFault(malformed),
+      "ImageReferenceInvalid",
+      malformed,
+    );
+});
+
 test("a repository and a branch as long as each is branded compose beside the longest image", () => {
   const longest = bootstrapConfiguration({
     repository: asRepositoryId("r".repeat(finalizerIdentityCharsMax)),
@@ -521,6 +539,34 @@ test("the worker is told where the format is published, and that evaluations run
         line.includes("in the order listed") &&
         line.includes("a failed stage ends evaluation") &&
         line.includes("Check stage goes before a Review"),
+    ),
+  );
+});
+
+test("the worker is told any image may stand for the one named, what chuggy's runtime needs of it, and whose a service is", () => {
+  const told = briefed("Work", "PurposeInstructions");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("I may instead be any image the repository builds") &&
+        line.includes("one it already builds for its CI") &&
+        line.includes(`read-only at ${workerRuntimeDirectory}`) &&
+        line.includes("ENTRYPOINT and CMD") &&
+        line.includes("/bin/sh, git on PATH") &&
+        line.includes(
+          `glibc ${configurationImageGlibcVersionMin} or later with libstdc++`,
+        ) &&
+        line.includes("not Alpine or musl") &&
+        line.includes("temporary directory uid 1000 can write") &&
+        line.includes("stops with a reason naming it"),
+    ),
+  );
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("such as a database, is the image's own") &&
+        line.includes("the runner owner's") &&
+        line.includes("never chuggy's"),
     ),
   );
 });

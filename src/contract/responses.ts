@@ -534,7 +534,7 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
 ]);
 
 /**
- * The label the catalog holds for an admitted image. It sits beside the
+ * The label the catalog holds for an offered image. It sits beside the
  * requirement rather than inside it, because the requirement is the digested
  * value and a label is not part of what an execution is.
  */

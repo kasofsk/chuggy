@@ -10,8 +10,10 @@ import {
   suppliedExecutionPolicy,
   suppliedRuntimeFacts,
   type SuppliedExecutionProfile,
+  type SuppliedOfferedImage,
 } from "../../src/adapters/supplied/schedulerPorts.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
+import type { ExecutionCapability } from "../../src/interpreter/executionRequirement.ts";
 import {
   asCapacityAccountId,
   asClusterId,
@@ -86,13 +88,21 @@ function executionOf(taskKind: ExecutionTaskKind): LogicalExecution {
   };
 }
 
-const admitted = ["registry.invalid/worker:v1"];
+/** An entry as a deployment that published no capabilities offers it. */
+function offeredUndeclared(image: string): SuppliedOfferedImage {
+  return { image, operatingSystem: "Linux", architecture: "Amd64" };
+}
+
+const offered = [offeredUndeclared("registry.invalid/worker:v1")];
+
+/** An agent outside the vocabulary, which is the one agent chuggy's runtime can lack. */
+const unprovidedAgent = "Agent:Unprovided" as unknown as ExecutionCapability;
 
 test("a task kind the deployment states resolves to its profile and grant", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: admitted,
+    imagesOffered: offered,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Work")), {
     resolved: "Profile",
@@ -105,7 +115,7 @@ test("a task kind the deployment states nothing for is a definitive inability", 
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: admitted,
+    imagesOffered: offered,
   });
   assert.deepEqual(await policy.profileFor(executionOf("Evaluation")), {
     resolved: "Denied",
@@ -113,24 +123,48 @@ test("a task kind the deployment states nothing for is a definitive inability", 
   });
 });
 
-test("an image the site does not admit is a definitive policy denial", async () => {
+test("a pinned image no entry offers runs, for each agent chuggy's runtime provides", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: ["registry.invalid/other:v1"],
+    imagesOffered: [offeredUndeclared("registry.invalid/other:v1")],
   });
-  assert.deepEqual(await policy.profileFor(executionOf("Work")), {
-    resolved: "Denied",
-    reason: "ExecutionPolicyDenied",
+  for (const agentCapability of [
+    undefined,
+    "Agent:Claude" as const,
+    "Agent:Codex" as const,
+  ])
+    assert.deepEqual(
+      await policy.profileFor({
+        ...executionOf("Work"),
+        ...(agentCapability === undefined ? {} : { agentCapability }),
+      }),
+      { resolved: "Profile", profile: work.profile, grant },
+      String(agentCapability),
+    );
+});
+
+test("a pinned image for an agent chuggy's runtime does not provide is a policy denial", async () => {
+  const policy = suppliedExecutionPolicy({
+    profiles: new Map([["Work", work]]),
+    routing,
+    imagesOffered: offered,
   });
+  assert.deepEqual(
+    await policy.profileFor({
+      ...executionOf("Work"),
+      agentCapability: unprovidedAgent,
+    }),
+    { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  );
 });
 
 /**
  * The catalog a deployment grows one release at a time: older entries that
  * never published a capability, and the newest one that does.
  */
-const catalogGrown = [
-  "registry.invalid/worker:v1",
+const catalogGrown: readonly SuppliedOfferedImage[] = [
+  offeredUndeclared("registry.invalid/worker:v1"),
   {
     image: "registry.invalid/worker:v10",
     operatingSystem: "Linux" as const,
@@ -143,7 +177,7 @@ test("a pinned image is what runs when the configuration also names an agent", a
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: catalogGrown,
+    imagesOffered: catalogGrown,
   });
   assert.deepEqual(
     await policy.profileFor({
@@ -160,11 +194,11 @@ test("a pinned image is what runs when the configuration also names an agent", a
   );
 });
 
-test("a pinned image whose entry does not provide the agent is a policy denial", async () => {
+test("a pinned image whose entry does not provide the agent runs it on chuggy's runtime", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: [
+    imagesOffered: [
       {
         image: "registry.invalid/claude-only:v1",
         operatingSystem: "Linux",
@@ -184,7 +218,7 @@ test("a pinned image whose entry does not provide the agent is a policy denial",
       },
       agentCapability: "Agent:Codex",
     }),
-    { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+    { resolved: "Profile", profile: work.profile, grant },
   );
 });
 
@@ -192,7 +226,7 @@ test("a pinned image whose entry publishes no capability runs the agent anyway",
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: admitted,
+    imagesOffered: offered,
   });
   assert.deepEqual(
     await policy.profileFor({
@@ -203,11 +237,11 @@ test("a pinned image whose entry publishes no capability runs the agent anyway",
   );
 });
 
-test("an agent capability resolves to the last admitted runtime that provides it", async () => {
+test("an agent capability resolves to the last offered image that provides it", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: catalogGrown,
+    imagesOffered: catalogGrown,
   });
   assert.deepEqual(
     await policy.profileFor({
@@ -228,11 +262,11 @@ test("an agent capability resolves to the last admitted runtime that provides it
   );
 });
 
-test("an agent capability resolves to an admitted runtime that provides it", async () => {
+test("an agent capability resolves to an offered image that provides it", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: [
+    imagesOffered: [
       {
         image: "registry.invalid/agents:v1",
         operatingSystem: "Linux",
@@ -261,11 +295,11 @@ test("an agent capability resolves to an admitted runtime that provides it", asy
   );
 });
 
-test("an agent capability does not resolve to a runtime on the wrong platform", async () => {
+test("an agent capability does not resolve to an image on the wrong platform", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: [
+    imagesOffered: [
       {
         image: "registry.invalid/agents-arm:v1",
         operatingSystem: "Linux",
@@ -295,11 +329,11 @@ test("an agent capability does not resolve to a runtime on the wrong platform", 
   );
 });
 
-test("a legacy admitted image provides the legacy Claude capability", async () => {
+test("an offered image publishing no capability provides the legacy Claude capability", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: admitted,
+    imagesOffered: offered,
   });
   const execution = executionOf("Work");
   const capability = {
@@ -314,16 +348,16 @@ test("a legacy admitted image provides the legacy Claude capability", async () =
   assert.deepEqual(await policy.profileFor(capability), {
     resolved: "Profile",
     profile: work.profile,
-    image: admitted[0],
+    image: offered[0]?.image,
     grant,
   });
 });
 
-test("a native requirement is refused by capability and never by the image list", async () => {
+test("a native requirement is refused by capability and never by policy", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
-    imagesAdmitted: admitted,
+    imagesOffered: offered,
   });
   const native = executionOf("Work");
   assert.deepEqual(
@@ -341,24 +375,24 @@ test("a native requirement is refused by capability and never by the image list"
   );
 });
 
-test("a policy admitting no image at all is refused where it is composed", () => {
+test("a policy offering no image at all, or an empty one, is refused where it is composed", () => {
   assert.throws(
     () =>
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
         routing,
-        imagesAdmitted: [],
+        imagesOffered: [],
       }),
-    Error,
+    /offers no image/u,
   );
   assert.throws(
     () =>
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
         routing,
-        imagesAdmitted: [""],
+        imagesOffered: [offeredUndeclared("")],
       }),
-    Error,
+    /offers an empty image/u,
   );
 });
 
@@ -368,7 +402,7 @@ test("an entry publishing an empty capability list is refused where it is compos
       suppliedExecutionPolicy({
         profiles: new Map([["Work", work]]),
         routing,
-        imagesAdmitted: [
+        imagesOffered: [
           {
             image: "registry.invalid/worker:v1",
             operatingSystem: "Linux",
@@ -387,7 +421,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
       suppliedExecutionPolicy({
         profiles: new Map(),
         routing,
-        imagesAdmitted: admitted,
+        imagesOffered: offered,
       }),
     Error,
   );
@@ -404,7 +438,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
           ],
         ]),
         routing,
-        imagesAdmitted: admitted,
+        imagesOffered: offered,
       }),
     Error,
   );
@@ -415,7 +449,7 @@ test("a policy that grants nothing, or grants a reach nothing names, is refused"
           ["Work", { ...work, profile: { profile: "", runtimeVersion: "1" } }],
         ]),
         routing,
-        imagesAdmitted: admitted,
+        imagesOffered: offered,
       }),
     Error,
   );
