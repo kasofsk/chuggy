@@ -5,6 +5,7 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  type GitObjectId,
 } from "../../interpreter/finalizer.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asResultManifestId } from "../../interpreter/resultManifest.ts";
@@ -71,5 +72,29 @@ export function postgresExecutionSourceHistory(
         ...(row.ref === null ? {} : { ref: asGitRefName(row.ref) }),
       } satisfies TicketSourceRow;
     },
+    workResultBases: (partition, ticket, commit, limit) =>
+      workResultBases(pool, partition, ticket, commit, limit),
   };
+}
+
+/** The distinct bases of the ticket's work results that produced `commit`, as the port names them. */
+async function workResultBases(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+  commit: GitObjectId,
+  limit: number,
+): Promise<readonly GitObjectId[]> {
+  const found = await pool.query<{ base: string }>(
+    sql`SELECT DISTINCT s.base
+          FROM execution_result_source s
+          JOIN execution e
+            ON e.tenant=s.tenant AND e.project=s.project
+           AND e.result_manifest=s.manifest
+         WHERE s.tenant=${partition.tenant} AND s.project=${partition.project}
+           AND e.ticket=${ticket} AND s.commit=${commit} AND s.base<>s.commit
+         ORDER BY s.base
+         LIMIT ${limit}`,
+  );
+  return found.rows.map((row) => asGitObjectId(row.base));
 }

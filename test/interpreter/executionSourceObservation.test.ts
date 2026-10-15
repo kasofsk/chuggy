@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
+import {
+  changeBaseStepsMax,
+  executionSourceObservation,
+} from "../../src/interpreter/executionSourceObservation.ts";
 import type {
   ExecutionSourceHistoryPort,
   TicketSourceRow,
@@ -11,6 +14,7 @@ import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  type GitObjectId,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -34,6 +38,9 @@ const noHistory: ExecutionSourceHistoryPort = {
     throw new Error("an observation reads no history");
   },
   ticketSource: () => {
+    throw new Error("an observation reads no history");
+  },
+  workResultBases: () => {
     throw new Error("an observation reads no history");
   },
 };
@@ -284,9 +291,30 @@ test("two tickets of one project are each observed in the repository their brief
 const acceptedCommit = asGitObjectId("c".repeat(40));
 const acceptedReference = digestFold(acceptedCommit);
 
-/** A spawn whose history answers the ticket's own source and its latest work manifests. */
+/** The commit the ticket was dispatched at, which the work that produced the accepted one started from. */
+const dispatchedCommit = asGitObjectId("d".repeat(40));
+
+/** The commits the ticket's work results producing one commit started from. */
+type WorkResultBases = (commit: string) => readonly GitObjectId[];
+
+/** A history whose work results produced each commit `produced` names, from the commits it names. */
+function producing(
+  produced: ReadonlyMap<string, readonly GitObjectId[]>,
+): WorkResultBases {
+  return (commit) => produced.get(commit) ?? [];
+}
+
+/** The history of a ticket whose one work result turned its dispatched commit into the accepted one. */
+const acceptedOnce = producing(new Map([[acceptedCommit, [dispatchedCommit]]]));
+
+/**
+ * A spawn whose history answers the ticket's own source, its latest work
+ * manifests and `bases`, recording each commit the walk asked about.
+ */
 function spawningFrom(
   row: TicketSourceRow | undefined,
+  bases: WorkResultBases = acceptedOnce,
+  asked: string[] = [],
 ): ReturnType<typeof executionSourceObservation> {
   return executionSourceObservation(
     {
@@ -303,6 +331,11 @@ function spawningFrom(
       workSource: () =>
         Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
       ticketSource: () => Promise.resolve(row),
+      workResultBases: (_partition, ticket, commit, limit) => {
+        assert.equal(ticket, 1, "the walk left the ticket's own results");
+        asked.push(commit);
+        return Promise.resolve(bases(commit).slice(0, limit));
+      },
     },
   );
 }
@@ -323,6 +356,7 @@ test("a rework runs at the source the ticket carries and judges nothing", async 
       repository: "work-repository",
       target: { commit: acceptedCommit, ref: ticketBranch },
       manifests: [],
+      changeBase: dispatchedCommit,
     },
   );
 });
@@ -342,8 +376,77 @@ test("an evaluation runs at that same source, over the manifests its work produc
       repository: "work-repository",
       target: { commit: acceptedCommit },
       manifests: ["manifest-one"],
+      changeBase: dispatchedCommit,
     },
   );
+});
+
+/** A spawn of the accepted source's ticket, over `bases`, and the commits its walk asked about. */
+async function changeBaseOver(
+  bases: WorkResultBases,
+): Promise<{ changeBase: string | undefined; asked: readonly string[] }> {
+  const asked: string[] = [];
+  const sourced = await spawningFrom(
+    { repository: asRepositoryId("work-repository"), commit: acceptedCommit },
+    bases,
+    asked,
+  ).spawnSource({
+    partition,
+    ticket: 1,
+    source: acceptedReference,
+    kind: "Evaluation",
+  });
+  return { changeBase: sourced?.changeBase, asked };
+}
+
+/**
+ * A rework starts at the result an evaluation failed, so the result it then
+ * produces started from that one. Catches a base read off the latest work
+ * alone, under which an evaluation of the rework would narrow to the rework's
+ * own diff and skip what the first attempt changed.
+ */
+test("the change's base is walked back through every work result of the ticket", async () => {
+  const reworked = asGitObjectId("b".repeat(40));
+  const { changeBase, asked } = await changeBaseOver(
+    producing(
+      new Map([
+        [acceptedCommit, [reworked]],
+        [reworked, [dispatchedCommit]],
+      ]),
+    ),
+  );
+  assert.equal(changeBase, dispatchedCommit);
+  assert.deepEqual(asked, [acceptedCommit, reworked, dispatchedCommit]);
+});
+
+test("a source no work of the ticket produced is where its change started", async () => {
+  assert.equal(
+    (await changeBaseOver(producing(new Map()))).changeBase,
+    acceptedCommit,
+  );
+});
+
+/** Catches either of two claimed bases taken, which is a guess a check would narrow to. */
+test("a commit two of the ticket's results claim names no base", async () => {
+  const { changeBase } = await changeBaseOver(
+    producing(
+      new Map([
+        [acceptedCommit, [dispatchedCommit, asGitObjectId("e".repeat(40))]],
+      ]),
+    ),
+  );
+  assert.equal(changeBase, undefined);
+});
+
+/** Catches a walk with no bound, which a history whose bases never end would hold forever. */
+test("a walk that does not end within its bound names no base", async () => {
+  let produced = 0;
+  const { changeBase, asked } = await changeBaseOver(() => {
+    produced += 1;
+    return [asGitObjectId(produced.toString(16).padStart(40, "0"))];
+  });
+  assert.equal(changeBase, undefined);
+  assert.equal(asked.length, changeBaseStepsMax + 1);
 });
 
 test("a ticket whose source names no repository has nothing for a bundle to name", async () => {

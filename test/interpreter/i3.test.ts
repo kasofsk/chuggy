@@ -35,6 +35,7 @@ import {
 import { materializationOf } from "../../src/interpreter/decisionPlan.ts";
 import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
 import {
+  asFinalizationAttemptId,
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
@@ -550,14 +551,60 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
         targetRef: asGitRefName("refs/heads/main"),
         targetCommit: asGitObjectId("a".repeat(40)),
         manifests: [asResultManifestId("manifest-one")],
+        changeBase: asGitObjectId("b".repeat(40)),
       },
     },
   );
   assert.deepEqual(references.slice(1), [
     { kind: "Repository", reference: "repository" },
     { kind: "TargetCommit", reference: "a".repeat(40) },
+    { kind: "ChangeBase", reference: "b".repeat(40) },
     { kind: "ResultManifest", reference: "manifest-one" },
   ]);
+});
+
+/** Catches a base named where nothing knew one, which a check would narrow to. */
+test("a spawn bundle whose source knows no change base names none", () => {
+  const references = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      source: {
+        repository: asRepositoryId("repository"),
+        targetCommit: asGitObjectId("a".repeat(40)),
+        manifests: [],
+      },
+    },
+  );
+  assert.deepEqual(
+    references.filter((reference) => reference.kind === "ChangeBase"),
+    [],
+  );
+});
+
+/**
+ * A rework after a failed landing is checked out at the target's commit and
+ * holds none of the change, so the change starts there again. Catches the
+ * landing's rework naming no base, or the base its failed change started from.
+ */
+test("a failed landing's rework bundle names the target's commit as where its change starts", () => {
+  const targetCommit = asGitObjectId("a".repeat(40));
+  const references = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      evidence: {
+        attempt: asFinalizationAttemptId("attempt"),
+        attemptDigest: "e".repeat(64),
+        targetCommit,
+        preparation: [{ kind: "Repository", reference: "repository" }],
+      },
+    },
+  );
+  assert.deepEqual(
+    references.filter((reference) => reference.kind === "ChangeBase"),
+    [{ kind: "ChangeBase", reference: targetCommit }],
+  );
 });
 
 test("a spawn bundle pins one reference per image the brief named, with the digest the store answered", () => {

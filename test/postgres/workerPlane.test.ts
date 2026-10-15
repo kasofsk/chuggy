@@ -82,6 +82,27 @@ function acceptedSourceManifest(
   );
 }
 
+/**
+ * A dispatch's work starts the ticket's change, so the worker reads its own
+ * commit as where the change started. Catches a base the worker plane does
+ * not serve, which a check would read as unknown and run everything.
+ */
+test("a dispatched work attempt's inputs name the commit it runs at as where its change starts", async () => {
+  const attempt = await placedAttempt("worker-change-base");
+  const inputs =
+    (
+      await postgresWorkerPlaneAuthority(workerPool).authenticate(
+        attempt.capability.secret,
+      )
+    )?.inputs ?? [];
+  const named = (kind: string) =>
+    inputs
+      .filter((input) => input.kind === kind)
+      .map((input) => input.reference);
+  assert.equal(named("TargetCommit").length, 1);
+  assert.deepEqual(named("ChangeBase"), named("TargetCommit"));
+});
+
 test("the worker role settles once and terminal authority is immediately fenced", async () => {
   const attempt = await placedAttempt("worker-terminal");
   const authority = postgresWorkerPlaneAuthority(workerPool);

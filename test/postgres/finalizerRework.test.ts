@@ -372,6 +372,11 @@ test("a concluded merge conflict returns the ticket to work with a bundle naming
     reference_id: attempt.target_commit,
     reference_digest: null,
   });
+  assert.deepEqual(reworkReference(bundle, "ChangeBase"), {
+    reference_kind: "ChangeBase",
+    reference_id: attempt.target_commit,
+    reference_digest: null,
+  });
   assert.equal(
     reworkReference(bundle, "Repository")?.reference_id,
     project.repository,
@@ -503,5 +508,6 @@ test("a rework runs at the accepted source with no observation", async () => {
     repository: project.repository,
     target: { commit: postgresHarnessObservedCommit },
     manifests: [],
+    changeBase: postgresHarnessObservedCommit,
   });
 });

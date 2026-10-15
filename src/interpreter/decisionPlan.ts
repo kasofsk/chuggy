@@ -171,6 +171,9 @@ function executionRequestBundle(
               : { targetRef: source.target.ref }),
             targetCommit: source.target.commit,
             manifests: source.manifests,
+            ...(source.changeBase === undefined
+              ? {}
+              : { changeBase: source.changeBase }),
           },
         }),
     ...(images === undefined || images.length === 0 ? {} : { images }),
@@ -305,7 +308,9 @@ function nativeActions(
  * The references one spawn's bundle pins, in the order a holder reads them and
  * with no reference declared twice. A failed finalization contributes the exact
  * immutable identities its evidence named, so a worker forms its reconciliation
- * objective from the bundle rather than from whatever a ref holds now.
+ * objective from the bundle rather than from whatever a ref holds now, and the
+ * target's commit as where the change starts again, since its rework is checked
+ * out there and holds none of the change.
  */
 export function inputBundleReferencesOf(
   configuration: ConfigurationPin,
@@ -330,6 +335,9 @@ export function inputBundleReferencesOf(
       : [
           { kind: "Repository" as const, reference: source.repository },
           { kind: "TargetCommit" as const, reference: source.targetCommit },
+          ...(source.changeBase === undefined
+            ? []
+            : [{ kind: "ChangeBase" as const, reference: source.changeBase }]),
           ...source.manifests.map((manifest) => ({
             kind: "ResultManifest" as const,
             reference: manifest,
@@ -345,6 +353,7 @@ export function inputBundleReferencesOf(
             digest: evidence.attemptDigest,
           },
           { kind: "TargetCommit" as const, reference: evidence.targetCommit },
+          { kind: "ChangeBase" as const, reference: evidence.targetCommit },
           ...(evidence.conflictManifest === undefined
             ? []
             : [

@@ -19,6 +19,14 @@
  * AND NOTHING BUT THE DISPATCH ASKS THE REMOTE. Every later spawn reads the row
  * the dispatch or an accepted work result wrote, so a rework runs at the commit
  * that was judged rather than at whatever the branch holds by then.
+ *
+ * WHERE THE CHANGE STARTED IS WALKED BACK, NOT STORED. A spawn's commit is a
+ * work result of this ticket's own wherever a pass moved the source to it, and
+ * that result names the commit its work started at; so the change's base is
+ * the first commit, walking back, that no work result of the ticket produced.
+ * That is the dispatch's commit, or the target's where a failed landing started
+ * the change again. A commit two results claim, or a walk past its bound, names
+ * no base, which a check reads as reason to run everything.
  */
 
 import {
@@ -60,6 +68,45 @@ export interface ExecutionSourceHistoryPort {
     ticket: number,
     source: number,
   ): Promise<TicketSourceRow | undefined>;
+  /**
+   * The distinct commits the ticket's work results that produced `commit`
+   * started from, as many as `limit` of them: none where no work of the
+   * ticket produced it. A result that reports the commit it started at as the
+   * one it produced made nothing, and says nothing of where that commit came
+   * from.
+   */
+  workResultBases(
+    partition: Partition,
+    ticket: number,
+    commit: GitObjectId,
+    limit: number,
+  ): Promise<readonly GitObjectId[]>;
+}
+
+/** The most work results a change's base is walked back through before it is called unknown. */
+export const changeBaseStepsMax = 256;
+
+/**
+ * The commit the ticket's change at `commit` started from: `commit` itself
+ * where no work of the ticket produced it, and otherwise where the one work
+ * result that did started, walked back. Nothing where two results claim one
+ * commit or the walk does not end within its bound.
+ */
+async function executionChangeBase(
+  history: Pick<ExecutionSourceHistoryPort, "workResultBases">,
+  partition: Partition,
+  ticket: number,
+  commit: GitObjectId,
+): Promise<GitObjectId | undefined> {
+  let at = commit;
+  for (let step = 0; step <= changeBaseStepsMax; step += 1) {
+    const bases = await history.workResultBases(partition, ticket, at, 2);
+    const [base, ...others] = bases;
+    if (base === undefined) return at;
+    if (others.length > 0) return undefined;
+    at = base;
+  }
+  return undefined;
 }
 
 export function executionSourceObservation(
@@ -106,6 +153,12 @@ export function executionSourceObservation(
         request.kind === "Evaluation"
           ? await history.workSource(request.partition, request.ticket)
           : undefined;
+      const changeBase = await executionChangeBase(
+        history,
+        request.partition,
+        request.ticket,
+        row.commit,
+      );
       return {
         repository: row.repository,
         target: {
@@ -113,6 +166,7 @@ export function executionSourceObservation(
           ...(row.ref === undefined ? {} : { ref: row.ref }),
         },
         manifests: work?.manifests ?? [],
+        ...(changeBase === undefined ? {} : { changeBase }),
       } satisfies ExecutionSourceObservation;
     },
   };
