@@ -78,7 +78,7 @@ const poolPlaneContractChecked = workerContractChecked(
   workerPoolContractAccepted,
 );
 
-/** The most a settlement is sent: a refusal's evidence at its bound, and nothing else. */
+/** The most a settlement is sent: a refusal's evidence at its bound, beside roster labels such as the image fault it names. */
 export const poolPlaneSettlementBytesMax = planeJsonObjectBytesMax(
   workerPoolEvidenceCharsMax,
 );
