@@ -8,13 +8,15 @@
  *
  * The machine is the record of the machine's things and the site of the
  * site's, and this program keeps neither. Every act is preceded by the probe
- * or the read that would show it already done, so the command is run again
- * after any failure, at any point, and picks up where things stand. Whatever
- * could stop a run without anything having been changed is looked at before
- * the first act: where the project's work runs and whether this person may
- * register for it, the machine's user services, a container engine the
- * package takes from this user, the runner's settings and its Claude login,
- * and whether the package could be installed at all.
+ * or the read that would show it already done, but the package's
+ * `install-service`, which is run each time because a repeat of it changes
+ * nothing; so the command is run again after any failure, at any point, and
+ * picks up where things stand. Whatever could stop a run without anything
+ * having been changed is looked at before the first act: where the project's
+ * work runs and whether this person may register for it, the machine's user
+ * services, a container engine the package takes from this user, the
+ * runner's settings and its Claude login, and whether the package could be
+ * installed at all.
  *
  * A registration is good where the machine holds a pool file for the project
  * and the site lists the pool it names; otherwise a registration token is
@@ -92,6 +94,7 @@ import {
   setupSettingsText,
   setupUnitIs,
   setupUnitOf,
+  setupUnitText,
 } from "./setupRunnerMachine.ts";
 import type {
   SetupFile,
@@ -350,7 +353,7 @@ async function setupActed(
 
 interface Packaged {
   readonly command: string;
-  /** Whether this run installed the package, which is whether a service written before it names the old one. */
+  /** Whether this run installed the package, which is whether a service running from before it runs the old one. */
   readonly installed: boolean;
 }
 
@@ -543,13 +546,18 @@ async function setupChecked(
     : halt({ stop: "CheckFailed", check: first.check, line });
 }
 
-/** The service of a registration's file, and whether this run wrote its unit. */
+/** The service of a registration's file, and whether this run wrote its unit new or changed it. */
 interface Served {
   readonly unit: SetupUnit;
   readonly written: boolean;
 }
 
-/** The service of a registration's file, a pool's or the person's own: found where its unit is there and this run did not install the package, and written by the package's own command otherwise. */
+/**
+ * The service of a registration's file, a pool's or the person's own, written
+ * by the package's own command on every run, so that it runs the package this
+ * run found. A unit that already runs it is written again as it was; one that
+ * serves another file, or that the package cannot read back, it refuses.
+ */
 async function setupServiceHad(
   run: Run,
   packaged: Packaged,
@@ -559,23 +567,29 @@ async function setupServiceHad(
   const unit = setupUnitOf(run.places, file);
   const own = kind === "Personal";
   const there = (): boolean => run.ports.disk.kind(unit.path) === "File";
-  if (there() && !packaged.installed) {
-    run.notes.push({ note: own ? "OwnUnit" : "Unit", unit: unit.name });
-    return { unit, written: false };
-  }
+  const held = there();
+  const before = setupUnitText(run.ports, unit);
   const act = own ? "ServiceOwn" : "Service";
   const acted = await setupActed(
     run,
     act,
     setupRunnerCommands.service(packaged.command, file),
   );
+  if ("halt" in acted && acted.halt.stop === "Act" && held) {
+    const { failed } = acted.halt;
+    if (failed.how === "Exit")
+      return halt({ stop: "ServiceRefused", act, path: unit.path, failed });
+  }
   if (halted(acted)) return acted;
   if (!there()) return halt({ stop: "Unseen", act, path: unit.path });
-  run.notes.push({
-    note: own ? "OwnUnitWritten" : "UnitWritten",
-    unit: unit.name,
-  });
-  return { unit, written: true };
+  const written =
+    before === undefined || setupUnitText(run.ports, unit) !== before;
+  run.notes.push(
+    written
+      ? { note: own ? "OwnUnitWritten" : "UnitWritten", unit: unit.name }
+      : { note: own ? "OwnUnit" : "Unit", unit: unit.name },
+  );
+  return { unit, written };
 }
 
 /** Lingering is read first and turned on only where it is not on, with no leave to ask for a password; where that fails the person is told the command to run themselves. */
@@ -607,9 +621,9 @@ async function setupLingerHad(run: Run): Promise<Halt | undefined> {
 
 /**
  * The service enabled and running. One found running from before this run
- * registered the machine or wrote the unit is restarted, since what it runs
- * as is no longer what is there; and whatever is run, the service manager
- * reads its units again first.
+ * registered the machine, installed the package or changed the unit is
+ * restarted, since what it runs as is no longer what is there; and whatever
+ * is run, the service manager reads its units again first.
  */
 async function setupStarted(
   run: Run,
@@ -716,7 +730,7 @@ async function setupPoolDone(
   if (halted(served)) return served;
   const lingering = await setupLingerHad(run);
   if (halted(lingering)) return lingering;
-  const changed = pooled.fresh || served.written;
+  const changed = pooled.fresh || packaged.installed || served.written;
   return (await setupStarted(run, served.unit, changed)) ?? served.unit;
 }
 
@@ -837,7 +851,7 @@ async function setupOwnWalked(
   if (halted(served)) return served;
   const lingering = pooled ? undefined : await setupLingerHad(run);
   if (halted(lingering)) return lingering;
-  const changed = owned.fresh || served.written;
+  const changed = owned.fresh || packaged.installed || served.written;
   const started = await setupStarted(run, served.unit, changed);
   if (halted(started)) return started;
   const projects = owned.fresh ? [] : (own.had?.projects ?? []);

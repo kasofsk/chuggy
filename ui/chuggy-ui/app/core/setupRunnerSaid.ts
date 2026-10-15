@@ -48,9 +48,12 @@ export type SetupRunnerAct =
 /**
  * What the runner package's `register` says where it refuses, by the words of
  * each that are the same every time and in the order it can meet them, each
- * with what it means in this program's words.
+ * with what it means in this program's words. The first is said by every
+ * command of the package, before anything else.
  */
 export const setupRegisterRefusals = {
+  "needs Node":
+    "the runner package needs a newer Node than the node this machine's PATH finds first",
   "a Linux pool runs on":
     "the runner package does not run on this machine's kind of processor",
   "hostname makes no pool name":
@@ -217,6 +220,13 @@ export type SetupRunnerStop =
       readonly stop: "Unseen";
       readonly act: SetupRunnerAct;
       readonly path: string;
+    }
+  | {
+      /** The package would not write its service over the unit already at `path`. */
+      readonly stop: "ServiceRefused";
+      readonly act: "Service" | "ServiceOwn";
+      readonly path: string;
+      readonly failed: Extract<SetupChildFailed, { readonly how: "Exit" }>;
     }
   | {
       readonly stop: "MintRefused";
@@ -686,6 +696,11 @@ const setupRefusalsLasting: {
     "tell" | "when" | "again"
   >;
 } = {
+  "needs Node": {
+    tell: "The runner package needs a newer Node than the node this machine's PATH finds first, so the runner is not set up yet. Running again under the same Node would end the same way. Tell me once node is newer.",
+    when: "once the person says node on this machine is newer",
+    again: "Runner",
+  },
   "a Linux pool runs on": {
     tell: "The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
     when: setupElsewhere,
@@ -698,14 +713,41 @@ const setupRefusalsLasting: {
   },
 };
 
+/** The package's refusal a failed program named, where it is one that lasts. */
+function setupLasting(
+  failed: SetupChildFailed,
+): Pick<SetupRunnerStopSaid, "tell" | "when" | "again"> | undefined {
+  const refusal =
+    failed.how === "ExitUnquoted"
+      ? failed.refusal
+      : failed.how === "Exit"
+        ? setupRegisterRefusal(failed.excerpt)
+        : undefined;
+  return refusal === undefined ? undefined : setupRefusalsLasting[refusal];
+}
+
 /** A program that failed, as a stop: one to try again, but for a refusal that lasts, which waits on what would have to change. */
 function setupActStopSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Act" }>,
 ): SetupRunnerStopSaid {
-  const said = setupActSaid(stop.act, setupFailedSaid(stop.failed));
-  if (stop.failed.how !== "ExitUnquoted" || stop.failed.refusal === undefined)
-    return said;
-  return { ...said, ...setupRefusalsLasting[stop.failed.refusal] };
+  return {
+    ...setupActSaid(stop.act, setupFailedSaid(stop.failed)),
+    ...setupLasting(stop.failed),
+  };
+}
+
+/** The package refusing to write its service over a unit already there, which it does where that unit serves another registration or is not one it can read back. */
+function setupServiceRefusedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "ServiceRefused" }>,
+): SetupRunnerStopSaid {
+  const said = setupActs[stop.act];
+  return {
+    found: `${said} ${setupFailedSaid(stop.failed)}`,
+    tell: `${said.charAt(0).toUpperCase()}${said.slice(1)} did not work, so the runner is not set up yet: the runner package would not write it over the service already at ${stop.path}. If that one is left from a runner set up before, remove it, and tell me once you have or if you want me to try again.`,
+    when: `once the person says ${stop.path} is removed, or asks to try again`,
+    again: "Runner",
+    ...setupLasting(stop.failed),
+  };
 }
 
 function setupMintSaid(
@@ -965,6 +1007,8 @@ export function setupRunnerStopSaid(
         stop.act,
         `ended well, and what it makes is not at ${stop.path}`,
       );
+    case "ServiceRefused":
+      return setupServiceRefusedSaid(stop);
     case "MintRefused":
       return setupMintSaid(stop, project);
     case "CheckFailed":
@@ -1002,6 +1046,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Unwritten":
     case "Act":
     case "Unseen":
+    case "ServiceRefused":
     case "MintRefused":
     case "CheckFailed":
     case "Inactive":

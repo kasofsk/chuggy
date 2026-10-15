@@ -221,12 +221,32 @@ function doctor(file: string): number {
     : said(knobs.doctor.exit, `${ok[0] ?? ""}\n`, knobs.doctor.aside);
 }
 
+/** The service of a file, run by this copy of the package, written over a unit of its name that serves the same file; one that serves another, or whose `ExecStart` cannot be read back, is refused. */
 function service(file: string): number {
   const unit = unitOf(file);
-  written(join(units, unit), `[Service]\nExecStart=run ${file}\n`, 0o644);
+  const path = join(units, unit);
+  if (existsSync(path)) {
+    const serves = /^ExecStart=.* --pool (\S+)$/mu.exec(
+      readFileSync(path, "utf8"),
+    )?.[1];
+    if (serves !== file)
+      return said(
+        1,
+        "",
+        serves === undefined
+          ? `${path} has no ExecStart chuggy-linux wrote; remove it if it is stale\n`
+          : `${path} serves ${serves}, not ${file}; remove it if it is stale\n`,
+      );
+  }
+  const copy = dirname(dirname(process.env[machineRunAs] ?? ""));
+  written(
+    path,
+    `[Service]\nExecStart=${process.execPath} ${join(copy, "lib", "node_modules", "chuggy-linux", "cli.mjs")} run --pool ${file}\n`,
+    0o644,
+  );
   return said(
     0,
-    `wrote ${join(units, unit)}; start it with:\n  systemctl --user daemon-reload\n  systemctl --user enable --now ${unit}\n  loginctl enable-linger\n`,
+    `wrote ${path}; start it with:\n  systemctl --user daemon-reload\n  systemctl --user enable --now ${unit}\n  loginctl enable-linger\n`,
   );
 }
 

@@ -195,6 +195,9 @@ const first = [
 
 const probes = ["services", "docker", "doctor", "linger", "enabled", "active"];
 
+/** What a run on a machine that has everything runs: its probes, and the package's `install-service`, which writes the unit again as it was. */
+const rerun = [...probes.slice(0, 3), "service", ...probes.slice(3)];
+
 /** A fresh machine taken through `runner` to a runner the site sees live. */
 async function setUp(): Promise<Stood> {
   const on = await stood();
@@ -274,7 +277,7 @@ test("on a fresh machine the bare command offers a runner having changed nothing
   assert.deepEqual(on.installation.writes, [mint, redemption]);
 });
 
-test("a second run on a machine that has everything finds each thing as it is, runs nothing but its probes, and sends the site no write", async () => {
+test("a second run on a machine that has everything finds each thing as it is, runs nothing but its probes and an install-service that writes its unit as it was, and sends the site no write", async () => {
   const on = await setUp();
   const { found } = lines(on);
   cleared(on);
@@ -294,7 +297,7 @@ test("a second run on a machine that has everything finds each thing as it is, r
     found.live,
     next,
   ]);
-  assert.deepEqual(acts(on), probes);
+  assert.deepEqual(acts(on), rerun);
   assert.deepEqual(on.installation.writes, []);
   assert.equal(on.installation.world.mints.length, 1);
   unasked(on);
@@ -384,7 +387,7 @@ async function setUpBoth(): Promise<Stood> {
   return on;
 }
 
-test("a second run where both runners are live and the person's own serves the project changes nothing, says each thing as found, and sends the site no write", async () => {
+test("a second run where both runners are live and the person's own serves the project changes nothing, says each thing as found, writes both units again only as they were, and sends the site no write", async () => {
   const on = await setUpBoth();
   const { found } = lines(on);
   cleared(on);
@@ -400,7 +403,7 @@ test("a second run where both runners are live and the person's own serves the p
     next,
   ]);
   assert.ok(!done.lines.some((line) => line.startsWith("did: ")));
-  assert.deepEqual(acts(on), [...probes, "enabled", "active"]);
+  assert.deepEqual(acts(on), [...rerun, "service", "enabled", "active"]);
   assert.deepEqual(on.installation.writes, []);
 });
 
@@ -498,7 +501,7 @@ test("a machine whose project's runner was set up on a package too old to regist
     did.replaced,
     found.pool,
     found.check,
-    did.unit,
+    found.unit,
     found.linger,
     did.restarted,
     found.live,
@@ -666,7 +669,7 @@ test("a user the runner package bars from docker is asked podman alone, and wher
   cleared(on);
   const second = await ran(on, runner, as);
   assert.deepEqual(second.lines.slice(-2), [found.live, next]);
-  assert.deepEqual(acts(on), ["services", "podman", ...probes.slice(2)]);
+  assert.deepEqual(acts(on), ["services", "podman", ...rerun.slice(2)]);
 });
 
 type Did = ReturnType<typeof lines>["did"];
@@ -694,7 +697,7 @@ const losses: readonly Loss[] = [
         project.runner = "Offline";
     },
     did: (did) => [did.started],
-    acts: [...probes, "reload", "start", "active"],
+    acts: [...rerun, "reload", "start", "active"],
     sent: [],
   },
   {
@@ -706,7 +709,7 @@ const losses: readonly Loss[] = [
       });
     },
     did: (did) => [did.enabled],
-    acts: [...probes, "reload", "start", "active"],
+    acts: [...rerun, "reload", "start", "active"],
     sent: [],
   },
   {
@@ -715,7 +718,7 @@ const losses: readonly Loss[] = [
       on.machine.keep({ ...on.machine.state(), linger: false });
     },
     did: (did) => [did.linger],
-    acts: [...probes.slice(0, 4), "lingerOn", ...probes.slice(3)],
+    acts: [...rerun.slice(0, 5), "lingerOn", ...rerun.slice(4)],
     sent: [],
   },
   {
@@ -724,7 +727,23 @@ const losses: readonly Loss[] = [
       rmSync(join(on.machine.units, unit));
     },
     did: (did) => [did.unit, did.restarted],
-    acts: [...probes.slice(0, 3), "service", ...probes.slice(3), ...restarted],
+    acts: [...rerun, ...restarted],
+    sent: [],
+  },
+  {
+    lost: "its unit to one another copy of the package wrote",
+    lose: (on) => {
+      const path = join(on.machine.units, unit);
+      writeFileSync(
+        path,
+        readFileSync(path, "utf8").replace(
+          /^ExecStart=\S+ \S+/mu,
+          "ExecStart=/usr/bin/node /usr/lib/node_modules/chuggy-linux/cli.mjs",
+        ),
+      );
+    },
+    did: (did) => [did.unit, did.restarted],
+    acts: [...rerun, ...restarted],
     sent: [],
   },
   {
@@ -733,7 +752,7 @@ const losses: readonly Loss[] = [
       rmSync(join(on.machine.pools, poolFile));
     },
     did: (did) => [did.pool, did.restarted],
-    acts: [...probes.slice(0, 2), "register", ...probes.slice(2), ...restarted],
+    acts: [...rerun.slice(0, 2), "register", ...rerun.slice(2), ...restarted],
     sent: [mint, redemption],
   },
   {
@@ -741,7 +760,7 @@ const losses: readonly Loss[] = [
     lose: (on) => {
       rmSync(join(on.machine.prefix, "bin", "chuggy-linux"));
     },
-    did: (did) => [did.package, did.unit, did.restarted],
+    did: (did) => [did.package, did.restarted],
     acts: [
       ...probes.slice(0, 2),
       "install",
@@ -758,7 +777,7 @@ const losses: readonly Loss[] = [
       rmSync(on.machine.settings);
     },
     did: (did) => [did.settings],
-    acts: probes,
+    acts: rerun,
     sent: [],
   },
 ];

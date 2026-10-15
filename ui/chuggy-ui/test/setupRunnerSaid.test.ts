@@ -214,6 +214,11 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
+      "registering this machine ended with exit 2: the runner package needs a newer Node than the node this machine's PATH finds first",
+      1,
+      "Runner",
+    ],
+    [
       "registering this machine ended with exit 2: the runner package does not run on this machine's kind of processor",
       1,
       "Status",
@@ -257,6 +262,18 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       `installing your own runner's service ended well, and what it makes is not at ${boxUnits}/${rosterOwnUnit}`,
+      1,
+      "Runner",
+    ],
+  ],
+  ServiceRefused: [
+    [
+      `installing the runner's service ended with exit 1, saying: ${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+      1,
+      "Runner",
+    ],
+    [
+      "installing your own runner's service ended with exit 1, saying: chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1",
       1,
       "Runner",
     ],
@@ -687,8 +704,46 @@ test("the checks this program has words for are the ones the package's doctor pr
   ]);
 });
 
+test("the package refusing the Node it was run under is a refusal that lasts, wherever the package was run: running again under the same node ends the same way, so it waits on a newer one", () => {
+  const line =
+    "chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1";
+  const lasting = {
+    tell: "The runner package needs a newer Node than the node this machine's PATH finds first, so the runner is not set up yet. Running again under the same Node would end the same way. Tell me once node is newer.",
+    when: "once the person says node on this machine is newer",
+    again: "Runner",
+  };
+  const stops: readonly SetupRunnerStop[] = [
+    {
+      stop: "Act",
+      act: "Register",
+      failed: { how: "ExitUnquoted", exit: 1, refusal: "needs Node" },
+    },
+    {
+      stop: "Act",
+      act: "Check",
+      failed: { how: "Exit", exit: 1, excerpt: line },
+    },
+    {
+      stop: "ServiceRefused",
+      act: "Service",
+      path: `${boxUnits}/${rosterUnit}`,
+      failed: { how: "Exit", exit: 1, excerpt: line },
+    },
+  ];
+  for (const stop of stops)
+    expect(setupRunnerStopSaid(stop, "acme/widgets"), stop.stop).toMatchObject(
+      lasting,
+    );
+  expect(
+    setupRunnerStopSaid(stops[0] ?? { stop: "Mac" }, "acme/widgets").found,
+  ).toBe(
+    "registering this machine ended with exit 1: the runner package needs a newer Node than the node this machine's PATH finds first",
+  );
+});
+
 test("the refusals of a registration this program has words for are the package's own sentences, each known by the words of it that never change, and nothing else a registration prints is one", () => {
   expect(Object.keys(setupRegisterRefusals)).toEqual([
+    "needs Node",
     "a Linux pool runs on",
     "hostname makes no pool name",
     "no token was spent",
@@ -698,6 +753,10 @@ test("the refusals of a registration this program has words for are the package'
     "pool file could not be written",
   ]);
   const printed: readonly (readonly [string, string])[] = [
+    [
+      "chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1",
+      "needs Node",
+    ],
     [
       "this machine's hostname makes no pool name; name the pool with --pool",
       "hostname makes no pool name",
