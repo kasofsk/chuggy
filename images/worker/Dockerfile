@@ -26,6 +26,18 @@ ARG ZOD_VERSION=4.5.4
 #   docker buildx imagetools inspect node:26.7.0-trixie
 FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS base
 
+# The node chuggy's runtime runs the core on: Node 24, an LTS release, and not
+# the base's. Node 26 also needs libatomic.so.1, which debian:trixie-slim,
+# ubuntu:24.04 and even buildpack-deps:trixie-scm do not ship, so chuggy's node
+# would not load in any of them.
+# The official image's node is nodejs.org's own build, which that image's
+# build verifies against the release's signed checksums, so it is taken from
+# the image by digest rather than fetched and verified a second time here.
+#
+# The digest is the multi-architecture index's, read on 2026-10-15 with
+#   docker buildx imagetools inspect node:24.22.0-trixie-slim
+FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS runtime-node
+
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
 # what the later stages copy leaves this one: the core's tree, for its suites;
@@ -82,11 +94,12 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # CHUGGY'S RUNTIME: the tree a job's container mounts read-only at `/opt/chuggy`
 # whatever image the job names, and the image every stage below is built on.
 #
-#   bin/node      the base's node, which runs the core
+#   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run
 #   bin/codex     the Codex the core runs
 #   lib/chuggy/   the shipped core, its entry named `worker.mjs`, and the
 #                 packages it imports in a `node_modules` of its own
+#   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
 #
 # The core finds `bin/` from where it sits, and nothing puts it on PATH.
@@ -146,9 +159,11 @@ RUN cd /tmp \
 
 COPY --from=core /shipped/ /opt/chuggy/lib/chuggy/
 COPY --from=core /check.sh /opt/chuggy/check.sh
-RUN cp /usr/local/bin/node /opt/chuggy/bin/node \
-  && ln -s ../lib/chuggy/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
-    /opt/chuggy/bin/claude
+COPY --from=runtime-node /usr/local/bin/node /opt/chuggy/bin/node
+RUN ln -s ../lib/chuggy/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+    /opt/chuggy/bin/claude \
+  && install -D -m 0644 /etc/ssl/certs/ca-certificates.crt \
+    /opt/chuggy/share/ca-certificates.crt
 
 # What the core needs, read off the tree rather than off this file. Each import
 # runs from the directory the core's modules live in, because what finds a
@@ -172,8 +187,9 @@ RUN cp /usr/local/bin/node /opt/chuggy/bin/node \
 # THEN THE ENTRY IS IMPORTED, AS A POD IMPORTS IT, from what is left. Loading it
 # starts nothing, so a module it reaches that `files` did not ship fails the
 # build here rather than the first pod. Last, what `coreRuntime.mjs` derives
-# from where the core sits is held to be in this tree and runnable, and each
-# agent to report the version this file names.
+# from where the core sits is held to be in this tree and readable, what the
+# core runs of it to be executable, and each agent to report the version this
+# file names.
 RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
@@ -204,8 +220,10 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
         console.error(`the core finds its ${name} at ${path}, outside the runtime`); \
         process.exit(1); \
       } \
-      accessSync(path, constants.R_OK | constants.X_OK); \
+      accessSync(path, constants.R_OK); \
     } \
+    for (const path of [coreRuntime.askpass, coreRuntime.claude, coreRuntime.codex]) \
+      accessSync(path, constants.X_OK); \
     console.log(`the core finds ${Object.values(coreRuntime).join(", ")}`); \
   ' \
   && claude="$(/opt/chuggy/bin/claude --version)" \
@@ -225,7 +243,7 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
 # chuggy's node or claude cannot load, which `check.sh` reports with the status
 # of `ImageLibcUnsupported`. `bin/claude` is held to be a native binary, which
 # a link to anything else would not be.
-ARG RUNTIME_LIBRARIES="ld-linux-x86-64.so.2 libatomic.so.1 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
+ARG RUNTIME_LIBRARIES="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
 ARG RUNTIME_VERSION_FLOOR="CXXABI_1.3.11 GLIBCXX_3.4.21 GLIBC_2.28"
 RUN find /opt/chuggy -type f > /tmp/files.txt \
   && : > /tmp/needed.txt \
