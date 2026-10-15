@@ -603,6 +603,7 @@ export async function schedulerPlacedAttempt(
     leaseSecs: schedulerPlacedLeaseSecs,
     retriesMax: schedulerPlacedRetriesMax,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   if (opened.opened !== "Opened")
     throw new Error(`scheduler harness: ${label} opened no attempt`);
@@ -611,6 +612,9 @@ export async function schedulerPlacedAttempt(
     throw new Error(`scheduler harness: ${label} could not place its attempt`);
   return { execution: admitted.execution, attempt: opened.attempt };
 }
+
+/** The runtime every attempt a case opens keeps, which is the scheduler's own digest-pinned one. */
+export const schedulerRuntime = `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
 
 /** An invocation as the scheduler records one, for a case that only needs one recorded. */
 export const schedulerInvocation: WorkTaskInvocation = {

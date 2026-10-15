@@ -44,6 +44,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerRuntime,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -191,6 +192,7 @@ async function opened(project: SchedulerProject): Promise<string> {
     leaseSecs,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   if (attempt.opened !== "Opened")
     throw new Error("personal executions suite: no attempt was opened");
@@ -353,6 +355,21 @@ test("a project's fallback is written through its door by the API alone, and abs
   );
 });
 
+test("a runner's claim returns the runtime its attempt was opened under", async () => {
+  const member = principal("member");
+  const project = await ownedProject("runtime", member, "Strict", 1);
+  await opened(project);
+  const runner = await runnerOf(project.partition, member);
+  const taken = await assignments.claimPersonal(
+    runner,
+    { leaseSecs, heldMax: 4 },
+    `assignment-${randomUUID()}`,
+    `bearer-${randomUUID()}`,
+    [project.partition.project],
+  );
+  assert.equal(taken?.runtime, schedulerRuntime);
+});
+
 test("a runner renews, settles and pulls the image of what it claimed, and another member's runner reaches none of it", async () => {
   const member = principal("member");
   const project = await ownedProject("holds", member, "Preferred", 2);
@@ -374,16 +391,16 @@ test("a runner renews, settles and pulls the image of what it claimed, and anoth
   assert.equal(await assignments.held(runner, kept), true);
   assert.equal(await assignments.renew(runner, kept, leaseSecs), true);
   assert.deepEqual(await assignments.heldImages(other, 4), []);
-  assert.deepEqual(
-    await assignments.heldImages(runner, 4),
-    (
+  assert.deepEqual(await assignments.heldImages(runner, 4), [
+    ...(
       (await rig.harness.query(
         `SELECT DISTINCT requirement_value->>'image' AS image FROM execution
           WHERE tenant=$1 AND project=$2 AND requirement_value->>'image' IS NOT NULL`,
         [project.partition.tenant, project.partition.project],
       )) as readonly { image: string }[]
     ).map((row) => row.image),
-  );
+    schedulerRuntime,
+  ]);
   assert.equal(await assignments.release(runner, released), true);
   assert.equal(await assignments.held(runner, released), false);
   assert.equal(
@@ -632,7 +649,11 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   const inKept = await claimed(runner, [kept.partition]);
   const inDropped = await claimed(runner, [dropped.partition]);
   assert.ok(inKept !== undefined && inDropped !== undefined);
-  assert.equal((await assignments.heldImages(runner, 4)).length, 2);
+  assert.deepEqual(await assignments.heldImages(runner, 4), [
+    `registry.invalid/dropped@sha256:${"b".repeat(64)}`,
+    schedulerRuntime,
+    keptImage,
+  ]);
   assert.equal(
     await personalRegistry.disallow(
       { tenant: runner.tenant, owner: runner.owner },
@@ -643,7 +664,10 @@ test("a project taken off a runner's allowlist stops what it holds there alone, 
   assert.equal(await assignments.renew(runner, inDropped, leaseSecs), false);
   assert.equal(await assignments.held(runner, inDropped), false);
   assert.equal(await assignments.refuse(runner, inDropped, "no node"), false);
-  assert.deepEqual(await assignments.heldImages(runner, 4), [keptImage]);
+  assert.deepEqual(await assignments.heldImages(runner, 4), [
+    keptImage,
+    schedulerRuntime,
+  ]);
   assert.equal(await assignments.renew(runner, inKept, leaseSecs), true);
   assert.equal(await assignments.held(runner, inKept), true);
   assert.equal(await assignments.refuse(runner, inKept, "no node"), true);

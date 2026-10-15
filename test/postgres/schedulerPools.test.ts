@@ -32,6 +32,7 @@ import {
 } from "../../src/adapters/postgres/workerPlane.ts";
 import { workerErrorPath } from "../../src/contract/http.ts";
 import { workerPoolEvidenceCharsMax } from "../../src/contract/workerPool.ts";
+import type { WorkerImageFault } from "../../src/contract/workerEnvironment.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolDirectory,
@@ -60,7 +61,11 @@ import {
   postgresHarnessRolePool,
 } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
-import { schedulerInvocation, schedulerRigOpen } from "./schedulerHarness.ts";
+import {
+  schedulerInvocation,
+  schedulerRigOpen,
+  schedulerRuntime,
+} from "./schedulerHarness.ts";
 import {
   poolRoutedExecution,
   poolRoutedKey,
@@ -98,6 +103,7 @@ async function routedAttempt(routed: PoolRouted) {
     leaseSecs: service.config.attemptLeaseSecs,
     retriesMax: service.config.attemptRetriesMax,
     placementBackoffSecs: service.config.placementBackoffSecs,
+    runtime: schedulerRuntime,
   });
   if (opened.opened !== "Opened")
     throw new Error(
@@ -375,10 +381,17 @@ async function poolClaimed(routed: PoolRouted, name: string) {
   return { pool, assignment, bearer };
 }
 
-/** Has a pool claim a routed execution's attempt, as `poolClaimed` does, and refuse it. */
-async function poolRefused(routed: PoolRouted, refusal: string): Promise<void> {
+/** Has a pool claim a routed execution's attempt, as `poolClaimed` does, and refuse it, naming `fault` where one is given. */
+async function poolRefused(
+  routed: PoolRouted,
+  refusal: string,
+  fault?: WorkerImageFault,
+): Promise<void> {
   const { pool, assignment } = await poolClaimed(routed, "refusing");
-  assert.equal(await assignments.refuse(pool, assignment, refusal), true);
+  assert.equal(
+    await assignments.refuse(pool, assignment, refusal, fault),
+    true,
+  );
 }
 
 /** The refusal each of an execution's attempts carries, read as the owner. */
@@ -407,6 +420,17 @@ const refusedStanding = {
     { state: "Withdrawn", evidence: "PlacementRefused", pool: "refusing" },
   ],
 };
+
+/** Where an execution stands once a pass has read a refusal naming `fault`: blocked as incompatible, its attempt withdrawn under the fault. */
+function faultedStanding(fault: WorkerImageFault) {
+  return {
+    execution: {
+      ...refusedStanding.execution,
+      blocked_reason: "TicketConfigIncompatible",
+    },
+    attempts: [{ state: "Withdrawn", evidence: fault, pool: "refusing" }],
+  };
+}
 
 /** Where an execution stands once a pass has concluded it on the one attempt a pool claimed: settled as the process that died. */
 function concludedStanding(
@@ -526,6 +550,75 @@ test("a pass between a refusal's end and its block blocks the execution as refus
   );
   assert.equal(late.blocked, "AlreadyBlocked");
   assert.deepEqual(await poolRoutedStanding(rig, routed), refusedStanding);
+});
+
+test("an attempt a pool refused naming an image fault is withdrawn under the fault without spending, and its execution blocked as incompatible", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-faulted");
+  const refusal = "/workspace is not writable";
+  await poolRefused(routed, refusal, "ImageWorkspaceUnwritable");
+  const read = (
+    await rig.store.refusedAttempts(
+      routed.project.epoch,
+      service.config.attemptsPerPassMax,
+    )
+  ).find((attempt) => attempt.execution === routed.execution);
+  assert.equal(read?.fault, "ImageWorkspaceUnwritable");
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    faultedStanding("ImageWorkspaceUnwritable"),
+  );
+  assert.deepEqual(await poolRefusals(routed), [refusal]);
+});
+
+test("a pass between a fault refusal's end and its block blocks the execution as incompatible", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-faulted-window");
+  await poolRefused(routed, "no shell", "ImageLacksShell");
+  const refused = (
+    await rig.store.refusedAttempts(
+      routed.project.epoch,
+      service.config.attemptsPerPassMax,
+    )
+  ).find((attempt) => attempt.execution === routed.execution);
+  assert.ok(refused);
+  assert.equal(
+    await rig.store.attemptEnded(refused, "Withdrawn", "ImageLacksShell"),
+    true,
+  );
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(
+    await poolRoutedStanding(rig, routed),
+    faultedStanding("ImageLacksShell"),
+  );
+});
+
+test("a spent budget whose last attempt a pool refused naming a fault blocks its execution as incompatible", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-faulted-spent");
+  await poolRefused(routed, "no git", "ImageLacksGit");
+  const refused = (
+    await rig.store.refusedAttempts(
+      routed.project.epoch,
+      service.config.attemptsPerPassMax,
+    )
+  ).find((attempt) => attempt.execution === routed.execution);
+  assert.ok(refused);
+  assert.equal(
+    await rig.store.attemptEnded(refused, "Withdrawn", "ImageLacksGit"),
+    true,
+  );
+  await rig.harness.query(
+    `UPDATE execution SET retries_spent=3 WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    poolRoutedKey(routed),
+  );
+  await rig.store.retriesExhausted(routed.project.partition, routed.execution);
+  const standing = await poolRoutedStanding(rig, routed);
+  assert.deepEqual(
+    {
+      outcome: standing.execution["outcome"],
+      blocked_reason: standing.execution["blocked_reason"],
+    },
+    { outcome: "Blocked", blocked_reason: "TicketConfigIncompatible" },
+  );
 });
 
 test("a refused attempt whose lease has also run out is not the reaper's, and the pass blocks it as refused", async () => {

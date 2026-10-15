@@ -1,19 +1,28 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 
 import {
   mintedCredentialDirectory,
+  workerImageFaults,
   workerJobCommand,
   workerRuntimeDirectory,
   workerTaskVariable,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
-import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import { workerErrorPath } from "../../src/contract/http.ts";
+import {
+  workerPoolEvidenceCharsMax,
+  type WorkerPoolAssignment,
+} from "../../src/contract/workerPool.ts";
+import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
-import type { WorkerPoolPlacement } from "../../src/interpreter/workerPoolClient.ts";
+import type {
+  WorkerPoolBackend,
+  WorkerPoolPlacement,
+} from "../../src/interpreter/workerPoolClient.ts";
 import type { KubernetesPod } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
@@ -23,7 +32,13 @@ import {
   kubernetesPoolPodName,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
+import {
+  kubernetesPodMessageCharsMax,
+  kubernetesPullFailureDwellSecs,
+} from "../../src/adapters/kubernetes/podFaults.ts";
 import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
+import { kubernetesImageFaultText } from "../../src/adapters/kubernetes/workerFaults.ts";
+import { kubernetesWorkerContainerName } from "../../src/adapters/kubernetes/workerPod.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-pool-kube-"));
 after(() => {
@@ -416,7 +431,7 @@ test("a pod that has ended is not held, and is deleted so its lease lapses", asy
   );
 });
 
-test("a session offered is refused without the cluster being reached, and nothing ended is reported", async () => {
+test("a session offered is refused without the cluster being reached", async () => {
   const { reached, fetcher } = cluster(
     () => new Response("{}", { status: 201 }),
   );
@@ -428,8 +443,276 @@ test("a session offered is refused without the cluster being reached, and nothin
     }),
     { placed: "Refused", evidence: "this pool runs no session" },
   );
-  assert.deepEqual(await backend.ended(), []);
   assert.deepEqual(reached, []);
+});
+
+/**
+ * One pod document a kubelet wrote, captured under `test/fixtures/kubernetesPods/`
+ * for a pushed worker's pod and read here as this pool's pod carrying
+ * `carried`: the job's container is the pool's, and the statuses are the
+ * kubelet's as captured.
+ */
+function poolCaptured(name: string, carried: string): Record<string, unknown> {
+  const pod = JSON.parse(
+    readFileSync(
+      new URL(`../fixtures/kubernetesPods/${name}.json`, import.meta.url),
+      "utf8",
+    ),
+  ) as {
+    metadata: Record<string, unknown>;
+    status: { containerStatuses: { name: string }[] };
+  };
+  for (const container of pod.status.containerStatuses)
+    if (container.name === kubernetesWorkerContainerName)
+      container.name = kubernetesPoolContainerName;
+  pod.metadata = {
+    ...pod.metadata,
+    name: `pool-${carried}`,
+    annotations: { [kubernetesPoolAssignmentAnnotation]: carried },
+  };
+  return pod;
+}
+
+/** When one captured pod was created, which is what a pull's dwell is counted from. */
+function poolCapturedAt(name: string): number {
+  return Date.parse(
+    String(
+      (poolCaptured(name, "any") as { metadata: { creationTimestamp: string } })
+        .metadata.creationTimestamp,
+    ),
+  );
+}
+
+/** Each assignment a backend's `ended` refused, with the fault it named. */
+function poolRefusedOf(
+  ended: Awaited<ReturnType<WorkerPoolBackend["ended"]>>,
+): readonly (readonly [string, string])[] {
+  return ended.map((end) =>
+    end.kind === "Job"
+      ? [end.assignment, end.fault]
+      : [end.session.assignment, "Session"],
+  );
+}
+
+/** One request a refusal makes, of the cluster or of the worker plane, as it was sent. */
+interface PoolReached {
+  readonly method: string;
+  readonly url: string;
+  readonly authorization?: string;
+  readonly body?: string;
+}
+
+/**
+ * A cluster listing `pods` and answering each pod's Secret by `secrets`, the
+ * envelope of a bearer named for the pod where it is not given, and a worker
+ * plane answering every upload with `uploaded`; each request recorded.
+ */
+function poolFaulted(
+  pods: readonly unknown[],
+  secrets: ((pod: string) => Response) | undefined = undefined,
+  uploaded = 204,
+): { readonly reached: PoolReached[]; readonly fetcher: typeof fetch } {
+  const reached: PoolReached[] = [];
+  const held = secrets ?? poolEnvelopeSecret;
+  return {
+    reached,
+    fetcher: async (input, init) => {
+      const url = new URL(reachedUrl(input));
+      const headers = new Headers(init?.headers);
+      const authorization = headers.get("authorization") ?? undefined;
+      reached.push({
+        method: init?.method ?? "GET",
+        url: `${url.origin}${url.pathname}`,
+        ...(url.origin === "https://cluster.invalid:6443"
+          ? {}
+          : {
+              ...(authorization === undefined ? {} : { authorization }),
+              body: await new Response(init?.body).text(),
+            }),
+      });
+      if (
+        url.pathname === "/api/v1/namespaces/pool/pods" &&
+        init?.method !== "DELETE"
+      )
+        return new Response(JSON.stringify({ items: pods }), { status: 200 });
+      const secret = /\/secrets\/(?<pod>[^/]+)$/u.exec(url.pathname)?.groups?.[
+        "pod"
+      ];
+      if (secret !== undefined) return held(secret);
+      return new Response(null, {
+        status: url.origin === "https://cluster.invalid:6443" ? 200 : uploaded,
+      });
+    },
+  };
+}
+
+/** The Secret a pod's envelope is projected from, carrying a bearer named for the pod. */
+function poolEnvelopeSecret(pod: string): Response {
+  return new Response(
+    JSON.stringify({
+      data: {
+        task: Buffer.from(
+          JSON.stringify({
+            callbackUrl: "https://callback.invalid/v1/ticket-execution",
+            bearer: `bearer-${pod}`,
+            workspace: "/workspace",
+            timeoutSecsMax: 60,
+            outputBytesMax: 4_096,
+          }),
+        ).toString("base64"),
+      },
+    }),
+    { status: 200 },
+  );
+}
+
+test("a pod naming a fault of its image is not held, and is refused under the fault once its text is stored, then deleted", async () => {
+  const lacking = poolCaptured("lacks-git", "lacking");
+  const running = poolCaptured("running", "running");
+  const { reached, fetcher } = poolFaulted([lacking, running]);
+  const backend = kubernetesPoolBackend(config, fetcher, () =>
+    poolCapturedAt("lacks-git"),
+  );
+  assert.deepEqual(await backend.held(), [
+    { assignment: "running", kind: "Job" },
+  ]);
+  assert.deepEqual(
+    reached.filter((made) => made.method === "DELETE"),
+    [],
+    "a faulted pod is ended's to refuse, not held's to delete",
+  );
+  reached.length = 0;
+  const text = kubernetesImageFaultText("ImageLacksGit", undefined);
+  assert.deepEqual(await backend.ended(), [
+    {
+      kind: "Job",
+      assignment: "lacking",
+      evidence: text,
+      fault: "ImageLacksGit",
+    },
+  ]);
+  assert.deepEqual(reached, [
+    {
+      method: "GET",
+      url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods",
+    },
+    {
+      method: "GET",
+      url: "https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/pool-lacking",
+    },
+    {
+      method: workerPlaneRoutes.artifact.method,
+      url: `https://callback.invalid${workerPlaneRoutes.artifact.path.replace("*", workerErrorPath)}`,
+      authorization: "Bearer bearer-pool-lacking",
+      body: text,
+    },
+    {
+      method: "DELETE",
+      url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-lacking",
+    },
+  ]);
+});
+
+test("every fault's text, with the longest message a kubelet's is kept to, is evidence a refusal may carry", () => {
+  for (const fault of workerImageFaults)
+    assert.ok(
+      kubernetesImageFaultText(fault, "m".repeat(kubernetesPodMessageCharsMax))
+        .length <= workerPoolEvidenceCharsMax,
+      fault,
+    );
+});
+
+test("a pull that can still succeed is held until its pod has stood for the dwell, and refused as unpullable after", async () => {
+  const pulling = poolCaptured("pull-unavailable", "pulling");
+  const created = poolCapturedAt("pull-unavailable");
+  const early = poolFaulted([pulling]);
+  const before = kubernetesPoolBackend(config, early.fetcher, () => created);
+  assert.deepEqual(await before.held(), [
+    { assignment: "pulling", kind: "Job" },
+  ]);
+  assert.deepEqual(await before.ended(), []);
+  const late = poolFaulted([pulling]);
+  const after = kubernetesPoolBackend(
+    config,
+    late.fetcher,
+    () => created + kubernetesPullFailureDwellSecs * 1_000,
+  );
+  assert.deepEqual(await after.held(), []);
+  assert.deepEqual(poolRefusedOf(await after.ended()), [
+    ["pulling", "ImageUnpullable"],
+  ]);
+});
+
+test("a fault of the runtime copy is no refusal, and its pod is deleted as any ended pod is", async () => {
+  const { reached, fetcher } = poolFaulted([
+    poolCaptured("runtime-copy-failed", "copy"),
+  ]);
+  const backend = kubernetesPoolBackend(config, fetcher, () =>
+    poolCapturedAt("runtime-copy-failed"),
+  );
+  assert.deepEqual(await backend.held(), []);
+  assert.deepEqual(await backend.ended(), []);
+  assert.deepEqual(
+    reached.filter((made) => made.method === "DELETE").map((made) => made.url),
+    ["https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-copy"],
+  );
+});
+
+test("a refusal whose text could not be stored is refused all the same, its pod deleted, and why told", async (t) => {
+  const unparsed = new Response(
+    JSON.stringify({
+      data: { task: Buffer.from("not json").toString("base64") },
+    }),
+    { status: 200 },
+  );
+  for (const [what, secret, answered, sent, why] of [
+    [
+      "no Secret",
+      () => new Response("{}", { status: 404 }),
+      204,
+      ["GET", "GET", "DELETE"],
+      /envelope Secret pool-unwritable could not be read/u,
+    ],
+    [
+      "no envelope",
+      () => unparsed,
+      204,
+      ["GET", "GET", "DELETE"],
+      /envelope Secret pool-unwritable could not be read/u,
+    ],
+    [
+      "a plane that refused it",
+      undefined,
+      500,
+      ["GET", "GET", workerPlaneRoutes.artifact.method, "DELETE"],
+      /worker plane answered 500/u,
+    ],
+  ] as const) {
+    const { reached, fetcher } = poolFaulted(
+      [poolCaptured("workspace-unwritable", "unwritable")],
+      secret,
+      answered,
+    );
+    const backend = kubernetesPoolBackend(config, fetcher, () =>
+      poolCapturedAt("workspace-unwritable"),
+    );
+    const written = t.mock.method(process.stderr, "write", () => true);
+    const ended = await backend.ended();
+    const lines = written.mock.calls.map((call) => String(call.arguments[0]));
+    written.mock.restore();
+    assert.deepEqual(
+      poolRefusedOf(ended),
+      [["unwritable", "ImageWorkspaceUnwritable"]],
+      what,
+    );
+    assert.deepEqual(
+      reached.map((made) => made.method),
+      sent,
+      what,
+    );
+    assert.equal(lines.length, 1, what);
+    assert.match(lines[0] ?? "", why, what);
+  }
 });
 
 test("a cluster that could not be listed raises rather than answering an empty pool", async () => {

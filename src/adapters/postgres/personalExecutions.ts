@@ -50,7 +50,10 @@ export async function personalExecutionClaimed(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
   );
-  const found = await client.query<{ requirement: unknown }>(
+  const found = await client.query<{
+    requirement: unknown;
+    runtime: string | null;
+  }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.owner},pool_principal=${identity.principal},
         personal=true,assignment=${claim.assignment},pool_refusal=NULL,
@@ -82,12 +85,37 @@ export async function personalExecutionClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement`,
+      RETURNING e.requirement_value AS requirement, a.runtime`,
   );
   const row = found.rows[0];
-  return row === undefined
-    ? undefined
-    : { requirement: asExecutionRequirement(row.requirement) };
+  return row === undefined ? undefined : workerPoolClaimedRow(row);
+}
+
+/** What a claim's returned row says: its execution's requirement, and the runtime its attempt kept where it kept one. */
+export function workerPoolClaimedRow(row: {
+  readonly requirement: unknown;
+  readonly runtime: string | null;
+}): WorkerPoolClaimed {
+  return {
+    requirement: asExecutionRequirement(row.requirement),
+    ...(row.runtime === null ? {} : { runtime: row.runtime }),
+  };
+}
+
+/** Every image and runtime the held attempts' rows name, once each. */
+export function workerPoolHeldPulls(
+  rows: readonly {
+    readonly image: string | null;
+    readonly runtime: string | null;
+  }[],
+): string[] {
+  return [
+    ...new Set(
+      rows.flatMap((row) =>
+        [row.image, row.runtime].filter((named) => named !== null),
+      ),
+    ),
+  ];
 }
 
 /** The projects the runner's current registration allowlists. */
@@ -117,7 +145,7 @@ export async function personalExecutionsPolled(
   );
 }
 
-/** The images pinned by every attempt a renewal would extend. */
+/** The images pinned by every attempt a renewal would extend, and the runtimes they were opened under. */
 async function personalExecutionImages(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,
@@ -125,8 +153,11 @@ async function personalExecutionImages(
 ): Promise<string[]> {
   if (!Number.isSafeInteger(heldMax) || heldMax < 1)
     throw new RangeError("invalid personal runner held bound");
-  const found = await pool.query<{ image: string | null }>(
-    sql`SELECT DISTINCT e.requirement_value->>'image' AS image
+  const found = await pool.query<{
+    image: string | null;
+    runtime: string | null;
+  }>(
+    sql`SELECT DISTINCT e.requirement_value->>'image' AS image, a.runtime
       FROM execution_attempt a
       JOIN execution e
         ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
@@ -141,10 +172,10 @@ async function personalExecutionImages(
         AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
         AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=a.tenant AND p.project=a.project AND p.lifecycle='Active')
-        AND e.requirement_value->>'image' IS NOT NULL
-      ORDER BY image LIMIT ${heldMax}`,
+        AND (e.requirement_value->>'image' IS NOT NULL OR a.runtime IS NOT NULL)
+      ORDER BY image, a.runtime LIMIT ${heldMax}`,
   );
-  return found.rows.flatMap((row) => (row.image === null ? [] : [row.image]));
+  return workerPoolHeldPulls(found.rows);
 }
 
 /** What a personal runner holds, through the registration that claimed it. */

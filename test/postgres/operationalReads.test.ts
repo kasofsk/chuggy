@@ -39,6 +39,7 @@ import {
   schedulerReport,
   schedulerRigOpen,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -520,6 +521,7 @@ async function operationalAttemptsOpened(
       leaseSecs: 300,
       retriesMax: opened + 1,
       placementBackoffSecs: 1,
+      runtime: schedulerRuntime,
     });
     assert.equal(attempt.opened, "Opened", `attempt ${String(number)}`);
     if (attempt.opened !== "Opened" || number === opened) continue;
@@ -596,6 +598,7 @@ async function operationalReopened(
     leaseSecs: 300,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   assert.equal(retried.opened, "Opened");
 }
@@ -784,6 +787,7 @@ test("a summary says when the open attempt's run started, and not before or afte
     leaseSecs: 300,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   assert.ok(opened.opened === "Opened");
   const unstarted = { runStartedAt: undefined, run: undefined };

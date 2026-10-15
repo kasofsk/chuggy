@@ -21,6 +21,7 @@ import {
   schedulerOwner,
   schedulerProject,
   schedulerRigOpen,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -75,6 +76,7 @@ async function parkedTicket(
     leaseSecs: 300,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   assert.ok(opened.opened === "Opened");
   await rig.store.attemptPlaced(

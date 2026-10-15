@@ -29,10 +29,17 @@
  * A JOB AND A SESSION ARE COUNTED APART. Each kind has its own ceiling, its own
  * room on the poll and its own offers, and a pool that names no session ceiling
  * asks for none. This is chuggy-common's `poolLoop.mjs` in TypeScript, and a
- * change to one is a change to both, except that only a session's unreported
- * end is reported here: a job's is left to its lease.
+ * change to one is a change to both, except that of a job's ends only one its
+ * backend refused is reported here, and every other is left to its lease.
+ *
+ * A JOB THE BACKEND REFUSED AFTER TAKING IT IS SETTLED REFUSED, naming the
+ * fault of its image, so the attempt's execution is blocked rather than its
+ * lease lapsed and its run retried. The backend leaves the fault's text on the
+ * attempt, where it can, before it answers the refusal, and a refusal the
+ * plane did not take is left to the attempt's lease as an end is.
  */
 import type { SessionContainerEnd } from "../contract/rosters.ts";
+import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type {
   AssignmentOutcome,
   WorkerPoolAssignment,
@@ -65,6 +72,14 @@ export interface WorkerPoolSessionEnd {
   readonly phase: SessionContainerEnd;
 }
 
+/** A job its backend took and then refused, for the fault of its image `evidence` tells. */
+export interface WorkerPoolJobRefused {
+  readonly kind: "Job";
+  readonly assignment: string;
+  readonly evidence: string;
+  readonly fault: WorkerImageFault;
+}
+
 /** What placing one assignment came to, which is the contract's outcome before it is posted. */
 export type WorkerPoolPlacement =
   | { readonly placed: "Placed" }
@@ -91,8 +106,11 @@ export interface WorkerPoolBackend {
   /** Idempotent, whichever kind it is. */
   stop(assignment: string): Promise<WorkerPoolStopped>;
   held(): Promise<readonly WorkerPoolHeld[]>;
-  /** Each session once, after `held` stopped naming it, and never one this pool stopped. */
-  ended(): Promise<readonly WorkerPoolSessionEnd[]>;
+  /**
+   * Each session once, after `held` stopped naming it, and never one this
+   * pool stopped; and each job it refused, which `held` does not name.
+   */
+  ended(): Promise<readonly (WorkerPoolSessionEnd | WorkerPoolJobRefused)[]>;
 }
 
 /**
@@ -270,22 +288,43 @@ function workerPoolClientSessionPlane(
   return client.sessions;
 }
 
+/** Settles one job its backend refused under the pass's token, answering whether the plane took it. */
+async function workerPoolClientRefused(
+  client: WorkerPoolClient,
+  token: string,
+  refused: WorkerPoolJobRefused,
+): Promise<boolean> {
+  const settled = await client.plane.settle(token, refused.assignment, {
+    outcome: "Refused",
+    evidence: refused.evidence,
+    fault: refused.fault,
+  });
+  if (settled === "Stale") client.tokens.invalidate(token);
+  return settled === "Settled";
+}
+
 /**
- * Ends each session whose container ended unreported, counting the ends the
- * plane took. One it did not take is left to its lease.
+ * Ends each session whose container ended unreported and settles each job its
+ * backend refused, counting what the planes took. One not taken is left to its
+ * lease.
  */
 async function workerPoolClientEnded(
   client: WorkerPoolClient,
   sessions: WorkerPoolSessionPlane | undefined,
+  token: string,
 ): Promise<number> {
-  const ended = await client.backend.ended();
-  if (ended.length > 0 && sessions === undefined)
-    throw new TypeError(
-      "a backend ended a session with no session plane to end it on",
-    );
   let taken = 0;
-  for (const workload of ended)
-    if ((await sessions?.end(workload)) === "Ended") taken += 1;
+  for (const workload of await client.backend.ended()) {
+    if (workload.kind === "Job") {
+      if (await workerPoolClientRefused(client, token, workload)) taken += 1;
+      continue;
+    }
+    if (sessions === undefined)
+      throw new TypeError(
+        "a backend ended a session with no session plane to end it on",
+      );
+    if ((await sessions.end(workload)) === "Ended") taken += 1;
+  }
   return taken;
 }
 
@@ -398,7 +437,7 @@ export async function workerPoolClientPass(
   const minted = await workerPoolClientToken(client);
   if (!("token" in minted)) return minted;
   const held = await client.backend.held();
-  const ended = await workerPoolClientEnded(client, sessions);
+  const ended = await workerPoolClientEnded(client, sessions, minted.token);
   const polled = await client.plane.poll(
     minted.token,
     held.map(({ assignment }) => assignment),

@@ -35,6 +35,10 @@
 
 import { configurationWithOverrides } from "../../contract/configurationOverrides.ts";
 import {
+  workerImageFaults,
+  type WorkerImageFault,
+} from "../../contract/workerEnvironment.ts";
+import {
   asStageIndex,
   asTaskId,
   asTicketId,
@@ -178,6 +182,17 @@ function attemptRowState(value: string): AttemptState {
   if (found === undefined) {
     throw new Error(
       `execution attempt row: ${value} is not an attempt state this code knows`,
+    );
+  }
+  return found;
+}
+
+/** Narrows a refusal's image fault column to the worker contract's faults. */
+export function attemptRowImageFault(value: string): WorkerImageFault {
+  const found = workerImageFaults.find((fault) => fault === value);
+  if (found === undefined) {
+    throw new Error(
+      `execution attempt row: ${value} is not an image fault this code knows`,
     );
   }
   return found;

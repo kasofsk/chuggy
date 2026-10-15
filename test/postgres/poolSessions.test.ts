@@ -331,7 +331,13 @@ async function polled(
   const answered = await workerPoolPoll(
     through,
     pool,
-    { held, wanted: 0, wantedSessions, readsSessions: true },
+    {
+      held,
+      wanted: 0,
+      wantedSessions,
+      readsSessions: true,
+      readsRuntime: true,
+    },
     terms,
   );
   if (answered.polled !== "Answered")
@@ -1015,7 +1021,13 @@ test("only a poll that could take a session marks a runner live, and a member's 
   await workerPoolPoll(
     ports,
     runs,
-    { held: [], wanted: 1, wantedSessions: 1, readsSessions: false },
+    {
+      held: [],
+      wanted: 1,
+      wantedSessions: 1,
+      readsSessions: false,
+      readsRuntime: false,
+    },
     settings,
   );
   assert.equal(await mine(), "Offline", "a release without sessions");

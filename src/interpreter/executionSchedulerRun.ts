@@ -93,9 +93,10 @@
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,
- * which is the task contract's `TaskExecutionUnavailable`. The reaper passes
- * over a refused attempt whatever its lease, so a refusal is never ended as a
- * lapse.
+ * which is the task contract's `TaskExecutionUnavailable`. One naming a fault
+ * of the image blocks it as `TicketConfigIncompatible` under the fault's own
+ * label, as a fault the cluster's pod shows does below. The reaper passes over
+ * a refused attempt whatever its lease, so a refusal is never ended as a lapse.
  *
  * ONCE A POOL HAS CLAIMED AN ATTEMPT, ITS EXECUTION OPENS NO OTHER. Any other
  * end of that attempt without a verified report concludes the execution as the
@@ -129,6 +130,7 @@
  */
 
 import {
+  attemptRefusalBlock,
   checkedExecutionSchedulerConfig,
   executionRoutes,
   recordScheduler,
@@ -200,6 +202,8 @@ export interface ExecutionSchedulerService {
   readonly failedLanding: FailedLandingPort;
   readonly ticketBriefs: TicketBriefPort;
   readonly practices: PracticeCatalog;
+  /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
+  readonly workerRuntime: string;
   readonly config: ExecutionSchedulerConfig;
   readonly ticketService: TicketServiceConfig;
   readonly finalizer: FinalizerConfig;
@@ -943,6 +947,7 @@ async function schedulerLaunchOne(
     leaseSecs: config.attemptLeaseSecs,
     retriesMax: config.attemptRetriesMax,
     placementBackoffSecs: config.placementBackoffSecs,
+    runtime: service.workerRuntime,
   };
   const opened = await service.store.openAttempt(opening);
   recordScheduler(service.metrics, (metrics) => {
@@ -977,6 +982,16 @@ async function schedulerLaunchOne(
   }
 }
 
+/** Ends an attempt whose workload could not be run and blocks its execution as `attemptRefusalBlock` says, answering whether this step ended it. */
+function schedulerBlockUnrun(
+  service: ExecutionSchedulerService,
+  attempt: FencedAttempt,
+  fault: WorkerImageFault | undefined,
+): Promise<boolean> {
+  const block = attemptRefusalBlock(fault);
+  return schedulerBlock(service, attempt, block.evidence, block.reason);
+}
+
 /** Blocks the execution of each attempt a pool refused, before any lapsed lease is reaped. */
 async function schedulerBlockRefused(
   service: ExecutionSchedulerService,
@@ -984,14 +999,8 @@ async function schedulerBlockRefused(
   attemptsMax: number,
 ): Promise<void> {
   const refused = await service.store.refusedAttempts(epoch, attemptsMax);
-  for (const attempt of refused) {
-    await schedulerBlock(
-      service,
-      attempt,
-      "PlacementRefused",
-      "RequiredCapabilityUnavailable",
-    );
-  }
+  for (const attempt of refused)
+    await schedulerBlockUnrun(service, attempt, attempt.fault);
 }
 
 /**
@@ -1012,12 +1021,7 @@ async function schedulerObserveOne(
         attempt,
         workload.text,
       );
-      const ended = await schedulerBlock(
-        service,
-        attempt,
-        workload.fault,
-        "TicketConfigIncompatible",
-      );
+      const ended = await schedulerBlockUnrun(service, attempt, workload.fault);
       if (ended && written.written === "Unwritten")
         notices.push({
           notice: "ErrorUnwritten",

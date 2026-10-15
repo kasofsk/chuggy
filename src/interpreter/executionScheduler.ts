@@ -668,6 +668,8 @@ export interface AttemptOpening {
   readonly leaseSecs: number;
   readonly retriesMax: number;
   readonly placementBackoffSecs: number;
+  /** The image chuggy's runtime is copied from, which the attempt keeps for a pool that claims it to start its workload from. */
+  readonly runtime: string;
 }
 
 /**
@@ -741,6 +743,25 @@ export const allBlockedReasons: readonly BlockedReason[] = [
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
 ];
+
+/**
+ * What an attempt whose workload could not be run blocks its execution as: an
+ * image fault as its configuration's, under the fault's own label, and a
+ * pool's refusal naming no fault as a capability that pool lacks.
+ */
+export function attemptRefusalBlock(fault: WorkerImageFault | undefined): {
+  readonly evidence: AttemptEvidence;
+  readonly reason: BlockedReason;
+} {
+  return fault === undefined
+    ? { evidence: "PlacementRefused", reason: "RequiredCapabilityUnavailable" }
+    : { evidence: fault, reason: "TicketConfigIncompatible" };
+}
+
+/** An attempt a pool refused, with the image fault its refusal named where it named one. */
+export interface RefusedAttempt extends FencedAttempt {
+  readonly fault?: WorkerImageFault;
+}
 
 /** One claim of a focused request, held for a bounded stretch of database time. */
 export interface RequestClaim {
@@ -852,12 +873,13 @@ export interface ExecutionSchedulerStore {
 
   /**
    * At most `attemptsMax` live attempts of this epoch that the pool holding
-   * them refused, and nothing under a superseded epoch.
+   * them refused, each with the image fault its refusal named, and nothing
+   * under a superseded epoch.
    */
   refusedAttempts(
     epoch: RecoveryEpoch,
     attemptsMax: number,
-  ): Promise<readonly FencedAttempt[]>;
+  ): Promise<readonly RefusedAttempt[]>;
 
   /**
    * Ends at most `attemptsMax` attempts whose lease has run out and that no

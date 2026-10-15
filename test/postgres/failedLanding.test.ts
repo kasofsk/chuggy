@@ -21,6 +21,7 @@ import {
   schedulerReport,
   schedulerRigOpen,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -169,6 +170,7 @@ test("the scheduler role reads the commits a failed landing left its rework, and
     leaseSecs: 300,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   assert.ok(placed.opened === "Opened");
   const passed = await rig.store.terminalize(

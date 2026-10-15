@@ -126,17 +126,32 @@ export async function kubernetesWorkerErrorWritten(
       written: "Unwritten",
       why: `the bearer Secret ${bearer.secret} could not be read`,
     };
+  return kubernetesWorkerErrorPosted(
+    site,
+    fetcher,
+    { token, plane: site.workerPlaneUrl },
+    text,
+  );
+}
+
+/** Uploads one attempt's error text to the worker plane at `plane`, under `token`. */
+export async function kubernetesWorkerErrorPosted(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  bearer: { readonly token: string; readonly plane: string },
+  text: string,
+): Promise<AttemptErrorWritten> {
   try {
     const response = await fetcher(
       new URL(
         workerPlaneRoutes.artifact.path.replace("*", workerErrorPath),
-        site.workerPlaneUrl,
+        bearer.plane,
       ),
       {
         method: workerPlaneRoutes.artifact.method,
         signal: kubernetesDeadline(site),
         headers: {
-          authorization: `Bearer ${token}`,
+          authorization: `Bearer ${bearer.token}`,
           "content-type": workerPlaneBytesMediaType,
           [workerContractHeader]: workerContractRelease,
         },

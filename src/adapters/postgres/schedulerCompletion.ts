@@ -44,9 +44,9 @@
  * skipped validation, which is the one thing the sealed type exists to prevent.
  * An execution whose attempt a pool claimed and that ended unreported settles
  * the same way, under a report that says so and bound to that attempt. One
- * whose attempt a pool refused is blocked instead, as the refusal's own pass
- * blocks it, so a pass that runs between that pass's two transactions
- * concludes it the same way.
+ * whose attempt a pool refused is blocked instead, under the reason the
+ * refusal's own pass blocks it with, so a pass that runs between that pass's
+ * two transactions concludes it the same way.
  *
  * AND IT IS SUBMITTED UNDER ITS OWN OUTCOME, because that manifest is this
  * adapter's sentence and not a worker's. The failed verdict in it says the
@@ -64,6 +64,7 @@ import { resultManifestSchemaVersion } from "../../contract/workerDocuments.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import {
   asAttemptId,
+  attemptRefusalBlock,
   type Blocked,
   type BlockedReason,
   type ExecutionId,
@@ -82,7 +83,11 @@ import {
   type ArtifactRow,
   type ResultManifest,
 } from "../../interpreter/resultManifest.ts";
-import { executionRowLogical, type ExecutionRow } from "./schedulerRows.ts";
+import {
+  attemptRowImageFault,
+  executionRowLogical,
+  type ExecutionRow,
+} from "./schedulerRows.ts";
 import {
   schedulerRole,
   sourceUnrecordedResult,
@@ -622,10 +627,11 @@ export async function schedulerTerminalize(
   return schedulerSettle(client, standing.execution, report.manifest);
 }
 
-/** The attempt an unreported execution is settled on, and whether a pool refused it. */
+/** The attempt an unreported execution is settled on, whether a pool refused it, and the image fault the refusal named. */
 interface SchedulerUnreportedAttempt {
   readonly attempt: string;
   readonly refused: boolean;
+  readonly fault: string | null;
 }
 
 /** The highest-numbered attempt that was not fenced, which is what an exhausted budget leaves. */
@@ -634,7 +640,8 @@ async function schedulerLastReporter(
   execution: LogicalExecution,
 ): Promise<SchedulerUnreportedAttempt | undefined> {
   const found = await client.query<SchedulerUnreportedAttempt>(
-    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused FROM execution_attempt
+    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused,
+               pool_refusal_fault AS fault FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
@@ -650,7 +657,8 @@ async function schedulerLastAssigned(
   execution: LogicalExecution,
 ): Promise<SchedulerUnreportedAttempt | undefined> {
   const found = await client.query<SchedulerUnreportedAttempt>(
-    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused FROM execution_attempt
+    sql`SELECT attempt, pool_refusal IS NOT NULL AS refused,
+               pool_refusal_fault AS fault FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
@@ -739,7 +747,11 @@ async function schedulerSettleUnreported(
     return schedulerBlockOpen(
       client,
       standing.execution,
-      "RequiredCapabilityUnavailable",
+      attemptRefusalBlock(
+        reporter.fault === null
+          ? undefined
+          : attemptRowImageFault(reporter.fault),
+      ).reason,
     );
   }
   return schedulerSettle(

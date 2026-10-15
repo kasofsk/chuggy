@@ -31,6 +31,7 @@ import {
   workerPoolPoll,
   workerPoolReconcile,
   workerPoolReconciliationUnsessioned,
+  workerPoolRuntimeRead,
   workerPoolSessionsRead,
   workerPoolSettled,
   type WorkerPoolAssignments,
@@ -195,13 +196,14 @@ function ports(
   };
 }
 
-/** What a pool that reads sessions asks with, holding nothing and wanting nothing unless told. */
+/** What a pool that reads sessions and a job's runtime asks with, holding nothing and wanting nothing unless told. */
 function asked(over: Partial<WorkerPoolAsked> = {}): WorkerPoolAsked {
   return {
     held: [],
     wanted: 0,
     wantedSessions: 0,
     readsSessions: true,
+    readsRuntime: true,
     ...over,
   };
 }
@@ -220,7 +222,11 @@ test("a claim is asked for only as far as the pool's remaining room", async () =
     }),
     identity,
     { jobs: ["one"], sessions: [] },
-    { wanted: settings.assignmentsPerPollMax, wantedSessions: 0 },
+    {
+      wanted: settings.assignmentsPerPollMax,
+      wantedSessions: 0,
+      readsRuntime: true,
+    },
     settings,
   );
   assert.equal(asked, 1);
@@ -244,7 +250,7 @@ test("a pool wanting none is claimed nothing and still renewed and told what to 
     }),
     identity,
     { jobs: ["live", "gone"], sessions: [] },
-    { wanted: 0, wantedSessions: 0 },
+    { wanted: 0, wantedSessions: 0, readsRuntime: true },
     { ...settings, heldMax: 4 },
   );
   assert.equal(asked, 0);
@@ -260,6 +266,7 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   const wanted = {
     wanted: settings.assignmentsPerPollMax + 5,
     wantedSessions: 0,
+    readsRuntime: true,
   };
   const perPoll = await workerPoolReconcile(
     claiming,
@@ -279,28 +286,34 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
   assert.equal(room.assignments.length, settings.heldMax - 1);
 });
 
-/** The one assignment a poll hands out when the durable side claims `requirement`, and the terms the claim was held to. */
+/**
+ * The one assignment a poll hands out when the durable side claims
+ * `requirement`, beside the runtime `claimed` names, for a pool that reads a
+ * runtime unless told otherwise; and the terms the claim was held to.
+ */
 async function reconciledOne(
   requirement: ExecutionRequirement,
   polled: WorkerPoolPollSettings = settings,
+  claimed: { readonly runtime?: string; readonly readsRuntime?: boolean } = {},
 ): Promise<{
   readonly assignment: Record<string, unknown>;
   readonly terms: WorkerPoolClaimTerms[];
 }> {
   const terms: WorkerPoolClaimTerms[] = [];
+  const { readsRuntime = true, ...row } = claimed;
   const answered = await workerPoolReconcile(
     ports({
       ...idle,
       claim: (_identity, held) => {
         terms.push(held);
         return Promise.resolve(
-          terms.length === 1 ? { requirement } : undefined,
+          terms.length === 1 ? { requirement, ...row } : undefined,
         );
       },
     }),
     identity,
     nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
+    { wanted: 1, wantedSessions: 0, readsRuntime },
     polled,
   );
   assert.equal(answered.assignments.length, 1);
@@ -339,6 +352,61 @@ test("an image pinned on a published host is handed out under the public host, i
     imageHosts: new Map(),
   });
   assert.equal(unpublished.assignment["image"], internal.image);
+});
+
+/** The runtime an attempt kept, on the host the plane publishes under its public one. */
+const runtime = `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
+
+test("a pool that reads a runtime is handed its attempt's, under the public host, beside the image and beside none", async () => {
+  const hosted = `registry.public.invalid/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
+  const pinned = await reconciledOne(container, settings, { runtime });
+  assert.equal(pinned.assignment["runtime"], hosted);
+  assert.equal(
+    pinned.assignment["image"],
+    `registry.invalid/worker@sha256:${"a".repeat(64)}`,
+  );
+  const capable = await reconciledOne(
+    {
+      mode: "ContainerCapability",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      capabilities: ["Agent:Codex"],
+    },
+    settings,
+    { runtime },
+  );
+  assert.equal(capable.assignment["runtime"], hosted);
+  assert.equal("image" in capable.assignment, false);
+  const unpublished = await reconciledOne(
+    container,
+    { ...settings, imageHosts: new Map() },
+    { runtime },
+  );
+  assert.equal(unpublished.assignment["runtime"], runtime);
+});
+
+test("a pool whose release reads no runtime is handed none, and an attempt that kept none hands none to any pool", async () => {
+  const earlier = await reconciledOne(container, settings, {
+    runtime,
+    readsRuntime: false,
+  });
+  assert.equal("runtime" in earlier.assignment, false);
+  assert.equal(
+    earlier.assignment["image"],
+    `registry.invalid/worker@sha256:${"a".repeat(64)}`,
+  );
+  const unkept = await reconciledOne(container);
+  assert.equal("runtime" in unkept.assignment, false);
+});
+
+test("a pool reads a job's runtime from the release that names it, and one from before is never handed one", () => {
+  for (const [release, read] of [
+    ["1.6.0", false],
+    ["1.6.9", false],
+    ["1.7.0", true],
+    [undefined, false],
+  ] as const)
+    assert.equal(workerPoolRuntimeRead(release), read, String(release));
 });
 
 test("a capability requirement is handed out with its platform and capabilities and no image", async () => {
@@ -549,7 +617,7 @@ test("a claimed session is opened with its invocation and launch and handed out 
     ports(idle, store, () => "assignment-one"),
     identity,
     nothingHeld,
-    { wanted: 0, wantedSessions: 1 },
+    { wanted: 0, wantedSessions: 1, readsRuntime: true },
     settings,
   );
   assert.deepEqual(answered.sessions, [
@@ -607,7 +675,7 @@ test("a session is claimed only up to the least of the pool's room, the per-poll
       ports(idle, store),
       identity,
       { jobs: [], sessions: held },
-      { wanted: 0, wantedSessions },
+      { wanted: 0, wantedSessions, readsRuntime: true },
       { ...settings, ...over },
     );
     assert.equal(
@@ -625,7 +693,7 @@ test("a session another claim took is skipped, and a pool the durable side finds
     ports(idle, skipped.store),
     identity,
     nothingHeld,
-    { wanted: 0, wantedSessions: 2 },
+    { wanted: 0, wantedSessions: 2, readsRuntime: true },
     settings,
   );
   assert.equal(one.sessions.length, 1);
@@ -635,7 +703,7 @@ test("a session another claim took is skipped, and a pool the durable side finds
     ports(idle, full.store),
     identity,
     nothingHeld,
-    { wanted: 0, wantedSessions: 2 },
+    { wanted: 0, wantedSessions: 2, readsRuntime: true },
     settings,
   );
   assert.equal(none.sessions.length, 0);
@@ -650,7 +718,7 @@ test("a plane naming no session API, or with no launch published, claims no sess
         ports(idle, unnamed.store),
         identity,
         nothingHeld,
-        { wanted: 0, wantedSessions: 1 },
+        { wanted: 0, wantedSessions: 1, readsRuntime: true },
         unaddressed,
       )
     ).sessions,
@@ -667,7 +735,7 @@ test("a plane naming no session API, or with no launch published, claims no sess
         }),
         identity,
         nothingHeld,
-        { wanted: 0, wantedSessions: 1 },
+        { wanted: 0, wantedSessions: 1, readsRuntime: true },
         settings,
       )
     ).sessions,
@@ -902,7 +970,7 @@ test("a personal runner claims only in the projects it allowlists that its owner
     ),
     runner,
     nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
+    { wanted: 1, wantedSessions: 0, readsRuntime: true },
     settings,
   );
   assert.equal(answered.assignments.length, 1);
@@ -931,7 +999,7 @@ test("a personal runner whose owner may read nothing it allowlists claims nothin
     ),
     runner,
     nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
+    { wanted: 1, wantedSessions: 0, readsRuntime: true },
     settings,
   );
   assert.deepEqual(answered.assignments, []);
@@ -976,7 +1044,7 @@ test("a pool's claim names revoked each owner it would defer to who lost their p
     ),
     identity,
     nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
+    { wanted: 1, wantedSessions: 0, readsRuntime: true },
     settings,
   );
   assert.deepEqual(asked, [workerPoolOwnersAskedMax, [unpermitted, unreading]]);
@@ -1022,7 +1090,7 @@ test("each poll asks the owners' window under a rotation it draws afresh, so a r
       polling,
       identity,
       nothingHeld,
-      { wanted: 1, wantedSessions: 0 },
+      { wanted: 1, wantedSessions: 0, readsRuntime: true },
       settings,
     );
   assert.equal(new Set(rotations).size, 2, "each poll drew its own rotation");
@@ -1053,7 +1121,7 @@ test("a caller with no room asks the authority nothing and claims nothing", asyn
       ),
       caller,
       nothingHeld,
-      { wanted: 0, wantedSessions: 0 },
+      { wanted: 0, wantedSessions: 0, readsRuntime: true },
       settings,
     );
   assert.deepEqual(reached, []);
@@ -1079,7 +1147,7 @@ test("a personal runner renews, settles and pulls the images of its executions t
     ports(executions),
     runner,
     { jobs: ["live", "gone"], sessions: [] },
-    { wanted: 0, wantedSessions: 0 },
+    { wanted: 0, wantedSessions: 0, readsRuntime: true },
     settings,
   );
   assert.deepEqual(answered.stop, ["gone"]);
@@ -1107,7 +1175,11 @@ test("a personal runner's poll is recorded as one that could take an execution w
     [runner, { held: ["j1"], readsSessions: false }, ["executions"]],
     [runner, { readsSessions: false }, []],
     [runner, { wantedSessions: 1 }, ["sessions"]],
-    [runner, { wanted: 1, wantedSessions: 1 }, ["sessions", "executions"]],
+    [
+      runner,
+      { wanted: 1, wantedSessions: 1, readsRuntime: true },
+      ["sessions", "executions"],
+    ],
     [identity, { wanted: 1, readsSessions: false }, []],
   ] as const) {
     const reached: string[] = [];
@@ -1154,7 +1226,7 @@ test("a personal runner's sessions are opened only in projects its owner may rea
     ports(idle, store, () => "minted", access),
     runner,
     nothingHeld,
-    { wanted: 0, wantedSessions: 3 },
+    { wanted: 0, wantedSessions: 3, readsRuntime: true },
     { ...settings, sessionsPerPollMax: 3, sessionsHeldMax: 3 },
   );
   assert.deepEqual(asked, ["a-member:project:Read", "a-member:elsewhere:Read"]);
@@ -1177,7 +1249,7 @@ test("a personal runner whose owner's authority cannot answer opens nothing", as
       ports(idle, store, () => "minted", access),
       runner,
       nothingHeld,
-      { wanted: 0, wantedSessions: 1 },
+      { wanted: 0, wantedSessions: 1, readsRuntime: true },
       settings,
     ),
     ProjectAccessUnavailable,

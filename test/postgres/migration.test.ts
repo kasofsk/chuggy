@@ -51,6 +51,7 @@ import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-
 import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-release-pairing-refusals.ts";
 import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-lead-refusal.ts";
 import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-pool-refusal-fault.ts";
+import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-attempt-runtime.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -142,6 +143,7 @@ import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
+import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -10232,5 +10234,76 @@ test("056 keeps every refusal that stood with no fault, admits the contract's im
       String(await faulted("ImageLacksGit", null)),
       /execution_attempt_pool_refusal_fault_is_a_refusal_s/u,
     );
+  });
+});
+
+/** What one attempt 057 is run beside keeps of a runtime. */
+async function attemptRuntimeKept057(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT to_jsonb(a) ? 'runtime' AS has_runtime,
+              to_jsonb(a)->>'runtime' AS runtime
+         FROM execution_attempt a WHERE tenant='tenant-5' AND attempt='attempt-1'`,
+    )
+  ).rows;
+}
+
+/** Every role but the owner that holds a privilege on the runtime 057 adds, by kind. */
+async function attemptRuntimeGrants057(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT grantee,privilege_type FROM information_schema.column_privileges
+        WHERE table_name='execution_attempt' AND column_name='runtime'
+          AND grantee <> current_user
+        ORDER BY grantee,privilege_type`,
+    )
+  ).rows;
+}
+
+test("057 keeps every attempt that stood with no runtime, bounds the one written, and lets the pool plane read it and no role change it", async () => {
+  await migrationDatabase("attempt_runtime", async (subject) => {
+    await installationBefore(subject, migration057.version);
+    await subject.query(
+      `${deletionPartition}
+       ${deletionJournalRow(1, journalledRevocation)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)}`,
+    );
+    assert.deepEqual(await attemptRuntimeKept057(subject), [
+      { has_runtime: false, runtime: null },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration057.version));
+    assert.deepEqual(await attemptRuntimeKept057(subject), [
+      { has_runtime: true, runtime: null },
+    ]);
+    assert.deepEqual(await attemptRuntimeGrants057(subject), [
+      { grantee: boundaryOwnerRole, privilege_type: "SELECT" },
+      { grantee: poolPlaneRole, privilege_type: "SELECT" },
+      { grantee: schedulerRole, privilege_type: "INSERT" },
+      { grantee: schedulerRole, privilege_type: "SELECT" },
+    ]);
+    const written = (runtime: string) =>
+      subject
+        .query(
+          `UPDATE execution_attempt SET runtime=$1
+            WHERE tenant='tenant-5' AND attempt='attempt-1'`,
+          [runtime],
+        )
+        .then(
+          () => undefined,
+          (failure: unknown) => String(failure),
+        );
+    assert.equal(await written("r".repeat(workerImageCharsMax)), undefined);
+    for (const runtime of ["", "r".repeat(workerImageCharsMax + 1)])
+      assert.match(
+        String(await written(runtime)),
+        /execution_attempt_runtime_is_bounded/u,
+        String(runtime.length),
+      );
   });
 });

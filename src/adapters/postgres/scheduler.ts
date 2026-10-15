@@ -115,6 +115,7 @@ import {
   type SchedulerOwnerId,
   type SpawnRegistered,
   type PlacementId,
+  type RefusedAttempt,
   type WorkTaskInvocation,
 } from "../../interpreter/executionScheduler.ts";
 import type {
@@ -138,6 +139,7 @@ import {
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
 import {
+  attemptRowImageFault,
   attemptRowPhysical,
   executionRowLogical,
   executionRowTaskKind,
@@ -902,11 +904,11 @@ async function schedulerOpenAttempt(
     sql`INSERT INTO execution_attempt
        (tenant, project, execution, attempt, attempt_number, generation,
         recovery_epoch, state, lease_owner, lease_expires_at,
-        capability, capability_secret_digest, manifest)
+        capability, capability_secret_digest, manifest, runtime)
      VALUES (${opening.partition.tenant},${opening.partition.project},${opening.execution},
              ${attempt},${attemptNumber}::bigint,1,${opening.epoch},'Placing',${attempt},
              now() + make_interval(secs => ${opening.leaseSecs}::double precision),
-             ${capability},${capabilitySecretDigest},${manifest})
+             ${capability},${capabilitySecretDigest},${manifest},${opening.runtime})
      RETURNING tenant, project, execution, attempt,
                attempt_number::text AS attempt_number,
                generation::text AS generation, recovery_epoch, state, workload,
@@ -1007,20 +1009,24 @@ async function schedulerAttemptEnded(
 /**
  * At most `attemptsMax` live attempts of this epoch that the pool holding them
  * refused, in key order and whatever their lease, each with the generation
- * ending it is fenced by.
+ * ending it is fenced by and the image fault its refusal named.
  */
 async function schedulerRefusedAttempts(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
   attemptsMax: number,
-): Promise<readonly FencedAttempt[]> {
+): Promise<readonly RefusedAttempt[]> {
   schedulerRequirePositive(attemptsMax, "attemptsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const refused = await client.query<
-    SchedulerRowKey & { attempt: string; generation: string }
+    SchedulerRowKey & {
+      attempt: string;
+      generation: string;
+      fault: string | null;
+    }
   >(
     sql`SELECT a.tenant, a.project, a.execution, a.attempt,
-               a.generation::text AS generation
+               a.generation::text AS generation, a.pool_refusal_fault AS fault
           FROM execution_attempt a
          WHERE a.state IN ('Placing', 'Running') AND a.pool_refusal IS NOT NULL
            AND a.recovery_epoch = ${epoch}
@@ -1032,6 +1038,7 @@ async function schedulerRefusedAttempts(
     execution: asExecutionId(row.execution),
     attempt: asAttemptId(row.attempt),
     generation: projectRowCounter(row.generation, "attempt generation"),
+    ...(row.fault === null ? {} : { fault: attemptRowImageFault(row.fault) }),
   }));
 }
 

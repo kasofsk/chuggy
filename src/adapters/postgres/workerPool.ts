@@ -81,7 +81,6 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 
-import { asExecutionRequirement } from "../../interpreter/executionRequirement.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
@@ -110,6 +109,8 @@ import {
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
   postgresPersonalExecutionHolds,
+  workerPoolClaimedRow,
+  workerPoolHeldPulls,
 } from "./personalExecutions.ts";
 import { postgresTransaction } from "./pool.ts";
 
@@ -393,7 +394,10 @@ async function workerPoolClaimed(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'worker-pool-claim:' || ${partition.tenant} || '/' || ${partition.project} || '/' || ${identity.pool}, 0))::text AS locked`,
   );
-  const found = await client.query<{ requirement: unknown }>(
+  const found = await client.query<{
+    requirement: unknown;
+    runtime: string | null;
+  }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.pool},pool_principal=${identity.principal},
         assignment=${assignment},pool_refusal=NULL,
@@ -432,12 +436,10 @@ async function workerPoolClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement`,
+      RETURNING e.requirement_value AS requirement, a.runtime`,
   );
   const row = found.rows[0];
-  return row === undefined
-    ? undefined
-    : { requirement: asExecutionRequirement(row.requirement) };
+  return row === undefined ? undefined : workerPoolClaimedRow(row);
 }
 
 /** A claim's terms, each a positive whole number, checked before anything is locked. */
@@ -464,7 +466,7 @@ async function workerPoolReleased(
 /**
  * The images pinned by every attempt a renewal would extend, which is what a
  * pool holds: its registration's, live, leased, unrefused, current and in an
- * active project.
+ * active project; and the runtimes those attempts were opened under.
  */
 async function workerPoolHeldImages(
   pool: pg.Pool,
@@ -473,8 +475,11 @@ async function workerPoolHeldImages(
 ): Promise<string[]> {
   if (!Number.isSafeInteger(heldMax) || heldMax < 1)
     throw new RangeError("invalid worker pool held bound");
-  const found = await pool.query<{ image: string | null }>(
-    sql`SELECT DISTINCT e.requirement_value->>'image' AS image
+  const found = await pool.query<{
+    image: string | null;
+    runtime: string | null;
+  }>(
+    sql`SELECT DISTINCT e.requirement_value->>'image' AS image, a.runtime
       FROM execution_attempt a
       JOIN execution e
         ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
@@ -487,10 +492,10 @@ async function workerPoolHeldImages(
         AND a.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
         AND EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=a.tenant AND p.project=a.project AND p.lifecycle='Active')
-        AND e.requirement_value->>'image' IS NOT NULL
-      ORDER BY image LIMIT ${heldMax}`,
+        AND (e.requirement_value->>'image' IS NOT NULL OR a.runtime IS NOT NULL)
+      ORDER BY image, a.runtime LIMIT ${heldMax}`,
   );
-  return found.rows.flatMap((row) => (row.image === null ? [] : [row.image]));
+  return workerPoolHeldPulls(found.rows);
 }
 
 /**

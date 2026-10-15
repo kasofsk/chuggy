@@ -17,6 +17,12 @@
  * serving pools never holds a journal, an obligation or a domain type. What it
  * hands out is the contract's assignment and nothing wider.
  *
+ * A JOB'S RUNTIME IS THE ONE ITS ATTEMPT WAS OPENED UNDER. The scheduler keeps
+ * it on the attempt row, and an assignment names it, by the host a pool pulls
+ * it from, only to a pool whose release reads it; an earlier pool starts its
+ * image's own entrypoint. A pool holding the attempt may pull the runtime as it
+ * pulls the image.
+ *
  * THE BOX IS THE DEPLOYMENT'S ANSWER AND NOT THE WORK'S. An execution
  * requirement in this tree names a platform, an image and capabilities and
  * says nothing about cores or memory, so the size an assignment carries is the
@@ -71,6 +77,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerRuntime,
   workerContractRunnerSessions,
   type WorkerContractRange,
 } from "./workerPlane.ts";
@@ -103,17 +110,23 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, and whether its release reads sessions at all. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, and whether its release reads sessions and a job's runtime at all. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly readsSessions: boolean;
+  readonly readsRuntime: boolean;
 }
 
 /** Whether a pool naming `release` reads `sessions`, which an earlier pool's strict schema refuses and so is never handed. */
 export function workerPoolSessionsRead(release: string | undefined): boolean {
   return contractVersionAccepted(workerContractRunnerSessions, release);
+}
+
+/** Whether a pool naming `release` reads a job assignment's `runtime`, which an earlier pool's strict schema refuses and so is never handed. */
+export function workerPoolRuntimeRead(release: string | undefined): boolean {
+  return contractVersionAccepted(workerContractRunnerRuntime, release);
 }
 
 /** A reconciliation as a pool from before sessions reads it. */
@@ -284,9 +297,10 @@ export interface WorkerPoolClients {
   remove(clientId: string): Promise<void>;
 }
 
-/** What one claim produced, which is the requirement the claimed attempt's execution recorded. */
+/** What one claim produced: the requirement the claimed attempt's execution recorded, and the runtime the attempt was opened under where it kept one. */
 export interface WorkerPoolClaimed {
   readonly requirement: ExecutionRequirement;
+  readonly runtime?: string;
 }
 
 /** What a claim is held to: how long the lease it takes runs, and how many live attempts the pool may hold with it. */
@@ -319,7 +333,7 @@ export interface WorkerPoolExecutionHolds<Identity> {
   ): Promise<boolean>;
   release(identity: Identity, assignment: string): Promise<boolean>;
   held(identity: Identity, assignment: string): Promise<boolean>;
-  /** The images pinned by the assignments this registration may still renew, at most `heldMax` of them. */
+  /** The images pinned by the assignments this registration may still renew and the runtimes they were opened under, from at most `heldMax` of them. */
   heldImages(identity: Identity, heldMax: number): Promise<readonly string[]>;
 }
 
@@ -547,6 +561,17 @@ async function workerPoolClaimMade(
   }
 }
 
+/** The runtime an assignment names, by the host a pool pulls it from, where the attempt kept one and the pool's release reads it. */
+function workerPoolClaimedRuntime(
+  row: WorkerPoolClaimed,
+  readsRuntime: boolean,
+  imageHosts: WorkerPoolImageHosts,
+): Pick<WorkerPoolAssignment, "runtime"> {
+  return readsRuntime && row.runtime !== undefined
+    ? { runtime: workerPoolImageHosted(row.runtime, imageHosts) }
+    : {};
+}
+
 /**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
  * in the same statement. A caller with no room asks for none and none is
@@ -558,6 +583,7 @@ async function workerPoolClaims(
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
   wanted: number,
+  readsRuntime: boolean,
 ): Promise<WorkerPoolAssignment[]> {
   const claimed: WorkerPoolAssignment[] = [];
   if (wanted <= 0) return claimed;
@@ -570,6 +596,7 @@ async function workerPoolClaims(
     claimed.push({
       assignment,
       ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
+      ...workerPoolClaimedRuntime(row, readsRuntime, settings.imageHosts),
       cpuMillis: settings.cpuMillis,
       memoryMib: settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,
@@ -617,7 +644,7 @@ export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
-  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
+  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions" | "readsRuntime">,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const stop = [
@@ -644,6 +671,7 @@ export async function workerPoolReconcile(
         settings.assignmentsPerPollMax,
         settings.heldMax - holding.jobs.length,
       ),
+      asked.readsRuntime,
     ),
     sessions: await workerPoolSessionsClaimed(
       ports,
@@ -742,6 +770,7 @@ export async function workerPoolPoll(
   const rooms = {
     wanted: asked.wanted,
     wantedSessions: asked.readsSessions ? asked.wantedSessions : 0,
+    readsRuntime: asked.readsRuntime,
   };
   let answer = await workerPoolReconcile(
     ports,
@@ -833,7 +862,7 @@ export async function workerPoolSettled(
   return workerPoolSettledOn(ports.assignments, identity, assignment, offered);
 }
 
-/** The images pinned by what this registration may still renew of either kind, each kind to its own bound. */
+/** The images pinned by what this registration may still renew of either kind, and the runtimes its jobs were opened under, each kind to its own bound. */
 export async function workerPoolHeldImages(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
