@@ -5,9 +5,9 @@
  *
  * THE TEXT IS THE BACKEND'S, ONE FIXED TEXT PER FAULT. A person reading why
  * their job never ran is told what the image lacks in this backend's words,
- * and for a pull the kubelet's own message after it, because only the kubelet
- * knows which of a pull's causes it was. Nothing the workload wrote is ever
- * relayed.
+ * and for a pull or a start the kubelet's own message after it, because only
+ * the kubelet knows which of the fault's causes it was. Nothing the workload
+ * wrote is ever relayed.
  *
  * IT IS STORED WHERE THE WORKER WOULD HAVE STORED IT, UNDER THE WORKER'S OWN
  * BEARER. A worker that never started wrote nothing, so the backend that placed
@@ -49,7 +49,7 @@ import {
 export const kubernetesImageFaultTexts = {
   ImageUnpullable: "The cluster could not pull the image this job names.",
   ImageLacksShell:
-    "The cluster could not start /bin/sh in the image this job names, so chuggy's check of the image never ran.",
+    "The image this job names has no executable /bin/sh, so the cluster could not start chuggy's check of the image.",
   ImageLibcUnsupported:
     "The image this job names cannot load chuggy's runtime, which needs the image's glibc and libstdc++.",
   ImageLacksGit: "The image this job names has no git on its PATH.",
@@ -70,13 +70,18 @@ export function kubernetesImageFaultText(
   return message === undefined ? text : `${text}\nThe cluster said: ${message}`;
 }
 
-/** What one read of a job's pod means for its attempt, a site's fault named by the pod it failed. */
+/** What one read of a job's pod, made at `nowEpochMs`, means for its attempt, a site's fault named by the pod it failed. */
 export function kubernetesWorkloadObserved(
   pod: string,
   reached: KubernetesReached,
   containers: KubernetesJobContainers,
+  nowEpochMs: number,
 ): AttemptWorkloadObserved {
-  const found = kubernetesPodFault(kubernetesObjectRead(reached), containers);
+  const found = kubernetesPodFault(
+    kubernetesObjectRead(reached),
+    containers,
+    nowEpochMs,
+  );
   switch (found.fault) {
     case "None":
       return { observed: "Unfaulted" };

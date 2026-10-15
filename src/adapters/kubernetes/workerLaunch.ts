@@ -45,10 +45,14 @@ import {
 } from "./workerPod.ts";
 import { kubernetesRuntimeContainerName } from "./workerRuntime.ts";
 
-/** Places, cancels and observes one bounded pod per attempt against the supplied cluster. */
+/**
+ * Places, cancels and observes one bounded pod per attempt against the supplied
+ * cluster, reading the time an observation is made at from `currentTimeEpochMs`.
+ */
 export function kubernetesWorkerLaunch(
   input: KubernetesWorkerLaunchConfig,
   fetcher: typeof fetch = fetch,
+  currentTimeEpochMs: () => number = Date.now,
 ): AttemptPlacementPort {
   const config = checkedKubernetesWorkerLaunchConfig(input);
   return {
@@ -72,13 +76,15 @@ export function kubernetesWorkerLaunch(
         attempt.partition,
         attempt.attempt,
       );
+      const reached = await kubernetesReadPod(config, fetcher, pod);
       return kubernetesWorkloadObserved(
         pod,
-        await kubernetesReadPod(config, fetcher, pod),
+        reached,
         {
           job: kubernetesWorkerContainerName,
           runtime: kubernetesRuntimeContainerName,
         },
+        currentTimeEpochMs(),
       );
     },
     writeError: async (attempt, text) =>

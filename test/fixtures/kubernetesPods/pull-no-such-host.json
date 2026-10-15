@@ -2,14 +2,16 @@
   "apiVersion": "v1",
   "kind": "Pod",
   "metadata": {
-    "name": "capture-unpullable",
-    "namespace": "chuggy-work"
+    "name": "capture-no-such-host",
+    "namespace": "chuggy-work",
+    "creationTimestamp": "2026-10-15T07:36:43Z"
   },
   "spec": {
     "initContainers": [
       {
         "name": "chuggy-runtime",
-        "image": "docker.io/library/stand-in-runtime:1"
+        "image": "docker.io/library/stand-in-runtime:1",
+        "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"]
       },
       {
         "name": "postgres",
@@ -19,7 +21,7 @@
     "containers": [
       {
         "name": "worker",
-        "image": "docker.io/library/alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "image": "registry.invalid/any/job:1",
         "command": ["/bin/sh", "/opt/chuggy/check.sh"]
       }
     ]
@@ -28,19 +30,19 @@
     "conditions": [
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T06:50:08Z",
+        "lastTransitionTime": "2026-10-15T07:36:44Z",
         "status": "True",
         "type": "PodReadyToStartContainers"
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T06:50:10Z",
+        "lastTransitionTime": "2026-10-15T07:36:47Z",
         "status": "True",
         "type": "Initialized"
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T06:50:08Z",
+        "lastTransitionTime": "2026-10-15T07:36:43Z",
         "message": "containers with unready status: [worker]",
         "reason": "ContainersNotReady",
         "status": "False",
@@ -48,7 +50,7 @@
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T06:50:08Z",
+        "lastTransitionTime": "2026-10-15T07:36:43Z",
         "message": "containers with unready status: [worker]",
         "reason": "ContainersNotReady",
         "status": "False",
@@ -56,14 +58,14 @@
       },
       {
         "lastProbeTime": null,
-        "lastTransitionTime": "2026-10-15T06:50:08Z",
+        "lastTransitionTime": "2026-10-15T07:36:43Z",
         "status": "True",
         "type": "PodScheduled"
       }
     ],
     "containerStatuses": [
       {
-        "image": "docker.io/library/alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "image": "registry.invalid/any/job:1",
         "imageID": "",
         "lastState": {},
         "name": "worker",
@@ -72,8 +74,8 @@
         "started": false,
         "state": {
           "waiting": {
-            "message": "Back-off pulling image \"docker.io/library/alpine@sha256:0000000000000000000000000000000000000000000000000000000000000000\"",
-            "reason": "ImagePullBackOff"
+            "message": "failed to pull and unpack image \"registry.invalid/any/job:1\": failed to resolve reference \"registry.invalid/any/job:1\": failed to do request: Head \"https://registry.invalid/v2/any/job/manifests/1\": dial tcp: lookup registry.invalid: no such host",
+            "reason": "ErrImagePull"
           }
         },
         "volumeMounts": [
@@ -106,15 +108,15 @@
         ]
       }
     ],
-    "hostIP": "172.17.0.4",
+    "hostIP": "172.27.0.5",
     "hostIPs": [
       {
-        "ip": "172.17.0.4"
+        "ip": "172.27.0.5"
       }
     ],
     "initContainerStatuses": [
       {
-        "containerID": "containerd://d645af159f00381ec664fd3aef029e273ae5c12ee63f86e0903e2985061faf4a",
+        "containerID": "containerd://1b0008c79fda24b121dd808172893d5de7375d3abfaac48f12580decbaa9b9b4",
         "image": "docker.io/library/stand-in-runtime:1",
         "imageID": "sha256:8ff236c764ef139a49faf57aa2aa2c09a339dec2b1c62b025f6061194bfb30bd",
         "lastState": {},
@@ -124,11 +126,11 @@
         "started": false,
         "state": {
           "terminated": {
-            "containerID": "containerd://d645af159f00381ec664fd3aef029e273ae5c12ee63f86e0903e2985061faf4a",
+            "containerID": "containerd://1b0008c79fda24b121dd808172893d5de7375d3abfaac48f12580decbaa9b9b4",
             "exitCode": 0,
-            "finishedAt": "2026-10-15T06:50:08Z",
+            "finishedAt": "2026-10-15T07:36:43Z",
             "reason": "Completed",
-            "startedAt": "2026-10-15T06:50:08Z"
+            "startedAt": "2026-10-15T07:36:43Z"
           }
         },
         "volumeMounts": [
@@ -139,9 +141,9 @@
         ]
       },
       {
-        "containerID": "containerd://c060229ab8cfb17d52e65066329c757f706dc8c30baa7376ce26cf1b3eb84bc4",
+        "containerID": "containerd://fe34e2d9b6a82c4393376570298b3c944dc837dc330b65f7cf06c80903e522c2",
         "image": "docker.io/library/postgres:18-alpine",
-        "imageID": "docker.io/library/postgres@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+        "imageID": "sha256:b07129cc272f688c98f5b343138a0a52fa45b3d82f50d7a53ff441330624cd2e",
         "lastState": {},
         "name": "postgres",
         "ready": true,
@@ -149,7 +151,7 @@
         "started": true,
         "state": {
           "running": {
-            "startedAt": "2026-10-15T06:50:08Z"
+            "startedAt": "2026-10-15T07:36:44Z"
           }
         },
         "volumeMounts": [
@@ -161,13 +163,13 @@
       }
     ],
     "phase": "Pending",
-    "podIP": "10.42.1.13",
+    "podIP": "10.42.0.12",
     "podIPs": [
       {
-        "ip": "10.42.1.13"
+        "ip": "10.42.0.12"
       }
     ],
     "qosClass": "Burstable",
-    "startTime": "2026-10-15T06:50:08Z"
+    "startTime": "2026-10-15T07:36:43Z"
   }
 }

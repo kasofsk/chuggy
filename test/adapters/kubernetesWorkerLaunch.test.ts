@@ -25,6 +25,7 @@ import {
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
 import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
+import { kubernetesPullFailureDwellSecs } from "../../src/adapters/kubernetes/podFaults.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerContainerName,
@@ -1348,15 +1349,27 @@ function capturedPod(name: string): unknown {
   );
 }
 
-/** What observing the suite's attempt answers when its pod reads as `answer` does. */
+/** What observing the suite's attempt answers when its pod reads as `answer` does, at the time `now` gives. */
 async function observedWith(
   answer: (request: ClusterReached) => Response,
   reached: ClusterReached[] = [],
+  now?: () => number,
 ): Promise<unknown> {
   return kubernetesWorkerLaunch(
     config,
     recordingCluster(reached, answer),
+    now,
   ).observe(placement);
+}
+
+/** The text an observation carries, or nothing where it carries none. */
+function observedText(observed: unknown): string | undefined {
+  return typeof observed === "object" &&
+    observed !== null &&
+    "text" in observed &&
+    typeof observed.text === "string"
+    ? observed.text
+    : undefined;
 }
 
 test("observing an attempt reads its own pod, once, under the cluster's credential", async () => {
@@ -1389,17 +1402,51 @@ test("observing an attempt reads its own pod, once, under the cluster's credenti
 
 test("a pull the kubelet could not make is told in the backend's words and then the kubelet's", async () => {
   const observed = await observedWith(() =>
-    Response.json(capturedPod("pull-failed")),
+    Response.json(capturedPod("pull-missing-digest")),
   );
-  assert.ok(
-    typeof observed === "object" &&
-      observed !== null &&
-      "text" in observed &&
-      typeof observed.text === "string",
-  );
-  const [line, said] = observed.text.split("\n");
+  const [line, said] = (observedText(observed) ?? "").split("\n");
   assert.equal(line, kubernetesImageFaultTexts.ImageUnpullable);
   assert.match(said ?? "", /^The cluster said: .*not found$/u);
+});
+
+test("a pull that can still succeed is read at the time the launcher's clock gives", async () => {
+  const pod = capturedPod("pull-unavailable") as {
+    readonly metadata: { readonly creationTimestamp: string };
+  };
+  const created = Date.parse(pod.metadata.creationTimestamp);
+  const at = (afterSecs: number) => () => created + afterSecs * 1_000;
+  assert.deepEqual(
+    await observedWith(
+      () => Response.json(pod),
+      [],
+      at(kubernetesPullFailureDwellSecs - 1),
+    ),
+    { observed: "Unfaulted" },
+  );
+  const [line, said] = (
+    observedText(
+      await observedWith(
+        () => Response.json(pod),
+        [],
+        at(kubernetesPullFailureDwellSecs),
+      ),
+    ) ?? ""
+  ).split("\n");
+  assert.equal(line, kubernetesImageFaultTexts.ImageUnpullable);
+  assert.match(said ?? "", /^The cluster said: .*503 Service Unavailable$/u);
+});
+
+test("a shell the cluster could not start is told in the backend's words and then the kubelet's", async () => {
+  const [line, said] = (
+    observedText(
+      await observedWith(() => Response.json(capturedPod("lacks-shell"))),
+    ) ?? ""
+  ).split("\n");
+  assert.equal(line, kubernetesImageFaultTexts.ImageLacksShell);
+  assert.match(
+    said ?? "",
+    /^The cluster said: .*stat \/bin\/sh: no such file or directory/u,
+  );
 });
 
 test("a runtime copy that failed is the site's fault and names the pod it failed", async () => {

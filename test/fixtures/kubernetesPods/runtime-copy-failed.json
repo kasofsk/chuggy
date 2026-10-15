@@ -3,13 +3,15 @@
   "kind": "Pod",
   "metadata": {
     "name": "capture-runtime-uncopyable",
-    "namespace": "chuggy-work"
+    "namespace": "chuggy-work",
+    "creationTimestamp": "2026-10-15T06:50:51Z"
   },
   "spec": {
     "initContainers": [
       {
         "name": "chuggy-runtime",
-        "image": "docker.io/library/stand-in-runtime-uncopyable:1"
+        "image": "docker.io/library/stand-in-runtime-uncopyable:1",
+        "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"]
       },
       {
         "name": "postgres",

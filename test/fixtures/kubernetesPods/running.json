@@ -3,13 +3,15 @@
   "kind": "Pod",
   "metadata": {
     "name": "capture-running",
-    "namespace": "chuggy-work"
+    "namespace": "chuggy-work",
+    "creationTimestamp": "2026-10-15T06:49:17Z"
   },
   "spec": {
     "initContainers": [
       {
         "name": "chuggy-runtime",
-        "image": "docker.io/library/stand-in-runtime-sleep:1"
+        "image": "docker.io/library/stand-in-runtime-sleep:1",
+        "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"]
       },
       {
         "name": "postgres",
