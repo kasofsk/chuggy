@@ -9,7 +9,10 @@ import {
   sessionTurnResultCharsMax,
   textCodePointsCount,
 } from "../contract/http.ts";
-import type { SelectorDeliveryState } from "../contract/rosters.ts";
+import type {
+  LeadAdmissionRefusal,
+  SelectorDeliveryState,
+} from "../contract/rosters.ts";
 import { leadRefusalsPerDecisionMax } from "../contract/sessionTools.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type { DispatchCandidate, DispatchViewToken } from "./dispatchView.ts";
@@ -171,6 +174,17 @@ export interface SelectorStateStore {
    * no attempt and no planning intent. False where the project moved under it.
    */
   recordQuietCycle(state: SelectorProjectState): Promise<boolean>;
+  /**
+   * Keeps what the project's lead was refused admission for, by the store's
+   * clock since the refusal it keeps began: the same refusal again moves
+   * nothing, and another starts again.
+   */
+  recordLeadRefusal(
+    partition: Partition,
+    refusal: LeadAdmissionRefusal,
+  ): Promise<void>;
+  /** Forgets the project's lead refusal, which is nothing where none is kept. */
+  clearLeadRefusal(partition: Partition): Promise<void>;
   pending(limit: number): Promise<readonly SelectorDelivery[]>;
   submittedDeliveries(limit: number): Promise<readonly SelectorDelivery[]>;
   /** One delivery of one decision settles alone, which is what partial failure is. */

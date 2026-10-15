@@ -8,6 +8,7 @@ import { expect, test } from "vitest";
 import type { LeadReadResponse } from "../../../src/contract/responses.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
+  projectLeadAbsenceLine,
   projectLeadFound,
   projectLeadPanelState,
   projectLeadPresent,
@@ -43,4 +44,49 @@ test("the lead page draws a lead it was answered, and is absent where there is n
   expect(projectLeadPanelState(ready(none)).state).toBe("Absent");
   const failed = { state: "Failed", reason: "no" } as const;
   expect(projectLeadPanelState(failed)).toBe(failed);
+});
+
+/** When a refusal began, a moment later that day, and a later day of the same year. */
+const sinceIso = "2026-09-02T09:30:00.000Z";
+const sameDayMs = Date.parse("2026-09-02T09:45:00.000Z");
+const laterMs = Date.parse("2026-10-14T09:45:00.000Z");
+
+test("a project with no lead says why under the line, and since when where it was refused", () => {
+  const since = new Date(sinceIso);
+  const clock = `${String(since.getHours()).padStart(2, "0")}:${String(since.getMinutes()).padStart(2, "0")}`;
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "NotNeeded" } }),
+      sameDayMs,
+    ),
+  ).toBe("Opens when a ticket is released");
+  expect(
+    projectLeadAbsenceLine(
+      ready({
+        lead: "None",
+        absence: { reason: "RunnerOffline", since: sinceIso },
+      }),
+      sameDayMs,
+    ),
+  ).toBe(`No live runner · since ${clock}`);
+  expect(
+    projectLeadAbsenceLine(
+      ready({
+        lead: "None",
+        absence: { reason: "HostedRunsNotGranted", since: sinceIso },
+      }),
+      laterMs,
+    ),
+  ).toMatch(/^Hosted runs not granted · since Sep 2 \d\d:\d\d$/u);
+});
+
+test("a server that gives no reason reads as tickets run by hand, and a lead or no read draws no line", () => {
+  expect(projectLeadAbsenceLine(ready(none), laterMs)).toBe(
+    "Tickets are dispatched by hand",
+  );
+  expect(projectLeadAbsenceLine(ready(lead), laterMs)).toBeUndefined();
+  expect(projectLeadAbsenceLine({ state: "Pending" }, laterMs)).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine({ state: "Absent", reason: "no" }, laterMs),
+  ).toBeUndefined();
 });

@@ -126,6 +126,7 @@ const leadPortsProgram = `
   });
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.leads.standing(partition, 1);
+  await ports.leads.leadRefusal(partition);
   await ports.leads.streams(partition, 'session', 1);
   await ports.leads.batches({
     partition,
@@ -167,13 +168,14 @@ test("the lead's reads stand on the API pool and never the review pool", async (
     [],
     "no lead read may reach the pool with no grant on 059's doors",
   );
-  assert.equal(asked.pool.length, 6, "every lead read was handed the API pool");
+  assert.equal(asked.pool.length, 7, "every lead read was handed the API pool");
 });
 
 test("each lead read reaches the definer function the plan names for it", async () => {
   const asked = await leadPortsAsked();
   for (const named of [
     "read_lead_standing",
+    "read_lead_refusal",
     "list_session_store_streams",
     "read_session_store_batches",
     "read_selector_interactions",

@@ -216,9 +216,9 @@ interface ProjectObservationResult {
  * `selector_interaction` row and a selections-per-minute slot to every pass of
  * a project whose changes leave the lead nothing to answer. A project with
  * nothing to decide therefore costs its bounded reads and at most the quiet
- * cycle's one write of its cursor and scan — no permit, no decision
- * reference, no turn and no quota — and the sweep still counts it as scanned,
- * so discovery goes on.
+ * cycle's writes, of its cursor and scan and of its lead refusal forgotten —
+ * no permit, no decision reference, no turn and no quota — and the sweep
+ * still counts it as scanned, so discovery goes on.
  */
 async function observeProject(
   partition: Partition,
@@ -254,8 +254,38 @@ async function observeProject(
   if (observation === undefined) return emptyProjectObservation;
   const quiet = selectorQuietCycle(state, observation);
   if (quiet !== undefined) return observeQuietProject(partition, store, quiet);
-  const passedOver = await observeProjectAdmission(partition, policy);
-  if (passedOver !== undefined) return passedOver;
+  const admission = await observeProjectAdmission(partition, policy, store);
+  if (!admission.admitted) return admission.passedOver;
+  const admitted = await observeAdmittedProject(
+    partition,
+    settings,
+    state,
+    observation,
+    refusals,
+    store,
+    source,
+    policy,
+    identities,
+    control,
+  );
+  return admission.failures.length === 0
+    ? admitted
+    : { ...admitted, failures: [...admission.failures, ...admitted.failures] };
+}
+
+/** Takes an admitted project's permit and, where one is given, runs its decision. */
+async function observeAdmittedProject(
+  partition: Partition,
+  settings: SelectorResolvedSettings,
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+  refusals: SelectorRefusalLedger,
+  store: SelectorStateStore,
+  source: SelectorRuntimeSource,
+  policy: SelectorPolicyHost,
+  identities: SelectorIdentityFactory,
+  control: SelectorRuntimeSettingsSource,
+): Promise<ProjectObservationResult> {
   const identity = identities.next(partition);
   let allocated: boolean;
   try {
@@ -286,13 +316,20 @@ async function observeProject(
   );
 }
 
-/** Stores a quiet cycle's state, which a pass whose revision is stale leaves unwritten. */
+/**
+ * Stores a quiet cycle's state, which a pass whose revision is stale leaves
+ * unwritten, after forgetting the project's lead refusal: a project with
+ * nothing to decide needs no lead, so a refusal kept from before is no longer
+ * why it has none. The refusal goes first, so a write that fails leaves the
+ * cursor where the next pass finds the same changes and forgets it again.
+ */
 async function observeQuietProject(
   partition: Partition,
   store: SelectorStateStore,
   quiet: SelectorProjectState,
 ): Promise<ProjectObservationResult> {
   try {
+    await store.clearLeadRefusal(partition);
     return (await store.recordQuietCycle(quiet))
       ? { ...emptyProjectObservation, quiet: true }
       : emptyProjectObservation;
@@ -301,27 +338,62 @@ async function observeQuietProject(
   }
 }
 
+/** Whether a project's lead may take a turn now, and what keeping its refusal failed. */
+type ProjectAdmission =
+  | { readonly admitted: false; readonly passedOver: ProjectObservationResult }
+  | {
+      readonly admitted: true;
+      readonly failures: readonly SelectorRunFailure[];
+    };
+
 /**
  * Why a project with something to decide is passed over before its permit, or
- * nothing where its lead may take a turn now: a refusal, or a read that could
- * not say. Neither is kept: the notification cursor moves only with a
- * completed, failed or quiet cycle, and a project passed over here took none
- * of them, so the next pass that reaches it asks again and finds its changes
- * waiting.
+ * that its lead may take a turn now: a refusal or a read that could not say
+ * moves no notification cursor, so the next pass that reaches the project asks
+ * again and finds its changes waiting. A refusal is kept and an admission
+ * forgets it, for a reader of a project with no lead; a read that could not say
+ * leaves what is kept, and a store that cannot keep or forget is reported under
+ * `Observation` and changes no admission.
  */
 async function observeProjectAdmission(
   partition: Partition,
   policy: SelectorPolicyHost,
-): Promise<ProjectObservationResult | undefined> {
+  store: SelectorStateStore,
+): Promise<ProjectAdmission> {
   let admission: LeadAdmission;
   try {
     admission = await policy.leadAdmission(partition);
   } catch {
-    return projectObservationFailure("AdmissionUndecided", partition);
+    return {
+      admitted: false,
+      passedOver: projectObservationFailure("AdmissionUndecided", partition),
+    };
   }
+  const unkept = await observeProjectAdmissionKept(partition, store, admission);
   return admission === "Admitted"
-    ? undefined
-    : projectObservationFailure(admission, partition);
+    ? { admitted: true, failures: unkept }
+    : {
+        admitted: false,
+        passedOver: {
+          ...emptyProjectObservation,
+          failures: [{ phase: admission, partition }, ...unkept],
+        },
+      };
+}
+
+/** Keeps a refused admission or forgets the refusal kept, answering the failure where the store could not. */
+async function observeProjectAdmissionKept(
+  partition: Partition,
+  store: SelectorStateStore,
+  admission: LeadAdmission,
+): Promise<readonly SelectorRunFailure[]> {
+  try {
+    if (admission === "Admitted") await store.clearLeadRefusal(partition);
+    else await store.recordLeadRefusal(partition, admission);
+    return [];
+  } catch {
+    return [{ phase: "Observation", partition }];
+  }
 }
 
 /**

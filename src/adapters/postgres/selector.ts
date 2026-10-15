@@ -52,7 +52,10 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import { notificationSchema } from "../../contract/responses.ts";
-import { selectorDeliveryStates } from "../../contract/rosters.ts";
+import {
+  selectorDeliveryStates,
+  type LeadAdmissionRefusal,
+} from "../../contract/rosters.ts";
 import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseProjectCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
@@ -1939,6 +1942,31 @@ async function recordQuietSelectorState(
   });
 }
 
+/** Keeps a project's lead refusal; the instant moves only where the refusal kept is another. */
+async function recordLeadRefusal(
+  pool: pg.Pool,
+  partition: Partition,
+  refusal: LeadAdmissionRefusal,
+): Promise<void> {
+  await pool.query(
+    sql`INSERT INTO selector_lead_refusal (tenant,project,refusal)
+       VALUES (${partition.tenant},${partition.project},${refusal})
+       ON CONFLICT (tenant,project) DO UPDATE
+          SET refusal=excluded.refusal,refused_since=now()
+        WHERE selector_lead_refusal.refusal<>excluded.refusal`,
+  );
+}
+
+async function clearLeadRefusal(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<void> {
+  await pool.query(
+    sql`DELETE FROM selector_lead_refusal
+       WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+  );
+}
+
 async function readPlanningIntent(
   pool: pg.Pool,
   partition: Partition,
@@ -2237,6 +2265,9 @@ export function postgresSelectorState(pool: pg.Pool): SelectorStateStore {
       return { retained: written.recorded, dispatched: written.deliveries };
     },
     recordQuietCycle: (state) => recordQuietSelectorState(pool, state),
+    recordLeadRefusal: (partition, refusal) =>
+      recordLeadRefusal(pool, partition, refusal),
+    clearLeadRefusal: (partition) => clearLeadRefusal(pool, partition),
     pending: (limit) => pendingDeliveries(pool, limit),
     submittedDeliveries: (limit) => submittedDeliveries(pool, limit),
     submitted: (decision, ticket) => markSubmitted(pool, decision, ticket),

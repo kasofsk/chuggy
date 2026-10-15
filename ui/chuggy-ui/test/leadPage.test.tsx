@@ -67,7 +67,10 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
-import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
+import type {
+  LeadInquiriesResponse,
+  LeadReadResponse,
+} from "../../../src/contract/responses.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -758,10 +761,13 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
 });
 
-/** A server answering that the project has no lead until `opened` says one
- * has, and every other route as the held state does; it counts the head's
- * reads. */
-function leadlessServed(served: LeadServed = opening): {
+/** A server answering that the project has no lead, as `none` says it, until
+ * `opened` says one has, and every other route as the held state does; it
+ * counts the head's reads. */
+function leadlessServed(
+  served: LeadServed = opening,
+  none: LeadReadResponse = { lead: "None" },
+): {
   readonly open: () => void;
   readonly reads: () => number;
 } {
@@ -772,7 +778,7 @@ function leadlessServed(served: LeadServed = opening): {
     route: (url) => {
       const head = url.endsWith("/lead");
       if (head) reads += 1;
-      if (head && !opened) return answer({ lead: "None" });
+      if (head && !opened) return answer(none);
       const found = leadRouteAnswer(url, served);
       return answer(found.body, found.status);
     },
@@ -793,6 +799,26 @@ test("a project with no lead is a page saying so and how its tickets run, not fi
   expect(heading.nextElementSibling?.textContent).toBe(
     "Tickets are dispatched by hand",
   );
+});
+
+/** A server that says why there is no lead is drawn saying it, refused or not. */
+test("a project with no lead says why under the line, and which refusal stands", async () => {
+  leadlessServed(opening, {
+    lead: "None",
+    absence: { reason: "HostedRunsNotGranted", since: "2026-09-02T09:30:00Z" },
+  });
+  await mountLead();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling?.textContent).toMatch(
+    /^Hosted runs not granted · since /u,
+  );
+  cleanup();
+  leadlessServed(opening, { lead: "None", absence: { reason: "NotNeeded" } });
+  await mountLead();
+  expect(
+    screen.getByRole("heading", { name: "No lead" }).nextElementSibling
+      ?.textContent,
+  ).toBe("Opens when a ticket is released");
 });
 
 /**

@@ -25,6 +25,7 @@ import {
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
+  leadResponse,
   notificationsResponse,
   operationResponse,
   operationalStatusResponse,
@@ -92,6 +93,8 @@ import {
   selectorProjectSettingsResponseSchema,
   selectorSettingsConflictResponseSchema,
   selectorSettingsHistoryResponseSchema,
+  leadNoneResponseSchema,
+  leadReadResponseSchema,
   leadResponseSchema,
   ticketAgenticRefusalsResponseSchema,
   ticketNativeActionsResponseSchema,
@@ -101,7 +104,10 @@ import {
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
-import { projectRepositoryConfigurationDeferrals } from "../../src/contract/rosters.ts";
+import {
+  leadAdmissionRefusals,
+  projectRepositoryConfigurationDeferrals,
+} from "../../src/contract/rosters.ts";
 import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
@@ -2337,4 +2343,49 @@ test("a redemption's pool file parses as the file a runner keeps, and an address
       true,
       planeUrl,
     );
+});
+
+test("every reason a project holds no lead parses as the lead route answers it", () => {
+  const absences = [
+    { reason: "NotNeeded" },
+    ...leadAdmissionRefusals.map((reason) => ({
+      reason,
+      since: "2026-09-02T00:00:00.000Z",
+    })),
+  ] as const;
+  for (const absence of absences) {
+    const answered = leadResponse({ result: "None", absence });
+    assert.equal(answered.status, 200);
+    assert.deepEqual(answered.body, { lead: "None", absence });
+    assert.deepEqual(leadReadResponseSchema.parse(answered.body), {
+      lead: "None",
+      absence,
+    });
+  }
+});
+
+/**
+ * A server that predates `absence` answers the bare arm, and a server past this
+ * one may say more in it; a console reads both rather than drawing either as a
+ * body it cannot read.
+ */
+test("a lead route's no-lead answer parses without its reason and with fields it does not know", () => {
+  assert.deepEqual(leadNoneResponseSchema.parse({ lead: "None" }), {
+    lead: "None",
+  });
+  assert.deepEqual(
+    leadReadResponseSchema.parse({
+      lead: "None",
+      absence: { reason: "NotNeeded", later: true },
+      later: true,
+    }),
+    { lead: "None", absence: { reason: "NotNeeded" } },
+  );
+  assert.equal(
+    leadNoneResponseSchema.safeParse({
+      lead: "None",
+      absence: { reason: "RunnerOffline" },
+    }).success,
+    false,
+  );
 });

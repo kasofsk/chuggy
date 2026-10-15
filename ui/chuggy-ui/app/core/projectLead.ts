@@ -6,7 +6,8 @@
  * selector opens a project's lead at its first decision there and dispatches
  * through it, so where the read says there is none, the project's tickets wait
  * for somebody to press Dispatch. The selector's settings say how a lead would
- * dispatch, not whether this project has one.
+ * dispatch, not whether this project has one; the read's `absence` says why
+ * there is none, where the server is one that says.
  */
 
 import type {
@@ -15,6 +16,8 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { SessionKind } from "../../../../src/contract/rosters.ts";
 
+import { leadAbsenceLabel } from "./codeLabels.ts";
+import { instantText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
 
 /** The session kind a lead's change frames carry. */
@@ -49,4 +52,22 @@ export function projectLeadPanelState(
   return lead === undefined
     ? { state: "Absent", reason: "the project has no lead" }
     : { ...state, value: lead };
+}
+
+/**
+ * The line under a lead page with no lead: why the read says there is none,
+ * with since when where a refusal stands, or how its tickets run where the
+ * server gives no reason. Nothing until a read has said there is no lead.
+ */
+export function projectLeadAbsenceLine(
+  state: PanelState<LeadReadResponse>,
+  nowMs: number,
+): string | undefined {
+  if (state.state !== "Ready" || "session" in state.value) return undefined;
+  const absence = state.value.absence;
+  if (absence === undefined) return "Tickets are dispatched by hand";
+  const label = leadAbsenceLabel(absence.reason);
+  return absence.reason === "NotNeeded"
+    ? label
+    : `${label} · since ${instantText(new Date(absence.since), new Date(nowMs))}`;
 }

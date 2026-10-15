@@ -148,6 +148,7 @@ import {
 } from "./agenticRefusal.ts";
 import {
   checkedLeadTranscriptQuery,
+  leadNotNeeded,
   leadTranscriptPage,
   sessionHeldWalk,
   sessionHeldWalkAsks,
@@ -1506,7 +1507,8 @@ type NativeLeadMethods = Pick<
 /**
  * The lead's own two reads, each reauthorizing before it reaches a store. A
  * readable project holding no lead is answered `None` by the head, which is
- * how the project stands; its transcript has nothing to page and is not found.
+ * how the project stands, with the refusal the selector keeps for it as the
+ * reason; its transcript has nothing to page and is not found.
  */
 function nativeLeadSessionMethods(
   access: ProjectAccess,
@@ -1521,7 +1523,11 @@ function nativeLeadSessionMethods(
         partition,
         leadTurnsAnsweredMax,
       );
-      if (standing === undefined) return { result: "None" };
+      if (standing === undefined)
+        return {
+          result: "None",
+          absence: (await ports.leads.leadRefusal(partition)) ?? leadNotNeeded,
+        };
       return {
         result: "Found",
         lead: standing,

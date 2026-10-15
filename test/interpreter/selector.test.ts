@@ -375,6 +375,8 @@ function stateStore(
     saveInventoryCursor: () => Promise.resolve(),
     recordInteraction: () => Promise.resolve(true),
     recordQuietCycle: () => Promise.resolve(true),
+    recordLeadRefusal: () => Promise.resolve(),
+    clearLeadRefusal: () => Promise.resolve(),
     record: (proposals) =>
       Promise.resolve({
         retained: true,
@@ -847,6 +849,7 @@ function heldProjectStore(
   let admissions = 0;
   let turns = 0;
   const steps: string[] = [];
+  const refusalsKept: string[] = [];
   const interactions: SelectorInteraction[] = [];
   const observations: SelectorObservation[] = [];
   const write = (next: SelectorProjectState): boolean => {
@@ -871,6 +874,10 @@ function heldProjectStore(
       interactions.push(interaction);
       return Promise.resolve(write(next));
     },
+    clearLeadRefusal: () => {
+      refusalsKept.push(`forgotten before ${String(steps.length)} steps`);
+      return Promise.resolve();
+    },
   };
   const policy: SelectorPolicyHost = {
     ...policyHost((request) => {
@@ -887,6 +894,7 @@ function heldProjectStore(
     store,
     policy,
     steps,
+    refusalsKept,
     interactions,
     observations,
     stored: () => stored,
@@ -1014,6 +1022,7 @@ test("a pass whose view has moved to nothing the lead can judge is a quiet cycle
     project.policy,
   );
   assert.deepEqual(project.steps, ["quiet"]);
+  assert.deepEqual(project.refusalsKept, ["forgotten before 0 steps"]);
   assert.equal(project.admissions(), 0);
   assert.equal(project.turns(), 0);
   assert.equal(result.quiet, 1);
@@ -1029,6 +1038,37 @@ test("a pass whose view has moved to nothing the lead can judge is a quiet cycle
       token: emptyViewPage("b".repeat(64)).token,
     },
   });
+});
+
+/**
+ * A quiet cycle moves the cursor past the changes that brought the project
+ * here, so it is not stored until the refusal it ends is forgotten: a refusal
+ * left standing behind a moved cursor would be answered until some later
+ * change brings the project back.
+ */
+test("a quiet cycle whose lead refusal cannot be forgotten is not stored", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  const result = await quietPass(
+    {
+      ...project.store,
+      clearLeadRefusal: () => Promise.reject(new Error("the store is down")),
+    },
+    {
+      ...promptObservationSource(),
+      moved: () => Promise.resolve(movedTicketPage),
+      dispatchView: (_scope, query) =>
+        Promise.resolve(
+          query.watermark === undefined
+            ? emptyViewPage("b".repeat(64))
+            : ({ result: "Reset" } as const),
+        ),
+    },
+    project.policy,
+  );
+  assert.deepEqual(project.steps, []);
+  assert.equal(result.quiet, 0);
+  assert.deepEqual(result.failures, [{ phase: "Observation", partition }]);
+  assert.deepEqual(project.stored(), exhaustedProjectState);
 });
 
 /**
@@ -1048,6 +1088,7 @@ test("a view that resets on its fresh read too records nothing and leaves the cu
     project.policy,
   );
   assert.deepEqual(project.steps, []);
+  assert.deepEqual(project.refusalsKept, []);
   assert.equal(project.admissions(), 0);
   assert.equal(result.quiet, 0);
   assert.deepEqual(project.stored(), exhaustedProjectState);
@@ -1521,12 +1562,18 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
   ]);
 });
 
-/** Passes over one moved project, its lead's admission answered by each pass's own answer in turn. */
+/**
+ * Passes over one moved project, its lead's admission answered by each pass's
+ * own answer in turn, and each write of the refusal kept for it logged, or
+ * refused where `keeping` says the store cannot keep it.
+ */
 async function admissionPasses(
   answers: readonly (() => Promise<LeadAdmission>)[],
+  keeping: () => Promise<void> = () => Promise.resolve(),
 ) {
   const allocated: string[] = [];
   const started: string[] = [];
+  const kept: string[] = [];
   const results: SelectorRunResult[] = [];
   for (const answer of answers)
     results.push(
@@ -1537,6 +1584,14 @@ async function admissionPasses(
           allocateAttempt: (attempt) => {
             allocated.push(attempt);
             return Promise.resolve(true);
+          },
+          recordLeadRefusal: (of, refusal) => {
+            kept.push(`${of.project} ${refusal}`);
+            return keeping();
+          },
+          clearLeadRefusal: (of) => {
+            kept.push(`${of.project} forgotten`);
+            return keeping();
           },
         },
         {
@@ -1557,7 +1612,7 @@ async function admissionPasses(
         { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
       ),
     );
-  return { allocated, started, results };
+  return { allocated, started, kept, results };
 }
 
 test("a refused project is asked again on the next pass and decides once its tenant grants hosted runs", async () => {
@@ -1599,6 +1654,55 @@ test("an authority that cannot say skips the project this pass and serves it on 
     [
       [0, [{ phase: "AdmissionUndecided", partition }]],
       [1, []],
+    ],
+  );
+  assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.kept, [`${partition.project} forgotten`]);
+});
+
+/**
+ * The refusal kept is what a reader of a project with no lead is told, so each
+ * refused cycle keeps its own code, an admitted one forgets it before its
+ * permit, and a read that could not say touches neither.
+ */
+test("each refused cycle keeps its refusal and the next admitted cycle forgets it", async () => {
+  const passes = await admissionPasses([
+    () => Promise.resolve("RunnerOffline"),
+    () => Promise.reject(new ProjectAccessUnavailable("no answer")),
+    () => Promise.resolve("HostedRunsNotGranted"),
+    () => Promise.resolve("Admitted"),
+  ]);
+  assert.deepEqual(passes.kept, [
+    `${partition.project} RunnerOffline`,
+    `${partition.project} HostedRunsNotGranted`,
+    `${partition.project} forgotten`,
+  ]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
+/**
+ * Keeping the refusal is what a reader is told, never what the selector
+ * decides on: a pass whose store cannot keep or forget it says so under
+ * `Observation`, and passes over the refused project and decides for the
+ * admitted one as it would have.
+ */
+test("a store that cannot keep or forget a lead refusal is reported and changes no admission", async () => {
+  const passes = await admissionPasses(
+    [() => Promise.resolve("RunnerOffline"), () => Promise.resolve("Admitted")],
+    () => Promise.reject(new Error("the store is down")),
+  );
+  assert.deepEqual(
+    passes.results.map((result) => [result.observed, result.failures]),
+    [
+      [
+        0,
+        [
+          { phase: "RunnerOffline", partition },
+          { phase: "Observation", partition },
+        ],
+      ],
+      [1, [{ phase: "Observation", partition }]],
     ],
   );
   assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);

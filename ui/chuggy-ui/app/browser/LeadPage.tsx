@@ -41,9 +41,9 @@ import {
   sessionChangeKindNamed,
 } from "../core/leadTranscript.ts";
 import {
+  projectLeadAbsenceLine,
   projectLeadFound,
   projectLeadPanelState,
-  projectLeadPresent,
   projectLeadSessionKind,
 } from "../core/projectLead.ts";
 import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
@@ -373,18 +373,19 @@ export function LeadPage(): ReactNode {
           short={runner}
         />
       );
+    const absence = projectLeadAbsenceLine(read, nowMs);
     return (
       <>
         <LeadSelectorStrip partition={partition} />
-        {projectLeadPresent(read) === false ? (
+        {absence === undefined ? (
+          <EmptyState label="No lead" variant="page" action={action} />
+        ) : (
           <EmptyState
             label="No lead"
             variant="page"
-            detail="Tickets are dispatched by hand"
+            detail={absence}
             action={action}
           />
-        ) : (
-          <EmptyState label="No lead" variant="page" action={action} />
         )}
       </>
     );
