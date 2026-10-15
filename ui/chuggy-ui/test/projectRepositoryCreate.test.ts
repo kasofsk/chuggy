@@ -112,6 +112,34 @@ test("every step the create took is a row of its own", () => {
   ]);
 });
 
+/** What a bootstrapped step's `.chug/` holds instead is a row of its own
+ * after the step's, and only where it names any. */
+test("what a bootstrapped configuration step read none of follows its row", () => {
+  const chug = ".chug/";
+  expect(
+    repositoryCreatedRows(
+      created({
+        configurations: {
+          result: "Bootstrapped",
+          revision: "bootstrap",
+          ignored: { paths: [`${chug}project.yaml`], truncated: false },
+        },
+      }),
+    ).slice(2),
+  ).toEqual([
+    {
+      label: "Configurations",
+      detail: "Default configuration added",
+      ticketOffered: true,
+    },
+    {
+      label: "Not configurations",
+      detail: `${chug}project.yaml`,
+      ticketOffered: false,
+    },
+  ]);
+});
+
 /** The envelope carries a code and a message and nothing else, so which app is
  * missing is read out of the message against the roster's own words. */
 test("a missing claim names the app the message names", () => {

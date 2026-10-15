@@ -18,6 +18,24 @@ export interface RepositoryDeclarationFile {
   readonly content: string;
 }
 
+/** The directory every declaration directory sits in. */
+export const repositoryDeclarationRoot = ".chug/";
+
+/** One entry a tree holds directly under `.chug/`, and whether it is a directory. */
+export interface RepositoryDeclarationEntry {
+  readonly path: string;
+  readonly directory: boolean;
+}
+
+/** What listing one tree's `.chug/` came to: its entries, a listing past its bound, or none read. */
+export type RepositoryDeclarationListing =
+  | {
+      readonly listed: "Entries";
+      readonly entries: readonly RepositoryDeclarationEntry[];
+    }
+  | { readonly listed: "Overflowed" }
+  | { readonly listed: "Unlisted" };
+
 export const repositoryDeclarationsMax = 100;
 export const repositoryDeclarationPathCharsMax = 256;
 export const repositoryDeclarationFileCharsMax = 65_536;

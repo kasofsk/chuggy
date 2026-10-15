@@ -32,6 +32,7 @@ import { repositoryActionRoot } from "../../src/interpreter/repositoryAction.ts"
 import { repositoryConfigurationRoot } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   repositoryDeclarationFileCharsMax,
+  repositoryDeclarationRoot,
   repositoryDeclarationsMax,
 } from "../../src/interpreter/repositoryDeclaration.ts";
 import {
@@ -216,6 +217,94 @@ test("non-JSON files beside declarations are ignored", async (t) => {
         },
       ],
     },
+  );
+});
+
+/** A tree whose `.chug/` holds a format no import reads, beside whatever `configurations` it is given. */
+function fixtureOtherFormat(fixture: Fixture): void {
+  const chug = repositoryDeclarationRoot;
+  fixtureWrite(fixture, `${chug}project.yaml`, "version: 2\n");
+  fixtureWrite(fixture, `${chug}workloads/build.yaml`, "build\n");
+  fixtureWrite(fixture, `${chug}workloads/test.yaml`, "test\n");
+  fixtureWrite(fixture, `${chug}evaluators/review.yaml`, "review\n");
+  fixtureWrite(fixture, "README.md", "outside\n");
+}
+
+test("a `.chug/` declaring no configuration names what it holds instead, each directory once and nothing outside it", async (t) => {
+  const chug = repositoryDeclarationRoot;
+  const fixture = fixtureOpen(t);
+  fixtureOtherFormat(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}notes.txt`, "notes\n");
+  const bare = fixtureCommit(fixture, "another format");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const declared = fixtureCommit(fixture, "and a declaration");
+  const port = fixturePort(fixture);
+  const repository = fixtureBinding(fixture.remote);
+  const others = [
+    `${chug}evaluators/`,
+    `${chug}project.yaml`,
+    `${chug}workloads/`,
+  ];
+
+  assert.deepEqual(
+    await port.snapshot({ repository, commit: asGitObjectId(bare) }),
+    {
+      read: "Absent",
+      absent: "ConfigurationDirectory",
+      ignored: {
+        paths: [`${repositoryConfigurationRoot}notes.txt`, ...others].sort(),
+        truncated: false,
+      },
+    },
+  );
+  assert.deepEqual(
+    await port.snapshot({ repository, commit: asGitObjectId(declared) }),
+    {
+      read: "Snapshot",
+      files: [
+        {
+          path: `${repositoryConfigurationRoot}work.json`,
+          kind: "File",
+          content: "work\n",
+        },
+      ],
+    },
+  );
+  assert.deepEqual(
+    await port.actionSnapshot({ repository, commit: asGitObjectId(bare) }),
+    { read: "Snapshot", files: [] },
+  );
+});
+
+test("a `.chug/` too large to list is said to be, and refuses none of the configurations later beside it", async (t) => {
+  const fixture = fixtureOpen(t);
+  for (let index = 0; index <= repositoryDeclarationsMax * 2; index += 1)
+    fixtureWrite(
+      fixture,
+      `${repositoryDeclarationRoot}${String(index).padStart(240, "0")}.yaml`,
+      "",
+    );
+  const crowded = fixtureCommit(fixture, "a crowded directory");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const declared = fixtureCommit(fixture, "and a declaration");
+  const port = fixturePort(fixture);
+  const repository = fixtureBinding(fixture.remote);
+
+  assert.deepEqual(
+    await port.snapshot({ repository, commit: asGitObjectId(crowded) }),
+    {
+      read: "Absent",
+      absent: "ConfigurationDirectory",
+      ignored: { paths: [], truncated: true },
+    },
+  );
+  const read = await port.snapshot({
+    repository,
+    commit: asGitObjectId(declared),
+  });
+  assert.deepEqual(
+    read.read === "Snapshot" ? read.files.map((file) => file.path) : read,
+    [`${repositoryConfigurationRoot}work.json`],
   );
 });
 

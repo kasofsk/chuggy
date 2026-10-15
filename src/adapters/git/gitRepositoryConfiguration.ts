@@ -10,6 +10,11 @@
  * ONE READ SERVES EVERY DIRECTORY, and only what an empty one means differs:
  * a tree declaring no configuration has no configuration directory to import,
  * and a tree declaring no action declares none.
+ *
+ * WHAT ELSE `.chug/` HOLDS IS A SECOND LISTING, one level deep, of the commit
+ * already fetched, and only where the configuration directory declares
+ * nothing. The configuration directory's own read keeps the bound it is
+ * refused past, so a large `.chug/` is named in part rather than refused.
  */
 
 import { textCodePointsCount } from "../../contract/http.ts";
@@ -24,7 +29,10 @@ import {
   type RepositoryActionSnapshotPort,
 } from "../../interpreter/repositoryAction.ts";
 import {
+  repositoryConfigurationIgnored,
+  repositoryConfigurationIgnoredField,
   repositoryConfigurationRoot,
+  type RepositoryConfigurationIgnored,
   type RepositoryConfigurationSnapshotPort,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchPort,
@@ -32,8 +40,11 @@ import {
 } from "../../interpreter/repositoryConfiguration.ts";
 import {
   repositoryDeclarationFileCharsMax,
+  repositoryDeclarationRoot,
   repositoryDeclarationsMax,
+  type RepositoryDeclarationEntry,
   type RepositoryDeclarationFile,
+  type RepositoryDeclarationListing,
 } from "../../interpreter/repositoryDeclaration.ts";
 import type {
   RepositoryDeclarationSnapshotRead,
@@ -83,6 +94,21 @@ interface GitRepositoryConfigurationEntry {
   readonly object: string;
   readonly path: string;
 }
+
+/** One directory's JSON blobs, and the paths of the blobs beside them that are not JSON. */
+interface GitRepositoryConfigurationTreeRead {
+  readonly entries: readonly GitRepositoryConfigurationEntry[];
+  readonly skipped: readonly string[];
+}
+
+/** One directory's read, a snapshot carrying what its tree held there that is not JSON. */
+type GitRepositoryConfigurationDirectoryRead =
+  | Exclude<RepositoryDeclarationSnapshotRead, { readonly read: "Snapshot" }>
+  | {
+      readonly read: "Snapshot";
+      readonly files: readonly RepositoryDeclarationFile[];
+      readonly skipped: readonly string[];
+    };
 
 type GitRepositoryConfigurationAuthorization =
   | {
@@ -203,8 +229,9 @@ async function gitRepositoryConfigurationFetch(
 
 function gitRepositoryConfigurationEntries(
   stdout: string,
-): readonly GitRepositoryConfigurationEntry[] | undefined {
+): GitRepositoryConfigurationTreeRead | undefined {
   const entries: GitRepositoryConfigurationEntry[] = [];
+  const skipped: string[] = [];
   for (const row of stdout.split("\0")) {
     if (row === "") continue;
     const matched = /^(\d{6}) blob ([0-9a-f]+) +\d+\t([^\0]+)$/u.exec(row);
@@ -212,18 +239,21 @@ function gitRepositoryConfigurationEntries(
     const [, mode, object, path] = matched;
     if (mode === undefined || object === undefined || path === undefined)
       return undefined;
-    if (!path.endsWith(".json")) continue;
+    if (!path.endsWith(".json")) {
+      skipped.push(path);
+      continue;
+    }
     entries.push({ mode, object, path });
     if (entries.length > repositoryDeclarationsMax) return undefined;
   }
-  return entries;
+  return { entries, skipped };
 }
 
 async function gitRepositoryConfigurationTree(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
   root: string,
-): Promise<readonly GitRepositoryConfigurationEntry[] | "Refused"> {
+): Promise<GitRepositoryConfigurationTreeRead | "Refused"> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
     timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
@@ -280,7 +310,7 @@ async function gitRepositoryConfigurationDirectory(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
   root: string,
-): Promise<RepositoryDeclarationSnapshotRead> {
+): Promise<GitRepositoryConfigurationDirectoryRead> {
   const authorization = await gitRepositoryConfigurationCredential(
     own,
     request.repository,
@@ -308,23 +338,67 @@ async function gitRepositoryConfigurationDirectory(
       ),
     };
   if (fetched.fetched === "Absent") return { read: "Absent" };
-  const entries = await gitRepositoryConfigurationTree(own, request, root);
-  if (entries === "Refused") return { read: "Refused" };
-  const files = await gitRepositoryConfigurationFiles(own, request, entries);
+  const tree = await gitRepositoryConfigurationTree(own, request, root);
+  if (tree === "Refused") return { read: "Refused" };
+  const files = await gitRepositoryConfigurationFiles(
+    own,
+    request,
+    tree.entries,
+  );
   return files === undefined
     ? { read: "Refused" }
-    : { read: "Snapshot", files };
+    : { read: "Snapshot", files, skipped: tree.skipped };
+}
+
+function gitRepositoryConfigurationListingEntries(
+  stdout: string,
+): readonly RepositoryDeclarationEntry[] | undefined {
+  const entries: RepositoryDeclarationEntry[] = [];
+  for (const row of stdout.split("\0")) {
+    if (row === "") continue;
+    const matched = /^\d{6} (blob|tree|commit) [0-9a-f]+\t([^\0]+)$/u.exec(row);
+    if (matched === null) return undefined;
+    const [, type, path] = matched;
+    if (type === undefined || path === undefined) return undefined;
+    entries.push({ path, directory: type === "tree" });
+  }
+  return entries;
+}
+
+/** What one fetched commit holds directly under `.chug/`, a listing past the tree read's bound said as one. */
+async function gitRepositoryConfigurationListing(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+): Promise<RepositoryDeclarationListing> {
+  const ran = await scratchRun(own.scratch, {
+    repository: request.repository.repository,
+    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    argv: ["ls-tree", "-z", request.commit, "--", repositoryDeclarationRoot],
+    outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
+  });
+  if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling")
+    return { listed: "Overflowed" };
+  if (!gitRepositoryConfigurationExited(ran)) return { listed: "Unlisted" };
+  const entries = gitRepositoryConfigurationListingEntries(ran.stdout);
+  return entries === undefined
+    ? { listed: "Unlisted" }
+    : { listed: "Entries", entries };
 }
 
 /** One directory's read in the configuration port's terms, where a tree declaring none has no directory to import. */
 function gitRepositoryConfigurationSnapshot(
-  read: RepositoryDeclarationSnapshotRead,
+  read: GitRepositoryConfigurationDirectoryRead,
+  ignored?: RepositoryConfigurationIgnored,
 ): RepositoryConfigurationSnapshotRead {
   switch (read.read) {
     case "Snapshot":
       return read.files.length === 0
-        ? { read: "Absent", absent: "ConfigurationDirectory" }
-        : read;
+        ? {
+            read: "Absent",
+            absent: "ConfigurationDirectory",
+            ...repositoryConfigurationIgnoredField(ignored),
+          }
+        : { read: "Snapshot", files: read.files };
     case "Absent":
       return { read: "Absent", absent: "Commit" };
     case "Unavailable":
@@ -334,6 +408,25 @@ function gitRepositoryConfigurationSnapshot(
     default:
       return assertNever(read);
   }
+}
+
+/** The configuration directory's read, a directory declaring nothing naming what else `.chug/` holds. */
+async function gitRepositoryConfigurationDeclared(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+): Promise<RepositoryConfigurationSnapshotRead> {
+  const read = await gitRepositoryConfigurationDirectory(
+    own,
+    request,
+    repositoryConfigurationRoot,
+  );
+  if (read.read !== "Snapshot" || read.files.length > 0)
+    return gitRepositoryConfigurationSnapshot(read);
+  const ignored = repositoryConfigurationIgnored({
+    listing: await gitRepositoryConfigurationListing(own, request),
+    skipped: read.skipped,
+  });
+  return gitRepositoryConfigurationSnapshot(read, ignored);
 }
 
 /**
@@ -408,16 +501,17 @@ export function gitRepositoryConfiguration(
     credentials: options.credentials,
   };
   return {
-    snapshot: async (request) =>
-      gitRepositoryConfigurationSnapshot(
-        await gitRepositoryConfigurationDirectory(
-          own,
-          request,
-          repositoryConfigurationRoot,
-        ),
-      ),
-    actionSnapshot: (request) =>
-      gitRepositoryConfigurationDirectory(own, request, repositoryActionRoot),
+    snapshot: (request) => gitRepositoryConfigurationDeclared(own, request),
+    actionSnapshot: async (request) => {
+      const read = await gitRepositoryConfigurationDirectory(
+        own,
+        request,
+        repositoryActionRoot,
+      );
+      return read.read === "Snapshot"
+        ? { read: "Snapshot", files: read.files }
+        : read;
+    },
     defaultBranch: (repository) => gitRepositoryDefaultBranch(own, repository),
   };
 }

@@ -119,7 +119,10 @@ import {
   reservedTenantNames,
 } from "../../contract/requests.ts";
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
-import type { RepositoryConfigurationImportOutcome } from "../../interpreter/repositoryConfiguration.ts";
+import {
+  repositoryConfigurationIgnoredField,
+  type RepositoryConfigurationImportOutcome,
+} from "../../interpreter/repositoryConfiguration.ts";
 import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
@@ -1853,14 +1856,28 @@ export function projectRepositoryConfigureResponse(
   }
 }
 
+/**
+ * What one import came to. A commit declaring no configurations is a refusal
+ * of its own rather than a miss, so a caller can tell it from a project or a
+ * commit that is not there, and it names what `.chug/` holds instead.
+ */
 export function repositoryConfigurationImportResponse(
   result: RepositoryConfigurationImportOutcome,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
     case "RepositoryAbsent":
-    case "SnapshotAbsent":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "SnapshotAbsent":
+      return result.absent === "Commit"
+        ? response(404, nativeHttpError("NotFound", "Resource not found."))
+        : response(422, {
+            ...nativeHttpError(
+              "RepositoryConfigurationsAbsent",
+              "The commit declares no configurations.",
+            ),
+            ...repositoryConfigurationIgnoredField(result.ignored),
+          });
     case "Unavailable":
       return retry(503, 1, "RepositoryUnavailable");
     case "SnapshotRefused":

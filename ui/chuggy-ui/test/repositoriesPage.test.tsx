@@ -1713,6 +1713,35 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
   ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
 });
 
+/** What under `.chug/` the step read none of is a line of its own under the
+ * one that says what the step came to. */
+test("a bind whose step read entries of `.chug/` none of names them under its line", async () => {
+  const chug = ".chug/";
+  await drawPage({
+    posted: () =>
+      answer(
+        {
+          repository: freeUrl,
+          landing: { mode: "Push" },
+          configurations: {
+            result: "Bootstrapped",
+            revision: "bootstrap",
+            ignored: {
+              paths: [`${chug}evaluators/`, `${chug}project.yaml`],
+              truncated: false,
+            },
+          },
+        },
+        201,
+      ),
+  });
+  await chooseFree();
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Default configuration added · New ticket",
+    `Not configurations · ${chug}evaluators/ and 1 more`,
+  ]);
+});
+
 test("a binding that already stood draws the repository's name and the one word and no more", async () => {
   await drawPage({ posted: () => answer({ repository: freeUrl }) });
   await chooseFree();

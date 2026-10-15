@@ -82,6 +82,8 @@ import type {
 } from "./finalizer.ts";
 import {
   importRepositoryConfigurations,
+  repositoryConfigurationIgnoredField,
+  type RepositoryConfigurationIgnored,
   type RepositoryConfigurationImportPorts,
   type RepositoryDefaultBranchPort,
 } from "./repositoryConfiguration.ts";
@@ -236,23 +238,31 @@ export const allProjectRepositoryConfigurationsDeferrals = [
 export type ProjectRepositoryConfigurationsDeferral =
   (typeof allProjectRepositoryConfigurationsDeferrals)[number];
 
-/** What configuring one bound repository came to, or what the project already held for it. */
+/** What a project holds for one bound repository, which a step that deferred left none of. */
+export type ProjectRepositoryConfigurationsHeld =
+  | { readonly result: "Imported"; readonly count: number }
+  | {
+      readonly result: "Bootstrapped";
+      readonly revision: ConfigurationRevisionId;
+    };
+
+/**
+ * What configuring one bound repository came to, or what the project already
+ * held for it. A bootstrap authored for a head declaring no configuration says
+ * what under `.chug/` the head held instead; what the project held was answered
+ * without reading one.
+ */
 export type ProjectRepositoryConfigurationsResult =
   | { readonly result: "Imported"; readonly count: number }
   | {
       readonly result: "Bootstrapped";
       readonly revision: ConfigurationRevisionId;
+      readonly ignored?: RepositoryConfigurationIgnored;
     }
   | {
       readonly result: "Deferred";
       readonly reason: ProjectRepositoryConfigurationsDeferral;
     };
-
-/** What a project holds for one bound repository, which a step that deferred left none of. */
-export type ProjectRepositoryConfigurationsHeld = Exclude<
-  ProjectRepositoryConfigurationsResult,
-  { readonly result: "Deferred" }
->;
 
 /** What binding one repository to one project came to. */
 export type ProjectRepositoryBindResult =
@@ -758,7 +768,10 @@ const bootstrapConfigurationRevision = asConfigurationRevisionId(
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,
   binding: RepositoryBinding,
-  defaultBranch: GitRefName,
+  head: {
+    readonly branch: GitRefName;
+    readonly ignored: RepositoryConfigurationIgnored | undefined;
+  },
   authority: Authority,
 ): Promise<ProjectRepositoryConfigurationsResult> {
   if (configurations.bootstrapImage === undefined)
@@ -769,14 +782,18 @@ async function bindRepositoryBootstrapped(
     revision: bootstrapConfigurationRevision,
     canonical: bootstrapConfiguration({
       repository: binding.repository,
-      defaultBranch,
+      defaultBranch: head.branch,
       image: configurations.bootstrapImage,
     }),
   });
   switch (created.created) {
     case "Created":
     case "AlreadyExists":
-      return { result: "Bootstrapped", revision: created.revision.revision };
+      return {
+        result: "Bootstrapped",
+        revision: created.revision.revision,
+        ...repositoryConfigurationIgnoredField(head.ignored),
+      };
     case "IdentityConflict":
       return { result: "Deferred", reason: "BootstrapDiffers" };
     case "ParentNotFound":
@@ -820,7 +837,7 @@ async function bindRepositoryConfigurations(
         ? bindRepositoryBootstrapped(
             configurations,
             binding,
-            head.branch,
+            { branch: head.branch, ignored: imported.ignored },
             authority,
           )
         : { result: "Deferred", reason: "SnapshotAbsent" };

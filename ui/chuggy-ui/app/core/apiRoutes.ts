@@ -1340,7 +1340,7 @@ export function apiCreateConfiguration(
   );
 }
 
-/** A refused import is a rejection, so its faults arrive in `Rejected`'s body. */
+/** A refused import is a rejection, so its faults, or what a commit declaring none holds instead, arrive in `Rejected`'s body. */
 export function apiImportRepositoryConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
