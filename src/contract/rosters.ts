@@ -619,6 +619,22 @@ export const sessionRunnerStandings = [
 export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 
 /**
+ * Why a selector cycle that needed a project's lead was refused one: on a
+ * hosted route the tenant grants the lead's principal no hosted runs, and on a
+ * runner route none of the project's runners is live.
+ */
+export const leadAdmissionRefusals = [
+  "HostedRunsNotGranted",
+  "RunnerOffline",
+] as const;
+export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
+
+/** Why a project holds no lead where no refusal stands to date it: no cycle has
+ * needed one, or its selector is paused. */
+export const leadAbsencesUntimed = ["NotNeeded", "Paused"] as const;
+export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
+
+/**
  * When a pool other than its owner's personal runner may take an owned
  * execution, in a project that lets personal runners serve their owners:
  * never while the owner has one for it, or only while that runner is not live.

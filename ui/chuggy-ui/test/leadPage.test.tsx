@@ -12,6 +12,7 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -44,6 +45,7 @@ import {
   sessionTranscriptHeldBatchesMax,
 } from "../../../src/contract/http.ts";
 import { leadTranscriptEntriesHeldMax } from "../app/core/leadTranscript.ts";
+import { projectLeadAbsencePolledMs } from "../app/core/projectLead.ts";
 import {
   leadBody,
   leadHandoffNote,
@@ -67,7 +69,10 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
-import type { LeadInquiriesResponse } from "../../../src/contract/responses.ts";
+import type {
+  LeadInquiriesResponse,
+  LeadReadResponse,
+} from "../../../src/contract/responses.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -98,6 +103,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   inquiryBoxesHeld.discard();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   drawnPartition = { ...leadPartition };
 });
@@ -758,21 +764,26 @@ test("a Session frame with a resource this console cannot read is ignored", asyn
   expect(screen.queryByText(/^Failed · /u)).toBeNull();
 });
 
-/** A server answering that the project has no lead until `opened` says one
- * has, and every other route as the held state does; it counts the head's
- * reads. */
-function leadlessServed(served: LeadServed = opening): {
+/** A server answering that the project has no lead, as `none` says it until
+ * `say` moves it, until `opened` says one has, and every other route as the
+ * held state does; it counts the head's reads. */
+function leadlessServed(
+  served: LeadServed = opening,
+  none: LeadReadResponse = { lead: "None" },
+): {
   readonly open: () => void;
+  readonly say: (next: LeadReadResponse) => void;
   readonly reads: () => number;
 } {
   let opened = false;
+  let said = none;
   let reads = 0;
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       const head = url.endsWith("/lead");
       if (head) reads += 1;
-      if (head && !opened) return answer({ lead: "None" });
+      if (head && !opened) return answer(said);
       const found = leadRouteAnswer(url, served);
       return answer(found.body, found.status);
     },
@@ -782,8 +793,17 @@ function leadlessServed(served: LeadServed = opening): {
     open: () => {
       opened = true;
     },
+    say: (next) => {
+      said = next;
+    },
     reads: () => reads,
   };
+}
+
+/** The line under `No lead`, or nothing where none is drawn. */
+function leadlessLine(): string | null | undefined {
+  return screen.getByRole("heading", { name: "No lead" }).nextElementSibling
+    ?.textContent;
 }
 
 test("a project with no lead is a page saying so and how its tickets run, not five empty panels", async () => {
@@ -793,6 +813,77 @@ test("a project with no lead is a page saying so and how its tickets run, not fi
   expect(heading.nextElementSibling?.textContent).toBe(
     "Tickets are dispatched by hand",
   );
+});
+
+/** A server that says why there is no lead is drawn saying it, refused or not. */
+test("a project with no lead says why under the line, and which refusal stands", async () => {
+  leadlessServed(opening, {
+    lead: "None",
+    absence: { reason: "HostedRunsNotGranted", since: "2026-09-02T09:30:00Z" },
+  });
+  await mountLead();
+  const heading = screen.getByRole("heading", { name: "No lead" });
+  expect(heading.nextElementSibling?.textContent).toMatch(
+    /^Hosted runs not granted · since /u,
+  );
+  cleanup();
+  leadlessServed(opening, { lead: "None", absence: { reason: "NotNeeded" } });
+  await mountLead();
+  expect(leadlessLine()).toBe("Opens when a ticket is released");
+  cleanup();
+  leadlessServed(opening, { lead: "None", absence: { reason: "Paused" } });
+  await mountLead();
+  expect(leadlessLine()).toBe("Selector paused");
+});
+
+/**
+ * NO FRAME SAYS THE SELECTOR KEPT OR FORGOT A REFUSAL, OR WAS PAUSED, so a page
+ * drawing why there is no lead reads it again on a clock, and draws the reason
+ * it moved to with nothing pressed.
+ */
+test("a project with no lead reads why again within one poll", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const server = leadlessServed(opening, {
+    lead: "None",
+    absence: { reason: "NotNeeded" },
+  });
+  await mountLead();
+  expect(leadlessLine()).toBe("Opens when a ticket is released");
+  server.say({
+    lead: "None",
+    absence: { reason: "HostedRunsNotGranted", since: "2026-09-02T09:30:00Z" },
+  });
+  await act(() => vi.advanceTimersByTimeAsync(projectLeadAbsencePolledMs));
+  await settled();
+  expect(leadlessLine()).toMatch(/^Hosted runs not granted · since /u);
+  server.say({ lead: "None", absence: { reason: "NotNeeded" } });
+  await act(() => vi.advanceTimersByTimeAsync(projectLeadAbsencePolledMs));
+  await settled();
+  expect(leadlessLine()).toBe("Opens when a ticket is released");
+});
+
+/** A lead the read names is moved by its own frames, so the clock that moves
+ * a missing one's reason reads nothing once one has opened. */
+test("a project with a lead is not read again on the clock", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const server = leadlessServed();
+  const stream = await mountLead();
+  server.open();
+  await turned(() => {
+    stream.push(
+      frame("Session", "52", {
+        version: 1,
+        resource: leadSessionResource(leadSession, "turn-1"),
+        representation: null,
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
+  const before = server.reads();
+  await act(() => vi.advanceTimersByTimeAsync(projectLeadAbsencePolledMs * 2));
+  await settled();
+  expect(server.reads(), "a lead was read again on the clock").toBe(before);
 });
 
 /**
@@ -822,6 +913,41 @@ test("a project with no lead on runners none of its own has says so under the li
   expect(screen.getByText("Tickets are dispatched by hand")).toBeDefined();
   expect(screen.getByText("No runner")).toBeDefined();
   expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+});
+
+/** The runner notice already says no runner can take the lead's turn, and
+ * links to where one is added, so a refusal saying it again is not drawn. */
+test("a project refused for no live runner leaves it to the runner notice", async () => {
+  leadlessServed(
+    {
+      ...opening,
+      placement: sessionPlacementBody({
+        lead: "Pool",
+        project: "Unregistered",
+      }),
+    },
+    {
+      lead: "None",
+      absence: { reason: "RunnerOffline", since: "2026-09-02T09:30:00Z" },
+    },
+  );
+  await mountLead();
+  expect(screen.queryByText(/No live runner/u)).toBeNull();
+  expect(screen.getByText("No runner")).toBeDefined();
+  expect(screen.getByRole("link", { name: "Runners" })).toBeDefined();
+});
+
+/** A placement saying the project's runners are live makes a kept refusal for
+ * none one the next selector pass clears, so neither it nor a notice is drawn. */
+test("a refusal for no live runner is not drawn where the placement says the runners are live", async () => {
+  leadlessServed(opening, {
+    lead: "None",
+    absence: { reason: "RunnerOffline", since: "2026-09-02T09:30:00Z" },
+  });
+  await mountLead();
+  expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
+  expect(screen.queryByText(/No live runner/u)).toBeNull();
+  expect(screen.queryByText("Runner offline")).toBeNull();
 });
 
 /** A project this reader is not shown says there is no lead here for them to

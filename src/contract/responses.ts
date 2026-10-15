@@ -129,6 +129,8 @@ import {
   forgeAccountProofs,
   forgeAppClaims,
   forgeApps,
+  leadAbsencesUntimed,
+  leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
 } from "./rosters.ts";
 
@@ -1214,9 +1216,27 @@ export const leadResponseSchema = z.object({
 });
 export type LeadResponse = z.infer<typeof leadResponseSchema>;
 
-/** A project the reader may read that holds no lead session: an answer, where a refusal is a 404. */
-export const leadNoneResponseSchema = z.strictObject({
+/**
+ * Why a project holds no lead: `Paused` while its selector is paused, by the
+ * project or the whole installation, ahead of any refusal it keeps, and
+ * otherwise the admission refusal the last cycle that needed a lead met, which
+ * has been the answer since `since`. `NotNeeded` where neither holds, because no
+ * selector cycle has needed a lead or the last refused one was followed by one
+ * admitted or with nothing to decide.
+ */
+export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
+  z.object({ reason: z.enum(leadAbsencesUntimed) }),
+  z.object({ reason: z.enum(leadAdmissionRefusals), since: instantSchema }),
+]);
+export type LeadAbsenceResponse = z.infer<typeof leadAbsenceResponseSchema>;
+
+/**
+ * A project the reader may read that holds no lead session: an answer, where a
+ * refusal is a 404. `absence` is absent from a server that predates it.
+ */
+export const leadNoneResponseSchema = z.object({
   lead: z.literal("None"),
+  absence: leadAbsenceResponseSchema.optional(),
 });
 export type LeadNoneResponse = z.infer<typeof leadNoneResponseSchema>;
 

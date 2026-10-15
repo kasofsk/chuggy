@@ -22,6 +22,8 @@ import {
   finalizationFailureKinds,
   finalizationUnavailableKinds,
   gitEvidences,
+  leadAbsencesUntimed,
+  leadAdmissionRefusals,
   operationRefusalCodes,
   operationStates,
   phaseRoster,
@@ -48,6 +50,7 @@ import {
   gitEvidenceLabel,
   landingEffect,
   landingLabel,
+  leadAbsenceLabel,
   resumeActionEffect,
   wallExitLine,
   escalationDetailLine,
@@ -91,6 +94,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ...changeProposalMerges.map(changeProposalMergeLabel),
     ...changeProposalMergeReasons.map(changeProposalMergeReasonLabel),
     ...changeProposalMergeabilities.map(changeProposalMergeabilityLabel),
+    ...[...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
   ];
   for (const label of drawn) {
     expect(label.length).toBeGreaterThan(0);

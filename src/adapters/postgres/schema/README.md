@@ -309,6 +309,16 @@ every member of every other project's history the first time a project's
 selector ran. The selector service reads it and moves it forward through
 `advance_thread_wake_cursor`, which never moves it back.
 
+`selector_lead_refusal` — the admission refusal the last selector cycle that
+needed a project's lead was refused under, and since when. The selector
+service alone writes it, directly, and the API role reads it through
+`read_lead_refusal` alone, for a project holding no lead. Its key and identity
+are `(tenant, project)` and it points at `project`. A refused cycle writes it,
+moving `refused_since` only where the refusal is another, and an admitted or
+quiet cycle deletes it, so a project with no row is one no refusal stands for;
+`selector_lead_refusal_is_known` holds the refusal to the roster as 055 wrote
+it. It has no unfinished work: it records what a cycle met and starts nothing.
+
 `session_attempt` — one physical run of a session, its lease, its bearer digest
 and how it ended. It is a sibling of `execution_attempt` rather than a widening
 of it: that relation's key and every function over it hang off `execution`,

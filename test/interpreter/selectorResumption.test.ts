@@ -299,6 +299,8 @@ function rigStore(rig: Rig, found: readonly SelectorUnfinishedAttempt[]) {
       });
     },
     recordQuietCycle: () => Promise.resolve(false),
+    recordLeadRefusal: () => Promise.resolve(),
+    clearLeadRefusal: () => Promise.resolve(),
     pending: () => Promise.resolve(rigPending(rig)),
     submittedDeliveries: () => Promise.resolve([]),
     submitted: () => Promise.resolve(),

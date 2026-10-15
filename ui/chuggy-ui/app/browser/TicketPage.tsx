@@ -45,7 +45,7 @@ import {
   parkedOverridesUnsaved,
 } from "../core/parkedOverrides.ts";
 import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
-import { projectLeadPresent } from "../core/projectLead.ts";
+import { projectLeadDispatches } from "../core/projectLead.ts";
 import {
   manualDispatchAction,
   ticketDispatchList,
@@ -278,7 +278,7 @@ function TicketStanding(
             noRunner={noRunner}
             byHand={offersDispatchByHand(
               offers,
-              projectLeadPresent(props.reads.leadState),
+              projectLeadDispatches(props.reads.leadState),
             )}
           />
         }

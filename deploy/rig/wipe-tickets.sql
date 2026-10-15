@@ -95,6 +95,7 @@ TRUNCATE TABLE
   public.selector_decision_permit,
   public.selector_interaction,
   public.selector_interaction_resource,
+  public.selector_lead_refusal,
   public.selector_observation,
   public.selector_planning_intent,
   public.selector_project_state,

@@ -191,6 +191,8 @@ export const selectorInteractionsReadFunction = "read_selector_interactions";
 export const selectorPlanningIntentReadFunction =
   "read_selector_planning_intent";
 export const leadStandingReadFunction = "read_lead_standing";
+/** The refusal the selector keeps for a project's lead, as the API reads it. */
+export const leadRefusalReadFunction = "read_lead_refusal";
 export const leadStoreReadFunction = "read_lead_store";
 export const leadStreamListFunction = "list_lead_store_streams";
 export const sessionStoreBatchesReadFunction = "read_session_store_batches";

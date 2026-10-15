@@ -1,14 +1,15 @@
 /**
  * What the API may read of a project's lead and of the decisions behind it:
  * the session with the tail of its mailbox, the store rows a transcript is
- * drawn from, and the decision log with the planning intent it left.
+ * drawn from, the decision log with the planning intent it left, and the
+ * admission refusal the selector keeps for the project's lead.
  *
  * THE API HOLDS NO GRANT ON ANY OF THESE RELATIONS. Every read below is a
- * `SECURITY DEFINER` function 059 declares, bounded and partitioned by its own
- * arguments, so the API cannot reach another project's session by writing its
- * own predicate. That is what makes a second pool holding the selector
- * service's role unnecessary, and a second credential in a deployment is a
- * second thing to leak.
+ * `SECURITY DEFINER` function, bounded and partitioned by its own arguments,
+ * so the API cannot reach another project's session by writing its own
+ * predicate. That is what makes a second pool holding the selector service's
+ * role unnecessary, and a second credential in a deployment is a second thing
+ * to leak.
  *
  * THE SHAPES ARE THE INTERPRETER'S. `LeadReadStore` and `SelectorHistoryStore`
  * are declared beside the reads that need them, and this module answers them; a
@@ -34,8 +35,10 @@ import type {
 } from "../../interpreter/selector.ts";
 import type {
   LeadReadStore,
+  LeadRefused,
   LeadStanding,
 } from "../../interpreter/leadRead.ts";
+import { leadAdmissionRefusals } from "../../contract/rosters.ts";
 import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
@@ -176,6 +179,32 @@ async function leadPlanningIntent(
   };
 }
 
+async function leadRefusal(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<LeadRefused | undefined> {
+  const found = await pool.query<{
+    refusal: string | null;
+    refused_since: Date | null;
+  }>(
+    sql`SELECT refusal,refused_since
+          FROM read_lead_refusal(${partition.tenant},${partition.project})`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  return {
+    reason: sessionRowMember(
+      leadAdmissionRefusals,
+      row.refusal,
+      "lead refusal",
+    ),
+    since: interactionInstant(
+      row.refused_since,
+      "a lead refusal's instant",
+    ).toISOString(),
+  };
+}
+
 /** Every read the API has onto a lead, over the API's own pool. */
 export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
   return {
@@ -194,5 +223,6 @@ export function postgresLeadReads(pool: pg.Pool): PostgresLeadReads {
     tail: (partition, limit) =>
       readSelectorInteractions(pool, partition, undefined, limit, true),
     planningIntent: (partition) => leadPlanningIntent(pool, partition),
+    leadRefusal: (partition) => leadRefusal(pool, partition),
   };
 }

@@ -36,7 +36,10 @@ import {
   type TicketLandingState,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
-import type { TicketEscalation } from "../../../../src/contract/responses.ts";
+import type {
+  LeadAbsenceResponse,
+  TicketEscalation,
+} from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import {
   mutationDeferralCodes,
@@ -144,6 +147,22 @@ export function finalizationUnavailableKindLabel(
       return "Proposal creations exhausted";
     case "ProposalMergesExhausted":
       return "Proposal merges exhausted";
+  }
+}
+
+/** Why a project holds no lead, as the line under its empty lead page says it. */
+export function leadAbsenceLabel(
+  reason: LeadAbsenceResponse["reason"],
+): string {
+  switch (reason) {
+    case "NotNeeded":
+      return "Opens when a ticket is released";
+    case "Paused":
+      return "Selector paused";
+    case "HostedRunsNotGranted":
+      return "Hosted runs not granted";
+    case "RunnerOffline":
+      return "No live runner";
   }
 }
 

@@ -1,9 +1,11 @@
 /** Where one project's sessions run, as its administrator reads and chooses it and as every door that spends a session asks. */
 
-import type {
-  PlacementRoute,
-  PlacementRouteSource,
-  SessionRunnerStanding,
+import {
+  leadAdmissionRefusals,
+  type LeadAdmissionRefusal,
+  type PlacementRoute,
+  type PlacementRouteSource,
+  type SessionRunnerStanding,
 } from "../contract/rosters.ts";
 import type { SessionKind } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
@@ -217,15 +219,14 @@ export async function sessionSpendRoute(
 
 export const allLeadAdmissions = [
   "Admitted",
-  "HostedRunsNotGranted",
-  "RunnerOffline",
+  ...leadAdmissionRefusals,
 ] as const;
 export type LeadAdmission = (typeof allLeadAdmissions)[number];
 
 /** A lead's admission, carrying the route an admitted turn is stamped with. */
 export type LeadRouteAdmission =
   | { readonly admission: "Admitted"; readonly route: PlacementRoute }
-  | { readonly admission: Exclude<LeadAdmission, "Admitted"> };
+  | { readonly admission: LeadAdmissionRefusal };
 
 /**
  * Whether a project's lead may take a turn now: on a hosted route the tenant

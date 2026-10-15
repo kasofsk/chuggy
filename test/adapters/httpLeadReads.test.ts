@@ -34,8 +34,16 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
 import type { AgenticRefusalEntry } from "../../src/interpreter/agenticRefusal.ts";
-import type { LeadStanding } from "../../src/interpreter/leadRead.ts";
-import type { SelectorInteractionRecord } from "../../src/interpreter/selector.ts";
+import type {
+  LeadRefused,
+  LeadStanding,
+} from "../../src/interpreter/leadRead.ts";
+import {
+  resolvedSelectorSettings,
+  type SelectorInteractionRecord,
+  type SelectorRuntimeSettings,
+} from "../../src/interpreter/selector.ts";
+import { selectorDefaults } from "../contract/representations.ts";
 import type { SelectorHistoryStore } from "../../src/interpreter/selectorHistory.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
@@ -196,6 +204,11 @@ const decisions: readonly SelectorInteractionRecord[] = [
 interface LeadCase {
   readonly allowed?: boolean;
   readonly standing?: LeadStanding | undefined;
+  /** The admission refusal the selector keeps for the project, where one stands. */
+  readonly refused?: LeadRefused;
+  /** The installation's mode and the project's own, each running where unstated. */
+  readonly installationMode?: SelectorRuntimeSettings["mode"];
+  readonly projectMode?: SelectorRuntimeSettings["mode"];
   readonly draws?: readonly SessionStoreRead[];
   readonly ticketVersion?: number;
   /** How many rows each refusal read answers, so a short page can be driven. */
@@ -277,6 +290,7 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
             .filter((row) => row.batch > after)
             .slice(0, limit),
         ),
+      leadRefusal: () => Promise.resolve(shape.refused),
     },
     store: {
       readBatch: (object) =>
@@ -307,6 +321,22 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         ),
     },
     history,
+    settings: leadPortsSettings(shape),
+  };
+}
+
+/** The project's settings as the selector resolves them, paused where a case says. */
+function leadPortsSettings(shape: LeadCase): NativeLeadPorts["settings"] {
+  return {
+    projectSettings: (of) =>
+      Promise.resolve(
+        resolvedSelectorSettings(
+          of,
+          { ...selectorDefaults, mode: shape.installationMode ?? "Running" },
+          0,
+          shape.projectMode === undefined ? {} : { mode: shape.projectMode },
+        ),
+      ),
   };
 }
 
@@ -392,8 +422,9 @@ test("a project with no lead answers that it has none, and one nobody may read a
     headers: authorized,
   });
   assert.equal(none.statusCode, 200);
-  assert.deepEqual(nativeHttpEndpoints.lead.response.parse(none.json()), {
+  assert.deepEqual(none.json(), {
     lead: "None",
+    absence: { reason: "NotNeeded" },
   });
   assert.equal(
     (
@@ -414,6 +445,80 @@ test("a project with no lead answers that it has none, and one nobody may read a
   ]) {
     const found = await refused.inject({ url: path, headers: authorized });
     assert.equal(found.statusCode, 404, path);
+  }
+});
+
+/**
+ * A project whose lead the selector was refused says which refusal and since
+ * when, so a reader can tell a project whose runner is down from one that has
+ * not needed a lead yet. A lead that exists answers itself, whatever refusal is
+ * kept beside it.
+ */
+test("a project with no lead answers the refusal the selector keeps for it, and a lead answers over one", async () => {
+  const refused: LeadRefused = {
+    reason: "RunnerOffline",
+    since: "2026-09-02T00:00:00.000Z",
+  };
+  await using absent = appOf({ standing: undefined, refused });
+  const none = await absent.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.equal(none.statusCode, 200);
+  assert.deepEqual(none.json(), {
+    lead: "None",
+    absence: refused,
+  });
+  assert.deepEqual(
+    nativeHttpEndpoints.lead.response.parse(none.json()),
+    none.json(),
+  );
+  await using present = appOf({ refused });
+  const found = await present.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.equal(Object.hasOwn(found.json(), "absence"), false);
+  const lead = nativeHttpEndpoints.lead.response.parse(found.json());
+  assert.ok("session" in lead);
+  assert.equal(lead.session, leadStanding.session);
+});
+
+/**
+ * A paused selector asks no admission, so a refusal it kept before pausing may
+ * have stopped being true; the project's own pause and the installation's each
+ * answer `Paused` over it, and a lead that exists still answers itself.
+ */
+test("a project whose selector is paused answers Paused over any refusal kept, and a lead answers over that", async () => {
+  const refused: LeadRefused = {
+    reason: "RunnerOffline",
+    since: "2026-09-02T00:00:00.000Z",
+  };
+  for (const paused of [
+    { projectMode: "Paused" },
+    { installationMode: "Paused", projectMode: "Running" },
+  ] as const) {
+    await using absent = appOf({ standing: undefined, refused, ...paused });
+    const none = await absent.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    assert.equal(none.statusCode, 200);
+    assert.deepEqual(none.json(), {
+      lead: "None",
+      absence: { reason: "Paused" },
+    });
+    assert.deepEqual(
+      nativeHttpEndpoints.lead.response.parse(none.json()),
+      none.json(),
+    );
+    await using present = appOf({ refused, ...paused });
+    const found = await present.inject({
+      url: `${root}/lead`,
+      headers: authorized,
+    });
+    assert.equal(Object.hasOwn(found.json(), "absence"), false);
   }
 });
 

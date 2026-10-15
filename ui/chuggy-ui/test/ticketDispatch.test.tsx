@@ -135,6 +135,24 @@ test("Dispatch in a project with no lead says tickets are dispatched by hand", a
   expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
 });
 
+/** A project that has not needed a lead yet opens one for a released ticket,
+ * so a press is not how it runs; one whose selector is paused, or whose lead
+ * was refused, runs it only on a press. */
+test("Dispatch says it is by hand only where the read says no lead will open", async () => {
+  await drawnWithLead({ lead: "None", absence: { reason: "NotNeeded" } });
+  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
+  cleanup();
+  await drawnWithLead({ lead: "None", absence: { reason: "Paused" } });
+  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
+  cleanup();
+  await drawnWithLead({
+    lead: "None",
+    absence: { reason: "HostedRunsNotGranted", since: "2026-09-02T09:30:00Z" },
+  });
+  expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
+});
+
 test("Dispatch in a project with a lead says nothing of the hand", async () => {
   await drawnWithLead(leadBody(1, 1));
   expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();

@@ -31,6 +31,18 @@ import {
 } from "../../src/contract/responses.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import {
+  postgresSelectorProjectSettings,
+  postgresSelectorResolvedSettings,
+  postgresSelectorRuntimeControl,
+  postgresSelectorState,
+} from "../../src/adapters/postgres/selector.ts";
+import { selectorControlRole } from "../../src/adapters/postgres/schema.ts";
+import {
+  asAuthorityKind,
+  asAuthoritySubject,
+} from "../../src/interpreter/operationInbox.ts";
+import { leadAdmissionRefusals } from "../../src/contract/rosters.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
@@ -41,7 +53,7 @@ import {
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { postgresHarnessKeying } from "./harness.ts";
+import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import {
   leadRigDecision,
@@ -148,6 +160,7 @@ function leadApp(subject: string) {
       store: storeReads,
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
+      settings: postgresSelectorResolvedSettings(pool),
     },
   );
   return createNativeHttpApp(
@@ -499,7 +512,174 @@ test("a readable project whose only session is a thread answers that it has no l
   assert.equal(found.statusCode, 200);
   assert.deepEqual(leadNoneResponseSchema.parse(found.json()), {
     lead: "None",
+    absence: { reason: "NotNeeded" },
   });
+});
+
+/** The no-lead answer the lead route gives one project, parsed as a console parses it. */
+async function leadAbsence(label: string, partition: Partition) {
+  await using app = leadApp(label);
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  return leadNoneResponseSchema.parse(found.json()).absence;
+}
+
+/**
+ * The refusal is written by the selector's own credential and read through the
+ * API's, so a grant either side lacks is a red here rather than on the rig.
+ * Its instant is when the refusal standing began: the same refusal again keeps
+ * it, another starts it again, and a forgotten one leaves nothing to answer.
+ */
+test("a project whose lead was refused admission answers which refusal and since when, until it is forgotten", async () => {
+  const partition = await readableProject("http-refused");
+  const selector = postgresSelectorState(rig.selectorPool);
+  await selector.recordLeadRefusal(partition, "RunnerOffline");
+  const began = "2026-01-02T03:04:05.678Z";
+  await rig.sessions.harness.pool.query(
+    `UPDATE selector_lead_refusal SET refused_since=$3
+      WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project, began],
+  );
+  assert.deepEqual(await leadAbsence("http-refused", partition), {
+    reason: "RunnerOffline",
+    since: began,
+  });
+  await selector.recordLeadRefusal(partition, "RunnerOffline");
+  assert.deepEqual(await leadAbsence("http-refused", partition), {
+    reason: "RunnerOffline",
+    since: began,
+  });
+  await selector.recordLeadRefusal(partition, "HostedRunsNotGranted");
+  const again = await leadAbsence("http-refused", partition);
+  assert.equal(again?.reason, "HostedRunsNotGranted");
+  assert.ok(again !== undefined && "since" in again);
+  assert.ok(Date.parse(again.since) > Date.parse(began));
+  await selector.clearLeadRefusal(partition);
+  await selector.clearLeadRefusal(partition);
+  assert.deepEqual(await leadAbsence("http-refused", partition), {
+    reason: "NotNeeded",
+  });
+});
+
+/**
+ * A paused selector asks no admission, so the refusal it keeps is outranked
+ * while it stays paused, by the project's own override as by the installation's
+ * kill switch, each read over the API's own credential as the selector resolves it.
+ */
+test("a project whose selector is paused answers Paused over the refusal it keeps, until it runs again", async () => {
+  const partition = await readableProject("http-paused");
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "RunnerOffline",
+  );
+  const administrator = {
+    kind: asAuthorityKind("User"),
+    subject: asAuthoritySubject("selector-admin"),
+  };
+  const project = postgresSelectorProjectSettings(rig.apiPool);
+  const paused = await project.write(
+    partition,
+    0,
+    { mode: "Paused" },
+    administrator,
+  );
+  assert.equal(paused.written, "Settings");
+  assert.deepEqual(await leadAbsence("http-paused", partition), {
+    reason: "Paused",
+  });
+  assert.equal(
+    (await project.write(partition, 1, {}, administrator)).written,
+    "Settings",
+  );
+  assert.equal(
+    (await leadAbsence("http-paused", partition))?.reason,
+    "RunnerOffline",
+  );
+  const controlPool = postgresHarnessRolePool(selectorControlRole);
+  const control = postgresSelectorRuntimeControl(controlPool);
+  try {
+    const stopped = await control.pause(
+      (await control.settings()).revision,
+      administrator,
+    );
+    assert.equal(stopped.updated, true);
+    try {
+      assert.deepEqual(await leadAbsence("http-paused", partition), {
+        reason: "Paused",
+      });
+    } finally {
+      await control.unpause((await control.settings()).revision, administrator);
+    }
+  } finally {
+    await controlPool.end();
+  }
+  assert.equal(
+    (await leadAbsence("http-paused", partition))?.reason,
+    "RunnerOffline",
+  );
+});
+
+/** A lead that exists is the answer, whatever refusal a later cycle met. */
+test("a project holding a lead answers it over the refusal kept beside it", async () => {
+  const partition = await readableProject("http-refused-lead");
+  await sessionRigSession(rig.sessions, partition, "http-refused-lead", {
+    kind: "Lead",
+  });
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "HostedRunsNotGranted",
+  );
+  await using app = leadApp("http-refused-lead");
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  assert.equal(Object.hasOwn(found.json(), "absence"), false);
+  assert.equal(leadResponseSchema.safeParse(found.json()).success, true);
+});
+
+test("the refusals the wire names are the refusals the selector may keep", async () => {
+  const constraint = await rig.sessions.harness.pool.query<{
+    definition: string;
+  }>(
+    `SELECT pg_get_constraintdef(c.oid) AS definition
+       FROM pg_constraint c
+      WHERE c.conrelid = 'selector_lead_refusal'::regclass
+        AND c.conname = 'selector_lead_refusal_is_known'`,
+  );
+  const definition = constraint.rows[0]?.definition;
+  assert.ok(definition !== undefined, "the refusal constraint was not found");
+  const admitted = [...definition.matchAll(/'([A-Za-z]+)'/gu)].map(
+    ([, name]) => name,
+  );
+  assert.deepEqual([...admitted].sort(), [...leadAdmissionRefusals].sort());
+});
+
+/** The API reads the refusal through its door alone, and neither credential may name one the roster does not hold. */
+test("the API cannot read or write the kept refusal directly, and no credential keeps an unknown one", async () => {
+  const partition = await readableProject("http-refused-direct");
+  await assert.rejects(
+    rig.apiPool.query(`SELECT refusal FROM selector_lead_refusal`),
+    /permission denied/u,
+  );
+  await assert.rejects(
+    rig.apiPool.query(
+      `INSERT INTO selector_lead_refusal (tenant,project,refusal) VALUES ($1,$2,'RunnerOffline')`,
+      [partition.tenant, partition.project],
+    ),
+    /permission denied/u,
+  );
+  await assert.rejects(
+    rig.selectorPool.query(
+      `INSERT INTO selector_lead_refusal (tenant,project,refusal) VALUES ($1,$2,'Unknown')`,
+      [partition.tenant, partition.project],
+    ),
+    /selector_lead_refusal_is_known/u,
+  );
 });
 
 test("a project the reader has no membership in answers not found", async () => {

@@ -62,6 +62,10 @@ import type {
   SessionStoreBatchRow,
   SessionStoreStreamRow,
 } from "./sessionPlane.ts";
+import type {
+  LeadAbsenceUntimed,
+  LeadAdmissionRefusal,
+} from "../contract/rosters.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
 import type { JsonValue, SelectorProjectState } from "./selector.ts";
@@ -133,7 +137,29 @@ export interface LeadReadStore extends SessionStoreRowsRead {
     session: SessionId,
     limit: number,
   ): Promise<readonly SessionStoreStreamRow[]>;
+  /** The lead refusal the selector keeps for the project, or nothing where none stands. */
+  leadRefusal(partition: Partition): Promise<LeadRefused | undefined>;
 }
+
+/**
+ * What the last selector cycle that needed a project's lead was refused
+ * admission for, and since when that has been the answer. The selector keeps
+ * one only until a cycle of the project is admitted or has nothing to decide.
+ */
+export interface LeadRefused {
+  readonly reason: LeadAdmissionRefusal;
+  readonly since: string;
+}
+
+/** Why a project holds no lead: its selector is paused, no refusal stands, or
+ * the one the selector keeps. */
+export type LeadAbsence = { readonly reason: LeadAbsenceUntimed } | LeadRefused;
+
+/** The absence of a project no refusal stands for. */
+export const leadNotNeeded: LeadAbsence = { reason: "NotNeeded" };
+
+/** The absence of a project whose selector is paused, whatever refusal it keeps. */
+export const leadPaused: LeadAbsence = { reason: "Paused" };
 
 /** How large the handoff note is, and as much of it as the lead read carries. */
 export interface HandoffNotePreview {
@@ -144,7 +170,7 @@ export interface HandoffNotePreview {
 
 export type LeadRead =
   | { readonly result: "NotFound" }
-  | { readonly result: "None" }
+  | { readonly result: "None"; readonly absence: LeadAbsence }
   | {
       readonly result: "Found";
       readonly lead: LeadStanding;

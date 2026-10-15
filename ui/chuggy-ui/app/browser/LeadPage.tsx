@@ -41,6 +41,8 @@ import {
   sessionChangeKindNamed,
 } from "../core/leadTranscript.ts";
 import {
+  projectLeadAbsenceLine,
+  projectLeadAbsencePolledMs,
   projectLeadFound,
   projectLeadPanelState,
   projectLeadPresent,
@@ -76,6 +78,7 @@ import {
 } from "./selectorSettingsWriting.ts";
 import {
   SessionRunnerNotice,
+  useSessionPlacement,
   useSessionRunnerShort,
 } from "./sessionPlacement.tsx";
 import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
@@ -90,8 +93,9 @@ export const leadListName = "lead";
 /**
  * The lead read, re-read on the `Session` frames that name its own session and
  * left alone by the rest, a project holding a session per thread beside its
- * lead. Which session that is, is learnt from the read and then KEPT, since a
- * read that has failed would otherwise leave the panel deaf to the very frame
+ * lead, and polled while it last said there is none, since no frame moves why.
+ * Which session that is, is learnt from the read and then KEPT, since a read
+ * that has failed would otherwise leave the panel deaf to the very frame
  * telling it to try again, and until then any lead's frame re-reads it, which
  * is how a project with none hears that one has opened.
  */
@@ -99,6 +103,7 @@ export function useLead(
   partition: PartitionIdentity,
 ): PanelState<LeadReadResponse> {
   const [session, setSession] = useState<string | undefined>(undefined);
+  const [absent, setAbsent] = useState(false);
   const state = usePanelList(
     projectListRereadNamed<LeadReadResponse>(
       partition,
@@ -110,13 +115,31 @@ export function useLead(
           : leadSessionNamed(change.resource) === session,
     ),
     (ports) => apiLead(ports, partition),
+    absent ? projectLeadAbsencePolledMs : undefined,
   );
   const named =
     state.state === "Ready"
       ? projectLeadFound(state.value)?.session
       : undefined;
   if (named !== undefined && named !== session) setSession(named);
+  const present = projectLeadPresent(state);
+  if (present !== undefined && present === absent) setAbsent(!present);
   return state;
+}
+
+/** The line beside a page's `No lead`, over the lead read the page holds and
+ * the placement its runner notice is drawn from. */
+export function useLeadAbsenceLine(
+  partition: PartitionIdentity,
+  read: PanelState<LeadReadResponse>,
+  nowMs: number,
+): string | undefined {
+  const placement = useSessionPlacement(partition);
+  return projectLeadAbsenceLine(
+    read,
+    nowMs,
+    placement.state === "Ready" ? placement.value : undefined,
+  );
 }
 
 /** The bar's own title, where the session stands, why no runner can take its
@@ -364,6 +387,7 @@ export function LeadPage(): ReactNode {
   const state = projectLeadPanelState(read);
   const inquiries = useInquiryBoxes();
   const runner = useSessionRunnerShort(partition, "lead", "project");
+  const absence = useLeadAbsenceLine(partition, read, nowMs);
   if (state.state === "Absent") {
     const action =
       runner === undefined ? undefined : (
@@ -376,15 +400,15 @@ export function LeadPage(): ReactNode {
     return (
       <>
         <LeadSelectorStrip partition={partition} />
-        {projectLeadPresent(read) === false ? (
+        {absence === undefined ? (
+          <EmptyState label="No lead" variant="page" action={action} />
+        ) : (
           <EmptyState
             label="No lead"
             variant="page"
-            detail="Tickets are dispatched by hand"
+            detail={absence}
             action={action}
           />
-        ) : (
-          <EmptyState label="No lead" variant="page" action={action} />
         )}
       </>
     );

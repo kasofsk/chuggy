@@ -49,6 +49,7 @@ import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-
 import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-workspace-links.ts";
 import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-retirement-releases-repository.ts";
 import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-release-pairing-refusals.ts";
+import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-lead-refusal.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -74,6 +75,7 @@ import {
   apiRole,
   boundaryOwnerRole,
   leadCloseFunction,
+  leadRefusalReadFunction,
   leadSessionFunction,
   configurationImporterRole,
   draftCreateFunction,
@@ -10049,5 +10051,103 @@ test("053 settles a release under the pairing fault it was refused for, and keep
         null,
         code,
       );
+  });
+});
+
+/** What each runtime role holds on the refusal 055 keeps, column by column where a grant is. */
+async function leadRefusalGrants055(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT grantee,privilege_type,
+              string_agg(column_name,',' ORDER BY column_name COLLATE "C") AS columns
+         FROM information_schema.column_privileges
+        WHERE table_name='selector_lead_refusal' AND grantee <> current_user
+        GROUP BY grantee,privilege_type
+        ORDER BY grantee,privilege_type`,
+    )
+  ).rows;
+}
+
+/** Whether the selector may delete the refusal 055 keeps, which is no column's privilege. */
+async function leadRefusalDeletes055(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query<{ granted: boolean }>(
+      `SELECT has_table_privilege($1,'selector_lead_refusal','DELETE') AS granted`,
+      [selectorServiceRole],
+    )
+  ).rows[0]?.granted;
+}
+
+/** How 055 declares the refusal's read, and who may execute it. */
+async function leadRefusalReadDeclared055(
+  subject: pg.Pool,
+  read: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+              array_to_string(p.proconfig,',') AS settings,
+              has_function_privilege($2,p.oid,'EXECUTE') AS api,
+              has_function_privilege($3,p.oid,'EXECUTE') AS selector,
+              has_function_privilege('public',p.oid,'EXECUTE') AS public
+         FROM pg_proc p WHERE p.oid = to_regprocedure($1)`,
+      [read, apiRole, selectorServiceRole],
+    )
+  ).rows;
+}
+
+test("055 keeps no refusal for any project that stood, grants the selector its writes and the API its read alone", async () => {
+  await migrationDatabase("lead_refusal", async (subject) => {
+    const read = `${leadRefusalReadFunction}(text,text)`;
+    await installationBefore(subject, migration055.version);
+    await subject.query(deletionPartition);
+    assert.equal(await migrationHasFunction(subject, read), false);
+    assert.ok((await postgresMigrate(subject)).includes(migration055.version));
+    assert.deepEqual(
+      (await subject.query(`SELECT * FROM selector_lead_refusal`)).rows,
+      [],
+    );
+    const every = "project,refusal,refused_since,tenant";
+    assert.deepEqual(await leadRefusalGrants055(subject), [
+      { grantee: boundaryOwnerRole, privilege_type: "SELECT", columns: every },
+      {
+        grantee: selectorServiceRole,
+        privilege_type: "INSERT",
+        columns: every,
+      },
+      {
+        grantee: selectorServiceRole,
+        privilege_type: "SELECT",
+        columns: every,
+      },
+      {
+        grantee: selectorServiceRole,
+        privilege_type: "UPDATE",
+        columns: "refusal,refused_since",
+      },
+    ]);
+    assert.equal(await leadRefusalDeletes055(subject), true);
+    await subject.query(
+      `INSERT INTO selector_lead_refusal (tenant,project,refusal)
+       VALUES ('tenant-5','project-5','RunnerOffline')`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT refusal FROM ${leadRefusalReadFunction}('tenant-5','project-5')`,
+        )
+      ).rows,
+      [{ refusal: "RunnerOffline" }],
+    );
+    assert.deepEqual(await leadRefusalReadDeclared055(subject, read), [
+      {
+        owner: boundaryOwnerRole,
+        definer: true,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        api: true,
+        selector: false,
+        public: false,
+      },
+    ]);
   });
 });

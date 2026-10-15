@@ -565,7 +565,7 @@ export interface TicketActionsProps {
   readonly resume: ResumeOffer;
   /** The actions a card beside the bar answers, which the bar leaves out. */
   readonly answered: readonly TicketAction[];
-  /** Whether Dispatch is offered in a project no lead dispatches. */
+  /** Whether Dispatch is offered in a project no lead dispatches or will open to. */
   readonly byHand: boolean;
   /** Whether a Dispatch gave way because the project's work has no runner. */
   readonly noRunner: boolean;

@@ -31,6 +31,7 @@ import type {
 } from "../../interpreter/agenticRefusal.ts";
 import {
   handoffNotePreview,
+  type LeadAbsence,
   type LeadRead,
   type LeadTranscriptRead,
   type LeadTurnRecord,
@@ -2128,12 +2129,21 @@ function leadTurnBody(turn: LeadTurnRecord): unknown {
   };
 }
 
+function leadAbsenceBody(absence: LeadAbsence): unknown {
+  return "since" in absence
+    ? { reason: absence.reason, since: absence.since }
+    : { reason: absence.reason };
+}
+
 export function leadResponse(result: LeadRead): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "None":
-      return response(200, { lead: "None" });
+      return response(200, {
+        lead: "None",
+        absence: leadAbsenceBody(result.absence),
+      });
     case "Found":
       return response(200, {
         session: result.lead.session,
