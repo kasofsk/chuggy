@@ -171,7 +171,6 @@ const shapes: readonly unknown[] = [
       },
       taskKindDefaults: {
         Work: capabilityRequirement,
-        Evaluation: capabilityRequirement,
         "Evaluation:2": capabilityRequirement,
       },
     },
@@ -199,6 +198,9 @@ const shapes: readonly unknown[] = [
       platformDefault: containerRequirement,
       platformDefaultVersion: 1,
       ticketDefault: { ...containerRequirement, image: "worker:v2" },
+      taskKindDefaults: {
+        Evaluation: { ...containerRequirement, image: "worker:v3" },
+      },
     },
   },
   {
@@ -658,7 +660,24 @@ const outputsSkipped: readonly (readonly [unknown, "Refused" | "Held"])[] = [
   [{ name: "coverage", path: "notes.md", renderer: "Markdown" }, "Refused"],
   [{ ...outputEntry, schema: [] }, "Refused"],
   [{ ...outputEntry, path: "" }, "Refused"],
-  [{ ...outputEntry, path: "../coverage.json" }, "Held"],
+  [
+    { ...outputEntry, path: Array(5).fill("a".repeat(60)).join("/") },
+    "Refused",
+  ],
+  ...[
+    "reports/\uD800.json",
+    "/reports/coverage.json",
+    "reports//coverage.json",
+    "reports/./coverage.json",
+    "../coverage.json",
+    "reports\\coverage.json",
+    "reports/\u0007.json",
+    "reports/cafe\u0301.json",
+    Array(17).fill("a").join("/"),
+    "a".repeat(65),
+    "reports/ coverage.json",
+    "reports/coverage.json\u00A0",
+  ].map((path) => [{ ...outputEntry, path }, "Held"] as const),
   [{ ...outputEntry, name: "\u{1F600}".repeat(33) }, "Held"],
 ];
 

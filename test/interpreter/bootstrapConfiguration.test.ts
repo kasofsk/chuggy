@@ -501,7 +501,7 @@ test("each role is told that a limit the request puts on what may change does no
   );
 });
 
-test("the worker is told where the whole format is published, and that evaluations run in order and stop at a failure", () => {
+test("the worker is told where the format is published, and that evaluations run in order and stop at a failure", () => {
   const told = briefed("Work", "PurposeInstructions");
   assert.ok(
     told.some(

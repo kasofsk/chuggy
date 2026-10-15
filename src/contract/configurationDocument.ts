@@ -418,11 +418,11 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
   }),
 ]);
 
-/** A key of `taskKindDefaults`: the work, every evaluation, or one evaluation stage by its position from one. */
+/** A key of `taskKindDefaults`: the work, the evaluations of a configuration listing none, or one listed stage by its position from one. */
 export const executionTaskKindKeyPattern =
   /^(?:Work|Evaluation|Evaluation:[1-9][0-9]*)$/u;
 
-/** The requirements a configuration's tasks run under, each default narrowing the one above it. */
+/** The requirements a configuration's tasks run under, each default refining the platform's. */
 export const executionRequirementsSchema = z
   .strictObject({
     platformDefault: executionRequirementSchema,
@@ -432,6 +432,9 @@ export const executionRequirementsSchema = z
       .record(
         z.string().regex(executionTaskKindKeyPattern),
         executionRequirementSchema,
+      )
+      .describe(
+        "The requirement a task runs under in place of ticketDefault, or of platformDefault without one, by the kind of task. Work is the work task's. Where evaluations is absent, Evaluation is every evaluation stage's and an Evaluation:N key is unused; where evaluations is listed, Evaluation:N is the Nth stage's, counting from one, and Evaluation is unused.",
       )
       .optional(),
   })
@@ -453,7 +456,7 @@ const configurationOutputFields = {
     .min(1)
     .max(artifactPathCharsMax)
     .describe(
-      "Where a result holds the artifact. The reader also holds it to the rules of an artifact path: relative, no segment empty, . or .., no backslash or control character, in NFC, and bounded in depth and in each segment's length.",
+      "Where a result holds the artifact. The reader also holds it to the rules of an artifact path: well formed, with no lone surrogate; relative; no segment empty, . or .., and none with whitespace at either edge; no backslash or control character; in NFC; and bounded in depth and in each segment's length.",
     ),
   schema: z
     .record(z.string(), z.unknown())
