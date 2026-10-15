@@ -925,3 +925,96 @@ test("open dependencies are the same in the detail read and in both pages", asyn
     );
   }
 });
+
+/**
+ * Ticket 1 was first drafted under a member and revised under another, ticket
+ * 2's first revision carries an authority that is no member's though a member
+ * revised it after, and ticket 3 has no draft at all.
+ */
+async function seedCreators(label: string): Promise<Partition> {
+  const partition = await postgresHarnessProject(subject.harness.store, label);
+  const keys = [partition.tenant, partition.project];
+  await subject.harness.query(
+    "UPDATE project SET head=3 WHERE tenant=$1 AND project=$2",
+    keys,
+  );
+  await subject.harness.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,'creator-revision','{}','creator-digest','Test','harness')`,
+    keys,
+  );
+  for (const ticket of [1, 2, 3]) {
+    await seedEntry(partition, `${label}-${String(ticket)}`, ticket);
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq,escalation)
+       VALUES ($1,$2,$3,'Pending',$3,'NoEscalation')`,
+      [...keys, ticket],
+    );
+  }
+  for (const [ticket, revisions] of [
+    [
+      1,
+      [
+        ["Member", "filer"],
+        ["Member", "reviser"],
+      ],
+    ],
+    [
+      2,
+      [
+        ["Test", "harness"],
+        ["Member", "reviser"],
+      ],
+    ],
+  ] as const) {
+    await subject.harness.query(
+      `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+       VALUES ($1,$2,$3,$4,'Draft','creator-revision')`,
+      [...keys, ticket, revisions.length],
+    );
+    for (const [index, [kind, subjectName]] of revisions.entries())
+      await subject.harness.query(
+        `INSERT INTO draft_revision
+           (tenant,project,ticket,authoring_version,configuration_revision,
+            authoring,authority_kind,authority_subject)
+         VALUES ($1,$2,$3,$4,'creator-revision','{}',$5,$6)`,
+        [...keys, ticket, index + 1, kind, subjectName],
+      );
+  }
+  return partition;
+}
+
+test("a ticket names the member its first revision was drafted under, in the detail read and both pages", async () => {
+  const partition = await seedCreators("native-creators");
+  const reads = postgresNativeReads(subject.pool);
+  const expected = [
+    [1, "filer"],
+    [2, undefined],
+    [3, undefined],
+  ];
+  const detail = [];
+  for (const ticket of [1, 2, 3]) {
+    const own = await reads.ticket(partition, id(ticket));
+    assert.ok(own !== undefined);
+    assert.equal("creator" in own, own.creator !== undefined);
+    detail.push([own.ticket, own.creator]);
+  }
+  assert.deepEqual(
+    detail,
+    expected,
+    "a later revision names no creator, and neither does a first one no member wrote or a missing draft",
+  );
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 3, order });
+    assert.deepEqual(
+      page.result === "Found"
+        ? page.project.tickets
+            .map((each) => [each.ticket, each.creator])
+            .sort(([left], [right]) => Number(left) - Number(right))
+        : undefined,
+      expected,
+      `the ${order} page answers what the detail read does`,
+    );
+  }
+});

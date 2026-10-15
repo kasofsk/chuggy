@@ -26,6 +26,7 @@ type TicketField = keyof TicketResponse;
 const ticketFieldOwnReadOnly = {
   ticket: false,
   title: false,
+  creator: false,
   revision: false,
   phase: false,
   sequence: false,

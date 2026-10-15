@@ -82,7 +82,25 @@ export function commitLabel(commit: string): Label {
 }
 
 /**
- * An image reference at a glance: its last path segment, with a digest cut to
+ * The member who filed a ticket, drawn as the subject their issuer gave them
+ * shortened as a digest is, the issuer every member of a site shares being cut
+ * by the length that prefixes it. A subject with no such prefix is shortened
+ * whole, and the whole authority subject is kept for the hover.
+ */
+export function creatorLabel(subject: string): Label {
+  const prefix = /^(\d+):/u.exec(subject);
+  const issuerEndsAt =
+    prefix === null ? 0 : prefix[0].length + Number(prefix[1]);
+  return {
+    text: digestShortened(
+      issuerEndsAt < subject.length ? subject.slice(issuerEndsAt) : subject,
+    ),
+    title: subject,
+  };
+}
+
+/**
+ * An image reference at a glance:its last path segment, with a digest cut to
  * the head that distinguishes it. A tag reference is already that short, so it
  * is kept whole.
  */

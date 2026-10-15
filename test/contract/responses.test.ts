@@ -266,6 +266,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
   const fullest = ticketResponse({
     ticket: asTicketId(3),
     title: "The ticket the contract names",
+    creator: "23:https://issuer.example/alice",
     phase: "Escalated",
     sequence: 9,
     escalation: ticketEscalationResource(

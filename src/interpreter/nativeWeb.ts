@@ -339,6 +339,8 @@ export interface TicketResource {
   readonly title?: string;
   /** Which revision of its definition the ticket is at: one at release, one more per update. */
   readonly revision: number;
+  /** The authority subject of the member whose first authoring revision filed the ticket. */
+  readonly creator?: string;
   readonly phase: Phase;
   readonly sequence: number;
   readonly changedAt: PublicInstant;
