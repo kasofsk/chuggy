@@ -33,24 +33,16 @@ import type {
 import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
 import { checkOutputName, checkOutputPath } from "../contract/checkOutput.ts";
+import {
+  configurationOutputSchema,
+  type releaseConfigurationSchema,
+} from "../contract/configurationDocument.ts";
 
 export type OutputRenderer =
   "UnifiedDiff" | "Markdown" | "Json" | "Text" | "Image";
 
 /** How an output's content characters encode the bytes behind them. */
 export type OutputContentEncoding = "Utf8" | "Base64";
-
-/**
- * The media types an `Image` output may declare. Each is a raster format no
- * browser executes on load, which is what a reader of the stored bytes can
- * trust: `image/svg+xml` is a document a browser parses as markup and may run
- * as script, and does not belong here.
- */
-export const imageOutputMediaTypes = [
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-] as const;
 
 export interface OutputDefinition {
   readonly name: string;
@@ -334,51 +326,28 @@ export function checkedExecutionListQuery(
   return query;
 }
 
+/** The configuration's field its outputs are declared in. */
+const configuredOutputsField =
+  "outputs" satisfies keyof typeof releaseConfigurationSchema.shape;
+
 export function configuredOutputs(
   canonical: CanonicalConfiguration,
 ): readonly OutputDefinition[] {
   const parsed = JSON.parse(canonical) as Readonly<Record<string, unknown>>;
-  const configured = parsed["outputs"];
+  const configured = parsed[configuredOutputsField];
   if (!Array.isArray(configured)) return builtInOutputs;
   const outputs: OutputDefinition[] = [...builtInOutputs];
   for (const candidate of configured) {
-    if (typeof candidate !== "object" || candidate === null) continue;
-    const fields = candidate as Readonly<Record<string, unknown>>;
-    const name = fields["name"];
-    const path = fields["path"];
-    const mediaType = fields["mediaType"];
-    const renderer = fields["renderer"];
-    const schema = fields["schema"];
-    if (
-      typeof name !== "string" ||
-      name.length < 1 ||
-      name.length > 64 ||
-      typeof path !== "string" ||
-      typeof mediaType !== "string" ||
-      mediaType.length < 1 ||
-      mediaType.length > 128 ||
-      (renderer !== "UnifiedDiff" &&
-        renderer !== "Markdown" &&
-        renderer !== "Json" &&
-        renderer !== "Text" &&
-        renderer !== "Image") ||
-      (renderer === "Image" &&
-        !(imageOutputMediaTypes as readonly string[]).includes(mediaType)) ||
-      (schema !== undefined &&
-        (typeof schema !== "object" ||
-          schema === null ||
-          Array.isArray(schema)))
-    )
-      continue;
+    const declared = configurationOutputSchema.safeParse(candidate);
+    if (!declared.success) continue;
+    const { name, path, mediaType, renderer, schema } = declared.data;
     try {
       outputs.push({
         name,
         path: asArtifactPath(path),
         mediaType,
         renderer,
-        ...(schema === undefined
-          ? {}
-          : { schema: schema as Readonly<Record<string, unknown>> }),
+        ...(schema === undefined ? {} : { schema }),
       });
     } catch {
       continue;

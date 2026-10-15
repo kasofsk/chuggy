@@ -23,12 +23,14 @@ import test from "node:test";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
 import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
+import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
+import { configuredOutputs } from "../../src/interpreter/operationsView.ts";
 import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
@@ -173,7 +175,22 @@ const shapes: readonly unknown[] = [
         "Evaluation:2": capabilityRequirement,
       },
     },
-    outputs: [{ name: "notes", path: "notes.md", renderer: "Markdown" }],
+    outputs: [
+      {
+        name: "coverage",
+        path: "reports/coverage.json",
+        mediaType: "application/json",
+        renderer: "Json",
+        schema: { type: "object" },
+      },
+      {
+        name: "spike",
+        path: "outputs/spike.png",
+        mediaType: "image/png",
+        renderer: "Image",
+      },
+    ],
+    finalizationApprovalRequired: true,
   },
   {
     ...configuration,
@@ -194,6 +211,13 @@ const shapes: readonly unknown[] = [
     ...configuration,
     worker: { mode: claude, arguments: "beside a mode", setup: [], files: [] },
   },
+  {
+    ...configuration,
+    outputs: [{ name: "unreadable", renderer: "Image" }],
+    finalizationApprovalRequired: "yes",
+    evaluation: [{ purpose: "Check", checks: ["true"] }],
+  },
+  { ...configuration, outputs: "not a list", finalizationApprovalRequired: 1 },
 ];
 
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -507,6 +531,10 @@ const mutationKeys = [
   "capabilities",
   "extra",
   "apiToken",
+  "outputs",
+  "finalizationApprovalRequired",
+  "renderer",
+  "mediaType",
 ];
 
 /** Every object and list in a document, the document included. */
@@ -564,4 +592,79 @@ test("a mutated file the import takes the schema takes, and one it refuses the s
   }
   assert.ok(verdicts.has("Ready"));
   assert.ok(verdicts.size > heldFaults.length);
+});
+
+/** The node of the published schema at `keys`, which the suite asserts is there. */
+function publishedAt(...keys: readonly (string | number)[]): object {
+  let node: unknown = configurationDocumentJsonSchema();
+  for (const key of keys) {
+    assert.ok(typeof node === "object" && node !== null, keys.join("."));
+    node = (node as Record<string | number, unknown>)[key];
+  }
+  assert.ok(typeof node === "object" && node !== null, keys.join("."));
+  return node;
+}
+
+/** The node the published schema states a configuration's field in. */
+function publishedField(field: string, ...keys: readonly (string | number)[]) {
+  return publishedAt(
+    "properties",
+    "configuration",
+    "properties",
+    field,
+    ...keys,
+  );
+}
+
+const outputShapeTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
+  publishedField("outputs", "anyOf", 0, "items"),
+);
+
+/** Whether the reader of a configuration's outputs takes one entry as an output. */
+function outputRead(entry: unknown): boolean {
+  const read = (outputs: unknown) =>
+    configuredOutputs(
+      canonicalConfigurationOf({ ...configuration, ...(outputs as object) }),
+    ).length;
+  return read({ outputs: [entry] }) > read({});
+}
+
+const outputEntry = {
+  name: "coverage",
+  path: "reports/coverage.json",
+  mediaType: "application/json",
+  renderer: "Json",
+};
+
+/** Entries the reader skips and the shape refuses, and entries it skips for a rule the shape cannot state. */
+const outputsSkipped: readonly (readonly [unknown, "Refused" | "Held"])[] = [
+  [
+    { ...outputEntry, renderer: "Image", mediaType: "image/svg+xml" },
+    "Refused",
+  ],
+  [{ ...outputEntry, renderer: "Image", mediaType: "text/plain" }, "Refused"],
+  [{ ...outputEntry, renderer: "Html" }, "Refused"],
+  [{ ...outputEntry, name: "" }, "Refused"],
+  [{ name: "coverage", path: "notes.md", renderer: "Markdown" }, "Refused"],
+  [{ ...outputEntry, schema: [] }, "Refused"],
+  [{ ...outputEntry, path: "" }, "Refused"],
+  [{ ...outputEntry, path: "../coverage.json" }, "Held"],
+  [{ ...outputEntry, name: "\u{1F600}".repeat(33) }, "Held"],
+];
+
+test("the outputs shape the schema shows is the one their reader takes, and approval is shown as a boolean", () => {
+  for (const renderer of ["UnifiedDiff", "Markdown", "Json", "Text"]) {
+    const entry = { ...outputEntry, renderer };
+    assert.ok(outputRead(entry) && outputShapeTakes(entry), renderer);
+  }
+  const image = { ...outputEntry, renderer: "Image", mediaType: "image/webp" };
+  assert.ok(outputRead(image) && outputShapeTakes(image));
+  for (const [entry, skipped] of outputsSkipped) {
+    const context = JSON.stringify(entry);
+    assert.ok(!outputRead(entry), context);
+    assert.equal(outputShapeTakes(entry), skipped === "Held", context);
+  }
+  assert.deepEqual(publishedField("finalizationApprovalRequired", "anyOf", 0), {
+    type: "boolean",
+  });
 });

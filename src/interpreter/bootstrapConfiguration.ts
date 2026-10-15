@@ -106,16 +106,17 @@ const bootstrapWorkerMode = {
 } as const;
 
 /**
- * The least a declaration holds, in the letters `N`, `C`, `I`, `S`, `E` and
- * `L` stand for, the bounds its import refuses past, and where the whole
- * format is published.
+ * One simple declaration, in the letters `N`, `C`, `I`, `S`, `E` and `L`
+ * stand for, the bounds its import refuses past, and where every key chuggy
+ * reads is published.
  */
 function bootstrapFormatInstructions(image: string): readonly string[] {
   return [
-    `Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them. What follows is the least a file needs; the whole format, with authority, executionRequirements, work.commands, a Codex mode naming a model and agent-briefed Check stages, is the JSON Schema at GET ${nativeHttpRoutes.configurationSchema} on the chuggy API, and a key it does not name is refused or dropped.`,
+    `Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
     `C is {"version":${String(releaseConfigurationVersion)},"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
     `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer. Evaluations run in the order listed and a failed stage ends evaluation, so a cheap Check stage goes before a Review.`,
     `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it.`,
+    `The JSON Schema at GET ${nativeHttpRoutes.configurationSchema} on the chuggy API names every key chuggy reads, among them authority, executionRequirements, work.commands, the model of a Codex mode, outputs and finalizationApprovalRequired, and shows Check stages that brief an agent. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`,
     "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file.",
     bootstrapImageLine(image),
   ];
@@ -171,8 +172,7 @@ function bootstrapConfigurationValue(
     practices: [],
     work: {
       instructions: [
-        "Read the repository before changing anything in it.",
-        `Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there.`,
+        `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there.`,
         ...bootstrapFormatInstructions(input.image),
       ],
     },

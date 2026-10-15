@@ -21,6 +21,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
 import {
   asCanonicalConfiguration,
@@ -515,6 +516,29 @@ test("the worker is told where the whole format is published, and that evaluatio
         line.includes("in the order listed") &&
         line.includes("a failed stage ends evaluation") &&
         line.includes("Check stage goes before a Review"),
+    ),
+  );
+});
+
+/** The fields the published schema names in a configuration. */
+function publishedConfigurationFields(): readonly string[] {
+  const published = configurationDocumentJsonSchema() as {
+    readonly properties?: {
+      readonly configuration?: { readonly properties?: object };
+    };
+  };
+  return Object.keys(published.properties?.configuration?.properties ?? {});
+}
+
+test("the worker is told of every field the published schema names in a configuration, and what becomes of one it does not", () => {
+  const told = toldLines().join("\n");
+  const fields = publishedConfigurationFields();
+  assert.ok(fields.includes("outputs"));
+  for (const field of fields) assert.ok(told.includes(field), field);
+  assert.ok(
+    toldLines().some(
+      (line) =>
+        line.includes("does not name") && line.includes("kept and ignored"),
     ),
   );
 });

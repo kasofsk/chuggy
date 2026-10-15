@@ -20,6 +20,11 @@
  * AN OBJECT DROPS A FIELD IT HAS NO PLACE FOR, except the configuration, which
  * keeps one as written, and the envelope, a stage that runs commands and the
  * execution requirements, which refuse one.
+ *
+ * THE OUTPUTS AND THE APPROVAL POLICY ARE READ AFTER IMPORT AND NOT BY IT, so
+ * the importer takes any value for either. Each is stated here as its reader
+ * takes it, beside anything at all, which is what lets an editor offer the
+ * shape while the schema still takes every file an import does.
  */
 
 import { z } from "zod";
@@ -28,6 +33,8 @@ import {
   configurationCanonicalCharsMax,
   repositoryConfigurationNameCharsMax,
 } from "./http.ts";
+import { outputRenderers } from "./rosters.ts";
+import { artifactPathCharsMax } from "./workerDocuments.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
@@ -55,8 +62,26 @@ const workerEntriesMax = 64;
 /** The longest content one worker file holds. */
 const workerContentCharsMax = 65_536;
 
-/** The longest model a Codex worker names, in UTF-16 code units, which bounds its code points too. */
+/** The longest model a Codex worker names, in UTF-16 code units. */
 const workerModelCodeUnitsMax = 128;
+
+/** The longest name an output is shown under, in UTF-16 code units. */
+const outputNameCodeUnitsMax = 64;
+
+/** The longest media type an output declares, in UTF-16 code units. */
+const outputMediaTypeCodeUnitsMax = 128;
+
+/**
+ * The media types an `Image` output may declare. Each is a raster format no
+ * browser executes on load, which is what a reader of the stored bytes can
+ * trust: `image/svg+xml` is a document a browser parses as markup and may run
+ * as script, and does not belong here.
+ */
+const imageOutputMediaTypes = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+] as const;
 
 /** Every accepted practice identity in stable rendering order. */
 export const allPracticeIds = [
@@ -106,6 +131,25 @@ export type ConfigurationContentFault =
 export const configurationLinePattern =
   // eslint-disable-next-line no-control-regex
   /^[^\u0000-\u001f\u007f-\u009f\ud800-\udfff]*$/u;
+
+/**
+ * A text of at least one character and at most `codeUnitsMax` UTF-16 code
+ * units, which `holder` holds it to; the bound the schema shows is on code
+ * points, which the one on code units implies.
+ */
+function configurationCodeUnitsText(
+  codeUnitsMax: number,
+  holder: "importer" | "reader",
+) {
+  return z
+    .string()
+    .min(1)
+    .max(codeUnitsMax)
+    .refine((text) => text.length <= codeUnitsMax)
+    .describe(
+      `The ${holder} also holds that it is at most ${String(codeUnitsMax)} UTF-16 code units.`,
+    );
+}
 
 /** One line of an authored list: one criterion, constraint, instruction or command. */
 export const configurationLineSchema = z
@@ -255,14 +299,7 @@ export const configurationWorkerModeSchema = z.discriminatedUnion("agent", [
     type: z.literal("SingleAgent"),
     agent: z.literal("Codex"),
     arguments: configurationWorkerArgumentsSchema,
-    model: z
-      .string()
-      .min(1)
-      .max(workerModelCodeUnitsMax)
-      .refine((model) => model.length <= workerModelCodeUnitsMax)
-      .describe(
-        `The importer also holds that it is at most ${String(workerModelCodeUnitsMax)} UTF-16 code units.`,
-      ),
+    model: configurationCodeUnitsText(workerModelCodeUnitsMax, "importer"),
   }),
 ]);
 
@@ -311,7 +348,7 @@ export const configurationModeWorkerSchema = z
 export const configurationWorkerSchema = z
   .union([configurationLegacyWorkerSchema, configurationModeWorkerSchema])
   .describe(
-    "The importer also holds that it is present unless work names commands and evaluations lists only stages naming checks.",
+    "The importer also holds that it is present unless work names commands and evaluations is listed with every stage in it naming checks: without evaluations, the review block briefs an agent.",
   );
 
 /** The claim a ticket makes about itself, which every role is briefed with unchanged. */
@@ -409,14 +446,65 @@ export const releaseConfigurationHeaderSchema = z.object({
   executionRequirements: executionRequirementsSchema.optional(),
 });
 
+const configurationOutputFields = {
+  name: configurationCodeUnitsText(outputNameCodeUnitsMax, "reader"),
+  path: z
+    .string()
+    .min(1)
+    .max(artifactPathCharsMax)
+    .describe(
+      "Where a result holds the artifact. The reader also holds it to the rules of an artifact path: relative, no segment empty, . or .., no backslash or control character, in NFC, and bounded in depth and in each segment's length.",
+    ),
+  schema: z
+    .record(z.string(), z.unknown())
+    .optional()
+    .describe(
+      "Served beside the artifact's content, such as a JSON Schema of a Json output.",
+    ),
+};
+
+/** One result artifact a configuration declares, and how it is shown. */
+export const configurationOutputSchema = z.discriminatedUnion("renderer", [
+  z.object({
+    ...configurationOutputFields,
+    renderer: z.literal("Image"),
+    mediaType: z.enum(imageOutputMediaTypes),
+  }),
+  z.object({
+    ...configurationOutputFields,
+    renderer: z.enum(outputRenderers).exclude(["Image"]),
+    mediaType: configurationCodeUnitsText(
+      outputMediaTypeCodeUnitsMax,
+      "reader",
+    ),
+  }),
+]);
+
+/** The result artifacts a configuration declares, as its reader takes them beside any value the importer takes. */
+const configurationOutputsSchema = z
+  .union([z.array(configurationOutputSchema), z.unknown()])
+  .describe(
+    "Result artifacts shown as outputs: an artifact a result holds at an output's path is shown under its name, as its media type, by its renderer. The built-in outputs come first, and one declared at a built-in output's path is not used. The importer takes any value here; its reader takes a list and skips an entry it cannot read, so only an entry of the shape shown is an output.",
+  );
+
+/** Whether a person approves a candidate before it lands, as its reader takes it beside any value the importer takes. */
+const configurationApprovalRequiredSchema = z
+  .union([z.boolean(), z.unknown()])
+  .describe(
+    "Whether a person approves each candidate before it lands; absent is false. The importer takes any value here, but one that is not a boolean is an approval policy finalization cannot read, so no candidate made under it lands.",
+  );
+
 /** The configuration a release reads, which keeps a field it does not name as written. */
 export const releaseConfigurationSchema = z
   .looseObject({
     ...releaseConfigurationHeaderSchema.shape,
     ...configurationTaskShape,
+    outputs: configurationOutputsSchema.optional(),
+    finalizationApprovalRequired:
+      configurationApprovalRequiredSchema.optional(),
   })
   .describe(
-    `What a ticket runs on. A field not named here is kept as written. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
+    `What a ticket runs on. A key not named here is kept as written and ignored. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
   );
 
 /** The name a configuration is declared under, which is one URL path segment exactly as written. */
@@ -437,7 +525,7 @@ export const configurationDocumentSchema = z
   })
   .meta({
     title: "chuggy repository configuration",
-    description: `One file directly in ${repositoryConfigurationRoot} whose name ends in .json. The importer also holds the directory to a bound on how many files it holds and each file to one on its size.`,
+    description: `One file directly in ${repositoryConfigurationRoot} whose name ends in .json. An object here that does not refuse a key it does not name drops it, except the configuration, which keeps it as written and ignores it. The importer also holds the directory to a bound on how many files it holds and each file to one on its size.`,
   });
 
 /** The media type the JSON Schema of one file is served as. */
