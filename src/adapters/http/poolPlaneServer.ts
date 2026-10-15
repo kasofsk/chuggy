@@ -47,9 +47,6 @@ import {
   workerPoolHeldImages,
   workerPoolHeldNamedMax,
   workerPoolPoll,
-  workerPoolReconciliationUnsessioned,
-  workerPoolRuntimeRead,
-  workerPoolSessionsRead,
   workerPoolSettled,
   type PersonalRunnerPlaneRegistry,
   type PoolPlaneIdentity,
@@ -71,7 +68,6 @@ import type { PrincipalAuthentication } from "./server.ts";
 import {
   workerContractChecked,
   workerContractNamed,
-  workerContractOffered,
 } from "./workerContractVersion.ts";
 
 /** A contract route's refusal of a release outside the range the pool plane serves. */
@@ -202,7 +198,7 @@ function poolAssignmentNamed(request: FastifyRequest): string | undefined {
   return named.success ? named.data : undefined;
 }
 
-/** The reconciliation poll, which is the whole of what a pool asks for, answered in the shape the release the pool names reads. */
+/** The reconciliation poll, which is the whole of what a pool asks for. */
 function poolAssignmentsRoute(
   app: FastifyInstance,
   service: PoolPlaneService,
@@ -216,10 +212,8 @@ function poolAssignmentsRoute(
       bodyBytesMax: planeJsonObjectBytesMax(),
     },
     async (request, reply, identity) => {
-      const release = workerContractOffered(request);
-      const sessionsRead = workerPoolSessionsRead(release);
       const query = workerPoolPollQuerySchema(
-        workerPoolHeldNamedMax(service.settings, sessionsRead),
+        workerPoolHeldNamedMax(service.settings),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
@@ -231,8 +225,6 @@ function poolAssignmentsRoute(
             held: query.data[workerPoolPollQuery.held],
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
-            readsSessions: sessionsRead,
-            readsRuntime: workerPoolRuntimeRead(release),
           },
           service.settings,
         );
@@ -242,13 +234,7 @@ function poolAssignmentsRoute(
         throw failure;
       }
       if (polled.polled === "HeldOverBound") return reply.code(400).send();
-      return reply
-        .code(200)
-        .send(
-          sessionsRead
-            ? polled.answer
-            : workerPoolReconciliationUnsessioned(polled.answer),
-        );
+      return reply.code(200).send(polled.answer);
     },
   );
 }

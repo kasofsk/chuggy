@@ -335,8 +335,6 @@ async function polled(
       held,
       wanted: 0,
       wantedSessions,
-      readsSessions: true,
-      readsRuntime: true,
     },
     terms,
   );
@@ -1018,19 +1016,6 @@ test("only a poll that could take a session marks a runner live, and a member's 
   const runs = await personal(partition, member);
   const mine = async () => (await standing()).mine;
   assert.equal(await mine(), "Offline");
-  await workerPoolPoll(
-    ports,
-    runs,
-    {
-      held: [],
-      wanted: 1,
-      wantedSessions: 1,
-      readsSessions: false,
-      readsRuntime: false,
-    },
-    settings,
-  );
-  assert.equal(await mine(), "Offline", "a release without sessions");
   await polled(runs, 0);
   assert.equal(await mine(), "Offline", "a runner with no room");
   await polled({ ...runs, principal: principal("stale") }, 1);

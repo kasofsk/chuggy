@@ -441,31 +441,6 @@ test("a poll that says its room for sessions as no count is refused, and one tha
   }
 });
 
-test("a pool naming a release from before sessions is answered without a list of them, whatever room it says it has", async () => {
-  const recorded = calls();
-  const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
-    method: "GET",
-    url: `${polling(["live", "gone"])}&wantedSessions=2`,
-    headers: { ...speaking, [workerContractHeader]: "1.2.0" },
-  });
-  assert.equal(answered.statusCode, 200);
-  assert.deepEqual(answered.json(), {
-    assignments: [
-      {
-        assignment: "minted-2",
-        capabilities: ["Platform:Linux:Amd64"],
-        image: published,
-        cpuMillis: 500,
-        memoryMib: 256,
-        deadlineSecs: 600,
-        callbackUrl: "https://plane.invalid/v1/ticket-execution",
-        bearer: "minted-3",
-      },
-    ],
-    stop: ["gone"],
-  });
-});
-
 test("a pool already at its bound still polls and is answered with control alone", async () => {
   const recorded = calls();
   const answered = await createPoolPlaneApp(plane(recorded.ports)).inject({
@@ -611,7 +586,7 @@ const unreleased = `${String(workerContractAccepted.max.major)}.${String(workerC
 test("a pool naming no release, one below the plane's floor or one later than the plane's is refused at the poll and at every settlement, before any port", async () => {
   const recorded = calls();
   const app = createPoolPlaneApp(plane(recorded.ports));
-  for (const offered of [undefined, "1.0.0", "1.1.0", unreleased]) {
+  for (const offered of [undefined, "1.0.0", "1.2.0", "1.6.0", unreleased]) {
     const headers = {
       authorization: `Bearer ${poolToken}`,
       ...(offered === undefined ? {} : { [workerContractHeader]: offered }),
@@ -632,7 +607,7 @@ test("a pool naming no release, one below the plane's floor or one later than th
         action: "stop",
         reason: "UnsupportedContractVersion",
         accepted: {
-          min: "1.2",
+          min: "1.7",
           max: workerContractVersionText(workerContractAccepted.max),
         },
       });
@@ -671,30 +646,17 @@ const claims = {
   },
 } as const;
 
-test("a pool of this release is handed the runtime its claim's attempt was opened under, on the public host, and one naming the release before is handed none", async () => {
-  for (const [release, handed] of [
-    [workerContractRelease, runtimePublished],
-    ["1.6.0", undefined],
-  ] as const) {
-    const recorded = calls();
-    const answered = await createPoolPlaneApp(
-      plane({ ...recorded.ports, claim: () => Promise.resolve(claims.pinned) }),
-    ).inject({
-      method: "GET",
-      url: polling([]),
-      headers: { ...speaking, [workerContractHeader]: release },
-    });
-    assert.equal(answered.statusCode, 200, release);
-    const [assignment] = workerPoolReconciliationSchema.parse(
-      answered.json(),
-    ).assignments;
-    assert.equal(assignment?.runtime, handed, release);
-    assert.equal(
-      Object.hasOwn(assignment ?? {}, "runtime"),
-      handed !== undefined,
-    );
-    assert.equal(assignment?.image, published, release);
-  }
+test("a pool is handed the runtime its claim's attempt was opened under, on the public host", async () => {
+  const recorded = calls();
+  const answered = await createPoolPlaneApp(
+    plane({ ...recorded.ports, claim: () => Promise.resolve(claims.pinned) }),
+  ).inject({ method: "GET", url: polling([]), headers: speaking });
+  assert.equal(answered.statusCode, 200);
+  const [assignment] = workerPoolReconciliationSchema.parse(
+    answered.json(),
+  ).assignments;
+  assert.equal(assignment?.runtime, runtimePublished);
+  assert.equal(assignment?.image, published);
 });
 
 /** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, and what a claim returns it. */
@@ -710,17 +672,12 @@ const poolReplayPolls = [
  * Every poll a pool built with `older` makes, through the names its own
  * release exports, read by its own reconciliation schema. That schema is
  * strict, so an answer naming a field it does not is one such a pool refuses
- * whole, and `sessions` is answered only to a release whose poll can ask for
- * one.
+ * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  const { wantedSessions } = older.pollQuery;
-  const polls = poolReplayPolls.filter(
-    ([, , , sessions]) => sessions === 0 || wantedSessions !== undefined,
-  );
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed a session only where its release asked for one`, async () => {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
-    for (const [what, held, wanted, sessions, claimed] of polls) {
+    for (const [what, held, wanted, sessions, claimed] of poolReplayPolls) {
       const recorded = calls();
       const ports = {
         ...recorded.ports,
@@ -730,9 +687,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),
         [older.pollQuery.wanted, String(wanted)],
-        ...(wantedSessions === undefined || sessions === 0
-          ? []
-          : [[wantedSessions, String(sessions)]]),
+        [older.pollQuery.wantedSessions, String(sessions)],
       ]);
       const answered = await createPoolPlaneApp(
         plane(ports, authority("Allow"), offering.store),
@@ -747,19 +702,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.equal(answered.statusCode, 200, what);
       const body: unknown = answered.json();
       assert.deepEqual(older.reconciliation.parse(body), body, what);
-      assert.equal(
-        Object.hasOwn(body as object, "sessions"),
-        wantedSessions !== undefined,
+      assert.deepEqual(
+        offering.made.filter((call) => (call as unknown[])[0] === "open"),
+        Array(sessions).fill(["open", "session-waiting", "minted-1"]),
         what,
       );
-      if (wantedSessions === undefined)
-        assert.deepEqual(offering.made, [], what);
-      else
-        assert.deepEqual(
-          offering.made.filter((call) => (call as unknown[])[0] === "open"),
-          Array(sessions).fill(["open", "session-waiting", "minted-1"]),
-          what,
-        );
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
     }
     for (const [field, held] of seen)
@@ -838,16 +785,6 @@ test("what a pool holds is renewed through the rows of its own kind, each kind h
     headers: speaking,
   });
   assert.equal(overSessions.statusCode, 400);
-  const unsessioned = await app.inject({
-    method: "GET",
-    url: polling(["live", "live", "live", "session-live"], 0),
-    headers: { ...speaking, [workerContractHeader]: "1.2.0" },
-  });
-  assert.equal(
-    unsessioned.statusCode,
-    400,
-    "a pool reading no sessions is held to its executions' bound alone",
-  );
 });
 
 test("a settlement of a held session reaches the session side and never the executions'", async () => {

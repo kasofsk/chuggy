@@ -835,7 +835,7 @@ test("a pool that reports holding nothing is held to what the database says it h
     ports,
     pool,
     { jobs: [], sessions: [] },
-    { wanted: 1, wantedSessions: 0, readsRuntime: true },
+    { wanted: 1, wantedSessions: 0 },
     settings,
   );
   assert.deepEqual(underReported.assignments, []);
@@ -843,7 +843,7 @@ test("a pool that reports holding nothing is held to what the database says it h
     ports,
     pool,
     { jobs: [], sessions: [] },
-    { wanted: 1, wantedSessions: 0, readsRuntime: true },
+    { wanted: 1, wantedSessions: 0 },
     { ...settings, heldMax: 2 },
   );
   assert.equal(
@@ -1057,7 +1057,7 @@ async function handedOut(
     polling(() => randomUUID()),
     pool,
     { jobs: [], sessions: [] },
-    { wanted: 1, wantedSessions: 0, readsRuntime: true },
+    { wanted: 1, wantedSessions: 0 },
     settings,
   );
   const [assignment] = answered.assignments;
