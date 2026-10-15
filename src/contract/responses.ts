@@ -1619,11 +1619,6 @@ export type ForgeRepositoriesResponse = z.infer<
  */
 export const bootstrapConfigurationName = "bootstrap";
 
-/**
- * What a project holds for one bound repository: the names the repository
- * declared into it, or the bootstrap revision its tickets are released under
- * while it declares none.
- */
 const projectRepositoryImportedSchema = z.object({
   result: z.literal("Imported"),
   count: countSchema,
@@ -1632,6 +1627,11 @@ const projectRepositoryBootstrappedSchema = z.object({
   result: z.literal("Bootstrapped"),
   revision: identitySchema,
 });
+/**
+ * What a project holds for one bound repository: the names the repository
+ * declared into it, or the bootstrap revision its tickets are released under
+ * while it declares none.
+ */
 export const projectRepositoryConfigurationsHeldSchema = z.discriminatedUnion(
   "result",
   [projectRepositoryImportedSchema, projectRepositoryBootstrappedSchema],
