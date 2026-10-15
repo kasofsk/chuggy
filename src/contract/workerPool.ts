@@ -18,6 +18,8 @@
 
 import { z } from "zod";
 
+import { workerImageFaults } from "./workerEnvironment.ts";
+
 export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
@@ -62,6 +64,13 @@ export const workerPoolAssignmentSchema = z.strictObject({
    */
   image: workerPoolImageSchema.optional(),
   /**
+   * The site's runtime image, by the host a pool pulls it from, which a job's
+   * container mounts read-only at `workerRuntimeDirectory` and starts through
+   * `workerJobCommand`. It is absent where the plane hands out no runtime, and
+   * the workload runs its image's own entrypoint.
+   */
+  runtime: workerPoolImageSchema.optional(),
+  /**
    * The size of the box, which no capability token expresses. Omit them and
    * large work lands on a small machine and dies as a process failure rather
    * than as work nobody could place.
@@ -83,11 +92,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
  * its image always named, because a session runs its site's session image and
- * never one a pool chooses. Its bearer is the session's own, which the same
- * bound admits.
+ * never one a pool chooses, and no runtime, because that image carries its
+ * own. Its bearer is the session's own, which the same bound admits.
  */
-export const workerPoolSessionAssignmentSchema =
-  workerPoolAssignmentSchema.extend({ image: workerPoolImageSchema });
+export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
+  .omit({ runtime: true })
+  .extend({ image: workerPoolImageSchema });
 
 /**
  * Both kinds of no are final for the assignment: a refusal becomes the attempt's
@@ -99,6 +109,8 @@ export const assignmentOutcomeSchema = z.discriminatedUnion("outcome", [
   z.strictObject({
     outcome: z.literal("Refused"),
     evidence: z.string().min(1).max(workerPoolEvidenceCharsMax),
+    /** Which of `workerImageFaults` stopped a job's image running it, where one did, beside the evidence a person reads. */
+    fault: z.enum(workerImageFaults).optional(),
   }),
   z.strictObject({ outcome: z.literal("Unavailable") }),
 ]);

@@ -171,9 +171,9 @@ export function postgresPersonalExecutionHolds(
             WHERE p.tenant=a.tenant AND p.project=a.project AND p.lifecycle='Active')`);
       return (updated.rowCount ?? 0) === 1;
     },
-    refuse: async (identity, assignment, evidence) => {
+    refuse: async (identity, assignment, evidence, fault) => {
       const updated =
-        await pool.query(sql`UPDATE execution_attempt a SET pool_refusal=${evidence}
+        await pool.query(sql`UPDATE execution_attempt a SET pool_refusal=${evidence},pool_refusal_fault=${fault ?? null}
         WHERE a.tenant=${identity.tenant as string} AND a.assignment=${assignment}
           AND a.personal AND a.pool=${identity.owner as string}
           AND a.pool_principal=${identity.principal as string}

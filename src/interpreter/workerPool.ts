@@ -54,6 +54,7 @@ import type {
   WorkerPoolReconciliation,
   WorkerPoolSessionAssignment,
 } from "../contract/workerPool.ts";
+import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { Principal } from "./principal.ts";
@@ -309,10 +310,12 @@ export interface WorkerPoolExecutionHolds<Identity> {
     assignment: string,
     leaseSecs: number,
   ): Promise<boolean>;
+  /** Records a refusal against the attempt it ends, with the image fault that caused it where the pool named one. */
   refuse(
     identity: Identity,
     assignment: string,
     evidence: string,
+    fault?: WorkerImageFault,
   ): Promise<boolean>;
   release(identity: Identity, assignment: string): Promise<boolean>;
   held(identity: Identity, assignment: string): Promise<boolean>;
@@ -775,6 +778,7 @@ function workerPoolSettledOn<Identity>(
       identity: Identity,
       assignment: string,
       evidence: string,
+      fault?: WorkerImageFault,
     ): Promise<boolean>;
     release(identity: Identity, assignment: string): Promise<boolean>;
   },
@@ -786,10 +790,24 @@ function workerPoolSettledOn<Identity>(
     case "Accepted":
       return settling.held(identity, assignment);
     case "Refused":
-      return settling.refuse(identity, assignment, offered.evidence);
+      return settling.refuse(
+        identity,
+        assignment,
+        offered.evidence,
+        offered.fault,
+      );
     case "Unavailable":
       return settling.release(identity, assignment);
   }
+}
+
+/** A settlement as a session's rows record it: a refusal keeps its evidence and not its fault, a session running its site's own image. */
+function workerPoolSessionSettlement(
+  offered: AssignmentOutcome,
+): AssignmentOutcome {
+  return offered.outcome === "Refused"
+    ? { outcome: "Refused", evidence: offered.evidence }
+    : offered;
 }
 
 /**
@@ -810,7 +828,7 @@ export async function workerPoolSettled(
       ports.sessions.store,
       identity,
       assignment,
-      offered,
+      workerPoolSessionSettlement(offered),
     );
   return workerPoolSettledOn(ports.assignments, identity, assignment, offered);
 }

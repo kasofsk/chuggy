@@ -386,8 +386,31 @@ test("a runner renews, settles and pulls the image of what it claimed, and anoth
   );
   assert.equal(await assignments.release(runner, released), true);
   assert.equal(await assignments.held(runner, released), false);
-  assert.equal(await assignments.refuse(runner, kept, "no node"), true);
+  assert.equal(
+    await assignments.refuse(
+      runner,
+      kept,
+      "/workspace is not writable",
+      "ImageWorkspaceUnwritable",
+    ),
+    true,
+  );
   assert.equal(await assignments.renew(runner, kept, leaseSecs), false);
+  assert.deepEqual(
+    (
+      await rig.pool.query(
+        `SELECT pool_refusal, pool_refusal_fault FROM execution_attempt
+          WHERE tenant=$1 AND assignment=$2`,
+        [project.partition.tenant, kept],
+      )
+    ).rows,
+    [
+      {
+        pool_refusal: "/workspace is not writable",
+        pool_refusal_fault: "ImageWorkspaceUnwritable",
+      },
+    ],
+  );
 });
 
 test("a runner's room is its own across every project it serves", async () => {

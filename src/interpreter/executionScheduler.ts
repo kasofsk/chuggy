@@ -92,6 +92,10 @@
 
 import type { WorkTaskDocument } from "../contract/workerTask.ts";
 import { placementRoutes, placementRouteSources } from "../contract/rosters.ts";
+import {
+  workerImageFaults,
+  type WorkerImageFault,
+} from "../contract/workerEnvironment.ts";
 import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
@@ -562,7 +566,11 @@ export const allAttemptStates: readonly AttemptState[] = [
  */
 export type AttemptLoss = "Lost" | "Withdrawn";
 
-/** The closed vocabulary an attempt records instead of free text, so a label is never a payload. */
+/**
+ * The closed vocabulary an attempt records instead of free text, so a label is
+ * never a payload. An image's faults are the worker contract's, which names
+ * them for the site and the runner that find them.
+ */
 export type AttemptEvidence =
   | "PolicyDenied"
   | "PolicyUnavailable"
@@ -578,7 +586,8 @@ export type AttemptEvidence =
   | "RunFailed"
   | "RunRateLimited"
   | "RunTurnsExhausted"
-  | "RunUploadRefused";
+  | "RunUploadRefused"
+  | WorkerImageFault;
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
 export const allAttemptEvidence: readonly AttemptEvidence[] = [
@@ -597,6 +606,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "RunRateLimited",
   "RunTurnsExhausted",
   "RunUploadRefused",
+  ...workerImageFaults,
 ];
 
 /**
