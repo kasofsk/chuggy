@@ -167,7 +167,10 @@ const configurationLinesSchema = z
 const configurationCommandLinesSchema = z
   .array(configurationLineSchema)
   .min(1)
-  .max(commandLinesMax);
+  .max(commandLinesMax)
+  .describe(
+    'Each line runs with CHUG_CHANGE_BASE set to the full hash of the commit the ticket\'s change started from where the worker knows it, and without it otherwise, so a line that runs only what changed, from git diff --name-only "$CHUG_CHANGE_BASE" HEAD, runs everything when it is unset.',
+  );
 
 /** A practice a stage is held to, named by its identity. */
 const configurationPracticeSchema = z.enum(allPracticeIds, {

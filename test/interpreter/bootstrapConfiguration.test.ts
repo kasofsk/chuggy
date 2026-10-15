@@ -253,9 +253,9 @@ function declaredTo(filling: Filling) {
   });
 }
 
-/** The sentence telling one bound to a sentence and a check line alike, whole. */
+/** The sentence telling one bound to a sentence and a check line alike, whole, opening its line. */
 const toldLineChars =
-  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.$/u;
+  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.(?: |$)/u;
 
 /** Each list and line filled to the most its worker is told it may hold. */
 const atEveryBound: Filling = {
@@ -518,6 +518,20 @@ test("the worker is told where the format is published, and that evaluations run
         line.includes("Check stage goes before a Review"),
     ),
   );
+});
+
+test("the worker is told its shell lines carry the commit the change started from, and to run everything without it", () => {
+  const told = briefed("Work", "PurposeInstructions");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("Each L runs with CHUG_CHANGE_BASE") &&
+        line.includes("runs everything when it is unset"),
+    ),
+  );
+  const published = JSON.stringify(configurationDocumentJsonSchema());
+  assert.ok(published.includes("CHUG_CHANGE_BASE"));
+  assert.ok(published.includes("runs everything when it is unset"));
 });
 
 /** The fields the published schema names in a configuration. */
