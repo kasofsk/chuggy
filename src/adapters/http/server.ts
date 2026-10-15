@@ -61,6 +61,10 @@ import type {
   ThreadLiveHub,
 } from "../../interpreter/threadLive.ts";
 import { projectStreamSocket, threadLiveSocket } from "./eventStream.ts";
+import {
+  configurationDocumentJsonSchema,
+  configurationDocumentSchemaMediaType,
+} from "../../contract/configurationDocument.ts";
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
   selectorHistoryOrders,
@@ -551,6 +555,16 @@ function registerContract(app: FastifyInstance): void {
         .header("cache-control", "no-cache")
         .type(nativeHttpMediaType)
         .send(nativeHttpContractDocument());
+    },
+  );
+  app.get(
+    "/api/v1/configuration-schema",
+    { config: { public: true } },
+    (_request, reply) => {
+      void reply
+        .header("cache-control", "no-cache")
+        .type(configurationDocumentSchemaMediaType)
+        .send(configurationDocumentJsonSchema());
     },
   );
 }

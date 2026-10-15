@@ -27,6 +27,7 @@ import type {
 } from "./finalizer.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
+import { configurationDocumentSchema } from "../contract/configurationDocument.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
   importRepositoryActions,
@@ -753,6 +754,13 @@ function repositoryConfigurationRevision(
   return asConfigurationRevisionId(`repository:${commit}:${name}`);
 }
 
+/** Every field a file's envelope holds, which is every field it may. */
+const repositoryConfigurationFields = Object.keys(
+  configurationDocumentSchema.shape,
+)
+  .sort()
+  .join(",");
+
 function repositoryConfigurationEnvelope(
   file: RepositoryDeclarationFile,
   repository: RepositoryId,
@@ -768,8 +776,9 @@ function repositoryConfigurationEnvelope(
     return { path: file.path, fault: "EnvelopeInvalid" };
   const record = value as Record<string, unknown>;
   if (
-    Object.keys(record).sort().join(",") !== "configuration,name,version" ||
-    record["version"] !== 1
+    Object.keys(record).sort().join(",") !== repositoryConfigurationFields ||
+    !configurationDocumentSchema.shape.version.safeParse(record["version"])
+      .success
   )
     return { path: file.path, fault: "EnvelopeInvalid" };
   const name = asRepositoryConfigurationName(record["name"]);

@@ -10,6 +10,7 @@ import {
   type ConfigurationOverrides,
 } from "../contract/configurationOverrides.ts";
 import {
+  configurationCanonicalCharsMax,
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
@@ -126,7 +127,11 @@ export function asConfigurationRevisionId(
 export function asCanonicalConfiguration(
   value: string,
 ): CanonicalConfiguration {
-  const bounded = boundedText(value, "canonical configuration", 65_536);
+  const bounded = boundedText(
+    value,
+    "canonical configuration",
+    configurationCanonicalCharsMax,
+  );
   const parsed: unknown = JSON.parse(bounded);
   const canonical = canonicalJson(parsed);
   if (canonical !== bounded)
@@ -161,17 +166,8 @@ function releaseDocumentReadiness(
   brief: ReleaseBrief | undefined,
 ): ReleaseConfigurationReadiness {
   const authored = authoredTaskConfigurationReadiness(value);
-  if (
-    typeof value !== "object" ||
-    value === null ||
-    Array.isArray(value) ||
-    (value as Record<string, unknown>)["version"] !== 1 ||
-    typeof (value as Record<string, unknown>)["image"] !== "string" ||
-    (value as Record<string, unknown>)["image"] === "" ||
-    !executionRequirementConfigurationIsValid(value)
-  ) {
+  if (!executionRequirementConfigurationIsValid(value))
     return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
-  }
   if (authored.readiness === "Incomplete") return authored;
   if (
     authored.configuration.worker === undefined &&

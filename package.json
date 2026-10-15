@@ -14,6 +14,7 @@
     "@ts-safeql/eslint-plugin": "^5.4.1",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
+    "ajv": "^8.20.0",
     "dependency-cruiser": "^18.2.0",
     "eslint": "^10.8.1",
     "jscpd": "5.0.5",

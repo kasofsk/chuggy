@@ -52,6 +52,7 @@
   "ticketLandings": "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, AwaitingApproval while a person has an approval open, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
   "routes": {
     "contract": "/api/v1/contract",
+    "configurationSchema": "/api/v1/configuration-schema",
     "installation": "/api/v1/installation",
     "forgeApps": "/api/v1/forge/github",
     "forgeAuthorizations": "/api/v1/tenants/:tenant/forge-authorizations",

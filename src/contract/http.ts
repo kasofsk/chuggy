@@ -452,6 +452,7 @@ export const threadWakesPerPassMax = 64;
 
 export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
+  configurationSchema: `${nativeHttpBasePath}/configuration-schema`,
   installation: `${nativeHttpBasePath}/installation`,
   forgeApps: `${nativeHttpBasePath}/forge/github`,
   forgeAuthorizations: `${nativeHttpBasePath}/tenants/:tenant/forge-authorizations`,

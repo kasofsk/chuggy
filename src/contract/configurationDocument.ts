@@ -1,0 +1,449 @@
+/**
+ * The document a repository declares one configuration in: a file directly in
+ * `.chug/configurations/` holding a configuration and the name it is declared
+ * under.
+ *
+ * THE IMPORTER READS A FILE THROUGH THESE SCHEMAS, and what the API publishes
+ * is the JSON Schema zod induces from them, so the format an author is shown
+ * and the one a file is held to are one statement rather than two that drift.
+ *
+ * A RULE JSON SCHEMA CANNOT STATE IS STILL HELD, and the description of the
+ * part it constrains says so. A rule of one value that zod can check but not
+ * emit is a refinement here; a rule across a configuration's parts, its
+ * encoding or the directory's files is the importer's. Either way the
+ * published schema accepts more than an import does and never less.
+ *
+ * A LINE, A LIST AND A PRACTICE ARE REFUSED HERE AND NAMED BY THE IMPORTER:
+ * the message of the check that refuses one is the fault an import reports,
+ * which it reports only once every part of the document has its shape.
+ *
+ * AN OBJECT DROPS A FIELD IT HAS NO PLACE FOR, except the configuration, which
+ * keeps one as written, and the envelope, a stage that runs commands and the
+ * execution requirements, which refuse one.
+ */
+
+import { z } from "zod";
+
+import {
+  configurationCanonicalCharsMax,
+  repositoryConfigurationNameCharsMax,
+} from "./http.ts";
+import {
+  briefingLineCharsMax,
+  commandLinesMax,
+  filesystemAccesses,
+} from "./workerTask.ts";
+
+/** The one envelope version this tree reads. */
+export const configurationDocumentVersion = 1;
+
+/** The one configuration version a release reads. */
+export const releaseConfigurationVersion = 1;
+
+/** The directory an import reads, from the repository root. */
+export const repositoryConfigurationRoot = ".chug/configurations/";
+
+/** The most lines one authored list may carry. */
+export const briefingLinesMax = 8;
+
+/** The most evaluation stages one configuration lists. */
+export const evaluationBlocksMax = 64;
+
+/** The most entries a worker's arguments, its setup or its files hold. */
+const workerEntriesMax = 64;
+
+/** The longest content one worker file holds. */
+const workerContentCharsMax = 65_536;
+
+/** The longest model a Codex worker names, in UTF-16 code units, which bounds its code points too. */
+const workerModelCodeUnitsMax = 128;
+
+/** Every accepted practice identity in stable rendering order. */
+export const allPracticeIds = [
+  "RegressionCoverage",
+  "ChangedCallPaths",
+  "AcceptanceCriteria",
+] as const;
+export type PracticeId = (typeof allPracticeIds)[number];
+
+/** Every operating system a platform names, so a suite iterates rather than restates. */
+export const allOperatingSystems = ["Linux", "MacOS"] as const;
+
+/** Every architecture a platform names, so a suite iterates rather than restates. */
+export const allArchitectures = ["Amd64", "Arm64"] as const;
+
+/** Every execution capability, so a suite iterates rather than restates. */
+export const allExecutionCapabilities = [
+  "Agent:Claude",
+  "Agent:Codex",
+] as const;
+
+/** Every driver a native requirement names. */
+const allNativeDrivers = [
+  "XcodeBuild",
+  "XcodeTesting",
+  "IosSimulatorTesting",
+] as const;
+
+/** The faults a check in this document names by its message, which an import reports once every shape holds. */
+export const configurationContentFaults = [
+  "EmptyBrief",
+  "UnknownPractice",
+  "DuplicatePractice",
+  "EmptyLine",
+  "TextTooLong",
+  "TextUnreadable",
+  "TooManyLines",
+] as const;
+export type ConfigurationContentFault =
+  (typeof configurationContentFaults)[number];
+
+/**
+ * A line a briefing can print: no control character and no half of a pair.
+ * Under a `u` pattern the surrogate range matches a lone surrogate only, as it
+ * does in a validator that reads code points.
+ */
+export const configurationLinePattern =
+  // eslint-disable-next-line no-control-regex
+  /^[^\u0000-\u001f\u007f-\u009f\ud800-\udfff]*$/u;
+
+/** One line of an authored list: one criterion, constraint, instruction or command. */
+export const configurationLineSchema = z
+  .string()
+  .min(1, { error: "EmptyLine" })
+  .max(briefingLineCharsMax, { error: "TextTooLong" })
+  .regex(configurationLinePattern, { error: "TextUnreadable" });
+
+/** One authored list of lines. */
+const configurationLinesSchema = z
+  .array(configurationLineSchema)
+  .max(briefingLinesMax, { error: "TooManyLines" });
+
+/** The lines a stage that runs commands names. */
+const configurationCommandLinesSchema = z
+  .array(configurationLineSchema)
+  .min(1)
+  .max(commandLinesMax);
+
+/** A practice a stage is held to, named by its identity. */
+const configurationPracticeSchema = z.enum(allPracticeIds, {
+  error: (issue) =>
+    typeof issue.input === "string" ? "UnknownPractice" : undefined,
+});
+
+/** The practices one stage is held to, each at most once. */
+export const configurationPracticesSchema = z
+  .array(configurationPracticeSchema)
+  .max(allPracticeIds.length, { error: "TooManyLines" })
+  .superRefine(
+    (practices, context) => {
+      practices.forEach((practice, index) => {
+        if (practices.indexOf(practice) !== index)
+          context.addIssue({
+            code: "custom",
+            message: "DuplicatePractice",
+            path: [index],
+          });
+      });
+    },
+    { when: (payload) => Array.isArray(payload.value) },
+  )
+  .describe("The importer also holds that each is named at most once.");
+
+type ConfigurationDocumentDefined<Value> = {
+  [
+    Key in keyof Value as undefined extends Value[Key] ? never : Key
+  ]: Value[Key];
+} & {
+  [Key in keyof Value as undefined extends Value[Key] ? Key : never]?: Exclude<
+    Value[Key],
+    undefined
+  >;
+};
+
+/** Strips unknown keys and omits optional fields whose supplied value is undefined. */
+function configurationDocumentObject<Shape extends z.ZodRawShape>(
+  shape: Shape,
+) {
+  return z
+    .object(shape)
+    .transform(
+      (value) =>
+        Object.fromEntries(
+          Object.entries(value).filter(([, field]) => field !== undefined),
+        ) as ConfigurationDocumentDefined<typeof value>,
+    );
+}
+
+/** What a stage asks to narrow of what its worker may reach. */
+export const configurationAuthoritySchema = configurationDocumentObject({
+  tools: configurationLinesSchema.optional(),
+  credentials: configurationLinesSchema.optional(),
+  network: z.boolean().optional(),
+  filesystem: z.enum(filesystemAccesses).optional(),
+  mayCompleteTask: z.boolean().optional(),
+});
+
+const configurationPurposeShape = {
+  instructions: configurationLinesSchema,
+  authority: configurationAuthoritySchema.optional(),
+};
+
+/** What one role is told beyond the shared brief, and what its stage asks to narrow. */
+export const configurationPurposeSchema = configurationDocumentObject(
+  configurationPurposeShape,
+);
+
+/** A work stage that briefs an agent. */
+export const configurationBriefedWorkSchema = configurationDocumentObject({
+  ...configurationPurposeShape,
+  commands: z.never().exactOptional(),
+});
+
+/** A work stage the worker runs itself, at the repository root. */
+export const configurationCommandedWorkSchema = z.strictObject({
+  commands: configurationCommandLinesSchema,
+});
+
+/** An evaluation stage that briefs an agent, a reviewer unless it says Check. */
+export const configurationAgentEvaluationSchema = configurationDocumentObject({
+  ...configurationPurposeShape,
+  practices: configurationPracticesSchema,
+  purpose: z.enum(["Review", "Check"]).default("Review"),
+  checks: z.never().exactOptional(),
+});
+
+/** A check stage the worker runs itself, at the repository root, failing on a nonzero exit. */
+export const configurationCommandedEvaluationSchema = z.strictObject({
+  purpose: z.literal("Check"),
+  checks: configurationCommandLinesSchema,
+});
+
+/** The evaluation stages, in the order they run. */
+export const configurationEvaluationsSchema = z
+  .array(
+    z.union([
+      configurationAgentEvaluationSchema,
+      configurationCommandedEvaluationSchema,
+    ]),
+  )
+  .min(1)
+  .max(evaluationBlocksMax)
+  .describe(
+    "The stages a change is held to, run in the order listed; a stage that fails ends evaluation.",
+  );
+
+const configurationWorkerArgumentsSchema = z
+  .array(z.string())
+  .max(workerEntriesMax);
+
+/** The one agent a worker runs a briefed stage as. */
+export const configurationWorkerModeSchema = z.discriminatedUnion("agent", [
+  z
+    .object({
+      type: z.literal("SingleAgent"),
+      agent: z.literal("Claude"),
+      arguments: configurationWorkerArgumentsSchema,
+      model: z.never().optional(),
+    })
+    .transform(({ type, agent, arguments: options }) => ({
+      type,
+      agent,
+      arguments: options,
+    })),
+  z.object({
+    type: z.literal("SingleAgent"),
+    agent: z.literal("Codex"),
+    arguments: configurationWorkerArgumentsSchema,
+    model: z
+      .string()
+      .min(1)
+      .max(workerModelCodeUnitsMax)
+      .refine((model) => model.length <= workerModelCodeUnitsMax)
+      .describe(
+        `The importer also holds that it is at most ${String(workerModelCodeUnitsMax)} UTF-16 code units.`,
+      ),
+  }),
+]);
+
+const configurationWorkerFields = {
+  setup: z.array(z.string()).max(workerEntriesMax),
+  files: z
+    .array(
+      z.object({
+        path: z.string(),
+        content: z.string().max(workerContentCharsMax),
+      }),
+    )
+    .max(workerEntriesMax),
+};
+
+/** Whether a value is a list of strings, which is what `arguments` beside a mode may not be. */
+function configurationWorkerArgumentsListed(value: unknown): boolean {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+/** The worker a configuration predating modes names: its agent's arguments and no mode. */
+export const configurationLegacyWorkerSchema = z.object({
+  arguments: configurationWorkerArgumentsSchema,
+  ...configurationWorkerFields,
+  mode: z.never().exactOptional(),
+});
+
+/** The worker a configuration names by its mode. */
+export const configurationModeWorkerSchema = z
+  .object({
+    mode: configurationWorkerModeSchema,
+    arguments: z
+      .unknown()
+      .refine((value) => !configurationWorkerArgumentsListed(value))
+      .optional()
+      .describe(
+        "Ignored beside mode. The importer also holds that it is not a list of strings.",
+      ),
+    ...configurationWorkerFields,
+  })
+  .transform(({ mode, setup, files }) => ({ mode, setup, files }));
+
+/** How the worker runs a briefed stage, and what it installs before every stage. */
+export const configurationWorkerSchema = z
+  .union([configurationLegacyWorkerSchema, configurationModeWorkerSchema])
+  .describe(
+    "The importer also holds that it is present unless work names commands and evaluations lists only stages naming checks.",
+  );
+
+/** The claim a ticket makes about itself, which every role is briefed with unchanged. */
+export const configurationBriefSchema = z
+  .object({
+    motivation: configurationLinesSchema,
+    acceptanceCriteria: configurationLinesSchema,
+    constraints: configurationLinesSchema,
+  })
+  .refine(
+    (brief) =>
+      brief.motivation.length > 0 || brief.acceptanceCriteria.length > 0,
+    { error: "EmptyBrief" },
+  )
+  .describe(
+    "The importer also holds that motivation and acceptanceCriteria are not both empty.",
+  );
+
+/** Every field of the task configuration, in the order an import names the first fault in. */
+const configurationTaskShape = {
+  brief: configurationBriefSchema,
+  practices: configurationPracticesSchema,
+  work: z.union([
+    configurationBriefedWorkSchema,
+    configurationCommandedWorkSchema,
+  ]),
+  review: configurationPurposeSchema,
+  evaluations: configurationEvaluationsSchema.optional(),
+  authority: configurationAuthoritySchema.optional(),
+  worker: configurationWorkerSchema.optional(),
+};
+
+/** The authored part of a configuration, which briefs every task a revision runs. */
+export const configurationTaskSchema = configurationDocumentObject(
+  configurationTaskShape,
+);
+
+const configurationPlatformShape = {
+  operatingSystem: z.enum(allOperatingSystems),
+  architecture: z.enum(allArchitectures),
+};
+
+/** Where one task runs, in the shape and key order every reader compares it in. */
+export const executionRequirementSchema = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("Container"),
+    ...configurationPlatformShape,
+    image: z.string().min(1),
+  }),
+  z.strictObject({
+    mode: z.literal("ContainerCapability"),
+    ...configurationPlatformShape,
+    capabilities: z
+      .array(z.enum(allExecutionCapabilities))
+      .min(1)
+      .refine(
+        (capabilities) => new Set(capabilities).size === capabilities.length,
+      )
+      .describe("The importer also holds that each is named at most once."),
+  }),
+  z.strictObject({
+    mode: z.literal("Native"),
+    architecture: z.enum(allArchitectures),
+    driver: z.enum(allNativeDrivers),
+    xcodeVersionMin: z.number().int().positive(),
+    sdkVersionMin: z.number().int().positive(),
+  }),
+]);
+
+/** A key of `taskKindDefaults`: the work, every evaluation, or one evaluation stage by its position from one. */
+export const executionTaskKindKeyPattern =
+  /^(?:Work|Evaluation|Evaluation:[1-9][0-9]*)$/u;
+
+/** The requirements a configuration's tasks run under, each default narrowing the one above it. */
+export const executionRequirementsSchema = z
+  .strictObject({
+    platformDefault: executionRequirementSchema,
+    platformDefaultVersion: z.number().int().min(1),
+    ticketDefault: executionRequirementSchema.optional(),
+    taskKindDefaults: z
+      .record(
+        z.string().regex(executionTaskKindKeyPattern),
+        executionRequirementSchema,
+      )
+      .optional(),
+  })
+  .describe(
+    'The importer also holds two rules here. platformDefault is {"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":image} with the configuration\'s own image, or, where worker.mode names an agent, a ContainerCapability requirement on Linux and Amd64. ticketDefault and every taskKindDefaults entry refine platformDefault: the same mode and architecture, the same operating system where the mode names one, every capability platformDefault names, and for Native the same driver and no lower minimum versions.',
+  );
+
+/** What a release reads before any task field: the version, the image, and where tasks run. */
+export const releaseConfigurationHeaderSchema = z.object({
+  version: z.literal(releaseConfigurationVersion),
+  image: z.string().min(1),
+  executionRequirements: executionRequirementsSchema.optional(),
+});
+
+/** The configuration a release reads, which keeps a field it does not name as written. */
+export const releaseConfigurationSchema = z
+  .looseObject({
+    ...releaseConfigurationHeaderSchema.shape,
+    ...configurationTaskShape,
+  })
+  .describe(
+    `What a ticket runs on. A field not named here is kept as written. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
+  );
+
+/** The name a configuration is declared under, which is one URL path segment exactly as written. */
+export const repositoryConfigurationNameSchema = z
+  .string()
+  .max(repositoryConfigurationNameCharsMax)
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u)
+  .describe(
+    `The importer also holds that no other file in ${repositoryConfigurationRoot} declares it.`,
+  );
+
+/** One file in the directory an import reads, which refuses a field it has no place for. */
+export const configurationDocumentSchema = z
+  .strictObject({
+    version: z.literal(configurationDocumentVersion),
+    name: repositoryConfigurationNameSchema,
+    configuration: releaseConfigurationSchema,
+  })
+  .meta({
+    title: "chuggy repository configuration",
+    description: `One file directly in ${repositoryConfigurationRoot} whose name ends in .json. The importer also holds the directory to a bound on how many files it holds and each file to one on its size.`,
+  });
+
+/** The media type the JSON Schema of one file is served as. */
+export const configurationDocumentSchemaMediaType = "application/schema+json";
+
+/** The JSON Schema of one file, as `GET /api/v1/configuration-schema` answers with it. */
+export function configurationDocumentJsonSchema(): z.core.JSONSchema.BaseSchema {
+  return z.toJSONSchema(configurationDocumentSchema, { io: "input" });
+}
