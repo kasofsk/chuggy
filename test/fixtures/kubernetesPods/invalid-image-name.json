@@ -1,0 +1,173 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "capture-invalid-name",
+    "namespace": "chuggy-work"
+  },
+  "spec": {
+    "initContainers": [
+      {
+        "name": "chuggy-runtime",
+        "image": "docker.io/library/stand-in-runtime:1"
+      },
+      {
+        "name": "postgres",
+        "image": "docker.io/library/postgres:18-alpine"
+      }
+    ],
+    "containers": [
+      {
+        "name": "worker",
+        "image": "docker.io/library/Not_A:Valid:Reference",
+        "command": ["/bin/sh", "/opt/chuggy/check.sh"]
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-15T06:50:24Z",
+        "status": "True",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-15T06:50:27Z",
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-15T06:50:23Z",
+        "message": "containers with unready status: [worker]",
+        "reason": "ContainersNotReady",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-15T06:50:23Z",
+        "message": "containers with unready status: [worker]",
+        "reason": "ContainersNotReady",
+        "status": "False",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-15T06:50:23Z",
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "image": "docker.io/library/Not_A:Valid:Reference",
+        "imageID": "",
+        "lastState": {},
+        "name": "worker",
+        "ready": false,
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "waiting": {
+            "message": "Failed to apply default image tag \"docker.io/library/Not_A:Valid:Reference\": couldn't parse image name \"docker.io/library/Not_A:Valid:Reference\": invalid reference format: repository name (library/Not_A) must be lowercase",
+            "reason": "InvalidImageName"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/run/chuggy/worker-capability/bearer",
+            "name": "worker-capability",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/workspace",
+            "name": "worker-workspace"
+          },
+          {
+            "mountPath": "/var/run/chuggy/minted",
+            "name": "minted-credential"
+          },
+          {
+            "mountPath": "/var/run/chuggy/credentials",
+            "name": "worker-credential-0",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/chuggy",
+            "name": "chuggy-runtime",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "172.17.0.4",
+    "hostIPs": [
+      {
+        "ip": "172.17.0.4"
+      }
+    ],
+    "initContainerStatuses": [
+      {
+        "containerID": "containerd://99baccb6b6c0b0c5d4b22376f391d79ad22b23695c39e3c71e689aebf46472c8",
+        "image": "docker.io/library/stand-in-runtime:1",
+        "imageID": "sha256:8ff236c764ef139a49faf57aa2aa2c09a339dec2b1c62b025f6061194bfb30bd",
+        "lastState": {},
+        "name": "chuggy-runtime",
+        "ready": true,
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "terminated": {
+            "containerID": "containerd://99baccb6b6c0b0c5d4b22376f391d79ad22b23695c39e3c71e689aebf46472c8",
+            "exitCode": 0,
+            "finishedAt": "2026-10-15T06:50:24Z",
+            "reason": "Completed",
+            "startedAt": "2026-10-15T06:50:24Z"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/run/chuggy/runtime",
+            "name": "chuggy-runtime"
+          }
+        ]
+      },
+      {
+        "containerID": "containerd://a7154cf2726a06e5ff4a66ae99a942b0931f3aef8ba478adc13540675b5e467f",
+        "image": "docker.io/library/postgres:18-alpine",
+        "imageID": "docker.io/library/postgres@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873",
+        "lastState": {},
+        "name": "postgres",
+        "ready": true,
+        "restartCount": 0,
+        "started": true,
+        "state": {
+          "running": {
+            "startedAt": "2026-10-15T06:50:24Z"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/lib/postgresql",
+            "name": "sidecar-postgres"
+          }
+        ]
+      }
+    ],
+    "phase": "Pending",
+    "podIP": "10.42.1.14",
+    "podIPs": [
+      {
+        "ip": "10.42.1.14"
+      }
+    ],
+    "qosClass": "Burstable",
+    "startTime": "2026-10-15T06:50:23Z"
+  }
+}
