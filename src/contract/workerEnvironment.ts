@@ -1,6 +1,13 @@
 /**
  * The names a pod's image reads its environment by, what the two it resolves a
  * repository from carry, and where it writes a credential the plane minted.
+ *
+ * And how a job's container is started where its site hands it a runtime,
+ * whatever image the job names: chuggy's own tree mounted read-only, whose
+ * check runs in the job's image before the worker does. Each of
+ * `workerImageFaults` is named for what an image lacks, so an attempt ended
+ * under one tells the person and the agent reading it what to change rather
+ * than only that it failed.
  */
 
 import { z } from "zod";
@@ -57,3 +64,45 @@ export const sessionConfigDirectoryVariable = "CLAUDE_CONFIG_DIR";
  * one path and nothing either reads would tell it the other had moved.
  */
 export const mintedCredentialDirectory = "/var/run/chuggy/minted";
+
+/** Where a job's container finds chuggy's runtime, mounted there read-only whatever image the job names. */
+export const workerRuntimeDirectory = "/opt/chuggy";
+
+/**
+ * What a job's container runs in place of its image's own entrypoint: the
+ * runtime's check of the image, which starts the worker once the image passes
+ * it and otherwise exits with the status of the fault it found.
+ */
+export const workerJobCommand = [
+  "/bin/sh",
+  `${workerRuntimeDirectory}/check.sh`,
+] as const;
+
+/**
+ * Why the image a job named cannot run it, in the order a job meets each: it
+ * is pulled, its shell starts the check, the runtime's binaries load against
+ * its system libraries, and git, a writable home and a writable workspace are
+ * there. The site tells the first two from the pull and the start failing, and
+ * the check tells the rest by `workerImageFaultStatuses`.
+ */
+export const workerImageFaults = [
+  "ImageUnpullable",
+  "ImageLacksShell",
+  "ImageLibcUnsupported",
+  "ImageLacksGit",
+  "ImageHomeUnwritable",
+  "ImageWorkspaceUnwritable",
+] as const;
+export type WorkerImageFault = (typeof workerImageFaults)[number];
+
+/**
+ * The status the runtime's check exits with for each fault it finds itself,
+ * none of them one a shell gives a script that failed, a command it could not
+ * start or one a signal killed.
+ */
+export const workerImageFaultStatuses = {
+  ImageLibcUnsupported: 81,
+  ImageLacksGit: 82,
+  ImageHomeUnwritable: 83,
+  ImageWorkspaceUnwritable: 84,
+} as const satisfies Readonly<Partial<Record<WorkerImageFault, number>>>;

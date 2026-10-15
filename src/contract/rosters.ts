@@ -14,6 +14,8 @@
  * third, the same suite holding that a landing parses at every member.
  */
 
+import { workerImageFaults } from "./workerEnvironment.ts";
+
 export const phaseRoster = [
   "Pending",
   "Work",
@@ -187,7 +189,10 @@ export const attemptStates = [
 ] as const;
 export type AttemptState = (typeof attemptStates)[number];
 
-/** Why an attempt ended without a result, restating the interpreter's own list. */
+/**
+ * Why an attempt ended without a result, restating the interpreter's own list,
+ * whose image faults are the worker contract's own.
+ */
 export const attemptEvidences = [
   "PolicyDenied",
   "PolicyUnavailable",
@@ -204,6 +209,7 @@ export const attemptEvidences = [
   "RunRateLimited",
   "RunTurnsExhausted",
   "RunUploadRefused",
+  ...workerImageFaults,
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 

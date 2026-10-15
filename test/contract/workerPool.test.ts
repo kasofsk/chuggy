@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { sessionBearerPattern } from "../../src/contract/sessionPlane.ts";
+import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import {
   assignmentOutcomeSchema,
   workerPoolAssignmentSchema,
@@ -69,6 +70,34 @@ test("an assignment is bounded in every member a pool could grow", () => {
     assert.equal(workerPoolAssignmentSchema.safeParse(invalid).success, false);
 });
 
+test("an assignment's runtime is a reference bounded as its image is, and an assignment without one is read as before", () => {
+  const image = `registry.invalid/project@sha256:${"a".repeat(64)}`;
+  const runtime = `registry.invalid/chuggy/runtime@sha256:${"b".repeat(64)}`;
+  const injected = { ...assignment, image, runtime };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(injected), injected);
+  assert.deepEqual(workerPoolAssignmentSchema.parse({ ...assignment, image }), {
+    ...assignment,
+    image,
+  });
+  for (const invalid of [
+    { ...injected, runtime: "" },
+    { ...injected, runtime: "r".repeat(workerImageCharsMax + 1) },
+    { ...injected, runtime: 1 },
+  ])
+    assert.equal(
+      workerPoolAssignmentSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid).slice(0, 80),
+    );
+  assert.equal(
+    workerPoolAssignmentSchema.safeParse({
+      ...injected,
+      runtime: "r".repeat(workerImageCharsMax),
+    }).success,
+    true,
+  );
+});
+
 test("a session assignment is an assignment that always names its image, under a session's own bearer", () => {
   const session = {
     ...assignment,
@@ -82,6 +111,7 @@ test("a session assignment is an assignment that always names its image, under a
     { ...session, image: undefined },
     { ...session, image: "" },
     { ...session, lease: 30 },
+    { ...session, runtime: "registry.invalid/chuggy/runtime:1" },
   ])
     assert.equal(
       workerPoolSessionAssignmentSchema.safeParse(invalid).success,
@@ -107,6 +137,29 @@ test("an outcome tells a settled no from an unavailable one, which carries nothi
         .success,
       false,
       JSON.stringify(extra),
+    );
+});
+
+test("a refusal may name the image fault that caused it, from the contract's roster alone, and still carries its evidence", () => {
+  for (const fault of workerImageFaults) {
+    const refused = { outcome: "Refused", evidence: "no git", fault } as const;
+    assert.deepEqual(assignmentOutcomeSchema.parse(refused), refused);
+  }
+  assert.deepEqual(
+    assignmentOutcomeSchema.parse({ outcome: "Refused", evidence: "busy" }),
+    { outcome: "Refused", evidence: "busy" },
+  );
+  for (const invalid of [
+    { outcome: "Refused", fault: "ImageLacksGit" },
+    { outcome: "Refused", evidence: "no git", fault: "ImageLacksSed" },
+    { outcome: "Refused", evidence: "no git", fault: "" },
+    { outcome: "Unavailable", fault: "ImageLacksGit" },
+    { outcome: "Accepted", fault: "ImageLacksGit" },
+  ])
+    assert.equal(
+      assignmentOutcomeSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid),
     );
 });
 
