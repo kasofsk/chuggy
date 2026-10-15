@@ -940,7 +940,7 @@ function processCluster(reachable: boolean, workerPod: unknown): string {
     const asked = [];
     const sessionTasks = [];
     const half = (init) => {
-      const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
+      const named = init && typeof init.body === 'string' ? JSON.parse(init.body).metadata.name : '';
       if (named.startsWith(cluster.podNamePrefix)) return ' worker';
       if (named.startsWith(sessionSite.podNamePrefix)) return ' session';
       return '';
@@ -948,7 +948,12 @@ function processCluster(reachable: boolean, workerPod: unknown): string {
     const fetcher = (input, init) => {
       asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
+      if (new URL(String(input)).host === new URL(cluster.workerPlaneUrl).host)
+        return Promise.reject(new Error('dropped by the worker plane ingress'));
       const path = new URL(String(input)).pathname;
+      if ((!init || (init.method || 'GET') === 'GET')
+          && path.includes('/secrets/' + cluster.podNamePrefix))
+        return Promise.resolve(Response.json({ data: { bearer: btoa('secret-one') } }));
       if ((!init || (init.method || 'GET') === 'GET')
           && path.includes('/pods/' + sessionSite.podNamePrefix))
         return Promise.resolve(Response.json({ status: { phase: 'Failed' } }));
@@ -1005,6 +1010,7 @@ function processExecutionFakes(observed: boolean): string {
       attemptInvoked: async () => true,
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
       attemptEnded: async () => true,
+      blockExecution: async () => ({ blocked: 'Blocked', operation: 'operation-one' }),
     };
     const configuration = ${JSON.stringify(configuration)};
   `;
@@ -1262,17 +1268,15 @@ test("a session pod the cluster says failed ends its attempt on the turn's own r
  * read, the pod is deleted, and stderr names the attempt, the pod and the copy.
  */
 test("a worker pod whose runtime copy failed is withdrawn and told on stderr", async () => {
-  const pod: unknown = JSON.parse(
-    readFileSync(
-      new URL(
-        "../fixtures/kubernetesPods/runtime-copy-failed.json",
-        import.meta.url,
-      ),
-      "utf8",
-    ),
-  );
   const found = JSON.parse(
-    await schedulerProgram(processProgram(true, {}, false, pod)),
+    await schedulerProgram(
+      processProgram(
+        true,
+        {},
+        false,
+        processCapturedPod("runtime-copy-failed"),
+      ),
+    ),
   ) as ProcessRan;
   const read = found.asked.find(
     (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
@@ -1284,6 +1288,47 @@ test("a worker pod whose runtime copy failed is withdrawn and told on stderr", a
     found.told.filter((line) => line.startsWith("execution scheduler:")),
     [
       `execution scheduler: tenant/project attempt attempt-one withdrawn, its pod failed on the site: pod ${name}: the runtime copy chuggy-runtime ended Error with status 1\n`,
+    ],
+  );
+});
+
+/** One pod document a kubelet reported, by its fixture's name. */
+function processCapturedPod(name: string): unknown {
+  return JSON.parse(
+    readFileSync(
+      new URL(`../fixtures/kubernetesPods/${name}.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
+/**
+ * What happens while the worker plane does not admit the scheduler: the image
+ * fault still blocks and the pod is still deleted, and the text that could not
+ * be stored is a line on stderr naming the attempt and the fault.
+ */
+test("an image fault whose text the worker plane never takes still blocks, and says so on stderr", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      processProgram(true, {}, false, processCapturedPod("lacks-git")),
+    ),
+  ) as ProcessRan;
+  const read = found.asked.find(
+    (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
+  );
+  const name = read?.split("/pods/")[1] ?? "";
+  assert.ok(name.length > 0);
+  assert.ok(found.asked.includes(`GET ${namespaceUrl}/secrets/${name}`));
+  assert.ok(
+    found.asked.includes(
+      "PUT https://worker-plane.invalid/v1/artifacts/.chuggy/worker-error.txt",
+    ),
+  );
+  assert.ok(found.asked.includes(`DELETE ${namespaceUrl}/pods/${name}`));
+  assert.deepEqual(
+    found.told.filter((line) => line.startsWith("execution scheduler:")),
+    [
+      "execution scheduler: tenant/project attempt attempt-one blocked ImageLacksGit, and its error text was not stored: the worker plane could not be reached\n",
     ],
   );
 });
