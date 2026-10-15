@@ -24,12 +24,15 @@
 # restarted, because a gate that pays a cold start on every run is a gate that
 # gets bypassed.
 #
-# ITS DATA LIVES IN MEMORY AND IS NEVER SYNCED. Every run migrates a template
-# and clones it once per suite, so a server writing durably to disk writes the
-# schema over and over for data no one keeps, and a day of runs wears the disk
-# and leaves a volume behind each time the container is replaced. The data
-# directory is a tmpfs and fsync, synchronous commit and full-page writes are
-# off: what a crash would lose is a run's scratch, which a crash ends anyway.
+# ITS DATA LIVES IN MEMORY AND IS NEVER SYNCED. A check-postgres run migrates a
+# template and clones it once per suite, so a server writing durably to disk
+# writes the schema over and over for data no one keeps, and a day of runs wears
+# the disk and leaves a volume behind each time the container is replaced. The
+# image's volume, /var/lib/postgresql from PostgreSQL 18 on, is a tmpfs, and
+# fsync, synchronous commit and full-page writes are off: what a crash would
+# lose is a run's scratch, which a crash ends anyway. An older image chosen
+# below declares its volume at /var/lib/postgresql/data, which docker still
+# mounts on the disk, so only the settings and the removal hold for it.
 #
 # EACH RUN GETS ITS OWN DATABASE inside that container, dropped when the run
 # ends via the trap the caller installs. Two runs share nothing, and a crashed
