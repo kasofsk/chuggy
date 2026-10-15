@@ -169,7 +169,7 @@ const configurationCommandLinesSchema = z
   .min(1)
   .max(commandLinesMax)
   .describe(
-    'Each line runs with CHUG_CHANGE_BASE set to the full hash of the commit the ticket\'s change started from where the worker knows it, and without it otherwise, so a line that runs only what changed, from git diff --name-only "$CHUG_CHANGE_BASE" HEAD, runs everything when it is unset.',
+    'Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket\'s change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n "${CHUG_CHANGE_BASE-}" ]; then git diff --name-only --diff-filter=d "$CHUG_CHANGE_BASE" HEAD; else git ls-files; fi.',
   );
 
 /** A practice a stage is held to, named by its identity. */
