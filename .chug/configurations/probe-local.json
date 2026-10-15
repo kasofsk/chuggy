@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "name": "probe-local",
+  "configuration": {
+    "version": 1,
+    "image": "chuggy-probe-local:dev",
+    "authority": {
+      "tools": [
+        "claude-code",
+        "shell"
+      ],
+      "credentials": [
+        "chuggy-github-worker",
+        "claude-code"
+      ],
+      "network": true,
+      "filesystem": "WriteWorkspace",
+      "mayCompleteTask": false
+    },
+    "worker": {
+      "mode": {
+        "type": "SingleAgent",
+        "agent": "Claude",
+        "arguments": [
+          "--allowedTools=Bash,Read,Glob,Grep",
+          "--model=sonnet"
+        ]
+      },
+      "setup": [],
+      "files": []
+    },
+    "brief": {
+      "motivation": [
+        "Prove that an image a runner's owner built locally, named by tag alone, runs a job on that runner."
+      ],
+      "acceptanceCriteria": [
+        "The report states the facts the ticket asks for, and the repository is unchanged."
+      ],
+      "constraints": [
+        "Change nothing in the repository and commit nothing."
+      ]
+    },
+    "practices": [
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Answer the ticket's questions by running commands, change nothing, and report what they printed."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Confirm the work changed nothing and that its report answers what the ticket asked."
+      ]
+    },
+    "evaluations": [
+      {
+        "purpose": "Check",
+        "checks": [
+          "git --version",
+          "node --version",
+          "test -z \"$(git status --porcelain)\""
+        ]
+      },
+      {
+        "purpose": "Review",
+        "instructions": [
+          "Confirm the work changed nothing and that its report answers what the ticket asked."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ]
+  }
+}

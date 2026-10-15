@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "name": "probe-public",
+  "configuration": {
+    "version": 1,
+    "image": "docker.io/library/node@sha256:14078204b6bb268c107ceff6d3c43f45a888105e5c2b18b14c32b3409d93a1b0",
+    "authority": {
+      "tools": [
+        "claude-code",
+        "shell"
+      ],
+      "credentials": [
+        "chuggy-github-worker",
+        "claude-code"
+      ],
+      "network": true,
+      "filesystem": "WriteWorkspace",
+      "mayCompleteTask": false
+    },
+    "worker": {
+      "mode": {
+        "type": "SingleAgent",
+        "agent": "Claude",
+        "arguments": [
+          "--allowedTools=Bash,Read,Glob,Grep",
+          "--model=sonnet"
+        ]
+      },
+      "setup": [],
+      "files": []
+    },
+    "brief": {
+      "motivation": [
+        "Prove that a public image no operator listed runs a job: node:24-bookworm, pinned by digest."
+      ],
+      "acceptanceCriteria": [
+        "The report states the facts the ticket asks for, and the repository is unchanged."
+      ],
+      "constraints": [
+        "Change nothing in the repository and commit nothing."
+      ]
+    },
+    "practices": [
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Answer the ticket's questions by running commands, change nothing, and report what they printed."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Confirm the work changed nothing and that its report answers what the ticket asked."
+      ]
+    },
+    "evaluations": [
+      {
+        "purpose": "Check",
+        "checks": [
+          "git --version",
+          "node --version",
+          "test -z \"$(git status --porcelain)\""
+        ]
+      },
+      {
+        "purpose": "Review",
+        "instructions": [
+          "Confirm the work changed nothing and that its report answers what the ticket asked."
+        ],
+        "practices": [
+          "AcceptanceCriteria"
+        ]
+      }
+    ]
+  }
+}
