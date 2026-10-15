@@ -81,9 +81,10 @@ export const workerJobCommand = [
 /**
  * Why the image a job named cannot run it, in the order a job meets each: it
  * is pulled, its shell starts the check, the runtime's binaries load against
- * its system libraries, and git, a writable home and a writable workspace are
- * there. The site tells the first two from the pull and the start failing, and
- * the check tells the rest by `workerImageFaultStatuses`.
+ * its system libraries, and git, a writable home, a writable workspace and a
+ * writable temporary directory are there. The site tells the first two from
+ * the pull and the start failing, and the check tells the rest by
+ * `workerImageFaultStatuses`.
  */
 export const workerImageFaults = [
   "ImageUnpullable",
@@ -92,6 +93,7 @@ export const workerImageFaults = [
   "ImageLacksGit",
   "ImageHomeUnwritable",
   "ImageWorkspaceUnwritable",
+  "ImageTmpUnwritable",
 ] as const;
 export type WorkerImageFault = (typeof workerImageFaults)[number];
 
@@ -105,4 +107,5 @@ export const workerImageFaultStatuses = {
   ImageLacksGit: 82,
   ImageHomeUnwritable: 83,
   ImageWorkspaceUnwritable: 84,
+  ImageTmpUnwritable: 85,
 } as const satisfies Readonly<Partial<Record<WorkerImageFault, number>>>;

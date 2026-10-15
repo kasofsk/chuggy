@@ -25,6 +25,7 @@ const imageFaults = [
   "ImageLacksGit",
   "ImageHomeUnwritable",
   "ImageWorkspaceUnwritable",
+  "ImageTmpUnwritable",
 ];
 
 function textArray(values: readonly string[]): string {
