@@ -186,6 +186,7 @@ export interface ExecutionRequestBundle {
     readonly targetRef?: string;
     readonly targetCommit: string;
     readonly manifests: readonly string[];
+    readonly changeBase?: string;
   };
   /** The brief's own images, read at the same gather the source observes and carried regardless of it. */
   readonly images?: readonly BriefImageReference[];

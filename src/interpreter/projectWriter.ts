@@ -689,7 +689,10 @@ async function projectWriterBriefImages(
   return resolved;
 }
 
-/** What the dispatch's own spawn runs against, which is what it just observed. */
+/**
+ * What the dispatch's own spawn runs against, which is what it just observed
+ * and where its change starts.
+ */
 function dispatchSpawnSources(
   ticket: TicketId,
   source: DispatchSource,
@@ -716,6 +719,7 @@ function dispatchSpawnSources(
         ...(source.ref === undefined ? {} : { ref: source.ref }),
       },
       manifests: [],
+      changeBase: source.commit,
     },
     ...withImages,
   };

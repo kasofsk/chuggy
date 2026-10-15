@@ -304,6 +304,7 @@ test("a source observation is gathered before a spawn bundle is materialized", a
       targetRef: "refs/heads/main",
       targetCommit: "a".repeat(40),
       manifests: [],
+      changeBase: "a".repeat(40),
     },
   );
 });
@@ -781,6 +782,9 @@ test("a brief landing elsewhere still has its work observed at the branch it hap
 /** The commit the ticket's own source row carries, which every later spawn runs at. */
 const workCommit = asGitObjectId("c".repeat(40));
 
+/** The commit the work that produced `workCommit` started from, which no work of the ticket produced. */
+const startedCommit = asGitObjectId("d".repeat(40));
+
 /**
  * The real observation over a history that answers one source row, with both
  * remote ports fatal — so a spawn that asked a remote anything would throw
@@ -808,6 +812,8 @@ function pinnedSources(sourced: number[]): ExecutionSourceObservationPort {
           commit: workCommit,
         });
       },
+      workResultBases: (_partition, _ticket, commit) =>
+        Promise.resolve(commit === workCommit ? [startedCommit] : []),
     },
   );
 }
@@ -869,6 +875,7 @@ test("an evaluation spawns at the source its ticket carries and judges the work'
     repository: "work-repository",
     targetCommit: workCommit,
     manifests: ["manifest-one"],
+    changeBase: startedCommit,
   });
 });
 
@@ -1094,6 +1101,7 @@ test("a rework spawns at the accepted source, asking no remote", async () => {
     repository: "work-repository",
     targetCommit: workCommit,
     manifests: [],
+    changeBase: startedCommit,
   });
 });
 
@@ -1151,6 +1159,7 @@ test("a resume re-asks at the accepted source, asking no remote", async () => {
     repository: "work-repository",
     targetCommit: workCommit,
     manifests: ["manifest-one"],
+    changeBase: startedCommit,
   });
 });
 
