@@ -6,6 +6,8 @@ import { after, test } from "node:test";
 
 import {
   mintedCredentialDirectory,
+  workerJobCommand,
+  workerRuntimeDirectory,
   workerTaskVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
@@ -547,5 +549,58 @@ test("a pod name is a function of the assignment and of nothing else", () => {
   assert.notEqual(
     kubernetesPoolPodName(config, "assignment-one"),
     kubernetesPoolPodName(config, "assignment-two"),
+  );
+});
+
+/**
+ * The runtime is the assignment's to name, and a plane that names none hands
+ * out the work a pool ran before it named one: the image's own entrypoint and
+ * nothing copied beside it.
+ */
+test("an assignment naming a runtime starts its workload from it, and one naming none runs its image's entrypoint", async () => {
+  const runtime = `registry.invalid/runtime@sha256:${"f".repeat(64)}`;
+  const started = (await placedPod(
+    { ...config, sidecars: [sidecar] },
+    { ...assignment, runtime },
+  )) as unknown as KubernetesPod;
+  const [container] = started.spec.containers;
+  assert.equal(container?.image, config.image);
+  assert.deepEqual(container.command, workerJobCommand);
+  assert.deepEqual(
+    container.volumeMounts
+      .filter(({ mountPath }) => mountPath === workerRuntimeDirectory)
+      .map(({ readOnly }) => readOnly),
+    [true],
+  );
+  assert.deepEqual(
+    started.spec.initContainers?.map(({ name, image }) => [name, image]),
+    [
+      ["chuggy-runtime", runtime],
+      [sidecar.name, sidecar.image],
+    ],
+  );
+  const unstarted = (await placedPod({
+    ...config,
+    sidecars: [sidecar],
+  })) as unknown as KubernetesPod;
+  assert.equal("command" in (unstarted.spec.containers[0] ?? {}), false);
+  assert.deepEqual(
+    unstarted.spec.initContainers?.map(({ name }) => name),
+    [sidecar.name],
+  );
+  assert.equal(
+    unstarted.spec.volumes.some(({ name }) => name === "chuggy-runtime"),
+    false,
+  );
+});
+
+test("a site is refused where its own mounts would land inside the runtime", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesPoolPlacementConfig({
+        ...config,
+        workspacePath: workerRuntimeDirectory,
+      }),
+    /pool placement mount path \/opt\/chuggy is inside/u,
   );
 });

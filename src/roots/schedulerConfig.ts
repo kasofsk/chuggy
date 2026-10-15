@@ -10,8 +10,9 @@
  * EVERY SITE DECISION ARRIVES AS DATA AND NONE IS DECIDED HERE. Admitted worker
  * images, resource budgets, the namespace, the service account, the node
  * selector and both security contexts are read and handed on unread; what this
- * module decides is whether a deployment named them at all, and whether the
- * admitted-images list names one image, or one worker label, twice.
+ * module decides is whether a deployment named them at all, whether the
+ * admitted-images list names one image, or one worker label, twice, and
+ * whether the runtime every worker pod is started from is pinned by digest.
  *
  * A BOUND IS EITHER THE DEFAULT OR AN OVERRIDE OF ONE THAT EXISTS. The three
  * pass configurations are merged over the defaults their own modules publish,
@@ -26,6 +27,7 @@
 
 import { z } from "zod";
 
+import { textCodePointsCount } from "../contract/http.ts";
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
   postgresLimitsDefault,
@@ -96,6 +98,7 @@ import {
   type AdmittedWorker,
 } from "../interpreter/workerCatalog.ts";
 import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
+import { workerPoolImagePinned } from "../interpreter/workerPoolImagePull.ts";
 import {
   ticketServiceDefaults,
   type TicketServiceConfig,
@@ -407,6 +410,23 @@ function schedulerOptional(
   return value === undefined || value.length === 0 ? undefined : value;
 }
 
+/**
+ * The image chuggy's runtime is copied from into every worker pod, pinned by
+ * digest so that every pod one deployment places runs one tree, and held to
+ * the bound the contract puts on an assignment's runtime.
+ */
+function schedulerRuntimeImage(environment: SchedulerEnvironment): string {
+  const image = schedulerRequired(environment, "WORKER_RUNTIME");
+  if (
+    textCodePointsCount(image) > workerImageCharsMax ||
+    !workerPoolImagePinned(image)
+  )
+    throw new RangeError(
+      `${schedulerVariablePrefix}WORKER_RUNTIME is not an image reference pinned by digest of at most ${String(workerImageCharsMax)} characters`,
+    );
+  return image;
+}
+
 /** One variable as a positive integer, falling back to the operational default. */
 function schedulerPositive(
   environment: SchedulerEnvironment,
@@ -685,6 +705,7 @@ function schedulerWorkers(
     podNamePrefix:
       schedulerOptional(environment, "WORKER_POD_NAME_PREFIX") ??
       schedulerCommandDefaults.workerPodNamePrefix,
+    runtimeImage: schedulerRuntimeImage(environment),
     resources: schedulerJson(
       environment,
       "WORKER_RESOURCES",

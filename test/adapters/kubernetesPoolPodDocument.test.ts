@@ -2,10 +2,12 @@
  * The exact document one pool placement submits to the cluster API, pinned
  * against a committed golden.
  *
- * IT PINS BOTH ARMS OF THE SIDECARS. A site that names them places each one
- * and its scratch volume; a site that names none places neither. Either arm
- * drifting is a different pod, and nothing but the bytes shows it. The pool's
- * sidecars are the worker golden's own, so the two pods are also compared.
+ * IT PINS BOTH ARMS OF THE SIDECARS AND OF THE RUNTIME. A site that names
+ * sidecars places each one and its scratch volume; a site that names none
+ * places neither. An assignment that names a runtime starts its workload from
+ * it; one that names none runs the image's own entrypoint. Any arm drifting is
+ * a different pod, and nothing but the bytes shows it. The pool's sidecars and
+ * runtime are the worker golden's own, so the two pods are also compared.
  *
  * IT PINS THE ORDER AS WELL AS THE VALUES, for the same reason the worker
  * golden does: the wire body is `JSON.stringify(pod)`, so the golden is read
@@ -35,7 +37,7 @@ after(() => {
 const tokenFile = join(root, "token");
 writeFileSync(tokenFile, "cluster-token\n");
 
-test("one pool placement, with sidecars and without, renders the documents the golden pins, byte for byte", async () => {
+test("one pool placement, with sidecars and without and with no runtime, renders the documents the golden pins, byte for byte", async () => {
   assert.equal(
     JSON.stringify(await poolPodDocuments(tokenFile)),
     JSON.stringify(JSON.parse(readFileSync(goldenPath, "utf8"))),
@@ -57,7 +59,7 @@ function podSidecars(pod: KubernetesPod): unknown {
   };
 }
 
-test("a pool's workload runs one site's sidecars exactly as a pushed worker's pod does", async () => {
+test("a pool's workload runs one site's runtime copy and sidecars exactly as a pushed worker's pod does", async () => {
   const pool = (await poolPodDocuments(tokenFile)) as {
     readonly withSidecars: KubernetesPod;
   };

@@ -16,7 +16,10 @@ import {
   kubernetesPoolBackend,
   type KubernetesPoolPlacementConfig,
 } from "../../src/adapters/kubernetes/poolPlacement.ts";
-import { goldenSidecars } from "./workerPodDocumentFixture.ts";
+import {
+  goldenRuntimeImage,
+  goldenSidecars,
+} from "./workerPodDocumentFixture.ts";
 
 const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
@@ -71,7 +74,8 @@ const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
   sidecars: [],
 };
 
-const goldenAssignment: WorkerPoolAssignment = {
+/** The golden assignment as a plane that hands out no runtime sends it. */
+const goldenAssignmentWithoutRuntime: WorkerPoolAssignment = {
   assignment: "golden-assignment",
   capabilities: ["Platform:Linux:Arm64", "claude-code"],
   cpuMillis: 1_500,
@@ -81,9 +85,15 @@ const goldenAssignment: WorkerPoolAssignment = {
   bearer: "golden-attempt-bearer",
 };
 
-/** The pod one site's placement of the golden assignment asked the cluster to create. */
+const goldenAssignment: WorkerPoolAssignment = {
+  ...goldenAssignmentWithoutRuntime,
+  runtime: goldenRuntimeImage,
+};
+
+/** The pod one site's placement of `assignment` asked the cluster to create. */
 async function poolPodSubmitted(
   config: KubernetesPoolPlacementConfig,
+  assignment: WorkerPoolAssignment = goldenAssignment,
 ): Promise<unknown> {
   const submitted: unknown[] = [];
   const fetcher: typeof fetch = (input, init) => {
@@ -103,14 +113,18 @@ async function poolPodSubmitted(
   };
   const placed = await kubernetesPoolBackend(config, fetcher).place({
     kind: "Job",
-    assignment: goldenAssignment,
+    assignment,
   });
   if (placed.placed !== "Placed" || submitted.length !== 1)
     throw new Error("the golden placement submitted no pod");
   return submitted[0];
 }
 
-/** Both sidecar arms, the worker golden's own sidecars in the first, so the two pods can be compared. */
+/**
+ * Both sidecar arms, the worker golden's own sidecars and runtime in the first
+ * so the two pods can be compared, and the first again for an assignment that
+ * names no runtime.
+ */
 export async function poolPodDocuments(tokenFile: string): Promise<unknown> {
   const config: KubernetesPoolPlacementConfig = { ...goldenConfig, tokenFile };
   return {
@@ -119,5 +133,9 @@ export async function poolPodDocuments(tokenFile: string): Promise<unknown> {
       sidecars: goldenSidecars,
     }),
     withoutSidecars: await poolPodSubmitted(config),
+    withoutRuntime: await poolPodSubmitted(
+      { ...config, sidecars: goldenSidecars },
+      goldenAssignmentWithoutRuntime,
+    ),
   };
 }

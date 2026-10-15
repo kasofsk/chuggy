@@ -27,6 +27,7 @@ import {
   kubernetesWorkerContainerName,
   kubernetesWorkerPodRequest,
 } from "../../src/adapters/kubernetes/workerPod.ts";
+import { kubernetesRuntimeContainerName } from "../../src/adapters/kubernetes/workerRuntime.ts";
 import {
   goldenConfig,
   goldenPlacement,
@@ -68,7 +69,8 @@ test("the rig's sidecar renders the server container and scratch volume its work
     goldenPlacement,
   );
   assert.ok(requested.requested === "Pod");
-  const [rendered, ...others] = requested.pod.spec.initContainers ?? [];
+  const [copy, rendered, ...others] = requested.pod.spec.initContainers ?? [];
+  assert.equal(copy?.name, kubernetesRuntimeContainerName);
   assert.ok(rendered !== undefined);
   assert.deepEqual(others, []);
   const expected: KubernetesContainer = {
@@ -161,6 +163,10 @@ const sidecarRefusals: readonly (readonly [
   [
     [{ ...bare, name: kubernetesWorkerContainerName }],
     /worker sidecar worker is named like the worker's own container/u,
+  ],
+  [
+    [{ ...bare, name: kubernetesRuntimeContainerName }],
+    /worker sidecar chuggy-runtime is named like the runtime's copy/u,
   ],
   [
     [{ ...bare, name: longest, scratch: { mountPath: "/data" } }],

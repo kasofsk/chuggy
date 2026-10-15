@@ -26,6 +26,7 @@ import {
   type KubernetesResourceBudget,
   type KubernetesStartupProbe,
 } from "./kubernetesSite.ts";
+import { kubernetesRuntimeContainerName } from "./workerRuntime.ts";
 
 /** One container a site runs beside every worker it places. */
 export interface KubernetesSidecar {
@@ -49,9 +50,9 @@ function kubernetesSidecarVolumeName(sidecar: KubernetesSidecar): string {
 }
 
 /**
- * Refuses a sidecar the cluster would not place beside the worker, or whose
- * probe it would time by its own defaults: a zero period or threshold is read
- * as the cluster's default rather than refused.
+ * Refuses a sidecar the cluster would not place beside the worker and the copy
+ * of its runtime, or whose probe it would time by its own defaults: a zero
+ * period or threshold is read as the cluster's default rather than refused.
  */
 export function checkedKubernetesSidecars(
   sidecars: readonly KubernetesSidecar[],
@@ -64,6 +65,8 @@ export function checkedKubernetesSidecars(
     kubernetesDnsLabel(sidecar.name, named);
     if (sidecar.name === workerContainerName)
       throw new RangeError(`${named} is named like the worker's own container`);
+    if (sidecar.name === kubernetesRuntimeContainerName)
+      throw new RangeError(`${named} is named like the runtime's copy`);
     if (names.has(sidecar.name))
       throw new RangeError(`${named} is named twice`);
     names.add(sidecar.name);

@@ -100,6 +100,9 @@ const configuration = {
   review: { instructions: ["Walk the call paths."] },
 };
 
+/** The runtime every worker pod is started from, pinned as the variable requires. */
+const runtimeImage = `registry.invalid/runtime@sha256:${"c".repeat(64)}`;
+
 /** A complete environment, so a case can make one variable at a time the subject. */
 const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_DATABASE_URL: "postgres://chuggy_scheduler@127.0.0.1:1/chuggy",
@@ -113,6 +116,7 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_WORKER_WORKSPACE_PATH: "/workspace",
   CHUG_SCHEDULER_WORKER_CREDENTIAL_MOUNTS: "{}",
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
+  CHUG_SCHEDULER_WORKER_RUNTIME: runtimeImage,
   CHUG_SCHEDULER_ADMITTED_IMAGES: JSON.stringify(images),
   CHUG_SCHEDULER_WORKER_RESOURCES: JSON.stringify(resources),
   CHUG_SCHEDULER_EXECUTION_POLICY: JSON.stringify(policy),
@@ -201,6 +205,7 @@ const parsed = {
     environment: {},
     serviceAccountName: "chuggy-worker",
     podNamePrefix: "chuggy-worker",
+    runtimeImage,
     resources,
     activeDeadlineSecs: 3_600,
     requestTimeoutSecsMax: 30,
@@ -803,6 +808,29 @@ test("a worker sidecar the document does not describe is refused by the variable
   }
 });
 
+test("a worker runtime not pinned by digest, or longer than an image may be, is refused by the variable's name", async () => {
+  for (const written of [
+    "registry.invalid/runtime:1",
+    "runtime@sha256:" + "c".repeat(64),
+    `registry.invalid/runtime@sha256:${"c".repeat(63)}`,
+    `registry.invalid/${"r".repeat(workerImageCharsMax)}@sha256:${"c".repeat(64)}`,
+  ]) {
+    const found = JSON.parse(
+      await schedulerProgram(
+        parseProgram({
+          ...environment,
+          CHUG_SCHEDULER_WORKER_RUNTIME: written,
+        }),
+      ),
+    ) as { readonly refused?: string };
+    assert.match(
+      found.refused ?? "",
+      /CHUG_SCHEDULER_WORKER_RUNTIME is not an image reference pinned by digest/u,
+      written,
+    );
+  }
+});
+
 test("every prerequisite variable is refused by its own name", async () => {
   for (const name of required) {
     const named = Object.fromEntries(
@@ -889,6 +917,7 @@ function processCluster(reachable: boolean): string {
       sidecars: [],
       serviceAccountName: 'chuggy-worker',
       podNamePrefix: 'chuggy-worker',
+      runtimeImage: ${JSON.stringify(runtimeImage)},
       resources: ${JSON.stringify(resources)},
       podLabels: {}, podAnnotations: {}, nodeSelector: {},
       podSecurityContext: {}, containerSecurityContext: {},

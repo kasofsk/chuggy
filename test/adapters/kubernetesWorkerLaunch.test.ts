@@ -43,9 +43,12 @@ import {
   sessionTaskVariable,
   workerCredentialFilesSchema,
   workerCredentialFilesVariable,
+  workerJobCommand,
   workerRepositoriesSchema,
   workerRepositoriesVariable,
+  workerRuntimeDirectory,
   workerTaskVariable,
+  workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import {
   briefingLineCharsMax,
@@ -89,6 +92,9 @@ writeFileSync(tokenFile, `${token}\n`);
 
 /** The image this suite's placement requires, which is the one a container runs. */
 const workerImage = "registry.invalid/worker:1";
+
+/** The image this suite's site copies its runtime from. */
+const runtimeImage = `registry.invalid/runtime@sha256:${"e".repeat(64)}`;
 
 const workspaceCredentialMount = {
   secretName: "workspace-credential",
@@ -139,6 +145,7 @@ const config: KubernetesWorkerLaunchConfig = {
   sidecars: [workerSidecar],
   serviceAccountName: "chuggy-worker",
   podNamePrefix: "chuggy-worker",
+  runtimeImage,
   resources: {
     cpuRequest: "500m",
     cpuLimit: "1",
@@ -320,6 +327,7 @@ function expectedContainer(): unknown {
   return {
     name: kubernetesWorkerContainerName,
     image: workerImage,
+    command: ["/bin/sh", "/opt/chuggy/check.sh"],
     env: [
       { name: workerTaskVariable, value: expectedTask() },
       {
@@ -328,6 +336,7 @@ function expectedContainer(): unknown {
           workspace: workspaceCredentialMount.mountPath,
         }),
       },
+      { name: workerWorkspaceVariable, value: "/workspace" },
       {
         name: workerRepositoriesVariable,
         value: workerRepositoriesValue,
@@ -363,6 +372,34 @@ function expectedContainer(): unknown {
         name: "worker-credential-0",
         mountPath: "/run/chuggy/credentials",
         readOnly: true,
+      },
+      {
+        name: "chuggy-runtime",
+        mountPath: "/opt/chuggy",
+        subPath: "chuggy",
+        readOnly: true,
+      },
+    ],
+  };
+}
+
+/** The copy of the site's runtime, which runs to completion before the sidecar starts. */
+function expectedRuntimeContainer(): unknown {
+  return {
+    name: "chuggy-runtime",
+    image: runtimeImage,
+    command: ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"],
+    env: [],
+    resources: {
+      requests: { cpu: "100m", memory: "64Mi", "ephemeral-storage": "64Mi" },
+      limits: { cpu: "1", memory: "512Mi", "ephemeral-storage": "64Mi" },
+    },
+    securityContext: { allowPrivilegeEscalation: false },
+    volumeMounts: [
+      {
+        name: "chuggy-runtime",
+        mountPath: "/var/run/chuggy/runtime",
+        readOnly: false,
       },
     ],
   };
@@ -430,6 +467,7 @@ function expectedVolumes(name: string): unknown {
         ],
       },
     },
+    { name: "chuggy-runtime", emptyDir: { sizeLimit: "10Gi" } },
   ];
 }
 
@@ -470,7 +508,7 @@ function expectedPod(name: string): unknown {
       activeDeadlineSeconds: 3_600,
       nodeSelector: { "kubernetes.io/os": "linux" },
       securityContext: { runAsNonRoot: true },
-      initContainers: [expectedSidecarContainer()],
+      initContainers: [expectedRuntimeContainer(), expectedSidecarContainer()],
       containers: [expectedContainer()],
       volumes: expectedVolumes(name),
     },
@@ -856,14 +894,19 @@ test("sibling credentials share one projected directory without changing their p
   );
   assert.equal(requested.requested, "Pod");
   if (requested.requested !== "Pod") return;
-  assert.deepEqual(requested.pod.spec.containers[0]?.volumeMounts.slice(-1), [
-    {
-      name: "worker-credential-0",
-      mountPath: "/run/chuggy/credentials",
-      readOnly: true,
-    },
-  ]);
-  assert.deepEqual(requested.pod.spec.volumes.slice(-1), [
+  const credential = ({ name }: { readonly name: string }): boolean =>
+    name.startsWith("worker-credential-");
+  assert.deepEqual(
+    requested.pod.spec.containers[0]?.volumeMounts.filter(credential),
+    [
+      {
+        name: "worker-credential-0",
+        mountPath: "/run/chuggy/credentials",
+        readOnly: true,
+      },
+    ],
+  );
+  assert.deepEqual(requested.pod.spec.volumes.filter(credential), [
     {
       name: "worker-credential-0",
       projected: {
@@ -1040,6 +1083,10 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { tokenFile: "" },
     { sidecars: [{ ...workerSidecar, image: "" }] },
     { sidecars: [{ ...workerSidecar, name: kubernetesWorkerContainerName }] },
+    { sidecars: [{ ...workerSidecar, name: "chuggy-runtime" }] },
+    { runtimeImage: "" },
+    { workspacePath: workerRuntimeDirectory },
+    { capabilityFile: `${workerRuntimeDirectory}/capability` },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },
   ];
@@ -1057,11 +1104,52 @@ test("a deployment that cannot address a cluster is refused where it is composed
   );
 });
 
+/**
+ * Whatever image the requirement names, the worker in it is the site's: the
+ * contract's command, run over the runtime the copy wrote, which the job can
+ * read and cannot change.
+ */
+test("a worker starts through the contract's command over the site's runtime, mounted read-only", () => {
+  const requested = kubernetesWorkerPodRequest(config, placement);
+  assert.ok(requested.requested === "Pod");
+  const [container] = requested.pod.spec.containers;
+  assert.equal(container?.image, workerImage);
+  assert.deepEqual(container.command, workerJobCommand);
+  const runtime = container.volumeMounts.filter(
+    ({ mountPath }) => mountPath === workerRuntimeDirectory,
+  );
+  assert.equal(runtime.length, 1);
+  assert.equal(runtime[0]?.readOnly, true);
+  const [copy] = requested.pod.spec.initContainers ?? [];
+  assert.equal(copy?.image, runtimeImage);
+  assert.deepEqual(
+    copy.volumeMounts.map(({ name }) => name),
+    [runtime[0]?.name],
+  );
+});
+
+test("a site whose own mounts would land inside the runtime is refused by the path", () => {
+  assert.throws(
+    () =>
+      checkedKubernetesWorkerLaunchConfig({
+        ...config,
+        credentialMounts: {
+          workspace: {
+            ...workspaceCredentialMount,
+            mountPath: `${workerRuntimeDirectory}/credentials/workspace`,
+          },
+        },
+      }),
+    /worker mount path \/opt\/chuggy\/credentials\/workspace is inside \/opt\/chuggy/u,
+  );
+});
+
 test("site environment cannot replace any worker-owned document", () => {
   assert.deepEqual(kubernetesWorkerReservedVariables, [
     workerTaskVariable,
     sessionTaskVariable,
     workerCredentialFilesVariable,
+    workerWorkspaceVariable,
   ]);
   for (const variable of populated(
     kubernetesWorkerReservedVariables,
@@ -1086,12 +1174,18 @@ test("a site that names no sidecar places a pod with none, and its worker's cont
   );
   const within = kubernetesWorkerPodRequest(config, placement);
   assert.ok(without.requested === "Pod" && within.requested === "Pod");
-  assert.equal("initContainers" in without.pod.spec, false);
+  assert.deepEqual(
+    without.pod.spec.initContainers?.map(({ name }) => name),
+    ["chuggy-runtime"],
+  );
   assert.deepEqual(
     without.pod.spec.volumes.filter(({ name }) => name.startsWith("sidecar-")),
     [],
   );
-  assert.equal(within.pod.spec.initContainers?.length, 1);
+  assert.deepEqual(
+    within.pod.spec.initContainers?.map(({ name }) => name),
+    ["chuggy-runtime", "cache"],
+  );
   assert.deepEqual(without.pod.spec.containers, within.pod.spec.containers);
 });
 
