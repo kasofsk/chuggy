@@ -61,12 +61,16 @@ function goldenInvocation(): AttemptPlacement["invocation"] {
   return composed.invocation;
 }
 
+/** The runtime both goldens copy, so a pushed worker's pod and a pool's workload can be compared. */
+export const goldenRuntimeImage = `registry.invalid/golden-runtime@sha256:${"d".repeat(64)}`;
+
 export const goldenConfig: KubernetesWorkerLaunchConfig = {
   apiBaseUrl: "https://golden-cluster.invalid:6443",
   namespace: "golden-work",
   tokenFile: "/var/run/secrets/golden/token",
   serviceAccountName: "golden-worker",
   podNamePrefix: "golden-worker",
+  runtimeImage: goldenRuntimeImage,
   workerPlaneUrl: "http://golden-plane.invalid:3001",
   capabilityFile: "/var/run/golden/capability/bearer",
   workspacePath: "/workspace",
@@ -166,7 +170,7 @@ export const goldenPlacement: AttemptPlacement = {
   },
 };
 
-/** Both sidecar arms, since a site that names none renders a pod with no init containers. */
+/** Both sidecar arms, since a site that names none renders a pod whose one init container is the runtime's copy. */
 export function workerPodDocuments(): unknown {
   return {
     withSidecars: kubernetesWorkerPodRequest(

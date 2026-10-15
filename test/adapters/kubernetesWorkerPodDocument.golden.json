@@ -46,6 +46,35 @@
         },
         "initContainers": [
           {
+            "name": "chuggy-runtime",
+            "image": "registry.invalid/golden-runtime@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"],
+            "env": [],
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "64Mi",
+                "ephemeral-storage": "64Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "512Mi",
+                "ephemeral-storage": "64Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "name": "chuggy-runtime",
+                "mountPath": "/var/run/chuggy/runtime",
+                "readOnly": false
+              }
+            ]
+          },
+          {
             "name": "postgres",
             "image": "registry.invalid/golden-postgres:18",
             "args": ["-c", "listen_addresses=127.0.0.1"],
@@ -92,6 +121,7 @@
           {
             "name": "worker",
             "image": "registry.invalid/golden-worker:1",
+            "command": ["/bin/sh", "/opt/chuggy/check.sh"],
             "env": [
               {
                 "name": "CHUG_WORKER_TASK",
@@ -104,6 +134,10 @@
               {
                 "name": "CHUG_WORKER_REPOSITORIES",
                 "value": "{\"repository\":{}}"
+              },
+              {
+                "name": "CHUG_WORKER_WORKSPACE",
+                "value": "/workspace"
               }
             ],
             "resources": {
@@ -147,6 +181,12 @@
               {
                 "name": "worker-credential-1",
                 "mountPath": "/var/run/golden/workspace",
+                "readOnly": true
+              },
+              {
+                "name": "chuggy-runtime",
+                "mountPath": "/opt/chuggy",
+                "subPath": "chuggy",
                 "readOnly": true
               }
             ]
@@ -222,6 +262,12 @@
                 }
               ]
             }
+          },
+          {
+            "name": "chuggy-runtime",
+            "emptyDir": {
+              "sizeLimit": "20Gi"
+            }
           }
         ]
       }
@@ -272,10 +318,42 @@
           "runAsNonRoot": true,
           "fsGroup": 2000
         },
+        "initContainers": [
+          {
+            "name": "chuggy-runtime",
+            "image": "registry.invalid/golden-runtime@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"],
+            "env": [],
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "64Mi",
+                "ephemeral-storage": "64Mi"
+              },
+              "limits": {
+                "cpu": "1",
+                "memory": "512Mi",
+                "ephemeral-storage": "64Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "readOnlyRootFilesystem": true
+            },
+            "volumeMounts": [
+              {
+                "name": "chuggy-runtime",
+                "mountPath": "/var/run/chuggy/runtime",
+                "readOnly": false
+              }
+            ]
+          }
+        ],
         "containers": [
           {
             "name": "worker",
             "image": "registry.invalid/golden-worker:1",
+            "command": ["/bin/sh", "/opt/chuggy/check.sh"],
             "env": [
               {
                 "name": "CHUG_WORKER_TASK",
@@ -288,6 +366,10 @@
               {
                 "name": "CHUG_WORKER_REPOSITORIES",
                 "value": "{\"repository\":{}}"
+              },
+              {
+                "name": "CHUG_WORKER_WORKSPACE",
+                "value": "/workspace"
               }
             ],
             "resources": {
@@ -331,6 +413,12 @@
               {
                 "name": "worker-credential-1",
                 "mountPath": "/var/run/golden/workspace",
+                "readOnly": true
+              },
+              {
+                "name": "chuggy-runtime",
+                "mountPath": "/opt/chuggy",
+                "subPath": "chuggy",
                 "readOnly": true
               }
             ]
@@ -399,6 +487,12 @@
                   }
                 }
               ]
+            }
+          },
+          {
+            "name": "chuggy-runtime",
+            "emptyDir": {
+              "sizeLimit": "20Gi"
             }
           }
         ]

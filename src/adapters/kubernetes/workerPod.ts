@@ -37,12 +37,18 @@
  *
  * A WORKER'S SIDECARS ARE THE SITE'S. `sidecars.ts` renders them, and the
  * worker's own container takes nothing from them.
+ *
+ * A WORKER STARTS FROM THE SITE'S RUNTIME, NEVER FROM ITS IMAGE'S ENTRYPOINT.
+ * Every pod copies the runtime image the deployment names and starts the
+ * worker from it, as `workerRuntime.ts` renders, so the image a requirement
+ * names need carry only the project's tools.
  */
 
 import {
   sessionTaskVariable,
   workerCredentialFilesVariable,
   workerTaskVariable,
+  workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
 import type { WorkTaskDocument } from "../../contract/workerTask.ts";
 import type {
@@ -77,6 +83,10 @@ import {
   kubernetesSidecarVolumes,
   type KubernetesSidecar,
 } from "./sidecars.ts";
+import {
+  checkedKubernetesRuntimeSite,
+  kubernetesJobRuntime,
+} from "./workerRuntime.ts";
 
 /**
  * Everything a deployment supplies the worker-launch adapter beyond the site
@@ -84,6 +94,8 @@ import {
  */
 export interface KubernetesWorkerLaunchConfig extends KubernetesPodSite {
   readonly podNamePrefix: string;
+  /** The image chuggy's runtime is copied from into every pod, whatever image the pod's job names. */
+  readonly runtimeImage: string;
   readonly resources: KubernetesResourceBudget;
   readonly podLabels: Readonly<Record<string, string>>;
   readonly podAnnotations: Readonly<Record<string, string>>;
@@ -103,6 +115,7 @@ export const kubernetesWorkerReservedVariables = [
   workerTaskVariable,
   sessionTaskVariable,
   workerCredentialFilesVariable,
+  workerWorkspaceVariable,
 ] as const;
 
 /**
@@ -113,7 +126,10 @@ export function checkedKubernetesWorkerLaunchConfig(
   config: KubernetesWorkerLaunchConfig,
 ): KubernetesWorkerLaunchConfig {
   checkedKubernetesPodSite(config, "worker");
+  checkedKubernetesRuntimeSite(config, "worker");
   kubernetesPodNamePrefix(config.podNamePrefix, "worker pod name prefix");
+  if (config.runtimeImage.length === 0)
+    throw new RangeError("worker runtime image is empty");
   kubernetesReservedVariables(
     config.environment,
     kubernetesWorkerReservedVariables,
@@ -312,7 +328,7 @@ function kubernetesWorkerContainer(
   };
 }
 
-/** Every volume the pod mounts: the bearer, the workspace, the mint, the sidecars' scratch and the credentials. */
+/** Every volume the pod mounts but the runtime's: the bearer, the workspace, the mint, the sidecars' scratch and the credentials. */
 function kubernetesWorkerVolumes(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
@@ -345,7 +361,21 @@ export function kubernetesWorkerPodRequest(
   );
   if (credentials === undefined)
     return { requested: "Denied", reason: "RequiredCapabilityUnavailable" };
-  const initContainers = kubernetesSidecarContainers(config, config.sidecars);
+  const job = kubernetesJobRuntime(
+    config,
+    config.runtimeImage,
+    config.resources.ephemeralStorageLimit,
+    {
+      initContainers: kubernetesSidecarContainers(config, config.sidecars),
+      container: kubernetesWorkerContainer(
+        config,
+        placement,
+        admitted.image,
+        credentials,
+      ),
+      volumes: kubernetesWorkerVolumes(config, placement, credentials),
+    },
+  );
   return {
     requested: "Pod",
     pod: {
@@ -368,16 +398,9 @@ export function kubernetesWorkerPodRequest(
         activeDeadlineSeconds: config.activeDeadlineSecs,
         nodeSelector: config.nodeSelector,
         securityContext: config.podSecurityContext,
-        ...(initContainers.length === 0 ? {} : { initContainers }),
-        containers: [
-          kubernetesWorkerContainer(
-            config,
-            placement,
-            admitted.image,
-            credentials,
-          ),
-        ],
-        volumes: kubernetesWorkerVolumes(config, placement, credentials),
+        initContainers: job.initContainers,
+        containers: [job.container],
+        volumes: job.volumes,
       },
     },
   };

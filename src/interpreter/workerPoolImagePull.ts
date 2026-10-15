@@ -42,6 +42,11 @@ const workerPoolImageReference = new RegExp(
   "u",
 );
 
+/** Whether `image` names its host and is pinned by digest, which is the only kind of reference a pool's pull is allowed by. */
+export function workerPoolImagePinned(image: string): boolean {
+  return workerPoolImageReference.test(image);
+}
+
 /** A registry host as a reference names one: a domain, `localhost` or an address, with an optional port. */
 const workerPoolImageHost =
   /^(?=[^.:]*[.:]|localhost(?::|$))[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?$/u;

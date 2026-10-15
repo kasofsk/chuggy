@@ -11,7 +11,11 @@
  * rather than a briefed placement, so nothing here reads a requirement, a
  * configuration or an invocation. The image is the one the assignment names,
  * which is the requirement's pinned image, and the pool's own where it names
- * none.
+ * none. The runtime is the assignment's too: a workload whose assignment names
+ * one is started from it by `workerRuntime.ts`, which starts a pushed worker's
+ * pod too, and one whose assignment names none runs its image's own entrypoint
+ * and is told nothing of a runtime, which is what the contract says an absent
+ * runtime means.
  *
  * WHAT IS RUNNING IS READ FROM THE CLUSTER. `held` lists this pool's own pods
  * by its label and reads each assignment off an annotation, so a restarted
@@ -34,7 +38,10 @@
  * names no session ceiling.
  */
 
-import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
+import {
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "../../contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type { PoolEnvelope } from "../../contract/workerTask.ts";
 import type {
@@ -72,6 +79,11 @@ import {
   kubernetesSidecarVolumes,
   type KubernetesSidecar,
 } from "./sidecars.ts";
+import {
+  checkedKubernetesRuntimeSite,
+  kubernetesJobRuntime,
+  type KubernetesJobPod,
+} from "./workerRuntime.ts";
 
 /** The annotation one pod carries its assignment in, which is what `held` reads back. */
 export const kubernetesPoolAssignmentAnnotation = `${kubernetesAnnotationPrefix}assignment`;
@@ -108,6 +120,7 @@ export function checkedKubernetesPoolPlacementConfig(
   config: KubernetesPoolPlacementConfig,
 ): KubernetesPoolPlacementConfig {
   checkedKubernetesPodSite(config, "pool placement");
+  checkedKubernetesRuntimeSite(config, "pool placement");
   kubernetesPodNamePrefix(config.podNamePrefix, "pool placement pod prefix");
   kubernetesPositive(config.timeoutSecsMax, "pool workload timeout");
   kubernetesPositive(config.outputBytesMax, "pool workload output bound");
@@ -117,7 +130,7 @@ export function checkedKubernetesPoolPlacementConfig(
     throw new RangeError("pool placement label is empty");
   kubernetesReservedVariables(
     config.environment,
-    [workerTaskVariable],
+    [workerTaskVariable, workerWorkspaceVariable],
     "pool worker environment",
   );
   checkedKubernetesSidecars(
@@ -212,6 +225,54 @@ function poolPlacementDeadlineSecs(
   return Math.min(assignment.deadlineSecs, config.timeoutSecsMax);
 }
 
+/** The workload as the assignment's image runs it, before any runtime is injected. */
+function poolPlacementJob(
+  config: KubernetesPoolPlacementConfig,
+  assignment: WorkerPoolAssignment,
+  name: string,
+  credentials: ReturnType<typeof kubernetesCredentials> & {},
+): KubernetesJobPod {
+  return {
+    initContainers: kubernetesSidecarContainers(config, config.sidecars),
+    container: {
+      name: kubernetesPoolContainerName,
+      image: assignment.image ?? config.image,
+      env: [
+        {
+          name: workerTaskVariable,
+          valueFrom: { secretKeyRef: { name, key: "task" } },
+        },
+        ...Object.entries(config.environment).map(([variable, value]) => ({
+          name: variable,
+          value,
+        })),
+      ],
+      resources: poolPlacementResources(config, assignment),
+      securityContext: config.containerSecurityContext,
+      volumeMounts: [
+        {
+          name: "workspace",
+          mountPath: config.workspacePath,
+          readOnly: false,
+        },
+        { name: "control", mountPath: "/tmp", readOnly: false },
+        kubernetesMintedCredentialVolumes().mount,
+        ...credentials.mounts,
+      ],
+    },
+    volumes: [
+      {
+        name: "workspace",
+        emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
+      },
+      { name: "control", emptyDir: { sizeLimit: "16Mi" } },
+      kubernetesMintedCredentialVolumes().volume,
+      ...kubernetesSidecarVolumes(config.sidecars),
+      ...credentials.volumes,
+    ],
+  };
+}
+
 function poolPlacementPod(
   config: KubernetesPoolPlacementConfig,
   assignment: WorkerPoolAssignment,
@@ -219,6 +280,16 @@ function poolPlacementPod(
 ): KubernetesPod {
   const name = kubernetesPoolPodName(config, assignment.assignment);
   const constraints = poolPlacementConstraints(config, assignment.capabilities);
+  const unstarted = poolPlacementJob(config, assignment, name, credentials);
+  const job =
+    assignment.runtime === undefined
+      ? unstarted
+      : kubernetesJobRuntime(
+          config,
+          assignment.runtime,
+          config.resources.ephemeralStorageLimit,
+          unstarted,
+        );
   return kubernetesWorkloadPod({
     site: config,
     name,
@@ -233,45 +304,9 @@ function poolPlacementPod(
     activeDeadlineSecs: poolPlacementDeadlineSecs(config, assignment),
     nodeSelector: constraints.nodeSelector,
     tolerations: constraints.tolerations,
-    initContainers: kubernetesSidecarContainers(config, config.sidecars),
-    containers: [
-      {
-        name: kubernetesPoolContainerName,
-        image: assignment.image ?? config.image,
-        env: [
-          {
-            name: workerTaskVariable,
-            valueFrom: { secretKeyRef: { name, key: "task" } },
-          },
-          ...Object.entries(config.environment).map(([variable, value]) => ({
-            name: variable,
-            value,
-          })),
-        ],
-        resources: poolPlacementResources(config, assignment),
-        securityContext: config.containerSecurityContext,
-        volumeMounts: [
-          {
-            name: "workspace",
-            mountPath: config.workspacePath,
-            readOnly: false,
-          },
-          { name: "control", mountPath: "/tmp", readOnly: false },
-          kubernetesMintedCredentialVolumes().mount,
-          ...credentials.mounts,
-        ],
-      },
-    ],
-    volumes: [
-      {
-        name: "workspace",
-        emptyDir: { sizeLimit: config.resources.ephemeralStorageLimit },
-      },
-      { name: "control", emptyDir: { sizeLimit: "16Mi" } },
-      kubernetesMintedCredentialVolumes().volume,
-      ...kubernetesSidecarVolumes(config.sidecars),
-      ...credentials.volumes,
-    ],
+    initContainers: job.initContainers,
+    containers: [job.container],
+    volumes: job.volumes,
   });
 }
 
