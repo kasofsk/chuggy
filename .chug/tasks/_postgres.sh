@@ -24,6 +24,16 @@
 # restarted, because a gate that pays a cold start on every run is a gate that
 # gets bypassed.
 #
+# ITS DATA LIVES IN MEMORY AND IS NEVER SYNCED. A check-postgres run migrates a
+# template and clones it once per suite, so a server writing durably to disk
+# writes the schema over and over for data no one keeps, and a day of runs wears
+# the disk and leaves a volume behind each time the container is replaced. The
+# image's volume, /var/lib/postgresql from PostgreSQL 18 on, is a tmpfs, and
+# fsync, synchronous commit and full-page writes are off: what a crash would
+# lose is a run's scratch, which a crash ends anyway. An older image chosen
+# below declares its volume at /var/lib/postgresql/data, which docker still
+# mounts on the disk, so only the settings and the removal hold for it.
+#
 # EACH RUN GETS ITS OWN DATABASE inside that container, dropped when the run
 # ends via the trap the caller installs. Two runs share nothing, and a crashed
 # run leaves no state the next one inherits.
@@ -64,7 +74,7 @@
 #                      two runs can be made to hold the same one
 #
 # The container outlives the run so the next one is warm. To remove it:
-#   docker rm -f chuggy-check-postgres
+#   docker rm -f -v chuggy-check-postgres
 
 image="${CHUG_PG_IMAGE:-postgres:18-alpine}"
 port="${CHUG_PG_PORT:-55432}"
@@ -169,10 +179,13 @@ process.stdout.write(`${process.argv[1].replace(/[^0-9]/gu, "")}_${randomBytes(6
 		fi
 
 		if [ "$(docker inspect -f '{{.State.Running}}' "$container" 2>/dev/null || echo false)" != "true" ]; then
-			docker rm -f "$container" >/dev/null 2>&1 || true
+			docker rm -f -v "$container" >/dev/null 2>&1 || true
 			if ! docker run -d --name "$container" \
+				--tmpfs /var/lib/postgresql:rw,size=4g \
 				-e POSTGRES_PASSWORD="$password" \
-				-p "$port:5432" "$image" >/dev/null 2>&1; then
+				-p "$port:5432" "$image" \
+				postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off \
+				>/dev/null 2>&1; then
 				echo "$pg_prefix: LINTER ERROR — could not start $image as $container"
 				exit 2
 			fi

@@ -69,7 +69,7 @@ drill_clean() {
 		echo "session-resume-drill: kept $container and $scratch"
 		return
 	fi
-	docker rm -f "$container" >/dev/null 2>&1 || true
+	docker rm -f -v "$container" >/dev/null 2>&1 || true
 	[ -z "$scratch" ] || rm -rf "$scratch"
 }
 trap drill_clean EXIT INT TERM
@@ -91,9 +91,11 @@ psql_as() { # <role> <statement>
 # --- the server -------------------------------------------------------------
 
 command -v docker >/dev/null 2>&1 || fail "no docker, so no server can be had"
-docker rm -f "$container" >/dev/null 2>&1 || true
+docker rm -f -v "$container" >/dev/null 2>&1 || true
 docker run -d --name "$container" -e POSTGRES_PASSWORD="$password" \
-	-p "127.0.0.1:$pg_port:5432" "$image" >/dev/null ||
+	--tmpfs /var/lib/postgresql:rw,size=4g \
+	-p "127.0.0.1:$pg_port:5432" "$image" \
+	postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off >/dev/null ||
 	fail "could not start $image as $container"
 waited=0
 until docker exec "$container" pg_isready -q 2>/dev/null; do
