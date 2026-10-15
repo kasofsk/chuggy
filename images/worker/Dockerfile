@@ -1,6 +1,6 @@
 # The zod the image installs as the agent SDK's peer. It is declared before any
 # stage because two of them read it: the `core` stage holds it to the core's
-# lock and the `worker-base` stage installs it.
+# lock and the `runtime` stage installs it.
 ARG ZOD_VERSION=4.5.4
 
 # The base every stage builds from. The image one attempt runs in is built by
@@ -26,11 +26,25 @@ ARG ZOD_VERSION=4.5.4
 #   docker buildx imagetools inspect node:26.7.0-trixie
 FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599cd76a7a6caad48b AS base
 
+# The node chuggy's runtime runs the core on: Node 24, an LTS release, and not
+# the base's. Node 26 also needs libatomic.so.1, which debian:trixie-slim,
+# ubuntu:24.04 and even buildpack-deps:trixie-scm do not ship, so chuggy's node
+# would not load in any of them.
+# The official image's node is nodejs.org's own build, which that image's
+# build verifies against the release's signed checksums, so it is taken from
+# the image by digest rather than fetched and verified a second time here.
+#
+# The digest is the multi-architecture index's, read on 2026-10-15 with
+#   docker buildx imagetools inspect node:24.22.0-trixie-slim
+FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS runtime-node
+
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
 # what the later stages copy leaves this one: the core's tree, for its suites;
 # its shipped set, which is `package.json`'s `files` read off that tree rather
-# than listed here; and the contract release its lock names.
+# than listed here, less the `check.sh` a job starts the core through, which is
+# kept apart to sit at the runtime's root; and the contract release its lock
+# names.
 #
 # THE CONTRACT IS THE ONE THE CORE WAS TESTED WITH. The lock names a release by
 # the URL of its asset and the digest of its bytes, and the asset is refused
@@ -74,78 +88,88 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
   && mkdir /shipped \
   && while read -r name; do cp "/core/$name" "/shipped/$name" || exit 1; done < /tmp/files.txt \
   && mv /shipped/entrypoint.mjs /shipped/worker.mjs \
+  && mv /shipped/check.sh /check.sh \
   && chmod 0555 /shipped/git-askpass.sh
 
-# What every image a pod runs is built from: the worker core, the contract it
-# speaks and the agents it drives.
-FROM base AS worker-base
-
-# THE IMAGE RUNS TWO CLAUDE CODES AND THEY MUST BE THE SAME ONE. A work attempt
-# spawns the global `claude`; a session's Agent SDK spawns a copy of its own,
-# shipped inside the SDK as `@anthropic-ai/claude-agent-sdk-linux-x64` and named
-# by the SDK's `manifest.json`. Nothing makes those two agree, so the probe
-# below reads both versions off the built image and fails the build when they
-# differ. `just bump-claude-code` moves the two ARGs together.
+# CHUGGY'S RUNTIME: the tree a job's container mounts read-only at `/opt/chuggy`
+# whatever image the job names, and the image every stage below is built on.
 #
-# THE SDK'S `zod` PEER IS INSTALLED HERE FOR THE SAME REASON: `sdkProbe.mjs`
-# reads the SDK's own declared range and fails the build where this pin no
-# longer satisfies it. The pin is declared at the top of this file, where the
-# `core` stage holds it to the core's lock.
+#   bin/node      the `runtime-node` stage's node, which runs the core
+#   bin/claude    the Claude Code the core and a session's SDK both run
+#   bin/codex     the Codex the core runs
+#   lib/chuggy/   the shipped core, its entry named `worker.mjs`, and the
+#                 packages it imports in a `node_modules` of its own
+#   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
+#   check.sh      what a job's container runs first, in the job's own image
+#
+# The core finds `bin/` from where it sits, and nothing puts it on PATH.
+#
+# A SITE COPIES THE TREE OUT OF THIS IMAGE with this image's `cp`, as the user a
+# job runs as. So `/opt/chuggy` is a directory and not a link, and every file in
+# it is one that user can read; the last probe below makes that copy and runs
+# the check from it.
+#
+# CLAUDE CODE IS THE SDK'S OWN. The Agent SDK spawns the binary shipped inside
+# it as `@anthropic-ai/claude-agent-sdk-linux-x64`, and `bin/claude` is a link
+# to that file, so a job and a session run one Claude Code. `CLAUDE_CODE_VERSION`
+# names it, and the build fails unless that binary reports it; `just
+# bump-claude-code` moves it with `AGENT_SDK_VERSION`. The SDK's `zod` peer is
+# pinned beside it: `sdkProbe.mjs` reads the SDK's own declared range and fails
+# the build where the pin no longer satisfies it. The pin is declared at the top
+# of this file, where the `core` stage holds it to the core's lock.
+#
+# CODEX IS ITS STATIC BUILD. npm's `codex` is a node script that finds its
+# platform package's binary and spawns it; the tree ships that binary alone,
+# which links against nothing.
+#
+# NO LIBRARY IS SHIPPED; THE JOB'S IMAGE PROVIDES THEM. Chuggy's node names no
+# directory of its own to find a library in, so one shipped here would be found
+# only through a variable every process it starts inherits; and the base's
+# libstdc++ asks for a newer glibc than node does, which would raise the floor
+# stated below.
+FROM base AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
 ARG ZOD_VERSION
 
-RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
-    /etc/apt/sources.list.d/debian.sources \
-  && apt-get update \
-  && apt-get install --yes --no-install-recommends \
-    build-essential ca-certificates curl fd-find git jq postgresql-client python3 ripgrep \
-  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-    --location https://just.systems/install.sh \
-    | bash -s -- --to /usr/local/bin \
-  && npm install --global \
-    "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+# The packages the core imports, installed as one tree, so that npm keeps a
+# single `zod` for the SDK, the contract and the core alike. The contract is the
+# release the core's lock names.
+RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
+  mkdir -p /tmp/runtime /opt/chuggy/bin /opt/chuggy/lib/chuggy \
+  && cd /tmp/runtime \
+  && npm install --no-save --no-package-lock --no-audit --no-fund \
     "@anthropic-ai/claude-agent-sdk@${AGENT_SDK_VERSION}" \
     "zod@${ZOD_VERSION}" \
-    "@openai/codex@${CODEX_VERSION}" \
-  && claude --version \
-  && codex --version \
-  && psql --version \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
+    /tmp/contract.tgz \
+  && mv node_modules /opt/chuggy/lib/chuggy/node_modules \
+  && cd / \
+  && rm -rf /tmp/runtime
 
-ENV DISABLE_AUTOUPDATER=1 \
-    CHUG_WORKER_WORKSPACE=/workspace \
-    NODE_PATH=/usr/local/lib/node_modules \
-    TMPDIR=/tmp
+# The platform package npm's `codex` names as its optional dependency, of which
+# only the binary is kept.
+RUN cd /tmp \
+  && npm pack --silent "@openai/codex@${CODEX_VERSION}-linux-x64" > /tmp/codex.txt \
+  && read -r packed < /tmp/codex.txt \
+  && tar --extract --gzip --file "/tmp/$packed" --directory /tmp \
+    package/vendor/x86_64-unknown-linux-musl/bin/codex \
+  && install -m 0755 /tmp/package/vendor/x86_64-unknown-linux-musl/bin/codex /opt/chuggy/bin/codex \
+  && rm -rf /tmp/package "/tmp/$packed" /tmp/codex.txt
 
-# The contract's global install nests its own copy of its `zod` peer unless told
-# to leave peers alone: that would be a second `zod` beside the one above, which
-# `contractProbe.mjs` below fails the build on. The release installed is the one
-# a pod names in every request, so it is held to the one `core.json` names.
-RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
-    --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
-  npm install --global --legacy-peer-deps /tmp/contract.tgz \
-  && cd /usr/local/lib \
-  && node --input-type=module --eval ' \
-    import { readFileSync } from "node:fs"; \
-    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
-    const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
-    if (workerContractRelease !== contractRelease) { \
-      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
-      process.exit(1); \
-    } \
-  '
+COPY --from=core /shipped/ /opt/chuggy/lib/chuggy/
+COPY --from=core /check.sh /opt/chuggy/check.sh
+COPY --from=runtime-node /usr/local/bin/node /opt/chuggy/bin/node
+RUN ln -s ../lib/chuggy/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+    /opt/chuggy/bin/claude \
+  && install -D -m 0644 /etc/ssl/certs/ca-certificates.crt \
+    /opt/chuggy/share/ca-certificates.crt
 
-COPY --from=core /shipped/ /usr/local/lib/chuggy/
-
-# What the session mode needs, read off the image rather than off this file. The
-# import runs from the directory the scripts live in, because that is what
-# decides whether it resolves: `NODE_PATH` above is honoured by `require` and
-# ignored by `import`, and what actually finds the SDK is the node_modules walk
-# up from `/usr/local/lib/chuggy/`. The second half holds the two Claude Codes
-# to the same version.
+# What the core needs, read off the tree rather than off this file. Each import
+# runs from the directory the core's modules live in, because what finds a
+# package is the `node_modules` walk up from there. The contract installed is the
+# release a pod names in every request, so it is held to the one `core.json`
+# names, and the tree to sitting where that release starts a job from.
 #
 # Both probes resolve the runtime through `session.mjs`'s own `sessionSdk`, so
 # what they prove is the resolution a turn will make. `sdkProbe.mjs` holds the
@@ -162,23 +186,141 @@ COPY --from=core /shipped/ /usr/local/lib/chuggy/
 #
 # THEN THE ENTRY IS IMPORTED, AS A POD IMPORTS IT, from what is left. Loading it
 # starts nothing, so a module it reaches that `files` did not ship fails the
-# build here rather than the first pod.
-RUN cd /usr/local/lib/chuggy \
-  && node sdkProbe.mjs \
-  && node toolProbe.mjs \
-  && node contractProbe.mjs \
+# build here rather than the first pod. Last, what `coreRuntime.mjs` derives
+# from where the core sits is held to be in this tree and readable, what the
+# core runs of it to be executable, and each agent to report the version this
+# file names.
+RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
+  cd /opt/chuggy/lib/chuggy \
+  && /opt/chuggy/bin/node --input-type=module --eval ' \
+    import { accessSync, constants, readFileSync } from "node:fs"; \
+    import { workerContractRelease } from "@chuggy/worker-contract/workerContract"; \
+    import { workerJobCommand, workerRuntimeDirectory } from "@chuggy/worker-contract/workerEnvironment"; \
+    const { contractRelease } = JSON.parse(readFileSync("/tmp/core.json", "utf8")); \
+    if (workerContractRelease !== contractRelease) { \
+      console.error(`core.json names contract ${contractRelease} and the core installs ${workerContractRelease}`); \
+      process.exit(1); \
+    } \
+    if (workerRuntimeDirectory !== "/opt/chuggy") { \
+      console.error(`the contract starts a job from ${workerRuntimeDirectory} and the runtime is at /opt/chuggy`); \
+      process.exit(1); \
+    } \
+    accessSync(workerJobCommand.at(-1), constants.R_OK); \
+  ' \
+  && /opt/chuggy/bin/node sdkProbe.mjs \
+  && /opt/chuggy/bin/node toolProbe.mjs \
+  && /opt/chuggy/bin/node contractProbe.mjs \
   && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
-  && node --input-type=module --eval 'import "/usr/local/lib/chuggy/worker.mjs";' \
-  && bundled="$(node -e "console.log(require('/usr/local/lib/node_modules/@anthropic-ai/claude-agent-sdk/manifest.json').version)")" \
-  && global="$(claude --version)" \
-  && if [ "${global% (Claude Code)}" != "$bundled" ]; then \
-       echo "the SDK spawns Claude Code $bundled while the image installs $global"; \
+  && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/worker.mjs";' \
+  && /opt/chuggy/bin/node --input-type=module --eval ' \
+    import { accessSync, constants } from "node:fs"; \
+    import { coreRuntime } from "/opt/chuggy/lib/chuggy/coreRuntime.mjs"; \
+    for (const [name, path] of Object.entries(coreRuntime)) { \
+      if (!path.startsWith("/opt/chuggy/")) { \
+        console.error(`the core finds its ${name} at ${path}, outside the runtime`); \
+        process.exit(1); \
+      } \
+      accessSync(path, constants.R_OK); \
+    } \
+    for (const path of [coreRuntime.askpass, coreRuntime.claude, coreRuntime.codex]) \
+      accessSync(path, constants.X_OK); \
+    console.log(`the core finds ${Object.values(coreRuntime).join(", ")}`); \
+  ' \
+  && claude="$(/opt/chuggy/bin/claude --version)" \
+  && codex="$(/opt/chuggy/bin/codex --version)" \
+  && if [ "$claude" != "${CLAUDE_CODE_VERSION} (Claude Code)" ] || \
+       [ "$codex" != "codex-cli ${CODEX_VERSION}" ]; then \
+       echo "the runtime ships $claude and $codex, and this file names Claude Code ${CLAUDE_CODE_VERSION} and Codex ${CODEX_VERSION}"; \
        exit 1; \
      fi
 
+# WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE:
+# every library an ELF the tree ships needs, and for each family of symbol
+# versions those ELFs reference the highest one, which is the oldest that
+# family's library in the image may be. Only an ELF's version references are
+# read, since its version definitions are what it provides rather than what it
+# needs. The build fails unless the two are exactly these, so a bump that
+# changes either changes this file. An image that lacks one of the libraries,
+# or holds one older than its floor, is one where chuggy's node or claude
+# cannot load, which `check.sh` reports with the status of
+# `ImageLibcUnsupported`. `bin/claude` is held to be a native binary, which a
+# link to anything else would not be.
+ARG RUNTIME_LIBRARIES="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
+ARG RUNTIME_VERSION_FLOOR="CXXABI_1.3.11 GCC_3.4 GLIBCXX_3.4.21 GLIBC_2.28"
+RUN find /opt/chuggy -type f > /tmp/files.txt \
+  && : > /tmp/needed.txt \
+  && while read -r file; do \
+       [ "$(od -An -tx1 -N4 "$file" | tr -d ' \n')" = 7f454c46 ] || continue; \
+       objdump -p "$file" > /tmp/elf.txt || exit 1; \
+       echo "runtime: $file is an ELF"; \
+       awk '$1 == "NEEDED" { print "library", $2 } \
+         /^Version References:/ { references = 1; next } \
+         !/^[ \t]/ { references = 0 } \
+         references && $1 ~ /^0x/ && $4 ~ /^[A-Z]+_[0-9][0-9.]*$/ { print "version", $4 }' \
+         /tmp/elf.txt >> /tmp/needed.txt || exit 1; \
+     done < /tmp/files.txt \
+  && libraries="$(sed -n 's/^library //p' /tmp/needed.txt | sort -u | tr '\n' ' ')" \
+  && floor="$(sed -n 's/^version //p' /tmp/needed.txt | sort -u -V \
+    | awk -F_ '{ highest[$1] = $0 } END { for (family in highest) print highest[family] }' \
+    | sort | tr '\n' ' ')" \
+  && stated_libraries="$(printf '%s\n' $RUNTIME_LIBRARIES | sort -u | tr '\n' ' ')" \
+  && stated_floor="$(printf '%s\n' $RUNTIME_VERSION_FLOOR | sort | tr '\n' ' ')" \
+  && rm -f /tmp/files.txt /tmp/needed.txt /tmp/elf.txt \
+  && echo "runtime: needs ${libraries}at ${floor}" \
+  && if [ "$libraries" != "$stated_libraries" ] || [ "$floor" != "$stated_floor" ]; then \
+       echo "the runtime needs ${libraries}at ${floor}and RUNTIME_LIBRARIES and RUNTIME_VERSION_FLOOR state ${stated_libraries}at ${stated_floor}"; \
+       exit 1; \
+     fi \
+  && if [ "$(od -An -tx1 -N4 /opt/chuggy/bin/claude | tr -d ' \n')" != 7f454c46 ]; then \
+       echo "bin/claude is not a native binary"; \
+       exit 1; \
+     fi
+
+# THE TREE IS COPIED AS A SITE COPIES IT, and the check passes both in place and
+# in the copy. A site hands the check a workspace, which here is a temporary
+# directory.
+USER 1000:1000
+RUN copy="$(mktemp -d)" \
+  && workspace="$(mktemp -d)" \
+  && cp -a /opt/chuggy "$copy/" \
+  && if [ ! -d "$copy/chuggy" ] || [ -L "$copy/chuggy" ]; then \
+       echo "the runtime copies as something other than a directory"; \
+       exit 1; \
+     fi \
+  && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh /opt/chuggy/check.sh check \
+  && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh "$copy/chuggy/check.sh" check \
+  && rm -rf "$copy" "$workspace"
+
+# What every image a pod runs is built from: chuggy's runtime, and the tools the
+# trees it works on are checked with.
+#
+# THE IMAGE'S `claude` IS THE RUNTIME'S, linked onto PATH by name rather than by
+# putting the runtime's `bin/` there, which would shadow the image's own node.
+# The practices the `worker` stage installs through it, and `check-roster` lists
+# through it, are then installed and listed by the Claude Code that loads them.
+FROM runtime AS worker-base
+USER 0:0
+RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
+    /etc/apt/sources.list.d/debian.sources \
+  && apt-get update \
+  && apt-get install --yes --no-install-recommends \
+    build-essential ca-certificates curl fd-find git jq postgresql-client python3 ripgrep \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+    --location https://just.systems/install.sh \
+    | bash -s -- --to /usr/local/bin \
+  && ln -s /opt/chuggy/bin/claude /usr/local/bin/claude \
+  && claude --version \
+  && psql --version \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV DISABLE_AUTOUPDATER=1 \
+    CHUG_WORKER_WORKSPACE=/workspace \
+    TMPDIR=/tmp
+
 USER 1000:1000
 WORKDIR /workspace
-ENTRYPOINT ["node", "/usr/local/lib/chuggy/worker.mjs"]
+ENTRYPOINT ["/opt/chuggy/bin/node", "/opt/chuggy/lib/chuggy/worker.mjs"]
 
 # The image this tree's own tickets run on.
 FROM worker-base AS worker
@@ -226,16 +368,16 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
      done < /tmp/practices.txt \
   && rm /tmp/practices.txt
 
-# THE CORE'S SUITES RUN ON THE IMAGES' NODE, against the contract and the zod
-# the base installed. The core's own gates run them on whatever Node its
+# THE CORE'S SUITES RUN ON THE RUNTIME'S NODE, against the contract and the zod
+# the runtime installed. The core's own gates run them on whatever Node its
 # developers have, and nothing else would run them on the one a pod has. They
-# sit under `/usr/local/lib` so that they resolve their packages by the walk the
-# pod's modules resolve theirs by. Like the roster stage below, this is a stage
-# and not an image, and each image binds its verdict.
+# sit inside the runtime's `lib/chuggy/` so that they resolve their packages by
+# the walk the pod's modules resolve theirs by. Like the roster stage below,
+# this is a stage and not an image, and each image binds its verdict.
 FROM worker-base AS core-suites
-COPY --from=core --chown=1000:1000 /core /usr/local/lib/chuggy-core
-RUN cd /usr/local/lib/chuggy-core \
-  && node --test --test-reporter=dot ./*.test.mjs \
+COPY --from=core --chown=1000:1000 /core /opt/chuggy/lib/chuggy/core-suites
+RUN cd /opt/chuggy/lib/chuggy/core-suites \
+  && /opt/chuggy/bin/node --test --test-reporter=dot ./*.test.mjs \
   && touch /workspace/core-suites-clean
 
 # THE BUILD REFUSES AN IMAGE THAT CANNOT RUN THE GATES. Every attempt's Check
@@ -250,10 +392,11 @@ RUN cd /usr/local/lib/chuggy-core \
 # WHAT THIS PROVES IS THE IMAGE, NOT THE POD. A build has no sidecars, so the
 # PostgreSQL the server gates are given is the stage's own: Debian's, started
 # as the image's own user and named by the URL `_postgres.sh` accepts in place
-# of a container. In a pod it is the site's, which names it to the gates as
-# `CHUG_PG_URL` in its own environment. Keto is handed to the gates in neither
-# place: `_keto.sh` finds no docker and starts the `keto` the image ships, here
-# as it does in a pod.
+# of a container. Its data directory is a tmpfs and it neither syncs nor writes
+# full pages, since a run's scratch is all a crash would lose. In a pod it is
+# the site's, which names it to the gates as `CHUG_PG_URL` in its own
+# environment. Keto is handed to the gates in neither place: `_keto.sh` finds
+# no docker and starts the `keto` the image ships, here as it does in a pod.
 #
 # THE POSTGRESQL LOG IS PRINTED ON THE WAY OUT. A server that does not come up
 # ends the stage with only the gate's could-not-run line.
@@ -282,11 +425,14 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY --chown=1000:1000 . /workspace/tree
 USER 1000:1000
-RUN cd /workspace/tree \
+RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
+  cd /workspace/tree \
   && export PATH="/usr/lib/postgresql/17/bin:$PATH" \
-  && initdb --pgdata /tmp/postgres --auth trust --username postgres \
+  && initdb --pgdata /tmp/postgres-memory/data --auth trust --username postgres \
     --encoding UTF8 --locale C >/dev/null \
-  && pg_ctl --pgdata /tmp/postgres --log /tmp/postgres.log --options '-k /tmp' --wait start \
+  && pg_ctl --pgdata /tmp/postgres-memory/data --log /tmp/postgres.log \
+    --options '-k /tmp -c fsync=off -c synchronous_commit=off -c full_page_writes=off' \
+    --wait start \
   && git init --quiet --initial-branch main \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid add --all \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid commit --quiet \
