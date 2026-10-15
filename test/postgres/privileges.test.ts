@@ -986,7 +986,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant,workload",
+      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
@@ -1131,13 +1131,14 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
 });
 
-test("the scheduler reads the refusal a pool writes on an attempt", async () => {
+test("the scheduler reads the refusal a pool writes on an attempt, and the image fault beside it", async () => {
   assert.deepEqual(
     await harness.query(
-      `SELECT has_column_privilege($1, 'public.execution_attempt', 'pool_refusal', 'SELECT') AS reads`,
+      `SELECT has_column_privilege($1, 'public.execution_attempt', 'pool_refusal', 'SELECT') AS reads,
+              has_column_privilege($1, 'public.execution_attempt', 'pool_refusal_fault', 'SELECT') AS reads_fault`,
       [schedulerRole],
     ),
-    [{ reads: true }],
+    [{ reads: true, reads_fault: true }],
   );
 });
 

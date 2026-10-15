@@ -806,6 +806,44 @@ test("a settlement is made against the kind its assignment is", async () => {
   ]);
 });
 
+test("an execution's refusal reaches its store with the image fault it names, and a session's with its evidence alone", async () => {
+  const refusals: unknown[][] = [];
+  const settling = ports(
+    {
+      ...idle,
+      refuse: (_identity, assignment, evidence, fault) =>
+        Promise.resolve(
+          (refusals.push(["job", assignment, evidence, fault]), true),
+        ),
+    },
+    holdingSessions(["s1"], {
+      refuse: (...called: unknown[]) =>
+        Promise.resolve((refusals.push(["session", ...called.slice(1)]), true)),
+    }),
+  );
+  for (const assignment of ["j1", "s1"])
+    assert.equal(
+      await workerPoolSettled(settling, identity, assignment, {
+        outcome: "Refused",
+        evidence: "git: not found",
+        fault: "ImageLacksGit",
+      }),
+      true,
+    );
+  assert.equal(
+    await workerPoolSettled(settling, identity, "j2", {
+      outcome: "Refused",
+      evidence: "no node",
+    }),
+    true,
+  );
+  assert.deepEqual(refusals, [
+    ["job", "j1", "git: not found", "ImageLacksGit"],
+    ["session", "s1", "git: not found", undefined],
+    ["job", "j2", "no node", undefined],
+  ]);
+});
+
 test("the images a pool may pull are those of what it holds of either kind, each kind to its own bound", async () => {
   const bounds: string[] = [];
   assert.deepEqual(

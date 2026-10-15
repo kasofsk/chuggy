@@ -50,6 +50,7 @@ import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-
 import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-retirement-releases-repository.ts";
 import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-release-pairing-refusals.ts";
 import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-lead-refusal.ts";
+import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-pool-refusal-fault.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -140,6 +141,7 @@ import { allSessionAttemptEvidences } from "../../src/interpreter/sessionSchedul
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
+import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
@@ -10149,5 +10151,76 @@ test("055 keeps no refusal for any project that stood, grants the selector its w
         public: false,
       },
     ]);
+  });
+});
+
+/** What one attempt 056 is run beside keeps of a pool's refusal. */
+async function poolRefusalKept056(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT pool_refusal, to_jsonb(a) ? 'pool_refusal_fault' AS has_fault,
+              to_jsonb(a)->>'pool_refusal_fault' AS fault
+         FROM execution_attempt a WHERE tenant='tenant-5' AND attempt='attempt-1'`,
+    )
+  ).rows;
+}
+
+test("056 keeps every refusal that stood with no fault, admits the contract's image faults alone, and none beside no refusal", async () => {
+  await migrationDatabase("pool_refusal_fault", async (subject) => {
+    await installationBefore(subject, migration056.version);
+    await subject.query(
+      `${deletionPartition}
+       ${deletionJournalRow(1, journalledRevocation)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)};
+       UPDATE execution_attempt
+          SET pool='pool-5',pool_principal='principal-5',assignment='assignment-5',
+              pool_refusal='no node'
+        WHERE tenant='tenant-5' AND attempt='attempt-1'`,
+    );
+    assert.deepEqual(await poolRefusalKept056(subject), [
+      { pool_refusal: "no node", has_fault: false, fault: null },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration056.version));
+    assert.deepEqual(await poolRefusalKept056(subject), [
+      { pool_refusal: "no node", has_fault: true, fault: null },
+    ]);
+    const known = (
+      await subject.query<{ definition: string }>(
+        `SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
+          WHERE c.conrelid = 'execution_attempt'::regclass
+            AND c.conname = 'execution_attempt_pool_refusal_fault_is_known'`,
+      )
+    ).rows[0]?.definition;
+    assert.deepEqual(
+      [...(known ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
+      [...workerImageFaults],
+      "the installed faults are the contract's",
+    );
+    const faulted = (fault: string, refusal: string | null) =>
+      subject
+        .query(
+          `UPDATE execution_attempt SET pool_refusal=$2,pool_refusal_fault=$1
+            WHERE tenant='tenant-5' AND attempt='attempt-1'`,
+          [fault, refusal],
+        )
+        .then(
+          () => undefined,
+          (failure: unknown) => String(failure),
+        );
+    assert.equal(await faulted("ImageLacksGit", "git: not found"), undefined);
+    assert.match(
+      String(await faulted("ImageLacksSed", "sed: not found")),
+      /execution_attempt_pool_refusal_fault_is_known/u,
+    );
+    assert.match(
+      String(await faulted("ImageLacksGit", null)),
+      /execution_attempt_pool_refusal_fault_is_a_refusal_s/u,
+    );
   });
 });

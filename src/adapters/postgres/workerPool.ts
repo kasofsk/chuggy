@@ -548,9 +548,9 @@ function postgresPoolExecutionHolds(
             WHERE p.tenant=a.tenant AND p.project=a.project AND p.lifecycle='Active')`);
       return (updated.rowCount ?? 0) === 1;
     },
-    refuse: async (identity, assignment, evidence) => {
+    refuse: async (identity, assignment, evidence, fault) => {
       const updated =
-        await pool.query(sql`UPDATE execution_attempt a SET pool_refusal=${evidence}
+        await pool.query(sql`UPDATE execution_attempt a SET pool_refusal=${evidence},pool_refusal_fault=${fault ?? null}
         WHERE a.tenant=${identity.partition.tenant} AND a.project=${identity.partition.project}
           AND a.assignment=${assignment} AND a.pool=${identity.pool}
           AND a.pool_principal=${identity.principal}
@@ -592,10 +592,10 @@ function postgresExecutionHoldsRouted(
       identity.kind === "Dedicated"
         ? pools.renew(identity, assignment, leaseSecs)
         : runners.renew(identity, assignment, leaseSecs),
-    refuse: (identity, assignment, evidence) =>
+    refuse: (identity, assignment, evidence, fault) =>
       identity.kind === "Dedicated"
-        ? pools.refuse(identity, assignment, evidence)
-        : runners.refuse(identity, assignment, evidence),
+        ? pools.refuse(identity, assignment, evidence, fault)
+        : runners.refuse(identity, assignment, evidence, fault),
     release: (identity, assignment) =>
       identity.kind === "Dedicated"
         ? pools.release(identity, assignment)

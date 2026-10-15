@@ -146,8 +146,16 @@ function calls(pinning: readonly string[] = []): {
         Promise.resolve(
           (made.push(["renew", assignment]), assignment === "live"),
         ),
-      refuse: (_identity, assignment, evidence) =>
-        Promise.resolve((made.push(["refuse", assignment, evidence]), true)),
+      refuse: (_identity, assignment, evidence, fault) =>
+        Promise.resolve(
+          (made.push([
+            "refuse",
+            assignment,
+            evidence,
+            ...(fault === undefined ? [] : [fault]),
+          ]),
+          true),
+        ),
       release: (_identity, assignment) =>
         Promise.resolve((made.push(["release", assignment]), true)),
       held: (_identity, assignment) =>
@@ -561,6 +569,26 @@ test("each settlement route reaches the one port its own path names", async () =
     ["held", "one"],
     ["refuse", "one", "no runner"],
     ["release", "one"],
+  ]);
+});
+
+test("a refusal naming an image fault reaches the port with it, and one naming no fault the contract has is refused before any port", async () => {
+  const recorded = calls();
+  const app = createPoolPlaneApp(plane(recorded.ports));
+  for (const [fault, status] of [
+    ["ImageWorkspaceUnwritable", 204],
+    ["ImageLacksSed", 400],
+  ] as const) {
+    const answered = await app.inject({
+      method: "POST",
+      url: workerPoolSettlementPath("Refused", "one"),
+      headers: speaking,
+      payload: { evidence: "/workspace is not writable", fault },
+    });
+    assert.equal(answered.statusCode, status, fault);
+  }
+  assert.deepEqual(recorded.made, [
+    ["refuse", "one", "/workspace is not writable", "ImageWorkspaceUnwritable"],
   ]);
 });
 

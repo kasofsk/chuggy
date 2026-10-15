@@ -570,7 +570,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution_attempt",
         "UPDATE",
-        "assignment,capability_secret_digest,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal",
+        "assignment,capability_secret_digest,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
       ],
       [
         "personal_runner",
@@ -706,6 +706,71 @@ async function poolClaimedIn(
 async function poolClaimed(label: string): ReturnType<typeof poolClaimedIn> {
   return poolClaimedIn(await poolProject(`pool-${label}`), label);
 }
+
+/** The refusal one attempt keeps, read under the scheduler that blocks on it. */
+async function poolRefusalKept(
+  project: SchedulerProject,
+  attempt: string,
+): Promise<unknown> {
+  return (
+    await rig.pool.query(
+      `SELECT pool_refusal, pool_refusal_fault FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt],
+    )
+  ).rows;
+}
+
+test("a refusal keeps the image fault its pool named, and a refusal naming none keeps none", async () => {
+  const faulted = await poolClaimed("refused-faulted");
+  assert.equal(
+    await assignments.refuse(
+      faulted.identity,
+      faulted.drawn.assignment,
+      "git: not found",
+      "ImageLacksGit",
+    ),
+    true,
+  );
+  assert.deepEqual(
+    await poolRefusalKept(faulted.project, faulted.claimed.attempt),
+    [{ pool_refusal: "git: not found", pool_refusal_fault: "ImageLacksGit" }],
+  );
+  const plain = await poolClaimed("refused-plain");
+  assert.equal(
+    await assignments.refuse(plain.identity, plain.drawn.assignment, "no node"),
+    true,
+  );
+  assert.deepEqual(
+    await poolRefusalKept(plain.project, plain.claimed.attempt),
+    [{ pool_refusal: "no node", pool_refusal_fault: null }],
+  );
+});
+
+test("no attempt keeps a fault the contract does not name, or a fault beside no refusal", async () => {
+  const { project, claimed } = await poolClaimed("refused-unknown");
+  const where = [
+    project.partition.tenant,
+    project.partition.project,
+    claimed.attempt,
+  ];
+  await assert.rejects(
+    planePool.query(
+      `UPDATE execution_attempt SET pool_refusal='no sed',pool_refusal_fault='ImageLacksSed'
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      where,
+    ),
+    /execution_attempt_pool_refusal_fault_is_known/u,
+  );
+  await assert.rejects(
+    planePool.query(
+      `UPDATE execution_attempt SET pool_refusal_fault='ImageLacksGit'
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      where,
+    ),
+    /execution_attempt_pool_refusal_fault_is_a_refusal_s/u,
+  );
+});
 
 /** A principal no registration here has used, which is what registering a name again is given. */
 function poolPrincipalFresh(pool: string): Principal {

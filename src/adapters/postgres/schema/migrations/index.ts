@@ -53,6 +53,7 @@ import { migration052 } from "./052-retirement-releases-repository.ts";
 import { migration053 } from "./053-release-pairing-refusals.ts";
 import { migration054 } from "./054-change-base-reference.ts";
 import { migration055 } from "./055-lead-refusal.ts";
+import { migration056 } from "./056-pool-refusal-fault.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -111,4 +112,5 @@ export const migrations: readonly Migration[] = [
   migration053,
   migration054,
   migration055,
+  migration056,
 ];
