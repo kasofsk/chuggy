@@ -268,6 +268,12 @@ export const ticketResponseSchema = z.object({
   title: z.string().max(briefTitleCharsMax).optional(),
   /** Which revision of its definition the ticket is at, which an update names as the one it expects. */
   revision: ticketNumberSchema,
+  /**
+   * The authority subject of the member who filed the ticket, which is who
+   * its first authoring revision was written under. It is absent where that
+   * revision carries no member's authority.
+   */
+  creator: identitySchema.optional(),
   phase: z.enum(phaseRoster),
   sequence: countSchema,
   /**

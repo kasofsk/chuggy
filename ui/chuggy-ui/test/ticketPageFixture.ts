@@ -12,6 +12,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 
 export const ticketPageTicket = {
   ticket: 11,
+  creator: "23:https://issuer.example/alice",
   phase: "Pending",
   sequence: 7,
   ...ticketInstants,
