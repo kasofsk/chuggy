@@ -388,10 +388,11 @@ RUN cd /opt/chuggy/lib/chuggy/core-suites \
 # WHAT THIS PROVES IS THE IMAGE, NOT THE POD. A build has no sidecars, so the
 # PostgreSQL the server gates are given is the stage's own: Debian's, started
 # as the image's own user and named by the URL `_postgres.sh` accepts in place
-# of a container. In a pod it is the site's, which names it to the gates as
-# `CHUG_PG_URL` in its own environment. Keto is handed to the gates in neither
-# place: `_keto.sh` finds no docker and starts the `keto` the image ships, here
-# as it does in a pod.
+# of a container. Its data directory is a tmpfs and it neither syncs nor writes
+# full pages, since a run's scratch is all a crash would lose. In a pod it is
+# the site's, which names it to the gates as `CHUG_PG_URL` in its own
+# environment. Keto is handed to the gates in neither place: `_keto.sh` finds
+# no docker and starts the `keto` the image ships, here as it does in a pod.
 #
 # THE POSTGRESQL LOG IS PRINTED ON THE WAY OUT. A server that does not come up
 # ends the stage with only the gate's could-not-run line.
@@ -420,11 +421,14 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY --chown=1000:1000 . /workspace/tree
 USER 1000:1000
-RUN cd /workspace/tree \
+RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
+  cd /workspace/tree \
   && export PATH="/usr/lib/postgresql/17/bin:$PATH" \
-  && initdb --pgdata /tmp/postgres --auth trust --username postgres \
+  && initdb --pgdata /tmp/postgres-memory/data --auth trust --username postgres \
     --encoding UTF8 --locale C >/dev/null \
-  && pg_ctl --pgdata /tmp/postgres --log /tmp/postgres.log --options '-k /tmp' --wait start \
+  && pg_ctl --pgdata /tmp/postgres-memory/data --log /tmp/postgres.log \
+    --options '-k /tmp -c fsync=off -c synchronous_commit=off -c full_page_writes=off' \
+    --wait start \
   && git init --quiet --initial-branch main \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid add --all \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid commit --quiet \
