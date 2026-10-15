@@ -153,9 +153,7 @@ export interface LeadRefused {
 
 /** Why a project holds no lead: its selector is paused, no refusal stands, or
  * the one the selector keeps. */
-export type LeadAbsence =
-  | { readonly reason: LeadAbsenceUntimed }
-  | LeadRefused;
+export type LeadAbsence = { readonly reason: LeadAbsenceUntimed } | LeadRefused;
 
 /** The absence of a project no refusal stands for. */
 export const leadNotNeeded: LeadAbsence = { reason: "NotNeeded" };

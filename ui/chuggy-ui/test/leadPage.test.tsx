@@ -921,7 +921,10 @@ test("a project refused for no live runner leaves it to the runner notice", asyn
   leadlessServed(
     {
       ...opening,
-      placement: sessionPlacementBody({ lead: "Pool", project: "Unregistered" }),
+      placement: sessionPlacementBody({
+        lead: "Pool",
+        project: "Unregistered",
+      }),
     },
     {
       lead: "None",

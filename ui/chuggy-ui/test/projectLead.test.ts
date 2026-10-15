@@ -108,7 +108,9 @@ test("a refusal for no live runner is left to the runner notice where one is dra
     lead: "None",
     absence: { reason: "RunnerOffline", since: sinceIso },
   });
-  expect(projectLeadAbsenceLine(offline, sameDayMs, "NoRunner")).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine(offline, sameDayMs, "NoRunner"),
+  ).toBeUndefined();
   expect(
     projectLeadAbsenceLine(offline, sameDayMs, "RunnerOffline"),
   ).toBeUndefined();
@@ -135,6 +137,10 @@ test("a server that gives no reason reads as tickets run by hand, and a lead or 
     projectLeadAbsenceLine({ state: "Pending" }, laterMs, undefined),
   ).toBeUndefined();
   expect(
-    projectLeadAbsenceLine({ state: "Absent", reason: "no" }, laterMs, undefined),
+    projectLeadAbsenceLine(
+      { state: "Absent", reason: "no" },
+      laterMs,
+      undefined,
+    ),
   ).toBeUndefined();
 });

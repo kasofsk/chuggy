@@ -321,17 +321,22 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         ),
     },
     history,
-    settings: {
-      projectSettings: (of) =>
-        Promise.resolve(
-          resolvedSelectorSettings(
-            of,
-            { ...selectorDefaults, mode: shape.installationMode ?? "Running" },
-            0,
-            shape.projectMode === undefined ? {} : { mode: shape.projectMode },
-          ),
+    settings: leadPortsSettings(shape),
+  };
+}
+
+/** The project's settings as the selector resolves them, paused where a case says. */
+function leadPortsSettings(shape: LeadCase): NativeLeadPorts["settings"] {
+  return {
+    projectSettings: (of) =>
+      Promise.resolve(
+        resolvedSelectorSettings(
+          of,
+          { ...selectorDefaults, mode: shape.installationMode ?? "Running" },
+          0,
+          shape.projectMode === undefined ? {} : { mode: shape.projectMode },
         ),
-    },
+      ),
   };
 }
 
