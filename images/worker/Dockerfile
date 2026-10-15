@@ -235,16 +235,18 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
      fi
 
 # WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE:
-# every library an ELF the tree ships needs, and for each family of versioned
-# symbols the highest version any of them asks for, which is the oldest that
-# family's library in the image may be. The build fails unless the two are
-# exactly these, so a bump that changes either changes this file. An image that
-# lacks one of the libraries, or holds one older than its floor, is one where
-# chuggy's node or claude cannot load, which `check.sh` reports with the status
-# of `ImageLibcUnsupported`. `bin/claude` is held to be a native binary, which
-# a link to anything else would not be.
+# every library an ELF the tree ships needs, and for each family of symbol
+# versions those ELFs reference the highest one, which is the oldest that
+# family's library in the image may be. Only an ELF's version references are
+# read, since its version definitions are what it provides rather than what it
+# needs. The build fails unless the two are exactly these, so a bump that
+# changes either changes this file. An image that lacks one of the libraries,
+# or holds one older than its floor, is one where chuggy's node or claude
+# cannot load, which `check.sh` reports with the status of
+# `ImageLibcUnsupported`. `bin/claude` is held to be a native binary, which a
+# link to anything else would not be.
 ARG RUNTIME_LIBRARIES="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
-ARG RUNTIME_VERSION_FLOOR="CXXABI_1.3.11 GLIBCXX_3.4.21 GLIBC_2.28"
+ARG RUNTIME_VERSION_FLOOR="CXXABI_1.3.11 GCC_3.4 GLIBCXX_3.4.21 GLIBC_2.28"
 RUN find /opt/chuggy -type f > /tmp/files.txt \
   && : > /tmp/needed.txt \
   && while read -r file; do \
@@ -252,7 +254,9 @@ RUN find /opt/chuggy -type f > /tmp/files.txt \
        objdump -p "$file" > /tmp/elf.txt || exit 1; \
        echo "runtime: $file is an ELF"; \
        awk '$1 == "NEEDED" { print "library", $2 } \
-         $4 ~ /^(GLIBC|GLIBCXX|CXXABI)_[0-9.]+$/ { print "version", $4 }' \
+         /^Version References:/ { references = 1; next } \
+         !/^[ \t]/ { references = 0 } \
+         references && $1 ~ /^0x/ && $4 ~ /^[A-Z]+_[0-9][0-9.]*$/ { print "version", $4 }' \
          /tmp/elf.txt >> /tmp/needed.txt || exit 1; \
      done < /tmp/files.txt \
   && libraries="$(sed -n 's/^library //p' /tmp/needed.txt | sort -u | tr '\n' ' ')" \
