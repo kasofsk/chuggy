@@ -153,16 +153,21 @@ test("a ticket carrying check lines is not releasable against it", () => {
 
 /**
  * The JSON skeletons one line spells out, each a balanced `{…}` span, with its
- * placeholder letters left bare.
+ * placeholder letters left bare. A `${…}` span is a shell expansion the line
+ * names, and no skeleton.
  */
 function skeletons(line: string): string[] {
   const found: string[] = [];
+  const characters = [...line];
   let depth = 0;
   let start = 0;
-  for (const [index, character] of [...line].entries()) {
-    if (character === "{" && depth++ === 0) start = index;
-    if (character === "}" && --depth === 0)
-      found.push([...line].slice(start, index + 1).join(""));
+  let shell = 0;
+  for (const [index, character] of characters.entries()) {
+    if (character === "{" && characters[index - 1] === "$") shell++;
+    else if (character === "}" && shell > 0) shell--;
+    else if (character === "{" && depth++ === 0) start = index;
+    else if (character === "}" && --depth === 0)
+      found.push(characters.slice(start, index + 1).join(""));
   }
   return found;
 }
@@ -253,9 +258,9 @@ function declaredTo(filling: Filling) {
   });
 }
 
-/** The sentence telling one bound to a sentence and a check line alike, whole. */
+/** The sentence telling one bound to a sentence and a check line alike, whole, opening its line. */
 const toldLineChars =
-  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.$/u;
+  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.(?: |$)/u;
 
 /** Each list and line filled to the most its worker is told it may hold. */
 const atEveryBound: Filling = {
@@ -518,6 +523,25 @@ test("the worker is told where the format is published, and that evaluations run
         line.includes("Check stage goes before a Review"),
     ),
   );
+});
+
+/** The one expansion of the change base that a line under `sh -eu` survives when it is unset. */
+const guardedChangeBase = "$" + "{CHUG_CHANGE_BASE-}";
+
+test("the worker is told its shell lines carry the commit the change started from, and how to read it unset under sh -eu", () => {
+  const told = briefed("Work", "PurposeInstructions");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("Each L runs under sh -eu with CHUG_CHANGE_BASE") &&
+        line.includes(
+          `${guardedChangeBase} and runs everything where that is empty`,
+        ),
+    ),
+  );
+  const published = JSON.stringify(configurationDocumentJsonSchema());
+  assert.ok(published.includes("/bin/sh -eu"));
+  assert.ok(published.includes(`reads it as ${guardedChangeBase}`));
 });
 
 /** The fields the published schema names in a configuration. */
