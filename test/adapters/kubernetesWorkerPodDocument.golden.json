@@ -132,12 +132,12 @@
                 "value": "{\"forge\":\"/var/run/golden/forge/token\",\"workspace\":\"/var/run/golden/workspace/token\"}"
               },
               {
-                "name": "CHUG_WORKER_WORKSPACE",
-                "value": "/workspace"
-              },
-              {
                 "name": "CHUG_WORKER_REPOSITORIES",
                 "value": "{\"repository\":{}}"
+              },
+              {
+                "name": "CHUG_WORKER_WORKSPACE",
+                "value": "/workspace"
               }
             ],
             "resources": {
@@ -364,12 +364,12 @@
                 "value": "{\"forge\":\"/var/run/golden/forge/token\",\"workspace\":\"/var/run/golden/workspace/token\"}"
               },
               {
-                "name": "CHUG_WORKER_WORKSPACE",
-                "value": "/workspace"
-              },
-              {
                 "name": "CHUG_WORKER_REPOSITORIES",
                 "value": "{\"repository\":{}}"
+              },
+              {
+                "name": "CHUG_WORKER_WORKSPACE",
+                "value": "/workspace"
               }
             ],
             "resources": {

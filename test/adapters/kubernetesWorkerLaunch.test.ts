@@ -336,11 +336,11 @@ function expectedContainer(): unknown {
           workspace: workspaceCredentialMount.mountPath,
         }),
       },
-      { name: workerWorkspaceVariable, value: "/workspace" },
       {
         name: workerRepositoriesVariable,
         value: workerRepositoriesValue,
       },
+      { name: workerWorkspaceVariable, value: "/workspace" },
     ],
     resources: {
       requests: {
@@ -1128,20 +1128,25 @@ test("a worker starts through the contract's command over the site's runtime, mo
   );
 });
 
-test("a site whose own mounts would land inside the runtime is refused by the path", () => {
-  assert.throws(
-    () =>
-      checkedKubernetesWorkerLaunchConfig({
-        ...config,
-        credentialMounts: {
-          workspace: {
-            ...workspaceCredentialMount,
-            mountPath: `${workerRuntimeDirectory}/credentials/workspace`,
+test("a site whose own mounts would land inside or around the runtime is refused by the path", () => {
+  for (const [mountPath, refused] of [
+    [
+      `${workerRuntimeDirectory}/credentials/workspace`,
+      /worker mount \/opt\/chuggy\/credentials overlaps \/opt\/chuggy/u,
+    ],
+    ["/opt/workspace", /worker mount \/opt overlaps \/opt\/chuggy/u],
+  ] as const)
+    assert.throws(
+      () =>
+        checkedKubernetesWorkerLaunchConfig({
+          ...config,
+          credentialMounts: {
+            workspace: { ...workspaceCredentialMount, mountPath },
           },
-        },
-      }),
-    /worker mount path \/opt\/chuggy\/credentials\/workspace is inside \/opt\/chuggy/u,
-  );
+        }),
+      refused,
+      mountPath,
+    );
 });
 
 test("site environment cannot replace any worker-owned document", () => {

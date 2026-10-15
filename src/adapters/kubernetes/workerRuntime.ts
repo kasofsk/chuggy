@@ -19,6 +19,10 @@
  * THE JOB CANNOT WRITE WHAT RUNS IT. Its mount is read-only, so no file of the
  * runtime changes under it, whatever the job's image, checks or agent do.
  *
+ * THE WORKSPACE IS NAMED IN THE JOB'S ENVIRONMENT. An image that never heard of
+ * chuggy says nothing about where it works, so the site's path is written
+ * beside the command that reads it, for whichever launcher started the job.
+ *
  * NOTHING HERE CHOOSES A RUNTIME. Which image the tree is copied from is the
  * caller's: the site's own for a pushed worker, and the assignment's for a
  * pool. The copy runs under the site's container security context, as every
@@ -27,11 +31,12 @@
  * not grow.
  */
 
-import { basename } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 
 import {
   workerJobCommand,
   workerRuntimeDirectory,
+  workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
 import {
   kubernetesContainerResources,
@@ -69,26 +74,37 @@ export interface KubernetesJobPod {
   readonly volumes: KubernetesPod["spec"]["volumes"];
 }
 
+/** Whether a mount at `target` and the runtime's would land one at, inside or around the other. */
+function checkedKubernetesRuntimeSiteOverlaps(target: string): boolean {
+  const mounted = resolve(target);
+  const within = (inner: string, outer: string): boolean =>
+    inner === outer || inner.startsWith(outer === "/" ? outer : `${outer}/`);
+  return (
+    within(mounted, workerRuntimeDirectory) ||
+    within(workerRuntimeDirectory, mounted)
+  );
+}
+
 /**
- * Refuses a site that mounts anything of its own at or under the runtime's
- * directory. Two mounts at one path are a pod the cluster refuses, and one
- * inside the read-only runtime is a container that cannot start.
+ * Refuses a site that mounts anything of its own at, inside or around the
+ * runtime's directory: one at it is a pod the cluster refuses, one inside it
+ * cannot be made in a read-only tree, and one around it puts the runtime inside
+ * a volume of the site's. A credential is mounted as its directory.
  */
 export function checkedKubernetesRuntimeSite(
   site: KubernetesPodSite,
   what: string,
 ): void {
-  for (const path of [
+  for (const target of [
     site.capabilityFile,
     site.workspacePath,
-    ...Object.values(site.credentialMounts).map(({ mountPath }) => mountPath),
+    ...Object.values(site.credentialMounts).map(({ mountPath }) =>
+      dirname(mountPath),
+    ),
   ])
-    if (
-      path === workerRuntimeDirectory ||
-      path.startsWith(`${workerRuntimeDirectory}/`)
-    )
+    if (checkedKubernetesRuntimeSiteOverlaps(target))
       throw new RangeError(
-        `${what} mount path ${path} is inside ${workerRuntimeDirectory}, where the runtime is mounted`,
+        `${what} mount ${target} overlaps ${workerRuntimeDirectory}, where the runtime is mounted`,
       );
 }
 
@@ -122,8 +138,9 @@ function kubernetesJobRuntimeCopy(
 /**
  * `job` started from the runtime `image` carries: the copy ahead of its
  * sidecars, its container running the contract's command over the read-only
- * tree, and the volume between them bounded by `storageLimit`. A container
- * naming a command or arguments of its own is refused rather than overridden.
+ * tree with the site's workspace in its environment, and the volume between
+ * them bounded by `storageLimit`. A container naming a command, arguments or
+ * the workspace of its own is refused rather than overridden.
  */
 export function kubernetesJobRuntime(
   site: KubernetesPodSite,
@@ -136,6 +153,10 @@ export function kubernetesJobRuntime(
     throw new RangeError(
       `job container ${name} names its own command, which the runtime's would replace`,
     );
+  if (started.env.some((variable) => variable.name === workerWorkspaceVariable))
+    throw new RangeError(
+      `job container ${name} names its own ${workerWorkspaceVariable}, which the site's would replace`,
+    );
   return {
     initContainers: [
       kubernetesJobRuntimeCopy(site, image),
@@ -146,6 +167,10 @@ export function kubernetesJobRuntime(
       image: jobImage,
       command: workerJobCommand,
       ...started,
+      env: [
+        ...started.env,
+        { name: workerWorkspaceVariable, value: site.workspacePath },
+      ],
       volumeMounts: [
         ...started.volumeMounts,
         {

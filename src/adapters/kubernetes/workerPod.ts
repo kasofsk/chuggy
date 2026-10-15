@@ -41,9 +41,7 @@
  * A WORKER STARTS FROM THE SITE'S RUNTIME, NEVER FROM ITS IMAGE'S ENTRYPOINT.
  * Every pod copies the runtime image the deployment names and starts the
  * worker from it, as `workerRuntime.ts` renders, so the image a requirement
- * names need carry only the project's tools. The workspace is named to the
- * worker in its environment for the same reason: an image that never heard of
- * chuggy says nothing about where it works.
+ * names need carry only the project's tools.
  */
 
 import {
@@ -305,7 +303,6 @@ function kubernetesWorkerContainer(
         name: workerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
-      { name: workerWorkspaceVariable, value: config.workspacePath },
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,

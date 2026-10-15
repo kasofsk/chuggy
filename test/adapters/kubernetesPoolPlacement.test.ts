@@ -9,6 +9,7 @@ import {
   workerJobCommand,
   workerRuntimeDirectory,
   workerTaskVariable,
+  workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
@@ -492,15 +493,17 @@ test("a site is refused where its provider credential is served by no mount", ()
   );
 });
 
-test("a site is refused where it reserves the variable the envelope is read from", () => {
-  assert.throws(
-    () =>
-      checkedKubernetesPoolPlacementConfig({
-        ...config,
-        environment: { [workerTaskVariable]: "hijacked" },
-      }),
-    RangeError,
-  );
+test("a site is refused where it reserves the variable the envelope is read from, or the workspace the runtime is told", () => {
+  for (const variable of [workerTaskVariable, workerWorkspaceVariable])
+    assert.throws(
+      () =>
+        checkedKubernetesPoolPlacementConfig({
+          ...config,
+          environment: { [variable]: "hijacked" },
+        }),
+      new RegExp(`pool worker environment may not replace ${variable}`, "u"),
+      variable,
+    );
 });
 
 test("a site is refused where a sidecar names no image or takes the workload's own name", () => {
@@ -579,11 +582,21 @@ test("an assignment naming a runtime starts its workload from it, and one naming
       [sidecar.name, sidecar.image],
     ],
   );
+  assert.deepEqual(
+    container.env.filter(({ name }) => name === workerWorkspaceVariable),
+    [{ name: workerWorkspaceVariable, value: config.workspacePath }],
+  );
   const unstarted = (await placedPod({
     ...config,
     sidecars: [sidecar],
   })) as unknown as KubernetesPod;
   assert.equal("command" in (unstarted.spec.containers[0] ?? {}), false);
+  assert.deepEqual(
+    unstarted.spec.containers[0]?.env.filter(
+      ({ name }) => name === workerWorkspaceVariable,
+    ),
+    [],
+  );
   assert.deepEqual(
     unstarted.spec.initContainers?.map(({ name }) => name),
     [sidecar.name],
@@ -601,6 +614,6 @@ test("a site is refused where its own mounts would land inside the runtime", () 
         ...config,
         workspacePath: workerRuntimeDirectory,
       }),
-    /pool placement mount path \/opt\/chuggy is inside/u,
+    /pool placement mount \/opt\/chuggy overlaps \/opt\/chuggy/u,
   );
 });

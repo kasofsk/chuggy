@@ -15,6 +15,7 @@ import { test } from "node:test";
 import {
   workerJobCommand,
   workerRuntimeDirectory,
+  workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import type {
   KubernetesContainer,
@@ -41,7 +42,7 @@ const site: KubernetesPodSite = {
   requestTimeoutSecsMax: 5,
   workerPlaneUrl: "http://plane.invalid:3001",
   capabilityFile: "/run/chuggy/capability",
-  workspacePath: "/workspace",
+  workspacePath: "/srv/workspace",
   credentialMounts: {
     forge: {
       secretName: "forge",
@@ -107,9 +108,18 @@ test("the copy is a plain init container that runs ahead of every sidecar", () =
 test("the job's container runs the contract's command and keeps its own image, environment and mounts", () => {
   assert.deepEqual(started.container.command, workerJobCommand);
   assert.equal("args" in started.container, false);
+  const unchanged = {
+    command: undefined,
+    env: undefined,
+    volumeMounts: undefined,
+  };
   assert.deepEqual(
-    { ...started.container, command: undefined, volumeMounts: undefined },
-    { ...job.container, command: undefined, volumeMounts: undefined },
+    { ...started.container, ...unchanged },
+    { ...job.container, ...unchanged },
+  );
+  assert.deepEqual(
+    started.container.env.slice(0, job.container.env.length),
+    job.container.env,
   );
   assert.deepEqual(
     started.container.volumeMounts.slice(0, job.container.volumeMounts.length),
@@ -137,6 +147,12 @@ test("the job mounts the tree the copy wrote, read-only, where the contract says
   assert.equal(tree.subPath, basename(workerRuntimeDirectory));
 });
 
+test("the job is told the site's workspace, which no image it names need know", () => {
+  assert.deepEqual(started.container.env.slice(job.container.env.length), [
+    { name: workerWorkspaceVariable, value: site.workspacePath },
+  ]);
+});
+
 test("the volume between them is the pod's own, bounded by the storage it was given", () => {
   const added = started.volumes.slice(job.volumes.length);
   assert.deepEqual(started.volumes.slice(0, job.volumes.length), job.volumes);
@@ -145,49 +161,61 @@ test("the volume between them is the pod's own, bounded by the storage it was gi
   ]);
 });
 
-test("a job container naming a command or arguments of its own is refused rather than overridden", () => {
-  for (const named of [
-    { command: ["node", "worker.mjs"] },
-    { args: ["--flag"] },
-  ])
+test("a job container naming a command, arguments or the workspace of its own is refused rather than overridden", () => {
+  for (const [named, refused] of [
+    [{ command: ["node", "worker.mjs"] }, /names its own command/u],
+    [{ args: ["--flag"] }, /names its own command/u],
+    [
+      { env: [{ name: workerWorkspaceVariable, value: "/elsewhere" }] },
+      /names its own CHUG_WORKER_WORKSPACE/u,
+    ],
+  ] as const)
     assert.throws(
       () =>
         kubernetesJobRuntime(site, runtime, "8Gi", {
           ...job,
           container: { ...job.container, ...named },
         }),
-      /job container worker names its own command/u,
+      refused,
       JSON.stringify(named),
     );
 });
 
-test("a site mounting anything at or under the runtime's directory is refused, and one beside it is not", () => {
+/** A site whose one credential is mounted at `mountPath`, which is mounted as its directory. */
+function siteCredentialAt(mountPath: string): Partial<KubernetesPodSite> {
+  return {
+    credentialMounts: {
+      forge: { secretName: "forge", key: "token", mountPath },
+    },
+  };
+}
+
+test("a site mounting anything at, inside or around the runtime's directory is refused, and one beside it is not", () => {
   for (const refused of [
     { workspacePath: workerRuntimeDirectory },
+    { workspacePath: `${workerRuntimeDirectory}/` },
     { capabilityFile: `${workerRuntimeDirectory}/capability` },
-    {
-      credentialMounts: {
-        forge: {
-          secretName: "forge",
-          key: "token",
-          mountPath: `${workerRuntimeDirectory}/token`,
-        },
-      },
-    },
+    siteCredentialAt(`${workerRuntimeDirectory}/token`),
+    { workspacePath: "/opt" },
+    { workspacePath: "/opt/" },
+    { workspacePath: "/" },
+    { capabilityFile: "/opt" },
+    siteCredentialAt("/opt/token"),
   ])
     assert.throws(
       () => {
         checkedKubernetesRuntimeSite({ ...site, ...refused }, "worker");
       },
-      /is inside \/opt\/chuggy, where the runtime is mounted/u,
+      /overlaps \/opt\/chuggy, where the runtime is mounted/u,
       JSON.stringify(refused),
     );
   for (const accepted of [
     site,
     { ...site, workspacePath: `${workerRuntimeDirectory}-workspace` },
-    { ...site, workspacePath: "/opt" },
+    { ...site, workspacePath: "/opt/workspace" },
+    { ...site, ...siteCredentialAt("/opt/credentials/token") },
   ])
     assert.doesNotThrow(() => {
       checkedKubernetesRuntimeSite(accepted, "worker");
-    });
+    }, JSON.stringify(accepted));
 });

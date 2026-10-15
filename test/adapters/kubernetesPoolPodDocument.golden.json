@@ -125,6 +125,10 @@
             {
               "name": "CHUG_WORKER_REPOSITORIES",
               "value": "{\"repository\":{}}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/srv/golden/workspace"
             }
           ],
           "resources": {
@@ -146,7 +150,7 @@
           "volumeMounts": [
             {
               "name": "workspace",
-              "mountPath": "/workspace",
+              "mountPath": "/srv/golden/workspace",
               "readOnly": false
             },
             {
@@ -311,6 +315,10 @@
             {
               "name": "CHUG_WORKER_REPOSITORIES",
               "value": "{\"repository\":{}}"
+            },
+            {
+              "name": "CHUG_WORKER_WORKSPACE",
+              "value": "/srv/golden/workspace"
             }
           ],
           "resources": {
@@ -332,7 +340,7 @@
           "volumeMounts": [
             {
               "name": "workspace",
-              "mountPath": "/workspace",
+              "mountPath": "/srv/golden/workspace",
               "readOnly": false
             },
             {
@@ -524,7 +532,7 @@
           "volumeMounts": [
             {
               "name": "workspace",
-              "mountPath": "/workspace",
+              "mountPath": "/srv/golden/workspace",
               "readOnly": false
             },
             {

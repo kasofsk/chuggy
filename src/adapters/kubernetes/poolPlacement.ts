@@ -12,9 +12,10 @@
  * configuration or an invocation. The image is the one the assignment names,
  * which is the requirement's pinned image, and the pool's own where it names
  * none. The runtime is the assignment's too: a workload whose assignment names
- * one starts from it exactly as a pushed worker does, through
- * `workerRuntime.ts`, and one whose assignment names none runs its image's own
- * entrypoint, which is what the contract says an absent runtime means.
+ * one is started from it by `workerRuntime.ts`, which starts a pushed worker's
+ * pod too, and one whose assignment names none runs its image's own entrypoint
+ * and is told nothing of a runtime, which is what the contract says an absent
+ * runtime means.
  *
  * WHAT IS RUNNING IS READ FROM THE CLUSTER. `held` lists this pool's own pods
  * by its label and reads each assignment off an annotation, so a restarted
@@ -37,7 +38,10 @@
  * names no session ceiling.
  */
 
-import { workerTaskVariable } from "../../contract/workerEnvironment.ts";
+import {
+  workerTaskVariable,
+  workerWorkspaceVariable,
+} from "../../contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
 import type { PoolEnvelope } from "../../contract/workerTask.ts";
 import type {
@@ -126,7 +130,7 @@ export function checkedKubernetesPoolPlacementConfig(
     throw new RangeError("pool placement label is empty");
   kubernetesReservedVariables(
     config.environment,
-    [workerTaskVariable],
+    [workerTaskVariable, workerWorkspaceVariable],
     "pool worker environment",
   );
   checkedKubernetesSidecars(
