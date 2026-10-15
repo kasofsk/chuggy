@@ -2909,6 +2909,15 @@ async function heldRow(subject: pg.Pool): Promise<HeldRow | undefined> {
   ).rows[0];
 }
 
+/** When the hold began, at the server's own precision, which a `Date` truncates to the millisecond. */
+async function heldSince(subject: pg.Pool): Promise<string | null | undefined> {
+  return (
+    await subject.query<{ held_since: string | null }>(
+      "SELECT held_since::text AS held_since FROM finalization_request WHERE request='request-5'",
+    )
+  ).rows[0]?.held_since;
+}
+
 /** The members a roster check installs, read off the constraint the server holds. */
 async function heldRosterOf(
   subject: pg.Pool,
@@ -3136,6 +3145,7 @@ test("a recorded hold counts its passes, restarts on another kind and clears on 
       { result: "Recorded", hold_passes: 1 },
     ]);
     const first = await heldRow(subject);
+    const firstSince = await heldSince(subject);
     assert.equal(first?.hold_kind, heldKind);
     assert.ok(first?.held_since instanceof Date);
     assert.deepEqual(await heldRecord(subject, heldKind), [
@@ -3152,7 +3162,7 @@ test("a recorded hold counts its passes, restarts on another kind and clears on 
     const moved = await heldRow(subject);
     assert.equal(moved?.hold_kind, heldOther);
     assert.equal(moved?.hold_passes, 1);
-    assert.notDeepEqual(moved.held_since, first.held_since);
+    assert.notEqual(await heldSince(subject), firstSince);
     assert.deepEqual(await heldRecord(subject, null), [
       { result: "Recorded", hold_passes: 0 },
     ]);
