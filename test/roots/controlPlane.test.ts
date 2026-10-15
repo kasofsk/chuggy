@@ -138,6 +138,7 @@ const successfulProcessProgram = `
         claimRequests: async () => [],
         admit: async () => ({ admitted: 'NoCandidate' }),
         refusedAttempts: async () => [],
+        attemptsAwaitingObservation: async () => [],
         reapLapsedAttempts: async () => 0,
         attemptsAwaitingCleanup: async () => [],
         attemptCleanupCompleted: async () => true,

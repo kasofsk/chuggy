@@ -29,7 +29,11 @@ import { asPlacementId } from "../../src/interpreter/executionScheduler.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { asExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asRecoveryEpoch,
+  asTenantId,
+} from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import {
@@ -981,6 +985,111 @@ test("a definitive inability blocks one execution and releases its slot", async 
       "ExecutionProfileUnavailable",
     ),
     { blocked: "AlreadyBlocked", operation: blocked.operation },
+  );
+});
+
+/** The attempts a sweep offers for observation, kept to one case's own partition. */
+async function awaitingObservation(
+  project: SchedulerProject,
+  epoch = project.epoch,
+): Promise<readonly FencedAttempt[]> {
+  return (
+    await rig.store.attemptsAwaitingObservation(epoch, observationBoundless)
+  ).filter(
+    ({ partition }) =>
+      partition.tenant === project.partition.tenant &&
+      partition.project === project.partition.project,
+  );
+}
+
+/** A bound no case's sweep reaches, so what one leaves out is the predicate's doing. */
+const observationBoundless = 1_000_000;
+
+test("observation offers a placed in-cluster attempt of this epoch and nothing else", async () => {
+  const project = await schedulerProject(rig, "observed", { tasks: 2 });
+  await registerAll(project, "observed");
+  const attempt = await placedAttempt(project, "observed");
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  const placing = await rig.store.openAttempt({
+    partition: project.partition,
+    execution: admitted.execution,
+    epoch: project.epoch,
+    ...attemptBounds,
+  });
+  assert.ok(placing.opened === "Opened");
+  const offered = {
+    partition: attempt.partition,
+    execution: attempt.execution,
+    attempt: attempt.attempt,
+    generation: attempt.generation,
+  };
+  assert.deepEqual(await awaitingObservation(project), [offered]);
+  assert.equal(
+    (await rig.store.attemptsAwaitingObservation(project.epoch, 1)).length,
+    1,
+  );
+  assert.deepEqual(
+    await awaitingObservation(
+      project,
+      asRecoveryEpoch(`other-${randomUUID()}`),
+    ),
+    [],
+  );
+  const key = [
+    project.partition.tenant,
+    project.partition.project,
+    attempt.execution,
+  ];
+  await rig.harness.query(
+    `UPDATE execution SET placement='Pool'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    key,
+  );
+  assert.deepEqual(await awaitingObservation(project), []);
+  await rig.harness.query(
+    `UPDATE execution SET placement='InCluster'
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    key,
+  );
+  assert.equal(
+    await rig.store.attemptEnded(attempt, "Withdrawn", "ImageLacksGit"),
+    true,
+  );
+  assert.deepEqual(await awaitingObservation(project), []);
+});
+
+test("an image fault blocks its execution as incompatible, keeps its label and spends no retry", async () => {
+  const project = await schedulerProject(rig, "image-fault", { tasks: 1 });
+  await registerAll(project, "image-fault");
+  const attempt = await placedAttempt(project, "image-fault");
+  assert.equal(
+    await rig.store.attemptEnded(
+      attempt,
+      "Withdrawn",
+      "ImageWorkspaceUnwritable",
+    ),
+    true,
+  );
+  const blocked = await rig.store.blockExecution(
+    project.partition,
+    attempt.execution,
+    "TicketConfigIncompatible",
+  );
+  assert.equal(blocked.blocked, "Blocked");
+  const execution = await rig.store.execution(
+    project.partition,
+    attempt.execution,
+  );
+  assert.equal(execution?.outcome, "Blocked");
+  assert.equal(execution?.retriesSpent, 0);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT state, evidence FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt.attempt],
+    ),
+    [{ state: "Withdrawn", evidence: "ImageWorkspaceUnwritable" }],
   );
 });
 

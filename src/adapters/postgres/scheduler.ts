@@ -1036,6 +1036,41 @@ async function schedulerRefusedAttempts(
 }
 
 /**
+ * At most `attemptsMax` running attempts of this epoch whose execution is
+ * placed in the cluster and that name the workload placed for them, in key
+ * order and whatever their lease, so a lapsed one is observed before it is
+ * reaped.
+ */
+async function schedulerAttemptsAwaitingObservation(
+  client: pg.PoolClient,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+): Promise<readonly FencedAttempt[]> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
+  if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
+  const placed = await client.query<
+    SchedulerRowKey & { attempt: string; generation: string }
+  >(
+    sql`SELECT a.tenant, a.project, a.execution, a.attempt,
+               a.generation::text AS generation
+          FROM execution_attempt a
+          JOIN execution e
+            ON e.tenant = a.tenant AND e.project = a.project
+           AND e.execution = a.execution
+         WHERE a.state = 'Running' AND a.workload IS NOT NULL
+           AND a.recovery_epoch = ${epoch} AND e.placement = 'InCluster'
+         ORDER BY a.tenant, a.project, a.execution, a.attempt
+         LIMIT ${attemptsMax}`,
+  );
+  return placed.rows.map((row) => ({
+    partition: schedulerRowPartition(row),
+    execution: asExecutionId(row.execution),
+    attempt: asAttemptId(row.attempt),
+    generation: projectRowCounter(row.generation, "attempt generation"),
+  }));
+}
+
+/**
  * Ends at most `attemptsMax` live attempts whose lease has run out and that no
  * pool refused, charging the budget an attempt that ran spends to exactly the
  * registrations whose attempt this pass ends and ran. The registrations are
@@ -1347,6 +1382,7 @@ function postgresExecutionSchedulerSweeps(
 ): Pick<
   ExecutionSchedulerStore,
   | "refusedAttempts"
+  | "attemptsAwaitingObservation"
   | "reapLapsedAttempts"
   | "attemptsAwaitingCleanup"
   | "attemptCleanupCompleted"
@@ -1357,6 +1393,10 @@ function postgresExecutionSchedulerSweeps(
     refusedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerRefusedAttempts(client, epoch, attemptsMax),
+      ),
+    attemptsAwaitingObservation: (epoch, attemptsMax) =>
+      postgresTransaction(pool, (client) =>
+        schedulerAttemptsAwaitingObservation(client, epoch, attemptsMax),
       ),
     reapLapsedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>

@@ -158,6 +158,9 @@ export function kubernetesWorkerPodName(
 
 export const kubernetesWorkerSecretName = kubernetesWorkerPodName;
 
+/** The key of the pod's Secret its bearer is held under. */
+export const kubernetesWorkerBearerKey = "bearer";
+
 export function kubernetesWorkerSecret(
   config: KubernetesWorkerLaunchConfig,
   placement: AttemptPlacement,
@@ -189,7 +192,7 @@ export function kubernetesWorkerSecret(
         },
       ],
     },
-    stringData: { bearer: placement.capability.secret },
+    stringData: { [kubernetesWorkerBearerKey]: placement.capability.secret },
   };
 }
 
@@ -278,7 +281,7 @@ function kubernetesWorkerCapabilityVolumes(
           placement.attempt,
         ),
         defaultMode: 0o400,
-        items: [{ key: "bearer", path: "bearer" }],
+        items: [{ key: kubernetesWorkerBearerKey, path: "bearer" }],
       },
     },
   ];

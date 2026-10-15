@@ -16,7 +16,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,6 +24,7 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
+import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
@@ -901,9 +902,10 @@ test("a stated project authority timeout is taken", async () => {
  * The cluster a case answers for, reachable or not, and the site each half
  * stands on. Both halves place against that one site, so what is recorded is
  * the pod or Secret name, which carries the prefix its own launcher was
- * configured with and is therefore the only thing that says which half asked.
+ * configured with and is therefore the only thing that says which half asked,
+ * and a read of a worker's pod is answered with `workerPod`.
  */
-function processCluster(reachable: boolean): string {
+function processCluster(reachable: boolean, workerPod: unknown): string {
   return `
     const cluster = {
       apiBaseUrl: 'https://cluster.invalid:6443',
@@ -939,7 +941,7 @@ function processCluster(reachable: boolean): string {
     const asked = [];
     const sessionTasks = [];
     const half = (init) => {
-      const named = init && init.body ? JSON.parse(init.body).metadata.name : '';
+      const named = init && typeof init.body === 'string' ? JSON.parse(init.body).metadata.name : '';
       if (named.startsWith(cluster.podNamePrefix)) return ' worker';
       if (named.startsWith(sessionSite.podNamePrefix)) return ' session';
       return '';
@@ -947,10 +949,18 @@ function processCluster(reachable: boolean): string {
     const fetcher = (input, init) => {
       asked.push(((init && init.method) || 'GET') + ' ' + String(input) + half(init));
       if (!${String(reachable)}) return Promise.reject(new Error('connection refused'));
+      if (new URL(String(input)).host === new URL(cluster.workerPlaneUrl).host)
+        return Promise.reject(new Error('dropped by the worker plane ingress'));
       const path = new URL(String(input)).pathname;
+      if ((!init || (init.method || 'GET') === 'GET')
+          && path.includes('/secrets/' + cluster.podNamePrefix))
+        return Promise.resolve(Response.json({ data: { bearer: btoa('secret-one') } }));
       if ((!init || (init.method || 'GET') === 'GET')
           && path.includes('/pods/' + sessionSite.podNamePrefix))
         return Promise.resolve(Response.json({ status: { phase: 'Failed' } }));
+      if ((!init || (init.method || 'GET') === 'GET')
+          && path.includes('/pods/' + cluster.podNamePrefix))
+        return Promise.resolve(Response.json(${JSON.stringify(workerPod ?? {})}));
       if (init && init.method === 'POST' && String(input).endsWith('/pods')) {
         const submitted = JSON.parse(init.body);
         if (submitted.metadata.name.startsWith(sessionSite.podNamePrefix))
@@ -966,8 +976,8 @@ function processCluster(reachable: boolean): string {
   `;
 }
 
-/** The durable rows the execution half of one pass is given to move. */
-function processExecutionFakes(): string {
+/** The durable rows the execution half of one pass is given to move, its attempt offered for observation when `observed`. */
+function processExecutionFakes(observed: boolean): string {
   return `
     const partition = { tenant: 'tenant', project: 'project' };
     const execution = {
@@ -992,6 +1002,7 @@ function processExecutionFakes(): string {
       claimRequests: async () => [],
       admit: async () => ({ admitted: 'NoCandidate' }),
       refusedAttempts: async () => [],
+      attemptsAwaitingObservation: async () => ${observed ? "[attempt]" : "[]"},
       reapLapsedAttempts: async () => 0,
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,
@@ -1000,6 +1011,7 @@ function processExecutionFakes(): string {
       attemptInvoked: async () => true,
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
       attemptEnded: async () => true,
+      blockExecution: async () => ({ blocked: 'Blocked', operation: 'operation-one' }),
     };
     const configuration = ${JSON.stringify(configuration)};
   `;
@@ -1046,11 +1058,18 @@ function processSessionFakes(observing: boolean): string {
   `;
 }
 
-/** Everything one driven pass calls out through, cluster and rows alike. */
-function processFakes(reachable: boolean, observing: boolean): string {
+/** Everything one driven pass calls out through, cluster, rows and stderr alike. */
+function processFakes(
+  reachable: boolean,
+  observing: boolean,
+  workerPod: unknown,
+): string {
   return `
-    ${processCluster(reachable)}
-    ${processExecutionFakes()}
+    const told = [];
+    const tell = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk, ...rest) => { told.push(String(chunk)); return tell(chunk, ...rest); };
+    ${processCluster(reachable, workerPod)}
+    ${processExecutionFakes(workerPod !== undefined)}
     ${processSessionFakes(observing)}
   `;
 }
@@ -1072,6 +1091,7 @@ function processProgram(
   reachable: boolean,
   mirrors: Readonly<Record<string, string>> = {},
   observing = false,
+  workerPod: unknown = undefined,
 ): string {
   return `
     const roots = await import('./src/roots/controlPlane.ts');
@@ -1085,7 +1105,7 @@ function processProgram(
     const briefing = await import('./src/interpreter/taskBriefing.ts');
     const tickets = await import('./src/interpreter/ticketService.ts');
     const finalizer = await import('./src/interpreter/finalizer.ts');
-    ${processFakes(reachable, observing)}
+    ${processFakes(reachable, observing, workerPod)}
     const service = {
       store,
       placement: launch.kubernetesWorkerLaunch(cluster, fetcher),
@@ -1104,8 +1124,7 @@ function processProgram(
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
-      ticketService: tickets.ticketServiceDefaults,
-      finalizer: finalizer.finalizerDefaults,
+      ticketService: tickets.ticketServiceDefaults, finalizer: finalizer.finalizerDefaults,
       metrics: scheduler.silentSchedulerTelemetry,
     };
     const sessionService = {
@@ -1134,7 +1153,7 @@ function processProgram(
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, sessionPlaced, sessionEnded, sessionTasks, asked,
+      started, health, stopped, placed, sessionPlaced, sessionEnded, sessionTasks, asked, told,
     }));
   `;
 }
@@ -1155,6 +1174,7 @@ interface ProcessRan {
     readonly repository?: { readonly reference: string };
   }[];
   readonly asked: readonly string[];
+  readonly told: readonly string[];
 }
 
 const namespaceUrl =
@@ -1240,6 +1260,86 @@ test("a session pod the cluster says failed ends its attempt on the turn's own r
       (one) => one.startsWith("GET") && one.includes("/pods/"),
     ),
     [`GET ${namespaceUrl}/pods/${found.sessionPlaced[0] ?? ""}`],
+  );
+});
+
+/**
+ * What the execution pass could not mend reaches an operator through the whole
+ * process: the cluster's own document for a worker whose runtime copy failed is
+ * read, the pod is deleted, and stderr names the attempt, the pod and the copy.
+ */
+test("a worker pod whose runtime copy failed is withdrawn and told on stderr", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      processProgram(
+        true,
+        {},
+        false,
+        processCapturedPod("runtime-copy-failed"),
+      ),
+    ),
+  ) as ProcessRan;
+  const read = found.asked.find(
+    (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
+  );
+  const name = read?.split("/pods/")[1] ?? "";
+  assert.ok(name.length > 0);
+  assert.ok(found.asked.includes(`DELETE ${namespaceUrl}/pods/${name}`));
+  assert.deepEqual(
+    found.told.filter((line) => line.startsWith("execution scheduler:")),
+    [
+      `execution scheduler: tenant/project attempt attempt-one withdrawn, its pod failed on the site: pod ${name}: the runtime copy chuggy-runtime ended Error with status 1\n`,
+    ],
+  );
+});
+
+/** One pod document a kubelet reported, by its fixture's name. */
+function processCapturedPod(name: string): unknown {
+  return JSON.parse(
+    readFileSync(
+      new URL(`../fixtures/kubernetesPods/${name}.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
+/**
+ * What happens while the worker plane does not admit the scheduler: the image
+ * fault still blocks and the pod is still deleted, and the text that could not
+ * be stored, the kubelet's message with it, is a line on stderr naming the
+ * attempt and the fault.
+ */
+test("an image fault whose text the worker plane never takes still blocks, and says so on stderr", async () => {
+  const pod = processCapturedPod("pull-missing-tag") as {
+    readonly status: {
+      readonly containerStatuses: readonly {
+        readonly state: { readonly waiting: { readonly message: string } };
+      }[];
+    };
+  };
+  const said = pod.status.containerStatuses[0]?.state.waiting.message ?? "";
+  assert.ok(said.includes("not found"));
+  const found = JSON.parse(
+    await schedulerProgram(processProgram(true, {}, false, pod)),
+  ) as ProcessRan;
+  const read = found.asked.find(
+    (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
+  );
+  const name = read?.split("/pods/")[1] ?? "";
+  assert.ok(name.length > 0);
+  assert.ok(found.asked.includes(`GET ${namespaceUrl}/secrets/${name}`));
+  assert.ok(
+    found.asked.includes(
+      "PUT https://worker-plane.invalid/v1/artifacts/.chuggy/worker-error.txt",
+    ),
+  );
+  assert.ok(found.asked.includes(`DELETE ${namespaceUrl}/pods/${name}`));
+  const text = `${kubernetesImageFaultTexts.ImageUnpullable}\nThe cluster said: ${said}`;
+  assert.deepEqual(
+    found.told.filter((line) => line.startsWith("execution scheduler:")),
+    [
+      `execution scheduler: tenant/project attempt attempt-one blocked ImageUnpullable, and its error text was not stored: the worker plane could not be reached: ${JSON.stringify(text)}\n`,
+    ],
   );
 });
 

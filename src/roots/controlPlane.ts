@@ -3,7 +3,10 @@ import type {
   SchedulerOwnerId,
 } from "../interpreter/executionScheduler.ts";
 import { executionSchedulerPass } from "../interpreter/executionSchedulerRun.ts";
-import type { ExecutionSchedulerService } from "../interpreter/executionSchedulerRun.ts";
+import type {
+  ExecutionSchedulerService,
+  SchedulerPassNotice,
+} from "../interpreter/executionSchedulerRun.ts";
 import type { FinalizerOwnerId } from "../interpreter/finalizer.ts";
 import {
   finalizerPass,
@@ -272,13 +275,26 @@ export function selectorProcess(
   );
 }
 
+/** The line an operator reads for one thing a scheduler pass could not mend, naming the attempt it was about. */
+function schedulerProcessNoticeLine(notice: SchedulerPassNotice): string {
+  const { partition, attempt } = notice.attempt;
+  const where = `execution scheduler: ${partition.tenant}/${partition.project} attempt ${attempt}`;
+  switch (notice.notice) {
+    case "SiteFault":
+      return `${where} withdrawn, its pod failed on the site: ${notice.why}\n`;
+    case "ErrorUnwritten":
+      return `${where} blocked ${notice.fault}, and its error text was not stored: ${notice.why}: ${JSON.stringify(notice.text)}\n`;
+  }
+}
+
 /**
  * Drives both schedulers in one tick of one pacing loop, execution first: either
  * cleanup raises on a cluster answering `Unavailable` to a cancel and
  * `../interpreter/serviceRuntime.ts` ends the loop on a raise out of `run`, so
  * the order decides only which half has finished its pass when the other stops
  * the tick, and this slice's newest infrastructure does not get to deny the
- * proved execution machine a dispatch on its way out.
+ * proved execution machine a dispatch on its way out. What the execution pass
+ * could not mend reaches stderr, since an operator is who mends it.
  */
 export function schedulerProcess(
   service: ExecutionSchedulerService,
@@ -294,12 +310,14 @@ export function schedulerProcess(
   return serviceRuntime(
     {
       run: async () => {
-        await executionSchedulerPass(
+        const report = await executionSchedulerPass(
           service,
           identity.owner,
           identity.recoveryEpoch,
           identity.cluster,
         );
+        for (const notice of report.notices)
+          process.stderr.write(schedulerProcessNoticeLine(notice));
         await sessionSchedulerPass(sessions, identity.recoveryEpoch);
       },
     },

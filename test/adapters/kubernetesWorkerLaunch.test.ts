@@ -15,7 +15,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -24,6 +24,8 @@ import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
+import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
+import { kubernetesPullFailureDwellSecs } from "../../src/adapters/kubernetes/podFaults.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
   kubernetesWorkerContainerName,
@@ -47,6 +49,7 @@ import {
   workerRepositoriesSchema,
   workerRepositoriesVariable,
   workerRuntimeDirectory,
+  workerImageFaults,
   workerTaskVariable,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
@@ -78,7 +81,15 @@ import {
   type PinnedTaskConfiguration,
   type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
-import { resultReportCharsMax } from "../../src/contract/http.ts";
+import {
+  resultReportCharsMax,
+  workerErrorPath,
+} from "../../src/contract/http.ts";
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
+import { workerPlaneBytesMediaType } from "../../src/contract/workerPlane.ts";
 import { populated } from "../interpreter/roster.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-cluster-"));
@@ -240,6 +251,7 @@ interface ClusterReached {
   readonly url: string;
   readonly method: string;
   readonly authorization: string | undefined;
+  readonly headers: Headers;
   readonly body: string | undefined;
 }
 
@@ -259,27 +271,30 @@ function recordingCluster(
             : input.url,
       method: init?.method ?? "GET",
       authorization: headers.get("authorization") ?? undefined,
-      body: typeof init?.body === "string" ? init.body : undefined,
+      headers,
+      body:
+        typeof init?.body === "string"
+          ? init.body
+          : init?.body instanceof Uint8Array
+            ? new TextDecoder().decode(init.body)
+            : undefined,
     };
     reached.push(request);
     const response = answer(request);
+    if (
+      request.method !== "POST" ||
+      !request.url.endsWith("/pods") ||
+      (response.status !== 200 && response.status !== 201)
+    )
+      return Promise.resolve(response);
     const submitted = JSON.parse(request.body ?? "{}") as {
       readonly metadata?: Readonly<Record<string, unknown>>;
     };
     return Promise.resolve(
-      (init?.method ?? "GET") === "POST" &&
-        request.url.endsWith("/pods") &&
-        (response.status === 200 || response.status === 201)
-        ? Response.json(
-            {
-              metadata: {
-                ...submitted.metadata,
-                uid: "pod-uid-one",
-              },
-            },
-            { status: response.status },
-          )
-        : response,
+      Response.json(
+        { metadata: { ...submitted.metadata, uid: "pod-uid-one" } },
+        { status: response.status },
+      ),
     );
   };
 }
@@ -1322,4 +1337,235 @@ test("the heaviest task a composition admits still fits the pod env that carries
     carried < taskEnvelopeBytesMax,
     `the task variable is ${String(carried)} bytes, which no exec environment string carries`,
   );
+});
+
+/** One pod document a kubelet reported, by its fixture's name. */
+function capturedPod(name: string): unknown {
+  return JSON.parse(
+    readFileSync(
+      new URL(`../fixtures/kubernetesPods/${name}.json`, import.meta.url),
+      "utf8",
+    ),
+  );
+}
+
+/** What observing the suite's attempt answers when its pod reads as `answer` does, at the time `now` gives. */
+async function observedWith(
+  answer: (request: ClusterReached) => Response,
+  reached: ClusterReached[] = [],
+  now?: () => number,
+): Promise<unknown> {
+  return kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, answer),
+    now,
+  ).observe(placement);
+}
+
+/** The text an observation carries, or nothing where it carries none. */
+function observedText(observed: unknown): string | undefined {
+  return typeof observed === "object" &&
+    observed !== null &&
+    "text" in observed &&
+    typeof observed.text === "string"
+    ? observed.text
+    : undefined;
+}
+
+test("observing an attempt reads its own pod, once, under the cluster's credential", async () => {
+  const reached: ClusterReached[] = [];
+  const observed = await observedWith(
+    () => Response.json(capturedPod("lacks-git")),
+    reached,
+  );
+  assert.deepEqual(observed, {
+    observed: "ImageFault",
+    fault: "ImageLacksGit",
+    text: kubernetesImageFaultTexts.ImageLacksGit,
+  });
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  assert.deepEqual(
+    reached.map(({ method, url, authorization }) => ({
+      method,
+      url,
+      authorization,
+    })),
+    [
+      {
+        method: "GET",
+        url: `https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/pods/${name}`,
+        authorization: `Bearer ${token}`,
+      },
+    ],
+  );
+});
+
+test("a pull the kubelet could not make is told in the backend's words and then the kubelet's", async () => {
+  const observed = await observedWith(() =>
+    Response.json(capturedPod("pull-missing-digest")),
+  );
+  const [line, said] = (observedText(observed) ?? "").split("\n");
+  assert.equal(line, kubernetesImageFaultTexts.ImageUnpullable);
+  assert.match(said ?? "", /^The cluster said: .*not found$/u);
+});
+
+test("a pull that can still succeed is read at the time the launcher's clock gives", async () => {
+  const pod = capturedPod("pull-unavailable") as {
+    readonly metadata: { readonly creationTimestamp: string };
+  };
+  const created = Date.parse(pod.metadata.creationTimestamp);
+  const at = (afterSecs: number) => () => created + afterSecs * 1_000;
+  assert.deepEqual(
+    await observedWith(
+      () => Response.json(pod),
+      [],
+      at(kubernetesPullFailureDwellSecs - 1),
+    ),
+    { observed: "Unfaulted" },
+  );
+  const [line, said] = (
+    observedText(
+      await observedWith(
+        () => Response.json(pod),
+        [],
+        at(kubernetesPullFailureDwellSecs),
+      ),
+    ) ?? ""
+  ).split("\n");
+  assert.equal(line, kubernetesImageFaultTexts.ImageUnpullable);
+  assert.match(said ?? "", /^The cluster said: .*503 Service Unavailable$/u);
+});
+
+test("a shell the cluster could not start is told in the backend's words and then the kubelet's", async () => {
+  const [line, said] = (
+    observedText(
+      await observedWith(() => Response.json(capturedPod("lacks-shell"))),
+    ) ?? ""
+  ).split("\n");
+  assert.equal(line, kubernetesImageFaultTexts.ImageLacksShell);
+  assert.match(
+    said ?? "",
+    /^The cluster said: .*stat \/bin\/sh: no such file or directory/u,
+  );
+});
+
+test("a runtime copy that failed is the site's fault and names the pod it failed", async () => {
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  assert.deepEqual(
+    await observedWith(() => Response.json(capturedPod("runtime-copy-failed"))),
+    {
+      observed: "SiteFault",
+      why: `pod ${name}: the runtime copy chuggy-runtime ended Error with status 1`,
+    },
+  );
+});
+
+test("a pod that is not there, not shown or not reachable is unfaulted", async () => {
+  for (const answer of [
+    answering(404),
+    answering(403),
+    () => new Response("not a pod", { status: 200 }),
+    () => Response.json(capturedPod("runtime-incomplete")),
+  ]) {
+    assert.deepEqual(await observedWith(answer), { observed: "Unfaulted" });
+  }
+  const unreachable = kubernetesWorkerLaunch(config, () =>
+    Promise.reject(new Error("connection refused")),
+  );
+  assert.deepEqual(await unreachable.observe(placement), {
+    observed: "Unfaulted",
+  });
+});
+
+/** A cluster holding the suite's attempt's bearer Secret, and a worker plane answering `planeStatus`. */
+function errorSite(
+  planeStatus: number,
+  secret: Readonly<Record<string, string>> = {
+    bearer: Buffer.from("secret-one").toString("base64"),
+  },
+): (request: ClusterReached) => Response {
+  return (request) =>
+    request.url.startsWith(config.apiBaseUrl)
+      ? Response.json({ data: secret })
+      : new Response(null, { status: planeStatus });
+}
+
+test("an error text is uploaded where its worker would have, under the bearer its pod was given", async () => {
+  const reached: ClusterReached[] = [];
+  const workers = kubernetesWorkerLaunch(
+    config,
+    recordingCluster(reached, errorSite(204)),
+  );
+  const text = kubernetesImageFaultTexts.ImageLacksGit;
+  assert.deepEqual(await workers.writeError(placement, text), {
+    written: "Written",
+  });
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  const [secret, upload] = reached;
+  assert.equal(secret?.method, "GET");
+  assert.equal(
+    secret.url,
+    `https://cluster.invalid:6443/api/v1/namespaces/chuggy-workers/secrets/${name}`,
+  );
+  assert.equal(secret.authorization, `Bearer ${token}`);
+  assert.equal(upload?.method, "PUT");
+  assert.equal(
+    upload.url,
+    `http://chuggy-worker-plane:8080/v1/artifacts/${workerErrorPath}`,
+  );
+  assert.equal(upload.authorization, "Bearer secret-one");
+  assert.equal(upload.headers.get("content-type"), workerPlaneBytesMediaType);
+  assert.equal(upload.headers.get(workerContractHeader), workerContractRelease);
+  assert.equal(upload.body, text);
+  assert.equal(reached.length, 2);
+});
+
+test("a text the worker plane refuses or never hears is unwritten, saying which", async () => {
+  const refused = kubernetesWorkerLaunch(
+    config,
+    recordingCluster([], errorSite(503)),
+  );
+  assert.deepEqual(await refused.writeError(placement, "text"), {
+    written: "Unwritten",
+    why: "the worker plane answered 503",
+  });
+  const unheard = kubernetesWorkerLaunch(
+    config,
+    recordingCluster([], (request) => {
+      if (request.url.startsWith(config.apiBaseUrl))
+        return errorSite(204)(request);
+      throw new Error(`${request.method} refused`);
+    }),
+  );
+  assert.deepEqual(await unheard.writeError(placement, "text"), {
+    written: "Unwritten",
+    why: "the worker plane could not be reached",
+  });
+});
+
+test("a bearer that cannot be read back uploads nothing", async () => {
+  const name = kubernetesWorkerPodName(config, partition, placement.attempt);
+  for (const answer of [answering(404), errorSite(204, {})]) {
+    const reached: ClusterReached[] = [];
+    const workers = kubernetesWorkerLaunch(
+      config,
+      recordingCluster(reached, answer),
+    );
+    assert.deepEqual(await workers.writeError(placement, "text"), {
+      written: "Unwritten",
+      why: `the bearer Secret ${name} could not be read`,
+    });
+    assert.deepEqual(
+      reached.map(({ method }) => method),
+      ["GET"],
+    );
+  }
+});
+
+test("every image fault is told by a text of its own", () => {
+  const texts = workerImageFaults.map(
+    (fault) => kubernetesImageFaultTexts[fault],
+  );
+  assert.equal(new Set(texts).size, workerImageFaults.length);
+  assert.ok(texts.every((text) => text.length > 0 && !text.includes("\n")));
 });

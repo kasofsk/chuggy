@@ -870,6 +870,15 @@ export interface ExecutionSchedulerStore {
     attemptsMax: number,
   ): Promise<number>;
 
+  /**
+   * At most `attemptsMax` live attempts of this epoch placed in the cluster,
+   * which are the ones with a workload to observe, whatever their lease.
+   */
+  attemptsAwaitingObservation(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<readonly FencedAttempt[]>;
+
   /** Ended physical attempts whose external workload still needs idempotent removal. */
   attemptsAwaitingCleanup(
     attemptsMax: number,
@@ -942,6 +951,26 @@ export type AttemptPlacementOutcome =
   | { readonly placed: "Unavailable" };
 
 /**
+ * What one look at a placed attempt's workload found that its own worker could
+ * not report. A fault of the image carries the text its person is shown, and a
+ * fault of the site says what an operator has to mend; `Unfaulted` is every
+ * other answer together, because the lease is what collects all of them.
+ */
+export type AttemptWorkloadObserved =
+  | {
+      readonly observed: "ImageFault";
+      readonly fault: WorkerImageFault;
+      readonly text: string;
+    }
+  | { readonly observed: "SiteFault"; readonly why: string }
+  | { readonly observed: "Unfaulted" };
+
+/** Whether a workload's error text was stored, and where it was not, why. */
+export type AttemptErrorWritten =
+  | { readonly written: "Written" }
+  | { readonly written: "Unwritten"; readonly why: string };
+
+/**
  * The mandatory execution policy, evaluated separately from the pinned release
  * briefing. A denial is definitive and becomes the task's wall; an unavailable
  * policy is a hold that leaves the execution exactly as it was.
@@ -982,6 +1011,15 @@ export interface AttemptPlacementPort {
   ): Promise<
     { readonly cancelled: "Accepted" } | { readonly cancelled: "Unavailable" }
   >;
+
+  /** What the workload placed for this attempt has met that its own worker cannot report. */
+  observe(attempt: FencedAttempt): Promise<AttemptWorkloadObserved>;
+
+  /** Stores the error text of a workload that never ran, as that workload would have under this attempt's own capability. */
+  writeError(
+    attempt: FencedAttempt,
+    text: string,
+  ): Promise<AttemptErrorWritten>;
 }
 
 /** The authority kind every scheduler-submitted completion is scoped and audited under. */

@@ -111,6 +111,7 @@ function recordingStore(
     blockExecution: unreached,
     execution: unreached,
     refusedAttempts: unreached,
+    attemptsAwaitingObservation: unreached,
     reapLapsedAttempts: unreached,
     attemptsAwaitingCleanup: unreached,
     attemptCleanupCompleted: unreached,
