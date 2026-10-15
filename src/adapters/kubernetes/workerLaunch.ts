@@ -1,15 +1,18 @@
 /**
  * The Kubernetes adapter behind `AttemptPlacementPort`: the one request that
  * asks a cluster for a scheduled attempt's pod, the one that asks it to go
- * away, and the readiness probe that says whether either could be attempted at
- * all. The port is backend-neutral, so a cluster fact reaches no caller: what
- * leaves here is an opaque placement identity and the three placement arms.
+ * away, the one that asks what the pod met, and the readiness probe that says
+ * whether any could be attempted at all. The port is backend-neutral, so a
+ * cluster fact reaches no caller: what leaves here is an opaque placement
+ * identity, the three placement arms, and a fault named in the contract's
+ * words.
  *
  * WHAT IS LEFT HERE IS WHAT MAKES A WORKER A WORKER. Reaching the cluster,
  * bounding the request, telling a refused document apart from an unreachable
  * API and creating a pod beside its bearer Secret are `./clusterReach.ts`'s,
  * because a session pod needs every one of them and needs them to behave the
- * same way. This module renders the worker's own document and hands it over.
+ * same way. This module renders the worker's own document and hands it over,
+ * and what a pod's status means for its attempt is `./workerFaults.ts`'s.
  */
 
 import type {
@@ -24,16 +27,25 @@ import {
   kubernetesCancelPod,
   kubernetesPlacePod,
   kubernetesReach,
+  kubernetesReadPod,
 } from "./clusterReach.ts";
 import {
+  kubernetesWorkerErrorWritten,
+  kubernetesWorkloadObserved,
+} from "./workerFaults.ts";
+import {
   checkedKubernetesWorkerLaunchConfig,
+  kubernetesWorkerBearerKey,
+  kubernetesWorkerContainerName,
   kubernetesWorkerPodName,
   kubernetesWorkerPodRequest,
   kubernetesWorkerSecret,
+  kubernetesWorkerSecretName,
   type KubernetesWorkerLaunchConfig,
 } from "./workerPod.ts";
+import { kubernetesRuntimeContainerName } from "./workerRuntime.ts";
 
-/** Places and cancels one bounded pod per attempt against the supplied cluster. */
+/** Places, cancels and observes one bounded pod per attempt against the supplied cluster. */
 export function kubernetesWorkerLaunch(
   input: KubernetesWorkerLaunchConfig,
   fetcher: typeof fetch = fetch,
@@ -53,6 +65,35 @@ export function kubernetesWorkerLaunch(
         config,
         fetcher,
         kubernetesWorkerPodName(config, attempt.partition, attempt.attempt),
+      ),
+    observe: async (attempt) => {
+      const pod = kubernetesWorkerPodName(
+        config,
+        attempt.partition,
+        attempt.attempt,
+      );
+      return kubernetesWorkloadObserved(
+        pod,
+        await kubernetesReadPod(config, fetcher, pod),
+        {
+          job: kubernetesWorkerContainerName,
+          runtime: kubernetesRuntimeContainerName,
+        },
+      );
+    },
+    writeError: async (attempt, text) =>
+      kubernetesWorkerErrorWritten(
+        config,
+        fetcher,
+        {
+          secret: kubernetesWorkerSecretName(
+            config,
+            attempt.partition,
+            attempt.attempt,
+          ),
+          key: kubernetesWorkerBearerKey,
+        },
+        text,
       ),
   };
 }

@@ -36,6 +36,8 @@ import {
   type AttemptPlacementPort,
   type AttemptPlacementOutcome,
   type AttemptPlacement,
+  type AttemptErrorWritten,
+  type AttemptWorkloadObserved,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -43,10 +45,12 @@ import {
   executionSchedulerCancel,
   executionSchedulerCleanup,
   executionSchedulerLaunch,
+  executionSchedulerObserve,
   executionSchedulerPass,
   executionSchedulerRegister,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
+import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import { resultReportCharsMax } from "../../src/contract/http.ts";
 import {
@@ -216,6 +220,7 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     },
     execution: () => Promise.resolve(undefined),
     refusedAttempts: () => Promise.resolve([]),
+    attemptsAwaitingObservation: () => Promise.resolve([]),
     reapLapsedAttempts: () => Promise.resolve(0),
     attemptsAwaitingCleanup: () => Promise.resolve([]),
     attemptCleanupCompleted: () => Promise.resolve(true),
@@ -280,6 +285,8 @@ function serviceWith(
       );
       return Promise.resolve({ cancelled: "Accepted" });
     },
+    observe: () => Promise.resolve({ observed: "Unfaulted" }),
+    writeError: () => Promise.resolve({ written: "Written" }),
   };
   return {
     store: recordingStore(calls),
@@ -387,6 +394,8 @@ test("independent backends substitute at the same placement port", async () => {
       });
     },
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
+    observe: () => Promise.resolve({ observed: "Unfaulted" }),
+    writeError: () => Promise.resolve({ written: "Written" }),
   });
   for (const name of ["kubernetes", "registered-runner"]) {
     const service = serviceWith([], runnable, placedOk);
@@ -622,6 +631,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("admitted");
       return Promise.resolve({ admitted: "ClusterFull" });
     },
+    attemptsAwaitingObservation: () => {
+      calls.push("observing");
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: () => {
       calls.push("reaped");
       return Promise.resolve(0);
@@ -639,7 +652,9 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       registered: 0,
       cancelled: 0,
       admitted: 0,
+      observed: 0,
       placed: 0,
+      notices: [],
     },
   );
   assert.deepEqual(calls, [
@@ -647,6 +662,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "claimed:CancelTicketWork",
     "claimed:SpawnWork,SpawnEvaluation",
     "admitted",
+    "observing",
     "reaped",
     "unlaunched",
   ]);
@@ -693,7 +709,9 @@ test("a pass reports the count each of its steps moved", async () => {
       registered: 1,
       cancelled: 3,
       admitted: 1,
+      observed: 0,
       placed: 1,
+      notices: [],
     },
   );
 });
@@ -789,6 +807,10 @@ test("each sweep is asked for at most the count a pass is configured to take", a
       swept.push(`fence:${String(attemptsMax)}`);
       return Promise.resolve(0);
     },
+    attemptsAwaitingObservation: (_epoch, attemptsMax) => {
+      swept.push(`observe:${String(attemptsMax)}`);
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       swept.push(`reap:${String(attemptsMax)}`);
       return Promise.resolve(0);
@@ -796,7 +818,11 @@ test("each sweep is asked for at most the count a pass is configured to take", a
   };
   const bound = String(executionSchedulerDefaults.attemptsPerPassMax);
   await executionSchedulerPass({ ...service, store }, owner, epoch, cluster);
-  assert.deepEqual(swept, [`fence:${bound}`, `reap:${bound}`]);
+  assert.deepEqual(swept, [
+    `fence:${bound}`,
+    `observe:${bound}`,
+    `reap:${bound}`,
+  ]);
 });
 
 test("a pass refuses a configuration that reserves no room for its completions", async () => {
@@ -1987,4 +2013,190 @@ test("an attempt routed to pools is offered to none while the authority cannot a
   );
   assert.deepEqual(calls, []);
   assert.deepEqual(seen, ["reaping:0", "attemptOpened:Opened"]);
+});
+
+/**
+ * A pass's observation of the fixture attempt, whose workload is found as
+ * `found` and whose error text the backend answers `written` to, noting every
+ * call the step makes of the store and the backend.
+ */
+async function observing(
+  calls: string[],
+  found: AttemptWorkloadObserved,
+  written: AttemptErrorWritten = { written: "Written" },
+  ended = true,
+  seen: string[] = [],
+): Promise<unknown> {
+  const service = serviceWith(calls, runnable, placedOk);
+  return executionSchedulerObserve(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        attemptsAwaitingObservation: () => Promise.resolve([attempt]),
+        attemptEnded: (_attempt, loss, evidence) => {
+          calls.push(`ended:${loss}:${evidence}`);
+          return Promise.resolve(ended);
+        },
+      },
+      placement: {
+        ...service.placement,
+        observe: (observed) => {
+          calls.push(`observed:${observed.attempt}`);
+          return Promise.resolve(found);
+        },
+        writeError: (failed, text) => {
+          calls.push(`wrote:${failed.attempt}:${text}`);
+          return Promise.resolve(written);
+        },
+      },
+      metrics: schedulerTelemetry(recordingMetrics(seen)),
+    },
+    epoch,
+  );
+}
+
+test("each image fault stores its text, then blocks as incompatible under its own label without spending a retry, then cancels the pod", async () => {
+  for (const fault of workerImageFaults) {
+    const calls: string[] = [];
+    const seen: string[] = [];
+    assert.deepEqual(
+      await observing(
+        calls,
+        { observed: "ImageFault", fault, text: `text of ${fault}` },
+        { written: "Written" },
+        true,
+        seen,
+      ),
+      { observed: 1, notices: [] },
+    );
+    assert.deepEqual(calls, [
+      "observed:attempt-one",
+      `wrote:attempt-one:text of ${fault}`,
+      `ended:Withdrawn:${fault}`,
+      "blocked:TicketConfigIncompatible",
+      "cancelled:attempt-one:1",
+    ]);
+    assert.deepEqual(seen, [
+      `attemptEnded:Withdrawn:${fault}`,
+      "blocking:Blocked:TicketConfigIncompatible",
+    ]);
+  }
+});
+
+test("a fault of the site's runtime withdraws the attempt without blocking or spending a retry, and is told", async () => {
+  const calls: string[] = [];
+  const why = "pod chuggy-worker-one: the runtime copy ended Error";
+  assert.deepEqual(await observing(calls, { observed: "SiteFault", why }), {
+    observed: 1,
+    notices: [{ notice: "SiteFault", attempt, why }],
+  });
+  assert.deepEqual(calls, [
+    "observed:attempt-one",
+    "ended:Withdrawn:PlacementUnavailable",
+    "cancelled:attempt-one:1",
+  ]);
+});
+
+test("a workload with no fault its worker cannot report is left to its lease", async () => {
+  const calls: string[] = [];
+  assert.deepEqual(await observing(calls, { observed: "Unfaulted" }), {
+    observed: 0,
+    notices: [],
+  });
+  assert.deepEqual(calls, ["observed:attempt-one"]);
+});
+
+test("a fault whose text could not be stored still blocks, and the text's absence is told", async () => {
+  const calls: string[] = [];
+  const why = "the worker plane answered 503";
+  assert.deepEqual(
+    await observing(
+      calls,
+      { observed: "ImageFault", fault: "ImageLacksGit", text: "text" },
+      { written: "Unwritten", why },
+    ),
+    {
+      observed: 1,
+      notices: [
+        { notice: "ErrorUnwritten", attempt, fault: "ImageLacksGit", why },
+      ],
+    },
+  );
+  assert.deepEqual(calls.slice(2), [
+    "ended:Withdrawn:ImageLacksGit",
+    "blocked:TicketConfigIncompatible",
+    "cancelled:attempt-one:1",
+  ]);
+});
+
+test("an attempt something else ended first is neither counted nor told", async () => {
+  for (const found of [
+    { observed: "SiteFault", why: "pod one: copy failed" },
+    { observed: "ImageFault", fault: "ImageLacksGit", text: "text" },
+  ] as const) {
+    assert.deepEqual(
+      await observing(
+        [],
+        found,
+        { written: "Unwritten", why: "the worker plane answered 409" },
+        false,
+      ),
+      { observed: 0, notices: [] },
+    );
+  }
+});
+
+test("a pass observes after admission and before the reaper, asking for the bound every sweep has", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    admit: () => {
+      calls.push("admitted");
+      return Promise.resolve({ admitted: "ClusterFull" });
+    },
+    attemptsAwaitingObservation: (observedEpoch, attemptsMax) => {
+      calls.push(`observing:${observedEpoch}:${String(attemptsMax)}`);
+      return Promise.resolve([attempt]);
+    },
+    refusedAttempts: () => {
+      calls.push("refused");
+      return Promise.resolve([]);
+    },
+    reapLapsedAttempts: () => {
+      calls.push("reaped");
+      return Promise.resolve(0);
+    },
+    unlaunched: () => Promise.resolve([]),
+  };
+  const placement = {
+    ...service.placement,
+    observe: () => {
+      calls.push("observed");
+      return Promise.resolve({
+        observed: "SiteFault",
+        why: "copy failed",
+      } as const);
+    },
+  };
+  const report = await executionSchedulerPass(
+    { ...service, store, placement },
+    owner,
+    epoch,
+    cluster,
+  );
+  assert.equal(report.observed, 1);
+  assert.deepEqual(report.notices, [
+    { notice: "SiteFault", attempt, why: "copy failed" },
+  ]);
+  assert.deepEqual(calls.slice(calls.indexOf("admitted")), [
+    "admitted",
+    `observing:${epoch}:${String(executionSchedulerDefaults.attemptsPerPassMax)}`,
+    "observed",
+    "ended:Withdrawn:PlacementUnavailable",
+    "cancelled:attempt-one:1",
+    "refused",
+    "reaped",
+  ]);
 });

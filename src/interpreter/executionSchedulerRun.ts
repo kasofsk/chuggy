@@ -2,15 +2,15 @@
  * The execution scheduler service: what one bounded pass does between holding
  * a claim on durable work and holding a durable result.
  *
- * EVERY PASS IS BOUNDED AND EVERY STEP IS A DURABLE MOVE. House rule 9 asks
- * for an explicit limit on anything that can grow, so a pass fences, reaps,
- * registers, cancels, admits and launches at most its configured count and
- * returns; the loop that calls it again is a deployment's. Nothing here retries
- * in place, because a retry that outlives a process is a row rather than a
- * loop. The two sweeps are bounded like every other step, which is what keeps a
- * cluster-wide outage from locking every affected row in one transaction: each
- * is idempotent, so a takeover with more attempts to fence than one pass may
- * take finishes across the passes that follow.
+ * EVERY PASS IS BOUNDED AND EVERY STEP IS A DURABLE MOVE. House rule 9 asks for
+ * an explicit limit on anything that can grow, so a pass fences, reaps,
+ * registers, cancels, admits, observes and launches at most its configured
+ * count and returns; the loop that calls it again is a deployment's. Nothing
+ * here retries in place, because a retry that outlives a process is a row
+ * rather than a loop. The two sweeps are bounded like every other step, which
+ * is what keeps a cluster-wide outage from locking every affected row in one
+ * transaction: each is idempotent, so a takeover with more attempts to fence
+ * than one pass may take finishes across the passes that follow.
  *
  * THE TWO INABILITIES ARE KEPT APART, which is the whole reason the policy and
  * placement ports answer with three arms rather than a boolean.
@@ -105,6 +105,22 @@
  * evidence rather than a model term, and `test/interpreter/runner.test.ts`
  * states the mapping and holds it to the model.
  *
+ * A WORKLOAD THAT MET A FAULT ITS WORKER CANNOT REPORT IS ENDED ON IT. A job
+ * whose image could not be pulled, started or passed through the runtime's
+ * check never claims anything, so waiting out its lease spends the ticket's
+ * whole retry budget a lease at a time on a fault no retry changes, and records
+ * `LeaseExpired` over what happened. The pass asks the placement port instead,
+ * before the reaper. A fault of the image blocks the execution as
+ * `TicketConfigIncompatible` under the fault's own label, and the backend
+ * stores the text its person reads first, while the attempt is still live
+ * enough to take it. A fault of the site's own runtime withdraws the attempt as
+ * `PlacementUnavailable` without spending the budget, because no change to the
+ * ticket mends it, and the pass reports it for an operator. The pod is
+ * cancelled after the durable move, so a pass that stops between them leaves an
+ * ended attempt the cleanup removes. That is one backend request per placed
+ * attempt, bounded by `attemptsPerPassMax` and taken one at a time, as the
+ * session pass observes its pods.
+ *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
  * it is; `eslint.config.js` says so for this directory.
@@ -130,6 +146,7 @@ import {
   type AttemptPlacementPort,
   type ClusterId,
 } from "./executionScheduler.ts";
+import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type { FinalizerConfig } from "./finalizer.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -187,14 +204,36 @@ export interface ExecutionSchedulerService {
   readonly metrics: SchedulerTelemetry;
 }
 
-/** What one bounded pass moved, which is what a deployment's loop paces itself by. */
+/** What a pass met that it cannot mend itself, which a deployment tells its operator. */
+export type SchedulerPassNotice =
+  | {
+      readonly notice: "SiteFault";
+      readonly attempt: FencedAttempt;
+      readonly why: string;
+    }
+  | {
+      readonly notice: "ErrorUnwritten";
+      readonly attempt: FencedAttempt;
+      readonly fault: WorkerImageFault;
+      readonly why: string;
+    };
+
+/** How many attempts one observation ended, and what it has to tell. */
+export interface SchedulerObserved {
+  readonly observed: number;
+  readonly notices: readonly SchedulerPassNotice[];
+}
+
+/** What one bounded pass moved, which is what a deployment's loop paces itself by, and what it has to tell. */
 export interface SchedulerPassReport {
   readonly fenced: number;
   readonly cleaned: number;
   readonly registered: number;
   readonly cancelled: number;
   readonly admitted: number;
+  readonly observed: number;
   readonly placed: number;
+  readonly notices: readonly SchedulerPassNotice[];
 }
 
 /** Removes a bounded batch of ended physical workloads, acknowledging only accepted cleanup. */
@@ -353,14 +392,22 @@ export async function executionSchedulerAdmit(
   return admitted;
 }
 
-/** Withdraws the attempt and retires the execution it names, which is what a definitive inability earns. */
+/**
+ * Withdraws the attempt and retires the execution it names, which is what a
+ * definitive inability earns, answering whether this move ended the attempt.
+ */
 async function schedulerBlock(
   service: ExecutionSchedulerService,
   attempt: FencedAttempt,
   evidence: AttemptEvidenceRecord,
   reason: BlockedReason,
-): Promise<void> {
-  await schedulerEndAttempt(service, attempt, "Withdrawn", evidence);
+): Promise<boolean> {
+  const ended = await schedulerEndAttempt(
+    service,
+    attempt,
+    "Withdrawn",
+    evidence,
+  );
   const blocked = await service.store.blockExecution(
     attempt.partition,
     attempt.execution,
@@ -372,6 +419,7 @@ async function schedulerBlock(
       metrics.incident("ImpossibleState");
     }
   });
+  return ended;
 }
 
 /** What policy granted this execution, or the durable move its refusal earns. */
@@ -943,6 +991,82 @@ async function schedulerBlockRefused(
   }
 }
 
+/**
+ * Ends one observed attempt on what its workload met, answering whether this
+ * step was what ended it and noting what an operator has to be told.
+ */
+async function schedulerObserveOne(
+  service: ExecutionSchedulerService,
+  attempt: FencedAttempt,
+  notices: SchedulerPassNotice[],
+): Promise<boolean> {
+  const workload = await service.placement.observe(attempt);
+  switch (workload.observed) {
+    case "Unfaulted":
+      return false;
+    case "ImageFault": {
+      const written = await service.placement.writeError(
+        attempt,
+        workload.text,
+      );
+      const ended = await schedulerBlock(
+        service,
+        attempt,
+        workload.fault,
+        "TicketConfigIncompatible",
+      );
+      if (ended && written.written === "Unwritten")
+        notices.push({
+          notice: "ErrorUnwritten",
+          attempt,
+          fault: workload.fault,
+          why: written.why,
+        });
+      await service.placement.cancel(attempt);
+      return ended;
+    }
+    case "SiteFault": {
+      const ended = await schedulerEndAttempt(
+        service,
+        attempt,
+        "Withdrawn",
+        "PlacementUnavailable",
+      );
+      if (ended)
+        notices.push({ notice: "SiteFault", attempt, why: workload.why });
+      await service.placement.cancel(attempt);
+      return ended;
+    }
+  }
+}
+
+/**
+ * Ends a bounded batch of placed attempts whose workload met a fault its own
+ * worker cannot report. It runs before the reaper because it is the sharper
+ * answer for the same attempts, and one it leaves standing is what the lease
+ * is still for.
+ */
+export async function executionSchedulerObserve(
+  service: ExecutionSchedulerService,
+  epoch: RecoveryEpoch,
+): Promise<SchedulerObserved> {
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+    service.finalizer,
+  );
+  const attempts = await service.store.attemptsAwaitingObservation(
+    epoch,
+    config.attemptsPerPassMax,
+  );
+  const notices: SchedulerPassNotice[] = [];
+  let observed = 0;
+  for (const attempt of attempts) {
+    if (await schedulerObserveOne(service, attempt, notices)) observed += 1;
+  }
+  return { observed, notices };
+}
+
 /** Places attempts for the executions that hold a slot and have no live attempt. */
 export async function executionSchedulerLaunch(
   service: ExecutionSchedulerService,
@@ -984,6 +1108,16 @@ export async function executionSchedulerPass(
   const cancelled = await executionSchedulerCancel(service, owner);
   const registered = await executionSchedulerRegister(service, owner);
   const admitted = await executionSchedulerAdmit(service, cluster);
+  const { observed, notices } = await executionSchedulerObserve(service, epoch);
   const placed = await executionSchedulerLaunch(service, epoch);
-  return { fenced, cleaned, registered, cancelled, admitted, placed };
+  return {
+    fenced,
+    cleaned,
+    registered,
+    cancelled,
+    admitted,
+    observed,
+    placed,
+    notices,
+  };
 }

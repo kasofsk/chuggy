@@ -80,15 +80,20 @@ export function kubernetesSecretsPath(site: KubernetesPodSite): string {
   return `/api/v1/namespaces/${site.namespace}/secrets`;
 }
 
+/** The deadline one request of this deployment's is held to, whichever service it reaches. */
+export function kubernetesDeadline(site: KubernetesPodSite): AbortSignal {
+  return AbortSignal.timeout(
+    site.requestTimeoutSecsMax * millisecondsPerSecond,
+  );
+}
+
 /** Reaches the cluster API once, under the caller's signal and this deployment's deadline. */
 export async function kubernetesReach(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   reach: KubernetesReach,
 ): Promise<KubernetesReached> {
-  const deadline = AbortSignal.timeout(
-    site.requestTimeoutSecsMax * millisecondsPerSecond,
-  );
+  const deadline = kubernetesDeadline(site);
   const signal =
     reach.signal === undefined
       ? deadline
@@ -259,16 +264,42 @@ function kubernetesPhaseEnd(phase: unknown): KubernetesPodEnd {
   return phase === "Succeeded" || phase === "Failed" ? phase : "Unended";
 }
 
-export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
-  if (reached.reached !== "Status" || reached.status !== 200) return "Unended";
+/** The document one object was read back as, or nothing where the cluster answered anything but it. */
+export function kubernetesObjectRead(reached: KubernetesReached): unknown {
+  if (reached.reached !== "Status" || reached.status !== 200) return undefined;
   try {
-    const document = JSON.parse(reached.body) as {
-      readonly status?: { readonly phase?: unknown };
-    };
-    return kubernetesPhaseEnd(document.status?.phase);
+    return JSON.parse(reached.body) as unknown;
   } catch {
-    return "Unended";
+    return undefined;
   }
+}
+
+export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
+  const document = kubernetesObjectRead(reached) as
+    { readonly status?: { readonly phase?: unknown } } | null | undefined;
+  return kubernetesPhaseEnd(document?.status?.phase);
+}
+
+/**
+ * One key of a named Secret, decoded to the text it was written as, or nothing
+ * where the cluster holds no such Secret or did not answer.
+ */
+export async function kubernetesSecretValue(
+  site: KubernetesPodSite,
+  fetcher: typeof fetch,
+  name: string,
+  key: string,
+): Promise<string | undefined> {
+  const document = kubernetesObjectRead(
+    await kubernetesReach(site, fetcher, {
+      method: "GET",
+      path: `${kubernetesSecretsPath(site)}/${encodeURIComponent(name)}`,
+    }),
+  ) as { readonly data?: Readonly<Record<string, unknown>> } | null | undefined;
+  const value = document?.data?.[key];
+  return typeof value === "string"
+    ? Buffer.from(value, "base64").toString("utf8")
+    : undefined;
 }
 
 /** One pod a listing found carrying the annotation asked for: its name, the annotation's value, and whether it has ended. */

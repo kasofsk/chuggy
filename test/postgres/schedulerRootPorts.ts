@@ -41,6 +41,8 @@ export const schedulerRootService: Omit<
   placement: {
     place: () => Promise.resolve({ placed: "Unavailable" }),
     cancel: () => Promise.resolve({ cancelled: "Accepted" }),
+    observe: () => Promise.resolve({ observed: "Unfaulted" }),
+    writeError: () => Promise.resolve({ written: "Written" }),
   },
   policy: {
     routing: {

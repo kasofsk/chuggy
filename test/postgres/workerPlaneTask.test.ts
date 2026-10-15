@@ -241,6 +241,8 @@ function launching(
     placement: {
       place,
       cancel: () => Promise.resolve({ cancelled: "Accepted" }),
+      observe: () => Promise.resolve({ observed: "Unfaulted" }),
+      writeError: () => Promise.resolve({ written: "Written" }),
     },
     workerPools: postgresWorkerPoolRoster(rig.pool),
     access: memoryProjectAccess(),
