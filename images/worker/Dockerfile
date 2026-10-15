@@ -398,6 +398,11 @@ RUN cd /opt/chuggy/lib/chuggy/core-suites \
 # environment. Keto is handed to the gates in neither place: `_keto.sh` finds
 # no docker and starts the `keto` the image ships, here as it does in a pod.
 #
+# THE STEP STARTS AS ROOT AND RUNS AS THE IMAGE'S USER. Some builders mount the
+# tmpfs as root's at 0755, the rig's among them, where docker's is open to all,
+# so the data directory is made in it as root and handed to the user, which
+# runs the rest with its own home.
+#
 # THE POSTGRESQL LOG IS PRINTED ON THE WAY OUT. A server that does not come up
 # ends the stage with only the gate's could-not-run line.
 #
@@ -424,26 +429,28 @@ RUN apt-get update \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 COPY --chown=1000:1000 . /workspace/tree
-USER 1000:1000
 RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
+  install --directory --owner 1000 --group 1000 --mode 0700 /tmp/postgres-memory/data \
+  && HOME="$(getent passwd 1000 | cut -d: -f6)" \
+    exec setpriv --reuid 1000 --regid 1000 --clear-groups /bin/sh -c ' \
   cd /workspace/tree \
   && export PATH="/usr/lib/postgresql/17/bin:$PATH" \
   && initdb --pgdata /tmp/postgres-memory/data --auth trust --username postgres \
     --encoding UTF8 --locale C >/dev/null \
   && pg_ctl --pgdata /tmp/postgres-memory/data --log /tmp/postgres.log \
-    --options '-k /tmp -c fsync=off -c synchronous_commit=off -c full_page_writes=off' \
+    --options "-k /tmp -c fsync=off -c synchronous_commit=off -c full_page_writes=off" \
     --wait start \
   && git init --quiet --initial-branch main \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid add --all \
   && git -c user.name=roster -c user.email=roster@chuggy.invalid commit --quiet \
-    --message 'the tree this image is held to' \
+    --message "the tree this image is held to" \
   && npm ci \
   && CHUG_CI_FULL=1 \
     VITEST_MAX_WORKERS=4 \
     CHUG_PG_URL=postgres://postgres@127.0.0.1:5432/postgres \
     ./.chug/tasks/ci.sh \
   && touch /workspace/roster-clean \
-  || { tail -n 50 /tmp/postgres.log; exit 1; }
+  || { tail -n 50 /tmp/postgres.log; exit 1; }'
 
 # The image any other tree runs on: the base and the toolchains a Python or Rust
 # tree builds with. Rust's belongs to the image's user, so an attempt can fill
