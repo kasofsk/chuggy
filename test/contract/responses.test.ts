@@ -2044,7 +2044,6 @@ const ignoredAtHead = {
 test("every configuration outcome a bind reports parses as the schema answers it", () => {
   const outcomes: readonly ProjectRepositoryConfigurationsResult[] = [
     { result: "Imported", count: 0 },
-    { result: "Imported", count: 1, ignored: ignoredAtHead },
     {
       result: "Bootstrapped",
       revision: asConfigurationRevisionId("bootstrap"),
@@ -2091,8 +2090,8 @@ test("a console reading a bind's configurations as they stood before `ignored` s
   );
   assert.throws(() =>
     projectRepositoryConfigurationsSchema.parse({
-      result: "Imported",
-      count: 1,
+      result: "Bootstrapped",
+      revision: "bootstrap",
       ignored: {
         paths: Array.from(
           { length: repositoryConfigurationIgnoredAnsweredMax + 1 },
@@ -2104,16 +2103,15 @@ test("a console reading a bind's configurations as they stood before `ignored` s
   );
 });
 
-test("an import answers what it read none of beside what it imported, and beside a commit declaring none", () => {
+test("an import of a commit declaring none answers what its `.chug/` holds instead", () => {
   assert.deepEqual(
     repositoryConfigurationImportedSchema.parse(
       repositoryConfigurationImportResponse({
         result: "Imported",
         declarations: 1,
-        ignored: ignoredAtHead,
       }).body,
     ),
-    { imported: true, ignored: ignoredAtHead },
+    { imported: true },
   );
   const absent = repositoryConfigurationImportResponse({
     result: "SnapshotAbsent",

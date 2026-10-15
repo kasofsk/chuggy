@@ -88,7 +88,6 @@ import type {
   ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
-  RepositoryConfigurationImportedResponse,
   SelectorHistoryResponse,
   SelectorProjectSettingsResponse,
   SelectorSettingsHistoryResponse,
@@ -1346,7 +1345,7 @@ export function apiImportRepositoryConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: z.infer<typeof repositoryConfigurationImportSchema>,
-): Promise<ApiResult<RepositoryConfigurationImportedResponse>> {
+): Promise<ApiResult<{ readonly imported: true }>> {
   return apiRead(
     ports,
     {

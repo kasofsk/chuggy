@@ -11,10 +11,10 @@
  * a tree declaring no configuration has no configuration directory to import,
  * and a tree declaring no action declares none.
  *
- * WHAT ELSE `.chug/` HOLDS IS A SECOND LISTING, one level deep and of the
- * commit already fetched. The configuration directory's own read keeps the
- * bound it is refused past, so a large `.chug/` is named in part rather than
- * refusing configurations it was never part of.
+ * WHAT ELSE `.chug/` HOLDS IS A SECOND LISTING, one level deep, of the commit
+ * already fetched, and only where the configuration directory declares
+ * nothing. The configuration directory's own read keeps the bound it is
+ * refused past, so a large `.chug/` is named in part rather than refused.
  */
 
 import { textCodePointsCount } from "../../contract/http.ts";
@@ -398,11 +398,7 @@ function gitRepositoryConfigurationSnapshot(
             absent: "ConfigurationDirectory",
             ...repositoryConfigurationIgnoredField(ignored),
           }
-        : {
-            read: "Snapshot",
-            files: read.files,
-            ...repositoryConfigurationIgnoredField(ignored),
-          };
+        : { read: "Snapshot", files: read.files };
     case "Absent":
       return { read: "Absent", absent: "Commit" };
     case "Unavailable":
@@ -414,7 +410,7 @@ function gitRepositoryConfigurationSnapshot(
   }
 }
 
-/** The configuration directory's read, a snapshot naming what else `.chug/` holds that it read none of. */
+/** The configuration directory's read, a directory declaring nothing naming what else `.chug/` holds. */
 async function gitRepositoryConfigurationDeclared(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
@@ -424,7 +420,8 @@ async function gitRepositoryConfigurationDeclared(
     request,
     repositoryConfigurationRoot,
   );
-  if (read.read !== "Snapshot") return gitRepositoryConfigurationSnapshot(read);
+  if (read.read !== "Snapshot" || read.files.length > 0)
+    return gitRepositoryConfigurationSnapshot(read);
   const ignored = repositoryConfigurationIgnored({
     listing: await gitRepositoryConfigurationListing(own, request),
     skipped: read.skipped,

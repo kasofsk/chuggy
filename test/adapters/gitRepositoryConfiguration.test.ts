@@ -192,7 +192,7 @@ test("symlinks and nested declarations reach the pure parser unchanged", async (
   );
 });
 
-test("non-JSON files beside declarations are ignored, and named as ignored", async (t) => {
+test("non-JSON files beside declarations are ignored", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureWrite(
     fixture,
@@ -216,10 +216,6 @@ test("non-JSON files beside declarations are ignored, and named as ignored", asy
           content: "work\n",
         },
       ],
-      ignored: {
-        paths: [`${repositoryConfigurationRoot}README.md`],
-        truncated: false,
-      },
     },
   );
 });
@@ -234,13 +230,13 @@ function fixtureOtherFormat(fixture: Fixture): void {
   fixtureWrite(fixture, "README.md", "outside\n");
 }
 
-test("what else `.chug/` holds is named beside the configurations, each directory once and nothing outside it", async (t) => {
+test("a `.chug/` declaring no configuration names what it holds instead, each directory once and nothing outside it", async (t) => {
   const chug = repositoryDeclarationRoot;
   const fixture = fixtureOpen(t);
   fixtureOtherFormat(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}notes.txt`, "notes\n");
   const bare = fixtureCommit(fixture, "another format");
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
-  fixtureWrite(fixture, `${repositoryConfigurationRoot}notes.txt`, "notes\n");
   const declared = fixtureCommit(fixture, "and a declaration");
   const port = fixturePort(fixture);
   const repository = fixtureBinding(fixture.remote);
@@ -255,46 +251,60 @@ test("what else `.chug/` holds is named beside the configurations, each director
     {
       read: "Absent",
       absent: "ConfigurationDirectory",
-      ignored: { paths: others, truncated: false },
+      ignored: {
+        paths: [`${repositoryConfigurationRoot}notes.txt`, ...others].sort(),
+        truncated: false,
+      },
     },
   );
-  const read = await port.snapshot({
-    repository,
-    commit: asGitObjectId(declared),
-  });
-  assert.deepEqual(read.read === "Snapshot" ? read.ignored : read, {
-    paths: [`${repositoryConfigurationRoot}notes.txt`, ...others].sort(),
-    truncated: false,
-  });
+  assert.deepEqual(
+    await port.snapshot({ repository, commit: asGitObjectId(declared) }),
+    {
+      read: "Snapshot",
+      files: [
+        {
+          path: `${repositoryConfigurationRoot}work.json`,
+          kind: "File",
+          content: "work\n",
+        },
+      ],
+    },
+  );
   assert.deepEqual(
     await port.actionSnapshot({ repository, commit: asGitObjectId(bare) }),
     { read: "Snapshot", files: [] },
   );
 });
 
-test("a `.chug/` too large to list is said to be, and refuses none of the configurations beside it", async (t) => {
+test("a `.chug/` too large to list is said to be, and refuses none of the configurations later beside it", async (t) => {
   const fixture = fixtureOpen(t);
-  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
   for (let index = 0; index <= repositoryDeclarationsMax * 2; index += 1)
     fixtureWrite(
       fixture,
       `${repositoryDeclarationRoot}${String(index).padStart(240, "0")}.yaml`,
       "",
     );
-  const commit = fixtureCommit(fixture, "a crowded directory");
+  const crowded = fixtureCommit(fixture, "a crowded directory");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const declared = fixtureCommit(fixture, "and a declaration");
+  const port = fixturePort(fixture);
+  const repository = fixtureBinding(fixture.remote);
 
-  const read = await fixturePort(fixture).snapshot({
-    repository: fixtureBinding(fixture.remote),
-    commit: asGitObjectId(commit),
-  });
   assert.deepEqual(
-    read.read === "Snapshot"
-      ? { files: read.files.map((file) => file.path), ignored: read.ignored }
-      : read,
+    await port.snapshot({ repository, commit: asGitObjectId(crowded) }),
     {
-      files: [`${repositoryConfigurationRoot}work.json`],
+      read: "Absent",
+      absent: "ConfigurationDirectory",
       ignored: { paths: [], truncated: true },
     },
+  );
+  const read = await port.snapshot({
+    repository,
+    commit: asGitObjectId(declared),
+  });
+  assert.deepEqual(
+    read.read === "Snapshot" ? read.files.map((file) => file.path) : read,
+    [`${repositoryConfigurationRoot}work.json`],
   );
 });
 

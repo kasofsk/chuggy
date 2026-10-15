@@ -479,19 +479,11 @@ function importAgainst(
   });
 }
 
-test("an import says what it read none of beside what it imported, and beside a commit declaring none", async () => {
+test("an import of a commit declaring none says what its `.chug/` holds instead", async () => {
   const ignored: RepositoryConfigurationIgnored = {
     paths: [`${chug}project.yaml`],
     truncated: false,
   };
-  assert.deepEqual(
-    await importAgainst({
-      read: "Snapshot",
-      files: [declaration("review")],
-      ignored,
-    }),
-    { result: "Imported", declarations: 1, ignored },
-  );
   assert.deepEqual(
     await importAgainst({
       read: "Absent",

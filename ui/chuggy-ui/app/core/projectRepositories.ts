@@ -445,11 +445,7 @@ export function repositoryConfigurationsNote(
 ): RepositoryNote {
   switch (configurations.result) {
     case "Imported":
-      return {
-        status: "Configurations imported",
-        ticketOffered: true,
-        ...repositoryConfigurationsNoteIgnored(configurations.ignored),
-      };
+      return { status: "Configurations imported", ticketOffered: true };
     case "Bootstrapped":
       return {
         status: "Default configuration added",

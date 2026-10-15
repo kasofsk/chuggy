@@ -433,7 +433,7 @@ test("a new binding names the repository and what its configurations came to, an
 
 /** The entries a step read none of are a line of their own, naming the first
  * and counting the rest, and a count past what the answer names is a floor. */
-test("a new binding names what under `.chug/` its step read none of on a line of its own", () => {
+test("a new binding that bootstrapped names what its `.chug/` holds instead on a line of its own", () => {
   const chug = ".chug/";
   expect(
     boundNote({
@@ -448,8 +448,8 @@ test("a new binding names what under `.chug/` its step read none of on a line of
   });
   expect(
     boundNote({
-      result: "Imported",
-      count: 1,
+      result: "Bootstrapped",
+      revision: "r1",
       ignored: {
         paths: [`${chug}evaluators/`, `${chug}project.yaml`, `${chug}tasks/`],
         truncated: false,

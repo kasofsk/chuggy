@@ -129,14 +129,6 @@ test("a commit declaring no configurations is a refusal of its own, naming what 
     repositoryConfigurationImportResponse({
       result: "Imported",
       declarations: 1,
-      ignored,
-    }).body,
-    { imported: true, ignored },
-  );
-  assert.deepEqual(
-    repositoryConfigurationImportResponse({
-      result: "Imported",
-      declarations: 1,
     }).body,
     { imported: true },
   );

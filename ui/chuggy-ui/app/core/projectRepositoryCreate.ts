@@ -156,15 +156,15 @@ export interface RepositoryCreatedRow {
 }
 
 /** Every step the create took, in the order it took them, and what under
- * `.chug/` the configuration step read none of where it names any. */
+ * `.chug/` a bootstrapped configuration step read none of where it names any. */
 export function repositoryCreatedRows(
   created: ProjectRepositoryCreatedResponse,
 ): readonly RepositoryCreatedRow[] {
   const configurations = repositoryConfigurationsNote(created.configurations);
   const ignored =
-    created.configurations.result === "Deferred"
-      ? undefined
-      : created.configurations.ignored;
+    created.configurations.result === "Bootstrapped"
+      ? created.configurations.ignored
+      : undefined;
   return [
     {
       label: "Seed",

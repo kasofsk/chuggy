@@ -1447,7 +1447,7 @@ const ignoredAtHead: RepositoryConfigurationIgnored = {
   truncated: false,
 };
 
-test("a bind says what under `.chug/` its step read none of, beside the bootstrap and beside an import", async () => {
+test("a bind that authored the bootstrap says what under `.chug/` the head held instead", async () => {
   const bootstrapped = await fixtureBound({
     configurations: {
       head: branchHead,
@@ -1468,19 +1468,6 @@ test("a bind says what under `.chug/` its step read none of, beside the bootstra
       revision: "bootstrap",
       ignored: ignoredAtHead,
     },
-  });
-  const imported = await fixtureBound({
-    configurations: {
-      head: branchHead,
-      snapshot: { read: "Snapshot", files: [], ignored: ignoredAtHead },
-      image: workerImage,
-    },
-  });
-  assert.deepEqual(imported.bound, {
-    result: "Bound",
-    repository,
-    landing: { mode: "Push" },
-    configurations: { result: "Imported", count: 0, ignored: ignoredAtHead },
   });
 });
 

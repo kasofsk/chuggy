@@ -112,16 +112,16 @@ test("every step the create took is a row of its own", () => {
   ]);
 });
 
-/** What under `.chug/` the configuration step read none of is a row of its
- * own after the step's, and only where it names any. */
-test("what the configuration step read none of follows its row", () => {
+/** What a bootstrapped step's `.chug/` holds instead is a row of its own
+ * after the step's, and only where it names any. */
+test("what a bootstrapped configuration step read none of follows its row", () => {
   const chug = ".chug/";
   expect(
     repositoryCreatedRows(
       created({
         configurations: {
-          result: "Imported",
-          count: 1,
+          result: "Bootstrapped",
+          revision: "bootstrap",
           ignored: { paths: [`${chug}project.yaml`], truncated: false },
         },
       }),
@@ -129,7 +129,7 @@ test("what the configuration step read none of follows its row", () => {
   ).toEqual([
     {
       label: "Configurations",
-      detail: "Configurations imported",
+      detail: "Default configuration added",
       ticketOffered: true,
     },
     {

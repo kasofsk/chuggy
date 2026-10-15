@@ -248,13 +248,17 @@ export type ProjectRepositoryConfigurationsHeld =
 
 /**
  * What configuring one bound repository came to, or what the project already
- * held for it. A step that read the head says what under `.chug/` it read none
- * of; what the project held was answered without reading one.
+ * held for it. A bootstrap authored for a head declaring no configuration says
+ * what under `.chug/` the head held instead; what the project held was answered
+ * without reading one.
  */
 export type ProjectRepositoryConfigurationsResult =
-  | (ProjectRepositoryConfigurationsHeld & {
+  | { readonly result: "Imported"; readonly count: number }
+  | {
+      readonly result: "Bootstrapped";
+      readonly revision: ConfigurationRevisionId;
       readonly ignored?: RepositoryConfigurationIgnored;
-    })
+    }
   | {
       readonly result: "Deferred";
       readonly reason: ProjectRepositoryConfigurationsDeferral;
@@ -827,11 +831,7 @@ async function bindRepositoryConfigurations(
   });
   switch (imported.result) {
     case "Imported":
-      return {
-        result: "Imported",
-        count: imported.declarations,
-        ...repositoryConfigurationIgnoredField(imported.ignored),
-      };
+      return { result: "Imported", count: imported.declarations };
     case "SnapshotAbsent":
       return imported.absent === "ConfigurationDirectory"
         ? bindRepositoryBootstrapped(

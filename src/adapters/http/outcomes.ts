@@ -1913,10 +1913,7 @@ export function repositoryConfigurationImportResponse(
         ),
       );
     case "Imported":
-      return response(200, {
-        imported: true,
-        ...repositoryConfigurationIgnoredField(result.ignored),
-      });
+      return response(200, { imported: true });
     default:
       return assertNever(result);
   }

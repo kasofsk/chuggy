@@ -63,9 +63,9 @@ import {
 export * from "./repositoryConfigurationIdentity.ts";
 
 /**
- * What under `.chug/` a configuration import read none of, a directory named
- * once with its trailing slash. `truncated` says there is more than `paths`
- * names.
+ * What under `.chug/` an import that found no configuration read none of, a
+ * directory named once with its trailing slash. `truncated` says there is more
+ * than `paths` names.
  */
 export interface RepositoryConfigurationIgnored {
   readonly paths: readonly string[];
@@ -117,7 +117,6 @@ export type RepositoryConfigurationSnapshotRead =
   | {
       readonly read: "Snapshot";
       readonly files: readonly RepositoryDeclarationFile[];
-      readonly ignored?: RepositoryConfigurationIgnored;
     }
   | { readonly read: "Absent"; readonly absent: "Commit" }
   | {
@@ -258,11 +257,7 @@ export type RepositoryConfigurationImportOutcome =
     }
   | { readonly result: "IdentityConflict" }
   | { readonly result: "StaleBinding" }
-  | {
-      readonly result: "Imported";
-      readonly declarations: number;
-      readonly ignored?: RepositoryConfigurationIgnored;
-    };
+  | { readonly result: "Imported"; readonly declarations: number };
 
 /** Imports the declarations at one exact repository commit under an already-resolved authority. */
 export async function importRepositoryConfigurations(input: {
@@ -313,7 +308,6 @@ export async function importRepositoryConfigurations(input: {
           return {
             result: "Imported",
             declarations: readiness.declarations.length,
-            ...repositoryConfigurationIgnoredField(snapshot.ignored),
           };
         case "IdentityConflict":
           return { result: "IdentityConflict" };
@@ -423,7 +417,6 @@ export type BoundRepositoryImportResult<
       readonly result: "Imported";
       readonly commit: GitObjectId;
       readonly declarations: number;
-      readonly ignored?: RepositoryConfigurationIgnored;
     }
   | {
       readonly result: "Skipped";
@@ -534,12 +527,7 @@ function boundRepositoryImportResult(
   outcome: RepositoryConfigurationImportOutcome,
 ): BoundRepositoryImportResult {
   if (outcome.result === "Imported")
-    return {
-      result: "Imported",
-      commit,
-      declarations: outcome.declarations,
-      ...repositoryConfigurationIgnoredField(outcome.ignored),
-    };
+    return { result: "Imported", commit, declarations: outcome.declarations };
   if (outcome.result === "SnapshotAbsent")
     return outcome.absent === "Commit"
       ? { result: "Skipped", why: "CommitAbsent" }
@@ -687,7 +675,7 @@ function boundRepositoryImportLineWords(
 ): string {
   switch (result.result) {
     case "Imported":
-      return `imported at ${result.commit}${boundRepositoryImportLineIgnored(result.ignored)}`;
+      return `imported at ${result.commit}`;
     case "Skipped":
       return `skipped: ${result.why}${boundRepositoryImportLineIgnored(result.ignored)}`;
     case "Failed":

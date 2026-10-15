@@ -992,9 +992,9 @@ export type ConfigurationsResponse = z.infer<
 >;
 
 /**
- * What under `.chug/` a configuration import read none of, a directory named
- * once with its trailing slash. `truncated` says there is more than `paths`
- * names.
+ * What under `.chug/` an import that found no configuration read none of, a
+ * directory named once with its trailing slash. `truncated` says there is more
+ * than `paths` names.
  */
 export const repositoryConfigurationIgnoredSchema = z.object({
   paths: z
@@ -1013,11 +1013,7 @@ const repositoryConfigurationIgnoredShape = {
 
 export const repositoryConfigurationImportedSchema = z.object({
   imported: z.literal(true),
-  ...repositoryConfigurationIgnoredShape,
 });
-export type RepositoryConfigurationImportedResponse = z.infer<
-  typeof repositoryConfigurationImportedSchema
->;
 
 /** A commit declaring no configurations, refused beside what its `.chug/` holds instead. */
 export const repositoryConfigurationsAbsentSchema = z.object({
@@ -1645,15 +1641,15 @@ export type ProjectRepositoryConfigurationsHeldResponse = z.infer<
 >;
 
 /**
- * What a bound repository's own configurations came to, and what under `.chug/`
- * a step that read the head read none of. It is beside the binding and not part
- * of it, so a `Deferred` is a step to run again through the configuration route
- * rather than a repository that is not bound.
+ * What a bound repository's own configurations came to, and beside a bootstrap
+ * what under `.chug/` the head held instead. It is beside the binding and not
+ * part of it, so a `Deferred` is a step to run again through the configuration
+ * route rather than a repository that is not bound.
  */
 export const projectRepositoryConfigurationsSchema = z.discriminatedUnion(
   "result",
   [
-    projectRepositoryImportedSchema.extend(repositoryConfigurationIgnoredShape),
+    projectRepositoryImportedSchema,
     projectRepositoryBootstrappedSchema.extend(
       repositoryConfigurationIgnoredShape,
     ),
