@@ -41,13 +41,18 @@ import { agoFigure } from "../core/figures.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { configurationLabel, digestShortened } from "../core/labels.ts";
+import {
+  configurationLabel,
+  creatorLabel,
+  digestShortened,
+} from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
 import { usePanelResource } from "./api.ts";
 import { DataSection, PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Freshness } from "./Freshness.tsx";
+import { Identity } from "./ui/Identity.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { ProjectImage } from "./ProjectImage.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -150,6 +155,17 @@ function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
   );
 }
 
+/** The member who filed the ticket, drawn only where the wire names one. */
+function FiledBy(props: { readonly ticket: TicketResponse }): ReactNode {
+  const creator = props.ticket.creator;
+  if (creator === undefined) return null;
+  return (
+    <Field name="filed by">
+      <Identity label={creatorLabel(creator)} />
+    </Field>
+  );
+}
+
 export function TicketBrief(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<TicketResponse>;
@@ -167,6 +183,7 @@ export function TicketBrief(props: {
           ) : (
             <Brief partition={props.partition} brief={ticket.brief} />
           )}
+          <FiledBy ticket={ticket} />
           <ReleasedUnder ticket={ticket} />
         </dl>
       )}

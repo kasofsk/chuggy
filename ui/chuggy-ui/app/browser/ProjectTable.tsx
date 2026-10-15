@@ -71,6 +71,7 @@ import {
 } from "./TicketCells.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { Identity } from "./ui/Identity.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -176,6 +177,7 @@ function TicketCard(props: {
             </Tooltip>
           </Pill>
         )}
+        {row.creator === undefined ? null : <Identity label={row.creator} />}
         <span className="text-ink-3">
           <TicketActivity activityAt={row.activityAt} nowMs={props.nowMs} />
         </span>

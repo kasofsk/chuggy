@@ -88,6 +88,7 @@ const digest = "d".repeat(64);
 async function drawTicket(
   served: string = canonical,
   overrides?: ConfigurationOverrides,
+  creator?: string,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -121,6 +122,7 @@ async function drawTicket(
         configurationRevision: revision,
         configurationVersion: version,
         ...(overrides === undefined ? {} : { overrides }),
+        ...(creator === undefined ? {} : { creator }),
       });
     },
   });
@@ -157,6 +159,23 @@ test("the Brief and Provenance rows draw no second heading of their own", async 
       name: /Configuration chuggy-development-sonnet/u,
     }),
   ).toBeDefined();
+});
+
+test("the Brief names the member who filed the ticket, the whole subject on hover", async () => {
+  const creator = "23:https://issuer.example/alice";
+  await drawTicket(canonical, undefined, creator);
+  await sectionOpened("Brief");
+  const filed = screen.getByText("filed by").closest("div");
+  expect(filed).not.toBeNull();
+  expect(within(filed as HTMLElement).getByText("alice")).toBeDefined();
+  expect(screen.queryByText(creator)).toBeNull();
+});
+
+test("a ticket the wire names no creator for draws no filed-by field at all", async () => {
+  await drawTicket();
+  await sectionOpened("Brief");
+  expect(screen.getByText("released under")).toBeDefined();
+  expect(screen.queryByText("filed by")).toBeNull();
 });
 
 test("the settings grid reads the model off its own flag and the tools off the allow-list", async () => {

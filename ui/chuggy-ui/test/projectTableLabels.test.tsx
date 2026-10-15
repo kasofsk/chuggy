@@ -91,9 +91,12 @@ const image =
 const title =
   "Serve the escalation reason on the ticket resource, and on the table beside it";
 
+const creator = "23:https://issuer.example/alice";
+
 const ticket = {
   ticket: 11,
   title,
+  creator,
   phase: "Work",
   sequence: 7,
   ...ticketInstants,
@@ -215,6 +218,16 @@ test("a row's phase, execution, runs-on and activity annotations are all on the 
   expect(card.contains(screen.getByText("3h ago"))).toBe(true);
 });
 
+test("a card names the member who filed it, the whole subject on hover, and a card with none names nobody", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  const filed = screen.getByText("alice");
+  expect(screen.getByText(title).closest("li")?.contains(filed)).toBe(true);
+  fireEvent.focus(filed);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(creator);
+  const unfiled = screen.getByText("Escalated ticket").closest("li");
+  expect(unfiled?.querySelector(".identity")).toBeNull();
+});
+
 test("a row draws its phase as a chip", async () => {
   await drawTable();
   const chip = screen.getByText("Working");
@@ -233,6 +246,7 @@ test("a row whose index was truncated draws no chip for its execution", () => {
   const row: ProjectTableRow = {
     ticket: 9,
     title: undefined,
+    creator: undefined,
     phase: "Work",
     section: "InProgress",
     badge: undefined,

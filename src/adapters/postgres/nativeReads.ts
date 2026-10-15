@@ -42,6 +42,7 @@ import {
   asOperationId,
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
+import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
@@ -83,6 +84,11 @@ interface TicketProjectionRow {
    */
   readonly ticket_title: string;
   readonly revision: string;
+  /**
+   * The authority subject the ticket's first authoring revision was written
+   * under, where that authority is a member's; null where it is not.
+   */
+  readonly creator: string | null;
   readonly phase: string;
   readonly seq: string;
   readonly escalation: string;
@@ -334,6 +340,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
     revision: projectRowCounter(row.revision, "ticket revision"),
+    ...(row.creator === null ? {} : { creator: row.creator }),
     phase: projectionPhase(row.phase),
     sequence: projectRowCounter(row.seq, "ticket projection sequence"),
     changedAt: ticketResourceChangedAt(row.changed_at),
@@ -489,6 +496,7 @@ async function readTicketsByActivity(
                  coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
+                 m.authority_subject AS creator,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -507,6 +515,9 @@ async function readTicketsByActivity(
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+          LEFT JOIN draft_revision m
+            ON m.tenant=t.tenant AND m.project=t.project AND m.ticket=t.ticket
+           AND m.authoring_version=1 AND m.authority_kind=${memberAuthorityKind}
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -541,6 +552,7 @@ async function readTicketsByIdentity(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
+               m.authority_subject AS creator,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -559,6 +571,9 @@ async function readTicketsByIdentity(
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+          LEFT JOIN draft_revision m
+            ON m.tenant=t.tenant AND m.project=t.project AND m.ticket=t.ticket
+           AND m.authoring_version=1 AND m.authority_kind=${memberAuthorityKind}
           LEFT JOIN journal_entry c
             ON c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq
           LEFT JOIN LATERAL (
@@ -592,6 +607,7 @@ async function readTicketRow(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
+               m.authority_subject AS creator,
                b.brief::text AS brief,
                b.overrides::text AS overrides,
                t.configuration_revision,
@@ -629,6 +645,9 @@ async function readTicketRow(
              ORDER BY j.seq LIMIT 1) r ON true
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+          LEFT JOIN draft_revision m
+            ON m.tenant=t.tenant AND m.project=t.project AND m.ticket=t.ticket
+           AND m.authoring_version=1 AND m.authority_kind=${memberAuthorityKind}
           LEFT JOIN repository_configuration_provenance p
             ON p.tenant=t.tenant AND p.project=t.project
            AND p.revision=t.configuration_revision

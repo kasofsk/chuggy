@@ -14,6 +14,7 @@ import type { ExecutionSummary } from "../../../src/contract/responses.ts";
 import {
   configurationCommitShort,
   configurationLabel,
+  creatorLabel,
   digestShortened,
   executionRequirementLabel,
   imageShortened,
@@ -166,4 +167,22 @@ test("a native execution names the toolchain floor it asked for", () => {
   });
   expect(drawn.text).toBe("Arm64 XcodeTesting, xcode ≥ 16, sdk ≥ 18");
   expect(drawn.title).toBe(drawn.text);
+});
+
+test("a creator is drawn as the subject its issuer gave them, the whole authority kept for the hover", () => {
+  expect(creatorLabel("23:https://issuer.example/alice")).toEqual({
+    text: "alice",
+    title: "23:https://issuer.example/alice",
+  });
+});
+
+test("a creator with no issuer prefix, or one naming nothing past it, is drawn whole", () => {
+  expect(creatorLabel("harness")).toEqual({
+    text: "harness",
+    title: "harness",
+  });
+  expect(creatorLabel("9:issuer/")).toEqual({
+    text: "9:issuer/",
+    title: "9:issuer/",
+  });
 });
