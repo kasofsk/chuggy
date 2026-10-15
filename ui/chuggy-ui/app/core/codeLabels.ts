@@ -157,6 +157,8 @@ export function leadAbsenceLabel(
   switch (reason) {
     case "NotNeeded":
       return "Opens when a ticket is released";
+    case "Paused":
+      return "Selector paused";
     case "HostedRunsNotGranted":
       return "Hosted runs not granted";
     case "RunnerOffline":

@@ -2130,9 +2130,9 @@ function leadTurnBody(turn: LeadTurnRecord): unknown {
 }
 
 function leadAbsenceBody(absence: LeadAbsence): unknown {
-  return absence.reason === "NotNeeded"
-    ? { reason: absence.reason }
-    : { reason: absence.reason, since: absence.since };
+  return "since" in absence
+    ? { reason: absence.reason, since: absence.since }
+    : { reason: absence.reason };
 }
 
 export function leadResponse(result: LeadRead): NativeHttpResponse {

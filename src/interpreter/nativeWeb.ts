@@ -131,7 +131,10 @@ import { projectAbilities } from "./projectAbilities.ts";
 import type { ProjectAbilitiesResponse } from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
-import type { SelectorOperationalContext } from "./selector.ts";
+import type {
+  SelectorOperationalContext,
+  SelectorRuntimeSettingsSource,
+} from "./selector.ts";
 import {
   sessionSpendRoute,
   type SessionRouteReads,
@@ -149,9 +152,11 @@ import {
 import {
   checkedLeadTranscriptQuery,
   leadNotNeeded,
+  leadPaused,
   leadTranscriptPage,
   sessionHeldWalk,
   sessionHeldWalkAsks,
+  type LeadAbsence,
   type LeadRead,
   type LeadReadStore,
   type LeadTranscriptQuery,
@@ -1352,15 +1357,17 @@ function nativeTicketMethods(
 }
 
 /**
- * The four ports the lead's read side needs. They arrive together because the
- * lead page needs all four and a deployment that composed three of them would
- * answer a page that is a quarter blank without saying which quarter.
+ * The ports the lead's read side needs. They arrive together because the lead
+ * page needs every one, and a deployment that composed only some would answer a
+ * page partly blank without saying which part.
  */
 export interface NativeLeadPorts {
   readonly leads: LeadReadStore;
   readonly store: SessionStoreReadPort;
   readonly refusals: AgenticRefusalRead;
   readonly history: SelectorHistoryStore;
+  /** The project's settings as the selector resolves them, which say whether it is paused. */
+  readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
 }
 
 function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
@@ -1505,10 +1512,25 @@ type NativeLeadMethods = Pick<
 >;
 
 /**
+ * Why a project holds no lead, where a paused selector outranks the refusal it
+ * keeps, since a paused selector asks no admission and its kept refusal may have
+ * stopped being true. The resolved mode is `Paused` under an installation pause
+ * as under the project's own, which is what the selector stops for.
+ */
+async function nativeLeadSessionAbsence(
+  ports: NativeLeadPorts,
+  partition: Partition,
+): Promise<LeadAbsence> {
+  if ((await ports.settings.projectSettings(partition)).mode === "Paused")
+    return leadPaused;
+  return (await ports.leads.leadRefusal(partition)) ?? leadNotNeeded;
+}
+
+/**
  * The lead's own two reads, each reauthorizing before it reaches a store. A
  * readable project holding no lead is answered `None` by the head, which is
- * how the project stands, with the refusal the selector keeps for it as the
- * reason; its transcript has nothing to page and is not found.
+ * how the project stands, with why as the reason; its transcript has nothing to
+ * page and is not found.
  */
 function nativeLeadSessionMethods(
   access: ProjectAccess,
@@ -1526,7 +1548,7 @@ function nativeLeadSessionMethods(
       if (standing === undefined)
         return {
           result: "None",
-          absence: (await ports.leads.leadRefusal(partition)) ?? leadNotNeeded,
+          absence: await nativeLeadSessionAbsence(ports, partition),
         };
       return {
         result: "Found",

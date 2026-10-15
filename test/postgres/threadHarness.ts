@@ -22,6 +22,7 @@ import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
@@ -265,6 +266,7 @@ export function threadRigApp(input: {
       store: input.store,
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
+      settings: postgresSelectorResolvedSettings(pool),
     },
     {
       threads: postgresThreads(pool, {

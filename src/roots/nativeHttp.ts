@@ -92,7 +92,10 @@ import {
   type ProjectAccessSettings,
 } from "../interpreter/projectAccess.ts";
 import { postgresExecutionContextRead } from "../adapters/postgres/schedulerContext.ts";
-import { postgresSelectorProposalReviews } from "../adapters/postgres/selector.ts";
+import {
+  postgresSelectorProposalReviews,
+  postgresSelectorResolvedSettings,
+} from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
 import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
@@ -1448,6 +1451,7 @@ export function nativeLeadPorts(
     store: artifacts,
     refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
+    settings: postgresSelectorResolvedSettings(pools.pool),
   };
 }
 

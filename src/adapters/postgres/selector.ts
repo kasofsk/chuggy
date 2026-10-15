@@ -25,6 +25,7 @@ import type {
   SelectorProjectOverrides,
   SelectorRuntimeControlStore,
   SelectorRuntimeSettings,
+  SelectorRuntimeSettingsSource,
   SelectorObservation,
   SelectorSettingsFence,
   SelectorSettingsUpdate,
@@ -1336,13 +1337,23 @@ async function rollbackSettings(
   );
 }
 
+/** One project's settings resolved as the selector resolves them, over any
+ * pool that may read both settings rows, as the API's may. */
+export function postgresSelectorResolvedSettings(
+  pool: pg.Pool,
+): Pick<SelectorRuntimeSettingsSource, "projectSettings"> {
+  return {
+    projectSettings: async (partition) =>
+      (await readProjectSettings(pool, partition)).effective,
+  };
+}
+
 export function postgresSelectorRuntimeControl(
   pool: pg.Pool,
 ): SelectorRuntimeControlStore {
   return {
     settings: () => readSettings(pool),
-    projectSettings: async (partition) =>
-      (await readProjectSettings(pool, partition)).effective,
+    ...postgresSelectorResolvedSettings(pool),
     pause: (revision, administrator) =>
       updateSettings(pool, revision, { mode: "Paused" }, administrator),
     unpause: (revision, administrator) =>

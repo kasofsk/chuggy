@@ -19,9 +19,17 @@ import type { SessionKind } from "../../../../src/contract/rosters.ts";
 import { leadAbsenceLabel } from "./codeLabels.ts";
 import { instantText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
+import type { SessionRunnerShort } from "./sessionRunners.ts";
 
 /** The session kind a lead's change frames carry. */
 export const projectLeadSessionKind: SessionKind = "Lead";
+
+/**
+ * How often a read that says there is no lead is read again. No frame says the
+ * selector kept or forgot a refusal, or was paused, so this is what moves the
+ * reason on screen; a read that names a lead is moved by its frames alone.
+ */
+export const projectLeadAbsencePolledMs = 15_000;
 
 /** The lead a read answered, or nothing where it answered that there is none. */
 export function projectLeadFound(
@@ -57,17 +65,22 @@ export function projectLeadPanelState(
 /**
  * The line under a lead page with no lead: why the read says there is none,
  * with since when where a refusal stands, or how its tickets run where the
- * server gives no reason. Nothing until a read has said there is no lead.
+ * server gives no reason. Nothing until a read has said there is no lead, and
+ * nothing for `RunnerOffline` where `runner` already says why no runner can
+ * take the lead's turn.
  */
 export function projectLeadAbsenceLine(
   state: PanelState<LeadReadResponse>,
   nowMs: number,
+  runner: SessionRunnerShort | undefined,
 ): string | undefined {
   if (state.state !== "Ready" || "session" in state.value) return undefined;
   const absence = state.value.absence;
   if (absence === undefined) return "Tickets are dispatched by hand";
+  if (absence.reason === "RunnerOffline" && runner !== undefined)
+    return undefined;
   const label = leadAbsenceLabel(absence.reason);
-  return absence.reason === "NotNeeded"
-    ? label
-    : `${label} · since ${instantText(new Date(absence.since), new Date(nowMs))}`;
+  return "since" in absence
+    ? `${label} · since ${instantText(new Date(absence.since), new Date(nowMs))}`
+    : label;
 }

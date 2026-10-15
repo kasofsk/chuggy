@@ -51,15 +51,33 @@ const sinceIso = "2026-09-02T09:30:00.000Z";
 const sameDayMs = Date.parse("2026-09-02T09:45:00.000Z");
 const laterMs = Date.parse("2026-10-14T09:45:00.000Z");
 
-test("a project with no lead says why under the line, and since when where it was refused", () => {
+/** The refusal's clock and its day, written in the reader's own zone as the
+ * line writes them, so a case holds wherever it is run. */
+function sinceLocal(): { readonly clock: string; readonly day: string } {
   const since = new Date(sinceIso);
-  const clock = `${String(since.getHours()).padStart(2, "0")}:${String(since.getMinutes()).padStart(2, "0")}`;
+  const month = since.toLocaleString("en-US", { month: "short" });
+  return {
+    clock: `${String(since.getHours()).padStart(2, "0")}:${String(since.getMinutes()).padStart(2, "0")}`,
+    day: `${month} ${String(since.getDate())}`,
+  };
+}
+
+test("a project with no lead says why under the line, and since when where it was refused", () => {
+  const { clock, day } = sinceLocal();
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "NotNeeded" } }),
       sameDayMs,
+      undefined,
     ),
   ).toBe("Opens when a ticket is released");
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "Paused" } }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe("Selector paused");
   expect(
     projectLeadAbsenceLine(
       ready({
@@ -67,6 +85,7 @@ test("a project with no lead says why under the line, and since when where it wa
         absence: { reason: "RunnerOffline", since: sinceIso },
       }),
       sameDayMs,
+      undefined,
     ),
   ).toBe(`No live runner · since ${clock}`);
   expect(
@@ -76,17 +95,46 @@ test("a project with no lead says why under the line, and since when where it wa
         absence: { reason: "HostedRunsNotGranted", since: sinceIso },
       }),
       laterMs,
+      undefined,
     ),
-  ).toMatch(/^Hosted runs not granted · since Sep 2 \d\d:\d\d$/u);
+  ).toBe(`Hosted runs not granted · since ${day} ${clock}`);
+});
+
+/** The runner notice beside the line says why no runner can take the lead's
+ * turn, and links to where one is added, so the refusal saying it again is left
+ * out; every other reason is not about runners and stays. */
+test("a refusal for no live runner is left to the runner notice where one is drawn", () => {
+  const offline = ready({
+    lead: "None",
+    absence: { reason: "RunnerOffline", since: sinceIso },
+  });
+  expect(projectLeadAbsenceLine(offline, sameDayMs, "NoRunner")).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine(offline, sameDayMs, "RunnerOffline"),
+  ).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "Paused" } }),
+      sameDayMs,
+      "NoRunner",
+    ),
+  ).toBe("Selector paused");
+  expect(projectLeadAbsenceLine(ready(none), sameDayMs, "NoRunner")).toBe(
+    "Tickets are dispatched by hand",
+  );
 });
 
 test("a server that gives no reason reads as tickets run by hand, and a lead or no read draws no line", () => {
-  expect(projectLeadAbsenceLine(ready(none), laterMs)).toBe(
+  expect(projectLeadAbsenceLine(ready(none), laterMs, undefined)).toBe(
     "Tickets are dispatched by hand",
   );
-  expect(projectLeadAbsenceLine(ready(lead), laterMs)).toBeUndefined();
-  expect(projectLeadAbsenceLine({ state: "Pending" }, laterMs)).toBeUndefined();
   expect(
-    projectLeadAbsenceLine({ state: "Absent", reason: "no" }, laterMs),
+    projectLeadAbsenceLine(ready(lead), laterMs, undefined),
+  ).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine({ state: "Pending" }, laterMs, undefined),
+  ).toBeUndefined();
+  expect(
+    projectLeadAbsenceLine({ state: "Absent", reason: "no" }, laterMs, undefined),
   ).toBeUndefined();
 });

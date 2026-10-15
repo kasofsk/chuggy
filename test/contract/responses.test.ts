@@ -105,6 +105,7 @@ import { authoringSchema } from "../../src/contract/authoring.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
+  leadAbsencesUntimed,
   leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
 } from "../../src/contract/rosters.ts";
@@ -2347,7 +2348,7 @@ test("a redemption's pool file parses as the file a runner keeps, and an address
 
 test("every reason a project holds no lead parses as the lead route answers it", () => {
   const absences = [
-    { reason: "NotNeeded" },
+    ...leadAbsencesUntimed.map((reason) => ({ reason })),
     ...leadAdmissionRefusals.map((reason) => ({
       reason,
       since: "2026-09-02T00:00:00.000Z",

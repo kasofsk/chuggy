@@ -62,7 +62,10 @@ import type {
   SessionStoreBatchRow,
   SessionStoreStreamRow,
 } from "./sessionPlane.ts";
-import type { LeadAdmissionRefusal } from "../contract/rosters.ts";
+import type {
+  LeadAbsenceUntimed,
+  LeadAdmissionRefusal,
+} from "../contract/rosters.ts";
 import type { SessionStoreRead } from "./sessionStore.ts";
 import type { Partition } from "./projectStore.ts";
 import type { JsonValue, SelectorProjectState } from "./selector.ts";
@@ -148,11 +151,17 @@ export interface LeadRefused {
   readonly since: string;
 }
 
-/** Why a project holds no lead: no refusal stands, or the one the selector keeps. */
-export type LeadAbsence = { readonly reason: "NotNeeded" } | LeadRefused;
+/** Why a project holds no lead: its selector is paused, no refusal stands, or
+ * the one the selector keeps. */
+export type LeadAbsence =
+  | { readonly reason: LeadAbsenceUntimed }
+  | LeadRefused;
 
 /** The absence of a project no refusal stands for. */
 export const leadNotNeeded: LeadAbsence = { reason: "NotNeeded" };
+
+/** The absence of a project whose selector is paused, whatever refusal it keeps. */
+export const leadPaused: LeadAbsence = { reason: "Paused" };
 
 /** How large the handoff note is, and as much of it as the lead read carries. */
 export interface HandoffNotePreview {

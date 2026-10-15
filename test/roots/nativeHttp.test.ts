@@ -138,6 +138,7 @@ const leadPortsProgram = `
   await ports.history.history(partition, { limit: 1, order: 'oldest' });
   await ports.refusals.standing(partition, 1);
   await ports.refusals.ledger(partition, 1, 1);
+  await ports.settings.projectSettings(partition).catch(() => undefined);
   process.stdout.write(JSON.stringify(asked));
 `;
 
@@ -168,7 +169,7 @@ test("the lead's reads stand on the API pool and never the review pool", async (
     [],
     "no lead read may reach the pool with no grant on 059's doors",
   );
-  assert.equal(asked.pool.length, 7, "every lead read was handed the API pool");
+  assert.equal(asked.pool.length, 8, "every lead read was handed the API pool");
 });
 
 test("each lead read reaches the definer function the plan names for it", async () => {
@@ -186,6 +187,20 @@ test("each lead read reaches the definer function the plan names for it", async 
       asked.pool.some((statement) => statement.includes(named)),
       `${named} was reached over the API pool`,
     );
+});
+
+/** Whether the selector is paused is read from both settings rows the API may
+ * read, which is how the selector resolves it, and no definer stands between. */
+test("the lead's selector mode is read over the API pool from the installation's settings and the project's", async () => {
+  const asked = await leadPortsAsked();
+  assert.ok(
+    asked.pool.some(
+      (statement) =>
+        statement.includes("FROM selector_runtime_settings installation") &&
+        statement.includes("LEFT JOIN selector_project_settings overrides"),
+    ),
+    "the settings read was not handed the API pool",
+  );
 });
 
 /**

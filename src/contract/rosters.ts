@@ -629,6 +629,11 @@ export const leadAdmissionRefusals = [
 ] as const;
 export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
 
+/** Why a project holds no lead where no refusal stands to date it: no cycle has
+ * needed one, or its selector is paused. */
+export const leadAbsencesUntimed = ["NotNeeded", "Paused"] as const;
+export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
+
 /**
  * When a pool other than its owner's personal runner may take an owned
  * execution, in a project that lets personal runners serve their owners:
