@@ -66,6 +66,7 @@ import {
   schedulerRivalRequest,
   schedulerRigOpen,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -85,6 +86,7 @@ const attemptBounds = {
   leaseSecs: 300,
   retriesMax: 3,
   placementBackoffSecs: 1,
+  runtime: schedulerRuntime,
 };
 
 /** The escalation a parked ticket opened, which is what a resume answers. */

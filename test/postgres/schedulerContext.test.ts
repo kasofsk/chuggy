@@ -45,6 +45,7 @@ import {
   schedulerProject,
   schedulerRigOpen,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -129,6 +130,7 @@ async function countedProject(label: string): Promise<SchedulerProject> {
       leaseSecs: 300,
       retriesMax: 3,
       placementBackoffSecs: 1,
+      runtime: schedulerRuntime,
     });
     assert.ok(opened.opened === "Opened");
     if (admitted.indexOf(execution) < counted.placements) {

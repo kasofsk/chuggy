@@ -641,7 +641,15 @@ test("a pool naming no release, one below the plane's floor or one later than th
   assert.deepEqual(recorded.made, []);
 });
 
-/** What a claim returns: an image pinned on a published host, and a capability requirement, which is handed out with no image. */
+/** The runtime a claimed attempt was opened under, and the name a pool reading one is handed it by. */
+const runtime = `registry.invalid/worker-runtime@sha256:${"e".repeat(64)}`;
+const runtimePublished = `registry.public.invalid/worker-runtime@sha256:${"e".repeat(64)}`;
+
+/**
+ * What a claim returns: an image pinned on a published host, and a capability
+ * requirement, which is handed out with no image; each beside the runtime its
+ * attempt was opened under, which a release that reads none is never handed.
+ */
 const claims = {
   pinned: {
     requirement: {
@@ -650,6 +658,7 @@ const claims = {
       architecture: "Amd64",
       image: pinned,
     },
+    runtime,
   },
   capable: {
     requirement: {
@@ -658,8 +667,35 @@ const claims = {
       architecture: "Amd64",
       capabilities: ["Agent:Codex"],
     },
+    runtime,
   },
 } as const;
+
+test("a pool of this release is handed the runtime its claim's attempt was opened under, on the public host, and one naming the release before is handed none", async () => {
+  for (const [release, handed] of [
+    [workerContractRelease, runtimePublished],
+    ["1.6.0", undefined],
+  ] as const) {
+    const recorded = calls();
+    const answered = await createPoolPlaneApp(
+      plane({ ...recorded.ports, claim: () => Promise.resolve(claims.pinned) }),
+    ).inject({
+      method: "GET",
+      url: polling([]),
+      headers: { ...speaking, [workerContractHeader]: release },
+    });
+    assert.equal(answered.statusCode, 200, release);
+    const [assignment] = workerPoolReconciliationSchema.parse(
+      answered.json(),
+    ).assignments;
+    assert.equal(assignment?.runtime, handed, release);
+    assert.equal(
+      Object.hasOwn(assignment ?? {}, "runtime"),
+      handed !== undefined,
+    );
+    assert.equal(assignment?.image, published, release);
+  }
+});
 
 /** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, and what a claim returns it. */
 const poolReplayPolls = [

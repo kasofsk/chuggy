@@ -57,6 +57,7 @@ export const schedulerRootService: Omit<
   },
   runtimeFacts: { facts: () => Promise.resolve({ read: "Unavailable" }) },
   practices: blessedPracticeCatalog,
+  workerRuntime: `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`,
   config: executionSchedulerDefaults,
   ticketService: ticketServiceDefaults,
   finalizer: finalizerDefaults,

@@ -1,6 +1,6 @@
 /**
  * The execution row's translation, where a registration's pinned configuration
- * is read for the agent its worker needs.
+ * is read for the agent its worker needs, and the attempt row's refusal fault.
  *
  * THE CAPABILITY IS NOT A COLUMN, so this is the only place a reader can get it
  * wrong: the row carries the configuration the requirement was materialized
@@ -12,9 +12,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  attemptRowImageFault,
   executionRowLogical,
   type ExecutionRow,
 } from "../../src/adapters/postgres/schedulerRows.ts";
+import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import { suppliedExecutionPolicy } from "../../src/adapters/supplied/schedulerPorts.ts";
 
 const pinned = {
@@ -189,5 +191,14 @@ test("an attempt whose ticket overrides the worker's mode to an agent its image 
       .resolved,
     "Profile",
     "the configuration's own agent is admitted",
+  );
+});
+
+test("a refusal's fault column is read as the contract's fault, and a value it does not name is refused", () => {
+  for (const fault of workerImageFaults)
+    assert.equal(attemptRowImageFault(fault), fault);
+  assert.throws(
+    () => attemptRowImageFault("ImageLacksSed"),
+    /not an image fault this code knows/u,
   );
 });

@@ -154,17 +154,28 @@ test("each settlement is the path it is said on and the body it needs", async ()
     evidence: "refused",
   });
   await plane.settle("pool-token", "three", { outcome: "Unavailable" });
+  await plane.settle("pool-token", "four", {
+    outcome: "Refused",
+    evidence: "no git",
+    fault: "ImageLacksGit",
+  });
   assert.deepEqual(
     sent.map((request) => request.url),
     [
       "https://pool-plane.invalid/v1/assignments/one/accepted",
       "https://pool-plane.invalid/v1/assignments/two/refused",
       "https://pool-plane.invalid/v1/assignments/three/unavailable",
+      "https://pool-plane.invalid/v1/assignments/four/refused",
     ],
   );
   assert.deepEqual(
     sent.map((request) => request.body),
-    ["{}", '{"evidence":"refused"}', "{}"],
+    [
+      "{}",
+      '{"evidence":"refused"}',
+      "{}",
+      '{"evidence":"no git","fault":"ImageLacksGit"}',
+    ],
   );
 });
 

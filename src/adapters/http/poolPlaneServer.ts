@@ -48,6 +48,7 @@ import {
   workerPoolHeldNamedMax,
   workerPoolPoll,
   workerPoolReconciliationUnsessioned,
+  workerPoolRuntimeRead,
   workerPoolSessionsRead,
   workerPoolSettled,
   type PersonalRunnerPlaneRegistry,
@@ -215,9 +216,8 @@ function poolAssignmentsRoute(
       bodyBytesMax: planeJsonObjectBytesMax(),
     },
     async (request, reply, identity) => {
-      const sessionsRead = workerPoolSessionsRead(
-        workerContractOffered(request),
-      );
+      const release = workerContractOffered(request);
+      const sessionsRead = workerPoolSessionsRead(release);
       const query = workerPoolPollQuerySchema(
         workerPoolHeldNamedMax(service.settings, sessionsRead),
       ).safeParse(request.query);
@@ -232,6 +232,7 @@ function poolAssignmentsRoute(
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
             readsSessions: sessionsRead,
+            readsRuntime: workerPoolRuntimeRead(release),
           },
           service.settings,
         );

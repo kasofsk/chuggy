@@ -49,6 +49,12 @@ export const workerContractLiveStops: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a pool reads a job assignment's runtime. A pool of an earlier one would refuse an answer naming it, and starts its image's own entrypoint. */
+export const workerContractRunnerRuntime: WorkerContractRange = {
+  min: { major: 1, minor: 7 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

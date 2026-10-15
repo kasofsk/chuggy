@@ -13,6 +13,7 @@ import {
   type WorkerPoolClientSettings,
   type WorkerPoolEndAnswer,
   type WorkerPoolHeld,
+  type WorkerPoolJobRefused,
   type WorkerPoolOffer,
   type WorkerPoolPlacement,
   type WorkerPoolPlane,
@@ -655,6 +656,103 @@ test("a session whose container ended is reported on the session plane before th
   assert.deepEqual(order, ["end:taken", "end:refused", "poll"]);
   assert.deepEqual(plane.told, [ended("taken"), ended("refused")]);
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
+});
+
+test("a job its backend refused is settled refused under its fault before the poll, with no session plane, and only a taken refusal counts", async () => {
+  const order: string[] = [];
+  const posted: [string, string, unknown][] = [];
+  const tokens = counting();
+  const refused = (named: string): WorkerPoolJobRefused => ({
+    kind: "Job",
+    assignment: named,
+    evidence: `no git for ${named}`,
+    fault: "ImageLacksGit",
+  });
+  const answers: Readonly<Record<string, WorkerPoolSettled>> = {
+    taken: "Settled",
+    gone: "Lost",
+    stale: "Stale",
+  };
+  const passed = await workerPoolClientPass(
+    client({
+      tokens: tokens.tokens,
+      backend: {
+        ...idle,
+        ended: () =>
+          Promise.resolve([
+            refused("taken"),
+            refused("gone"),
+            refused("stale"),
+          ]),
+      },
+      plane: {
+        poll: (...asked) => {
+          order.push("poll");
+          return quiet.poll(...asked);
+        },
+        settle: (token, named, outcome) => {
+          order.push(`settle:${named}`);
+          posted.push([token, named, outcome]);
+          return Promise.resolve(answers[named] ?? "Unavailable");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(order, [
+    "settle:taken",
+    "settle:gone",
+    "settle:stale",
+    "poll",
+  ]);
+  assert.deepEqual(
+    posted,
+    ["taken", "gone", "stale"].map((named) => [
+      "pool-token-1",
+      named,
+      {
+        outcome: "Refused",
+        evidence: `no git for ${named}`,
+        fault: "ImageLacksGit",
+      },
+    ]),
+  );
+  assert.deepEqual(tokens.invalidated, ["pool-token-1"]);
+  assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
+});
+
+test("a backend that ends a session in a pool with no session plane raises before the poll", async () => {
+  let polled = 0;
+  await assert.rejects(
+    () =>
+      workerPoolClientPass(
+        client({
+          backend: {
+            ...idle,
+            ended: () =>
+              Promise.resolve<WorkerPoolSessionEnd[]>([
+                {
+                  kind: "Session",
+                  session: {
+                    assignment: "unplaned",
+                    callbackUrl: "https://plane.invalid/",
+                    bearer: "chgs_unplaned",
+                  },
+                  phase: "Failed",
+                },
+              ]),
+          },
+          plane: {
+            ...quiet,
+            poll: (...asked) => {
+              polled += 1;
+              return quiet.poll(...asked);
+            },
+          },
+        }),
+      ),
+    /no session plane to end it on/u,
+  );
+  assert.equal(polled, 0);
 });
 
 test("a pool with a session ceiling and no session plane is refused before it polls", async () => {

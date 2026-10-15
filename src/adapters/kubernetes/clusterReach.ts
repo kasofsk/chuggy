@@ -302,11 +302,12 @@ export async function kubernetesSecretValue(
     : undefined;
 }
 
-/** One pod a listing found carrying the annotation asked for: its name, the annotation's value, and whether it has ended. */
+/** One pod a listing found carrying the annotation asked for: its name, the annotation's value, whether it has ended, and the pod as listed. */
 export interface KubernetesListedPod {
   readonly name: string;
   readonly value: string;
   readonly end: KubernetesPodEnd;
+  readonly document: unknown;
 }
 
 /**
@@ -349,7 +350,12 @@ export async function kubernetesListedPods(
     const name = item.metadata?.name;
     if (typeof name !== "string" || name.length === 0)
       throw new Error("the cluster listed pods this side cannot read");
-    listed.push({ name, value, end: kubernetesPhaseEnd(item.status?.phase) });
+    listed.push({
+      name,
+      value,
+      end: kubernetesPhaseEnd(item.status?.phase),
+      document: item,
+    });
   }
   return listed;
 }

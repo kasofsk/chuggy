@@ -48,23 +48,27 @@ as final: the execution concludes as a failed process.
 
 ## How a pool pulls
 
-An assignment names the image its execution pinned, by digest. Where that
-reference's host is a key of the pool plane's `CHUG_POOL_PLANE_IMAGE_HOSTS`, a
-JSON object from an internal registry host to its public one, the assignment
-names the public host instead, with the path and digest unchanged. A malformed
-value refuses the plane's start; unset, every image is named as pinned.
+An assignment names the image its execution pinned, by digest. A job's
+assignment to a pool whose release reads a runtime
+(`workerContractRunnerRuntime` in `src/interpreter/workerPlane.ts`) also names
+the runtime image its attempt was opened under, where the attempt kept one.
+Where either reference's host is a key of the pool plane's
+`CHUG_POOL_PLANE_IMAGE_HOSTS`, a JSON object from an internal registry host to
+its public one, the assignment names the public host instead, with the path and
+digest unchanged. A malformed value refuses the plane's start; unset, every
+reference is named as kept.
 
 The public registry is read-only, and its front asks the pool plane at
-`/registry/authorize`, outside the `/v1` its public address serves, about
-every request. A pool presents a Basic credential of any user name whose
-password is its own access token, the one its polls carry as a bearer. The
-base `/v2/`, a manifest by the digest of an assignment the pool still holds and
-a blob of that image's repository are allowed; everything else is refused,
-including the catalog, tags, a manifest by tag, any write, and a pull before a
-claim or after a release. The token is checked as each request starts, so a
-pull's last request has to start before the token expires. The Kubernetes pool
-client sets no pull credential on the pods it makes, so a pool pulling from
-the public registry supplies one to its container runtime itself.
+`/registry/authorize`, outside the `/v1` its public address serves, about every
+request. A pool presents a Basic credential of any user name whose password is
+its own access token, the one its polls carry as a bearer. The base `/v2/`, a
+manifest by the digest of an image or runtime that an assignment the pool still
+holds names, and a blob of that reference's repository, are allowed; everything
+else is refused, including the catalog, tags, a manifest by tag, any write, and
+a pull before a claim or after a release. The token is checked as each request
+starts, so a pull's last request has to start before the token expires. The
+Kubernetes pool client sets no pull credential on the pods it makes, so a pool
+pulling from the public registry supplies one to its container runtime itself.
 
 ## What a pool is trusted with
 

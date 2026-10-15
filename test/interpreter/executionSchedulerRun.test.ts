@@ -38,6 +38,7 @@ import {
   type AttemptPlacement,
   type AttemptErrorWritten,
   type AttemptWorkloadObserved,
+  type AttemptOpening,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -120,6 +121,9 @@ function poolAccess(
 const epoch = asRecoveryEpoch("epoch");
 const cluster = asClusterId("cluster");
 const owner = asSchedulerOwnerId("scheduler-one");
+
+/** The runtime the service opens every attempt under. */
+const workerRuntime = `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`;
 
 const execution: LogicalExecution = {
   partition,
@@ -313,6 +317,7 @@ function serviceWith(
     failedLanding: { landing: () => Promise.resolve({ read: "Landing" }) },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
+    workerRuntime,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
     finalizer: finalizerDefaults,
@@ -379,6 +384,32 @@ test("a placed attempt records its backend placement and nothing else", async ()
     1,
   );
   assert.deepEqual(calls, ["placed:placement-one"]);
+});
+
+test("an attempt is opened under the scheduler's runtime, whichever route its execution takes", async () => {
+  for (const route of ["InCluster", "Pool"] as const) {
+    const openings: AttemptOpening[] = [];
+    const service = serviceWith([], runnable, placedOk);
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        store: {
+          ...service.store,
+          unlaunched: () => Promise.resolve([{ ...execution, route }]),
+          openAttempt: (opening) => {
+            openings.push(opening);
+            return Promise.resolve({ opened: "BackingOff" });
+          },
+        },
+      },
+      epoch,
+    );
+    assert.deepEqual(
+      openings.map((opening) => opening.runtime),
+      [workerRuntime],
+      route,
+    );
+  }
 });
 
 test("independent backends substitute at the same placement port", async () => {
@@ -1890,6 +1921,35 @@ test("an attempt a pool refused is withdrawn and its execution blocked before an
     "blocking:Blocked:RequiredCapabilityUnavailable",
     "reaping:0",
   ]);
+});
+
+test("an attempt a pool refused naming an image fault is withdrawn under that fault and its execution blocked as incompatible, for every fault", async () => {
+  for (const fault of workerImageFaults) {
+    const calls: string[] = [];
+    const seen: string[] = [];
+    const service = serviceWith(calls, runnable, placedOk);
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        store: {
+          ...service.store,
+          refusedAttempts: () => Promise.resolve([{ ...attempt, fault }]),
+          unlaunched: () => Promise.resolve([]),
+        },
+        metrics: schedulerTelemetry(recordingMetrics(seen)),
+      },
+      epoch,
+    );
+    assert.deepEqual(calls, [
+      `ended:Withdrawn:${fault}`,
+      "blocked:TicketConfigIncompatible",
+    ]);
+    assert.deepEqual(seen, [
+      `attemptEnded:Withdrawn:${fault}`,
+      "blocking:Blocked:TicketConfigIncompatible",
+      "reaping:0",
+    ]);
+  }
 });
 
 test("a refused attempt something else ended first is not counted as ended", async () => {

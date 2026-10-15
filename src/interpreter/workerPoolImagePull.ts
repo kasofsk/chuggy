@@ -1,13 +1,14 @@
 /**
  * Which registry requests a pool may make, and the host a pool pulls an
- * assignment's image from.
+ * assignment's image and runtime from.
  *
  * The registry's front forwards the method and address of every request it
  * receives, and a request is allowed only where it is exactly a pull of an
- * image the pool holds an assignment for: a manifest by the digest an
- * assignment pinned, or a blob of that image's repository. What an image is
- * called on the cluster and what a pool off it pulls it by differ only in the
- * host, so the digest a pool is handed is the one its execution pinned.
+ * image or a runtime an assignment the pool holds names: a manifest by that
+ * reference's digest, or a blob of its repository. What an image is called on
+ * the cluster and what a pool off it pulls it by differ only in the host, so
+ * the digest a pool is handed is the one its execution pinned or its attempt
+ * was opened under.
  */
 import { textCodePointsCount } from "../contract/http.ts";
 import { workerImageCharsMax } from "../contract/workerPool.ts";
@@ -69,9 +70,9 @@ export function workerPoolImagePullRequested(
 }
 
 /**
- * Whether a pool holding assignments pinned to `held` may make `pull`. Only an
- * image on an internal host counts, because that is the registry the front
- * serves.
+ * Whether a pool holding assignments that name `held`, each an image or a
+ * runtime, may make `pull`. Only a reference on an internal host counts,
+ * because that is the registry the front serves.
  */
 export function workerPoolImagePullAllowed(
   pull: WorkerPoolImagePull,

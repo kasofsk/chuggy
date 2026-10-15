@@ -90,6 +90,7 @@ import {
   schedulerRigOpen,
   schedulerInCluster,
   schedulerRouting,
+  schedulerRuntime,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -193,6 +194,7 @@ async function openedAttempt(label: string): Promise<PhysicalAttempt> {
     leaseSecs,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   if (opened.opened !== "Opened")
     throw new Error(`worker task suite: ${label} opened no attempt`);
@@ -274,6 +276,7 @@ function launching(
     failedLanding: postgresFailedLanding(rig.pool),
     ticketBriefs: postgresTicketBrief(rig.pool),
     practices: blessedPracticeCatalog,
+    workerRuntime: schedulerRuntime,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
     finalizer: finalizerDefaults,

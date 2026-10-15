@@ -61,6 +61,7 @@ import {
   schedulerReport,
   schedulerRigOpen,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
 } from "./schedulerHarness.ts";
 
@@ -190,6 +191,7 @@ async function poolAttempt(
     leaseSecs,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   if (opened.opened !== "Opened")
     throw new Error(`worker pool suite: ${label} opened no attempt`);
@@ -278,6 +280,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
       architecture: "Amd64",
       capabilities: ["Agent:Claude"],
     },
+    runtime: schedulerRuntime,
   });
   const held = (await rig.harness.query(
     `SELECT attempt, pool FROM execution_attempt
@@ -292,21 +295,46 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   );
 });
 
-test("a container claim returns the image its execution's requirement pinned", async () => {
-  const project = await poolProject("pool-image");
+/** Clears the runtime an attempt was opened under, as the owner, which is a row opened before attempts kept one. */
+async function poolRuntimeCleared(
+  project: SchedulerProject,
+  attempt: string,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE execution_attempt SET runtime=NULL
+      WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+    [project.partition.tenant, project.partition.project, attempt],
+  );
+}
+
+test("a container claim returns the image its execution's requirement pinned and the runtime its attempt was opened under", async () => {
+  const project = await poolProject("pool-image", 2);
   const pool = await registered(project.partition, "image", [platform]);
+  const requirement = {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "worker:v1",
+  };
   await poolAttempt(project, "image");
   const drawn = handles("image");
   assert.deepEqual(
     await assignments.claim(pool, terms, drawn.assignment, drawn.bearer, []),
-    {
-      requirement: {
-        mode: "Container",
-        operatingSystem: "Linux",
-        architecture: "Amd64",
-        image: "worker:v1",
-      },
-    },
+    { requirement, runtime: schedulerRuntime },
+  );
+  const { attempt } = await poolAttempt(project, "image-unruntimed");
+  await poolRuntimeCleared(project, attempt);
+  const unruntimed = handles("image-unruntimed");
+  assert.deepEqual(
+    await assignments.claim(
+      pool,
+      terms,
+      unruntimed.assignment,
+      unruntimed.bearer,
+      [],
+    ),
+    { requirement },
+    "an attempt that kept no runtime is claimed with none",
   );
 });
 
@@ -323,6 +351,7 @@ test("an execution the scheduler still places is offered to no pool", async () =
     leaseSecs,
     retriesMax: 3,
     placementBackoffSecs: 1,
+    runtime: schedulerRuntime,
   });
   assert.equal(opened.opened, "Opened");
   if (opened.opened !== "Opened") return;
@@ -478,36 +507,62 @@ test("a pool holds the images of the attempts it may still renew, and none of an
     [platform],
     poolPrincipalFresh("held-mine"),
   );
+  const pulls = ["worker:v1", schedulerRuntime];
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
   await poolHeldBy(project, theirs, "held-theirs");
   await poolHeldBy(elsewhere, yonder, "held-yonder");
-  assert.deepEqual(await assignments.heldImages(theirs, terms.heldMax), [
-    "worker:v1",
-  ]);
-  assert.deepEqual(await assignments.heldImages(yonder, terms.heldMax), [
-    "worker:v1",
-  ]);
+  assert.deepEqual(await assignments.heldImages(theirs, terms.heldMax), pulls);
+  assert.deepEqual(await assignments.heldImages(yonder, terms.heldMax), pulls);
   assert.deepEqual(
     await assignments.heldImages(mine, terms.heldMax),
     [],
     "another pool's attempt, or the same name's in another project, is not this pool's",
   );
   const refused = await poolHeldBy(project, mine, "held-refused");
-  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), [
-    "worker:v1",
-  ]);
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), pulls);
   assert.equal(await assignments.refuse(mine, refused, "no node"), true);
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
   const released = await poolHeldBy(project, mine, "held-released");
-  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), [
-    "worker:v1",
-  ]);
+  assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), pulls);
   assert.equal(await assignments.release(mine, released), true);
   assert.deepEqual(await assignments.heldImages(mine, terms.heldMax), []);
   await assert.rejects(
     assignments.heldImages(mine, 0),
     /invalid worker pool held bound/u,
   );
+});
+
+test("a pool holding one attempt may pull both its image and its runtime, a capability's attempt its runtime alone, and one that kept no runtime its image alone", async () => {
+  const pinned = await poolProject("pool-held-pulls");
+  const one = await registered(pinned.partition, "held-pulls", [platform]);
+  await poolHeldBy(pinned, one, "held-pulls");
+  assert.deepEqual(await assignments.heldImages(one, 1), [
+    "worker:v1",
+    schedulerRuntime,
+  ]);
+  const unruntimed = await poolProject("pool-held-unruntimed");
+  const plain = await registered(unruntimed.partition, "held-unruntimed", [
+    platform,
+  ]);
+  const { attempt } = await poolAttempt(unruntimed, "held-unruntimed");
+  await poolRuntimeCleared(unruntimed, attempt);
+  const drawn = handles("held-unruntimed");
+  assert.notEqual(
+    await assignments.claim(plain, terms, drawn.assignment, drawn.bearer, []),
+    undefined,
+  );
+  assert.deepEqual(await assignments.heldImages(plain, terms.heldMax), [
+    "worker:v1",
+  ]);
+  const capable = await poolProject("pool-held-capability", 1, "Claude");
+  const agent = await registered(capable.partition, "held-capability", [
+    platform,
+    "Agent:Claude",
+  ]);
+  await poolHeldBy(capable, agent, "held-capability");
+  assert.deepEqual(await assignments.heldImages(agent, terms.heldMax), [
+    schedulerRuntime,
+  ]);
 });
 
 test("the plane serving harnesses cannot read the relation a pool is registered in", async () => {
@@ -565,7 +620,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution_attempt",
         "SELECT",
-        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,state,tenant",
+        "assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,runtime,state,tenant",
       ],
       [
         "execution_attempt",

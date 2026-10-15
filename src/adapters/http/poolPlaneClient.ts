@@ -206,14 +206,17 @@ async function poolPlanePolled(
     : poolPlaneRefusal(answered.status);
 }
 
-/** What a settlement carries beyond its path, which is nothing at all but a refusal's evidence. */
+/** What a settlement carries beyond its path, which is nothing at all but a refusal's evidence and the image fault it names. */
 function poolPlaneOutcomeBody(outcome: AssignmentOutcome): string {
   switch (outcome.outcome) {
     case "Accepted":
     case "Unavailable":
       return "{}";
     case "Refused":
-      return JSON.stringify({ evidence: outcome.evidence });
+      return JSON.stringify({
+        evidence: outcome.evidence,
+        ...(outcome.fault === undefined ? {} : { fault: outcome.fault }),
+      });
   }
 }
 

@@ -29,6 +29,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       policy: suppliedExecutionPolicy(config.policy),
       runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
       practices: blessedPracticeCatalog,
+      workerRuntime: config.workers.runtimeImage,
       config: config.scheduler,
       ticketService: config.ticketService,
       finalizer: config.finalizer,

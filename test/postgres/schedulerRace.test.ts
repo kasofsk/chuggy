@@ -52,6 +52,7 @@ import {
   schedulerRigOpen,
   schedulerRolePool,
   schedulerInCluster,
+  schedulerRuntime,
   type SchedulerProject,
   type SchedulerRig,
 } from "./schedulerHarness.ts";
@@ -76,6 +77,7 @@ const attemptBounds = {
   leaseSecs: 300,
   retriesMax: 3,
   placementBackoffSecs: 1,
+  runtime: schedulerRuntime,
 };
 
 /** How many backends one held lock is expected to have stalled behind it. */
