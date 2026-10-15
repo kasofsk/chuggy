@@ -218,6 +218,15 @@ const shapes: readonly unknown[] = [
     evaluation: [{ purpose: "Check", checks: ["true"] }],
   },
   { ...configuration, outputs: "not a list", finalizationApprovalRequired: 1 },
+  {
+    ...configuration,
+    worker: { mode: codex, setup: [], files: [] },
+    executionRequirements: {
+      platformDefault: capabilityRequirement,
+      platformDefaultVersion: 1,
+    },
+    configuration: "a key the format does not name",
+  },
 ];
 
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -528,6 +537,7 @@ const mutationKeys = [
   "Evaluation:0",
   "evaluations",
   "worker",
+  "configuration",
   "capabilities",
   "extra",
   "apiToken",

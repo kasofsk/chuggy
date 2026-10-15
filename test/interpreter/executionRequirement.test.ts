@@ -129,6 +129,42 @@ test("a worker that names no single agent needs no capability of an image", () =
   );
 });
 
+test("a configuration key inside a configuration is ignored like any other key the format does not name", () => {
+  const configuration = {
+    version: 1,
+    image: "worker:v1",
+    worker: {
+      ...codexWorker,
+      mode: { type: "SingleAgent" as const, agent: "Claude" as const },
+    },
+    executionRequirements: {
+      platformDefault: {
+        mode: "ContainerCapability" as const,
+        operatingSystem: "Linux" as const,
+        architecture: "Amd64" as const,
+        capabilities: ["Agent:Claude" as const],
+      },
+      platformDefaultVersion: 1,
+    },
+  };
+  const read = materializeExecutionRequirement(configuration, "Work");
+  for (const nested of ["kept as written", null, { worker: codexWorker }]) {
+    const carrying = { ...configuration, configuration: nested };
+    const context = JSON.stringify(nested);
+    assert.equal(
+      executionRequirementConfigurationIsValid(carrying),
+      true,
+      context,
+    );
+    assert.equal(executionAgentCapability(carrying), "Agent:Claude", context);
+    assert.deepEqual(
+      materializeExecutionRequirement(carrying, "Work"),
+      read,
+      context,
+    );
+  }
+});
+
 test("a single agent is added to an authored capability requirement", () => {
   const authoredCapability = {
     mode: "ContainerCapability" as const,

@@ -150,9 +150,7 @@ function requirementForAgent(
 export function executionAgentCapability(
   configuration: unknown,
 ): ExecutionCapability | undefined {
-  const root = record(configuration);
-  const authored = record(root?.["configuration"] ?? configuration);
-  const worker = record(authored?.["worker"]);
+  const worker = record(record(configuration)?.["worker"]);
   const mode = record(worker?.["mode"]);
   const agent = mode?.["type"] === "SingleAgent" ? mode["agent"] : undefined;
   return agent === "Claude" || agent === "Codex" ? `Agent:${agent}` : undefined;
