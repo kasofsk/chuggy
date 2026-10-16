@@ -8,19 +8,28 @@
  * are put back in the box the reader is still looking at. A box that was not
  * drawn when the answer came is handed them as `back` when it next is.
  *
- * AN IMAGE PASTED OR DROPPED IS HELD, NOT SENT. The box holds its bytes under
- * the field, each with its own control to remove it, and hands them up with
- * the text at a press; the page owns the upload. A page that takes no images
- * hands no `attaches`, and its box offers nothing that looks as though it
- * would take one.
+ * AN IMAGE PASTED, DROPPED OR PICKED IS HELD, NOT SENT. The box holds its
+ * bytes over the field, each with its own control to remove it, and hands them
+ * up with the text at a press; the page owns the upload. A page that takes no
+ * images hands no `attaches`, and its box offers nothing that looks as though
+ * it would take one: no paperclip either, since a picker on such a page would
+ * hand up what nothing takes.
+ *
+ * THE PICKER IS EMPTIED AFTER EACH PICK. A file input that still holds what was
+ * picked fires no change for the same file again, so a screenshot picked,
+ * removed and picked once more would attach nothing; two picks of one file are
+ * two attachments, as two pastes of it are.
  *
  * WHILE A TURN CAN BE STOPPED THE BUTTON IS STOP, and Enter still sends, so a
  * message typed under an answer being written queues behind it. Escape stops
  * nothing: a stop is one press of the one control that says so.
  *
- * WHAT THE PAGE SAYS OF A PRESS IS SAID OVER THE BOX. The composer is held to
- * the foot of its pane, so a line over the box takes its room from the column
- * and the box and its button stay where they are as it comes and goes.
+ * THE BOX HOLDS THE TEXT ALONE, and its controls are a row beneath it: the
+ * paperclip at the start and the button at the end.
+ *
+ * WHAT THE PAGE SAYS OF A PRESS IS SAID OVER EVERYTHING ELSE. The composer is
+ * held to the foot of its pane, so a line over it takes its room from the
+ * column and the box and its controls stay where they are as it comes and goes.
  *
  * A PRESS THE SURFACE SAYS TO IGNORE DOES NOTHING, AND THE BUTTON SAYS SO.
  * The button is asked at each press, so one too close behind a press of Stop
@@ -29,13 +38,20 @@
  * is drawn as a button that takes no press, and it stays one a press can
  * land on, so the pointer and the caret are where they were when it ends.
  *
- * A POINTER'S PRESS OF THE BUTTON LEAVES THE CARET IN THE BOX. The button
+ * A POINTER'S PRESS OF A CONTROL LEAVES THE CARET IN THE BOX. The button
  * turns into another or goes inert under the pointer, and focus it had taken
  * would fall to the page, where what a member types next goes nowhere.
  */
 
 import { ComposerPrimitive, useAuiState } from "@assistant-ui/react";
-import type { ClipboardEvent, DragEvent, MouseEvent, ReactNode } from "react";
+import { useRef } from "react";
+import type {
+  ChangeEvent,
+  ClipboardEvent,
+  DragEvent,
+  MouseEvent,
+  ReactNode,
+} from "react";
 
 import { textCodePointsCount } from "../../../../../src/contract/http.ts";
 import {
@@ -132,6 +148,21 @@ function ConversationStopGlyph(): ReactNode {
   );
 }
 
+function ConversationAttachGlyph(): ReactNode {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
+      <path
+        d="M13 7.5 L8 12.5 A3 3 0 0 1 3.5 8 L9 2.5 A2 2 0 0 1 12 5.5 L6.5 11 A1 1 0 0 1 5 9.5 L10 4.5"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** What the surface asks of the composer's button beyond what a page does. */
 interface ConversationComposerSurface {
   readonly busy: boolean;
@@ -154,15 +185,15 @@ export interface ConversationComposerAttached {
   readonly onDetach: (attachment: ConversationAttachment) => void;
 }
 
-/** The images of a paste or a drop, which is every file it carries that says
- * it is one: the page's own types are the surface's to hold it to. */
+/** The images of a paste, a drop or a pick, which is every file it carries
+ * that says it is one: the page's own types are the surface's to hold it to. */
 function conversationFilesImages(files: FileList | undefined): File[] {
   return Array.from(files ?? []).filter((file) =>
     file.type.startsWith("image/"),
   );
 }
 
-/** The images held for the message, under the box, each removable, and how
+/** The images held for the message, over the box, each removable, and how
  * many of the page's bound they are. */
 function ConversationAttachments(props: {
   readonly attaches: ConversationAttaches | undefined;
@@ -177,7 +208,7 @@ function ConversationAttachments(props: {
         {props.attached.map((attachment, at) => (
           <li key={at} className="relative">
             <img
-              className="rounded-2 border-edge block h-[calc(var(--space-7)*2)] max-w-full border"
+              className="rounded-2 border-edge block h-[var(--space-7)] max-w-full border"
               src={conversationAttachmentUri(attachment)}
               alt={`Image ${String(at + 1)}`}
             />
@@ -250,6 +281,41 @@ function ConversationComposerPressed(
   );
 }
 
+/** The paperclip, which opens a picker of the types the page takes and hands
+ * what was picked up as a paste's images are. */
+function ConversationAttachPicker(props: {
+  readonly attaches: ConversationAttaches;
+  readonly onPick: (event: ChangeEvent<HTMLInputElement>) => void;
+}): ReactNode {
+  const picker = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={picker}
+        type="file"
+        hidden
+        multiple
+        accept={props.attaches.mediaTypes.join(",")}
+        onChange={(event) => {
+          props.onPick(event);
+          event.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        className="conversation-attach"
+        aria-label="Attach image"
+        onMouseDown={conversationCaretKept}
+        onClick={() => {
+          picker.current?.click();
+        }}
+      >
+        <ConversationAttachGlyph />
+      </button>
+    </>
+  );
+}
+
 /** The line over the box: what the page says of the last press, why the last
  * paste took less than it held, and the count once it is near the bound. */
 function ConversationComposerNote(props: {
@@ -277,16 +343,17 @@ function ConversationComposerNote(props: {
   );
 }
 
-/** What the box does with a paste or a drop: hands the images it carries up,
- * as an edit of the box, where the page takes images and the box takes
- * messages; and nothing otherwise, so the browser's own handling stands. A
- * removal is an edit of the box too. */
+/** What the box does with a paste, a drop or a pick: hands the images it
+ * carries up, as an edit of the box, where the page takes images and the box
+ * takes messages; and nothing otherwise, so the browser's own handling stands,
+ * and no picker is offered. A removal is an edit of the box too. */
 function conversationComposerTaken(
   props: ConversationComposerProps & ConversationComposerAttached,
   written: string,
 ): {
   readonly pasted: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   readonly detached: (attachment: ConversationAttachment) => void;
+  readonly picked?: (event: ChangeEvent<HTMLInputElement>) => void;
   readonly dropped: {
     readonly onDragOver?: (event: DragEvent<HTMLDivElement>) => void;
     readonly onDrop?: (event: DragEvent<HTMLDivElement>) => void;
@@ -311,6 +378,13 @@ function conversationComposerTaken(
       props.onDetach(attachment);
       props.onEdit?.(written);
     },
+    ...(takes
+      ? {
+          picked: (event: ChangeEvent<HTMLInputElement>) => {
+            taken(event.target.files ?? undefined, event);
+          },
+        }
+      : {}),
     dropped: takes
       ? {
           onDragOver: (event) => {
@@ -323,6 +397,34 @@ function conversationComposerTaken(
         }
       : {},
   };
+}
+
+/** The row under the box: the paperclip where the box takes images, and the
+ * button. */
+function ConversationComposerControls(
+  props: ConversationComposerSurface & {
+    readonly attaches?: ConversationAttaches;
+    readonly onPick:
+      ((event: ChangeEvent<HTMLInputElement>) => void) | undefined;
+  },
+): ReactNode {
+  return (
+    <div className="conversation-controls">
+      {props.attaches === undefined || props.onPick === undefined ? null : (
+        <ConversationAttachPicker
+          attaches={props.attaches}
+          onPick={props.onPick}
+        />
+      )}
+      <ConversationComposerPressed
+        busy={props.busy}
+        stops={props.stops}
+        ignores={props.ignores}
+        rests={props.rests}
+        onSendClick={props.onSendClick}
+      />
+    </div>
+  );
 }
 
 export function ConversationComposer(
@@ -352,12 +454,18 @@ export function ConversationComposer(
           count={textCodePointsCount(written)}
           charsMax={props.charsMax}
         />
+        <ConversationAttachments
+          attaches={props.attaches}
+          attached={props.attached}
+          removes={props.takes}
+          onDetach={taken.detached}
+        />
         <div
           className="conversation-field bg-surface-1 border-edge-control rounded-3 border"
           {...taken.dropped}
         >
           <ComposerPrimitive.Input
-            className="conversation-input w-full min-w-0 flex-1 resize-none border-0"
+            className="conversation-input w-full resize-none border-0"
             minRows={1}
             maxRows={conversationRowsMax}
             maxLength={props.charsMax}
@@ -377,20 +485,8 @@ export function ConversationComposer(
                   }
             }
           />
-          <ConversationComposerPressed
-            busy={props.busy}
-            stops={props.stops}
-            ignores={props.ignores}
-            rests={props.rests}
-            onSendClick={props.onSendClick}
-          />
         </div>
-        <ConversationAttachments
-          attaches={props.attaches}
-          attached={props.attached}
-          removes={props.takes}
-          onDetach={taken.detached}
-        />
+        <ConversationComposerControls {...props} onPick={taken.picked} />
       </ComposerPrimitive.Root>
     </ComposerPrimitive.Unstable_TriggerPopoverRoot>
   );

@@ -1,7 +1,8 @@
 /**
  * The controls the conversation surface offers beside what it draws: the copy
- * of an answer and of a block of code, and the way back to the foot of the
- * column for a reader who scrolled away from it.
+ * of an answer and of a block of code, the way back to the foot of the column
+ * for a reader who scrolled away from it, and the composer's row of controls
+ * under its box.
  *
  * jsdom scrolls nothing and measures nothing, so the column is given the
  * measures a scrolled one has and its events are sent by hand, in the order a
@@ -18,7 +19,11 @@ import {
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { Conversation } from "../app/browser/conversation/Conversation.tsx";
+import {
+  Conversation,
+  conversationStopBeatMs,
+} from "../app/browser/conversation/Conversation.tsx";
+import type { ConversationSent } from "../app/browser/conversation/Conversation.tsx";
 import { copySaidMilliseconds } from "../app/browser/ui/CopyButton.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
@@ -277,5 +282,113 @@ describe("the way back to the foot of the column", () => {
     await frame();
     expect(column.sent.at(-1)).toBe(1500);
     expect(back()).toBe(null);
+  });
+});
+
+/** A composer that takes images and a stop, under one turn at `standing`. */
+function composing(
+  standing: ConversationExchange["standing"],
+  onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent")),
+  onStop = vi.fn(() => Promise.resolve()),
+): ReactNode {
+  return (
+    <Conversation
+      exchanges={[exchangeOf({ standing })]}
+      composer={{
+        takes: true,
+        charsMax: 40,
+        attaches: { countMax: 2, mediaTypes: ["image/png"] },
+        onSend,
+        onStop,
+      }}
+    />
+  );
+}
+
+function message(): HTMLTextAreaElement {
+  return screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" });
+}
+
+describe("the composer's controls", () => {
+  test("stand in a row under the box, the paperclip first and the button last, with the images over the box and the box holding the text alone", async () => {
+    const view = render(composing({ standing: "Answered" }));
+    fireEvent.paste(message(), {
+      clipboardData: {
+        files: [new File([new Uint8Array([1])], "shot", { type: "image/png" })],
+        types: ["Files"],
+      },
+    });
+    const images = await screen.findByRole("list", { name: "Images" });
+    const field = view.container.querySelector(".conversation-field");
+    const controls = view.container.querySelector(".conversation-controls");
+    expect(field?.querySelectorAll("button, textarea")).toHaveLength(1);
+    expect(field?.contains(message())).toBe(true);
+    expect(field?.contains(images)).toBe(false);
+    expect(field?.previousElementSibling?.contains(images)).toBe(true);
+    expect(field?.nextElementSibling).toBe(controls);
+    const pressable = controls?.querySelectorAll("button");
+    expect(pressable?.[0]?.getAttribute("aria-label")).toBe("Attach image");
+    expect(pressable?.[pressable.length - 1]).toBe(
+      screen.getByRole("button", { name: "Send" }),
+    );
+    expect(
+      pressable?.[pressable.length - 1]?.querySelector(
+        ".conversation-send-mark svg",
+      ),
+    ).not.toBeNull();
+    styleless();
+  });
+
+  test("take no focus from a pointer's press, so the caret stays in the box", () => {
+    const view = render(composing({ standing: "Running", state: "Claimed" }));
+    const controls = view.container.querySelector(".conversation-controls");
+    const refused = (name: string): boolean => {
+      const button = screen.getByRole("button", { name });
+      expect(controls?.contains(button)).toBe(true);
+      return !fireEvent.mouseDown(button);
+    };
+    expect(refused("Stop")).toBe(true);
+    expect(refused("Attach image")).toBe(true);
+    view.rerender(composing({ standing: "Answered" }));
+    fireEvent.change(message(), { target: { value: "one more thing" } });
+    expect(refused("Send")).toBe(true);
+    styleless();
+  });
+});
+
+describe("the composer's button in its row", () => {
+  test("a press the surface ignores still does nothing", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
+    const onStop = vi.fn(() => Promise.resolve());
+    const view = render(
+      composing({ standing: "Running", state: "Claimed" }, onSend, onStop),
+    );
+    const controls = view.container.querySelector(".conversation-controls");
+    expect(
+      controls?.contains(screen.getByRole("button", { name: "Stop" })),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+    view.rerender(composing({ standing: "Stopped" }, onSend, onStop));
+    fireEvent.change(message(), { target: { value: "one more thing" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(onSend).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(conversationStopBeatMs);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    styleless();
   });
 });
