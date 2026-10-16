@@ -143,6 +143,29 @@ export const runnerStops: {
       path: `${boxUnits}/${rosterOwnUnit}`,
     },
   ],
+  ServiceRefused: [
+    {
+      stop: "ServiceRefused",
+      act: "Service",
+      path: `${boxUnits}/${rosterUnit}`,
+      failed: {
+        how: "Exit",
+        exit: 1,
+        excerpt: `${boxUnits}/${rosterUnit} serves /elsewhere.json, not ${rosterPool}; remove it if it is stale`,
+      },
+    },
+    {
+      stop: "ServiceRefused",
+      act: "ServiceOwn",
+      path: `${boxUnits}/${rosterOwnUnit}`,
+      failed: {
+        how: "Exit",
+        exit: 1,
+        excerpt:
+          "chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1",
+      },
+    },
+  ],
   MintRefused: [
     { stop: "MintRefused", outcome: "Absent", lapseMins: 60 },
     { stop: "MintRefused", outcome: "Conflict", lapseMins: 60 },

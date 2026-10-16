@@ -58,6 +58,7 @@ import {
   boxPrefix,
   boxSettings,
   boxUnitName,
+  boxUnitText,
   boxUnits,
   exited,
 } from "./setupRunnerBox.ts";
@@ -215,7 +216,7 @@ test("on a machine with an engine and a Claude login and nothing else, runner in
   });
 });
 
-test("a second run on a machine that has everything finds each thing as it is, does none of it again, and sends the site nothing but reads", async () => {
+test("a second run on a machine that has everything finds each thing as it is, writes its service again only to find it as it was, and sends the site nothing but reads", async () => {
   const machine = await fresh();
   await ran(machine);
   machine.box.acts.length = 0;
@@ -228,6 +229,7 @@ test("a second run on a machine that has everything finds each thing as it is, d
     "services",
     "docker",
     "doctor",
+    "service",
     "linger",
     "enabled",
     "active",
@@ -289,7 +291,7 @@ test("where the person's chats run on runners and they have none, runner makes t
   );
 });
 
-test("a second run where both runners are live and the person's own serves the project finds each thing as it is, changes nothing, and sends the site nothing but reads", async () => {
+test("a second run where both runners are live and the person's own serves the project finds each thing as it is, writes both services again only to find them as they were, and sends the site nothing but reads", async () => {
   const machine = await both();
   await ran(machine);
   machine.box.acts.length = 0;
@@ -308,10 +310,11 @@ test("a second run where both runners are live and the person's own serves the p
   });
   expect(writes(machine)).toEqual([]);
   expect(times(machine, "register")).toBe(0);
-  expect(times(machine, "service")).toBe(0);
+  expect(times(machine, "service")).toBe(2);
+  expect(times(machine, "restart")).toBe(0);
 });
 
-test("a package older than the first whose register takes --personal, or of a version that cannot be read, is installed again by the same command, the service written before it is restarted onto the new one, and the run goes on to the person's own runner", async () => {
+test("a package older than the first whose register takes --personal, or of a version that cannot be read, is installed again by the same command, the service written before it, whose unit the new one writes the same, is restarted onto the new one, and the run goes on to the person's own runner", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
   const words = runnerPackageOffered.installCommand.split(" ");
   for (const [held, said] of [
@@ -332,7 +335,7 @@ test("a package older than the first whose register takes --personal, or of a ve
       did.replaced,
       found.pool,
       found.check,
-      did.unit,
+      found.unit,
       found.linger,
       did.restarted,
       live,
@@ -922,7 +925,7 @@ const killed: readonly BoxAct[] = [
 ];
 
 test.each(killed)(
-  "a run that ended the moment %s was done is picked up by the next, which does nothing a second time",
+  "a run that ended the moment %s was done is picked up by the next, which does nothing a second time but write the service again as it was",
   async (act) => {
     const machine = await fresh();
     machine.box.after = (done) => {
@@ -941,7 +944,13 @@ test.each(killed)(
       (["install", "register", "service", "lingerOn", "start"] as const).map(
         (done) => times(machine, done),
       ),
-    ).toEqual([1, 1, 1, 1, 1]);
+    ).toEqual([
+      1,
+      1,
+      killed.indexOf(act) < killed.indexOf("service") ? 1 : 2,
+      1,
+      1,
+    ]);
     expect(writes(machine)).toEqual([mint]);
     expect(machine.lock).toBeUndefined();
   },
@@ -1159,7 +1168,7 @@ test("the registration a run goes on with is the file register said it wrote, al
   expect(other.lines.slice(-2)).toEqual([live, next]);
 });
 
-test("a package gone from a machine that was set up is installed again, and the unit written for the one before is written again by the one now there and its service restarted", async () => {
+test("a package gone from a machine that was set up is installed again where it was, which writes the unit as it was, and its service is restarted onto it", async () => {
   const machine = await fresh();
   await ran(machine);
   machine.box.paths.delete(command);
@@ -1168,13 +1177,70 @@ test("a package gone from a machine that was set up is installed again, and the 
   const done = await ran(machine);
   expect(done.lines.filter((line) => line.startsWith("did: "))).toEqual([
     did.package,
-    did.unit,
     did.restarted,
   ]);
+  expect(done.lines).toContain(found.unit);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(times(machine, "service")).toBe(1);
   expect(times(machine, "register")).toBe(0);
   expect(writes(machine)).toEqual([]);
+});
+
+test("a service whose unit another copy of the package wrote, under another prefix or Node, is written again by the copy this run found and restarted onto it, for the project's runner and the person's own alike", async () => {
+  const machine = await both();
+  await ran(machine);
+  const other = "/opt/node-22/bin/chuggy-linux";
+  machine.box.paths.set(`${boxUnits}/${unit}`, boxUnitText(other, pool));
+  machine.box.paths.set(`${boxUnits}/${ownUnit}`, boxUnitText(other, own));
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  const done = await ran(machine);
+  expect(done.exit).toBe(0);
+  expect(done.lines.filter((line) => line.startsWith("did: "))).toEqual([
+    did.unit,
+    did.restarted,
+    did.ownUnit,
+    did.ownRestarted,
+  ]);
+  for (const [served, file] of [
+    [unit, pool],
+    [ownUnit, own],
+  ] as const)
+    expect(machine.box.paths.get(`${boxUnits}/${served}`)).toBe(
+      boxUnitText(command, file),
+    );
+  expect(times(machine, "register")).toBe(0);
+  expect(writes(machine)).toEqual([]);
+});
+
+test("a unit of the service's name that serves another registration, or that the package cannot read back, is refused by the package, and the run stops on its line, naming the unit and saying to remove it where it is stale, with nothing started or restarted", async () => {
+  for (const [held, line] of [
+    [
+      boxUnitText(command, "/elsewhere.json"),
+      `${boxUnits}/${unit} serves /elsewhere.json, not ${pool}; remove it if it is stale`,
+    ],
+    [
+      "[Service]\nExecStart=/home/person/run-it-my-way\n",
+      `${boxUnits}/${unit} has no ExecStart chuggy-linux wrote; remove it if it is stale`,
+    ],
+  ] as const) {
+    const machine = await fresh();
+    await ran(machine);
+    machine.box.paths.set(`${boxUnits}/${unit}`, held);
+    machine.box.acts.length = 0;
+    const done = await ran(machine);
+    expect(done.exit, line).toBe(1);
+    expect(done.lines.slice(-4), line).toEqual([
+      `found: installing the runner's service ended with exit 1, saying: ${line}`,
+      `tell: Installing the runner's service did not work, so the runner is not set up yet: the runner package would not write it over the service already at ${boxUnits}/${unit}. If that one is left from a runner set up before, remove it, and tell me once you have or if you want me to try again.`,
+      again(
+        `once the person says ${boxUnits}/${unit} is removed, or asks to try again`,
+      ),
+      stop,
+    ]);
+    expect(machine.box.paths.get(`${boxUnits}/${unit}`), line).toBe(held);
+    expect(machine.box.acts.at(-1), line).toBe("service");
+  }
 });
 
 test("a service found running and not set to start at login is set to by the one command that starts it, is not restarted for that, and is not said to have been started; one found stopped is", async () => {

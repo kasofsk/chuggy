@@ -317,12 +317,37 @@ function checked(box: RunnerBox, file: string): SetupChildEnded {
     : exited(box.doctor.exit, `${ok[0] ?? ""}\n`, box.doctor.aside);
 }
 
-function served(box: RunnerBox, file: string): SetupChildEnded {
+/** The unit `install-service` writes for a file: run by the copy of the package the command is, so a unit two copies write differs. */
+export function boxUnitText(program: string, file: string): string {
+  const copy = program.slice(0, -"/bin/chuggy-linux".length);
+  return `[Service]\nExecStart=/usr/bin/node ${copy}/lib/node_modules/chuggy-linux/cli.mjs run --pool ${file}\n`;
+}
+
+/** The service of a file written over any unit of its name that serves the same file, and a unit that serves another, or whose `ExecStart` cannot be read back, refused. */
+function served(
+  box: RunnerBox,
+  program: string,
+  file: string,
+): SetupChildEnded {
   const unit = unitOf(file);
-  box.paths.set(`${boxUnits}/${unit}`, `[Service]\nExecStart=run ${file}\n`);
+  const path = `${boxUnits}/${unit}`;
+  if (box.paths.has(path)) {
+    const serves = /^ExecStart=.* --pool (\S+)$/mu.exec(
+      box.paths.get(path) ?? "",
+    )?.[1];
+    if (serves !== file)
+      return exited(
+        1,
+        "",
+        serves === undefined
+          ? `${path} has no ExecStart chuggy-linux wrote; remove it if it is stale\n`
+          : `${path} serves ${serves}, not ${file}; remove it if it is stale\n`,
+      );
+  }
+  box.paths.set(path, boxUnitText(program, file));
   return exited(
     0,
-    `wrote ${boxUnits}/${unit}; start it with:\n  systemctl --user daemon-reload\n  systemctl --user enable --now ${unit}\n  loginctl enable-linger\n`,
+    `wrote ${path}; start it with:\n  systemctl --user daemon-reload\n  systemctl --user enable --now ${unit}\n  loginctl enable-linger\n`,
   );
 }
 
@@ -411,7 +436,7 @@ function done(
     case "doctor":
       return checked(box, last);
     case "service":
-      return served(box, last);
+      return served(box, command[0] ?? "", last);
     case "reload":
       return exited(0);
     case "enabled":

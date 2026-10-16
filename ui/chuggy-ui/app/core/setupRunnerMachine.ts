@@ -48,7 +48,7 @@ export const setupProbeWaitMs = 20_000;
 /** The most of either stream of another program that is kept. */
 export const setupChildBytesMax = 65_536;
 
-/** Past any settings file or package manifest a person would write. */
+/** Past any settings file, package manifest or unit a person would write. */
 const setupTextBytesMax = 65_536;
 
 const setupProgram = runnerPackageOffered.program;
@@ -553,6 +553,14 @@ export function setupUnitOf(
   );
   const name = `${setupProgram}-${base}.service`;
   return { name, path: setupPath(places.units, name) };
+}
+
+/** A unit's text, or nothing where there is none or it cannot be read. */
+export function setupUnitText(
+  ports: SetupPorts,
+  unit: SetupUnit,
+): string | undefined {
+  return ports.disk.text(unit.path, setupTextBytesMax);
 }
 
 /** The commands of the installed package and of the machine's service manager that `runner` runs. */
