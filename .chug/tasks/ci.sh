@@ -25,14 +25,32 @@
 # not end clean: the last line counts them, and a run that would have exited 0
 # exits 1.
 #
+# A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN, given a Track Record token
+# and a `track-record` that runs. Every gate and every suite then runs under
+# `track-record run`, keyed on the tracked tree as it is on disk, the version
+# of node, what else that gate's verdict reads, and the salt below. A key on
+# record replays its log instead of running, and only an exit of 0 is recorded.
+# A reused pass is a pass and nothing more: it is counted as one, and the clean
+# line says how many there were. Without a token, or with TRACK_RECORD_OFF=1,
+# nothing is wrapped and every gate runs itself.
+#
 # Env:
 #   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
 #   CHUG_CI_BASE=<ref>            override the default origin/main or main base
-#   CHUG_CI_FULL=1                force every gate and shell suite
+#   CHUG_CI_FULL=1                force every gate and shell suite, each run
+#                                 fresh (TRACK_RECORD_FRESH=1)
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
 #   CHUG_CI_SUITE_TIMEOUT_SECS    per-suite cap, default 300
+#   TRACK_RECORD_TOKEN, TRACK_RECORD_TOKEN_FILE
+#                                 a Track Record token, or the file holding
+#                                 one; either turns reuse on, and a file that
+#                                 is missing or holds none does not
+#   TRACK_RECORD_URL              the store, default https://track-record.vteng.io
+#   TRACK_RECORD_NAMESPACE        the store's namespace, default chuggy
+#   TRACK_RECORD_FRESH=1          look nothing up, and still record each pass
+#   TRACK_RECORD_OFF=1            wrap nothing, though a token is set
 set -eu
 export LC_ALL=C
 
@@ -47,9 +65,42 @@ cd "$root" || exit 2
 ci_select_init
 echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 
+# Every key carries the salt, so a new value disowns every pass on record. The
+# store keeps the first pass recorded for a key, and a fresh run does not
+# replace it; bump the salt when passes already recorded must stop counting
+# for a reason no key can see, such as a pass found to be false.
+record_salt="chuggy-ci-1"
+record_tool="node --version"
+record=""
+# A token is read as track-record reads one, so a variable naming a file that
+# is not there wraps nothing rather than announcing reuse that cannot happen.
+# The binary is probed functionally — `command -v` says it exists, not that
+# it runs.
+if [ "${TRACK_RECORD_OFF:-0}" != "1" ] &&
+	{ [ -n "${TRACK_RECORD_TOKEN:-}" ] ||
+		grep -q '[^[:space:]]' "${TRACK_RECORD_TOKEN_FILE:-/dev/null}" 2>/dev/null; } &&
+	track-record --version >/dev/null 2>&1 &&
+	record_dir="$(mktemp -d 2>/dev/null)"; then
+	record=1
+	trap 'rm -rf "$record_dir"' EXIT
+	TRACK_RECORD_URL="${TRACK_RECORD_URL:-https://track-record.vteng.io}"
+	TRACK_RECORD_NAMESPACE="${TRACK_RECORD_NAMESPACE:-chuggy}"
+	export TRACK_RECORD_URL TRACK_RECORD_NAMESPACE
+	if [ "${CHUG_CI_FULL:-0}" = "1" ]; then
+		TRACK_RECORD_FRESH=1
+		export TRACK_RECORD_FRESH
+	fi
+	if [ "${TRACK_RECORD_FRESH:-0}" = "1" ]; then
+		echo "ci: every pass is recorded at $TRACK_RECORD_URL ($TRACK_RECORD_NAMESPACE), and none on record is reused"
+	else
+		echo "ci: a pass on record at $TRACK_RECORD_URL ($TRACK_RECORD_NAMESPACE) is reused"
+	fi
+fi
+
 failed=0
 errored=0
 ran=0
+reused=0
 
 untracked_shown_max=20
 untracked_count=0
@@ -71,9 +122,65 @@ if [ -n "$untracked" ]; then
 	fi
 fi
 
-run_gate() { # <label> <script> [args...]
-	label="$1"
+# Whether the run whose stderr is in the file was a pass on record: on one,
+# the command never ran, and track-record's line saying so is the last there.
+record_reused() { # <name> <stderr file>
+	case "$(tail -n 1 "$2" 2>/dev/null)" in
+	"track-record: REUSED $1 ("*) return 0 ;;
+	esac
+	return 1
+}
+
+# What a gate's verdict reads beyond the tracked tree goes into its key, so a
+# pass is reused only where the same question would be asked: the server a
+# caller names or the image one is started from, since a server started by
+# hand is not the one an evaluation gets; the corpus replayed; the walk's
+# samples and seeds; the setup program the unit suites run; the history the
+# paths gate reads deleted paths from; and the plugins and checkout the roster
+# resolves against, which are the whole of what it judges. Left out because
+# none moves a verdict: the ports a server is published on, the caps on a wait
+# or a walk (an overrun exits 2, never recorded), worker counts, colour, where
+# a counterexample is written, and the CHUG_CI_* selection, which picks gates
+# and asks none of them anything.
+#
+# Its stderr passes through as written and a copy is kept, from which
+# `record_reused` reads; sets $rc and $record_hit.
+record_gate() { # <gate-id> <script> [args...]
+	record_name="$1"
 	shift
+	case "$record_name" in
+	check-paths) set -- --tool 'git log --diff-filter=D --name-only --format=' -- "$@" ;;
+	check-roster) set -- --tool 'claude plugin list --json' --tool 'pwd -P' -- "$@" ;;
+	source-unit) set -- --env CHUG_SETUP_PROGRAM -- "$@" ;;
+	check-conformance) set -- --env CHUG_GOLDEN_DIR -- "$@" ;;
+	check-random)
+		set -- --env CHUG_WALK_SAMPLES --env CHUG_WALK_SEED_BASE \
+			--env CHUG_WALK_SEED --env CHUG_WALK_INSTANCE -- "$@"
+		;;
+	check-postgres | check-queries) set -- --env CHUG_PG_URL --env CHUG_PG_IMAGE -- "$@" ;;
+	check-keto)
+		set -- --env CHUG_KETO_READ_URL --env CHUG_KETO_WRITE_URL --env CHUG_KETO_IMAGE \
+			--env CHUG_PG_URL --env CHUG_PG_IMAGE -- "$@"
+		;;
+	*) set -- -- "$@" ;;
+	esac
+	rm -f "$record_dir/rc"
+	{
+		{
+			track-record run --name "$record_name" --tool "$record_tool" \
+				--salt "$record_salt" "$@" 2>&1 1>&3 3>&-
+			echo "$?" >"$record_dir/rc"
+		} | tee "$record_dir/err" >&2
+	} 3>&1
+	rc="$(cat "$record_dir/rc" 2>/dev/null || echo 2)"
+	record_hit=0
+	if record_reused "$record_name" "$record_dir/err"; then record_hit=1; fi
+}
+
+run_gate() { # <gate-id> <label> <script> [args...]
+	gate_id="$1"
+	label="$2"
+	shift 2
 	ran=$((ran + 1))
 	printf '\n--- %s\n' "$label"
 	if [ ! -x "$1" ]; then
@@ -83,11 +190,16 @@ run_gate() { # <label> <script> [args...]
 		return 0
 	fi
 	set +e
-	"$@"
-	rc=$?
+	record_hit=0
+	if [ -n "$record" ]; then
+		record_gate "$gate_id" "$@"
+	else
+		"$@"
+		rc=$?
+	fi
 	set -e
 	case "$rc" in
-	0) ;;
+	0) reused=$((reused + record_hit)) ;;
 	1)
 		echo "ci: FAILED — $label"
 		failed=$((failed + 1))
@@ -104,7 +216,7 @@ run_selected_gate() { # <gate-id> <label> <script> [args...]
 	label="$2"
 	shift 2
 	if ci_gate_selected "$gate_id"; then
-		run_gate "$label" "$@"
+		run_gate "$gate_id" "$label" "$@"
 	else
 		printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
 	fi
@@ -167,16 +279,27 @@ else
 			echo "ci: WARNING — no working \`timeout\` or \`gtimeout\`, so suites run"
 			echo "ci:           UNCAPPED. Install coreutils for the cap."
 		fi
+		# A suite's key takes the platform as well, since `sh` is not one
+		# program everywhere. Its stderr is kept only when it is wrapped,
+		# where track-record's last line there says whether it ran.
+		suite_err=/dev/null
+		if [ -n "$record" ]; then suite_err="$record_dir/err"; fi
 		started="$(date +%s)"
 		IFS='
 '
 		for suite in $suites; do
 			printf '  - %s\n' "$suite"
+			if [ -n "$record" ]; then
+				set -- track-record run --name "$suite" --tool "$record_tool" \
+					--salt "$record_salt" --platform -- sh "$suite"
+			else
+				set -- sh "$suite"
+			fi
 			set +e
 			if [ -n "$timeout_cmd" ]; then
-				CHUG_CI_SHELL_SUITES=0 "$timeout_cmd" "$suite_cap" sh "$suite" >/dev/null 2>&1
+				CHUG_CI_SHELL_SUITES=0 "$timeout_cmd" "$suite_cap" "$@" >/dev/null 2>"$suite_err"
 			else
-				CHUG_CI_SHELL_SUITES=0 sh "$suite" >/dev/null 2>&1
+				CHUG_CI_SHELL_SUITES=0 "$@" >/dev/null 2>"$suite_err"
 			fi
 			rc=$?
 			set -e
@@ -186,6 +309,9 @@ else
 			elif [ "$rc" -ne 0 ]; then
 				echo "ci: FAILED — $suite (rc=$rc); rerun with: sh $suite"
 				failed=$((failed + 1))
+			elif [ -n "$record" ] && record_reused "$suite" "$suite_err"; then
+				printf '    %s\n' "$(tail -n 1 "$suite_err")"
+				reused=$((reused + 1))
 			fi
 		done
 		unset IFS
@@ -231,4 +357,8 @@ if [ "$ran" -eq 0 ]; then
 	echo "ci: no gate selected; nothing ran"
 	exit 0
 fi
-echo "ci: all gates clean"
+if [ -n "$record" ]; then
+	echo "ci: all gates clean ($reused reused)"
+else
+	echo "ci: all gates clean"
+fi

@@ -13,7 +13,7 @@
  * WHAT THE BUNDLE ADDS THAT EQUALITY DOES NOT, and it is not what it looks
  * like. The states under the predicates are the model's own output, which is
  * weaker than states proved to satisfy them: what stands behind
- * `allInvariants` is the unseeded randomized run `.chug/tasks/check-model.sh`
+ * `allInvariants` is the randomized run `.chug/tasks/check-model.sh`
  * makes over the full-roster instances, plus the witness and refinement suites,
  * which assert it at every step of the particular traces they walk. There is no
  * `quint verify` in this tree and no inductive proof, and the rows emitted under

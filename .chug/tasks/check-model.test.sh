@@ -16,6 +16,10 @@ trap 'rm -rf "$WORK" "$BARE"' EXIT
 
 R="$WORK/repo"
 
+# Under a wrapped `ci.sh` this suite is handed a key of its own, which would
+# seed every case's randomized runs; the cases that want one set it.
+unset TRACK_RECORD_KEY
+
 # A PATH holding only git, so `command -v quint` can be made to fail. Without
 # it the real quint satisfies the fallback and the no-quint case cannot go red.
 GITBIN="$WORK/gitonly"
@@ -30,7 +34,8 @@ ln -sf "$(command -v git)" "$GITBIN/git"
 # nothing prints no such line and the gate must tell the two apart.
 #
 # It colours its verdict line under FORCE_COLOR the way quint does, so what the
-# gate reads is what a caller's environment would have made of it.
+# gate reads is what a caller's environment would have made of it, and writes
+# each call's arguments to STUB_LOG when a case names one.
 model_repo() { # <quint-version>
 	rm -rf "$R"
 	mkdir -p "$R/model/mc" "$R/model/tests" "$R/node_modules/.bin"
@@ -43,6 +48,7 @@ model_repo() { # <quint-version>
 	cat > "$R/node_modules/.bin/quint" <<STUB
 #!/bin/sh
 if [ "\$1" = "--version" ]; then echo "$1"; exit 0; fi
+if [ -n "\${STUB_LOG-}" ]; then echo "\$*" >> "\$STUB_LOG"; fi
 sub="\$1"
 eval "out=\\\${STUB_OUT_\$sub-}"
 eval "rc=\\\${STUB_RC_\$sub-0}"
@@ -130,6 +136,40 @@ Use --seed=0x1c6f70db7e06ad9b to reproduce."
 run_in_repo
 check "a refuted invariant is a finding" 1 "$RC" "violated an invariant"
 check "a refuted invariant prints its seed" 1 "$RC" "0x1c6f70db7e06ad9b"
+
+# A PASS THAT CAN BE RECORDED IS ONE SWEEP THAT REPRODUCES IT. With a key,
+# both randomized runs are seeded from its leading hex digits, and the stage
+# says so; without one, neither is seeded. A key that is no key seeds nothing
+# and runs nothing.
+key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+model_repo 0.32.0
+STUB_LOG="$WORK/quint.log"
+export STUB_LOG
+: > "$STUB_LOG"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && TRACK_RECORD_KEY="$key" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a key names the seed it gives the runs" 0 "$RC" "seeded 0x0123456789abcdef from TRACK_RECORD_KEY"
+seeded="$(grep '^run ' "$STUB_LOG" | grep -c -- ' --seed=0x0123456789abcdef ' || true)"
+printf 'seeded runs %s\n' "$seeded" >> "$OUT"
+check "a key seeds both randomized runs" 0 "$RC" "seeded runs 2"
+: > "$STUB_LOG"
+run_in_repo
+seeded="$(grep -c -- '--seed' "$STUB_LOG" || true)"
+printf 'seeded calls %s\n' "$seeded" >> "$OUT"
+check "without a key no run is seeded" 0 "$RC" "seeded calls 0"
+: > "$STUB_LOG"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && TRACK_RECORD_KEY="not-a-key" "$SUT") >"$OUT" 2>&1
+RC=$?
+set -e
+check "a key that is no key is a could-not-run" 2 "$RC" "TRACK_RECORD_KEY is not a key"
+printf 'calls %s\n' "$(grep -c '' "$STUB_LOG" || true)" >> "$OUT"
+check "a key that is no key runs nothing" 2 "$RC" "calls 0"
+unset STUB_LOG
 
 # TWO IS NOT A PASS, AND NEITHER IS ONE. Quint exits 1 for a violated invariant
 # and for a module it cannot parse alike, and the crash on #12 leaves on a
