@@ -534,7 +534,7 @@ test("what the merge answered is what the finalization does next", () => {
         reconciled: "Unmerged",
         evidence: evidence({ mergeability: "Blocked" }),
       }),
-      { decide: "WaitMergeAttempt" },
+      { decide: "WaitMergeAttempt", hold: "ProposalMergeBlocked" },
     ],
     [
       unheard(1, 1, {
@@ -542,7 +542,73 @@ test("what the merge answered is what the finalization does next", () => {
         contradiction: "Closed",
         evidence: evidence({ status: "Closed" }),
       }),
+      { decide: "WaitMergeAttempt", hold: "ProposalAbsent" },
+    ],
+  ]);
+});
+
+test("a merge read as closed is read again on the cadence, waiting or moved, since a person may reopen it", () => {
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: evidence({ status: "Closed" }),
+  } as const;
+  mergesDecided([
+    [
+      waitingOn(0, { status: "Closed" }, "Closed"),
       { decide: "Hold", hold: "ProposalAbsent" },
+    ],
+    [
+      waitingOn(proposalMergeRereadSecs, { status: "Closed" }, "Closed"),
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+    ],
+    [
+      { merging: "Moved", reading: closed, heardAgeSecs: 0 },
+      { decide: "Hold", hold: "ProposalAbsent" },
+    ],
+    [
+      {
+        merging: "Moved",
+        reading: closed,
+        heardAgeSecs: proposalMergeRereadSecs,
+      },
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+    ],
+  ]);
+});
+
+test("a merge anybody made concludes the landing at whatever head it was made, and edits to the words refuse nothing", () => {
+  const later = {
+    ref: request.head.ref,
+    commit: asGitObjectId("d".repeat(40)),
+  };
+  const edited = {
+    title: "feat: serve the escalation reason",
+    body: request.body.replaceAll("\n", "\r\n"),
+  };
+  mergesDecided([
+    [
+      waitingOn(0, { status: "Merged", head: later, mergeCommit }),
+      { decide: "Conclude" },
+    ],
+    [
+      {
+        merging: "Moved",
+        reading: {
+          reconciled: "Accepted",
+          evidence: evidence({ status: "Merged", head: later, mergeCommit }),
+        },
+        heardAgeSecs: 0,
+      },
+      { decide: "Conclude" },
+    ],
+    [
+      waitingOn(0, { ...edited, mergeability: "Blocked" }),
+      { decide: "Hold", hold: "ProposalMergeBlocked" },
+    ],
+    [
+      waitingOn(0, { ...edited, status: "Merged", mergeCommit }),
+      { decide: "Conclude" },
     ],
   ]);
 });
@@ -675,7 +741,21 @@ test("an answer about this deployment is never recorded as one about the merge",
   );
   assert.deepEqual(
     finalizationProposalMergeReadingRecording({ reconciled: "Absent" }),
-    { record: "Reading", reconciled: { reconciled: "Absent" } },
+    {
+      record: "Reading",
+      reconciled: { reconciled: "Absent" },
+      hold: undefined,
+    },
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: evidence({ status: "Closed" }),
+  } as const;
+  assert.deepEqual(
+    finalizationProposalMergeReadingRecording(closed),
+    { record: "Reading", reconciled: closed, hold: "ProposalAbsent" },
+    "a reading of a closed proposal holds as every pass it stays closed does",
   );
 });
 

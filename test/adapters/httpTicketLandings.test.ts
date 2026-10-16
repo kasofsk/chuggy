@@ -83,6 +83,7 @@ const failedThenLanded: readonly TicketLandingRecord[] = [
     proposal: {
       url: "https://forge.example/acme/atlas/pull/9",
       headRef: "refs/heads/chuggy/7",
+      headCommit: candidateCommit,
       baseRef: "refs/heads/main",
       creation: "Created",
     },
@@ -187,6 +188,7 @@ test("a reader is answered each landing oldest first, a failed one with its conf
         proposal: {
           url: "https://forge.example/acme/atlas/pull/9",
           headRef: "refs/heads/chuggy/7",
+          headCommit: candidateCommit,
           baseRef: "refs/heads/main",
           creation: "Created",
         },

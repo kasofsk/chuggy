@@ -471,6 +471,14 @@ export const changeProposalMerges = [
 /** Why a stored change proposal was not mergeable, restating `allChangeProposalUnmergeableSettled`. */
 export const changeProposalMergeReasons = ["Conflict"] as const;
 
+/** What a forge last said of a proposal itself, restating `allChangeProposalStatuses`. */
+export const changeProposalStatuses = [
+  "Open",
+  "Closed",
+  "Merged",
+  "Superseded",
+] as const;
+
 /** What a merge waiting on the forge waits on, restating `allChangeProposalMergeWaits`. */
 export const changeProposalMergeWaits = ["Blocked", "HeadMoved"] as const;
 

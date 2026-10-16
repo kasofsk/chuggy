@@ -82,6 +82,7 @@ import {
   changeProposalMergeabilities,
   changeProposalMergeReasons,
   changeProposalMergeWaits,
+  changeProposalStatuses,
   changeProposalMerges,
   draftStates,
   escalationKinds,
@@ -2055,22 +2056,27 @@ const ticketLandingConflictSchema = z.strictObject({
 });
 
 /**
- * The pull request one landing opened, each field present where its row holds
- * it. `url` is absent where none was recorded or the one recorded is not a link
- * a report could carry; `creation` is absent where the proposal was found by
- * reading it back; `mergeability` is what the last reading of its merge said,
- * and `mergeState` the forge's own word it was read out of.
+ * The pull request one landing opened at `headCommit`, each other field present
+ * where its row holds it. `url` is absent where none was recorded or the one
+ * recorded is not a link a report could carry; `creation` is absent where the
+ * proposal was found by reading it back; `status` and `mergeability` are what
+ * the forge last said of it, and `mergeState` its own word for the second; and
+ * `mergedHead` is the head the forge merged, present only where it is not the
+ * one this landing opened it at.
  */
 const ticketLandingProposalSchema = z.strictObject({
   url: actionReportDocumentSchema.shape.link,
   headRef: z.string().min(1),
+  headCommit: landingCommitSchema,
   baseRef: z.string().min(1),
   creation: z.enum(changeProposalCreations).optional(),
+  status: z.enum(changeProposalStatuses).optional(),
   merge: z.enum(changeProposalMerges).optional(),
   mergeReason: z.enum(changeProposalMergeReasons).optional(),
   mergeability: z.enum(changeProposalMergeabilities).optional(),
   mergeState: z.string().min(1).max(proposalMergeStateCharsMax).optional(),
   mergeCommit: landingCommitSchema.optional(),
+  mergedHead: landingCommitSchema.optional(),
 });
 
 const ticketLandingFields = {

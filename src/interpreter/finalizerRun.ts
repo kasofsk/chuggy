@@ -1427,8 +1427,8 @@ async function finalizerReconcileProposal(
 /**
  * Releases the merge attempt in flight so that a later pass may ask for
  * another, spending the merge it stood for where the forge may have made it and
- * nothing where the forge would not, and keeping the reading a merge the
- * forge's own rules refused waits on.
+ * nothing where the forge would not, and keeping the reading a waiting merge
+ * waits on.
  */
 async function finalizerReleaseProposalMergeAttempt(
   service: FinalizerService,
@@ -1496,6 +1496,8 @@ async function finalizerRecordProposalMerge(
   });
   if (wrote.wrote !== "Row")
     finalizerHold(service, tally, "ProposalUnrecorded");
+  else if (recording.record === "Reading" && recording.hold !== undefined)
+    finalizerHold(service, tally, recording.hold);
 }
 
 /**
@@ -1606,20 +1608,23 @@ async function finalizerMergeConflicted(
   );
 }
 
-/** Releases the merge attempt as the proposal step decided, a wait keeping its reading and holding on the forge's rules. */
+/** Releases the merge attempt as the proposal step decided, a wait keeping its reading and holding at what it waits on. */
 function finalizerProposalMergeReleased(
   service: FinalizerService,
   view: FinalizationView,
-  decide: "RefuseMergeAttempt" | "WaitMergeAttempt",
+  decision: Extract<
+    FinalizationProposalDecision,
+    { decide: "RefuseMergeAttempt" | "WaitMergeAttempt" }
+  >,
   tally: FinalizerTally,
 ): Promise<void> {
-  return decide === "WaitMergeAttempt"
+  return decision.decide === "WaitMergeAttempt"
     ? finalizerReleaseProposalMergeAttempt(
         service,
         view,
         "Waiting",
         tally,
-        "ProposalMergeBlocked",
+        decision.hold,
       )
     : finalizerReleaseProposalMergeAttempt(
         service,
@@ -1672,12 +1677,7 @@ async function finalizerProposalDecided(
       return;
     case "RefuseMergeAttempt":
     case "WaitMergeAttempt":
-      await finalizerProposalMergeReleased(
-        service,
-        view,
-        decision.decide,
-        tally,
-      );
+      await finalizerProposalMergeReleased(service, view, decision, tally);
       return;
     case "RecordMergeConflict":
       await finalizerMergeConflicted(service, view, tally);

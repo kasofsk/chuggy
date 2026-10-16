@@ -69,7 +69,11 @@ const hold = {
   since: asPublicInstant("2026-10-07T11:00:00.000000Z"),
 };
 
-const proposal = { headRef: "refs/heads/chuggy/7", baseRef: "refs/heads/main" };
+const proposal = {
+  headRef: "refs/heads/chuggy/7",
+  headCommit: commitOf("b"),
+  baseRef: "refs/heads/main",
+};
 
 function recorded(
   fields: Partial<TicketLandingRecord> = {},

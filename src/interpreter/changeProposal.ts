@@ -7,15 +7,19 @@
  * review is the one the promotion put on the ticket's own branch, so the head
  * is the caller's and nothing here mints one.
  *
- * EACH SIDE IS IDENTIFIED BY ITS REF, AND THE PROPOSAL BY ITS MARKER. A
- * proposal stands between two branches, and what either branch holds is the
- * forge's to move between the moment it is observed and every later reading —
- * so comparing a commit would refuse a proposal this request had successfully
- * opened whenever anybody landed anything on either side in between, which for
- * a head that is the ticket's own work branch is every push the ticket makes
- * after the create. The marker is what says a proposal is this request's and
- * the two refs are where it stands, so each side's commit stays in the request
- * and in the evidence as what was observed and is compared with nothing.
+ * EACH SIDE IS IDENTIFIED BY ITS REF, AND THE PROPOSAL BY ITS MARKER UNTIL
+ * ITS NUMBER IS KNOWN. A proposal stands between two branches, and what either
+ * branch holds is the forge's to move between the moment it is observed and
+ * every later reading — so comparing a commit would refuse a proposal this
+ * request had successfully opened whenever anybody landed anything on either
+ * side in between, which for a head that is the ticket's own work branch is
+ * every push the ticket makes after the create. The marker is what says a
+ * proposal is this request's and the two refs are where it stands, so each
+ * side's commit stays in the request and in the evidence as what was observed
+ * and is compared with nothing. A reading of a merge is of a proposal already
+ * proved, so the number it was read by and the refs are all that identify it:
+ * its title, its body and the marker in it are a person's to edit while it
+ * waits, and none of them says whose it is any more.
  *
  * A CREATE IS EITHER IN FLIGHT OR IT IS NOT, AND THAT IS THE WHOLE STATE. An
  * attempt is counted before the forge is asked, so a create whose outcome
@@ -32,10 +36,11 @@
  * a reading found blocked is released with that reading kept as what it waits
  * on. A merge the forge answered had moved head waits the same way, on whoever
  * moved it. Either is read again once `proposalMergeRereadSecs` have passed
- * since the forge was last heard about it: a proposal merged by anyone is the
- * merge this request asked for, one closed unmerged is a merge that can no
- * longer happen, and only a blocked one read as mergeable is merged again,
- * under the same ceilings as any other.
+ * since the forge was last heard about it: a proposal merged by anyone, at
+ * whatever head, concludes the merge; one closed unmerged is read on the same
+ * cadence, because a person may reopen it, and waits again once one has; and
+ * only a blocked one read as mergeable is merged again, at the commit this
+ * request proposed and under the same ceilings as any other.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -581,6 +586,29 @@ export function changeProposalRequest(
  */
 export type ChangeProposalMergedStanding = "Contradictory" | "Accepted";
 
+/** Whether one proposal stands where this request's does, and where it does not. */
+function proposalPlaceContradiction(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+): ChangeProposalContradiction | undefined {
+  if (evidence.repository !== request.repository) return "RepositoryMismatch";
+  if (evidence.head.ref !== request.head.ref) return "HeadMismatch";
+  if (evidence.base.ref !== request.base.ref) return "BaseMismatch";
+  return undefined;
+}
+
+/** What a proposal's own status contradicts of this request, a merge being nothing where the request asked for one. */
+function proposalStatusContradiction(
+  evidence: ChangeProposalEvidence,
+  merged: ChangeProposalMergedStanding,
+): ChangeProposalContradiction | undefined {
+  if (evidence.status === "Closed") return "Closed";
+  if (evidence.status === "Merged")
+    return merged === "Accepted" ? undefined : "Merged";
+  if (evidence.status === "Superseded") return "Superseded";
+  return undefined;
+}
+
 /** Whether one proposal is this request's, and what it is not where it is not. */
 function proposalContradiction(
   request: ChangeProposalRequest,
@@ -589,16 +617,27 @@ function proposalContradiction(
 ): ChangeProposalContradiction | undefined {
   if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
   if (evidence.marker !== request.marker) return "MarkerMismatch";
-  if (evidence.repository !== request.repository) return "RepositoryMismatch";
-  if (evidence.head.ref !== request.head.ref) return "HeadMismatch";
-  if (evidence.base.ref !== request.base.ref) return "BaseMismatch";
+  const place = proposalPlaceContradiction(request, evidence);
+  if (place !== undefined) return place;
   if (evidence.title !== request.title || evidence.body !== request.body)
     return "MetadataMismatch";
-  if (evidence.status === "Closed") return "Closed";
-  if (evidence.status === "Merged")
-    return merged === "Accepted" ? undefined : "Merged";
-  if (evidence.status === "Superseded") return "Superseded";
-  return undefined;
+  return proposalStatusContradiction(evidence, merged);
+}
+
+/**
+ * Whether one reading of a proved proposal is still of it, and what it is not
+ * where it is not. The number it was read by identifies it, so nothing a person
+ * may edit while it waits is compared, and a merge is the status it waits for.
+ */
+function proposalMergeContradiction(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+): ChangeProposalContradiction | undefined {
+  if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
+  return (
+    proposalPlaceContradiction(request, evidence) ??
+    proposalStatusContradiction(evidence, "Contradictory")
+  );
 }
 
 /** Verifies a marker lookup before an ambiguous create may be accepted. */
@@ -870,7 +909,7 @@ export type ChangeProposalMergingNext =
   | { readonly next: "Merge" }
   | { readonly next: "ReadByNumber" }
   | { readonly next: "RefuseAttempt" }
-  | { readonly next: "Wait" }
+  | { readonly next: "Wait"; readonly reason: "Blocked" | "Closed" }
   | { readonly next: "Concluded"; readonly merge: ChangeProposalMergeConcluded }
   | {
       readonly next: "Refused";
@@ -922,7 +961,7 @@ export function changeProposalMergeRequest(
 /**
  * Verifies a reading of the proposal a merge was asked of. The status the
  * create's reconciliation calls a contradiction is what this one is waiting
- * for, and every other contradiction is one here too.
+ * for, and a title or a body edited since is no contradiction at all.
  */
 export function reconcileChangeProposalMerge(
   request: ChangeProposalRequest,
@@ -937,11 +976,7 @@ export function reconcileChangeProposalMerge(
       return { reconciled: "Denied" };
     case "Found": {
       const evidence = read.evidence;
-      const contradiction = proposalContradiction(
-        request,
-        evidence,
-        "Contradictory",
-      );
+      const contradiction = proposalMergeContradiction(request, evidence);
       if (contradiction === undefined)
         return { reconciled: "Unmerged", evidence };
       if (contradiction !== "Merged")
@@ -965,9 +1000,9 @@ function proposalMergingBoundsAsserted(
 
 /**
  * What one stored reading says of the proposal a merge was asked of: what it
- * settles the merge to, whoever merged or closed it; what the forge said of
- * merging a proposal it found open; and nothing where it was read as merged at
- * no commit.
+ * settles the merge to, whoever merged it; what the forge said of merging a
+ * proposal it found open; that it was found closed, which a person may undo;
+ * and nothing where it was read as merged at no commit.
  */
 type ProposalMergeRead =
   | { readonly read: "Settled"; readonly next: ChangeProposalMergingNext }
@@ -975,6 +1010,7 @@ type ProposalMergeRead =
       readonly read: "Open";
       readonly mergeability: ChangeProposalMergeability | undefined;
     }
+  | { readonly read: "Closed" }
   | { readonly read: "Unsettled" };
 
 /** Rebinds one stored reading to the current request, which is the only request it is ever compared against. */
@@ -994,11 +1030,7 @@ function proposalMergeRead(
       next: { next: "Held", reason: "ProposalAbsent" },
     };
   const evidence = reading.evidence;
-  const contradiction = proposalContradiction(
-    request,
-    evidence,
-    "Contradictory",
-  );
+  const contradiction = proposalMergeContradiction(request, evidence);
   switch (contradiction) {
     case undefined:
       return { read: "Open", mergeability: evidence.mergeability };
@@ -1013,7 +1045,7 @@ function proposalMergeRead(
             },
           };
     case "Closed":
-      return { read: "Settled", next: { next: "Held", reason: "Closed" } };
+      return { read: "Closed" };
     case "Superseded":
     case "ForgeMismatch":
     case "RepositoryMismatch":
@@ -1040,8 +1072,8 @@ const proposalMergeConflicted: ChangeProposalMergingNext = {
  * What a merge nobody has heard the fate of authorizes. Its readings are spent
  * on it alone, so a merge none of them found landed is one the forge never made
  * and the attempt it stands on is released, while one a reading found blocked
- * is released to wait on the forge and one ruled out of the number it addressed
- * merges nothing again.
+ * or closed is released to wait on the forge and one ruled out of the number it
+ * addressed merges nothing again.
  */
 function proposalMergeUnansweredNext(
   request: ChangeProposalRequest,
@@ -1052,10 +1084,11 @@ function proposalMergeUnansweredNext(
     throw new RangeError("proposal merging: nothing is in flight");
   const read = proposalMergeRead(request, merging.reading);
   if (read.read === "Settled") return read.next;
+  if (read.read === "Closed") return { next: "Wait", reason: "Closed" };
   if (read.read === "Open" && read.mergeability === "Conflicting")
     return proposalMergeConflicted;
   if (read.read === "Open" && read.mergeability === "Blocked")
-    return { next: "Wait" };
+    return { next: "Wait", reason: "Blocked" };
   return merging.readings < merging.merges * bounds.readingsMax
     ? { next: "ReadByNumber" }
     : { next: "RefuseAttempt" };
@@ -1092,13 +1125,14 @@ function proposalMergeWaitingNext(
       : { next: "Held", reason: "MergesExhausted" };
   return proposalMergeRereadDue(merging.heardAgeSecs)
     ? { next: "ReadByNumber" }
-    : { next: "Held", reason: "Blocked" };
+    : { next: "Held", reason: read.read === "Closed" ? "Closed" : "Blocked" };
 }
 
 /**
- * What a merge the forge answered had moved head authorizes. The commit the
- * permit landed is the only one this request ever asked to have merged, so it
- * is never merged again and waits on whoever moved it to merge or close it.
+ * What a merge the forge answered had moved head authorizes. This request only
+ * ever asks to merge the commit its permit landed, so it never merges again and
+ * waits on whoever moved the head; a merge the forge reports, by anyone and at
+ * any head, concludes it, and the landing's read names the head it merged.
  */
 function proposalMergeMovedNext(
   request: ChangeProposalRequest,
@@ -1108,7 +1142,10 @@ function proposalMergeMovedNext(
   if (read.read === "Settled") return read.next;
   return proposalMergeRereadDue(merging.heardAgeSecs)
     ? { next: "ReadByNumber" }
-    : { next: "Held", reason: "HeadMoved" };
+    : {
+        next: "Held",
+        reason: read.read === "Closed" ? "Closed" : "HeadMoved",
+      };
 }
 
 /**

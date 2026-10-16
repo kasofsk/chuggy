@@ -22,8 +22,8 @@
  * one recorded and may be older than what holds it now. An open approval is
  * no such record: nothing moves the attempt past it, so it is answered over a
  * hold recorded beside it. A wait is answered under a recorded hold, because a
- * pass that reached the forge clears the record and so one that stands is
- * newer than the last reading. A concluded landing answers neither, whatever
+ * pass that found the proposal open clears the record and so one that stands
+ * is newer than the last reading. A concluded landing answers neither, whatever
  * its columns still carry.
  *
  * A CONFLICT IS READ FROM ITS MANIFEST, which is a project artifact and not a
@@ -53,6 +53,7 @@ import type {
   ChangeProposalMergeAnswer,
   ChangeProposalMergeability,
   ChangeProposalMergeWait,
+  ChangeProposalStatus,
   ChangeProposalUnmergeableSettled,
   ProposalMergeState,
 } from "./changeProposal.ts";
@@ -93,17 +94,22 @@ export interface TicketLandingAttempt {
   readonly preparedAt: PublicInstant;
 }
 
-/** One request's pull request, each field present where its row holds it. */
+/** One request's pull request, opened at `headCommit`, each other field present where its row holds it. */
 export interface TicketLandingProposal {
   readonly url?: string;
   readonly headRef: string;
+  readonly headCommit: GitObjectId;
   readonly baseRef: string;
   readonly creation?: ChangeProposalCreationStored["created"];
+  /** What the forge last said of the proposal itself. */
+  readonly status?: ChangeProposalStatus;
   readonly merge?: ChangeProposalMergeAnswer["merged"];
   readonly mergeReason?: ChangeProposalUnmergeableSettled;
   readonly mergeability?: ChangeProposalMergeability;
   readonly mergeState?: ProposalMergeState;
   readonly mergeCommit?: GitObjectId;
+  /** The head the forge merged, where it is not `headCommit`: a person moved it before merging. */
+  readonly mergedHead?: GitObjectId;
 }
 
 /** What a request's merge waits on at the forge, and when the forge was last heard about it. */

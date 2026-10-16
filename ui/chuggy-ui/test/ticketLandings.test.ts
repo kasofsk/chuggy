@@ -23,9 +23,14 @@ import {
 } from "../app/core/ticketLandings.ts";
 import {
   landingAwaitingMerge,
+  landingCandidateCommit,
+  landingClosed,
   landingConflicted,
   landingHeld,
   landingLanded,
+  landingLandedCommit,
+  landingMergedElsewhere,
+  landingMergedHead,
   landingPullRequest,
   landingRunning,
   landingsRead,
@@ -40,7 +45,7 @@ test("a landing that failed on a conflict says so and how many files it names", 
   expect(ticketLandingFragment(landing, nowMs)).toEqual({
     text: "Merge conflict · 1 file",
     link: undefined,
-    commit: undefined,
+    commits: [],
   });
   expect(ticketLandingSummary(landing)).toBe("Landing failed");
 });
@@ -62,7 +67,7 @@ test("a landing whose merge waits on the forge says on what, what the forge said
   expect(ticketLandingFragment(landing, nowMs)).toEqual({
     text: "Blocked · behind · checked 3m ago",
     link: { href: landingPullRequest, host: "forge.example.test" },
-    commit: undefined,
+    commits: [],
   });
   expect(landing.detail.proposal?.mergeState).toBe("behind");
   expect(landing.detail.checkedAt).toBe("2026-10-07T14:57:00Z");
@@ -97,10 +102,57 @@ test("a landed landing offers its pull request under its host and its commit sho
     href: landingPullRequest,
     host: "forge.example.test",
   });
-  expect(fragment.commit?.text).toBe("e0f3a7c");
+  expect(fragment.commits).toEqual([
+    {
+      name: undefined,
+      label: { text: "e0f3a7c", title: landingLandedCommit },
+    },
+  ]);
   expect(ticketLandingSummary(ticketLandingOf(landingLanded(2)))).toBe(
     "Landed",
   );
+});
+
+test("a pull request a person merged at a head it was not opened at names both heads, and never the evaluated one alone", () => {
+  const landing = ticketLandingOf(landingMergedElsewhere(2));
+  expect(landing.word).toBe("Landed");
+  expect(
+    ticketLandingFragment(landing, nowMs).commits.map(
+      (commit) => `${commit.name ?? ""} ${commit.label.text}`,
+    ),
+  ).toEqual(["Merged d4e5f6a", "Evaluated b51d9f0"]);
+  expect(landing.detail.proposal?.heads).toEqual({
+    merged: { text: "d4e5f6a", title: landingMergedHead },
+    evaluated: { text: "b51d9f0", title: landingCandidateCommit },
+  });
+  expect(landing.detail.proposal?.status).toBe("Merged");
+  expect(
+    landing.detail.proposal?.mergeCommit,
+    "a merge somebody else made names the commit it landed at",
+  ).toEqual({ text: "e0f3a7c", title: landingLandedCommit });
+  expect(
+    ticketLandingOf(landingLanded(2)).detail.proposal?.heads,
+    "a merge at the head opened names one commit",
+  ).toBeUndefined();
+});
+
+test("a pull request held on being closed is labelled closed, and an absent one is still absent", () => {
+  const closed = ticketLandingOf(landingClosed(2, "2026-10-07T14:58:00Z"));
+  expect(closed.word).toBe("Held");
+  expect(ticketLandingFragment(closed, nowMs).text).toBe("Held 2m · Closed");
+  const absent = landingClosed(2, "2026-10-07T14:58:00Z");
+  expect(
+    ticketLandingFragment(
+      ticketLandingOf({
+        ...absent,
+        proposal:
+          absent.proposal === undefined
+            ? undefined
+            : { ...absent.proposal, status: "Open" },
+      }),
+      nowMs,
+    ).text,
+  ).toBe("Held 2m · Proposal absent");
 });
 
 test("an address that does not parse, or is not https, is no link and no throw", () => {

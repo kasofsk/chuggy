@@ -22,6 +22,7 @@ import {
   changeProposalMergeabilities,
   changeProposalMergeReasons,
   changeProposalMergeWaits,
+  changeProposalStatuses,
   changeProposalMerges,
   configurationProvenanceSources,
   configurationReadinesses,
@@ -176,6 +177,7 @@ import {
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
   allChangeProposalMergeWaits,
+  allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
 } from "../../src/interpreter/changeProposal.ts";
 import {
@@ -308,6 +310,7 @@ test("the attempt and pull request codes a landing carries are the ones a row ho
     [...changeProposalMergeWaits],
     [...allChangeProposalMergeWaits],
   );
+  assert.deepEqual([...changeProposalStatuses], [...allChangeProposalStatuses]);
 });
 
 /** One landing a reader could be sent, carrying `state` and every optional code at the value given. */
@@ -329,8 +332,10 @@ function landingCarrying(
     },
     proposal: {
       headRef: "refs/heads/chuggy/1",
+      headCommit: commit,
       baseRef: "refs/heads/main",
       creation: codes["creation"] ?? "Created",
+      status: codes["status"] ?? "Open",
       merge: codes["merge"] ?? "NotMergeable",
       mergeReason: codes["mergeReason"] ?? "Conflict",
       mergeability: codes["mergeability"] ?? "Conflicting",
@@ -371,6 +376,7 @@ test("every code a landing can carry is a member of a contract roster", () => {
     ["merge", changeProposalMerges],
     ["mergeReason", changeProposalMergeReasons],
     ["mergeability", changeProposalMergeabilities],
+    ["status", changeProposalStatuses],
     ["hold", finalizationUnavailableKinds],
     ["wait", changeProposalMergeWaits],
   ];

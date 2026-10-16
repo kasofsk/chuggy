@@ -23,6 +23,7 @@ import {
   type changeProposalMergeReasons,
   type changeProposalMergeWaits,
   type changeProposalMerges,
+  type changeProposalStatuses,
   type finalizationAttemptOutcomes,
   type finalizationFailureKinds,
   type BlockedReason,
@@ -251,6 +252,22 @@ export function changeProposalMergeReasonLabel(
   switch (reason) {
     case "Conflict":
       return "Conflict";
+  }
+}
+
+/** What the forge last said of a pull request itself. */
+export function changeProposalStatusLabel(
+  status: (typeof changeProposalStatuses)[number],
+): string {
+  switch (status) {
+    case "Open":
+      return "Open";
+    case "Closed":
+      return "Closed";
+    case "Merged":
+      return "Merged";
+    case "Superseded":
+      return "Superseded";
   }
 }
 

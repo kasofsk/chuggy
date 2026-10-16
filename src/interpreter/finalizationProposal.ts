@@ -32,12 +32,21 @@
  * the row exists the request is rebuilt from it, so a proposal already proved
  * concludes whatever became of the branch it was opened into afterwards.
  *
- * A MERGE WAITING ON THE FORGE IS HELD, AND ONE CLOSED UNMERGED ESCALATES. The
- * forge's own rules and a head somebody else moved both wait on a person at
- * the forge, which a resume would not hurry, so each holds off
- * `finalizationUnavailableKinds` for as long as the forge says so and lands on
- * whoever's merge a reading finds. A proposal closed unmerged is a landing that
- * cannot happen, held as `ProposalAbsent` and escalated once that dwell is spent.
+ * A MERGE WAITING ON THE FORGE IS HELD, AND ONE CLOSED UNMERGED ESCALATES ONLY
+ * IF IT STAYS CLOSED. The forge's own rules and a head somebody else moved both
+ * wait on a person at the forge, which a resume would not hurry, so each holds
+ * off `finalizationUnavailableKinds` for as long as the forge says so. A
+ * proposal closed unmerged is read again on the same cadence while it holds as
+ * `ProposalAbsent`, every pass counting toward that dwell, so one a person
+ * reopens waits again and one that stays closed escalates once the dwell is
+ * spent.
+ *
+ * THE FINALIZER MERGES ONLY THE HEAD IT PROPOSED, AND A MERGE ANYBODY MADE
+ * LANDS. Its own merge is conditional on the promoted candidate, so it never
+ * merges a commit nobody evaluated; a merge the forge reports, by whoever made
+ * it and at whatever head, is a person's decision at the forge and concludes
+ * `FinalizationSucceeded`, and the landing's read names the head that was
+ * merged wherever it is not the one proposed.
  *
  * THIS STEP AWAITS NOTHING AND REACHES NO FORGE. The request, the durable row
  * and any observation they needed are gathered before it runs, so what it reads
@@ -131,7 +140,7 @@ export type FinalizationProposalDecision =
       readonly merge: ChangeProposalMergeRequest;
     }
   | { readonly decide: "RefuseMergeAttempt" }
-  | { readonly decide: "WaitMergeAttempt" }
+  | { readonly decide: "WaitMergeAttempt"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "RecordMergeConflict" }
   | { readonly decide: "Abort" }
   | { readonly decide: "Conclude" }
@@ -271,7 +280,10 @@ function finalizationProposalMergeNext(
     case "RefuseAttempt":
       return { decide: "RefuseMergeAttempt" };
     case "Wait":
-      return { decide: "WaitMergeAttempt" };
+      return {
+        decide: "WaitMergeAttempt",
+        hold: finalizationProposalMergeHeld(next.reason),
+      };
     case "Concluded":
       return finalizationProposalMerged(next.merge);
     case "Refused":
@@ -411,6 +423,8 @@ export type FinalizationProposalMergeRecording =
   | {
       readonly record: "Reading";
       readonly reconciled: ChangeProposalMergeReconciliationAnswer;
+      /** The hold the pass that recorded it ends at, which only a reading of a closed proposal names. */
+      readonly hold: FinalizationHoldKind | undefined;
     }
   | { readonly record: "Decline"; readonly hold: FinalizationHoldKind }
   | { readonly record: "Nothing"; readonly hold: FinalizationHoldKind }
@@ -451,7 +465,9 @@ export function finalizationProposalMergeRecording(
 /**
  * What one reading of a merge is written down as. A read that could not be made
  * and one the forge refused are answers about this deployment rather than about
- * the proposal, so neither is recorded and neither spends a reading.
+ * the proposal, so neither is recorded and neither spends a reading; a reading
+ * of a closed proposal is recorded and holds as each pass it stays closed does,
+ * so reading it again leaves the dwell counting.
  */
 export function finalizationProposalMergeReadingRecording(
   reconciled: ChangeProposalMergeReconciled,
@@ -460,8 +476,16 @@ export function finalizationProposalMergeReadingRecording(
     case "Accepted":
     case "Unmerged":
     case "Absent":
+      return { record: "Reading", reconciled, hold: undefined };
     case "Contradictory":
-      return { record: "Reading", reconciled };
+      return {
+        record: "Reading",
+        reconciled,
+        hold:
+          reconciled.contradiction === "Closed"
+            ? finalizationProposalMergeHeld("Closed")
+            : undefined,
+      };
     case "Unavailable":
       return { record: "Nothing", hold: "ProposalUnavailable" };
     case "Denied":
@@ -622,7 +646,7 @@ export interface FinalizerProposalStore {
     claim: FinalizationClaim,
   ): Promise<ChangeProposalWritten>;
 
-  /** Records that the forge's own rules refused the merge, which spends the attempt and keeps the reading it waits on. */
+  /** Records that the merge waits on the forge, blocked or closed, which spends the attempt and keeps the reading it waits on. */
   waitChangeProposalMergeAttempt(
     claim: FinalizationClaim,
   ): Promise<ChangeProposalWritten>;

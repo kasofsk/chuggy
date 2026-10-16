@@ -3,11 +3,11 @@
  * it, and a ticket's landings say that it waits, on what, and what the forge
  * said.
  *
- * `merge_heard_at` IS WHEN THE FORGE LAST ANSWERED ABOUT A MERGE AT ALL, written
- * by the finalizer with every merge answer and every reading of one. A row that
- * already had either is given the moment its proposal was opened, which is
- * older than any answer about it, so a wait that stood before this version is
- * read again on the first pass after it.
+ * `merge_heard_at` IS WHEN THE FORGE LAST ANSWERED ABOUT A MERGE AT ALL,
+ * written by the finalizer with every merge answer and every reading of one. A
+ * row that already had either is given the moment its proposal was opened,
+ * which is older than any answer about it, so a wait that stood before this
+ * version is read again on the first pass after it.
  *
  * A REFUSAL NAMING THE FORGE'S OWN RULES NO LONGER SETTLES A ROW. Those rules
  * may lift, so the finalizer reads such a refusal back as it reads one naming
@@ -17,12 +17,20 @@
  *
  * THE LANDINGS DOOR IS DROPPED AND RECREATED, because a result type cannot
  * change in place: beside 044's columns it answers the forge's own word for
- * the last reading, what a waiting merge waits on, and `merge_heard_at`. A
- * merge waits on the forge's rules where nothing is in flight and a reading
- * found the proposal open, which only a release that kept it leaves, and on
- * whoever moved the head where it was answered as a moved head and no reading
- * since found anything but an open proposal; the door's owner is granted the
- * counters that tell those apart and the new column.
+ * the last reading, what a waiting merge waits on, `merge_heard_at`, the head
+ * the proposal was opened at, the head the forge merged where that is another,
+ * and what the forge last said of the proposal. A merge waits on the forge's
+ * rules where nothing is in flight and a reading found the proposal open, which
+ * only a release that kept it leaves, and on whoever moved the head where it
+ * was answered as a moved head and no reading since found anything but an open
+ * proposal; the door's owner is granted the counters that tell those apart,
+ * the new column and the head.
+ *
+ * A LANDING'S COMMIT AND THE HEAD IT MERGED ARE READ FROM ONE ANSWER. Each arm
+ * that says where a landing landed names both out of the same evidence: the
+ * finalizer's own merge is conditional on the head it opened the proposal at,
+ * and a reading of somebody else's merge carries the head that merge was made
+ * at, which is how a merge of a head nobody here proposed is told apart.
  */
 
 import {
@@ -52,7 +60,7 @@ export const migration060: Migration = {
     `ALTER TABLE public.finalization_change_proposal
        ADD CONSTRAINT finalization_change_proposal_merge_is_whole CHECK ((((merge IS NULL) OR (merge = ANY (ARRAY['Merged'::text, 'HeadMoved'::text, 'NotMergeable'::text]))) AND ((merge_reason IS NULL) = (merge IS DISTINCT FROM 'NotMergeable'::text)) AND ((merge_reason IS NULL) OR (merge_reason = 'Conflict'::text)) AND ((merge_commit IS NULL) = (merge IS DISTINCT FROM 'Merged'::text)) AND ((merge_commit IS NULL) OR (merge_commit ~ '^([0-9a-f]{40}|[0-9a-f]{64})$'::text)) AND ((merge_reading IS NULL) OR (merge_reading = ANY (ARRAY['Accepted'::text, 'Unmerged'::text, 'Contradictory'::text, 'Absent'::text, 'Unstorable'::text]))) AND ((merge_reading_evidence IS NULL) OR (merge_reading IS NOT NULL)) AND ((merge_reading IS NULL) OR (merge_reading <> ALL (ARRAY['Accepted'::text, 'Unmerged'::text, 'Contradictory'::text])) OR (merge_reading_evidence IS NOT NULL)) AND ((merge_reading_contradiction IS NULL) = (merge_reading IS DISTINCT FROM 'Contradictory'::text)) AND ((merge_reading_contradiction IS NULL) OR (merge_reading_contradiction = ANY (ARRAY['Closed'::text, 'Merged'::text, 'Superseded'::text, 'ForgeMismatch'::text, 'RepositoryMismatch'::text, 'HeadMismatch'::text, 'BaseMismatch'::text, 'MetadataMismatch'::text, 'MarkerMismatch'::text]))) AND ((COALESCE(length((merge_reading_evidence)::text), 1) >= 1) AND (COALESCE(length((merge_reading_evidence)::text), 1) <= 131072))))`,
     `GRANT SELECT (merge_attempts, merge_refusals, merge_declines,
-                   merge_heard_at)
+                   merge_heard_at, head_commit)
        ON TABLE public.finalization_change_proposal TO ${boundaryOwnerRole}`,
     `DROP FUNCTION ${signature}`,
     `CREATE FUNCTION ${signature}
@@ -67,7 +75,8 @@ export const migration060: Migration = {
                   base_ref text, creation text, url text, merge text,
                   merge_reason text, mergeability text, merge_commit text,
                   landed_commit text, merge_state text, merge_wait text,
-                  merge_heard_at timestamp with time zone)
+                  merge_heard_at timestamp with time zone, head_commit text,
+                  merged_head text, proposal_status text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
@@ -121,7 +130,8 @@ export const migration060: Migration = {
                       c.reconciliation_evidence->>'url'),
              c.merge, c.merge_reason,
              c.merge_reading_evidence->>'mergeability', c.merge_commit,
-             CASE WHEN l.landed ~ ${gitObject} THEN l.landed END,
+             CASE WHEN l.landed->>'commit' ~ ${gitObject}
+                  THEN l.landed->>'commit' END,
              c.merge_reading_evidence->>'mergeState',
              CASE WHEN c.merge='HeadMoved'
                        AND coalesce(c.merge_reading,'Unmerged')='Unmerged'
@@ -129,7 +139,13 @@ export const migration060: Migration = {
                   WHEN c.merge IS NULL AND c.merge_reading='Unmerged'
                        AND c.merge_attempts=c.merge_refusals+c.merge_declines
                     THEN 'Blocked' END,
-             c.merge_heard_at
+             c.merge_heard_at, c.head_commit,
+             CASE WHEN l.landed->>'head' ~ ${gitObject}
+                       AND l.landed->>'head' IS DISTINCT FROM c.head_commit
+                  THEN l.landed->>'head' END,
+             coalesce(c.merge_reading_evidence->>'status',
+                      c.reconciliation_evidence->>'status',
+                      c.creation_evidence->>'status')
         FROM shown s
         LEFT JOIN LATERAL (
           SELECT x.* FROM finalization_attempt x
@@ -151,17 +167,27 @@ export const migration060: Migration = {
                    WHEN c.request IS NULL THEN
                      CASE WHEN w.definition->'finalization'->>'mode'
                                IN ('PullRequest','PullRequestMerge')
-                          THEN NULL ELSE x.candidate_commit END
-                   WHEN c.merge='Merged' THEN c.merge_commit
+                          THEN NULL
+                          ELSE jsonb_build_object('commit', x.candidate_commit)
+                     END
+                   WHEN c.merge='Merged'
+                     THEN jsonb_build_object('commit', c.merge_commit,
+                                             'head', c.head_commit)
                    WHEN c.merge_reading='Accepted'
-                     THEN c.merge_reading_evidence->>'mergeCommit'
+                     THEN jsonb_build_object(
+                            'commit', c.merge_reading_evidence->'mergeCommit',
+                            'head', c.merge_reading_evidence->'head'->'commit')
                    WHEN w.definition->'finalization'->>'mode'='PullRequestMerge'
                         AND c.creation IN ('Created','AlreadyExists')
                         AND c.creation_evidence->>'status'='Merged'
-                     THEN c.creation_evidence->>'mergeCommit'
+                     THEN jsonb_build_object(
+                            'commit', c.creation_evidence->'mergeCommit',
+                            'head', c.creation_evidence->'head'->'commit')
                    WHEN c.reconciliation='Accepted'
                         AND c.reconciliation_evidence->>'status'='Merged'
-                     THEN c.reconciliation_evidence->>'mergeCommit'
+                     THEN jsonb_build_object(
+                            'commit', c.reconciliation_evidence->'mergeCommit',
+                            'head', c.reconciliation_evidence->'head'->'commit')
                  END AS landed
             FROM finalization_attempt x
             JOIN commit_permit q

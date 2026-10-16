@@ -1414,8 +1414,35 @@ test("a merge the forge's own rules refused keeps the reading it waits on, spend
   );
 });
 
-test("only a reading that found the proposal open is kept for a merge to wait on", async () => {
-  const { claim, store } = await proposalMergeProved("proposalmergewaitabsent");
+test("a reading that found the proposal closed is kept for a merge to wait on whoever may reopen it", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergewaitclosed",
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: { ...evidence, status: "Closed" },
+  } as const;
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: closed },
+  });
+  assert.deepEqual(await store.waitChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Waiting",
+    merges: 1,
+    reading: closed,
+    heardAgeSecs: 0,
+  });
+});
+
+test("only a reading that found the proposal open or closed is kept for a merge to wait on", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergewaitabsent",
+  );
   await store.markChangeProposalMergeAttempt(claim);
   assert.deepEqual(
     await store.waitChangeProposalMergeAttempt(claim),
@@ -1429,6 +1456,22 @@ test("only a reading that found the proposal open is kept for a merge to wait on
   assert.deepEqual(await store.waitChangeProposalMergeAttempt(claim), {
     wrote: "Nothing",
   });
+  await store.recordChangeProposalMerge({
+    claim,
+    result: {
+      records: "Reading",
+      reconciled: {
+        reconciled: "Contradictory",
+        contradiction: "Superseded",
+        evidence: { ...evidence, status: "Superseded" },
+      },
+    },
+  });
+  assert.deepEqual(
+    await store.waitChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    "a proposal somebody superseded is no wait",
+  );
   assert.equal(
     (await store.changeProposal(claim))?.merging.merging,
     "Unanswered",

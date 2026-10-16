@@ -20,6 +20,7 @@ import {
   proposalBodyCharsMax,
   proposalEvidenceCharsMax,
   proposalMarkerCharsMax,
+  proposalMarkerOf,
   proposalDisplayUrlCharsMax,
   proposalMergeRereadSecs,
   proposalTitleCharsMax,
@@ -689,6 +690,56 @@ test("a proposal that is no longer this request's contradicts its merge as it do
   }
 });
 
+test("a reading of a merge is of the proposal its number names, whatever a person has since edited of its words", () => {
+  const edits: readonly Partial<ChangeProposalEvidence>[] = [
+    { title: "feat: a title a reviewer chose" },
+    { body: `${request.body}\r\n` },
+    { body: "A description a reviewer rewrote, with no marker left in it." },
+    {
+      marker: proposalMarkerOf(asChangeProposalRequestIdentity("e".repeat(64))),
+    },
+  ];
+  for (const edit of edits) {
+    const open = evidence({ ...edit, mergeability: "Blocked" });
+    assert.deepEqual(
+      reconcileChangeProposalMerge(request, { read: "Found", evidence: open }),
+      { reconciled: "Unmerged", evidence: open },
+      JSON.stringify(edit).slice(0, 60),
+    );
+    const merged = evidence({ ...edit, status: "Merged", mergeCommit });
+    assert.deepEqual(
+      reconcileChangeProposalMerge(request, {
+        read: "Found",
+        evidence: merged,
+      }),
+      { reconciled: "Accepted", evidence: merged },
+      JSON.stringify(edit).slice(0, 60),
+    );
+  }
+});
+
+test("a reading finding the proposal merged at a head somebody else pushed accepts that merge", () => {
+  const merged = evidence({
+    head: { ref: request.head.ref, commit: asGitObjectId("d".repeat(40)) },
+    status: "Merged",
+    mergeCommit,
+  });
+  assert.deepEqual(
+    reconcileChangeProposalMerge(request, { read: "Found", evidence: merged }),
+    { reconciled: "Accepted", evidence: merged },
+  );
+  for (const merging of [
+    waiting(1, 0, { reconciled: "Accepted", evidence: merged }),
+    moved(0, { reconciled: "Accepted", evidence: merged }),
+    unheard(1, 1, { reconciled: "Accepted", evidence: merged }),
+  ])
+    assert.deepEqual(
+      changeProposalMergeNext(request, merging, mergeBounds),
+      { next: "Concluded", merge: { merged: "Merged", mergeCommit } },
+      merging.merging,
+    );
+});
+
 test("every arm of the merge reading roster is one this reconciliation answers with", () => {
   const answered = new Set(
     [
@@ -782,7 +833,7 @@ test("a merge nobody heard back from is read back within its bound and then rele
       mergeBounds,
     ),
     { next: "Held", reason: "ProposalAbsent" },
-    "a number that addresses another proposal is merged nothing again",
+    "a number a reading found nothing at is merged nothing again",
   );
   assert.deepEqual(
     changeProposalMergeNext(
@@ -794,8 +845,8 @@ test("a merge nobody heard back from is read back within its bound and then rele
       }),
       mergeBounds,
     ),
-    { next: "Held", reason: "Closed" },
-    "a proposal closed unmerged is a merge that can no longer happen",
+    { next: "Wait", reason: "Closed" },
+    "a proposal closed unmerged waits on whoever may reopen it",
   );
 });
 
@@ -887,8 +938,21 @@ test("what the forge says about merging is what tells a conflict from its own ru
   } as const;
   assert.deepEqual(
     changeProposalMergeNext(request, unheard(1, 1, blocked), mergeBounds),
-    { next: "Wait" },
+    { next: "Wait", reason: "Blocked" },
     "the forge's own rules release the merge to wait on them",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      unheard(1, 1, {
+        reconciled: "Contradictory",
+        contradiction: "Closed",
+        evidence: evidence({ status: "Closed" }),
+      }),
+      mergeBounds,
+    ),
+    { next: "Wait", reason: "Closed" },
+    "a closed proposal releases the merge to wait on whoever may reopen it",
   );
   for (const said of [
     evidence({ mergeability: "Mergeable" }),
@@ -1026,6 +1090,15 @@ test("a waiting merge somebody else made or closed is settled by the reading tha
       changeProposalMergeNext(request, merging, mergeBounds),
       { next: "Held", reason: "Closed" },
       merging.merging,
+    );
+  for (const merging of [
+    waiting(1, proposalMergeRereadSecs, closed),
+    moved(proposalMergeRereadSecs, closed),
+  ])
+    assert.deepEqual(
+      changeProposalMergeNext(request, merging, mergeBounds),
+      { next: "ReadByNumber" },
+      `a closed proposal ${merging.merging} is read again on the cadence`,
     );
   for (const merging of [
     waiting(1, 0, { reconciled: "Absent" }),

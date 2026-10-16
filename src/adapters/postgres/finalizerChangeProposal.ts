@@ -888,9 +888,9 @@ export function finalizerChangeProposalMergeDecline(
 }
 
 /**
- * Records that the forge's own rules refused the merge in flight, which spends
- * the attempt and keeps the reading that found the proposal blocked as what
- * the merge now waits on.
+ * Records that the merge in flight waits on the forge, which spends the attempt
+ * and keeps the reading that found the proposal blocked or closed as what the
+ * merge now waits on.
  */
 export async function finalizerChangeProposalMergeWait(
   client: pg.PoolClient,
@@ -905,7 +905,8 @@ export async function finalizerChangeProposalMergeWait(
         AND request = ${claim.request}
         AND merge IS NULL
         AND merge_attempts = merge_refusals + merge_declines + 1
-        AND merge_reading = 'Unmerged'`,
+        AND (merge_reading = 'Unmerged'
+             OR merge_reading_contradiction = 'Closed')`,
   );
   return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
 }

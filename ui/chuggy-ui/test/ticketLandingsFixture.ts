@@ -14,6 +14,7 @@ import { evalIdentity, workIdentity } from "./ticketLedgerFixture.ts";
 export const landingTargetCommit = `7c1e04a9${"2".repeat(32)}`;
 export const landingCandidateCommit = `b51d9f03${"3".repeat(32)}`;
 export const landingLandedCommit = `e0f3a7c2${"4".repeat(32)}`;
+export const landingMergedHead = `d4e5f6a1${"5".repeat(32)}`;
 export const landingConflictPath = "ui/chuggy-ui/app/core/tones.ts";
 export const landingPullRequest =
   "https://forge.example.test/acme/atlas/pull/68";
@@ -59,11 +60,63 @@ export function landingLanded(
     proposal: {
       url,
       headRef: "chug/ticket-68",
+      headCommit: landingCandidateCommit,
       baseRef: "main",
       creation: "Created",
       merge: "Merged",
       mergeability: "Mergeable",
       mergeCommit: landingLandedCommit,
+    },
+  };
+}
+
+/**
+ * A landing of `cycle` whose pull request a person merged at `head`, a head
+ * they moved it to after it was opened at the candidate.
+ */
+export function landingMergedElsewhere(
+  cycle: number,
+  head: string = landingMergedHead,
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "Landed",
+    attempt: landingAttempt,
+    landedCommit: landingLandedCommit,
+    proposal: {
+      url: landingPullRequest,
+      headRef: "chug/ticket-68",
+      headCommit: landingCandidateCommit,
+      baseRef: "main",
+      creation: "Created",
+      status: "Merged",
+      merge: "HeadMoved",
+      mergedHead: head,
+    },
+  };
+}
+
+/** A landing of `cycle` held since `since` on its pull request found closed. */
+export function landingClosed(
+  cycle: number,
+  since: string,
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "Held",
+    hold: { kind: "ProposalAbsent", passes: 1, since },
+    attempt: landingAttempt,
+    proposal: {
+      url: landingPullRequest,
+      headRef: "chug/ticket-68",
+      headCommit: landingCandidateCommit,
+      baseRef: "main",
+      creation: "Created",
+      status: "Closed",
     },
   };
 }
@@ -79,6 +132,7 @@ export function landingRunning(cycle: number): TicketLandingResponse {
     proposal: {
       url: landingPullRequest,
       headRef: "chug/ticket-68",
+      headCommit: landingCandidateCommit,
       baseRef: "main",
       mergeability: "Unknown",
     },
@@ -106,6 +160,7 @@ export function landingAwaitingMerge(
     proposal: {
       url: landingPullRequest,
       headRef: "chug/ticket-68",
+      headCommit: landingCandidateCommit,
       baseRef: "main",
       creation: "Created",
       ...(reason === "HeadMoved" ? { merge: "HeadMoved" as const } : {}),

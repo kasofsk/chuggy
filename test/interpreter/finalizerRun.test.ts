@@ -397,11 +397,11 @@ function recordedProposalOf(
  * The merge half of that row, which keeps its own counters exactly as the
  * create's half keeps its: an attempt is counted before the merge it stands
  * for, the answer is written once, a released attempt takes its reading with
- * it unless the forge's own rules refused it, when the reading is what it
- * waits on, a reading of a waiting merge counts against no merge in flight, and
- * every write that heard the forge makes it heard just now. A merge is asked
- * only of a row whose create was answered, which is the evidence the number
- * comes out of.
+ * it unless the merge waits on the forge, blocked or closed, when the reading
+ * is what it waits on, a reading of a waiting merge counts against no merge in
+ * flight, and every write that heard the forge makes it heard just now. A merge
+ * is asked only of a row whose create was answered, which is the evidence the
+ * number comes out of.
  */
 function recordingProposalMerges(
   store: () => FinalizerRecorder,
@@ -433,9 +433,14 @@ function recordingProposalMerges(
       proposalMergeReleased(store(), "proposalMergeDeclines"),
     waitChangeProposalMergeAttempt: () => {
       const own = store();
+      const reading = own.proposalMergeReading;
       if (
         !proposalMergeReleasable(own) ||
-        own.proposalMergeReading?.reconciled !== "Unmerged"
+        !(
+          reading?.reconciled === "Unmerged" ||
+          (reading?.reconciled === "Contradictory" &&
+            reading.contradiction === "Closed")
+        )
       )
         return Promise.resolve({ wrote: "Nothing" });
       own.proposalMergeRefusals += 1;
@@ -1885,6 +1890,31 @@ function rereadDue(store: FinalizerRecorder): void {
   store.proposalMergeHeardAgeSecs = proposalMergeRereadSecs;
 }
 
+/**
+ * Has the forge read a waiting merge as mergeable with `evidence`, merge it
+ * when asked, and the pass after prove it landed on the second merge asked.
+ */
+async function mergedOnceMergeable(
+  store: FinalizerRecorder,
+  forge: ForgeRecorder,
+  service: FinalizerService,
+  evidence: Partial<ChangeProposalEvidence> = {},
+): Promise<void> {
+  forge.numberEvidence = { ...evidence, mergeability: "Mergeable" };
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(forge.merges.length, 2);
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+}
+
 test("a merge the forge's own rules blocked waits on them, and is merged once a reading finds them cleared", async () => {
   const { store, forge, service, emitted } = blockedCase();
   await blockedWaiting(service, store);
@@ -1981,7 +2011,7 @@ test("a re-read the forge could not answer stays due, and counts toward the dwel
   ]);
 });
 
-test("a waiting merge somebody else made lands the finalization on their merge", async () => {
+test("a waiting merge somebody else made at the head it proposed lands the finalization on their merge", async () => {
   const { store, forge, service } = blockedCase();
   await blockedWaiting(service, store);
 
@@ -1998,26 +2028,84 @@ test("a waiting merge somebody else made lands the finalization on their merge",
   assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 
-test("a waiting merge closed unmerged is held as a proposal no reading can land, and escalated once the dwell is spent", async () => {
+test("a waiting merge closed unmerged is read again on the cadence, and escalated only once it has stayed closed for the dwell", async () => {
   const { store, forge, service } = blockedCase({ holdPassesMax: 3 });
+  await blockedWaiting(service, store);
+  const read = forge.numbered.length;
+
+  forge.numberEvidence = { status: "Closed" };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  assert.equal(
+    forge.numbered.length,
+    read + 1,
+    "a closed proposal is read on the cadence, not every pass",
+  );
+  assert.deepEqual(store.concluded, []);
+
+  rereadDue(store);
+  await passOver(service);
+
+  assert.equal(forge.numbered.length, read + 2, "and is read again once due");
+  assert.equal(forge.merges.length, 1);
+  assert.deepEqual(
+    store.holds.slice(-3),
+    Array(3).fill("ProposalAbsent"),
+    "every pass it stayed closed counted, the readings among them",
+  );
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "ProposalAbsent" },
+  ]);
+});
+
+test("a closed proposal a person reopens goes back to waiting, its dwell cleared, and is merged once mergeable", async () => {
+  const { store, forge, service, emitted } = blockedCase({ holdPassesMax: 3 });
   await blockedWaiting(service, store);
 
   forge.numberEvidence = { status: "Closed" };
   rereadDue(store);
   await passOver(service);
-  const read = forge.numbered.length;
-  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+  await passOver(service);
+  assert.deepEqual(store.holds.slice(-2), ["ProposalAbsent", "ProposalAbsent"]);
+
+  forge.numberEvidence = blockedEvidence;
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(
+    store.holds.at(-1),
+    undefined,
+    "the reading that found it open again cleared the count",
+  );
+  for (let pass = 0; pass < 4; pass += 1) await passOver(service);
+  assert.deepEqual(store.concluded, [], "a reopened proposal waits again");
+  assert.equal(emitted.at(-1), "ProposalMergeBlocked");
+
+  await mergedOnceMergeable(store, forge, service);
+});
+
+test("a merge read closed while it was in flight waits on the proposal being reopened", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "Ambiguous" };
+  forge.numberEvidence = { status: "Closed" };
+  const service = mergingService(store, forge, { holdPassesMax: 5 });
+
+  for (let pass = 0; pass < 4; pass += 1) await passOver(service);
 
   assert.equal(
-    forge.numbered.length,
-    read,
-    "a closed proposal is not read again",
+    proposalMergingOf(store).merging,
+    "Waiting",
+    "the merge in flight was released to wait on the closed proposal",
   );
   assert.equal(forge.merges.length, 1);
-  assert.deepEqual(store.holds.slice(-3), Array(3).fill("ProposalAbsent"));
-  assert.deepEqual(store.concluded, [
-    { outcome: "FinalizationResultUnavailable", kind: "ProposalAbsent" },
-  ]);
+  assert.ok(
+    store.holds.slice(-2).every((kind) => kind === "ProposalAbsent"),
+    "and the wait holds as a closed proposal does",
+  );
 });
 
 test("a required check that has already failed waits as a pending one does, read on the cadence and never escalated", async () => {
@@ -2052,7 +2140,17 @@ test("a required check that has already failed waits as a pending one does, read
   );
 });
 
-test("a moved head waits on whoever moved it, is never merged again, and lands on their merge", async () => {
+/** A head a person moved the proposal to after the finalizer opened it, by a push or the forge's own update of the branch. */
+function movedHead(
+  store: FinalizerRecorder,
+  commit: string,
+): ChangeProposalEvidence["head"] {
+  const asked = store.askedProposal;
+  if (asked === undefined) throw new Error("no proposal was opened to move");
+  return { ref: asked.head.ref, commit: asGitObjectId(commit) };
+}
+
+test("a moved head waits on whoever moved it, is never merged again, and lands on their merge of the head they pushed", async () => {
   const emitted: FinalizerHoldReason[] = [];
   const store = recordingStore([
     proposedView("request-one", "PullRequestMerge"),
@@ -2075,7 +2173,8 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
   assert.equal(held.proposals, 0);
   assert.deepEqual(emitted, ["ProposalHeadMoved"]);
 
-  forge.numberEvidence = { mergeability: "Mergeable" };
+  const pushed = movedHead(store, commitOf("d"));
+  forge.numberEvidence = { head: pushed, mergeability: "Mergeable" };
   rereadDue(store);
   await passOver(service);
   await passOver(service);
@@ -2086,6 +2185,7 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
   assert.deepEqual(store.concluded, [], "and its wait never escalates");
 
   forge.numberEvidence = {
+    head: pushed,
     status: "Merged",
     mergeCommit: asGitObjectId(commitOf("f")),
   };
@@ -2095,6 +2195,89 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
 
   assert.equal(proved.conclusions, 1);
   assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  const reading = store.proposalMergeReading;
+  assert.equal(
+    reading?.reconciled === "Accepted"
+      ? reading.evidence.head.commit
+      : undefined,
+    pushed.commit,
+    "the reading that concluded it keeps the head that was merged",
+  );
+});
+
+test("a merge after the forge updated the branch lands, the finalizer itself having asked only for the head it proposed", async () => {
+  const { store, forge, service } = blockedCase();
+  await blockedWaiting(service, store);
+  const proposed = forge.merges[0]?.headCommit;
+  const updated = movedHead(store, commitOf("9"));
+
+  forge.numberEvidence = { head: updated, mergeability: "Mergeable" };
+  forge.merged = { merged: "HeadMoved" };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+
+  assert.equal(forge.merges.length, 2);
+  assert.ok(
+    forge.merges.every((merge) => merge.headCommit === proposed),
+    "every merge this finalizer asked for was conditional on the head it proposed",
+  );
+  assert.equal(proposalMergingOf(store).merging, "Moved");
+
+  forge.numberEvidence = {
+    head: updated,
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("f")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(forge.merges.length, 2, "the person's merge was theirs to make");
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a waiting proposal a reviewer retitled is still the one waited on, and lands on their merge", async () => {
+  const { store, forge, service } = blockedCase();
+  await blockedWaiting(service, store);
+  const title = "feat: what the reviewer called it";
+
+  forge.numberEvidence = { ...blockedEvidence, title };
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(store.proposalMergeReading?.reconciled, "Unmerged");
+  const held = await passOver(service);
+  assert.equal(held.proposals, 0, "a retitled proposal keeps waiting");
+
+  forge.numberEvidence = {
+    title,
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("f")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a waiting proposal whose body was edited, if only to other line endings, is merged once mergeable", async () => {
+  const { store, forge, service } = blockedCase();
+  await blockedWaiting(service, store);
+  const body = store.askedProposal?.body ?? "";
+  assert.ok(body.includes("\n"), "the body this tree wrote has lines");
+  const crlf = body.replaceAll("\n", "\r\n");
+
+  forge.numberEvidence = { ...blockedEvidence, body: crlf };
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(store.proposalMergeReading?.reconciled, "Unmerged");
+
+  await mergedOnceMergeable(store, forge, service, {
+    body: `${crlf}\r\n- [x] reviewed`,
+  });
 });
 
 test("a merge the forge refused for a conflict fails this finalization as a preparation's conflict does", async () => {

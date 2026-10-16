@@ -36,6 +36,7 @@ import {
   asProposalRemoteIdentity,
   changeProposalMergeRequest,
   changeProposalRequest,
+  proposalBodyCharsMax,
   proposalTitleCharsMax,
   reconcileChangeProposal,
   type ChangeProposalEvidence,
@@ -1048,18 +1049,44 @@ test("a proposal read out of a collection says nothing about merging", async () 
   assert.equal(numbered.calls[0]?.method, "GET");
 });
 
-test("a number addressing another request's proposal rules this one out", async () => {
+test("a proposal read by its number is found whatever a person has since made of its title and body", async () => {
   const request = fixtureRequest();
-  const foreign = fixtureForge([
-    fixtureAnswer(
-      200,
-      fixtureNumberedPull(request, { body: "somebody else's work" }),
-    ),
-  ]);
-  assert.deepEqual(
-    await fixtureAdapter(foreign).readByNumber(fixtureMergeRequest()),
-    { read: "Absent" },
-  );
+  const long = "x".repeat(proposalBodyCharsMax + 1);
+  const edits = [
+    [{ body: "A reviewer rewrote it." }, "", "A reviewer rewrote it."],
+    [{ body: null }, "", ""],
+    [
+      { body: request.body.replaceAll("\n", "\r\n") },
+      "",
+      request.body.replaceAll("\n", "\r\n"),
+    ],
+    [{ body: long }, "", long.slice(0, proposalBodyCharsMax)],
+    [{ body: `before${fixtureNul}after` }, "", "before\uFFFDafter"],
+    [
+      { title: "feat: retitled \ud800", body: "Words." },
+      "feat: retitled \uFFFD",
+      "Words.",
+    ],
+  ] as const;
+  for (const [edit, title, body] of edits) {
+    const edited = fixtureForge([
+      fixtureAnswer(200, fixtureNumberedPull(request, edit)),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(edited).readByNumber(fixtureMergeRequest()),
+      {
+        read: "Found",
+        evidence: {
+          ...fixtureEvidence(request),
+          title: title === "" ? request.title : title,
+          body,
+          mergeability: "Mergeable",
+          mergeState: asProposalMergeState("clean"),
+        },
+      },
+      JSON.stringify(edit).slice(0, 60),
+    );
+  }
   const unholdable = fixtureForge([
     fixtureAnswer(
       200,

@@ -19,10 +19,12 @@ import {
 } from "./screenHarness.tsx";
 import {
   landingAwaitingMerge,
+  landingClosed,
   landingConflicted,
   landingConflictPath,
   landingHeld,
   landingLanded,
+  landingMergedElsewhere,
   landingPullRequest,
   landingRunning,
   landingsRead,
@@ -252,6 +254,47 @@ test("a landed landing draws its pull request as a link under its host, and its 
     "e0f3a7c",
   );
   expect(summaryOf(groupOf(container, 3))).toMatch(/ · Landed$/u);
+});
+
+test("a pull request a person merged at another head draws both heads under their names, on its row and in its detail", async () => {
+  const container = await drawn(() =>
+    answer(landingsRead([landingMergedElsewhere(3)])),
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Landed",
+    "forge.example.testMergedd4e5f6a·Evaluatedb51d9f0",
+  ]);
+  expect(
+    [...row.querySelectorAll(".ledger-note .ticket-landing-commit")].map(
+      (commit) => commit.textContent,
+    ),
+  ).toEqual(["Mergedd4e5f6a", "·Evaluatedb51d9f0"]);
+  const detail = await detailOpened(row);
+  expect(detail.textContent).toContain("Merge commite0f3a7c");
+  expect(detail.textContent).toContain("Merged headd4e5f6a");
+  expect(detail.textContent).toContain("Evaluated headb51d9f0");
+  expect(detail.textContent).toContain("StatusMerged");
+});
+
+test("a landing held on its pull request being closed says closed, and offers the pull request", async () => {
+  const since = new Date(Date.now() - 3 * 60_000 - 5_000).toISOString();
+  const container = await drawn(() =>
+    answer(landingsRead([landingClosed(3, since)])),
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Held",
+    "Held 3m · Closedforge.example.test",
+  ]);
+  expect(
+    within(row).getByRole("link").getAttribute("href"),
+    "a closed pull request is offered to be reopened",
+  ).toBe(landingPullRequest);
 });
 
 test("a pull request address that does not parse, or is not https, draws no link and leaves the cycles drawn", async () => {

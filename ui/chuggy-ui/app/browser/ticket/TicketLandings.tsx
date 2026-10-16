@@ -58,7 +58,10 @@ export function useTicketLandings(
   );
 }
 
-/** A landing's fragment: its text, its pull request under the host it names, its commit. */
+/**
+ * A landing's fragment: its text, its pull request under the host it names,
+ * and its commits, each under its noun where it names more than one.
+ */
 export function LandingFragment(props: {
   readonly fragment: TicketLandingFragment;
 }): ReactNode {
@@ -72,9 +75,16 @@ export function LandingFragment(props: {
           {fragment.link.host}
         </a>
       )}
-      {fragment.commit === undefined ? null : (
-        <Identity label={fragment.commit} />
-      )}
+      {fragment.commits.map((commit, index) => (
+        <span
+          className="ticket-landing-commit"
+          key={commit.name ?? commit.label.title}
+        >
+          {index === 0 ? null : <span aria-hidden="true">·</span>}
+          {commit.name}
+          <Identity label={commit.label} />
+        </span>
+      ))}
     </span>
   );
 }
@@ -87,6 +97,7 @@ function LandingProposalFields(props: {
     ["Head", proposal.head],
     ["Base", proposal.base],
     ["Creation", proposal.creation],
+    ["Status", proposal.status],
     ["Merge", proposal.merge],
     ["Reason", proposal.mergeReason],
     ["Mergeability", proposal.mergeability],
@@ -105,6 +116,16 @@ function LandingProposalFields(props: {
         <Field name="Merge commit">
           <Identity label={proposal.mergeCommit} />
         </Field>
+      )}
+      {proposal.heads === undefined ? null : (
+        <>
+          <Field name="Merged head">
+            <Identity label={proposal.heads.merged} />
+          </Field>
+          <Field name="Evaluated head">
+            <Identity label={proposal.heads.evaluated} />
+          </Field>
+        </>
       )}
     </>
   );

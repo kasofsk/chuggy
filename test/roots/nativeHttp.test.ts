@@ -1636,6 +1636,9 @@ const landingsRow = {
   merge_state: null,
   merge_wait: null,
   merge_heard_at: null,
+  head_commit: null,
+  merged_head: null,
+  proposal_status: null,
 };
 
 /**

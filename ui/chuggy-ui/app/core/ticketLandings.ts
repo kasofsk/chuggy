@@ -30,6 +30,7 @@ import {
   changeProposalMergeLabel,
   changeProposalMergeReasonLabel,
   changeProposalMergeWaitLabel,
+  changeProposalStatusLabel,
   finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
@@ -56,17 +57,28 @@ export function ticketLandingsListName(ticket: number): string {
   return `landings:${String(ticket)}`;
 }
 
+/**
+ * The head the forge merged and the one this landing evaluated, named both
+ * only where they differ.
+ */
+export interface TicketLandingHeads {
+  readonly merged: Label;
+  readonly evaluated: Label;
+}
+
 /** The pull request a landing opened, as its detail draws it. */
 export interface TicketLandingProposal {
   readonly head: string;
   readonly base: string;
   readonly creation: string | undefined;
+  readonly status: string | undefined;
   readonly merge: string | undefined;
   readonly mergeReason: string | undefined;
   readonly mergeability: string | undefined;
   /** The forge's own word for where the merge stands, as it said it. */
   readonly mergeState: string | undefined;
   readonly mergeCommit: Label | undefined;
+  readonly heads: TicketLandingHeads | undefined;
 }
 
 /** What a landing's detail holds beyond its row. */
@@ -89,7 +101,10 @@ export interface TicketLandingHold {
   readonly since: string;
 }
 
-/** What a landing's merge waits on at the forge, what the forge said, and when it was asked. */
+/**
+ * What a landing's merge waits on at the forge, what the forge said, and when
+ * it was asked.
+ */
 export interface TicketLandingWait {
   readonly label: string;
   readonly mergeState: string | undefined;
@@ -110,6 +125,8 @@ export interface TicketLanding {
   readonly wait: TicketLandingWait | undefined;
   readonly link: TicketDeliveryLink | undefined;
   readonly landedCommit: Label | undefined;
+  /** Where the pull request was merged at a head it was not opened at, both. */
+  readonly heads: TicketLandingHeads | undefined;
   readonly detail: TicketLandingDetail;
 }
 
@@ -132,10 +149,33 @@ export function ticketLandingLink(
     : undefined;
 }
 
-function ticketLandingProposal(
+/**
+ * The two heads a pull request names, where the forge merged one other than
+ * the one it was opened at.
+ */
+function ticketLandingHeads(
   proposal: TicketLandingRead["proposal"],
+): TicketLandingHeads | undefined {
+  return proposal?.mergedHead === undefined
+    ? undefined
+    : {
+        merged: commitLabel(proposal.mergedHead),
+        evaluated: commitLabel(proposal.headCommit),
+      };
+}
+
+/**
+ * A landing's pull request as its detail draws it; its merge commit is the one
+ * the landing landed at wherever the finalizer did not make the merge itself.
+ */
+function ticketLandingProposal(
+  read: TicketLandingRead,
 ): TicketLandingProposal | undefined {
+  const proposal = read.proposal;
   if (proposal === undefined) return undefined;
+  const mergeCommit =
+    proposal.mergeCommit ??
+    (read.state === "Landed" ? read.landedCommit : undefined);
   return {
     head: proposal.headRef,
     base: proposal.baseRef,
@@ -143,6 +183,10 @@ function ticketLandingProposal(
       proposal.creation === undefined
         ? undefined
         : changeProposalCreationLabel(proposal.creation),
+    status:
+      proposal.status === undefined
+        ? undefined
+        : changeProposalStatusLabel(proposal.status),
     merge:
       proposal.merge === undefined
         ? undefined
@@ -157,10 +201,21 @@ function ticketLandingProposal(
         : changeProposalMergeabilityLabel(proposal.mergeability),
     mergeState: proposal.mergeState,
     mergeCommit:
-      proposal.mergeCommit === undefined
-        ? undefined
-        : commitLabel(proposal.mergeCommit),
+      mergeCommit === undefined ? undefined : commitLabel(mergeCommit),
+    heads: ticketLandingHeads(proposal),
   };
+}
+
+/**
+ * What a hold is labelled, a pull request the forge last read as closed being
+ * called that.
+ */
+function ticketLandingHoldLabel(read: TicketLandingRead): string | undefined {
+  if (read.state !== "Held") return undefined;
+  return read.hold.kind === "ProposalAbsent" &&
+    read.proposal?.status === "Closed"
+    ? changeProposalStatusLabel(read.proposal.status)
+    : finalizationUnavailableKindLabel(read.hold.kind);
 }
 
 function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
@@ -177,7 +232,7 @@ function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
     attempts: read.attempts,
     conflicts: read.conflict?.paths ?? [],
     conflictsCut: read.conflict?.truncated ?? false,
-    proposal: ticketLandingProposal(read.proposal),
+    proposal: ticketLandingProposal(read),
     checkedAt: read.state === "AwaitingMerge" ? read.wait.checkedAt : undefined,
   };
 }
@@ -198,10 +253,7 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
     conflictCount: read.conflict?.paths.length ?? 0,
     hold:
       read.state === "Held"
-        ? {
-            label: finalizationUnavailableKindLabel(read.hold.kind),
-            since: read.hold.since,
-          }
+        ? { label: ticketLandingHoldLabel(read) ?? "", since: read.hold.since }
         : undefined,
     wait:
       read.state === "AwaitingMerge"
@@ -214,6 +266,7 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
     link: ticketLandingLink(read.proposal?.url),
     landedCommit:
       read.state === "Landed" ? commitLabel(read.landedCommit) : undefined,
+    heads: ticketLandingHeads(read.proposal),
     detail: ticketLandingDetail(read),
   };
 }
@@ -260,11 +313,38 @@ function ticketLandingWaitText(wait: TicketLandingWait, nowMs: number): string {
   ].join(" · ");
 }
 
-/** What a landing's row says beside its pill, as text, a link and a commit. */
+/**
+ * One commit a fragment names, under the noun that says which it is where
+ * there is more than one.
+ */
+export interface TicketLandingCommit {
+  readonly name: string | undefined;
+  readonly label: Label;
+}
+
+/** What a landing's row says beside its pill: text, a link and its commits. */
 export interface TicketLandingFragment {
   readonly text: string | undefined;
   readonly link: TicketDeliveryLink | undefined;
-  readonly commit: Label | undefined;
+  readonly commits: readonly TicketLandingCommit[];
+}
+
+/**
+ * The commits a landed row names: where it landed, or, where a person moved
+ * the pull request's head before merging it, the head merged beside the one
+ * evaluated, which is what the row must not let a reader take for each other.
+ */
+function ticketLandingCommits(
+  landing: TicketLanding,
+): readonly TicketLandingCommit[] {
+  if (landing.heads !== undefined)
+    return [
+      { name: "Merged", label: landing.heads.merged },
+      { name: "Evaluated", label: landing.heads.evaluated },
+    ];
+  return landing.landedCommit === undefined
+    ? []
+    : [{ name: undefined, label: landing.landedCommit }];
 }
 
 /** The one short fragment a landing's row and the status bar carry. */
@@ -285,7 +365,7 @@ export function ticketLandingFragment(
                   : []),
               ].join(" · "),
         link: undefined,
-        commit: undefined,
+        commits: [],
       };
     case "Held":
       return {
@@ -293,8 +373,8 @@ export function ticketLandingFragment(
           landing.hold === undefined
             ? undefined
             : ticketLandingHeldFor(landing.hold, nowMs),
-        link: undefined,
-        commit: undefined,
+        link: landing.link,
+        commits: [],
       };
     case "AwaitingMerge":
       return {
@@ -303,7 +383,7 @@ export function ticketLandingFragment(
             ? undefined
             : ticketLandingWaitText(landing.wait, nowMs),
         link: landing.link,
-        commit: undefined,
+        commits: [],
       };
     case "Running":
     case "AwaitingApproval":
@@ -312,11 +392,11 @@ export function ticketLandingFragment(
       return {
         text: undefined,
         link: landing.link,
-        commit: landing.landedCommit,
+        commits: ticketLandingCommits(landing),
       };
     case "Unavailable":
     case "Invalidated":
-      return { text: undefined, link: undefined, commit: undefined };
+      return { text: undefined, link: undefined, commits: [] };
   }
 }
 
@@ -327,7 +407,7 @@ export function ticketLandingFragmentSays(
   return (
     fragment.text !== undefined ||
     fragment.link !== undefined ||
-    fragment.commit !== undefined
+    fragment.commits.length > 0
   );
 }
 
