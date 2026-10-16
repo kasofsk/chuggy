@@ -26,12 +26,16 @@
 # exits 1.
 #
 # A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN, given a Track Record token
-# and a `track-record` that runs. Every gate and every suite then runs under
-# `track-record run`, keyed on the tracked tree as it is on disk, the version
-# of node, what else that gate's verdict reads, and the salt below. A key on
-# record replays its log instead of running, and only an exit of 0 is recorded.
-# A reused pass is a pass and nothing more: it is counted as one, and the clean
-# line says how many there were. Without a token, or with TRACK_RECORD_OFF=1,
+# and a `track-record` that runs. Every gate but check-roster, and every suite,
+# then runs under `track-record run`, keyed on the tracked tree as it is on
+# disk, the ignored files beside it, what npm installed, the version of node,
+# what else that gate's verdict reads, and the salt below. A key on record
+# replays its log instead of running, and only an exit of 0 is recorded. A
+# reused pass is a pass and nothing more: it is counted as one, and the clean
+# line says how many there were. What no key sees, a reused pass does not
+# check: a different server behind the same URL, a container reused by name, a
+# file outside the tree or outside the scope below, such as a package changed
+# under node_modules by hand. Without a token, or with TRACK_RECORD_OFF=1,
 # nothing is wrapped and every gate runs itself.
 #
 # Env:
@@ -70,7 +74,18 @@ echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 # replace it; bump the salt when passes already recorded must stop counting
 # for a reason no key can see, such as a pass found to be false.
 record_salt="chuggy-ci-1"
-record_tool="node --version"
+
+# Every key also holds npm's own record of what it installed, since a lock that
+# changed after `npm ci` names packages that are not the ones installed, and
+# every ignored file a gate's walk can reach, by name and content. Out of that
+# scope are the install, which the record stands for, build output and Claude
+# Code's state: gates and the session write them while a run is under way, and
+# no gate reads them as its input.
+record_tool_node="node --version"
+record_tool_install="cat node_modules/.package-lock.json"
+record_tool_ignored="git ls-files -z --others --ignored --exclude-standard -- \
+':(glob,exclude)**/node_modules/**' ':(glob,exclude)**/dist/**' ':(glob,exclude)**/.claude/**' \
+| tee /dev/stderr | xargs -0 git hash-object --"
 record=""
 # A token is read as track-record reads one, so a variable naming a file that
 # is not there wraps nothing rather than announcing reuse that cannot happen.
@@ -131,17 +146,15 @@ record_reused() { # <name> <stderr file>
 	return 1
 }
 
-# What a gate's verdict reads beyond the tracked tree goes into its key, so a
-# pass is reused only where the same question would be asked: the server a
-# caller names or the image one is started from, since a server started by
-# hand is not the one an evaluation gets; the corpus replayed; the walk's
-# samples and seeds; the setup program the unit suites run; the history the
-# paths gate reads deleted paths from; and the plugins and checkout the roster
-# resolves against, which are the whole of what it judges. Left out because
-# none moves a verdict: the ports a server is published on, the caps on a wait
-# or a walk (an overrun exits 2, never recorded), worker counts, colour, where
-# a counterexample is written, and the CHUG_CI_* selection, which picks gates
-# and asks none of them anything.
+# What else a gate's verdict reads goes into its key, so a pass is reused only
+# where the same question would be asked: the server a caller names or the
+# image one is started from, since a server started by hand is not the one an
+# evaluation gets; the corpus replayed; the walk's samples and seeds; the setup
+# program the unit suites run; and the history the paths gate reads deleted
+# paths from. Left out because none moves a verdict: the ports a server is
+# published on, the caps on a wait or a walk (an overrun exits 2, never
+# recorded), worker counts, colour, where a counterexample is written, and the
+# CHUG_CI_* selection, which picks gates and asks none of them anything.
 #
 # Its stderr passes through as written and a copy is kept, from which
 # `record_reused` reads; sets $rc and $record_hit.
@@ -150,7 +163,6 @@ record_gate() { # <gate-id> <script> [args...]
 	shift
 	case "$record_name" in
 	check-paths) set -- --tool 'git log --diff-filter=D --name-only --format=' -- "$@" ;;
-	check-roster) set -- --tool 'claude plugin list --json' --tool 'pwd -P' -- "$@" ;;
 	source-unit) set -- --env CHUG_SETUP_PROGRAM -- "$@" ;;
 	check-conformance) set -- --env CHUG_GOLDEN_DIR -- "$@" ;;
 	check-random)
@@ -167,7 +179,8 @@ record_gate() { # <gate-id> <script> [args...]
 	rm -f "$record_dir/rc"
 	{
 		{
-			track-record run --name "$record_name" --tool "$record_tool" \
+			track-record run --name "$record_name" --tool "$record_tool_node" \
+				--tool "$record_tool_install" --tool "$record_tool_ignored" \
 				--salt "$record_salt" "$@" 2>&1 1>&3 3>&-
 			echo "$?" >"$record_dir/rc"
 		} | tee "$record_dir/err" >&2
@@ -191,7 +204,10 @@ run_gate() { # <gate-id> <label> <script> [args...]
 	fi
 	set +e
 	record_hit=0
-	if [ -n "$record" ]; then
+	# check-roster judges the plugins installed on this machine, down to
+	# whether their files are there, and no key holds that for less than the
+	# gate costs to run.
+	if [ -n "$record" ] && [ "$gate_id" != "check-roster" ]; then
 		record_gate "$gate_id" "$@"
 	else
 		"$@"
@@ -290,7 +306,8 @@ else
 		for suite in $suites; do
 			printf '  - %s\n' "$suite"
 			if [ -n "$record" ]; then
-				set -- track-record run --name "$suite" --tool "$record_tool" \
+				set -- track-record run --name "$suite" --tool "$record_tool_node" \
+					--tool "$record_tool_install" --tool "$record_tool_ignored" \
 					--salt "$record_salt" --platform -- sh "$suite"
 			else
 				set -- sh "$suite"

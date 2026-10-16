@@ -1006,7 +1006,9 @@ check "no suites found exits 2, not 0" 2 "$RC" "matched nothing"
 # track-record: it answers the probe with STUB_TR_VERSION_RC, logs each call's
 # arguments and the store's variables it was handed, and runs the command after
 # `--` — or, for a name STUB_TR_REUSE lists, prints a replayed log and the
-# REUSED line and exits STUB_TR_REUSE_RC, running nothing.
+# REUSED line and exits STUB_TR_REUSE_RC, running nothing. Under STUB_TR_DIGEST
+# it also logs a digest of what its tools print, as track-record keys on it;
+# for the name STUB_TR_KILL gives, it kills the shell that ran it.
 TRBIN="$WORK/trbin"
 TRLOG="$WORK/tr.log"
 mkdir -p "$TRBIN"
@@ -1020,13 +1022,20 @@ if [ "$1" = "--version" ]; then exit "${STUB_TR_VERSION_RC:-0}"; fi
 		"${TRACK_RECORD_URL-unset}" "${TRACK_RECORD_NAMESPACE-unset}"
 } >>"$STUB_TR_LOG"
 name=""
+tools=""
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 	--) shift; break ;;
 	--name) name="$2"; shift 2 ;;
+	--tool)
+		if [ -n "${STUB_TR_DIGEST:-}" ]; then tools="$tools$(sh -c "$2" 2>&1 | cksum)/"; fi
+		shift 2
+		;;
 	*) shift ;;
 	esac
 done
+if [ -n "${STUB_TR_DIGEST:-}" ]; then printf 'digest|%s|%s\n' "$name" "$tools" >>"$STUB_TR_LOG"; fi
+if [ "$name" = "${STUB_TR_KILL:-}" ]; then kill -KILL "$PPID"; exit 0; fi
 for listed in ${STUB_TR_REUSE:-}; do
 	if [ "$listed" = "$name" ]; then
 		echo "stub log replayed for $name"
@@ -1038,7 +1047,14 @@ exec "$@"
 STUB
 chmod +x "$TRBIN/track-record"
 salt="$(sed -n 's/^record_salt="\(.*\)"$/\1/p' "$SUT")"
-gate_calls="$(named_gates "$SUT" | grep -c '')"
+record_tool_node="" record_tool_install="" record_tool_ignored=""
+eval "$(awk '
+	/^record_tool_(node|install)=/ { print; next }
+	/^record_tool_ignored=/ { open = 1 }
+	open { print; if ($0 !~ /\\$/) exit }
+' "$SUT")"
+# Every gate the sequencer names is wrapped but check-roster.
+gate_calls="$(named_gates "$SUT" | grep -vcx check-roster)"
 
 # The gate stage with the stub first on PATH and whatever VAR=value the case
 # names; the token is the case's to give.
@@ -1078,21 +1094,23 @@ for case in "no token|" "a token file that is not there|TRACK_RECORD_TOKEN_FILE=
 done
 
 # A token, in the variable or in a file, wraps every gate the sequencer calls
-# once, named by its id, keyed on node and the salt and on what else its
-# verdict reads, and never on the platform.
+# once but check-roster, named by its id, keyed on node, the install, the
+# ignored files and the salt and on what else its verdict reads, and never on
+# the platform. check-roster runs as it does unwrapped.
 printf 'trk_stub\n' > "$WORK/token"
 run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
 check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
 check "a wrapped clean run counts what it reused" 0 "$RC" "ci: all gates clean (0 reused)"
+check "check-roster still runs" 0 "$RC" "stub check-roster"
 recorded_log
 check "every gate the sequencer calls is wrapped once" 0 "$RC" "calls $gate_calls"
 refute "no gate is keyed on the platform" 0 "$RC" "|--platform|"
+refute "check-roster is not wrapped" 0 "$RC" "run|--name|check-roster|"
 check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
-common="--tool|node --version|--salt|$salt|"
+common="--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
 for gate in \
 	"doc-lint|--|./.chug/tasks/doc-lint.sh|" \
 	"check-paths|${common}--tool|git log --diff-filter=D --name-only --format=|--|./.chug/tasks/check-paths.sh|" \
-	"check-roster|${common}--tool|claude plugin list --json|--tool|pwd -P|--|./.chug/tasks/check-roster.sh|" \
 	"source-static|--|./.chug/tasks/check-source.sh|--static|" \
 	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|" \
 	"check-conformance|${common}--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
@@ -1127,13 +1145,14 @@ recorded_log
 refute "TRACK_RECORD_FRESH=1 reaches every gate" 0 "$RC" "FRESH=unset"
 
 # A reused pass is counted as a pass and as reused, from track-record's own
-# line for that gate or suite — check-gates prints check-model's, which counts
-# for neither; a gate's replayed log is printed, and a suite's REUSED line is.
+# line for that gate or suite — check-model prints the line of check-model-api,
+# whose name begins with its own, and that counts for neither; a gate's
+# replayed log is printed, and a suite's REUSED line is.
 stub_repo 0
 printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/passing.test.sh"
 printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/ran.test.sh"
-printf '#!/bin/sh\necho "track-record: REUSED check-model (recorded 2026-01-01T00:00:00Z by stub)" >&2\nexit 0\n' \
-	> "$R/.chug/tasks/check-gates.sh"
+printf '#!/bin/sh\necho "track-record: REUSED check-model-api (recorded 2026-01-01T00:00:00Z by stub)" >&2\nexit 0\n' \
+	> "$R/.chug/tasks/check-model.sh"
 git -C "$R" add -A
 run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1 \
 	"STUB_TR_REUSE=doc-lint source-unit .chug/tasks/passing.test.sh"
@@ -1157,6 +1176,54 @@ run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=doc-lint STUB_TR_REUSE_RC=1
 check "a REUSED line on an exit of 1 is still a finding" 1 "$RC" "ci: FAILED — doc-lint"
 run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=doc-lint STUB_TR_REUSE_RC=2
 check "a REUSED line on an exit of 2 is still a could-not-run" 2 "$RC" "ci: LINTER ERROR (2) — doc-lint could not run"
+# A wrapped gate whose exit never came back is not a pass.
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_KILL=doc-lint
+check "a wrapped gate whose exit was lost could not run" 2 "$RC" "ci: LINTER ERROR (2) — doc-lint could not run"
+
+# THE KEY SEES THE INSTALL AND THE IGNORED FILES. The stub digests what each
+# call's tools print, which is what track-record keys on. npm's record of the
+# install moves it, and so does an ignored file, by its presence and by its
+# content; what a run writes under node_modules, dist/ or .claude/ does not.
+stub_repo 0
+printf 'node_modules\ndist/\n' > "$R/.gitignore"
+mkdir -p "$R/node_modules" "$R/src"
+printf '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
+git -C "$R" add -A
+key_of() { # <label> — doc-lint's digest, kept under the label
+	run_recorded TRACK_RECORD_TOKEN=t STUB_TR_DIGEST=1
+	grep '^digest|doc-lint|' "$TRLOG" > "$WORK/key.$1"
+}
+same_key() { # <label> <label>
+	if cmp -s "$WORK/key.$1" "$WORK/key.$2"; then echo "same key"; else echo "new key"; fi > "$WORK/.key"
+	OUT="$WORK/.key"
+}
+key_of base
+printf '{"packages":{"node_modules/a":{"version":"2.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
+key_of install
+same_key base install
+check "an install from another lock is a new key" 0 "$RC" "new key"
+printf 'export {}\n' > "$R/src/generated.ts"
+printf 'src/generated.ts\n' >> "$R/.git/info/exclude"
+key_of ignored
+same_key install ignored
+check "an ignored file is a new key" 0 "$RC" "new key"
+printf 'export const generated = 1\n' > "$R/src/generated.ts"
+key_of edited
+same_key ignored edited
+check "an ignored file's content is a new key" 0 "$RC" "new key"
+mv "$R/src/generated.ts" "$R/src/renamed.ts"
+printf 'src/renamed.ts\n' >> "$R/.git/info/exclude"
+key_of renamed
+same_key edited renamed
+check "an ignored file's name is a new key" 0 "$RC" "new key"
+mkdir -p "$R/node_modules/.vite" "$R/ui/console/dist" "$R/.claude"
+printf '.claude/\n' >> "$R/.git/info/exclude"
+printf 'cache\n' > "$R/node_modules/.vite/deps.json"
+printf 'built\n' > "$R/ui/console/dist/index.html"
+printf 'lock\n' > "$R/.claude/scheduled_tasks.lock"
+key_of written
+same_key renamed written
+check "what a run writes under node_modules, dist/ and .claude/ is the same key" 0 "$RC" "same key"
 
 # A wrapped suite still has its cap.
 stub_repo 0
