@@ -44,8 +44,8 @@ FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e
 
 # Track Record's client, installed by `go install` at its module's tag, whose
 # content the Go checksum database holds to what every install of that tag
-# gets. It is built without cgo, so the binary links against nothing and needs
-# nothing of the image it is copied into.
+# gets. It is built without cgo, so the binary links against no library; it
+# runs the `git` and `sh` it finds on PATH, and trusts the image's CA store.
 #
 # The digest is the multi-architecture index's, read on 2026-10-15 with
 #   docker buildx imagetools inspect golang:1.27.2-trixie
