@@ -18,8 +18,8 @@
  * which it reports only once every part of the document has its shape.
  *
  * AN OBJECT DROPS A FIELD IT HAS NO PLACE FOR, except the configuration, which
- * keeps one as written, and the envelope, a stage that runs commands and the
- * execution requirements, which refuse one.
+ * keeps one as written, and the envelope, a stage that runs commands, the
+ * execution requirements and the resources, which refuse one.
  *
  * THE OUTPUTS AND THE APPROVAL POLICY ARE READ AFTER IMPORT AND NOT BY IT, so
  * the importer takes any value for either. Each is stated here as its reader
@@ -480,11 +480,57 @@ export const executionRequirementsSchema = z
     'The importer also holds two rules here. platformDefault is {"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":image} with the configuration\'s own image, or, where worker.mode names an agent, a ContainerCapability requirement on Linux and Amd64. ticketDefault and every taskKindDefaults entry refine platformDefault: the same mode and architecture, the same operating system where the mode names one, every capability platformDefault names, and for Native the same driver and no lower minimum versions.',
   );
 
-/** What a release reads before any task field: the version, the image, and where tasks run. */
+/** The most CPUs one task asks for. */
+export const configurationCpusMax = 64;
+
+/** The least memory one task asks for, in MiB. */
+export const configurationMemoryMibMin = 512;
+
+/** The most memory one task asks for, in MiB. */
+export const configurationMemoryMibMax = 262_144;
+
+/** The CPUs and memory one task runs with, each field the deployment's own where it is absent. */
+export const configurationResourceSizeSchema = z.strictObject({
+  cpus: z
+    .number()
+    .int()
+    .min(1)
+    .max(configurationCpusMax)
+    .optional()
+    .describe("Whole CPUs."),
+  memoryMib: z
+    .number()
+    .int()
+    .min(configurationMemoryMibMin)
+    .max(configurationMemoryMibMax)
+    .optional()
+    .describe("Memory in MiB."),
+});
+
+/** The size a configuration's tasks run with: one for every task, and one per kind of task in place of it. */
+export const configurationResourcesSchema = z
+  .strictObject({
+    ticketDefault: configurationResourceSizeSchema.optional(),
+    taskKindDefaults: z
+      .record(
+        z.string().regex(executionTaskKindKeyPattern),
+        configurationResourceSizeSchema,
+      )
+      .describe(
+        "The size a task runs with in place of ticketDefault, by the kind of task, keyed as executionRequirements.taskKindDefaults is.",
+      )
+      .optional(),
+  })
+  .describe(
+    "The CPUs and memory each job of a ticket runs with, as its request and its limit. A field a task kind's size leaves out is ticketDefault's, and one neither names is the deployment's own. A ticket keeps the size it was released with. A runner whose whole machine is smaller than a job's size refuses the job, which blocks it and escalates its ticket, and the runner's reason is shown on the job. Sessions are not sized here.",
+  );
+
+/** What a release reads before any task field: the version, the image, where tasks run and what they run with. */
 export const releaseConfigurationHeaderSchema = z.object({
   version: z.literal(releaseConfigurationVersion),
   image: configurationImageSchema,
   executionRequirements: executionRequirementsSchema.optional(),
+  resources: configurationResourcesSchema.optional(),
 });
 
 const configurationOutputFields = {

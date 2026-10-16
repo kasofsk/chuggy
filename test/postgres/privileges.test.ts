@@ -977,7 +977,7 @@ const schedulerWritePrivileges = [
     table_name: "execution",
     privilege_type: "INSERT",
     columns:
-      "account,cluster,configuration_digest,configuration_revision,execution,owner,owner_fallback,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
+      "account,cluster,configuration_digest,configuration_revision,cpu_millis,execution,memory_mib,owner,owner_fallback,placement,platform_default_version,project,requirement_digest,requirement_identity,requirement_source,requirement_value,source_request,task,tenant,ticket",
   },
   {
     table_name: "execution",

@@ -743,6 +743,9 @@ async function schedulerPlace(
     requirementIdentity: execution.requirementIdentity,
     requirement: execution.requirement,
     requirementDigest: execution.requirementDigest,
+    ...(execution.resources === undefined
+      ? {}
+      : { resources: execution.resources }),
     profile: launch.profile,
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,

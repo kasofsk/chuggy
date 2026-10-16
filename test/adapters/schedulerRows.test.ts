@@ -59,6 +59,8 @@ function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
     requirement_digest: "a".repeat(64),
     requirement_source: "PlatformDefault",
     platform_default_version: "1",
+    cpu_millis: null,
+    memory_mib: null,
     status: "Admitted",
     outcome: null,
     result_manifest: null,
@@ -132,6 +134,21 @@ test("the placement a row stores is the route its execution carries, and one no 
   assert.throws(
     () => executionRowLogical({ ...row, placement: "Spillover" }),
     /Spillover is not a route/,
+  );
+});
+
+test("a row's size is the execution's, field by field, and a row naming none carries none", () => {
+  const row = rowOf({ version: 1 });
+  assert.equal("resources" in executionRowLogical(row), false);
+  assert.deepEqual(
+    executionRowLogical({ ...row, cpu_millis: 8_000, memory_mib: 16_384 })
+      .resources,
+    { cpuMillis: 8_000, memoryMib: 16_384 },
+  );
+  assert.deepEqual(
+    executionRowLogical({ ...row, memory_mib: 16_384 }).resources,
+    { memoryMib: 16_384 },
+    "a field the row leaves NULL is the deployment's, and is left out",
   );
 });
 

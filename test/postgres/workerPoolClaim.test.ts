@@ -66,13 +66,16 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   asTenantId,
   type Partition,
+  type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
+import type { TaskResources } from "../../src/interpreter/taskResources.ts";
 import {
   workerPoolReconcile,
   type DedicatedPoolIdentity,
@@ -96,7 +99,10 @@ import {
   type RunnerCase,
 } from "../interpreter/runnerCases.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
-import { postgresHarnessRolePool } from "./harness.ts";
+import {
+  postgresHarnessConfiguration,
+  postgresHarnessRolePool,
+} from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerInvocation,
@@ -292,13 +298,40 @@ function planted(c: RunnerCase, project: SchedulerProject): Planted {
   };
 }
 
-/** A project whose every execution runs `requirement`, written into the release before registration copies it out. */
+/** The image every task of the harness configuration is released in. */
+const harnessImage = (
+  JSON.parse(String(postgresHarnessConfiguration)) as { readonly image: string }
+).image;
+
+/**
+ * A project whose every execution runs `requirement`, and with the size
+ * `resources` names where it names one, written into the release before
+ * registration copies it out.
+ */
 async function releasedUnder(
   label: string,
   requirement: ExecutionRequirement,
   tasks: number,
+  resources?: TaskResources,
 ): Promise<SchedulerProject> {
   const project = await schedulerProject(rig, label, { tasks });
+  if (resources !== undefined)
+    await rig.harness.query(
+      `UPDATE ticket_definition d SET definition=jsonb_set(d.definition,'{tasks}',
+         (SELECT jsonb_agg(CASE WHEN t->>'key'='Work'
+            THEN jsonb_set(jsonb_set(t,'{workload,resources}',$4::jsonb),
+                           '{workload,digest}',to_jsonb($5::text))
+            ELSE t END ORDER BY o)
+            FROM jsonb_array_elements(d.definition->'tasks') WITH ORDINALITY AS e(t,o)))
+        WHERE d.tenant=$1 AND d.project=$2 AND d.ticket=$3`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        project.ticket,
+        JSON.stringify(resources),
+        materialDigest({ image: harnessImage, resources }),
+      ],
+    );
   await rig.harness.query(
     `UPDATE ticket_definition d SET definition=jsonb_set(d.definition,'{tasks}',
        (SELECT jsonb_agg(CASE WHEN t->>'key'='Work'
@@ -428,6 +461,24 @@ async function plantedRunner(
     owner: named.principal(pool.dedicatedOwner),
     principal: named.principal(pool.principal),
   };
+  const allowed = pool.allowlist.map((project) => named.partition(project));
+  for (const project of allowed) await projectPlanted(project, home);
+  await plantedRunnerRows(
+    identity,
+    pool.capabilities,
+    live ? polledSecsAgo : undefined,
+    allowed.map((project) => project.project),
+  );
+  return identity;
+}
+
+/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise. */
+async function plantedRunnerRows(
+  identity: PersonalPlaneIdentity,
+  capabilities: readonly string[],
+  polledSecsAgo: number | undefined,
+  allowlist: readonly ProjectId[],
+): Promise<void> {
   await rig.harness.query(
     `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
       VALUES($1,$2,$3,$4,$5,
@@ -435,22 +486,18 @@ async function plantedRunner(
     [
       identity.tenant,
       identity.owner,
-      pool.capabilities,
+      capabilities,
       identity.principal,
       `chuggy-personal-${randomUUID()}`,
-      live,
-      polledSecsAgo,
+      polledSecsAgo !== undefined,
+      polledSecsAgo ?? 0,
     ],
   );
-  for (const allowed of pool.allowlist) {
-    const project = named.partition(allowed);
-    await projectPlanted(project, home);
+  for (const project of allowlist)
     await rig.harness.query(
       `INSERT INTO personal_runner_project(tenant,owner,project) VALUES($1,$2,$3)`,
-      [identity.tenant, identity.owner, project.project],
+      [identity.tenant, identity.owner, project],
     );
-  }
-  return identity;
 }
 
 type PersonalPlaneIdentity = PersonalRunnerIdentity & {
@@ -1014,8 +1061,10 @@ const site: KubernetesPoolPlacementConfig = {
   sidecars: [],
 };
 
-/** The image of the pod a site places for one assignment, as the cluster was asked to create it. */
-async function podImage(assignment: WorkerPoolAssignment): Promise<string> {
+/** The worker container of the pod a site places for one assignment, as the cluster was asked to create it. */
+async function podContainer(
+  assignment: WorkerPoolAssignment,
+): Promise<{ readonly image: string; readonly resources: unknown }> {
   const created: unknown[] = [];
   const fetcher: typeof fetch = (input, init) => {
     const path = new URL(input instanceof Request ? input.url : input).pathname;
@@ -1039,18 +1088,26 @@ async function podImage(assignment: WorkerPoolAssignment): Promise<string> {
     }),
     { placed: "Placed" },
   );
-  const [pod] = created as { spec: { containers: { image: string }[] } }[];
-  const image = pod?.spec.containers[0]?.image;
-  if (image === undefined) throw new Error("no pod was created");
-  return image;
+  const [pod] = created as {
+    spec: { containers: { image: string; resources: unknown }[] };
+  }[];
+  const container = pod?.spec.containers[0];
+  if (container === undefined) throw new Error("no pod was created");
+  return container;
 }
 
-/** The one assignment a poll is handed for a project released under `requirement`. */
+/** The image of the pod a site places for one assignment. */
+async function podImage(assignment: WorkerPoolAssignment): Promise<string> {
+  return (await podContainer(assignment)).image;
+}
+
+/** The one assignment a poll is handed for a project released under `requirement`, sized as `resources` names. */
 async function handedOut(
   label: string,
   requirement: ExecutionRequirement,
+  resources?: TaskResources,
 ): Promise<WorkerPoolAssignment> {
-  const project = await releasedUnder(label, requirement, 1);
+  const project = await releasedUnder(label, requirement, 1, resources);
   const pool = await pollingPool(project, label, requirement);
   await opened(project);
   const answered = await workerPoolReconcile(
@@ -1069,6 +1126,76 @@ test("a container's pod runs the image its requirement pinned, claimed out of th
   const assignment = await handedOut("claim-pinned-image", pinned);
   assert.equal(assignment.image, pinnedImage);
   assert.equal(await podImage(assignment), pinnedImage);
+});
+
+test("an execution released with no size is claimed on the plane's box, and its pod on the same", async () => {
+  const assignment = await handedOut("claim-unsized", pinned);
+  assert.deepEqual(
+    [assignment.cpuMillis, assignment.memoryMib],
+    [settings.cpuMillis, settings.memoryMib],
+  );
+  assert.deepEqual((await podContainer(assignment)).resources, {
+    requests: { cpu: "500m", memory: "256Mi", "ephemeral-storage": "4Gi" },
+    limits: { cpu: "500m", memory: "256Mi", "ephemeral-storage": "4Gi" },
+  });
+});
+
+test("an execution released with a size is claimed asking for it, and its pod is held to it", async () => {
+  const assignment = await handedOut("claim-sized", pinned, {
+    cpuMillis: 2_000,
+    memoryMib: 1_024,
+  });
+  assert.deepEqual(
+    [assignment.cpuMillis, assignment.memoryMib],
+    [2_000, 1_024],
+  );
+  assert.deepEqual((await podContainer(assignment)).resources, {
+    requests: { cpu: "2000m", memory: "1024Mi", "ephemeral-storage": "4Gi" },
+    limits: { cpu: "2000m", memory: "1024Mi", "ephemeral-storage": "4Gi" },
+  });
+  const memoryOnly = await handedOut("claim-sized-memory", pinned, {
+    memoryMib: 1_024,
+  });
+  assert.deepEqual(
+    [memoryOnly.cpuMillis, memoryOnly.memoryMib],
+    [settings.cpuMillis, 1_024],
+  );
+});
+
+test("an execution released with a size is claimed asking for it by its owner's own runner", async () => {
+  const label = "claim-sized-personal";
+  const project = await releasedUnder(label, pinned, 1, {
+    cpuMillis: 2_000,
+    memoryMib: 1_024,
+  });
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(runner, declaringAll(pinned), 0, [
+    project.partition.project,
+  ]);
+  await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+  const ports = polling(() => randomUUID());
+  const answered = await workerPoolReconcile(
+    {
+      ...ports,
+      access: {
+        ...ports.access,
+        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+      },
+    },
+    runner,
+    { jobs: [], sessions: [] },
+    { wanted: 1, wantedSessions: 0 },
+    settings,
+  );
+  assert.deepEqual(
+    answered.assignments.map((taken) => [taken.cpuMillis, taken.memoryMib]),
+    [[2_000, 1_024]],
+  );
 });
 
 test("a capability requirement names no image, and its pod runs the pool's own", async () => {

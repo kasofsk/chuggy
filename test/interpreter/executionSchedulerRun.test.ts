@@ -515,6 +515,25 @@ test("a pinned non-default requirement reaches placement unchanged", async () =>
   assert.equal(placements[0]?.requirementDigest, overridden.requirementDigest);
 });
 
+test("an execution's size reaches placement as it was released, and one with none places none", async () => {
+  const placements: AttemptPlacement[] = [];
+  const service = placingService([], placements);
+  const sized = { ...execution, resources: { cpuMillis: 8_000 } };
+  for (const unlaunched of [sized, execution]) {
+    const store: ExecutionSchedulerStore = {
+      ...service.store,
+      unlaunched: () => Promise.resolve([unlaunched]),
+    };
+    assert.equal(
+      await executionSchedulerLaunch({ ...service, store }, epoch),
+      1,
+    );
+  }
+  assert.equal(placements.length, 2);
+  assert.deepEqual(placements[0]?.resources, sized.resources);
+  assert.equal(Object.hasOwn(placements[1] ?? {}, "resources"), false);
+});
+
 test("a definitive placement denial blocks the execution", async () => {
   const calls: string[] = [];
   const service = serviceWith(calls, runnable, {

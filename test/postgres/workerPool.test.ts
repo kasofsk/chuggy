@@ -21,6 +21,7 @@ import {
   workerPoolFenceFunction,
   workerPoolReleaseFunction,
 } from "../../src/adapters/postgres/schema.ts";
+import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
@@ -47,6 +48,7 @@ import type {
   WorkerPoolIdentity,
 } from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   postgresHarnessConfiguration,
   postgresHarnessNewEpoch,
@@ -94,11 +96,17 @@ const platform = "Platform:Linux:Amd64";
  * platform default has to be it rather than refine it, because a default of a
  * different mode is a widening the materializer refuses.
  */
-function poolConfiguration(agent: "Claude" | "Codex" | undefined): string {
-  const authored = JSON.parse(String(postgresHarnessConfiguration)) as Record<
-    string,
-    unknown
-  >;
+function poolConfiguration(
+  agent: "Claude" | "Codex" | undefined,
+  resources?: unknown,
+): string {
+  const authored = {
+    ...(JSON.parse(String(postgresHarnessConfiguration)) as Record<
+      string,
+      unknown
+    >),
+    ...(resources === undefined ? {} : { resources }),
+  };
   if (agent === undefined) return poolCanonical(authored);
   return poolCanonical({
     ...authored,
@@ -144,14 +152,14 @@ function poolCanonical(value: unknown): string {
 async function poolProject(
   label: string,
   tasks = 1,
-  agent?: "Claude" | "Codex",
+  configuration: string = poolConfiguration(undefined),
   partition?: Partition,
 ): Promise<SchedulerProject> {
   const project = await schedulerProject(
     rig,
     label,
     { tasks },
-    asCanonicalConfiguration(poolConfiguration(agent)),
+    asCanonicalConfiguration(configuration),
     partition,
   );
   await rig.store.registerSpawn(
@@ -239,7 +247,11 @@ function handles(label: string): { assignment: string; bearer: string } {
 }
 
 test("a pool claims only work marked for a pool, and only what it declared", async () => {
-  const beyond = await poolProject("pool-beyond", 1, "Codex");
+  const beyond = await poolProject(
+    "pool-beyond",
+    1,
+    poolConfiguration("Codex"),
+  );
   const beyondPool = await registered(beyond.partition, "beyond", [
     platform,
     "Agent:Claude",
@@ -258,7 +270,11 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
     "a pool claims nothing whose capability it did not declare",
   );
 
-  const project = await poolProject("pool-claims", 3, "Claude");
+  const project = await poolProject(
+    "pool-claims",
+    3,
+    poolConfiguration("Claude"),
+  );
   const pool = await registered(project.partition, "claims", [
     platform,
     "Agent:Claude",
@@ -554,7 +570,11 @@ test("a pool holding one attempt may pull both its image and its runtime, a capa
   assert.deepEqual(await assignments.heldImages(plain, terms.heldMax), [
     "worker:v1",
   ]);
-  const capable = await poolProject("pool-held-capability", 1, "Claude");
+  const capable = await poolProject(
+    "pool-held-capability",
+    1,
+    poolConfiguration("Claude"),
+  );
   const agent = await registered(capable.partition, "held-capability", [
     platform,
     "Agent:Claude",
@@ -614,7 +634,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution",
         "SELECT",
-        "execution,owner,owner_fallback,placement,project,requirement_value,status,tenant",
+        "cpu_millis,execution,memory_mib,owner,owner_fallback,placement,project,requirement_value,status,tenant",
       ],
       ["execution", "UPDATE", "placement_backoff_from"],
       [
@@ -799,6 +819,49 @@ test("a refusal keeps the image fault its pool named, and a refusal naming none 
   assert.deepEqual(
     await poolRefusalKept(plain.project, plain.claimed.attempt),
     [{ pool_refusal: "no node", pool_refusal_fault: null }],
+  );
+});
+
+/** Who reads an execution back through the API's role; no ticket here is theirs. */
+const reader = asPrincipal("https://issuer.invalid#an-operator");
+
+test("a refusal is read back through the API in the pool's own words, beside the size its execution asked for", async () => {
+  const sized = await poolClaimedIn(
+    await poolProject(
+      "pool-refused-sized",
+      1,
+      poolConfiguration(undefined, {
+        ticketDefault: { cpus: 8, memoryMib: 16_384 },
+      }),
+    ),
+    "refused-sized",
+  );
+  const words =
+    "the assignment asks for 8000 CPU millis and this machine has 4000";
+  assert.equal(
+    await assignments.refuse(sized.identity, sized.drawn.assignment, words),
+    true,
+  );
+  const read = await postgresOperationalReads(apiPool).execution(
+    sized.project.partition,
+    asExecutionId(sized.claimed.execution),
+    reader,
+  );
+  assert.deepEqual(read?.resources, { cpuMillis: 8_000, memoryMib: 16_384 });
+  assert.deepEqual(
+    read?.attempts.map((attempt) => attempt.refusal),
+    [words],
+  );
+  const unsized = await poolClaimed("refused-unsized");
+  const plain = await postgresOperationalReads(apiPool).execution(
+    unsized.project.partition,
+    asExecutionId(unsized.claimed.execution),
+    reader,
+  );
+  assert.equal(plain?.resources, undefined);
+  assert.deepEqual(
+    plain?.attempts.map((attempt) => attempt.refusal),
+    [undefined],
   );
 });
 
@@ -1079,18 +1142,28 @@ test("a pool registered again fences no other pool's attempts", async () => {
   const neighbours = {
     "another pool of its project": await poolClaimedIn(project, "beside"),
     "its namesake in another project": await poolClaimedIn(
-      await poolProject("pool-neighbours-project", 1, undefined, {
-        ...postgresHarnessPartition("neighbours-project"),
-        tenant,
-      }),
+      await poolProject(
+        "pool-neighbours-project",
+        1,
+        poolConfiguration(undefined),
+        {
+          ...postgresHarnessPartition("neighbours-project"),
+          tenant,
+        },
+      ),
       "neighbours",
       poolPrincipalFresh("neighbours"),
     ),
     "its namesake in another tenant": await poolClaimedIn(
-      await poolProject("pool-neighbours-tenant", 1, undefined, {
-        ...postgresHarnessPartition("neighbours-tenant"),
-        project: named,
-      }),
+      await poolProject(
+        "pool-neighbours-tenant",
+        1,
+        poolConfiguration(undefined),
+        {
+          ...postgresHarnessPartition("neighbours-tenant"),
+          project: named,
+        },
+      ),
       "neighbours",
       poolPrincipalFresh("neighbours"),
     ),

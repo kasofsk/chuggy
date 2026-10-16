@@ -38,6 +38,7 @@ import {
 import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
 import {
   kubernetesNameCharsMax,
+  type KubernetesContainer,
   type KubernetesPod,
 } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
@@ -579,6 +580,44 @@ test("the pod mounts memory where the image writes a minted credential", () => {
     requested.pod.spec.volumes.find(({ name }) => name === mount?.name)
       ?.emptyDir,
     { medium: "Memory", sizeLimit: "1Mi" },
+  );
+});
+
+/** The worker container's requests and limits for one placement. */
+function workerResources(
+  sized: AttemptPlacement,
+): KubernetesContainer["resources"] | undefined {
+  const requested = kubernetesWorkerPodRequest(config, sized);
+  if (requested.requested !== "Pod") return undefined;
+  return requested.pod.spec.containers[0]?.resources;
+}
+
+test("a pod is held to the site's budget where its task named no size, and to the size as request and limit where it named one", () => {
+  assert.deepEqual(workerResources(placement), {
+    requests: { cpu: "500m", memory: "1Gi", "ephemeral-storage": "10Gi" },
+    limits: { cpu: "1", memory: "2Gi", "ephemeral-storage": "10Gi" },
+  });
+  assert.deepEqual(
+    workerResources({
+      ...placement,
+      resources: { cpuMillis: 8_000, memoryMib: 16_384 },
+    }),
+    {
+      requests: {
+        cpu: "8000m",
+        memory: "16384Mi",
+        "ephemeral-storage": "10Gi",
+      },
+      limits: { cpu: "8000m", memory: "16384Mi", "ephemeral-storage": "10Gi" },
+    },
+  );
+  assert.deepEqual(
+    workerResources({ ...placement, resources: { memoryMib: 16_384 } }),
+    {
+      requests: { cpu: "500m", memory: "16384Mi", "ephemeral-storage": "10Gi" },
+      limits: { cpu: "1", memory: "16384Mi", "ephemeral-storage": "10Gi" },
+    },
+    "a field the task left out is the site's",
   );
 });
 

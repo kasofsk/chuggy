@@ -1,10 +1,12 @@
 /**
- * Why a run ended without a result, in its worker's own words: which attempt
- * left them, and the line a row draws of them.
+ * Why a run ended without a result, in its worker's own words or in the words
+ * of the pool that refused to run it: which attempt left them, and the line a
+ * row draws of them.
  *
  * The reason belongs to the run that ended the execution, so an earlier
- * attempt's text never speaks for a later one. The text is the worker's and
- * is drawn as text, never as markup.
+ * attempt's text never speaks for a later one. The text is the worker's or
+ * the pool's and is drawn as text, never as markup. A worker's is read on its
+ * own route; a pool's arrives on the attempt.
  */
 
 import type { ExecutionResponse } from "../../../../src/contract/responses.ts";
@@ -37,16 +39,43 @@ export function runReasonLeft(attempt: ExecutionAttempt): boolean {
   );
 }
 
-/** The newest attempt, where it left a reason. */
+function runReasonNewest(
+  execution: ExecutionResponse,
+): ExecutionAttempt | undefined {
+  return [...execution.attempts]
+    .sort((left, right) => left.number - right.number)
+    .at(-1);
+}
+
+/** The newest attempt, where its worker left a reason. */
 export function runReasonAttempt(
   execution: ExecutionResponse,
 ): string | undefined {
-  const newest = [...execution.attempts]
-    .sort((left, right) => left.number - right.number)
-    .at(-1);
+  const newest = runReasonNewest(execution);
   return newest !== undefined && runReasonLeft(newest)
     ? newest.attempt
     : undefined;
+}
+
+/**
+ * What the pool said in refusing an attempt, where one refused it and its
+ * worker left no text of its own. A pool that refuses for its image writes the
+ * same words as the worker's text, so the worker's stand for both.
+ */
+export function runAttemptRefusal(
+  attempt: ExecutionAttempt,
+): RunReason | undefined {
+  return attempt.refusal === undefined || runReasonLeft(attempt)
+    ? undefined
+    : runReasonOf(attempt.refusal);
+}
+
+/** What the pool said in refusing the newest attempt, as `runAttemptRefusal` reads it. */
+export function runRefusalOf(
+  execution: ExecutionResponse,
+): RunReason | undefined {
+  const newest = runReasonNewest(execution);
+  return newest === undefined ? undefined : runAttemptRefusal(newest);
 }
 
 function runReasonCut(text: string, charsMax: number): string {

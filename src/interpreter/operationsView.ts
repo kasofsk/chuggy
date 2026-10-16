@@ -32,6 +32,7 @@ import type {
 } from "./executionRequirement.ts";
 import type { Worker } from "./workerCatalog.ts";
 import type { BriefingCarrier } from "./briefingTemplate.ts";
+import type { TaskResources } from "./taskResources.ts";
 import { checkOutputName, checkOutputPath } from "../contract/checkOutput.ts";
 import {
   configurationOutputSchema,
@@ -142,6 +143,8 @@ export interface ExecutionSummary {
   readonly request: string;
   readonly worker?: Worker;
   readonly platformDefaultVersion: number;
+  /** The size its task was released with, absent where it names none and the deployment's is used. */
+  readonly resources?: TaskResources;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly retriesSpent: number;
@@ -209,6 +212,8 @@ export interface ExecutionAttemptResource {
   readonly run?: ExecutionRunResource;
   /** How much text this attempt's worker left saying why it ended, where it left any. */
   readonly error?: { readonly bytes: number };
+  /** What the pool that claimed this attempt said in refusing to run it, where one refused. */
+  readonly refusal?: string;
 }
 
 export interface ResultArtifactResource {

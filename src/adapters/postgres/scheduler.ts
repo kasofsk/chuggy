@@ -91,6 +91,7 @@ import type pg from "pg";
 import {
   ticketTaskKey,
   ticketTaskRequirement,
+  ticketTaskResources,
 } from "../../interpreter/ticketDefinition.ts";
 
 import {
@@ -393,10 +394,10 @@ interface ExecutionCreateInput {
 
 /**
  * Creates the executions this request authorizes that do not exist yet, and
- * only those. THE REQUIREMENT IS COPIED, NOT RESOLVED: what a task runs under
- * was resolved when the ticket was released and stored beside it, so every
- * cycle of a ticket runs what that release froze rather than what this image's
- * platform defaults would say today.
+ * only those. THE REQUIREMENT AND THE SIZE ARE COPIED, NOT RESOLVED: what a
+ * task runs under was resolved when the ticket was released and stored beside
+ * it, so every cycle of a ticket runs what that release froze rather than what
+ * this image's platform defaults would say today.
  */
 async function schedulerCreateExecutions(
   client: pg.PoolClient,
@@ -432,15 +433,15 @@ async function schedulerCreateExecutions(
   for (const input of inputs.rows) {
     const task = projectRowCounter(input.task, "execution task");
     const kind = executionRowTaskKind(input.kind);
-    const materialized = ticketTaskRequirement(
-      JSON.parse(input.definition) as unknown,
-      ticketTaskKey(
-        kind,
-        input.stage === null
-          ? undefined
-          : projectRowCounter(input.stage, "task stage"),
-      ),
+    const definition = JSON.parse(input.definition) as unknown;
+    const key = ticketTaskKey(
+      kind,
+      input.stage === null
+        ? undefined
+        : projectRowCounter(input.stage, "task stage"),
     );
+    const materialized = ticketTaskRequirement(definition, key);
+    const resources = ticketTaskResources(definition, key);
     const execution = `${executionStem}-${input.task}`;
     const requirementIdentity = execution;
     const requirementValue = JSON.stringify(materialized.value);
@@ -449,13 +450,14 @@ async function schedulerCreateExecutions(
        (tenant,project,execution,ticket,task,source_request,account,cluster,
         configuration_revision,configuration_digest,requirement_identity,requirement_value,
         requirement_digest,requirement_source,platform_default_version,placement,
-        owner,owner_fallback)
+        owner,owner_fallback,cpu_millis,memory_mib)
        VALUES (${claim.partition.tenant},${claim.partition.project},${execution},${claim.ticket},
         ${task},${claim.request},${input.capacity_account},${input.cluster},
         ${input.configuration_revision},${input.configuration_digest},${requirementIdentity},
         ${requirementValue}::jsonb,${requirementDigest},${materialized.source},
         ${materialized.platformDefaultVersion},${routes[kind]},
-        ${input.owner},${input.owner_fallback})
+        ${input.owner},${input.owner_fallback},
+        ${resources?.cpuMillis ?? null},${resources?.memoryMib ?? null})
        ON CONFLICT (tenant,project,ticket,task) DO NOTHING`);
     created += inserted.rowCount ?? 0;
   }
@@ -804,7 +806,7 @@ async function schedulerLockForLaunch(
             c.canonical AS configuration_canonical,
             d.overrides::text AS configuration_overrides, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
-            e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
+            e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
             (e.attempt_next - 1)::text AS attempts_opened,
             e.retries_spent::text AS retries_spent,
@@ -1182,7 +1184,7 @@ async function schedulerUnlaunched(
             c.canonical AS configuration_canonical,
             d.overrides::text AS configuration_overrides, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
-            e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
+            e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
             (e.attempt_next - 1)::text AS attempts_opened,
             e.retries_spent::text AS retries_spent
@@ -1304,7 +1306,7 @@ async function schedulerExecution(
                c.canonical AS configuration_canonical,
             d.overrides::text AS configuration_overrides, e.requirement_identity,
                e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
-               e.platform_default_version::text AS platform_default_version, e.status,
+               e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status,
                e.outcome, e.result_manifest, e.completion_operation,
                (e.attempt_next - 1)::text AS attempts_opened,
                e.retries_spent::text AS retries_spent

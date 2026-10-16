@@ -369,6 +369,86 @@ test("a reason longer than a row's line is drawn whole in the run's details", as
   ).toContain(pullFailed);
 });
 
+/** What a runner says of an assignment larger than its machine, as the worker core refuses one. */
+const tooLarge =
+  "the assignment asks for 8000 CPU millis and this machine has 4000";
+
+/** A run released with a size and refused by the one pool that claimed it, which blocks it unrun. */
+const refusedRun: RunPageServed = (() => {
+  const summary = runSummary({
+    outcome: "Blocked",
+    resources: { cpuMillis: 8_000, memoryMib: 16_384 },
+    runTotals: undefined,
+  });
+  return {
+    ticket,
+    executions: [summary],
+    execution: {
+      ...summary,
+      attempts: [
+        runAttempt("a1", {
+          state: "Withdrawn",
+          evidence: "PlacementRefused",
+          run: undefined,
+          refusal: tooLarge,
+        }),
+      ],
+    },
+    transcripts: [],
+  };
+})();
+
+test("a run no runner could size names the size on its row and the runner's refusal beneath it, asking for no worker's text", async () => {
+  const rendered = await ticketPage(refusedRun);
+  const row = rendered.container.querySelector(".ledger-row");
+  expect(row?.querySelector(".ledger-note")?.textContent).toBe(
+    "8 CPUs, 16 GiB",
+  );
+  const reason = row?.querySelector(".ledger-reason");
+  expect(reason?.textContent).toBe(tooLarge);
+  expect(
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
+  ).toContain(tooLarge);
+  expect(errorReads(rendered.reads)).toEqual([]);
+});
+
+/** What a runner says of an image it cannot run in, which it leaves as the
+ * worker's text and refuses with as well. */
+const imageFault = "Worker could not start: the image has no git on its PATH";
+
+/** A run refused for its image, its worker's text and its refusal the same words. */
+const imageRefusedRun: RunPageServed = (() => {
+  const summary = runSummary({ outcome: "Blocked", runTotals: undefined });
+  return {
+    ticket,
+    executions: [summary],
+    execution: {
+      ...summary,
+      attempts: [
+        runAttempt("a1", {
+          state: "Withdrawn",
+          evidence: "PlacementRefused",
+          run: undefined,
+          error: { bytes: 57 },
+          refusal: imageFault,
+        }),
+      ],
+    },
+    transcripts: [],
+    error: { read: "Content", content: `${imageFault}\n` },
+  };
+})();
+
+test("a run refused in its worker's own words draws them once in its details", async () => {
+  const rendered = await ticketPage(imageRefusedRun);
+  expect(
+    rendered.container.querySelector(".ledger-row .ledger-reason")?.textContent,
+  ).toBe(imageFault);
+  const details =
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent ?? "";
+  expect(details.split(imageFault)).toHaveLength(2);
+});
+
 test("the runs table scrolls itself rather than widening the run's details", async () => {
   await ticketPage(lostRun(pullFailed));
   const table = screen.getByRole("table", { name: "Runs" });

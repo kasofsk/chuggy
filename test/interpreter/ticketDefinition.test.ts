@@ -34,6 +34,7 @@ import {
   releasedTicketDefinition,
   ticketDefinitionMaterial,
   ticketTaskMaterialAt,
+  ticketTaskResources,
 } from "../../src/interpreter/ticketDefinition.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
@@ -455,5 +456,75 @@ test("an agent named where the requirement is a container capability moves the d
       },
     }),
     { verdict: "Refused", code: "OverridesMoveDefinition" },
+  );
+});
+
+/** The fixture configuration naming a size for every task and a larger one for its work. */
+function sizedConfiguration(resources: unknown): ReleaseConfiguration {
+  const readiness = releaseConfigurationReadiness(
+    canonicalConfigurationOf({ ...document, resources }),
+  );
+  if (readiness.readiness !== "Ready")
+    throw new Error(`the sized configuration is ${readiness.fault}`);
+  return readiness.configuration;
+}
+
+test("a configuration that names no size releases each workload as its image alone, as a release before sizes did", () => {
+  const material = ticketDefinitionMaterial({ authoring, configuration });
+  for (const task of material.tasks)
+    assert.deepEqual(task.workload, {
+      image: "worker:v1",
+      digest: materialDigest("worker:v1"),
+    });
+  assert.equal(
+    releasedTicketDefinition(asTicketId(1), authoring, material)
+      .workConfiguration.workload,
+    digestFold(materialDigest("worker:v1")),
+  );
+});
+
+test("a release pins each task's size in its workload, a task kind's over the configuration's, and folds it into the reference", () => {
+  const material = ticketDefinitionMaterial({
+    authoring,
+    configuration: sizedConfiguration({
+      ticketDefault: { cpus: 2, memoryMib: 4_096 },
+      taskKindDefaults: { Work: { cpus: 8, memoryMib: 16_384 } },
+    }),
+  });
+  const work = ticketTaskMaterialAt(material, "Work").workload;
+  const review = ticketTaskMaterialAt(material, "Evaluation:1").workload;
+  assert.deepEqual(work.resources, { cpuMillis: 8_000, memoryMib: 16_384 });
+  assert.deepEqual(review.resources, { cpuMillis: 2_000, memoryMib: 4_096 });
+  assert.equal(
+    work.digest,
+    materialDigest({ image: "worker:v1", resources: work.resources }),
+  );
+  assert.notEqual(work.digest, review.digest);
+  assert.notEqual(work.digest, materialDigest("worker:v1"));
+  const released = releasedTicketDefinition(asTicketId(1), authoring, material);
+  assert.equal(released.workConfiguration.workload, digestFold(work.digest));
+  assert.equal(
+    released.evaluationPlan.stages[0]?.evaluators[0]?.task.workload,
+    digestFold(review.digest),
+  );
+});
+
+test("a stored task's size is read back as it was released, and a task released with none has none", () => {
+  const sized = ticketDefinitionMaterial({
+    authoring,
+    configuration: sizedConfiguration({ ticketDefault: { memoryMib: 8_192 } }),
+  });
+  const stored: unknown = JSON.parse(JSON.stringify(sized));
+  assert.deepEqual(ticketTaskResources(stored, "Work"), { memoryMib: 8_192 });
+  assert.deepEqual(ticketTaskResources(stored, "Evaluation:2"), {
+    memoryMib: 8_192,
+  });
+  const unsized: unknown = JSON.parse(
+    JSON.stringify(ticketDefinitionMaterial({ authoring, configuration })),
+  );
+  assert.equal(ticketTaskResources(unsized, "Work"), undefined);
+  assert.throws(
+    () => ticketTaskResources(unsized, "Evaluation:3"),
+    /resolves no workload/,
   );
 });

@@ -57,6 +57,7 @@ import {
   workerErrorPath,
 } from "../../contract/http.ts";
 import { projectRowCounter } from "./rows.ts";
+import { executionRowResources } from "./schedulerRows.ts";
 import {
   postgresAttemptRuns,
   postgresExecutionRunTotals,
@@ -88,6 +89,8 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly requirement_source: string;
   readonly source_request: string;
   readonly platform_default_version: string;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
   readonly canonical: string;
   readonly status: string;
   readonly outcome: string | null;
@@ -111,6 +114,7 @@ interface AttemptViewRow {
   readonly ended_at: string | null;
   readonly evidence: string | null;
   readonly error_bytes: string | null;
+  readonly pool_refusal: string | null;
 }
 
 interface ResultViewRow {
@@ -223,6 +227,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
       row.platform_default_version,
       "platform default version",
     ),
+    ...executionRowResources(row),
     status: known(row.status, allExecutionStatuses, "execution status"),
     ...(row.outcome === null
       ? {}
@@ -275,6 +280,7 @@ function attemptResource(
       : {
           error: { bytes: projectRowCounter(row.error_bytes, "error bytes") },
         }),
+    ...(row.pool_refusal === null ? {} : { refusal: row.pool_refusal }),
   };
 }
 
@@ -341,7 +347,7 @@ async function executionRows(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -434,7 +440,7 @@ async function oneExecution(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -485,9 +491,10 @@ async function attempts(
   const found = await pool.query<AttemptViewRow>(
     sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
                n.generation::text AS generation,n.state,n.opened_at::text AS opened_at,
-               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes
+               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
+               n.pool_refusal
           FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
-                       a.ended_at,a.evidence,r.bytes AS error_bytes
+                       a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
                   FROM execution_attempt a
                   LEFT JOIN worker_artifact_reservation r
                     ON r.tenant=a.tenant AND r.project=a.project

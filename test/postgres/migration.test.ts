@@ -53,6 +53,7 @@ import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-
 import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-pool-refusal-fault.ts";
 import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-attempt-runtime.ts";
 import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
+import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -145,6 +146,11 @@ import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
+import {
+  configurationCpusMax,
+  configurationMemoryMibMax,
+  configurationMemoryMibMin,
+} from "../../src/contract/configurationDocument.ts";
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
 import { postgresHarnessUrl } from "./harness.ts";
@@ -1791,7 +1797,7 @@ async function installationAt(
   what = `the schema migration ${String(migration)} left`,
 ): Promise<void> {
   const through = migrations
-    .slice(0, migration)
+    .filter(({ version }) => version <= migration)
     .map(({ version, name }) => ({ version, name }));
   const held = runtimeSchemaContract(through);
   assert.equal(
@@ -10353,5 +10359,99 @@ test("058 lets the scheduler list one project's bindings and the worker plane re
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
     ]);
+  });
+});
+
+/** What the one execution 059 is run beside keeps of a size. */
+async function executionSizeKept059(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT to_jsonb(e) ? 'cpu_millis' AS has_size,
+              to_jsonb(e)->'cpu_millis' AS cpu_millis,
+              to_jsonb(e)->'memory_mib' AS memory_mib
+         FROM execution e WHERE tenant='tenant-5' AND execution='execution-1'`,
+    )
+  ).rows;
+}
+
+/** Every role but the owner holding a privilege on a size column or on the refusal, by column and kind. */
+async function executionSizeGrants059(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT column_name,grantee,privilege_type FROM information_schema.column_privileges
+        WHERE ((table_name='execution' AND column_name IN ('cpu_millis','memory_mib'))
+            OR (table_name='execution_attempt' AND column_name='pool_refusal'
+                AND grantee=$1))
+          AND grantee <> current_user
+        ORDER BY column_name,grantee,privilege_type`,
+      [apiRole],
+    )
+  ).rows;
+}
+
+test("059 keeps every execution that stood on the deployment's size, bounds a size to what a configuration may ask, and lets no role change one", async () => {
+  await migrationDatabase("execution_size", async (subject) => {
+    await installationBefore(subject, migration059.version);
+    await subject.query(
+      `${deletionPartition}
+       ${deletionJournalRow(1, journalledRevocation)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)}`,
+    );
+    assert.deepEqual(await executionSizeKept059(subject), [
+      { has_size: false, cpu_millis: null, memory_mib: null },
+    ]);
+    assert.ok((await postgresMigrate(subject)).includes(migration059.version));
+    assert.deepEqual(await executionSizeKept059(subject), [
+      { has_size: true, cpu_millis: null, memory_mib: null },
+    ]);
+    const granted = (column: string) =>
+      [
+        { grantee: apiRole, privilege_type: "SELECT" },
+        { grantee: boundaryOwnerRole, privilege_type: "SELECT" },
+        { grantee: finalizerRole, privilege_type: "SELECT" },
+        { grantee: poolPlaneRole, privilege_type: "SELECT" },
+        { grantee: schedulerRole, privilege_type: "INSERT" },
+        { grantee: schedulerRole, privilege_type: "SELECT" },
+      ].map((grant) => ({ column_name: column, ...grant }));
+    assert.deepEqual(await executionSizeGrants059(subject), [
+      ...granted("cpu_millis"),
+      ...granted("memory_mib"),
+      {
+        column_name: "pool_refusal",
+        grantee: apiRole,
+        privilege_type: "SELECT",
+      },
+    ]);
+    const sized = (column: string, value: number) =>
+      subject
+        .query(
+          `UPDATE execution SET ${column}=$1
+            WHERE tenant='tenant-5' AND execution='execution-1'`,
+          [value],
+        )
+        .then(
+          () => undefined,
+          (failure: unknown) => String(failure),
+        );
+    const cpuMillisPerCpu = 1_000;
+    for (const [column, least, most] of [
+      ["cpu_millis", cpuMillisPerCpu, configurationCpusMax * cpuMillisPerCpu],
+      ["memory_mib", configurationMemoryMibMin, configurationMemoryMibMax],
+    ] as const) {
+      assert.equal(await sized(column, least), undefined, column);
+      assert.equal(await sized(column, most), undefined, column);
+      for (const value of [least - 1, most + 1])
+        assert.match(
+          String(await sized(column, value)),
+          new RegExp(`execution_${column}_is_bounded`, "u"),
+          `${column} ${String(value)}`,
+        );
+    }
   });
 });

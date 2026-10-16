@@ -17,6 +17,7 @@ import {
   creatorLabel,
   digestShortened,
   executionRequirementLabel,
+  executionSizeLabel,
   imageShortened,
   workerLabel,
 } from "../app/core/labels.ts";
@@ -138,6 +139,16 @@ test("a container execution names its platform and its worker, and keeps the ima
     text: "Linux/Amd64 worker@sha256:9949c442",
     title: digestImage,
   });
+});
+
+test("an execution whose task was released with a size names it, and one with none names none", () => {
+  expect(executionSizeLabel({ cpuMillis: 8_000, memoryMib: 16_384 })).toBe(
+    "8 CPUs, 16 GiB",
+  );
+  expect(executionSizeLabel({ cpuMillis: 1_000 })).toBe("1 CPU");
+  expect(executionSizeLabel({ memoryMib: 1_536 })).toBe("1536 MiB");
+  expect(executionSizeLabel({})).toBeUndefined();
+  expect(executionSizeLabel(undefined)).toBeUndefined();
 });
 
 test("a capability execution names its platform and what it asked the site for", () => {

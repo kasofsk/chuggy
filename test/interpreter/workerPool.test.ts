@@ -33,6 +33,7 @@ import {
   workerPoolSettled,
   type WorkerPoolAssignments,
   type WorkerPoolAsked,
+  type WorkerPoolClaimed,
   type WorkerPoolClaimTerms,
   type PoolPlaneIdentity,
   type WorkerPoolPollSettings,
@@ -278,13 +279,13 @@ test("a pool wanting more than the plane allows is claimed the plane's bound", a
 
 /**
  * The one assignment a poll hands out when the durable side claims
- * `requirement`, beside the runtime `claimed` names; and the terms the claim
- * was held to.
+ * `requirement`, beside the runtime and the size `claimed` names; and the
+ * terms the claim was held to.
  */
 async function reconciledOne(
   requirement: ExecutionRequirement,
   polled: WorkerPoolPollSettings = settings,
-  claimed: { readonly runtime?: string } = {},
+  claimed: Omit<WorkerPoolClaimed, "requirement"> = {},
 ): Promise<{
   readonly assignment: Record<string, unknown>;
   readonly terms: WorkerPoolClaimTerms[];
@@ -380,6 +381,28 @@ test("an attempt that kept no runtime hands none to a pool", async () => {
   assert.equal(
     unkept.assignment["image"],
     `registry.invalid/worker@sha256:${"a".repeat(64)}`,
+  );
+});
+
+test("an execution released with no size asks for the plane's box, and one released with a size asks for it field by field", async () => {
+  const unsized = await reconciledOne(container);
+  assert.deepEqual(
+    [unsized.assignment["cpuMillis"], unsized.assignment["memoryMib"]],
+    [settings.cpuMillis, settings.memoryMib],
+  );
+  const sized = await reconciledOne(container, settings, {
+    resources: { cpuMillis: 8_000, memoryMib: 16_384 },
+  });
+  assert.deepEqual(
+    [sized.assignment["cpuMillis"], sized.assignment["memoryMib"]],
+    [8_000, 16_384],
+  );
+  const memoryOnly = await reconciledOne(container, settings, {
+    resources: { memoryMib: 16_384 },
+  });
+  assert.deepEqual(
+    [memoryOnly.assignment["cpuMillis"], memoryOnly.assignment["memoryMib"]],
+    [settings.cpuMillis, 16_384],
   );
 });
 

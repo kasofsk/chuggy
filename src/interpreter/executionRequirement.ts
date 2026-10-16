@@ -71,7 +71,6 @@ interface RequirementConfiguration {
   readonly taskKindDefaults?: Readonly<
     Partial<Record<ExecutionTaskKindKey, ExecutionRequirement>>
   >;
-  readonly stageQualifiedEvaluation: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -218,7 +217,6 @@ function platformDefaultMatchesLegacy(
 function configuredRequirements(
   configured: z.output<typeof executionRequirementsSchema>,
   legacy: ExecutionRequirement,
-  stageQualifiedEvaluation: boolean,
   capability: ExecutionCapability | undefined,
 ): RequirementConfiguration | undefined {
   const { platformDefault, ticketDefault, taskKindDefaults = {} } = configured;
@@ -237,7 +235,6 @@ function configuredRequirements(
     platformDefaultVersion: configured.platformDefaultVersion,
     ...(ticketDefault === undefined ? {} : { ticketDefault }),
     taskKindDefaults,
-    stageQualifiedEvaluation,
   };
 }
 
@@ -252,26 +249,40 @@ function parsedConfiguration(
     architecture: "Amd64",
     image: parsed.data.image,
   };
-  const stageQualifiedEvaluation = record(value)?.["evaluations"] !== undefined;
   if (parsed.data.executionRequirements !== undefined)
     return configuredRequirements(
       parsed.data.executionRequirements,
       legacy,
-      stageQualifiedEvaluation,
       executionAgentCapability(value),
     );
-  return {
-    platformDefault: legacy,
-    platformDefaultVersion: 1,
-    stageQualifiedEvaluation,
-  };
+  return { platformDefault: legacy, platformDefaultVersion: 1 };
 }
 
-/** Whether a release reads a configuration's version, its image and where its tasks run. */
+/** Whether a release reads a configuration's version, its image, where its tasks run and what they run with. */
 export function executionRequirementConfigurationIsValid(
   value: unknown,
 ): boolean {
   return parsedConfiguration(value) !== undefined;
+}
+
+/**
+ * The `taskKindDefaults` key one task reads: `Evaluation:N` for a stage of a
+ * configuration listing its evaluations, and the kind alone otherwise.
+ */
+export function executionTaskKindKey(
+  configuration: unknown,
+  kind: ExecutionTaskKind,
+  stage?: number,
+): ExecutionTaskKindKey {
+  if (
+    (kind === "Work" && stage !== undefined) ||
+    (kind === "Evaluation" &&
+      (stage === undefined || !Number.isSafeInteger(stage) || stage < 1))
+  )
+    throw new TypeError("execution task kind and stage are inconsistent");
+  return kind === "Work" || record(configuration)?.["evaluations"] === undefined
+    ? kind
+    : `Evaluation:${stage as number}`;
 }
 
 export function materializeExecutionRequirement(
@@ -284,17 +295,8 @@ export function materializeExecutionRequirement(
     throw new TypeError(
       "execution requirement configuration is malformed or widening",
     );
-  if (
-    (kind === "Work" && stage !== undefined) ||
-    (kind === "Evaluation" &&
-      (stage === undefined || !Number.isSafeInteger(stage) || stage < 1))
-  )
-    throw new TypeError("execution task kind and stage are inconsistent");
-  const kindKey: ExecutionTaskKindKey =
-    kind === "Work" || !parsed.stageQualifiedEvaluation
-      ? kind
-      : `Evaluation:${stage as number}`;
-  const kindDefault = parsed.taskKindDefaults?.[kindKey];
+  const kindDefault =
+    parsed.taskKindDefaults?.[executionTaskKindKey(configuration, kind, stage)];
   const value = kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
   const capability = executionAgentCapability(configuration);
   const selected = requirementForAgent(value, capability);
