@@ -153,9 +153,9 @@ ci_gate_selected() { # <gate id>
 	check-roster) ci_changed CLAUDE.md '.agents/**' '.codex/**' .chug/tasks/check-roster.sh ;;
 	check-boundaries) ci_code_changed 'src/**' 'test/**' 'scripts/**' 'ui/**' .chug/tasks/check-boundaries.sh || ci_toolchain_changed ;;
 	source-unit) ci_code_changed 'src/**' 'test/**' 'ui/**' 'images/**' 'scripts/**' 'deploy/**' 'model/**' '.chug/configurations/**' '.chug/actions/**' tsconfig.contract.json tsconfig.contract-pack.json .chug/tasks/check-source.sh .chug/tasks/check-console-sheets.sh || ci_changed deploy/rig/images/README.md .chug/actions/README.md || ci_toolchain_changed ;;
-	check-console) ci_changed 'ui/**' .gitignore || ci_code_changed 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' package.json package-lock.json .chug/tasks/check-console.sh ;;
-	check-conformance) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/**' .chug/tasks/check-conformance.sh ;;
-	check-random) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/**' .chug/tasks/check-random.sh ;;
+	check-console) ci_changed 'ui/**' .gitignore || ci_code_changed 'src/contract/**' '.chug/configurations/**' 'scripts/console-policy.ts' 'scripts/check-console-policy.ts' package.json package-lock.json test/rig/package.json tsconfig.json .prettierrc.json .prettierignore .chug/tasks/check-console.sh ;;
+	check-conformance) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'test/golden/**' 'model/**' package.json package-lock.json .chug/tasks/check-conformance.sh ;;
+	check-random) ci_code_changed 'src/domain/**' 'src/generated/**' 'test/random/**' 'test/conformance/**' 'test/domain/**' 'test/itf/**' 'model/**' package.json package-lock.json .chug/tasks/check-random.sh ;;
 	check-postgres) ci_code_changed 'src/**' 'test/**' deploy/rig/wipe-tickets.sql .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh || ci_toolchain_changed ;;
 	check-queries) ci_code_changed 'src/**' eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh || ci_toolchain_changed ;;
 	check-keto) ci_code_changed 'src/**' 'test/**' '.chug/tasks/keto/**' .chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh || ci_toolchain_changed ;;
