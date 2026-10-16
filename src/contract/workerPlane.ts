@@ -16,7 +16,9 @@ import {
   countSchema,
   digestSchema,
   identitySchema,
+  isBoundedText,
   nativeHttpPageItemsMax,
+  repositoryIdentityCharsMax,
   runModelCharsMax,
   runTurnSeriesMax,
 } from "./http.ts";
@@ -154,6 +156,20 @@ export const workerRunTurnsAnswerSchema = z.object({
   turnsRecorded: countSchema,
 });
 
+/** One repository as a pod names it for a credential, refused here rather than by the brand. */
+export const workerCredentialRepositorySchema = z
+  .string()
+  .refine((value) => isBoundedText(value, repositoryIdentityCharsMax));
+
+/**
+ * What an attempt may ask its credential for: nothing or its own repository,
+ * minted what its task kind needs, or another repository its project binds,
+ * minted a read.
+ */
+export const workerCredentialSchema = z.strictObject({
+  repository: workerCredentialRepositorySchema.exactOptional(),
+});
+
 /** One git credential, presented to git as a username and a password until it expires. */
 export const workerCredentialAnswerSchema = z.object({
   username: identitySchema,
@@ -161,7 +177,11 @@ export const workerCredentialAnswerSchema = z.object({
   expiresAtMs: countSchema,
 });
 
-/** Why the plane minted nothing, which sends the pod back to the credential its launcher mounted. */
+/**
+ * Why the plane minted nothing. A pod asking for the repository it works in
+ * then uses the credential its launcher mounted, and one that named any other
+ * repository holds no credential for it.
+ */
 export const workerCredentialAbsences = [
   "ForgeNotConfigured",
   "NotMinted",
@@ -251,6 +271,7 @@ export const workerPlaneAnswers = workerPlaneAnswersRefusingVersions({
   },
   credential: {
     200: workerCredentialAnswerSchema,
+    400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     404: workerCredentialAbsentSchema,
     503: workerPlaneRetrySchema,

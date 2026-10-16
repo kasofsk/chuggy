@@ -19,7 +19,7 @@ import {
 } from "../adapters/http/workerPlaneServer.ts";
 import { postgresForgeInstallations } from "../adapters/postgres/forgeInstallation.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
-import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
+import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
 import { workerPlaneRole } from "../adapters/postgres/schema.ts";
 import { postgresSessionLivePublisher } from "../adapters/postgres/sessionLive.ts";
 import { postgresSessionPlane } from "../adapters/postgres/sessionPlane.ts";
@@ -180,7 +180,8 @@ function planeForgeOptions(): GithubInstallationTokensOptions | undefined {
 
 /**
  * The minting a pod's credential routes answer from, or nothing where this
- * deployment holds no app key and every pod resolves what its launcher mounted.
+ * deployment holds no app key and a pod resolves what its launcher mounted for
+ * the repository it works in.
  * A key this process could not sign with refuses the start, leaving no pool
  * open behind it: minting that fails at every attempt is worse than not minting
  * at all, because the pods cannot tell the two apart.
@@ -205,7 +206,7 @@ async function planeCredentials(
       installations: postgresForgeInstallations(pool),
       tokens: githubInstallationTokens(options),
     }),
-    bindings: postgresProjectRepositoryBinding(pool),
+    bindings: postgresProjectRepositoryLanding(pool),
   });
 }
 

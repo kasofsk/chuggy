@@ -17,7 +17,6 @@ import {
   identitySchema,
   isBoundedText,
   nativeHttpPageItemsMax,
-  repositoryIdentityCharsMax,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
   sessionLiveEventsMax,
@@ -48,6 +47,7 @@ import { sessionLiveEventSchema } from "./sessionLive.ts";
 import {
   workerCredentialAbsentSchema,
   workerCredentialAnswerSchema,
+  workerCredentialRepositorySchema,
   workerPlaneRefusalSchema,
   workerPlaneRetrySchema,
   workerPlaneStopSchema,
@@ -135,11 +135,9 @@ export const sessionIdentitySchema = z
   .string()
   .refine((value) => isBoundedText(value, sessionIdentityCharsMax));
 
-/** One repository as a session names it, refused here rather than by the brand. */
+/** One repository as a session names it, which a session always does. */
 export const sessionCredentialSchema = z.strictObject({
-  repository: z
-    .string()
-    .refine((value) => isBoundedText(value, repositoryIdentityCharsMax)),
+  repository: workerCredentialRepositorySchema,
 });
 
 export const sessionReferenceSchema = z.strictObject({

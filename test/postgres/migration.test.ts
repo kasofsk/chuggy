@@ -52,6 +52,7 @@ import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-
 import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-lead-refusal.ts";
 import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-pool-refusal-fault.ts";
 import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-attempt-runtime.ts";
+import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -96,6 +97,7 @@ import {
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingListFunction,
+  repositoryBindingReadFunction,
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
@@ -10305,5 +10307,51 @@ test("057 keeps every attempt that stood with no runtime, bounds the one written
         /execution_attempt_runtime_is_bounded/u,
         String(runtime.length),
       );
+  });
+});
+
+/** Whether each role holds the door 058 moves, in the order it lists them. */
+async function projectReadDoors058(subject: pg.Pool): Promise<unknown> {
+  const held = async (role: string, door: string) =>
+    (
+      await subject.query<{ granted: boolean }>(
+        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+        [role, door],
+      )
+    ).rows[0]?.granted;
+  return {
+    schedulerLists: await held(
+      schedulerRole,
+      `${repositoryBindingListFunction}(text,text,bigint)`,
+    ),
+    planeReadsRetirement: await held(
+      workerPlaneRole,
+      `${repositoryLandingReadFunction}(text,text,text)`,
+    ),
+    planeReadsBinding: await held(
+      workerPlaneRole,
+      `${repositoryBindingReadFunction}(text,text,text)`,
+    ),
+  };
+}
+
+test("058 lets the scheduler list one project's bindings and the worker plane read a binding's retirement, and takes the plane's older door", async () => {
+  await migrationDatabase("project_reads", async (subject) => {
+    await installationBefore(subject, migration058.version);
+    assert.deepEqual(await projectReadDoors058(subject), {
+      schedulerLists: false,
+      planeReadsRetirement: false,
+      planeReadsBinding: true,
+    });
+    assert.ok((await postgresMigrate(subject)).includes(migration058.version));
+    assert.deepEqual(await projectReadDoors058(subject), {
+      schedulerLists: true,
+      planeReadsRetirement: true,
+      planeReadsBinding: false,
+    });
+    await assertDoorsStandOwned(subject, [
+      `${repositoryBindingListFunction}(text,text,bigint)`,
+      `${repositoryLandingReadFunction}(text,text,text)`,
+    ]);
   });
 });

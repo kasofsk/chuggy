@@ -42,6 +42,7 @@ import type { WorkTaskAnswer } from "../../contract/workerTask.ts";
 import {
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
+  workerCredentialSchema,
   workerPlaneRoutes,
   workerRunEndedSchema,
   workerRunTotalsSchema,
@@ -95,7 +96,10 @@ import {
   type WorkerRunTranscriptPort,
   type WorkerRunTurnsPort,
 } from "../../interpreter/runEvidence.ts";
-import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asRepositoryId,
+  type RepositoryId,
+} from "../../interpreter/finalizer.ts";
 import {
   asProjectArtifactId,
   type ProjectArtifactPort,
@@ -116,6 +120,7 @@ import {
   contractVersionAccepted,
   workerContractAccepted,
   workerContractLiveStops,
+  workerContractProjectReads,
   workerContractRunnerSessions,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
@@ -256,7 +261,11 @@ export function workerPlaneServed(uploadBytesMax: number) {
       stored: false,
       bodyBytesMax: planeJsonObjectBytesMax(),
     },
-    credential: { caller: "LiveAttempt", ...workerPlaneBodyless },
+    credential: {
+      caller: "LiveAttempt",
+      stored: false,
+      bodyBytesMax: planeJsonObjectBytesMax(repositoryIdentityCharsMax),
+    },
   } as const satisfies Readonly<
     Record<WorkerPlaneRouteName, WorkerPlaneServed>
   >;
@@ -486,9 +495,8 @@ export interface WorkerPlaneServerService {
   readonly sessions?: SessionPlaneService;
   /**
    * The minting a deployment holding a forge app key composes. Without one both
-   * credential routes answer not found, which is the pod resolving the
-   * credential its launcher mounted exactly as it did before this plane minted
-   * anything.
+   * credential routes answer not found, and a pod resolves the credential its
+   * launcher mounted for the repository it works in.
    */
   readonly credentials?: WorkerPlaneCredentialMinting;
   readonly ready: () => Promise<boolean>;
@@ -990,7 +998,7 @@ function workerReportRoute(
 /** How long a pod leaves a plane that could not reach the forge before asking again. */
 const workerCredentialRetryAfterSeconds = 1;
 
-/** What a plane holding no app key answers, which is the pod's signal to fall back. */
+/** What a plane holding no app key answers, for whichever repository a pod asks about. */
 const workerCredentialNotConfigured: WorkerCredentialAbsent = {
   reason: "ForgeNotConfigured",
 };
@@ -1001,10 +1009,10 @@ const workerCredentialNotMinted: WorkerCredentialAbsent = {
 };
 
 /**
- * One minted credential, or the refusal that sends a pod back to what its
- * launcher mounted. A not-found carries no `action`, unlike every other refusal
- * here: the pod neither stops nor retries on it, it resolves its own mounted
- * credential instead, and an outage is the arm that says to wait.
+ * One minted credential, or a refusal. A not-found carries no `action`, unlike
+ * every other refusal here: the pod neither stops nor retries on it, but uses
+ * its launcher's mount for the repository it works in and holds no credential
+ * for any other it named, and an outage is the arm that says to wait.
  */
 function workerCredentialAnswered(
   reply: FastifyReply,
@@ -1025,20 +1033,51 @@ function workerCredentialAnswered(
 }
 
 /**
- * The credential one attempt works under. It carries no body: the repository is
- * the one the attempt's own input bundle pinned and the permission set follows
- * from the kind of task the scheduler recorded, so there is nothing here for a
- * pod to name and nothing for it to widen.
+ * The repository an attempt's credential request names, nothing where it names
+ * none, or a refusal of a body that is no request. A pod speaking a release
+ * before `workerContractProjectReads` names no repository whatever it sends,
+ * so its body is not read and it is answered for its own repository.
+ */
+function workerCredentialNamed(
+  request: FastifyRequest,
+): RepositoryId | undefined | "Malformed" {
+  if (
+    request.body === undefined ||
+    !contractVersionAccepted(
+      workerContractProjectReads,
+      workerContractOffered(request),
+    )
+  )
+    return undefined;
+  const offered = workerCredentialSchema.safeParse(request.body);
+  if (!offered.success) return "Malformed";
+  return offered.data.repository === undefined
+    ? undefined
+    : asRepositoryId(offered.data.repository);
+}
+
+/**
+ * The credential one attempt works under. A pod may ask for a read of any
+ * repository its project binds and never for more: its own repository is the
+ * one its input bundle pinned, whose permission set follows from the kind of
+ * task the scheduler recorded, and any other it names is held to the project's
+ * live bindings and minted a read, so nothing a pod names widens what it may
+ * push to.
  */
 function workerCredentialRoute(
   register: WorkerJobRegistrar,
   service: WorkerPlaneServerService,
 ): void {
-  register("credential", async (_request, reply, { authority }) => {
+  register("credential", async (request, reply, { authority }) => {
+    const named = workerCredentialNamed(request);
+    if (named === "Malformed") return reply.code(400).send({ action: "stop" });
     const credentials = service.credentials;
     return credentials === undefined
       ? reply.code(404).send(workerCredentialNotConfigured)
-      : workerCredentialAnswered(reply, await credentials.attempt(authority));
+      : workerCredentialAnswered(
+          reply,
+          await credentials.attempt(authority, named),
+        );
   });
 }
 
@@ -1046,7 +1085,7 @@ function workerCredentialRoute(
  * The credential one session reads its tree under. It names its repository,
  * because a site may have placed the session against a mirror of the binding
  * rather than the binding itself; the minting holds that name to the project's
- * own bindings, and a session is never minted more than a read.
+ * live bindings, and a session is never minted more than a read.
  */
 function sessionCredentialRoute(
   register: SessionRegistrar,
