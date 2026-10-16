@@ -162,9 +162,9 @@ export const workerCredentialRepositorySchema = z
   .refine((value) => isBoundedText(value, repositoryIdentityCharsMax));
 
 /**
- * What an attempt may ask its credential for: nothing, which is its own
- * repository, or a repository named, which is its own or another its project
- * binds and is then minted a read.
+ * What an attempt may ask its credential for: nothing or its own repository,
+ * minted what its task kind needs, or another repository its project binds,
+ * minted a read.
  */
 export const workerCredentialSchema = z.strictObject({
   repository: workerCredentialRepositorySchema.exactOptional(),
@@ -179,8 +179,8 @@ export const workerCredentialAnswerSchema = z.object({
 
 /**
  * Why the plane minted nothing. A pod asking for the repository it works in
- * then uses the credential its launcher mounted, and one that named another
- * repository of its project holds no credential for it.
+ * then uses the credential its launcher mounted, and one that named any other
+ * repository holds no credential for it.
  */
 export const workerCredentialAbsences = [
   "ForgeNotConfigured",

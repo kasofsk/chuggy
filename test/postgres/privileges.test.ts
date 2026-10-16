@@ -115,7 +115,7 @@ test("no runtime role but the API and the scheduler reads a project's bindings t
     );
   for (const [role, why] of [
     [apiRole, "the role whose route answers the listing still holds the door"],
-    [schedulerRole, "the role that tells a job what else it may read holds it"],
+    [schedulerRole, "the scheduler holds it beside the API"],
   ] as const)
     assert.equal(
       await harness.attemptAs(

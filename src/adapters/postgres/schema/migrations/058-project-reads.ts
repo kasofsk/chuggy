@@ -2,9 +2,8 @@
  * A job reads every repository its project binds, and its pod may ask a read
  * of any of them.
  *
- * THE SCHEDULER MAY LIST ONE PROJECT'S BINDINGS, for telling a job which
- * repositories beside its own it may read, through the per-project door the API
- * answers the listing from; it holds no grant on the table behind it.
+ * THE SCHEDULER MAY LIST ONE PROJECT'S BINDINGS, through the per-project door
+ * the API answers the listing from; it holds no grant on the table behind it.
  *
  * THE WORKER PLANE READS A BINDING THROUGH THE DOOR THAT ANSWERS ITS
  * RETIREMENT, because a pod may name a repository of its project and the

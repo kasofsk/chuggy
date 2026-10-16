@@ -2,8 +2,9 @@
  * What the plane mints for one pod, which is the whole of what a pod may obtain
  * by asking: the permission set its recorded task kind needs on the repository
  * its own row names, a read of any other its project binds live, and a refusal
- * that is kept apart from an outage all the way out — because one leaves the
- * pod on its launcher's mount and the other does not.
+ * that is kept apart from an outage all the way out — because a refusal for
+ * its own repository leaves the pod on its launcher's mount and an outage
+ * does not.
  */
 
 import assert from "node:assert/strict";
