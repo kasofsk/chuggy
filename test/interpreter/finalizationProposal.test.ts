@@ -31,6 +31,7 @@ import {
   changeProposalRequest,
   proposalBodyCharsMax,
   proposalMarkerOf,
+  proposalMergeRereadSecs,
   proposalTitleCharsMax,
   type ChangeProposalEvidence,
   type ChangeProposalMergeReconciliationStored,
@@ -384,6 +385,26 @@ function unheard(
   return { merging: "Unanswered", merges, readings, reading };
 }
 
+/** One merge the forge's own rules refused, waiting on a reading of the proposal heard so many seconds ago. */
+function waitingOn(
+  heardAgeSecs: number,
+  read: Partial<ChangeProposalEvidence>,
+  contradiction?: "Closed",
+): Extract<ChangeProposalMerging, { readonly merging: "Waiting" }> {
+  const said = evidence(read);
+  return {
+    merging: "Waiting",
+    merges: 1,
+    reading:
+      contradiction !== undefined
+        ? { reconciled: "Contradictory", contradiction, evidence: said }
+        : said.status === "Merged"
+          ? { reconciled: "Accepted", evidence: said }
+          : { reconciled: "Unmerged", evidence: said },
+    heardAgeSecs,
+  };
+}
+
 test("a proved proposal is merged only under the landing that merges it", () => {
   assert.deepEqual(finalizationProposalNext(proposing, proved(), bounds), {
     decide: "Conclude",
@@ -454,18 +475,38 @@ test("a proposal somebody else already merged is the success only a merging land
   );
 });
 
-test("what the merge answered is what the finalization does next", () => {
-  const answered: readonly [
+/** Asserts each merge state proved over the request decides what it is paired with. */
+function mergesDecided(
+  cases: readonly (readonly [
     Parameters<typeof proved>[0],
     FinalizationProposalDecision,
-  ][] = [
+  ])[],
+): void {
+  for (const [merged, decision] of cases)
+    assert.deepEqual(
+      finalizationProposalNext(merging, proved(merged), bounds),
+      decision,
+      JSON.stringify(merged).slice(0, 70),
+    );
+}
+
+test("what the merge answered is what the finalization does next", () => {
+  mergesDecided([
     [
       { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
       { decide: "Conclude" },
     ],
     [
-      { merging: "Answered", merge: { merged: "HeadMoved" } },
+      { merging: "Moved", reading: undefined, heardAgeSecs: 0 },
       { decide: "Hold", hold: "ProposalHeadMoved" },
+    ],
+    [
+      {
+        merging: "Moved",
+        reading: undefined,
+        heardAgeSecs: proposalMergeRereadSecs,
+      },
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
     ],
     [
       {
@@ -473,13 +514,6 @@ test("what the merge answered is what the finalization does next", () => {
         merge: { merged: "NotMergeable", reason: "Conflict" },
       },
       { decide: "RecordMergeConflict" },
-    ],
-    [
-      {
-        merging: "Answered",
-        merge: { merged: "NotMergeable", reason: "Blocked" },
-      },
-      { decide: "Hold", hold: "ProposalMergeBlocked" },
     ],
     [
       unheard(1, 1, {
@@ -500,7 +534,7 @@ test("what the merge answered is what the finalization does next", () => {
         reconciled: "Unmerged",
         evidence: evidence({ mergeability: "Blocked" }),
       }),
-      { decide: "Hold", hold: "ProposalMergeBlocked" },
+      { decide: "WaitMergeAttempt", hold: "ProposalMergeBlocked" },
     ],
     [
       unheard(1, 1, {
@@ -508,16 +542,97 @@ test("what the merge answered is what the finalization does next", () => {
         contradiction: "Closed",
         evidence: evidence({ status: "Closed" }),
       }),
-      { decide: "Hold", hold: "ProposalRefused" },
+      { decide: "WaitMergeAttempt", hold: "ProposalAbsent" },
     ],
-  ];
-  for (const [merged, decision] of answered) {
-    assert.deepEqual(
-      finalizationProposalNext(merging, proved(merged), bounds),
-      decision,
-      JSON.stringify(merged).slice(0, 70),
-    );
-  }
+  ]);
+});
+
+test("a merge read as closed is read again on the cadence, waiting or moved, since a person may reopen it", () => {
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: evidence({ status: "Closed" }),
+  } as const;
+  mergesDecided([
+    [
+      waitingOn(0, { status: "Closed" }, "Closed"),
+      { decide: "Hold", hold: "ProposalAbsent" },
+    ],
+    [
+      waitingOn(proposalMergeRereadSecs, { status: "Closed" }, "Closed"),
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+    ],
+    [
+      { merging: "Moved", reading: closed, heardAgeSecs: 0 },
+      { decide: "Hold", hold: "ProposalAbsent" },
+    ],
+    [
+      {
+        merging: "Moved",
+        reading: closed,
+        heardAgeSecs: proposalMergeRereadSecs,
+      },
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+    ],
+  ]);
+});
+
+test("a merge anybody made concludes the landing at whatever head it was made, and edits to the words refuse nothing", () => {
+  const later = {
+    ref: request.head.ref,
+    commit: asGitObjectId("d".repeat(40)),
+  };
+  const edited = {
+    title: "feat: serve the escalation reason",
+    body: request.body.replaceAll("\n", "\r\n"),
+  };
+  mergesDecided([
+    [
+      waitingOn(0, { status: "Merged", head: later, mergeCommit }),
+      { decide: "Conclude" },
+    ],
+    [
+      {
+        merging: "Moved",
+        reading: {
+          reconciled: "Accepted",
+          evidence: evidence({ status: "Merged", head: later, mergeCommit }),
+        },
+        heardAgeSecs: 0,
+      },
+      { decide: "Conclude" },
+    ],
+    [
+      waitingOn(0, { ...edited, mergeability: "Blocked" }),
+      { decide: "Hold", hold: "ProposalMergeBlocked" },
+    ],
+    [
+      waitingOn(0, { ...edited, status: "Merged", mergeCommit }),
+      { decide: "Conclude" },
+    ],
+  ]);
+});
+
+test("a merge waiting on the forge holds until it is due, is read then, and lands on what a reading finds", () => {
+  mergesDecided([
+    [
+      waitingOn(0, { mergeability: "Blocked" }),
+      { decide: "Hold", hold: "ProposalMergeBlocked" },
+    ],
+    [
+      waitingOn(proposalMergeRereadSecs, { mergeability: "Blocked" }),
+      { decide: "ReconcileMerge", request, merge: mergeRequest },
+    ],
+    [
+      waitingOn(0, { mergeability: "Mergeable" }),
+      { decide: "MergeProposal", request, merge: mergeRequest },
+    ],
+    [
+      waitingOn(0, { status: "Closed" }, "Closed"),
+      { decide: "Hold", hold: "ProposalAbsent" },
+    ],
+    [waitingOn(0, { status: "Merged", mergeCommit }), { decide: "Conclude" }],
+  ]);
 });
 
 test("every reason a merge is held reaches a hold this tree declares", () => {
@@ -526,17 +641,12 @@ test("every reason a merge is held reaches a hold this tree declares", () => {
     [{ merging: "Idle", merges: 2 }, "ProposalMergesExhausted"],
     [unheard(1, 1, { reconciled: "Absent" }), "ProposalAbsent"],
     [unheard(1, 1, { reconciled: "Unstorable" }), "ProposalEvidenceUnstorable"],
+    [waitingOn(0, { mergeability: "Blocked" }), "ProposalMergeBlocked"],
     [
-      {
-        merging: "Answered",
-        merge: { merged: "NotMergeable", reason: "Blocked" },
-      },
-      "ProposalMergeBlocked",
-    ],
-    [
-      { merging: "Answered", merge: { merged: "HeadMoved" } },
+      { merging: "Moved", reading: undefined, heardAgeSecs: 0 },
       "ProposalHeadMoved",
     ],
+    [waitingOn(0, { status: "Closed" }, "Closed"), "ProposalAbsent"],
   ];
   for (const [merged, hold] of populated(held, "the merge holds")) {
     assert.deepEqual(
@@ -610,6 +720,14 @@ test("an answer about this deployment is never recorded as one about the merge",
     "a refusal naming no reason settles nothing and is read back",
   );
   assert.deepEqual(
+    finalizationProposalMergeRecording({
+      merged: "NotMergeable",
+      reason: "Blocked",
+    }),
+    { record: "Unanswered" },
+    "a refusal naming the forge's own rules is read back, since they may lift",
+  );
+  assert.deepEqual(
     finalizationProposalMergeRecording({ merged: "Merged", mergeCommit }),
     { record: "Merge", merged: { merged: "Merged", mergeCommit } },
   );
@@ -623,7 +741,21 @@ test("an answer about this deployment is never recorded as one about the merge",
   );
   assert.deepEqual(
     finalizationProposalMergeReadingRecording({ reconciled: "Absent" }),
-    { record: "Reading", reconciled: { reconciled: "Absent" } },
+    {
+      record: "Reading",
+      reconciled: { reconciled: "Absent" },
+      hold: undefined,
+    },
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: evidence({ status: "Closed" }),
+  } as const;
+  assert.deepEqual(
+    finalizationProposalMergeReadingRecording(closed),
+    { record: "Reading", reconciled: closed, hold: "ProposalAbsent" },
+    "a reading of a closed proposal holds as every pass it stays closed does",
   );
 });
 
@@ -633,7 +765,17 @@ test("no merging in flight and no answered one reaches a second merge", () => {
     unheard(1, 1, { reconciled: "Unmerged", evidence: evidence() }),
     { merging: "Idle", merges: 2 },
     { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
-    { merging: "Answered", merge: { merged: "HeadMoved" } },
+    { merging: "Moved", reading: undefined, heardAgeSecs: 0 },
+    {
+      merging: "Moved",
+      reading: {
+        reconciled: "Unmerged",
+        evidence: evidence({ mergeability: "Mergeable" }),
+      },
+      heardAgeSecs: 0,
+    },
+    waitingOn(0, { mergeability: "Blocked" }),
+    { ...waitingOn(0, { mergeability: "Mergeable" }), merges: 2 },
   ];
   for (const state of populated(merged, "the mergings")) {
     assert.notEqual(

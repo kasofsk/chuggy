@@ -226,7 +226,12 @@ export function setupSiteProposed(url: string): TicketLandingResponse {
     generation: 1,
     attempts: 1,
     state: "Running",
-    proposal: { url, headRef: "chug/ticket", baseRef: "main" },
+    proposal: {
+      url,
+      headRef: "chug/ticket",
+      headCommit: "b".repeat(40),
+      baseRef: "main",
+    },
   };
 }
 

@@ -21,7 +21,9 @@ import {
   type changeProposalCreations,
   type changeProposalMergeabilities,
   type changeProposalMergeReasons,
+  type changeProposalMergeWaits,
   type changeProposalMerges,
+  type changeProposalStatuses,
   type finalizationAttemptOutcomes,
   type finalizationFailureKinds,
   type BlockedReason,
@@ -174,6 +176,7 @@ export function ticketLandingStateLabel(state: TicketLandingState): string {
     case "Held":
       return "Held";
     case "AwaitingApproval":
+    case "AwaitingMerge":
       return "Waiting";
     case "Failed":
       return "Failed";
@@ -249,8 +252,34 @@ export function changeProposalMergeReasonLabel(
   switch (reason) {
     case "Conflict":
       return "Conflict";
+  }
+}
+
+/** What the forge last said of a pull request itself. */
+export function changeProposalStatusLabel(
+  status: (typeof changeProposalStatuses)[number],
+): string {
+  switch (status) {
+    case "Open":
+      return "Open";
+    case "Closed":
+      return "Closed";
+    case "Merged":
+      return "Merged";
+    case "Superseded":
+      return "Superseded";
+  }
+}
+
+/** What a landing's merge waits on at the forge. */
+export function changeProposalMergeWaitLabel(
+  wait: (typeof changeProposalMergeWaits)[number],
+): string {
+  switch (wait) {
     case "Blocked":
       return "Blocked";
+    case "HeadMoved":
+      return "Head moved";
   }
 }
 

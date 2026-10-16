@@ -15,6 +15,7 @@ import {
   briefFinalizationModes,
   changeProposalCreations,
   changeProposalMergeabilities,
+  changeProposalStatuses,
   changeProposalMergeReasons,
   changeProposalMerges,
   escalationKinds,
@@ -38,6 +39,7 @@ import {
   briefLandingLine,
   changeProposalCreationLabel,
   changeProposalMergeabilityLabel,
+  changeProposalStatusLabel,
   changeProposalMergeLabel,
   changeProposalMergeReasonLabel,
   escalationDetail,
@@ -94,6 +96,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ...changeProposalMerges.map(changeProposalMergeLabel),
     ...changeProposalMergeReasons.map(changeProposalMergeReasonLabel),
     ...changeProposalMergeabilities.map(changeProposalMergeabilityLabel),
+    ...changeProposalStatuses.map(changeProposalStatusLabel),
     ...[...leadAbsencesUntimed, ...leadAdmissionRefusals].map(leadAbsenceLabel),
   ];
   for (const label of drawn) {

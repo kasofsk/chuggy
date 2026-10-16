@@ -5,11 +5,12 @@
  * IT IS AUTHORIZED AS THE TICKET'S OWN READ IS, and a ticket the caller may
  * not read is answered as one that does not exist.
  *
- * A LANDING'S STATE IS READ FROM THE REQUEST, ITS CONCLUSION, ITS HOLD AND ITS
- * APPROVAL, and `ticketLandingState` is the whole of that reading. A request
- * the finalizer still holds is `AwaitingApproval` while its newest attempt
- * waits on an approval a person still has open, `Held` where its hold columns
- * are set, and `Running` otherwise. A concluded one is what its journal event
+ * A LANDING'S STATE IS READ FROM THE REQUEST, ITS CONCLUSION, ITS HOLD, ITS
+ * APPROVAL AND ITS MERGE, and `ticketLandingState` is the whole of that
+ * reading. A request the finalizer still holds is `AwaitingApproval` while its
+ * newest attempt waits on an approval a person still has open, `Held` where its
+ * hold columns are set, `AwaitingMerge` where its pull request's merge waits on
+ * the forge, and `Running` otherwise. A concluded one is what its journal event
  * says: `Failed` for the ticket sent back to work, `Unavailable` for the one
  * escalated, and for a success `Landed` where a commit it landed at is
  * recorded and `Proposed` where only its pull request is. `Invalidated` is the
@@ -20,8 +21,10 @@
  * other reason writes nothing either way, so a live landing's hold is the last
  * one recorded and may be older than what holds it now. An open approval is
  * no such record: nothing moves the attempt past it, so it is answered over a
- * hold recorded beside it. A concluded landing answers no hold, whatever its
- * columns still carry.
+ * hold recorded beside it. A wait is answered under a recorded hold, because a
+ * pass that found the proposal open clears the record and so one that stands
+ * is newer than the last reading. A concluded landing answers neither, whatever
+ * its columns still carry.
  *
  * A CONFLICT IS READ FROM ITS MANIFEST, which is a project artifact and not a
  * row. A manifest not found and a store that cannot be reached both leave the
@@ -49,7 +52,10 @@ import type {
   ChangeProposalCreationStored,
   ChangeProposalMergeAnswer,
   ChangeProposalMergeability,
+  ChangeProposalMergeWait,
+  ChangeProposalStatus,
   ChangeProposalUnmergeableSettled,
+  ProposalMergeState,
 } from "./changeProposal.ts";
 import type {
   ConflictSummary,
@@ -88,16 +94,28 @@ export interface TicketLandingAttempt {
   readonly preparedAt: PublicInstant;
 }
 
-/** One request's pull request, each field present where its row holds it. */
+/** One request's pull request, opened at `headCommit`, each other field present where its row holds it. */
 export interface TicketLandingProposal {
   readonly url?: string;
   readonly headRef: string;
+  readonly headCommit: GitObjectId;
   readonly baseRef: string;
   readonly creation?: ChangeProposalCreationStored["created"];
+  /** What the forge last said of the proposal itself. */
+  readonly status?: ChangeProposalStatus;
   readonly merge?: ChangeProposalMergeAnswer["merged"];
   readonly mergeReason?: ChangeProposalUnmergeableSettled;
   readonly mergeability?: ChangeProposalMergeability;
+  readonly mergeState?: ProposalMergeState;
   readonly mergeCommit?: GitObjectId;
+  /** The head the forge merged, where it is not `headCommit`: a person moved it before merging. */
+  readonly mergedHead?: GitObjectId;
+}
+
+/** What a request's merge waits on at the forge, and when the forge was last heard about it. */
+export interface TicketLandingWait {
+  readonly reason: ChangeProposalMergeWait;
+  readonly checkedAt: PublicInstant;
 }
 
 /**
@@ -118,6 +136,7 @@ export interface TicketLandingRecord {
   readonly conflictManifest?: ProjectArtifactId;
   readonly approvalOpen: boolean;
   readonly proposal?: TicketLandingProposal;
+  readonly wait?: TicketLandingWait;
   readonly landedCommit?: GitObjectId;
 }
 
@@ -134,11 +153,17 @@ export interface TicketLandingsStore {
   ): Promise<readonly TicketLandingRecord[] | undefined>;
 }
 
-/** Where one landing stands, with the hold or the commit its state carries. */
+/** Where one landing stands, with the hold, the wait or the commit its state carries. */
 export type TicketLandingStanding =
   | { readonly state: "Held"; readonly hold: TicketLandingHold }
+  | { readonly state: "AwaitingMerge"; readonly wait: TicketLandingWait }
   | { readonly state: "Landed"; readonly landedCommit: GitObjectId }
-  | { readonly state: Exclude<TicketLandingState, "Held" | "Landed"> };
+  | {
+      readonly state: Exclude<
+        TicketLandingState,
+        "Held" | "AwaitingMerge" | "Landed"
+      >;
+    };
 
 /** One landing as the read answers it. */
 export type TicketLanding = TicketLandingStanding & {
@@ -202,6 +227,15 @@ function ticketLandingConcluded(
   }
 }
 
+/** Where a request the finalizer still holds stands, an open approval over a recorded hold over a wait. */
+function ticketLandingLive(record: TicketLandingRecord): TicketLandingStanding {
+  if (record.approvalOpen) return { state: "AwaitingApproval" };
+  if (record.hold !== undefined) return { state: "Held", hold: record.hold };
+  if (record.wait !== undefined)
+    return { state: "AwaitingMerge", wait: record.wait };
+  return { state: "Running" };
+}
+
 /** Where one recorded request stands, which reads nothing and performs nothing. */
 export function ticketLandingState(
   record: TicketLandingRecord,
@@ -213,10 +247,7 @@ export function ticketLandingState(
       return ticketLandingConcluded(record);
     case "Open":
     case "Registered":
-      if (record.approvalOpen) return { state: "AwaitingApproval" };
-      return record.hold === undefined
-        ? { state: "Running" }
-        : { state: "Held", hold: record.hold };
+      return ticketLandingLive(record);
     default:
       return assertNever(record.request);
   }

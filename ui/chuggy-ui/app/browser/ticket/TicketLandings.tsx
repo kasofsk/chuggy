@@ -58,7 +58,10 @@ export function useTicketLandings(
   );
 }
 
-/** A landing's fragment: its text, its pull request under the host it names, its commit. */
+/**
+ * A landing's fragment: its text, its pull request under the host it names,
+ * the commit it landed at, and what a reader must not miss about that commit.
+ */
 export function LandingFragment(props: {
   readonly fragment: TicketLandingFragment;
 }): ReactNode {
@@ -73,7 +76,16 @@ export function LandingFragment(props: {
         </a>
       )}
       {fragment.commit === undefined ? null : (
-        <Identity label={fragment.commit} />
+        <span className="ticket-landing-part">
+          {fragment.commit.name}
+          <Identity label={fragment.commit.label} />
+        </span>
+      )}
+      {fragment.caveat === undefined ? null : (
+        <span className="ticket-landing-part">
+          <span aria-hidden="true">·</span>
+          {fragment.caveat}
+        </span>
       )}
     </span>
   );
@@ -87,9 +99,11 @@ function LandingProposalFields(props: {
     ["Head", proposal.head],
     ["Base", proposal.base],
     ["Creation", proposal.creation],
+    ["Status", proposal.status],
     ["Merge", proposal.merge],
     ["Reason", proposal.mergeReason],
     ["Mergeability", proposal.mergeability],
+    ["Merge state", proposal.mergeState],
   ];
   return (
     <>
@@ -104,6 +118,16 @@ function LandingProposalFields(props: {
         <Field name="Merge commit">
           <Identity label={proposal.mergeCommit} />
         </Field>
+      )}
+      {proposal.heads === undefined ? null : (
+        <>
+          <Field name="Merged head">
+            <Identity label={proposal.heads.merged} />
+          </Field>
+          <Field name="Evaluated head">
+            <Identity label={proposal.heads.evaluated} />
+          </Field>
+        </>
       )}
     </>
   );
@@ -159,6 +183,11 @@ function LandingDetail(props: {
       <LandingConflicts detail={detail} />
       {detail.proposal === undefined ? null : (
         <LandingProposalFields proposal={detail.proposal} />
+      )}
+      {detail.checkedAt === undefined ? null : (
+        <Field name="Checked">
+          <Figure figure={sinceFigure(detail.checkedAt, props.nowMs)} />
+        </Field>
       )}
     </Fields>
   );

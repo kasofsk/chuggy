@@ -433,6 +433,7 @@ test("where the repository holds only the bootstrap and no pull request of the t
   const proposal = {
     url: pullRequest,
     headRef: "chug/ticket",
+    headCommit: "b".repeat(40),
     baseRef: "main",
   };
   const unstanding: readonly (readonly TicketLandingResponse[])[] = [

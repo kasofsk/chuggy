@@ -29,6 +29,8 @@ import {
   changeProposalMergeabilityLabel,
   changeProposalMergeLabel,
   changeProposalMergeReasonLabel,
+  changeProposalMergeWaitLabel,
+  changeProposalStatusLabel,
   finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
@@ -55,15 +57,28 @@ export function ticketLandingsListName(ticket: number): string {
   return `landings:${String(ticket)}`;
 }
 
+/**
+ * The head the forge merged and the one this landing evaluated, named both
+ * only where they differ.
+ */
+export interface TicketLandingHeads {
+  readonly merged: Label;
+  readonly evaluated: Label;
+}
+
 /** The pull request a landing opened, as its detail draws it. */
 export interface TicketLandingProposal {
   readonly head: string;
   readonly base: string;
   readonly creation: string | undefined;
+  readonly status: string | undefined;
   readonly merge: string | undefined;
   readonly mergeReason: string | undefined;
   readonly mergeability: string | undefined;
+  /** The forge's own word for where the merge stands, as it said it. */
+  readonly mergeState: string | undefined;
   readonly mergeCommit: Label | undefined;
+  readonly heads: TicketLandingHeads | undefined;
 }
 
 /** What a landing's detail holds beyond its row. */
@@ -76,12 +91,24 @@ export interface TicketLandingDetail {
   readonly conflicts: readonly string[];
   readonly conflictsCut: boolean;
   readonly proposal: TicketLandingProposal | undefined;
+  /** When the forge was last asked about a merge that waits on it. */
+  readonly checkedAt: string | undefined;
 }
 
 /** The hold a landing waits on, and since when. */
 export interface TicketLandingHold {
   readonly label: string;
   readonly since: string;
+}
+
+/**
+ * What a landing's merge waits on at the forge, what the forge said, and when
+ * it was asked.
+ */
+export interface TicketLandingWait {
+  readonly label: string;
+  readonly mergeState: string | undefined;
+  readonly checkedAt: string;
 }
 
 /** One landing as every part of the page draws it. */
@@ -95,6 +122,7 @@ export interface TicketLanding {
   readonly failure: string | undefined;
   readonly conflictCount: number;
   readonly hold: TicketLandingHold | undefined;
+  readonly wait: TicketLandingWait | undefined;
   readonly link: TicketDeliveryLink | undefined;
   readonly landedCommit: Label | undefined;
   readonly detail: TicketLandingDetail;
@@ -119,10 +147,35 @@ export function ticketLandingLink(
     : undefined;
 }
 
-function ticketLandingProposal(
+/**
+ * The two heads a pull request names, where the forge merged one other than
+ * the one it was opened at.
+ */
+function ticketLandingHeads(
   proposal: TicketLandingRead["proposal"],
+): TicketLandingHeads | undefined {
+  return proposal?.mergedHead === undefined
+    ? undefined
+    : {
+        merged: commitLabel(proposal.mergedHead),
+        evaluated: commitLabel(proposal.headCommit),
+      };
+}
+
+/**
+ * A landing's pull request as its detail draws it: its merge commit is the one
+ * the landing landed at wherever the finalizer did not make the merge itself,
+ * and the forge's word on it is drawn only while nothing has settled the
+ * landing, after which no reading keeps that word current.
+ */
+function ticketLandingProposal(
+  read: TicketLandingRead,
 ): TicketLandingProposal | undefined {
+  const proposal = read.proposal;
   if (proposal === undefined) return undefined;
+  const mergeCommit =
+    proposal.mergeCommit ??
+    (read.state === "Landed" ? read.landedCommit : undefined);
   return {
     head: proposal.headRef,
     base: proposal.baseRef,
@@ -130,6 +183,10 @@ function ticketLandingProposal(
       proposal.creation === undefined
         ? undefined
         : changeProposalCreationLabel(proposal.creation),
+    status:
+      proposal.status === undefined || !ticketLandingLive(read.state)
+        ? undefined
+        : changeProposalStatusLabel(proposal.status),
     merge:
       proposal.merge === undefined
         ? undefined
@@ -142,11 +199,23 @@ function ticketLandingProposal(
       proposal.mergeability === undefined
         ? undefined
         : changeProposalMergeabilityLabel(proposal.mergeability),
+    mergeState: proposal.mergeState,
     mergeCommit:
-      proposal.mergeCommit === undefined
-        ? undefined
-        : commitLabel(proposal.mergeCommit),
+      mergeCommit === undefined ? undefined : commitLabel(mergeCommit),
+    heads: ticketLandingHeads(proposal),
   };
+}
+
+/**
+ * What a hold is labelled, a pull request the forge last read as closed being
+ * called that.
+ */
+function ticketLandingHoldLabel(read: TicketLandingRead): string | undefined {
+  if (read.state !== "Held") return undefined;
+  return read.hold.kind === "ProposalAbsent" &&
+    read.proposal?.status === "Closed"
+    ? changeProposalStatusLabel(read.proposal.status)
+    : finalizationUnavailableKindLabel(read.hold.kind);
 }
 
 function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
@@ -163,7 +232,8 @@ function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
     attempts: read.attempts,
     conflicts: read.conflict?.paths ?? [],
     conflictsCut: read.conflict?.truncated ?? false,
-    proposal: ticketLandingProposal(read.proposal),
+    proposal: ticketLandingProposal(read),
+    checkedAt: read.state === "AwaitingMerge" ? read.wait.checkedAt : undefined,
   };
 }
 
@@ -183,9 +253,14 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
     conflictCount: read.conflict?.paths.length ?? 0,
     hold:
       read.state === "Held"
+        ? { label: ticketLandingHoldLabel(read) ?? "", since: read.hold.since }
+        : undefined,
+    wait:
+      read.state === "AwaitingMerge"
         ? {
-            label: finalizationUnavailableKindLabel(read.hold.kind),
-            since: read.hold.since,
+            label: changeProposalMergeWaitLabel(read.wait.reason),
+            mergeState: read.proposal?.mergeState,
+            checkedAt: read.wait.checkedAt,
           }
         : undefined,
     link: ticketLandingLink(read.proposal?.url),
@@ -219,11 +294,60 @@ function ticketLandingHeldFor(hold: TicketLandingHold, nowMs: number): string {
     : `Held · ${hold.label}`;
 }
 
-/** What a landing's row says beside its pill, as text, a link and a commit. */
+/**
+ * What a landing's merge waits on, the forge's own word where it adds to it,
+ * and how long ago the forge was asked.
+ */
+function ticketLandingWaitText(wait: TicketLandingWait, nowMs: number): string {
+  const checkedMs = Date.parse(wait.checkedAt);
+  return [
+    wait.label,
+    ...(wait.mergeState === undefined ||
+    wait.mergeState.toLowerCase() === wait.label.toLowerCase()
+      ? []
+      : [wait.mergeState]),
+    ...(Number.isFinite(checkedMs)
+      ? [`checked ${agoText(nowMs, checkedMs)} ago`]
+      : []),
+  ].join(" · ");
+}
+
+/** The commit a fragment names, under a noun where the row qualifies it. */
+export interface TicketLandingCommit {
+  readonly name: string | undefined;
+  readonly label: Label;
+}
+
+/**
+ * What a landing's row says beside its pill: text, a link, the commit it
+ * landed at, and what a reader must not miss about that commit.
+ */
 export interface TicketLandingFragment {
   readonly text: string | undefined;
   readonly link: TicketDeliveryLink | undefined;
-  readonly commit: Label | undefined;
+  readonly commit: TicketLandingCommit | undefined;
+  readonly caveat: string | undefined;
+}
+
+/**
+ * The commit a row says its landing landed at, and, where the forge merged a
+ * head other than the one evaluated, that it says so, since the commit alone
+ * reads as the evaluated work landing.
+ */
+function ticketLandingLandedAt(
+  landing: TicketLanding,
+): Pick<TicketLandingFragment, "commit" | "caveat"> {
+  if (landing.landedCommit === undefined)
+    return { commit: undefined, caveat: undefined };
+  return landing.detail.proposal?.heads === undefined
+    ? {
+        commit: { name: undefined, label: landing.landedCommit },
+        caveat: undefined,
+      }
+    : {
+        commit: { name: "Merged", label: landing.landedCommit },
+        caveat: "Unevaluated head",
+      };
 }
 
 /** The one short fragment a landing's row and the status bar carry. */
@@ -245,6 +369,7 @@ export function ticketLandingFragment(
               ].join(" · "),
         link: undefined,
         commit: undefined,
+        caveat: undefined,
       };
     case "Held":
       return {
@@ -252,8 +377,19 @@ export function ticketLandingFragment(
           landing.hold === undefined
             ? undefined
             : ticketLandingHeldFor(landing.hold, nowMs),
-        link: undefined,
+        link: landing.link,
         commit: undefined,
+        caveat: undefined,
+      };
+    case "AwaitingMerge":
+      return {
+        text:
+          landing.wait === undefined
+            ? undefined
+            : ticketLandingWaitText(landing.wait, nowMs),
+        link: landing.link,
+        commit: undefined,
+        caveat: undefined,
       };
     case "Running":
     case "AwaitingApproval":
@@ -262,11 +398,16 @@ export function ticketLandingFragment(
       return {
         text: undefined,
         link: landing.link,
-        commit: landing.landedCommit,
+        ...ticketLandingLandedAt(landing),
       };
     case "Unavailable":
     case "Invalidated":
-      return { text: undefined, link: undefined, commit: undefined };
+      return {
+        text: undefined,
+        link: undefined,
+        commit: undefined,
+        caveat: undefined,
+      };
   }
 }
 
@@ -327,23 +468,29 @@ export function ticketLandingOpened(
     : `After ${before.failure.toLowerCase()}`;
 }
 
-/** The landing the status bar names while the ticket is finalizing: the newest, while it is still live. */
-export function ticketLandingCurrent(
-  landings: readonly TicketLanding[],
-): TicketLanding | undefined {
-  const newest = landings.at(-1);
-  switch (newest?.state) {
-    case undefined:
-      return undefined;
+/** Whether a landing in `state` is still live: running, held or waiting. */
+function ticketLandingLive(state: TicketLandingState): boolean {
+  switch (state) {
     case "Running":
     case "Held":
     case "AwaitingApproval":
-      return newest;
+    case "AwaitingMerge":
+      return true;
     case "Failed":
     case "Unavailable":
     case "Landed":
     case "Proposed":
     case "Invalidated":
-      return undefined;
+      return false;
   }
+}
+
+/** The landing the status bar names while the ticket is finalizing: the newest, while it is still live. */
+export function ticketLandingCurrent(
+  landings: readonly TicketLanding[],
+): TicketLanding | undefined {
+  const newest = landings.at(-1);
+  return newest !== undefined && ticketLandingLive(newest.state)
+    ? newest
+    : undefined;
 }

@@ -21,6 +21,7 @@ import {
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
   forgeRefusalMessageCharsMax,
+  proposalMergeStateCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
   repositoryConfigurationIgnoredAnsweredMax,
@@ -80,6 +81,8 @@ import {
   changeProposalCreations,
   changeProposalMergeabilities,
   changeProposalMergeReasons,
+  changeProposalMergeWaits,
+  changeProposalStatuses,
   changeProposalMerges,
   draftStates,
   escalationKinds,
@@ -2053,20 +2056,27 @@ const ticketLandingConflictSchema = z.strictObject({
 });
 
 /**
- * The pull request one landing opened, each field present where its row holds
- * it. `url` is absent where none was recorded or the one recorded is not a link
- * a report could carry; `creation` is absent where the proposal was found by
- * reading it back; `mergeability` is what the last reading of its merge said.
+ * The pull request one landing opened at `headCommit`, each other field present
+ * where its row holds it. `url` is absent where none was recorded or the one
+ * recorded is not a link a report could carry; `creation` is absent where the
+ * proposal was found by reading it back; `status` and `mergeability` are what
+ * the forge last said of it, and `mergeState` its own word for the second; and
+ * `mergedHead` is the head the forge merged, present only where it is not the
+ * one this landing opened it at.
  */
 const ticketLandingProposalSchema = z.strictObject({
   url: actionReportDocumentSchema.shape.link,
   headRef: z.string().min(1),
+  headCommit: landingCommitSchema,
   baseRef: z.string().min(1),
   creation: z.enum(changeProposalCreations).optional(),
+  status: z.enum(changeProposalStatuses).optional(),
   merge: z.enum(changeProposalMerges).optional(),
   mergeReason: z.enum(changeProposalMergeReasons).optional(),
   mergeability: z.enum(changeProposalMergeabilities).optional(),
+  mergeState: z.string().min(1).max(proposalMergeStateCharsMax).optional(),
   mergeCommit: landingCommitSchema.optional(),
+  mergedHead: landingCommitSchema.optional(),
 });
 
 const ticketLandingFields = {
@@ -2080,8 +2090,9 @@ const ticketLandingFields = {
 
 /**
  * One finalization of a ticket, as what is recorded of it. A `Held` landing
- * carries the hold it was last recorded at, and only a `Landed` one carries
- * the commit it landed at.
+ * carries the hold it was last recorded at, an `AwaitingMerge` one what its
+ * merge waits on and when the forge was last heard about it, and only a
+ * `Landed` one carries the commit it landed at.
  */
 export const ticketLandingSchema = z.discriminatedUnion("state", [
   z.strictObject({
@@ -2095,12 +2106,22 @@ export const ticketLandingSchema = z.discriminatedUnion("state", [
   }),
   z.strictObject({
     ...ticketLandingFields,
+    state: z.literal("AwaitingMerge"),
+    wait: z.strictObject({
+      reason: z.enum(changeProposalMergeWaits),
+      checkedAt: instantSchema,
+    }),
+  }),
+  z.strictObject({
+    ...ticketLandingFields,
     state: z.literal("Landed"),
     landedCommit: landingCommitSchema,
   }),
   z.strictObject({
     ...ticketLandingFields,
-    state: z.enum(ticketLandingStates).exclude(["Held", "Landed"]),
+    state: z
+      .enum(ticketLandingStates)
+      .exclude(["Held", "AwaitingMerge", "Landed"]),
   }),
 ]);
 export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;

@@ -109,6 +109,7 @@ import {
   finalizerChangeProposalMergeDecline,
   finalizerChangeProposalMergeRecord,
   finalizerChangeProposalMergeRefuse,
+  finalizerChangeProposalMergeWait,
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
@@ -780,6 +781,10 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     declineChangeProposalMergeAttempt: (claim) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalMergeDecline(client, claim),
+      ),
+    waitChangeProposalMergeAttempt: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalMergeWait(client, claim),
       ),
     recordChangeProposalMerge: (record) =>
       postgresTransaction(pool, (client) =>

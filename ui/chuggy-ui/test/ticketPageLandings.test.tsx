@@ -18,10 +18,13 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import {
+  landingAwaitingMerge,
+  landingClosed,
   landingConflicted,
   landingConflictPath,
   landingHeld,
   landingLanded,
+  landingMergedElsewhere,
   landingPullRequest,
   landingRunning,
   landingsRead,
@@ -253,6 +256,47 @@ test("a landed landing draws its pull request as a link under its host, and its 
   expect(summaryOf(groupOf(container, 3))).toMatch(/ · Landed$/u);
 });
 
+test("a pull request a person merged at another head draws its merge commit and that the head was not evaluated on its row, and both heads in its detail", async () => {
+  const container = await drawn(() =>
+    answer(landingsRead([landingMergedElsewhere(3)])),
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Landed",
+    "forge.example.testMergede0f3a7c·Unevaluated head",
+  ]);
+  expect(
+    [...row.querySelectorAll(".ledger-note .ticket-landing-part")].map(
+      (commit) => commit.textContent,
+    ),
+  ).toEqual(["Mergede0f3a7c", "·Unevaluated head"]);
+  const detail = await detailOpened(row);
+  expect(detail.textContent).toContain("Merge commite0f3a7c");
+  expect(detail.textContent).toContain("Merged headd4e5f6a");
+  expect(detail.textContent).toContain("Evaluated headb51d9f0");
+  expect(detail.textContent).not.toContain("Status");
+});
+
+test("a landing held on its pull request being closed says closed, and offers the pull request", async () => {
+  const since = new Date(Date.now() - 3 * 60_000 - 5_000).toISOString();
+  const container = await drawn(() =>
+    answer(landingsRead([landingClosed(3, since)])),
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Held",
+    "Held 3m · Closedforge.example.test",
+  ]);
+  expect(
+    within(row).getByRole("link").getAttribute("href"),
+    "a closed pull request is offered to be reopened",
+  ).toBe(landingPullRequest);
+});
+
 test("a pull request address that does not parse, or is not https, draws no link and leaves the cycles drawn", async () => {
   for (const url of ["not a url", "http://forge.example.test/pull/68"]) {
     const container = await drawn(() =>
@@ -280,6 +324,29 @@ test("a held landing draws its age and hold on its row, and on the status bar wh
   expect(container.querySelector(".ticket-status-line")?.textContent).toContain(
     "Held 12m · Target unreadable",
   );
+});
+
+test("a landing whose merge waits on the forge says so on its row, its detail and the status bar", async () => {
+  const checkedAt = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
+  const container = await drawn(
+    () => answer(landingsRead([landingAwaitingMerge(3, checkedAt)])),
+    { phase: "Finalization" },
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Waiting",
+    "Blocked · behind · checked 2m agoforge.example.test",
+  ]);
+  expect(within(row).getByRole("link").getAttribute("href")).toBe(
+    landingPullRequest,
+  );
+  const line = container.querySelector<HTMLElement>(".ticket-status-line");
+  expect(line?.textContent).toContain("Blocked · behind · checked 2m ago");
+  const detail = await detailOpened(row);
+  expect(detail.textContent).toContain("Merge statebehind");
+  expect(detail.textContent).toContain("Checked");
 });
 
 test("a running landing's pull request is a link on the status bar while finalizing", async () => {

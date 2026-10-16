@@ -30,9 +30,12 @@
  * answers it, the composition root answers that port, and the value reaches
  * exactly one header and no diagnostic, evidence field or returned string.
  *
- * THE MARKER IS WHAT MAKES A PROPOSAL THIS REQUEST'S. A pull request the forge
- * returns is evidence only where its body carries the request's marker;
- * anything else on the same head branch is somebody else's and is not found.
+ * THE MARKER IS WHAT MAKES A PROPOSAL THIS REQUEST'S UNTIL ITS NUMBER DOES. A
+ * pull request the forge returns is evidence only where its body carries the
+ * request's marker; anything else on the same head branch is somebody else's
+ * and is not found. A read by number is of a proposal already proved, so it
+ * asks nothing of the body and holds the title and body as far as a stored row
+ * can: a person edits both while a merge waits, and neither edit is a refusal.
  * The read filters on the head branch alone, because a proposal opened against
  * another base is the `BaseMismatch` the pure layer exists to report rather
  * than a row to hide, and a proposal the forge answered for another repository
@@ -80,9 +83,11 @@
 
 import { z } from "zod";
 
+import { textCodePointsCount } from "../../contract/http.ts";
 import { asBoundedText } from "../../interpreter/boundedText.ts";
 import {
   asProposalDisplayUrl,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
   proposalBodyCharsMax,
@@ -476,6 +481,20 @@ function githubChangeProposalsMergeabilityOf(
   return { mergeability: pull.mergeable === true ? "Mergeable" : "Unknown" };
 }
 
+/** The forge's own word the mergeability was read out of, absent where it said none or none a row could hold. */
+function githubChangeProposalsMergeStateOf(
+  pull: GithubPullRequest,
+): Pick<ChangeProposalEvidence, "mergeState"> {
+  const state =
+    pull.mergeable_state === undefined
+      ? undefined
+      : githubChangeProposalsBranded(
+          pull.mergeable_state,
+          asProposalMergeState,
+        );
+  return state === undefined ? {} : { mergeState: state };
+}
+
 /**
  * The commit a merge left, which this forge names on an open proposal as the
  * trial merge it would make, so only a merged proposal carries one.
@@ -553,19 +572,76 @@ type GithubProposalMatch =
   | { readonly matched: "Unholdable" };
 
 /**
- * What one pull request is evidence of. The marker is asked first, because
- * everything after it is about a proposal already known to be this request's:
- * a forge that named no repository and a field no stored row holds each leave
- * it found and unusable rather than absent.
+ * What says one answered pull request is the proposal asked about: the marker
+ * in its body, or the number it was read by.
+ */
+type GithubProposalIdentified = "ByMarker" | "ByNumber";
+
+/**
+ * One of a proposal's own words as evidence of it: branded where the marker is
+ * what says whose it is, and held as far as a stored row holds them where the
+ * number does, because nothing compares them then and a person may edit them.
+ */
+function githubChangeProposalsTextOf(
+  identified: GithubProposalIdentified,
+  value: string,
+  what: string,
+  charsMax: number,
+): string | undefined {
+  if (identified === "ByMarker")
+    return githubChangeProposalsBranded(value, (text) =>
+      asBoundedText(text, what, charsMax),
+    );
+  const held = value.toWellFormed().replaceAll("\u0000", "\uFFFD");
+  return textCodePointsCount(held) <= charsMax
+    ? held
+    : [...held].slice(0, charsMax).join("");
+}
+
+/**
+ * A proposal's title and body as evidence of it, each held as
+ * `githubChangeProposalsTextOf` holds it.
+ */
+function githubChangeProposalsWordsOf(
+  identified: GithubProposalIdentified,
+  title: string,
+  body: string,
+): {
+  readonly title: string | undefined;
+  readonly body: string | undefined;
+} {
+  return {
+    title: githubChangeProposalsTextOf(
+      identified,
+      title,
+      "proposal title",
+      proposalTitleCharsMax,
+    ),
+    body: githubChangeProposalsTextOf(
+      identified,
+      body,
+      "proposal body",
+      proposalBodyCharsMax,
+    ),
+  };
+}
+
+/**
+ * What one pull request is evidence of. Where the marker identifies it, it is
+ * asked first, because everything after it is about a proposal already known to
+ * be this request's: a forge that named no repository and a field no stored row
+ * holds each leave it found and unusable rather than absent.
  */
 function githubChangeProposalsEvidenceOf(
   request: GithubProposalOwner,
   address: GithubAddress,
   host: string,
   pull: GithubPullRequest,
+  identified: GithubProposalIdentified,
 ): GithubProposalMatch {
   const answered = pull.body ?? "";
-  if (!answered.includes(request.marker)) return { matched: "Unmarked" };
+  if (identified === "ByMarker" && !answered.includes(request.marker))
+    return { matched: "Unmarked" };
   const repository = githubChangeProposalsRepositoryOf(
     request,
     address,
@@ -579,11 +655,10 @@ function githubChangeProposalsEvidenceOf(
   const number = githubChangeProposalsBranded(pull.number, asProposalNumber);
   const status = githubChangeProposalsStatusOf(pull);
   const merge = githubChangeProposalsMergeCommitOf(pull, status);
-  const title = githubChangeProposalsBranded(pull.title, (value) =>
-    asBoundedText(value, "proposal title", proposalTitleCharsMax),
-  );
-  const body = githubChangeProposalsBranded(answered, (value) =>
-    asBoundedText(value, "proposal body", proposalBodyCharsMax),
+  const { title, body } = githubChangeProposalsWordsOf(
+    identified,
+    pull.title,
+    answered,
   );
   const head = githubChangeProposalsRefOf(pull.head.ref);
   const base = githubChangeProposalsRefOf(pull.base.ref);
@@ -615,6 +690,7 @@ function githubChangeProposalsEvidenceOf(
       body,
       status,
       ...githubChangeProposalsMergeabilityOf(pull),
+      ...githubChangeProposalsMergeStateOf(pull),
       ...merge,
       ...githubChangeProposalsUrlOf(pull, host),
     },
@@ -678,6 +754,7 @@ async function githubChangeProposalsCreate(
     target.address,
     own.repositoryHost,
     parsed.data,
+    "ByMarker",
   );
   return match.matched === "Evidence"
     ? { created: "Created", evidence: match.evidence }
@@ -721,6 +798,7 @@ async function githubChangeProposalsRead(
       target.address,
       own.repositoryHost,
       pull,
+      "ByMarker",
     );
     if (match.matched === "Evidence")
       return { read: "Found", evidence: match.evidence };
@@ -767,9 +845,8 @@ function githubChangeProposalsNumberedAddress(
 }
 
 /**
- * Reads the one proposal a number addresses. A proposal carrying another
- * request's marker is this request's ruled out of that number rather than a
- * proposal to ask about again.
+ * Reads the one proposal a number addresses, which is this request's because
+ * the number was proved to be, whatever its body now says.
  */
 async function githubChangeProposalsReadNumbered(
   own: GithubChangeProposalsState,
@@ -794,11 +871,10 @@ async function githubChangeProposalsReadNumbered(
     address,
     own.repositoryHost,
     parsed.data,
+    "ByNumber",
   );
-  if (match.matched === "Evidence")
-    return { read: "Found", evidence: match.evidence };
-  return match.matched === "Unmarked"
-    ? { read: "Absent" }
+  return match.matched === "Evidence"
+    ? { read: "Found", evidence: match.evidence }
     : { read: "Unavailable" };
 }
 

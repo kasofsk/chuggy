@@ -97,6 +97,7 @@ export function ticketLandingTone(state: TicketLandingState): Tone {
       return "live";
     case "Held":
     case "AwaitingApproval":
+    case "AwaitingMerge":
     case "Unavailable":
       return "parked";
     case "Failed":

@@ -34,6 +34,7 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
   changeProposalRequest,
@@ -43,6 +44,7 @@ import {
   type ChangeProposalEvidence,
   type ChangeProposalForges,
   type ChangeProposalMergeAnswer,
+  type ChangeProposalMerging,
   type ChangeProposalPort,
   type ChangeProposalRequest,
 } from "../../src/interpreter/changeProposal.ts";
@@ -1109,12 +1111,14 @@ function proposalStoredEvidence(
 /**
  * Every write about merging that one row admits only while a merge is in
  * flight, offered one at a time because each is guarded on the state the last
- * one left.
+ * one left, and the reading one waiting on the forge admits too unless `waits`
+ * says the row is one.
  */
 async function proposalMergeWritesRefused(
   store: FinalizerProposalStore,
   claim: FinalizationClaim,
   why: string,
+  waits = false,
 ): Promise<void> {
   assert.deepEqual(
     await store.refuseChangeProposalMergeAttempt(claim),
@@ -1127,6 +1131,11 @@ async function proposalMergeWritesRefused(
     why,
   );
   assert.deepEqual(
+    await store.waitChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    why,
+  );
+  assert.deepEqual(
     await store.recordChangeProposalMerge({
       claim,
       result: { records: "Merge", merged: { merged: "HeadMoved" } },
@@ -1134,6 +1143,7 @@ async function proposalMergeWritesRefused(
     { wrote: "Nothing" },
     why,
   );
+  if (waits) return;
   assert.deepEqual(
     await store.recordChangeProposalMerge({
       claim,
@@ -1141,6 +1151,34 @@ async function proposalMergeWritesRefused(
     }),
     { wrote: "Nothing" },
     why,
+  );
+}
+
+/** The merge half of the row with its age set aside, and the age, which the database's clock moves. */
+async function proposalMergingAged(
+  store: FinalizerProposalStore,
+  claim: FinalizationClaim,
+): Promise<{
+  readonly merging: ChangeProposalMerging | undefined;
+  readonly heardAgeSecs: number | undefined;
+}> {
+  const merging = (await store.changeProposal(claim))?.merging;
+  if (merging?.merging !== "Waiting" && merging?.merging !== "Moved")
+    return { merging, heardAgeSecs: undefined };
+  const { heardAgeSecs, ...rest } = merging;
+  return { merging: { ...rest, heardAgeSecs: 0 }, heardAgeSecs };
+}
+
+/** Moves when the forge was last heard about the project's merge back by `secs`, as a wait that has stood that long. */
+async function proposalMergeHeardBefore(
+  project: FinalizerProject,
+  secs: number,
+): Promise<void> {
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET merge_heard_at = now() - make_interval(secs => $4)
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [...proposalRowKey(project), secs],
   );
 }
 
@@ -1275,6 +1313,7 @@ const proposalMergeAnswers: readonly ChangeProposalMergeAnswer[] = [
 
 test("every answer a merge settles a row with is written once and closes what the row admits", async () => {
   for (const [ordinal, merged] of proposalMergeAnswers.entries()) {
+    const moved = merged.merged === "HeadMoved";
     const { claim, store } = await proposalMergeProved(
       `proposalmergeanswer${String(ordinal)}`,
     );
@@ -1288,8 +1327,10 @@ test("every answer a merge settles a row with is written once and closes what th
       merged.merged,
     );
     assert.deepEqual(
-      (await store.changeProposal(claim))?.merging,
-      { merging: "Answered", merge: merged },
+      (await proposalMergingAged(store, claim)).merging,
+      moved
+        ? { merging: "Moved", reading: undefined, heardAgeSecs: 0 }
+        : { merging: "Answered", merge: merged },
       merged.merged,
     );
     const why = `an answered merge authorizes nothing further: ${merged.merged}`;
@@ -1298,8 +1339,179 @@ test("every answer a merge settles a row with is written once and closes what th
       { wrote: "Nothing" },
       why,
     );
-    await proposalMergeWritesRefused(store, claim, why);
+    await proposalMergeWritesRefused(store, claim, why, moved);
   }
+});
+
+test("a merge the forge's own rules refused keeps the reading it waits on, spends the merge, and is aged by the database's clock", async () => {
+  const { project, claim, store, evidence } =
+    await proposalMergeProved("proposalmergewaits");
+  const blocked = {
+    reconciled: "Unmerged",
+    evidence: {
+      ...evidence,
+      mergeability: "Blocked",
+      mergeState: asProposalMergeState("blocked"),
+    },
+  } as const;
+
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: blocked },
+  });
+  assert.deepEqual(await store.waitChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  const waited = await proposalMergingAged(store, claim);
+  assert.deepEqual(waited.merging, {
+    merging: "Waiting",
+    merges: 1,
+    reading: blocked,
+    heardAgeSecs: 0,
+  });
+  assert.ok(
+    waited.heardAgeSecs !== undefined && waited.heardAgeSecs < 60,
+    "the reading the wait kept was heard just now",
+  );
+  await proposalMergeWritesRefused(
+    store,
+    claim,
+    "a waiting merge has nothing in flight to release or answer for",
+    true,
+  );
+
+  await proposalMergeHeardBefore(project, 300);
+  assert.ok(
+    ((await proposalMergingAged(store, claim)).heardAgeSecs ?? 0) >= 300,
+    "a wait is aged by the database's clock",
+  );
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Reading", reconciled: blocked },
+    }),
+    { wrote: "Row" },
+  );
+  const reread = await proposalMergingAged(store, claim);
+  assert.ok(
+    reread.heardAgeSecs !== undefined && reread.heardAgeSecs < 60,
+    "a reading of a waiting merge is the forge heard again",
+  );
+  assert.equal(
+    (await proposalOf(project))?.merge_readings,
+    "1",
+    "and spends none of the readings a merge in flight is read back by",
+  );
+
+  assert.deepEqual(await store.markChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.merging,
+    { merging: "Unanswered", merges: 2, readings: 1, reading: undefined },
+    "the next merge clears the reading, which was about the last",
+  );
+});
+
+test("a reading that found the proposal closed is kept for a merge to wait on whoever may reopen it", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergewaitclosed",
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: { ...evidence, status: "Closed" },
+  } as const;
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: closed },
+  });
+  assert.deepEqual(await store.waitChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Waiting",
+    merges: 1,
+    reading: closed,
+    heardAgeSecs: 0,
+  });
+});
+
+test("only a reading that found the proposal open or closed is kept for a merge to wait on", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergewaitabsent",
+  );
+  await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(
+    await store.waitChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    "a merge nobody has read back has nothing to wait on",
+  );
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: { reconciled: "Absent" } },
+  });
+  assert.deepEqual(await store.waitChangeProposalMergeAttempt(claim), {
+    wrote: "Nothing",
+  });
+  await store.recordChangeProposalMerge({
+    claim,
+    result: {
+      records: "Reading",
+      reconciled: {
+        reconciled: "Contradictory",
+        contradiction: "Superseded",
+        evidence: { ...evidence, status: "Superseded" },
+      },
+    },
+  });
+  assert.deepEqual(
+    await store.waitChangeProposalMergeAttempt(claim),
+    { wrote: "Nothing" },
+    "a proposal somebody superseded is no wait",
+  );
+  assert.equal(
+    (await store.changeProposal(claim))?.merging.merging,
+    "Unanswered",
+  );
+});
+
+test("a merge answered as a moved head is read again, merged nothing again, and spends no reading", async () => {
+  const { project, claim, store, evidence } =
+    await proposalMergeProved("proposalmergemoved");
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Merge", merged: { merged: "HeadMoved" } },
+  });
+  const merged = {
+    reconciled: "Accepted",
+    evidence: {
+      ...evidence,
+      status: "Merged",
+      mergeCommit: asGitObjectId(finalizerCommit()),
+    },
+  } as const;
+  assert.deepEqual(
+    await store.recordChangeProposalMerge({
+      claim,
+      result: { records: "Reading", reconciled: merged },
+    }),
+    { wrote: "Row" },
+  );
+  assert.deepEqual((await proposalMergingAged(store, claim)).merging, {
+    merging: "Moved",
+    reading: merged,
+    heardAgeSecs: 0,
+  });
+  const row = await proposalOf(project);
+  assert.deepEqual(
+    [row?.merge, row?.merge_readings],
+    ["HeadMoved", "0"],
+    "the answer stands, and the reading is no merge's own",
+  );
 });
 
 /** Every column one settled merge carries, and the rewrite of it the trigger refuses. */
@@ -1683,6 +1895,10 @@ const proposalMergesRefused: readonly (readonly [string, string])[] = [
   [
     "merge='NotMergeable', merge_reason='Unknown'",
     "a reason no refusal settles on",
+  ],
+  [
+    "merge='NotMergeable', merge_reason='Blocked'",
+    "the forge's own rules, which may lift",
   ],
   [
     "merge='HeadMoved', merge_reason='Conflict'",
