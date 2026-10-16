@@ -188,7 +188,9 @@ test("the settings grid reads the model off its own flag and the tools off the a
   expect(
     screen.getByText("Bash · Edit · Read · Write · Glob · Grep"),
   ).toBeDefined();
-  expect(screen.getByText("chuggy-github-worker · claude-code")).toBeDefined();
+  expect(
+    screen.getByText("chuggy-github-worker · claude-code · track-record"),
+  ).toBeDefined();
   expect(screen.getByText("Network · Workspace writable")).toBeDefined();
   expect(screen.getByText("npm ci")).toBeDefined();
   expect(
