@@ -72,7 +72,11 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
-import { finalizerDefaults } from "../../src/interpreter/finalizer.ts";
+import {
+  asRepositoryId,
+  finalizerDefaults,
+} from "../../src/interpreter/finalizer.ts";
+import { briefingLabels } from "../../src/interpreter/briefingTemplate.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
@@ -315,6 +319,10 @@ function serviceWith(
         Promise.resolve({ read: "Reports", reports: { reports: [] } }),
     },
     failedLanding: { landing: () => Promise.resolve({ read: "Landing" }) },
+    readOnlyRepositories: {
+      repositories: () =>
+        Promise.resolve({ read: "Repositories", repositories: [] }),
+    },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     workerRuntime,
@@ -1327,6 +1335,51 @@ test("runtime facts that cannot be gathered hold the attempt instead", async () 
   );
   assert.equal(await executionSchedulerLaunch(service, epoch), 0);
   assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("the project's other repositories that cannot be read hold the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        readOnlyRepositories: {
+          repositories: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("the project's other repositories read for this execution reach its briefing as read-only", async () => {
+  const placements: AttemptPlacement[] = [];
+  const asked: unknown[] = [];
+  const sibling = asRepositoryId("https://github.com/mimage/argus.git");
+  await executionSchedulerLaunch(
+    {
+      ...placingService([], placements),
+      readOnlyRepositories: {
+        repositories: (partitionRead, executionRead) => {
+          asked.push({ partition: partitionRead, execution: executionRead });
+          return Promise.resolve({
+            read: "Repositories" as const,
+            repositories: [sibling],
+          });
+        },
+      },
+    },
+    epoch,
+  );
+  assert.deepEqual(asked, [{ partition, execution: execution.execution }]);
+  assert.ok(
+    placements[0]?.invocation.briefing.text.includes(
+      `${briefingLabels.readOnlyRepositories} ${sibling}`,
+    ),
+  );
 });
 
 test("prior work reports that cannot be read hold the attempt instead", async () => {

@@ -413,6 +413,7 @@ function briefed(
     pin,
     configuration: read.configuration,
     runtime: { changedFiles: [], handoff: [] },
+    readOnlyRepositories: [],
     priorWorkReports: { reports: [] },
     priorEvaluationReports: { reports: [] },
     brief: limitedRequest,

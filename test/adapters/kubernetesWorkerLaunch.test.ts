@@ -68,6 +68,7 @@ import {
   type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
@@ -76,6 +77,7 @@ import {
   briefingLinesMax,
   composeTaskInvocation,
   priorWorkReportsMax,
+  readOnlyRepositoriesMax,
   runtimeChangedFilesMax,
   runtimeHandoffLinesMax,
   taskEnvelopeBytesMax,
@@ -83,6 +85,7 @@ import {
   type TaskInvocation,
 } from "../../src/interpreter/taskBriefing.ts";
 import {
+  repositoryIdentityCharsMax,
   resultReportCharsMax,
   workerErrorPath,
 } from "../../src/contract/http.ts";
@@ -208,6 +211,7 @@ function taskInvocation(
     pin: configuration,
     configuration,
     runtime: { changedFiles: [], handoff: [] },
+    readOnlyRepositories: [],
     priorWorkReports: { reports: [] },
     priorEvaluationReports: { reports: [] },
     grant: authorityGrant,
@@ -1341,6 +1345,10 @@ function heaviestTaskInvocation(): TaskInvocation | undefined {
         ),
         handoff: Array.from({ length: runtimeHandoffLinesMax }, () => longest),
       },
+      readOnlyRepositories: Array.from(
+        { length: readOnlyRepositoriesMax },
+        () => asRepositoryId("x".repeat(repositoryIdentityCharsMax)),
+      ),
       priorWorkReports: {
         reports: Array.from({ length: reports }, () =>
           "x".repeat(resultReportCharsMax),
