@@ -27,7 +27,7 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
+unset CHUG_CI_ALLOW_UNTRACKED CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -101,6 +101,7 @@ run_last_commit() { # [1 to run the suite stage too]
 stub_repo 0
 git -C "$R" commit -qm baseline
 printf '# a page\n' > "$R/PAGE.md"
+git -C "$R" add PAGE.md
 run_gates_only
 check "all gates clean exits 0" 0 "$RC" "all gates clean"
 check "CHUG_CI_SHELL_SUITES=0 skips the suite stage" 0 "$RC" "SKIPPED"
@@ -796,7 +797,11 @@ git -C "$R" config --unset diff.external
 stub_repo 0
 commit_all baseline
 package_at 0.32.0 1.0.0
-run_gates_only
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_ALLOW_UNTRACKED=1 CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
 refute "package files git cannot diff select Quint" 0 "$RC" "check-model: SKIPPED"
 
 # A RUN THAT RAN NOTHING SAYS SO.
@@ -805,6 +810,103 @@ commit_all baseline
 run_gates_only
 check "a change that selects nothing says nothing ran" 0 "$RC" "no gate selected; nothing ran"
 refute "a run of nothing is not called clean" 0 "$RC" "all gates clean"
+
+# AN UNTRACKED FILE IS ONE MOST GATES NEVER READ, so a run that leaves one does
+# not end clean though every gate passed, and names it before any gate runs.
+untracked_last_line() { # the run's last line, as $OUT for the next check
+	tail -n 1 "$OUT" > "$WORK/.last"
+	OUT="$WORK/.last"
+}
+untracked_listing() { # what the run printed before its first gate, as $OUT
+	sed -n '/^---/q;p' "$OUT" > "$WORK/.listing"
+	OUT="$WORK/.listing"
+}
+stub_repo 0
+commit_all baseline
+mkdir -p "$R/src"
+printf 'export const unread = 1;\n' > "$R/src/unread.ts"
+run_gates_only
+refute "a run with an untracked file is not called clean" 1 "$RC" "all gates clean"
+untracked_last_line
+check "an untracked file fails a run every gate passed, on its last line" 1 "$RC" "ci: 1 untracked file(s) went unchecked; git add them or ignore them"
+run_gates_only
+untracked_listing
+check "the untracked file is named before any gate runs" 1 "$RC" "ci:   src/unread.ts"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_FULL=1 CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "an untracked file fails a full run too" 1 "$RC" "1 untracked file(s) went unchecked"
+printf '#!/bin/sh\necho stub doc-lint\nexit 2\n' > "$R/.chug/tasks/doc-lint.sh"
+git -C "$R" add .chug/tasks/doc-lint.sh
+run_gates_only
+check "an untracked file leaves a could-not-run exiting 2" 2 "$RC" "1 untracked file(s) went unchecked"
+
+# A listing git could not make is a could-not-run, not a tree with nothing
+# untracked. An index git cannot read still leaves the checkout found.
+stub_repo 0
+commit_all baseline
+echo garbage > "$R/.git/index"
+run_gates_only
+check "untracked files git cannot list are a could-not-run" 2 "$RC" "ci: LINTER ERROR — could not list the files git does not track"
+untracked_last_line
+check "the last line says the listing failed, not a gate" 2 "$RC" "ci: the files git does not track could not be listed; this is not a pass"
+
+# The listing is bounded, and the count is of every file, not of those shown.
+shown_max="$(sed -n 's/^untracked_shown_max=//p' "$SUT")"
+stub_repo 0
+commit_all baseline
+mkdir -p "$R/many"
+n=0
+while [ "$n" -le "$shown_max" ]; do
+	printf '%s\n' "$n" > "$R/many/$n.txt"
+	n=$((n + 1))
+done
+run_gates_only
+check "the count is of every untracked file" 1 "$RC" "ci: $((shown_max + 1)) untracked file(s) went unchecked"
+untracked_listing
+check "the listing past its bound counts the rest" 1 "$RC" "ci:   and 1 more"
+listed="$(grep -c '^ci:   many/' "$OUT" || true)"
+OUT="$WORK/.out"
+printf 'listed %s\n' "$listed" >> "$OUT"
+check "the listing stops at its bound" 1 "$RC" "listed $shown_max"
+
+# A file an ignore file names is not untracked to git, the repository's own
+# exclude among them, which is where a job's harness puts what it made.
+stub_repo 0
+printf 'build/\n' > "$R/.gitignore"
+commit_all baseline
+mkdir -p "$R/build"
+printf 'built\n' > "$R/build/out.txt"
+printf '/harness.txt\n' >> "$(git -C "$R" rev-parse --absolute-git-dir)/info/exclude"
+printf 'made by the harness\n' > "$R/harness.txt"
+printf '# a page\n' > "$R/PAGE.md"
+git -C "$R" add PAGE.md
+run_gates_only
+check "ignored files leave a clean run clean" 0 "$RC" "all gates clean"
+refute "ignored files are not listed" 0 "$RC" "untracked"
+
+# The override lets a run with an untracked file end as its gates did.
+stub_repo 0
+commit_all baseline
+printf 'export const unread = 1;\n' > "$R/unread.ts"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_ALLOW_UNTRACKED=1 CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+check "the override lets a run with an untracked file end clean" 0 "$RC" "all gates clean"
+check "the override still names the untracked file" 0 "$RC" "ci:   unread.ts"
+
+# Nothing untracked leaves a run as it was.
+stub_repo 0
+commit_all baseline
+printf '# a page\n' > "$R/PAGE.md"
+git -C "$R" add PAGE.md
+run_gates_only
+check "a run with nothing untracked ends clean" 0 "$RC" "all gates clean"
+refute "a run with nothing untracked lists nothing" 0 "$RC" "untracked"
 
 # An unresolvable base fails open to complete coverage, never to no coverage.
 stub_repo 0
