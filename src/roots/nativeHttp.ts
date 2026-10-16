@@ -129,7 +129,10 @@ import type {
   RepositoryOnboardingForgeApp,
 } from "../interpreter/repositoryOnboarding.ts";
 import { forgeRepositoriesAnsweredMax } from "../contract/http.ts";
-import { bootstrapImageFault } from "../interpreter/bootstrapConfiguration.ts";
+import {
+  bootstrapImageFault,
+  bootstrapPublicOriginFault,
+} from "../interpreter/bootstrapConfiguration.ts";
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
@@ -283,6 +286,13 @@ const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
 const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
+/**
+ * The origin this API is publicly reached at, which a bootstrap configuration
+ * names the configuration schema under because a job is told no origin of its
+ * own. Optional: a deployment naming none tells its bootstrap ticket the
+ * route alone.
+ */
+const publicOriginVariable = "CHUG_API_PUBLIC_ORIGIN";
 /**
  * Who may report what a declared action did: a JSON roster of reporters, each
  * a scheme, the file its secret is in, a project and the actions it may report
@@ -910,6 +920,22 @@ function bootstrapWorkerImage(): string | undefined {
 }
 
 /**
+ * The origin a bootstrap configuration names the configuration schema under,
+ * or nothing where this deployment names none; one that is no origin as a URL
+ * writes it, or that its briefing line cannot carry, is refused here.
+ */
+export function nativePublicOrigin(): string | undefined {
+  const publicOrigin = process.env[publicOriginVariable];
+  if (publicOrigin === undefined || publicOrigin.length === 0) return undefined;
+  const fault = bootstrapPublicOriginFault(publicOrigin);
+  if (fault !== undefined)
+    throw new Error(
+      `${publicOriginVariable} must be an http or https origin with nothing after it, such as https://chuggy.example, that a bootstrap configuration can name: ${fault}`,
+    );
+  return publicOrigin;
+}
+
+/**
  * The repository a personal account's is copied from, named `owner/name`. A
  * setting this side cannot read as one repository is refused where it is read
  * rather than at the forge that would answer the request it composes.
@@ -978,6 +1004,7 @@ async function nativeForge(
     pairs.filter((pair) => pair.app !== portalForgeApp),
   );
   const image = bootstrapWorkerImage();
+  const publicOrigin = nativePublicOrigin();
   const minting = composeForgeRepositoryMinting(pools.pool, portal?.key);
   const credentials = nativeRepositoryCredentials(minting);
   const repositories = repositoryConfigurationSnapshots(credentials);
@@ -997,6 +1024,7 @@ async function nativeForge(
       forgeApps: half === undefined ? others : [half.onboarding, ...others],
       ...(repositories === undefined ? {} : { repositories }),
       ...(image === undefined ? {} : { bootstrapImage: image }),
+      ...(publicOrigin === undefined ? {} : { publicOrigin }),
       ...(half === undefined ? {} : { creation: half.creation }),
       ...(authorization === undefined ? {} : { authorization }),
     }),

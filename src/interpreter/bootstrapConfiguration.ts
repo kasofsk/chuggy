@@ -39,11 +39,12 @@
  * choosing one has nothing else to learn chuggy's runtime's needs from.
  *
  * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
- * and a reference name are bounded where each is branded, the image by
- * `bootstrapImageFault` where a deployment names it, and the rest of every
- * line is this file's own, so no input composes a line past the bound release
- * refuses one at — which the generated document is checked against before it is
- * returned, rather than at the authoring door that would already have taken it.
+ * and a reference name are bounded where each is branded, the image and the
+ * public origin by `bootstrapImageFault` and `bootstrapPublicOriginFault` where
+ * a deployment names each, and the rest of every line is this file's own, so no
+ * input composes a line past the bound release refuses one at — which the
+ * generated document is checked against before it is returned, rather than at
+ * the authoring door that would already have taken it.
  */
 
 import {
@@ -77,6 +78,8 @@ export interface BootstrapConfigurationInput {
   readonly repository: RepositoryId;
   readonly defaultBranch: GitRefName;
   readonly image: string;
+  /** The origin this deployment's API is publicly reached at, where it names one. */
+  readonly publicOrigin?: string;
 }
 
 /** The bootstrap's name, surfaced where the configuration it names is generated. */
@@ -115,6 +118,50 @@ export function bootstrapImageFault(
 }
 
 /**
+ * The line naming where every key chuggy reads is published, which is what
+ * bounds the origin. A job is told no origin of its own, so the line names the
+ * whole URL where the deployment names its public origin, and only the route
+ * where it names none.
+ */
+function bootstrapSchemaLine(publicOrigin: string | undefined): string {
+  const published =
+    publicOrigin === undefined
+      ? `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`
+      : `${publicOrigin}${nativeHttpRoutes.configurationSchema}`;
+  return `The JSON Schema at ${published} names every key chuggy reads, among them authority, executionRequirements, resources, work.commands, the model of a Codex mode, outputs and finalizationApprovalRequired, and shows Check stages that brief an agent. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`;
+}
+
+/** The longest public origin a bootstrap configuration can name. */
+export const bootstrapPublicOriginCharsMax =
+  briefingLineCharsMax - textCodePointsCount(bootstrapSchemaLine(""));
+
+/**
+ * Whether this is an http or https origin written as a URL serializes one, so
+ * that a route appended to it is the route's URL.
+ */
+function bootstrapPublicOriginWritten(publicOrigin: string): boolean {
+  const url = URL.parse(publicOrigin);
+  return (
+    url !== null &&
+    (url.protocol === "https:" || url.protocol === "http:") &&
+    url.origin === publicOrigin
+  );
+}
+
+/**
+ * Why a bootstrap configuration cannot name this public origin, if it cannot:
+ * it is no origin as a URL writes one, or its line is past what a briefing
+ * holds.
+ */
+export function bootstrapPublicOriginFault(
+  publicOrigin: string,
+): ReturnType<typeof taskConfigurationLineFault> | "OriginInvalid" {
+  return bootstrapPublicOriginWritten(publicOrigin)
+    ? taskConfigurationLineFault(bootstrapSchemaLine(publicOrigin))
+    : "OriginInvalid";
+}
+
+/**
  * The agent every briefed stage runs as, with no arguments: a job runs its
  * agent with permissions bypassed, where a list of allowed tools restricts
  * nothing.
@@ -130,14 +177,16 @@ const bootstrapWorkerMode = {
  * `N`, `C`, `I`, `S`, `E` and `L` stand for, the bounds its import refuses
  * past, where every key chuggy reads is published, and what an image needs.
  */
-function bootstrapWorkInstructions(image: string): readonly string[] {
+function bootstrapWorkInstructions(
+  input: BootstrapConfigurationInput,
+): readonly string[] {
   return [
     `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there. Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
     `C is {"version":${String(releaseConfigurationVersion)},"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
     `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer. Evaluations run in the order listed and a failed stage ends evaluation, so a cheap Check stage goes before a Review.`,
     `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty.`,
-    `The JSON Schema at GET ${nativeHttpRoutes.configurationSchema} on the chuggy API names every key chuggy reads, among them authority, executionRequirements, resources, work.commands, the model of a Codex mode, outputs and finalizationApprovalRequired, and shows Check stages that brief an agent. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`,
-    bootstrapImageLine(image),
+    bootstrapSchemaLine(input.publicOrigin),
+    bootstrapImageLine(input.image),
     `I may instead be any image the repository builds or chooses, best one it already builds for its CI with what its checks need added. chuggy mounts its runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD, so the image needs /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++ (a current Debian or Ubuntu, not Alpine or musl), and a $HOME, workspace and temporary directory uid 1000 can write; a ticket on an image lacking one stops with a reason naming it.`,
     "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
   ];
@@ -192,7 +241,7 @@ function bootstrapConfigurationValue(
     brief: bootstrapBrief(input),
     practices: [],
     work: {
-      instructions: bootstrapWorkInstructions(input.image),
+      instructions: bootstrapWorkInstructions(input),
     },
     review: { instructions: bootstrapReviewInstructions },
     evaluations: [

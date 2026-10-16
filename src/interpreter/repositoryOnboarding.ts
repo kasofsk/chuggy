@@ -476,6 +476,12 @@ export interface RepositoryConfigurationsPorts {
   readonly imports: RepositoryConfigurationImportPorts;
   readonly authoring: Pick<AuthoringStore, "createConfiguration">;
   readonly bootstrapImage?: string;
+  /**
+   * The origin the API is publicly reached at, which a bootstrap names the
+   * configuration schema under; a deployment naming none tells its worker the
+   * route alone.
+   */
+  readonly publicOrigin?: string;
 }
 
 /**
@@ -761,9 +767,9 @@ const bootstrapConfigurationRevision = asConfigurationRevisionId(
  * The bootstrap configuration authored as this project's own, at the revision
  * the name itself is. Identical text is that revision and any other is
  * `BootstrapDiffers`, whether it is another repository's, was authored under
- * another image or branch or in other words than the generator's, or no longer
- * releases, and in each case the repository declaring its own configurations is
- * what clears it.
+ * another image, origin or branch or in other words than the generator's, or no
+ * longer releases, and in each case the repository declaring its own
+ * configurations is what clears it.
  */
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,
@@ -784,6 +790,9 @@ async function bindRepositoryBootstrapped(
       repository: binding.repository,
       defaultBranch: head.branch,
       image: configurations.bootstrapImage,
+      ...(configurations.publicOrigin === undefined
+        ? {}
+        : { publicOrigin: configurations.publicOrigin }),
     }),
   });
   switch (created.created) {
@@ -1040,6 +1049,7 @@ async function createRepositorySeeded(
 ): Promise<CreateRepositorySeeding> {
   const image = ports.configurations?.bootstrapImage;
   if (image === undefined) return { seeding: "Unseeded" };
+  const publicOrigin = ports.configurations?.publicOrigin;
   const seeded = await creation.repositories.seed({
     installation,
     name: request.name,
@@ -1054,6 +1064,7 @@ async function createRepositorySeeded(
       repository: made.url,
       defaultBranch: made.defaultBranch,
       image,
+      ...(publicOrigin === undefined ? {} : { publicOrigin }),
     }),
   });
   switch (seeded.seeded) {

@@ -21,7 +21,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { forgeInstallationsAnsweredMax } from "../../src/contract/http.ts";
+import {
+  forgeInstallationsAnsweredMax,
+  nativeHttpRoutes,
+} from "../../src/contract/http.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -232,6 +235,7 @@ interface FixtureConfigurations {
   readonly stored?: RepositoryConfigurationsImported;
   readonly authored?: ConfigurationCreated;
   readonly image?: string;
+  readonly publicOrigin?: string;
   readonly raising?: boolean;
 }
 
@@ -398,6 +402,9 @@ function fixtureConfigurations(
       },
     },
     ...(given.image === undefined ? {} : { bootstrapImage: given.image }),
+    ...(given.publicOrigin === undefined
+      ? {}
+      : { publicOrigin: given.publicOrigin }),
   };
 }
 
@@ -1716,6 +1723,30 @@ test("the bootstrap a creation seeds names the branch the forge made", async () 
     wrote.seeds[0]?.content.includes(bootstrapConstraint(bootstrapBranch)),
     "the first ticket is briefed against the branch the repository was made at",
   );
+});
+
+/** A deployment's public origin, and the schema's URL under it. */
+const publicOrigin = "https://chuggy.example";
+const publicSchema = `${publicOrigin}${nativeHttpRoutes.configurationSchema}`;
+
+test("the bootstrap a bind authors and a creation seeds names the schema under the deployment's public origin, and its route alone where there is none", async () => {
+  const configurations: FixtureConfigurations = {
+    head: branchHead,
+    snapshot: { read: "Absent", absent: "ConfigurationDirectory" },
+    image: workerImage,
+    publicOrigin,
+  };
+  const { wrote: bound } = await fixtureBound({ configurations });
+  assert.ok(bound.authoredCanonical[0]?.includes(publicSchema), "bound");
+  const { wrote: created } = await fixtureCreated({ configurations });
+  assert.ok(created.seeds[0]?.content.includes(publicSchema), "created");
+  const { wrote: unnamed } = await fixtureCreated();
+  assert.ok(
+    unnamed.seeds[0]?.content.includes(
+      `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`,
+    ),
+  );
+  assert.equal(unnamed.seeds[0]?.content.includes(publicSchema), false);
 });
 
 test("the repository is made under the portal claim of the account named", async () => {

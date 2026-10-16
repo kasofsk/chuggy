@@ -73,6 +73,14 @@ The API refuses to start on one that is no image reference. It checks nothing
 else of the image: one chuggy's runtime cannot run in stops its ticket when the
 job starts, with a reason naming what the image lacks.
 
+Its worker is told the configuration schema's URL under the API's public
+origin where the deployment names one, and the route alone otherwise, since a
+job is told no origin of its own:
+
+```
+CHUG_API_PUBLIC_ORIGIN=<the origin the API is reached at, such as https://chuggy.example>
+```
+
 The step runs after the binding row exists and never refuses one. The bind's
 answer carries `configurations`, which is an import, a bootstrap, or a
 `Deferred` naming what stopped it; a deferred step is re-run through

@@ -437,6 +437,7 @@ async function rootRead(
     "CHUG_API_POOL_REGISTRY_HOST",
     "CHUG_API_ACTION_REPORTERS",
     "CHUG_API_GIT_SCRATCH_ROOT",
+    "CHUG_API_PUBLIC_ORIGIN",
     ...Object.keys(threadLiveNamed),
   ])
     if (named[variable] === undefined) delete environment[variable];
@@ -806,6 +807,42 @@ test("a registry host a runner would refuse is a refusal to start, and none name
     (JSON.parse(ran.out) as { registryHost?: string }).registryHost,
     undefined,
   );
+});
+
+const publicOriginProgram = `
+  const root = await import('./src/roots/nativeHttp.ts');
+  process.stdout.write(JSON.stringify(root.nativePublicOrigin() ?? null));
+`;
+
+test("a public origin a bootstrap can name is composed as named, none is no origin, and any other is a refusal to start", async () => {
+  for (const [named, composed] of [
+    [{ CHUG_API_PUBLIC_ORIGIN: "https://chuggy.test" }, "https://chuggy.test"],
+    [{ CHUG_API_PUBLIC_ORIGIN: "" }, null],
+    [{}, null],
+  ] as const) {
+    const ran = await rootRead(named, publicOriginProgram);
+    assert.equal(ran.code, 0, ran.out);
+    assert.equal(JSON.parse(ran.out), composed);
+  }
+  for (const [value, fault] of [
+    ["https://chuggy.test/", "OriginInvalid"],
+    ["https://op:pw-fixture@chuggy.test", "OriginInvalid"],
+    [`https://${"o".repeat(512)}.test`, "TextTooLong"],
+  ] as const) {
+    const ran = await rootRead(
+      { CHUG_API_PUBLIC_ORIGIN: value },
+      publicOriginProgram,
+    );
+    assert.equal(ran.code, 1, value);
+    assert.match(
+      ran.out,
+      new RegExp(
+        `CHUG_API_PUBLIC_ORIGIN must be an http or https origin.*: ${fault}`,
+        "u",
+      ),
+    );
+    assert.doesNotMatch(ran.out, /pw-fixture/u);
+  }
 });
 
 test("a deployment naming no forge app mints nothing at all", async () => {

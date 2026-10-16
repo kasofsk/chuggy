@@ -529,6 +529,7 @@ export interface RepositoryOnboardingComposition {
   readonly repositories?: RepositoryConfigurationSnapshotPort &
     RepositoryDefaultBranchPort;
   readonly bootstrapImage?: string;
+  readonly publicOrigin?: string;
   readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
@@ -551,6 +552,9 @@ function composeRepositoryConfigurations(
     ...(composition.bootstrapImage === undefined
       ? {}
       : { bootstrapImage: composition.bootstrapImage }),
+    ...(composition.publicOrigin === undefined
+      ? {}
+      : { publicOrigin: composition.publicOrigin }),
   };
 }
 
