@@ -106,7 +106,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 8;
+export const briefingTemplateVersion = 9;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -157,6 +157,7 @@ export const briefingLabels = {
   acceptanceCriteria: "Acceptance criteria:",
   constraints: "Constraints:",
   workspace: "Workspace:",
+  readOnlyRepositories: "Other repositories of this project, read-only:",
   changedFiles: "Changed files:",
   handoff: "Handoff from the earlier task:",
   workReports: "Worker reports:",

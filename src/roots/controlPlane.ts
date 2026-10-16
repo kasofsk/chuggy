@@ -61,6 +61,7 @@ import { postgresProjectDecision } from "../adapters/postgres/projectDecision.ts
 import { postgresProjectDiscovery } from "../adapters/postgres/projectDiscovery.ts";
 import { postgresProjectStore } from "../adapters/postgres/projectStore.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
+import { postgresReadOnlyRepositories } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresExecutionSourceHistory } from "../adapters/postgres/executionSourceHistory.ts";
 import { executionSourceObservation } from "../interpreter/executionSourceObservation.ts";
 import {
@@ -569,6 +570,7 @@ export interface SchedulerProcessRootConfig {
     | "priorWorkReports"
     | "priorEvaluationReports"
     | "failedLanding"
+    | "readOnlyRepositories"
     | "ticketBriefs"
     | "workerPools"
     | "access"
@@ -608,6 +610,7 @@ export function schedulerProcessRootService(
     priorWorkReports: postgresPriorWorkReports(pool),
     priorEvaluationReports: postgresPriorEvaluationReports(pool),
     failedLanding: postgresFailedLanding(pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(pool),
     ticketBriefs: postgresTicketBrief(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };

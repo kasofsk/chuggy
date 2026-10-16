@@ -15,6 +15,7 @@ import {
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
+import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import {
   apiRole,
@@ -274,6 +275,7 @@ function launching(
     priorWorkReports: postgresPriorWorkReports(rig.pool),
     priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
     failedLanding: postgresFailedLanding(rig.pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(rig.pool),
     ticketBriefs: postgresTicketBrief(rig.pool),
     practices: blessedPracticeCatalog,
     workerRuntime: schedulerRuntime,

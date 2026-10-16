@@ -1117,6 +1117,10 @@ const reportsNone =
 /** A landing port that answers no failed landing, as the program spells one. */
 const landingNone = "{ landing: async () => ({ read: 'Landing' }) }";
 
+/** A port that answers no other repository of the project, as the program spells one. */
+const readOnlyNone =
+  "{ repositories: async () => ({ read: 'Repositories', repositories: [] }) }";
+
 /**
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
@@ -1156,7 +1160,7 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone},
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,

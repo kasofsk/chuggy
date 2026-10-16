@@ -41,7 +41,10 @@ import {
   configurationWithOverrides,
   type ConfigurationOverrides,
 } from "../../src/contract/configurationOverrides.ts";
-import { resultReportCharsMax } from "../../src/contract/http.ts";
+import {
+  repositoryIdentityCharsMax,
+  resultReportCharsMax,
+} from "../../src/contract/http.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
@@ -58,6 +61,7 @@ import {
   pinnedTaskConfigurationReadiness,
   priorEvaluationReportsMax,
   priorWorkReportsMax,
+  readOnlyRepositoriesMax,
   renderBriefing,
   taskEnvelopeBytesMax,
   taskEnvelopeFabricBytesMax,
@@ -86,6 +90,10 @@ import {
   type AuthorityRequest,
   type PolicyAuthorityGrant,
 } from "../../src/interpreter/taskAuthority.ts";
+import {
+  asRepositoryId,
+  type RepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
@@ -456,6 +464,7 @@ function viewOf(parts: {
   readonly authority?: AuthorityRequest;
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
+  readonly readOnlyRepositories?: readonly RepositoryId[];
   readonly priorWorkReports?: readonly string[];
   readonly priorEvaluationReports?: readonly string[];
   readonly failedLanding?: FailedLanding;
@@ -481,6 +490,7 @@ function viewOf(parts: {
       ...(parts.worker === undefined ? {} : { worker: parts.worker }),
     },
     runtime: parts.runtime ?? noFacts,
+    readOnlyRepositories: parts.readOnlyRepositories ?? [],
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
     priorEvaluationReports: { reports: parts.priorEvaluationReports ?? [] },
     ...(parts.failedLanding === undefined
@@ -1567,6 +1577,66 @@ test("runtime facts move the runtime section and no other", () => {
   );
 });
 
+const readOnly = [
+  asRepositoryId("https://github.com/mimage/argus.git"),
+  asRepositoryId("https://github.com/mimage/rust-libs.git"),
+];
+
+test("the project's other repositories are one read-only line of the runtime context, and none is no line", () => {
+  const runtimeLines = (view: BriefingView): readonly string[] | undefined =>
+    composed(view).briefing.sections.find(
+      (section) => section.section === "RuntimeContext",
+    )?.lines;
+  for (const purpose of allTaskPurposes) {
+    assert.deepEqual(
+      runtimeLines(
+        viewOf({
+          purpose,
+          runtime: {
+            workspace: "/work/importer",
+            changedFiles: [],
+            handoff: [],
+          },
+          readOnlyRepositories: readOnly,
+        }),
+      ),
+      [
+        "Workspace: /work/importer",
+        "Other repositories of this project, read-only: https://github.com/mimage/argus.git, https://github.com/mimage/rust-libs.git",
+      ],
+    );
+    assert.equal(
+      runtimeLines(viewOf({ purpose, readOnlyRepositories: [] })),
+      undefined,
+    );
+  }
+});
+
+test("read-only repositories past their bound, or unprintable, are refused rather than told", () => {
+  assert.equal(
+    blockedFault(
+      viewOf({
+        readOnlyRepositories: Array.from(
+          { length: readOnlyRepositoriesMax + 1 },
+          (_unused, at) =>
+            asRepositoryId(`https://github.com/o/r${String(at)}.git`),
+        ),
+      }),
+    ),
+    "TooManyLines",
+  );
+  assert.equal(
+    blockedFault(
+      viewOf({
+        readOnlyRepositories: [
+          asRepositoryId("https://github.com/o/\u001b.git"),
+        ],
+      }),
+    ),
+    "TextUnreadable",
+  );
+});
+
 const ticketIntent = "Fix the importer.\nIt drops rows and reports a success.";
 const ticketLink = "https://example.test/issues/340";
 const ticketSections: readonly BriefingSectionId[] = [
@@ -1846,6 +1916,9 @@ function maximalBriefingView(reports: number): BriefingView {
       ),
       handoff: Array.from({ length: runtimeHandoffLinesMax }, () => longest),
     },
+    readOnlyRepositories: Array.from({ length: readOnlyRepositoriesMax }, () =>
+      asRepositoryId("x".repeat(repositoryIdentityCharsMax)),
+    ),
     priorWorkReports: Array.from({ length: reports }, () =>
       "x".repeat(resultReportCharsMax),
     ),

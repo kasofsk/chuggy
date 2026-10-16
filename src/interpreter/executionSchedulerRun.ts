@@ -151,7 +151,7 @@ import {
   type ClusterId,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
-import type { FinalizerConfig } from "./finalizer.ts";
+import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import {
@@ -165,6 +165,7 @@ import {
   type PriorEvaluationReportsPort,
   type PriorWorkReports,
   type PriorWorkReportsPort,
+  type ReadOnlyRepositoriesPort,
   type RuntimeFacts,
   type RuntimeFactsPort,
   type TaskInvocation,
@@ -197,6 +198,7 @@ export interface ExecutionSchedulerService {
   readonly policy: ExecutionPolicy;
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
+  readonly readOnlyRepositories: ReadOnlyRepositoriesPort;
   readonly priorWorkReports: PriorWorkReportsPort;
   readonly priorEvaluationReports: PriorEvaluationReportsPort;
   readonly failedLanding: FailedLandingPort;
@@ -511,6 +513,25 @@ async function schedulerRuntimeFacts(
   }
 }
 
+/** Reads the repositories this execution's project binds beside its own, which its pod reads and never delivers to. */
+async function schedulerReadOnlyRepositories(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<
+  { readonly readOnlyRepositories: readonly RepositoryId[] } | BriefingUnready
+> {
+  const read = await service.readOnlyRepositories.repositories(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Repositories":
+      return { readOnlyRepositories: read.repositories };
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
 /** The durable move an ungatherable briefing input earns, one arm each. */
 async function schedulerUnready(
   service: ExecutionSchedulerService,
@@ -668,6 +689,11 @@ async function schedulerPrepare(
     await schedulerUnready(service, attempt, runtime);
     return undefined;
   }
+  const readOnly = await schedulerReadOnlyRepositories(service, execution);
+  if ("gathered" in readOnly) {
+    await schedulerUnready(service, attempt, readOnly);
+    return undefined;
+  }
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
   if ("gathered" in priorWorkReports) {
     await schedulerUnready(service, attempt, priorWorkReports);
@@ -688,6 +714,7 @@ async function schedulerPrepare(
     pin: execution,
     configuration,
     runtime,
+    ...readOnly,
     priorWorkReports,
     ...rework,
     ...(brief === undefined ? {} : { brief }),

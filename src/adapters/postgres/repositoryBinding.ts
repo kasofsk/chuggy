@@ -25,6 +25,10 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import type { RepositoryBindingListing } from "../../interpreter/repositoryConfiguration.ts";
+import type {
+  ReadOnlyRepositoriesPort,
+  ReadOnlyRepositoriesRead,
+} from "../../interpreter/taskBriefing.ts";
 import {
   asRepositoryLanding,
   type ProjectRepositoryBindings,
@@ -111,6 +115,60 @@ export function postgresProjectRepositoryBindings(
                 ${projectRepositoriesAnsweredMax})`,
       );
       return found.rows.map(projectRepositoryBoundOf);
+    },
+  };
+}
+
+/**
+ * The repositories one execution's project binds live beside the one its own
+ * input bundle pins, oldest first, through the same per-project door, which the
+ * scheduler holds for this read alone. A failed read is `Unavailable` rather
+ * than a throw, because the scheduler holds an attempt it could not brief
+ * instead of losing its loop.
+ */
+export function postgresReadOnlyRepositories(
+  pool: pg.Pool,
+): ReadOnlyRepositoriesPort {
+  return {
+    repositories: async (
+      partition,
+      execution,
+    ): Promise<ReadOnlyRepositoriesRead> => {
+      let found: pg.QueryResult<{ repository: string | null }>;
+      try {
+        found = await pool.query<{ repository: string | null }>(
+          sql`SELECT l.repository
+                FROM list_project_repository_bindings(
+                  ${partition.tenant},${partition.project},
+                  ${projectRepositoriesAnsweredMax}) l
+               WHERE l.retired_at IS NULL
+                 AND NOT EXISTS (
+                   SELECT 1
+                     FROM execution e
+                     JOIN execution_request q
+                       ON q.tenant=e.tenant AND q.project=e.project
+                      AND q.request=e.source_request
+                     JOIN input_bundle_reference b
+                       ON b.tenant=q.tenant AND b.project=q.project
+                      AND b.bundle=q.input_bundle AND b.reference_kind='Repository'
+                    WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+                      AND e.execution=${execution}
+                      AND b.reference_id=l.repository)
+               ORDER BY l.bound_at,l.repository`,
+        );
+      } catch {
+        return { read: "Unavailable" };
+      }
+      return {
+        read: "Repositories",
+        repositories: found.rows.map((row) => {
+          if (row.repository === null)
+            throw new Error(
+              "repository binding: a binding names no repository",
+            );
+          return asRepositoryId(row.repository);
+        }),
+      };
     },
   };
 }

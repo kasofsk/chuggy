@@ -19,6 +19,7 @@ import {
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../../src/adapters/postgres/evaluationReports.ts";
+import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { postgresWorkerPoolRoster } from "../../src/adapters/postgres/workerPool.ts";
@@ -86,6 +87,7 @@ export function poolRoutedService(
     priorWorkReports: postgresPriorWorkReports(rig.pool),
     priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
     failedLanding: postgresFailedLanding(rig.pool),
+    readOnlyRepositories: postgresReadOnlyRepositories(rig.pool),
     ticketBriefs: postgresTicketBrief(rig.pool),
   };
 }

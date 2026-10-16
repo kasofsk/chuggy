@@ -14,12 +14,15 @@
  * satisfy rather than against a second description of it. Only the
  * purpose-specific block and the scoped practices differ between them.
  *
- * A RETRY RENDERS THE SAME BRIEFING BECAUSE THE INPUT IS CONTENT-ADDRESSED.
+ * A RETRY RENDERS THE SAME CONFIGURATION BECAUSE IT IS CONTENT-ADDRESSED.
  * `PinnedConfigurationPort` can only be asked for a named revision — there is
  * no call on it that means "current" — and what comes back is refused unless
  * its own revision and digest are the ones the durable execution row pinned at
  * registration. So a moving ticket row cannot reach a second attempt, and a
- * silently rewritten revision is a refusal rather than a different prompt.
+ * silently rewritten revision is a refusal rather than a different prompt. The
+ * project's other repositories are read as they stand at each prepare instead,
+ * because the plane holds a repository a pod names to the live bindings when
+ * it asks.
  *
  * A STAGE THAT NAMES COMMANDS BRIEFS NOBODY. Its block carries a command list
  * instead of instructions, and composition resolves that list into the
@@ -97,9 +100,14 @@ import {
   briefIntentCharsMax,
   briefLinksMax,
 } from "../contract/brief.ts";
-import { resultReportCharsMax, textCodePointsCount } from "../contract/http.ts";
+import {
+  projectRepositoriesAnsweredMax,
+  resultReportCharsMax,
+  textCodePointsCount,
+} from "../contract/http.ts";
 import { workerPlaneRoutes } from "../contract/workerPlane.ts";
 import { commandLinesMax } from "../contract/workerTask.ts";
+import type { RepositoryId } from "./finalizer.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import { resultTextControlCharacter } from "./resultManifest.ts";
 import type { Partition } from "./projectStore.ts";
@@ -251,6 +259,25 @@ export interface RuntimeFacts {
   readonly handoff: readonly string[];
 }
 
+/**
+ * What reading the repositories an execution's project binds live beside the
+ * one its own bundle pins found, which its pod may read and never deliver to,
+ * an outage kept apart from a project that binds no other.
+ */
+export type ReadOnlyRepositoriesRead =
+  | {
+      readonly read: "Repositories";
+      readonly repositories: readonly RepositoryId[];
+    }
+  | { readonly read: "Unavailable" };
+
+export interface ReadOnlyRepositoriesPort {
+  repositories(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<ReadOnlyRepositoriesRead>;
+}
+
 /** The bounded summaries earlier work tasks reported for a review to understand, not verify. */
 export interface PriorWorkReports {
   readonly reports: readonly string[];
@@ -311,6 +338,9 @@ export const runtimeChangedFilesMax = 64;
 
 /** The most handoff lines runtime context may carry. */
 export const runtimeHandoffLinesMax = 32;
+
+/** The most read-only repositories a briefing names, which is as many as a project's binding listing answers. */
+export const readOnlyRepositoriesMax = projectRepositoriesAnsweredMax;
 
 /**
  * The bytes one environment string carries into an exec, which is `execve`'s
@@ -485,6 +515,7 @@ export interface BriefingView {
   readonly pin: ConfigurationPin;
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
+  readonly readOnlyRepositories: readonly RepositoryId[];
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
   readonly failedLanding?: FailedLanding;
@@ -745,12 +776,24 @@ function briefingCriteriaLines(brief: TicketBrief): readonly string[] {
   ];
 }
 
-/** The runtime facts as lines, each of them absent when the adapter observed nothing. */
-function briefingRuntimeLines(runtime: RuntimeFacts): readonly string[] {
+/**
+ * The runtime facts as lines, each of them absent when the adapter observed
+ * nothing, and the project's other repositories as one line beside the
+ * workspace, absent where the project binds no other.
+ */
+function briefingRuntimeLines(
+  runtime: RuntimeFacts,
+  readOnlyRepositories: readonly RepositoryId[],
+): readonly string[] {
   return [
     ...(runtime.workspace === undefined
       ? []
       : [`${briefingLabels.workspace} ${runtime.workspace}`]),
+    ...(readOnlyRepositories.length === 0
+      ? []
+      : [
+          `${briefingLabels.readOnlyRepositories} ${readOnlyRepositories.join(", ")}`,
+        ]),
     ...briefingLabelled(briefingLabels.changedFiles, runtime.changedFiles),
     ...briefingLabelled(briefingLabels.handoff, runtime.handoff),
   ];
@@ -797,7 +840,10 @@ function briefingBodies(
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
-    RuntimeContext: briefingRuntimeLines(view.runtime),
+    RuntimeContext: briefingRuntimeLines(
+      view.runtime,
+      view.readOnlyRepositories,
+    ),
     RequiredResult: briefingRequiredResult(view.purpose, carrier),
   };
 }
@@ -1001,6 +1047,9 @@ export function composeTaskInvocation(
   const fault =
     briefingConfigurationFault(view) ??
     briefingRuntimeFault(view.runtime) ??
+    briefingListsFault([
+      [view.readOnlyRepositories, readOnlyRepositoriesMax],
+    ]) ??
     briefingReportsFault(view.priorWorkReports.reports, priorWorkReportsMax) ??
     briefingReportsFault(
       view.priorEvaluationReports.reports,
