@@ -40,6 +40,17 @@
  * have to be kept in step.
  */
 
+import { textCodePointsCount } from "../contract/http.ts";
+import { briefingLineCharsMax } from "../contract/workerTask.ts";
+import type { ChangeProposalStatus } from "./changeProposal.ts";
+import type {
+  DependencyChange,
+  DependencyDelivery,
+  DependencyHistory,
+  DependencyProposal,
+  DependencyRepository,
+} from "./dependencyDelivery.ts";
+
 /** The role a briefing is written for, which is also the role a practice is scoped to. */
 export type TaskPurpose = "Work" | "Review" | "Check";
 
@@ -72,6 +83,7 @@ export type BriefingSectionId =
   | "TicketImages"
   | "WhyItMatters"
   | "AcceptanceAndConstraints"
+  | "DependencyDeliveries"
   | "FailedLanding"
   | "PriorEvaluationReports"
   | "PriorWorkReports"
@@ -89,6 +101,7 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "TicketImages",
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "DependencyDeliveries",
   "FailedLanding",
   "PriorEvaluationReports",
   "PriorWorkReports",
@@ -106,7 +119,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 9;
+export const briefingTemplateVersion = 10;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -127,6 +140,8 @@ export function briefingHeading(
       return "Why this ticket matters";
     case "AcceptanceAndConstraints":
       return "Acceptance criteria and constraints";
+    case "DependencyDeliveries":
+      return "What this ticket's dependencies delivered";
     case "FailedLanding":
       return "The change that failed to land";
     case "PriorEvaluationReports":
@@ -224,6 +239,136 @@ export function briefingFailedLandingLines(
       : []),
     "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
   ];
+}
+
+/** What opens the section, which is what a reader needs before any one dependency. */
+export const briefingDependencyPreface =
+  "This ticket depends on each ticket below, and each of them is done.";
+
+/** The word for what the forge last said of a pull request. */
+const briefingProposalStatusWords: Record<ChangeProposalStatus, string> = {
+  Open: "open",
+  Closed: "closed",
+  Merged: "merged",
+  Superseded: "superseded",
+};
+
+/** Where a dependency's repository stands to the job being briefed. */
+function briefingDependencyRepositoryLine(
+  repository: DependencyRepository,
+  readable: boolean,
+): string {
+  if (repository.own)
+    return `Repository: ${repository.repository}, the one this job works in.`;
+  return readable
+    ? `Repository: ${repository.repository}, another of this project's, which this job can read and fetch and never delivers to.`
+    : `Repository: ${repository.repository}, which this job is not given.`;
+}
+
+/** A pull request's link, named only where it fits a line. */
+function briefingDependencyLinkLines(
+  proposal: DependencyProposal,
+): readonly string[] {
+  if (proposal.url === undefined) return [];
+  const line = `Pull request: ${proposal.url}`;
+  return textCodePointsCount(line) > briefingLineCharsMax ? [] : [line];
+}
+
+/** Where a dependency's change is, which is what its landing answered. */
+function briefingDependencyChangeLines(
+  change: DependencyChange,
+): readonly string[] {
+  switch (change.change) {
+    case "Landed": {
+      const proposal = change.proposal;
+      return [
+        `Landed at commit ${change.commit} on ${change.ref}.`,
+        ...(proposal === undefined
+          ? []
+          : [
+              ...briefingDependencyLinkLines(proposal),
+              `It landed when its pull request from ${proposal.headRef} was merged.`,
+              ...(proposal.mergedHead === undefined
+                ? []
+                : [
+                    `That pull request was merged at head ${proposal.mergedHead}, which is not the head ${proposal.headCommit} its evaluation passed.`,
+                  ]),
+            ]),
+      ];
+    }
+    case "Proposed": {
+      const proposal = change.proposal;
+      const status =
+        proposal.status === undefined
+          ? ""
+          : `, and was ${briefingProposalStatusWords[proposal.status]} when it was last read`;
+      return [
+        "Its landing opened a pull request and merged nothing.",
+        ...briefingDependencyLinkLines(proposal),
+        `The pull request is from ${proposal.headRef} at commit ${proposal.headCommit}.`,
+        `It asks to merge into ${proposal.baseRef}${status}.`,
+      ];
+    }
+    case "Committed":
+      return [
+        change.ref === undefined
+          ? `Committed at ${change.commit}, and no landing carried it further.`
+          : `Committed at ${change.commit} on ${change.ref}, and no landing carried it further.`,
+      ];
+    case "Unsourced":
+      return ["Its work changed no repository."];
+  }
+}
+
+/** Whether the change's commit is in the history the ticket's work began at, and which commit that is to this job. */
+function briefingDependencyHistoryLine(history: DependencyHistory): string {
+  const began = history.startsAtBegan
+    ? `${history.began}, the commit this job starts from`
+    : `${history.began}, the commit this ticket's work began at`;
+  switch (history.ancestry) {
+    case "Ancestor":
+      return `Commit ${history.commit} is in the history of ${began}.`;
+    case "NotAncestor":
+      return `Commit ${history.commit} is not in the history of ${began}.`;
+    case "Unknown":
+      return `Whether commit ${history.commit} is in the history of ${began}, was not found out.`;
+  }
+}
+
+/**
+ * What one dependency delivered, each line a list member under the line that
+ * names the ticket; `readable` is whether the job can read the repository it
+ * delivered to beside its own.
+ */
+export function briefingDependencyLines(
+  delivery: DependencyDelivery,
+  readable: boolean,
+): readonly string[] {
+  return [
+    ...(delivery.repository === undefined
+      ? []
+      : [briefingDependencyRepositoryLine(delivery.repository, readable)]),
+    ...briefingDependencyChangeLines(delivery.change),
+    ...(delivery.history === undefined
+      ? []
+      : [briefingDependencyHistoryLine(delivery.history)]),
+  ];
+}
+
+/** What a dependency's work reported, which is a document rather than a line. */
+export function briefingDependencyReportLine(report: string): string {
+  return `Report: ${report}`;
+}
+
+/** What stands in for a report the room the briefing gives its dependencies' reports could not hold. */
+export const briefingDependencyReportUncarried =
+  "Report: not carried, because the reports before it fill the room this briefing gives them.";
+
+/** The line that names one dependency, by its number and, where it has one, its title. */
+export function briefingDependencyName(delivery: DependencyDelivery): string {
+  return delivery.title === undefined
+    ? `Ticket ${String(delivery.dependency)}`
+    : `Ticket ${String(delivery.dependency)}: ${delivery.title}`;
 }
 
 /** What a commanded stage is, stated rather than addressed to anyone. */

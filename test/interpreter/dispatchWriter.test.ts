@@ -66,6 +66,9 @@ import {
   ticketServiceDefaults,
 } from "../../src/interpreter/ticketService.ts";
 import type { ExecutionSourceObservationPort } from "../../src/interpreter/executionSource.ts";
+import type { DependencyPinningPort } from "../../src/interpreter/dependencyDelivery.ts";
+import { inputBundleReferencesOf } from "../../src/interpreter/decisionPlan.ts";
+import { depArtifacts } from "../../src/domain/enablement.ts";
 import {
   asDraftBrief,
   type TicketBriefPort,
@@ -195,6 +198,11 @@ const noProjectArtifacts: ProjectTicketWriter["projectArtifacts"] = {
   readArtifact: () => Promise.resolve({ read: "NotFound" }),
 };
 
+/** What a dispatch of a ticket with no dependency is never asked to pin, answered as nothing pinned. */
+const noDependencyPins: DependencyPinningPort = {
+  pins: () => Promise.resolve({ results: [], ancestors: [], nonAncestors: [] }),
+};
+
 /** What one decision left behind: what it offered the authority, and the memory it kept. */
 async function decidedWith(
   memory: ProjectMemory,
@@ -203,6 +211,7 @@ async function decidedWith(
   ticketBriefs: TicketBriefPort = unbriefedTickets,
   policy: Partial<Pick<ProjectTicketWriter, "config" | "rework">> = {},
   projectArtifacts: ProjectTicketWriter["projectArtifacts"] = noProjectArtifacts,
+  dependencyPinning: DependencyPinningPort = noDependencyPins,
 ): Promise<{
   readonly offered: Decision | undefined;
   readonly result: ProjectDecided;
@@ -228,6 +237,7 @@ async function decidedWith(
       ticketBriefs,
       executionSources,
       projectArtifacts,
+      dependencyPinning,
     },
     memory,
     input,
@@ -624,6 +634,7 @@ const committingWriter: ProjectTicketWriter = {
   ticketBriefs: unbriefedTickets,
   executionSources: readableSources,
   projectArtifacts: noProjectArtifacts,
+  dependencyPinning: noDependencyPins,
 };
 
 test("both dispatches of one decision land, though the first changed the view", async () => {
@@ -1491,6 +1502,7 @@ test("a deferred input ends the run it arrived in without clearing readiness", a
       ticketBriefs: { brief: () => Promise.resolve(undefined) },
       executionSources: unreadableSources("RemoteUnreachable"),
       projectArtifacts: noProjectArtifacts,
+      dependencyPinning: noDependencyPins,
     },
     {
       ready: () => Promise.resolve([]),
@@ -1621,4 +1633,147 @@ test("an overrides change is offered to the transaction for a parked ticket alon
     assert.equal(offered?.draftRelease, undefined);
     assert.equal(result.memory.graph, memory.graph);
   }
+});
+
+/**
+ * Ticket 1 done, by a passed evaluation and a landing that succeeded, and
+ * ticket 2 released waiting on it: the one shape a dispatch pins dependencies
+ * for. The versions are folded the way `twoReleasedMemory` folds them.
+ */
+function dependentMemory(): ProjectMemory {
+  const ticketVersions = new Map<number, number>();
+  let state = actorInit();
+  const steps: readonly TicketCommand[] = [
+    createTicketCommand(plainDefinitionOf(1)),
+    dispatchTicketCommand(id(1), aDispatchSource),
+    workCompletion,
+    reportTaskTerminalCommand(
+      judgedReport(evaluationTaskOf(1, 1, 1, 1, 1), "EvaluatorPass"),
+    ),
+    reportFinalizationResultCommand(id(1), 1, 1, {
+      type: "FinalizationSucceeded",
+      value: 1,
+    }),
+    createTicketCommand(plainDefinitionOf(2, new Set([1]))),
+  ];
+  for (const [index, step] of steps.entries()) {
+    const before = memoryGraph(state);
+    state = stepped(refinementInstance, state, step);
+    for (const row of projectionChanges(before, memoryGraph(state)))
+      ticketVersions.set(row.ticket, index + 1);
+  }
+  return {
+    ...releasedMemory(steps.length),
+    ...memoryOf(state),
+    ticketVersions,
+    dispatchContracts: twoContracts,
+  };
+}
+
+/** A pinning port that records what it was asked and answers fixed pins. */
+function recordingPins(
+  asked: Parameters<DependencyPinningPort["pins"]>[0][],
+): DependencyPinningPort {
+  return {
+    pins: (input) => {
+      asked.push(input);
+      return Promise.resolve({
+        results: [asResultManifestId("dependency-manifest")],
+        ancestors: [asGitObjectId("b".repeat(40))],
+        nonAncestors: [asGitObjectId("c".repeat(40))],
+      });
+    },
+  };
+}
+
+test("a dispatch pins each dependency by the result its journal accepted, asked against the source it observed", async () => {
+  const memory = dependentMemory();
+  assert.equal(phaseOf(ticketAt(memory.graph, id(1)).state), "Done");
+  const asked: Parameters<DependencyPinningPort["pins"]>[0][] = [];
+  const { offered } = await decidedWith(
+    memory,
+    operationInput({
+      ...manualDispatch,
+      ticket: id(2),
+      expectedTicketVersion: 6,
+    }),
+    readableSources,
+    unbriefedTickets,
+    {},
+    noProjectArtifacts,
+    recordingPins(asked),
+  );
+  const accepted = depArtifacts(memory.graph, memory.ledgers, id(2));
+  const mark = accepted[0];
+  assert.ok(mark !== undefined && mark !== "NoArtifact");
+  assert.deepEqual(asked, [
+    {
+      partition,
+      source: {
+        reference: digestFold(observedCommit),
+        repository: asRepositoryId("repository"),
+        commit: observedCommit,
+      },
+      accepted: [{ dependency: id(1), result: mark.value }],
+    },
+  ]);
+  if (offered?.outcome.outcome !== "Journaled")
+    assert.fail("the dispatch journalled nothing");
+  const spawn = offered.outcome.materialization.execution[0];
+  assert.equal(spawn?.kind, "SpawnWork");
+  const bundle = spawn?.bundle;
+  assert.ok(bundle !== undefined);
+  assert.deepEqual(
+    inputBundleReferencesOf(
+      { configurationRevision: "revision", configurationDigest: "digest" },
+      bundle,
+    )
+      .filter((reference) => reference.kind.startsWith("Dependency"))
+      .map(({ kind, reference }) => [kind, reference]),
+    [
+      ["DependencyResult", "dependency-manifest"],
+      ["DependencyAncestor", "b".repeat(40)],
+      ["DependencyNotAncestor", "c".repeat(40)],
+    ],
+  );
+});
+
+test("a dispatch of a ticket with no dependency asks nothing of its dependencies and pins none", async () => {
+  const asked: Parameters<DependencyPinningPort["pins"]>[0][] = [];
+  const { offered } = await decidedWith(
+    releasedMemory(),
+    operationInput(manualDispatch),
+    readableSources,
+    unbriefedTickets,
+    {},
+    noProjectArtifacts,
+    recordingPins(asked),
+  );
+  assert.deepEqual(asked, []);
+  if (offered?.outcome.outcome !== "Journaled")
+    assert.fail("the dispatch journalled nothing");
+  assert.equal(
+    offered.outcome.materialization.execution[0]?.bundle?.dependencies,
+    undefined,
+  );
+});
+
+test("a spawn that is not a dispatch pins no dependency and asks for none", async () => {
+  const asked: Parameters<DependencyPinningPort["pins"]>[0][] = [];
+  const { offered } = await decidedWith(
+    dispatchedMemory(),
+    completionInput(workCompletion),
+    readableSources,
+    unbriefedTickets,
+    {},
+    noProjectArtifacts,
+    recordingPins(asked),
+  );
+  assert.deepEqual(asked, []);
+  if (offered?.outcome.outcome !== "Journaled")
+    assert.fail("the completion journalled nothing");
+  assert.equal(
+    offered.outcome.materialization.execution[0]?.bundle?.dependencies,
+    undefined,
+  );
 });

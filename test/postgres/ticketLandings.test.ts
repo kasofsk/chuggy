@@ -1039,17 +1039,15 @@ test("a ticket with more landings than one read answers answers the newest, olde
   );
 });
 
-const bystanders = [
-  configurationImporterRole,
-  ticketServiceRole,
-  schedulerRole,
-  workerPlaneRole,
-  finalizerRole,
-];
+/** Who reads a landing: the API answering a person, and the ticket service and the scheduler telling a dependent what its dependency delivered. */
+const landingReaders = [apiRole, ticketServiceRole, schedulerRole];
 
-test("the landings are read through a door only the API may call, which runs as the boundary owner under a path of its own", async () => {
+const bystanders = [configurationImporterRole, workerPlaneRole, finalizerRole];
+
+test("the landings are read through a door only their readers may call, which runs as the boundary owner under a path of its own", async () => {
   const call = `SELECT * FROM ${ticketLandingsReadFunction}('tenant','project',1,1)`;
-  assert.equal(await rig.harness.attemptAs(apiRole, call), undefined);
+  for (const role of landingReaders)
+    assert.equal(await rig.harness.attemptAs(role, call), undefined, role);
   for (const role of bystanders)
     assert.match(
       (await rig.harness.attemptAs(role, call)) ?? "",

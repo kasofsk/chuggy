@@ -35,6 +35,7 @@ export const schedulerRootService: Omit<
   | "priorEvaluationReports"
   | "failedLanding"
   | "readOnlyRepositories"
+  | "dependencyDeliveries"
   | "ticketBriefs"
   | "workerPools"
   | "access"

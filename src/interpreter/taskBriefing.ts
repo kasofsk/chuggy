@@ -31,11 +31,11 @@
  * rather than by a second path into the worker.
  *
  * SO A COMMANDED STAGE IS TOLD NOTHING AN AGENT WOULD HAVE READ. It carries no
- * practices, no report and no failed landing. The failed evaluation's reports
- * are gated on the carrier, because they are documents rather than lines and
- * would otherwise take a reworked commanded stage past the carrier the
- * invocation has; the work reports are a review's, and no commanded stage is
- * one.
+ * practices, no report, no dependency's delivery and no failed landing. The
+ * failed evaluation's reports are gated on the carrier, because they are
+ * documents rather than lines and would otherwise take a reworked commanded
+ * stage past the carrier the invocation has; the work reports are a review's,
+ * and no commanded stage is one.
  *
  * THE TICKET'S OWN CHECK LINES ARE THE SECOND SOURCE, AND THEY FOLLOW. They are
  * appended to the first evaluation stage the configuration commands, so the
@@ -79,6 +79,12 @@
  * authored criterion has. It is held to the same printable rule as the row it
  * came from, so what a manifest may carry a briefing may render.
  *
+ * A DEPENDENCY'S REPORT IS A DOCUMENT AS WELL, AND ALL OF THEM SHARE ONE ROOM.
+ * Every job of a ticket is told what its dependencies delivered, each report
+ * admitted whole while it fits the room the ones before it left, and the rest
+ * named as not carried, so the section stays bounded however many dependencies
+ * a ticket names.
+ *
  * WHAT COMPOSITION HANDS OVER IS BOUNDED AS ONE VALUE, NOT LIST BY LIST. Every
  * input has a bound of its own, and their sum is larger than an exec
  * environment string holds — which is how a launched fabric carries the task —
@@ -107,6 +113,10 @@ import {
 } from "../contract/http.ts";
 import { workerPlaneRoutes } from "../contract/workerPlane.ts";
 import { commandLinesMax } from "../contract/workerTask.ts";
+import {
+  dependencyDeliveriesMax,
+  type DependencyDelivery,
+} from "./dependencyDelivery.ts";
 import type { RepositoryId } from "./finalizer.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import { resultTextControlCharacter } from "./resultManifest.ts";
@@ -153,6 +163,11 @@ export {
   type WorkerMode,
 } from "./taskConfiguration.ts";
 import {
+  briefingDependencyLines,
+  briefingDependencyName,
+  briefingDependencyPreface,
+  briefingDependencyReportLine,
+  briefingDependencyReportUncarried,
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
@@ -343,6 +358,13 @@ export const runtimeHandoffLinesMax = 32;
 export const readOnlyRepositoriesMax = projectRepositoriesAnsweredMax;
 
 /**
+ * The room a briefing gives its dependencies' reports together, which is the
+ * room one report has: a ticket's dependencies tell it as much as one earlier
+ * work task would, however many there are.
+ */
+export const dependencyReportsCharsMax = resultReportCharsMax;
+
+/**
  * The bytes one environment string carries into an exec, which is `execve`'s
  * `MAX_ARG_STRLEN`. It is the smallest carrier a launched task has, so it is
  * the one composition is written against; a fabric that hands its worker the
@@ -516,6 +538,8 @@ export interface BriefingView {
   readonly configuration: PinnedTaskConfiguration;
   readonly runtime: RuntimeFacts;
   readonly readOnlyRepositories: readonly RepositoryId[];
+  /** What each of the ticket's dependencies delivered, in the order they ascend. */
+  readonly dependencyDeliveries: readonly DependencyDelivery[];
   readonly priorWorkReports: PriorWorkReports;
   readonly priorEvaluationReports: PriorEvaluationReports;
   readonly failedLanding?: FailedLanding;
@@ -649,6 +673,96 @@ function briefingFailedLandingFault(
     [[landing.targetCommit], 1],
     [landing.changeCommit === undefined ? [] : [landing.changeCommit], 1],
   ]);
+}
+
+/** One dependency as it renders: what it delivered, whether its repository is readable here, and whether its report fit. */
+interface BriefedDependency {
+  readonly delivery: DependencyDelivery;
+  readonly readable: boolean;
+  readonly reportCarried: boolean;
+}
+
+/**
+ * Each dependency as it renders. Reports are admitted whole and in the order
+ * the dependencies ascend, each where it fits the room the ones before it
+ * left, so which are carried is a function of the reports alone.
+ */
+function briefingDependenciesBriefed(
+  view: BriefingView,
+): readonly BriefedDependency[] {
+  let room = dependencyReportsCharsMax;
+  const briefed: BriefedDependency[] = [];
+  for (const delivery of view.dependencyDeliveries) {
+    const chars =
+      delivery.report === undefined ? 0 : textCodePointsCount(delivery.report);
+    const reportCarried = delivery.report !== undefined && chars <= room;
+    if (reportCarried) room -= chars;
+    briefed.push({
+      delivery,
+      readable:
+        delivery.repository !== undefined &&
+        view.readOnlyRepositories.includes(delivery.repository.repository),
+      reportCarried,
+    });
+  }
+  return briefed;
+}
+
+/** The report line one dependency renders, or none where its work reported nothing. */
+function briefingDependencyReportLines(
+  briefed: BriefedDependency,
+): readonly string[] {
+  const report = briefed.delivery.report;
+  if (report === undefined) return [];
+  return [
+    briefed.reportCarried
+      ? briefingDependencyReportLine(report)
+      : briefingDependencyReportUncarried,
+  ];
+}
+
+/** The dependencies' section, opened by what a reader needs before any one of them. */
+function briefingDependencyDeliveryLines(
+  view: BriefingView,
+): readonly string[] {
+  const briefed = briefingDependenciesBriefed(view);
+  if (briefed.length === 0) return [];
+  return [
+    briefingDependencyPreface,
+    ...briefed.flatMap((each) => [
+      briefingDependencyName(each.delivery),
+      ...[
+        ...briefingDependencyLines(each.delivery, each.readable),
+        ...briefingDependencyReportLines(each),
+      ].map(briefingBullet),
+    ]),
+  ];
+}
+
+/**
+ * What the dependencies have to be to render: no more than a draft may name,
+ * every line of them printable and bounded, and every report carried a
+ * document within its own bound.
+ */
+function briefingDependencyDeliveriesFault(
+  view: BriefingView,
+): BriefingFault | undefined {
+  if (view.dependencyDeliveries.length > dependencyDeliveriesMax)
+    return "TooManyLines";
+  for (const each of briefingDependenciesBriefed(view)) {
+    for (const line of [
+      briefingDependencyName(each.delivery),
+      ...briefingDependencyLines(each.delivery, each.readable),
+    ]) {
+      const fault = briefingLineFault(line);
+      if (fault !== undefined) return fault;
+    }
+    if (each.reportCarried && each.delivery.report !== undefined) {
+      const fault = briefingReportFault(each.delivery.report);
+      if (fault !== undefined) return fault;
+    }
+  }
+  return undefined;
 }
 
 /** What one earlier work task's report has to be to render, which is a document's bound. */
@@ -820,6 +934,7 @@ function briefingBodies(
         : briefingTicketImageLines(view.brief.images),
     WhyItMatters: view.configuration.brief.motivation,
     AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
+    DependencyDeliveries: briefed ? briefingDependencyDeliveryLines(view) : [],
     FailedLanding:
       briefed && view.purpose === "Work" && view.failedLanding !== undefined
         ? briefingFailedLandingLines(view.failedLanding)
@@ -1056,6 +1171,7 @@ export function composeTaskInvocation(
       priorEvaluationReportsMax,
     ) ??
     briefingFailedLandingFault(view.failedLanding) ??
+    briefingDependencyDeliveriesFault(view) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
   const resolved = resolvePractices(

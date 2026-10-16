@@ -11,20 +11,12 @@ import { after, test } from "node:test";
 import { createWorkerPlaneApp } from "../../src/adapters/http/workerPlaneServer.ts";
 import { kubernetesWorkerTask } from "../../src/adapters/kubernetes/workerPod.ts";
 import {
-  postgresFailedLanding,
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../../src/adapters/postgres/evaluationReports.ts";
-import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
-import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
-import {
   apiRole,
   poolPlaneRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { attemptInvocationBytesMax } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
-import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
   postgresWorkerPlaneAuthority,
   postgresWorkerReportStore,
@@ -82,6 +74,7 @@ import {
 } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
+  schedulerBriefingReads,
   schedulerClaimFor,
   schedulerEvaluationRequest,
   schedulerInvocation,
@@ -264,7 +257,7 @@ function launching(
           },
         }),
     },
-    configurations: postgresPinnedConfigurations(rig.pool),
+    ...schedulerBriefingReads(rig.pool),
     runtimeFacts: {
       facts: () =>
         Promise.resolve({
@@ -272,11 +265,6 @@ function launching(
           facts: { changedFiles: [], handoff: [] },
         }),
     },
-    priorWorkReports: postgresPriorWorkReports(rig.pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
-    failedLanding: postgresFailedLanding(rig.pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(rig.pool),
-    ticketBriefs: postgresTicketBrief(rig.pool),
     practices: blessedPracticeCatalog,
     workerRuntime: schedulerRuntime,
     config: executionSchedulerDefaults,

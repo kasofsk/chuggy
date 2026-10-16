@@ -71,7 +71,12 @@ import type {
   TicketGraph,
   TicketState,
 } from "../domain/generated/modelTypes.ts";
-import { canReleaseIn, dependableIn } from "../domain/enablement.ts";
+import {
+  canReleaseIn,
+  dependableIn,
+  depArtifacts,
+  waitsOn,
+} from "../domain/enablement.ts";
 import {
   alwaysPolicy,
   commandTaken,
@@ -119,6 +124,7 @@ import {
 } from "./dispatchView.ts";
 import { dispatchViewSchemaVersion } from "../contract/http.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { DependencyPinningPort } from "./dependencyDelivery.ts";
 import {
   checkedTicketServiceConfig,
   observe,
@@ -140,6 +146,8 @@ export interface ProjectTicketWriter {
   readonly ticketBriefs: TicketBriefPort;
   /** Where a brief's named images are read back, to pin the digest a dispatch's bundle carries for each. */
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
+  /** What a dispatch pins of what its ticket's dependencies delivered. */
+  readonly dependencyPinning: DependencyPinningPort;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -871,15 +879,51 @@ async function projectWriterDispatchPlan(
     throw new IntegrityContradiction(
       "project writer: an observed source is not one a dispatch may carry",
     );
-  return decision.type === "TicketRefused"
-    ? refusedPlan(memory, decision.value)
-    : journaledPlan(
-        memory,
-        item,
-        command,
-        decision.value,
-        dispatchSpawnSources(ticket, observed.source, observed.images),
+  if (decision.type === "TicketRefused")
+    return refusedPlan(memory, decision.value);
+  return journaledPlan(memory, item, command, decision.value, {
+    ...dispatchSpawnSources(ticket, observed.source, observed.images),
+    ...(await projectWriterDependencyPins(
+      writer,
+      memory,
+      ticket,
+      observed.source,
+    )),
+  });
+}
+
+/**
+ * What an accepted dispatch pins of its ticket's dependencies, each named by
+ * the result its journal accepted. A dispatch is accepted only once every
+ * dependency is done, and a done ticket has accepted a result, so a dependency
+ * that accepted none is a contradiction rather than an absence.
+ */
+async function projectWriterDependencyPins(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  ticket: TicketId,
+  source: DispatchSource,
+): Promise<Pick<SpawnSources, "dependencies">> {
+  const dependencies = [...waitsOn(memory.graph, ticket)].sort(
+    (left, right) => left - right,
+  );
+  if (dependencies.length === 0) return {};
+  const marks = depArtifacts(memory.graph, memory.ledgers, ticket);
+  const accepted = dependencies.map((dependency, index) => {
+    const mark = marks[index];
+    if (mark === undefined || mark === "NoArtifact")
+      throw new IntegrityContradiction(
+        "project writer: a dispatched ticket's dependency accepted no result",
       );
+    return { dependency: asTicketId(dependency), result: mark.value };
+  });
+  return {
+    dependencies: await writer.dependencyPinning.pins({
+      partition: memory.lease.partition,
+      source,
+      accepted,
+    }),
+  };
 }
 
 /** The plan an accepted command earns, at the source its spawns already run on. */

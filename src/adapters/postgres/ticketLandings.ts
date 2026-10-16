@@ -1,9 +1,10 @@
 /**
  * PostgreSQL reads for a ticket's landings, through the one door that reads
- * the finalizer's rows for the API.
+ * the finalizer's rows for the API, and for the ticket service and the
+ * scheduler telling a dependent what its dependency delivered.
  *
- * THE TICKET IS FOUND FIRST in the projection the API already reads, so a
- * ticket the project does not have is told from one that has had no landing.
+ * THE TICKET IS FOUND FIRST in the projection, so a ticket the project does
+ * not have is told from one that has had no landing.
  *
  * A COLUMN THE DOOR ANSWERS IS NARROWED TO ITS ROSTER HERE, and a value no
  * writer of this tree can have stored fails the read rather than reaching a

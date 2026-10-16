@@ -142,6 +142,17 @@ export function digestFold(digest: string): number {
   return Number.parseInt(digest.slice(0, digestFoldHexChars), 16) + 1;
 }
 
+/** What every digest `digestFold` folds to `fold` begins with, which is how a folded reference finds the rows it may name. */
+export function digestFoldPrefix(fold: number): string {
+  if (
+    !Number.isSafeInteger(fold) ||
+    fold < 1 ||
+    fold > 16 ** digestFoldHexChars
+  )
+    throw new RangeError("result manifest: no digest folds to this reference");
+  return (fold - 1).toString(16).padStart(digestFoldHexChars, "0");
+}
+
 /** The first code point retained text may carry, below which every value is a control character. */
 const resultTextFirstPrintable = 0x20;
 

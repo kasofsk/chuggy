@@ -212,6 +212,7 @@ function taskInvocation(
     configuration,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
+    dependencyDeliveries: [],
     priorWorkReports: { reports: [] },
     priorEvaluationReports: { reports: [] },
     grant: authorityGrant,
@@ -1349,6 +1350,7 @@ function heaviestTaskInvocation(): TaskInvocation | undefined {
         { length: readOnlyRepositoriesMax },
         () => asRepositoryId("x".repeat(repositoryIdentityCharsMax)),
       ),
+      dependencyDeliveries: [],
       priorWorkReports: {
         reports: Array.from({ length: reports }, () =>
           "x".repeat(resultReportCharsMax),

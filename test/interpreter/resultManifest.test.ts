@@ -27,6 +27,7 @@ import {
   manifestsAgree,
   digestFold,
   digestFoldHexChars,
+  digestFoldPrefix,
   type ManifestRejection,
   type ResultManifest,
 } from "../../src/interpreter/resultManifest.ts";
@@ -562,6 +563,15 @@ test("the model-grain fold is positive, bounded and reads the digest's leading c
   assert.ok(Number.isSafeInteger(digestFold(highest)));
   assert.ok(digestFold(highest) < Number.MAX_SAFE_INTEGER);
   assert.equal(digestFold(asArtifactDigest(digestFor("out/a"))) >= 1, true);
+});
+
+test("every digest a fold's prefix begins is a digest that folds to it, and no prefix answers a reference no digest folds to", () => {
+  for (const digest of ["0".repeat(64), "f".repeat(64), digestFor("out/a")]) {
+    const fold = digestFold(asArtifactDigest(digest));
+    assert.equal(digestFoldPrefix(fold), digest.slice(0, digestFoldHexChars));
+  }
+  for (const fold of [0, 16 ** digestFoldHexChars + 1, 1.5, Number.NaN])
+    assert.throws(() => digestFoldPrefix(fold), RangeError);
 });
 
 test("the trusted doors refuse exactly what the untrusted one refuses", () => {
