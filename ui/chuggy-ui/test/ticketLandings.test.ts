@@ -45,7 +45,8 @@ test("a landing that failed on a conflict says so and how many files it names", 
   expect(ticketLandingFragment(landing, nowMs)).toEqual({
     text: "Merge conflict · 1 file",
     link: undefined,
-    commits: [],
+    commit: undefined,
+    caveat: undefined,
   });
   expect(ticketLandingSummary(landing)).toBe("Landing failed");
 });
@@ -67,7 +68,8 @@ test("a landing whose merge waits on the forge says on what, what the forge said
   expect(ticketLandingFragment(landing, nowMs)).toEqual({
     text: "Blocked · behind · checked 3m ago",
     link: { href: landingPullRequest, host: "forge.example.test" },
-    commits: [],
+    commit: undefined,
+    caveat: undefined,
   });
   expect(landing.detail.proposal?.mergeState).toBe("behind");
   expect(landing.detail.checkedAt).toBe("2026-10-07T14:57:00Z");
@@ -102,30 +104,33 @@ test("a landed landing offers its pull request under its host and its commit sho
     href: landingPullRequest,
     host: "forge.example.test",
   });
-  expect(fragment.commits).toEqual([
-    {
-      name: undefined,
-      label: { text: "e0f3a7c", title: landingLandedCommit },
-    },
-  ]);
+  expect(fragment.commit).toEqual({
+    name: undefined,
+    label: { text: "e0f3a7c", title: landingLandedCommit },
+  });
+  expect(fragment.caveat).toBeUndefined();
   expect(ticketLandingSummary(ticketLandingOf(landingLanded(2)))).toBe(
     "Landed",
   );
 });
 
-test("a pull request a person merged at a head it was not opened at names both heads, and never the evaluated one alone", () => {
+test("a pull request a person merged at a head it was not opened at names its merge commit as the row always does, says the head was not evaluated, and names both heads in its detail", () => {
   const landing = ticketLandingOf(landingMergedElsewhere(2));
   expect(landing.word).toBe("Landed");
-  expect(
-    ticketLandingFragment(landing, nowMs).commits.map(
-      (commit) => `${commit.name ?? ""} ${commit.label.text}`,
-    ),
-  ).toEqual(["Merged d4e5f6a", "Evaluated b51d9f0"]);
+  const fragment = ticketLandingFragment(landing, nowMs);
+  expect(fragment.commit).toEqual({
+    name: "Merged",
+    label: { text: "e0f3a7c", title: landingLandedCommit },
+  });
+  expect(fragment.caveat).toBe("Unevaluated head");
   expect(landing.detail.proposal?.heads).toEqual({
     merged: { text: "d4e5f6a", title: landingMergedHead },
     evaluated: { text: "b51d9f0", title: landingCandidateCommit },
   });
-  expect(landing.detail.proposal?.status).toBe("Merged");
+  expect(
+    landing.detail.proposal?.status,
+    "a landed proposal's status is no longer read, so it is not drawn",
+  ).toBeUndefined();
   expect(
     landing.detail.proposal?.mergeCommit,
     "a merge somebody else made names the commit it landed at",
@@ -140,6 +145,7 @@ test("a pull request held on being closed is labelled closed, and an absent one 
   const closed = ticketLandingOf(landingClosed(2, "2026-10-07T14:58:00Z"));
   expect(closed.word).toBe("Held");
   expect(ticketLandingFragment(closed, nowMs).text).toBe("Held 2m · Closed");
+  expect(closed.detail.proposal?.status).toBe("Closed");
   const absent = landingClosed(2, "2026-10-07T14:58:00Z");
   expect(
     ticketLandingFragment(
@@ -153,6 +159,22 @@ test("a pull request held on being closed is labelled closed, and an absent one 
       nowMs,
     ).text,
   ).toBe("Held 2m · Proposal absent");
+});
+
+test("the forge's word on a pull request is drawn while its landing is live, and not once a landing has settled it", () => {
+  const running = landingRunning(2);
+  const opened = (landing: typeof running) =>
+    ticketLandingOf({
+      ...landing,
+      proposal:
+        landing.proposal === undefined
+          ? undefined
+          : { ...landing.proposal, status: "Open" },
+    }).detail.proposal?.status;
+  expect(opened(running)).toBe("Open");
+  expect(opened(landingAwaitingMerge(2, "2026-10-07T14:57:00Z"))).toBe("Open");
+  expect(opened({ ...running, state: "Proposed" })).toBeUndefined();
+  expect(opened(landingLanded(2))).toBeUndefined();
 });
 
 test("an address that does not parse, or is not https, is no link and no throw", () => {

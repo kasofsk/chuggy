@@ -60,7 +60,7 @@ export function useTicketLandings(
 
 /**
  * A landing's fragment: its text, its pull request under the host it names,
- * and its commits, each under its noun where it names more than one.
+ * the commit it landed at, and what a reader must not miss about that commit.
  */
 export function LandingFragment(props: {
   readonly fragment: TicketLandingFragment;
@@ -75,16 +75,18 @@ export function LandingFragment(props: {
           {fragment.link.host}
         </a>
       )}
-      {fragment.commits.map((commit, index) => (
-        <span
-          className="ticket-landing-commit"
-          key={commit.name ?? commit.label.title}
-        >
-          {index === 0 ? null : <span aria-hidden="true">·</span>}
-          {commit.name}
-          <Identity label={commit.label} />
+      {fragment.commit === undefined ? null : (
+        <span className="ticket-landing-part">
+          {fragment.commit.name}
+          <Identity label={fragment.commit.label} />
         </span>
-      ))}
+      )}
+      {fragment.caveat === undefined ? null : (
+        <span className="ticket-landing-part">
+          <span aria-hidden="true">·</span>
+          {fragment.caveat}
+        </span>
+      )}
     </span>
   );
 }

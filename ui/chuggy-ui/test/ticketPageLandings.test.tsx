@@ -256,7 +256,7 @@ test("a landed landing draws its pull request as a link under its host, and its 
   expect(summaryOf(groupOf(container, 3))).toMatch(/ · Landed$/u);
 });
 
-test("a pull request a person merged at another head draws both heads under their names, on its row and in its detail", async () => {
+test("a pull request a person merged at another head draws its merge commit and that the head was not evaluated on its row, and both heads in its detail", async () => {
   const container = await drawn(() =>
     answer(landingsRead([landingMergedElsewhere(3)])),
   );
@@ -265,18 +265,18 @@ test("a pull request a person merged at another head draws both heads under thei
   expect(rowSaid(row)).toEqual([
     "Landing",
     "Landed",
-    "forge.example.testMergedd4e5f6a·Evaluatedb51d9f0",
+    "forge.example.testMergede0f3a7c·Unevaluated head",
   ]);
   expect(
-    [...row.querySelectorAll(".ledger-note .ticket-landing-commit")].map(
+    [...row.querySelectorAll(".ledger-note .ticket-landing-part")].map(
       (commit) => commit.textContent,
     ),
-  ).toEqual(["Mergedd4e5f6a", "·Evaluatedb51d9f0"]);
+  ).toEqual(["Mergede0f3a7c", "·Unevaluated head"]);
   const detail = await detailOpened(row);
   expect(detail.textContent).toContain("Merge commite0f3a7c");
   expect(detail.textContent).toContain("Merged headd4e5f6a");
   expect(detail.textContent).toContain("Evaluated headb51d9f0");
-  expect(detail.textContent).toContain("StatusMerged");
+  expect(detail.textContent).not.toContain("Status");
 });
 
 test("a landing held on its pull request being closed says closed, and offers the pull request", async () => {

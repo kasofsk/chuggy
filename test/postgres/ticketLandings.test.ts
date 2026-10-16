@@ -471,6 +471,11 @@ test("a landing merged through its pull request answers Landed, the link and the
     ["Merged", made, undefined],
     "the finalizer's own merge is of the head it opened the proposal at",
   );
+  assert.equal(
+    mergedLanding?.proposal?.status,
+    "Merged",
+    "the forge's last word on a proposal the finalizer merged is its merge",
+  );
 });
 
 test("a merge somebody made at a head they moved the proposal to answers Landed at its commit and names that head beside the one opened", async () => {

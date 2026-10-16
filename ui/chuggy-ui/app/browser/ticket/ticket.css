@@ -395,7 +395,7 @@
     overflow-wrap: anywhere;
   }
 
-  .ticket-landing-commit {
+  .ticket-landing-part {
     display: inline-flex;
     align-items: baseline;
     column-gap: var(--space-2);

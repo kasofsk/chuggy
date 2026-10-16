@@ -125,8 +125,6 @@ export interface TicketLanding {
   readonly wait: TicketLandingWait | undefined;
   readonly link: TicketDeliveryLink | undefined;
   readonly landedCommit: Label | undefined;
-  /** Where the pull request was merged at a head it was not opened at, both. */
-  readonly heads: TicketLandingHeads | undefined;
   readonly detail: TicketLandingDetail;
 }
 
@@ -165,8 +163,10 @@ function ticketLandingHeads(
 }
 
 /**
- * A landing's pull request as its detail draws it; its merge commit is the one
- * the landing landed at wherever the finalizer did not make the merge itself.
+ * A landing's pull request as its detail draws it: its merge commit is the one
+ * the landing landed at wherever the finalizer did not make the merge itself,
+ * and the forge's word on it is drawn only while nothing has settled the
+ * landing, after which no reading keeps that word current.
  */
 function ticketLandingProposal(
   read: TicketLandingRead,
@@ -184,7 +184,7 @@ function ticketLandingProposal(
         ? undefined
         : changeProposalCreationLabel(proposal.creation),
     status:
-      proposal.status === undefined
+      proposal.status === undefined || !ticketLandingLive(read.state)
         ? undefined
         : changeProposalStatusLabel(proposal.status),
     merge:
@@ -266,7 +266,6 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
     link: ticketLandingLink(read.proposal?.url),
     landedCommit:
       read.state === "Landed" ? commitLabel(read.landedCommit) : undefined,
-    heads: ticketLandingHeads(read.proposal),
     detail: ticketLandingDetail(read),
   };
 }
@@ -313,38 +312,42 @@ function ticketLandingWaitText(wait: TicketLandingWait, nowMs: number): string {
   ].join(" · ");
 }
 
-/**
- * One commit a fragment names, under the noun that says which it is where
- * there is more than one.
- */
+/** The commit a fragment names, under a noun where the row qualifies it. */
 export interface TicketLandingCommit {
   readonly name: string | undefined;
   readonly label: Label;
 }
 
-/** What a landing's row says beside its pill: text, a link and its commits. */
+/**
+ * What a landing's row says beside its pill: text, a link, the commit it
+ * landed at, and what a reader must not miss about that commit.
+ */
 export interface TicketLandingFragment {
   readonly text: string | undefined;
   readonly link: TicketDeliveryLink | undefined;
-  readonly commits: readonly TicketLandingCommit[];
+  readonly commit: TicketLandingCommit | undefined;
+  readonly caveat: string | undefined;
 }
 
 /**
- * The commits a landed row names: where it landed, or, where a person moved
- * the pull request's head before merging it, the head merged beside the one
- * evaluated, which is what the row must not let a reader take for each other.
+ * The commit a row says its landing landed at, and, where the forge merged a
+ * head other than the one evaluated, that it says so, since the commit alone
+ * reads as the evaluated work landing.
  */
-function ticketLandingCommits(
+function ticketLandingLandedAt(
   landing: TicketLanding,
-): readonly TicketLandingCommit[] {
-  if (landing.heads !== undefined)
-    return [
-      { name: "Merged", label: landing.heads.merged },
-      { name: "Evaluated", label: landing.heads.evaluated },
-    ];
-  return landing.landedCommit === undefined
-    ? []
-    : [{ name: undefined, label: landing.landedCommit }];
+): Pick<TicketLandingFragment, "commit" | "caveat"> {
+  if (landing.landedCommit === undefined)
+    return { commit: undefined, caveat: undefined };
+  return landing.detail.proposal?.heads === undefined
+    ? {
+        commit: { name: undefined, label: landing.landedCommit },
+        caveat: undefined,
+      }
+    : {
+        commit: { name: "Merged", label: landing.landedCommit },
+        caveat: "Unevaluated head",
+      };
 }
 
 /** The one short fragment a landing's row and the status bar carry. */
@@ -365,7 +368,8 @@ export function ticketLandingFragment(
                   : []),
               ].join(" · "),
         link: undefined,
-        commits: [],
+        commit: undefined,
+        caveat: undefined,
       };
     case "Held":
       return {
@@ -374,7 +378,8 @@ export function ticketLandingFragment(
             ? undefined
             : ticketLandingHeldFor(landing.hold, nowMs),
         link: landing.link,
-        commits: [],
+        commit: undefined,
+        caveat: undefined,
       };
     case "AwaitingMerge":
       return {
@@ -383,7 +388,8 @@ export function ticketLandingFragment(
             ? undefined
             : ticketLandingWaitText(landing.wait, nowMs),
         link: landing.link,
-        commits: [],
+        commit: undefined,
+        caveat: undefined,
       };
     case "Running":
     case "AwaitingApproval":
@@ -392,11 +398,16 @@ export function ticketLandingFragment(
       return {
         text: undefined,
         link: landing.link,
-        commits: ticketLandingCommits(landing),
+        ...ticketLandingLandedAt(landing),
       };
     case "Unavailable":
     case "Invalidated":
-      return { text: undefined, link: undefined, commits: [] };
+      return {
+        text: undefined,
+        link: undefined,
+        commit: undefined,
+        caveat: undefined,
+      };
   }
 }
 
@@ -407,7 +418,7 @@ export function ticketLandingFragmentSays(
   return (
     fragment.text !== undefined ||
     fragment.link !== undefined ||
-    fragment.commits.length > 0
+    fragment.commit !== undefined
   );
 }
 
@@ -457,24 +468,29 @@ export function ticketLandingOpened(
     : `After ${before.failure.toLowerCase()}`;
 }
 
-/** The landing the status bar names while the ticket is finalizing: the newest, while it is still live. */
-export function ticketLandingCurrent(
-  landings: readonly TicketLanding[],
-): TicketLanding | undefined {
-  const newest = landings.at(-1);
-  switch (newest?.state) {
-    case undefined:
-      return undefined;
+/** Whether a landing in `state` is still live: running, held or waiting. */
+function ticketLandingLive(state: TicketLandingState): boolean {
+  switch (state) {
     case "Running":
     case "Held":
     case "AwaitingApproval":
     case "AwaitingMerge":
-      return newest;
+      return true;
     case "Failed":
     case "Unavailable":
     case "Landed":
     case "Proposed":
     case "Invalidated":
-      return undefined;
+      return false;
   }
+}
+
+/** The landing the status bar names while the ticket is finalizing: the newest, while it is still live. */
+export function ticketLandingCurrent(
+  landings: readonly TicketLanding[],
+): TicketLanding | undefined {
+  const newest = landings.at(-1);
+  return newest !== undefined && ticketLandingLive(newest.state)
+    ? newest
+    : undefined;
 }

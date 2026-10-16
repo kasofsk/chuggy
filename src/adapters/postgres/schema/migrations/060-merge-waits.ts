@@ -143,9 +143,10 @@ export const migration060: Migration = {
              CASE WHEN l.landed->>'head' ~ ${gitObject}
                        AND l.landed->>'head' IS DISTINCT FROM c.head_commit
                   THEN l.landed->>'head' END,
-             coalesce(c.merge_reading_evidence->>'status',
-                      c.reconciliation_evidence->>'status',
-                      c.creation_evidence->>'status')
+             CASE WHEN c.merge='Merged' THEN 'Merged'
+                  ELSE coalesce(c.merge_reading_evidence->>'status',
+                                c.reconciliation_evidence->>'status',
+                                c.creation_evidence->>'status') END
         FROM shown s
         LEFT JOIN LATERAL (
           SELECT x.* FROM finalization_attempt x
