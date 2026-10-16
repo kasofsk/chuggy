@@ -14,14 +14,6 @@
 
 import assert from "node:assert/strict";
 
-import {
-  postgresFailedLanding,
-  postgresPriorEvaluationReports,
-  postgresPriorWorkReports,
-} from "../../src/adapters/postgres/evaluationReports.ts";
-import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
-import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
-import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { postgresWorkerPoolRoster } from "../../src/adapters/postgres/workerPool.ts";
 import type {
   ExecutionId,
@@ -30,6 +22,7 @@ import type {
 import type { ExecutionSchedulerService } from "../../src/interpreter/executionSchedulerRun.ts";
 import type { ProjectAccess } from "../../src/interpreter/projectAccess.ts";
 import {
+  schedulerBriefingReads,
   schedulerClaimFor,
   schedulerOwner,
   schedulerProject,
@@ -83,12 +76,7 @@ export function poolRoutedService(
           facts: { changedFiles: [], handoff: [] },
         }),
     },
-    configurations: postgresPinnedConfigurations(rig.pool),
-    priorWorkReports: postgresPriorWorkReports(rig.pool),
-    priorEvaluationReports: postgresPriorEvaluationReports(rig.pool),
-    failedLanding: postgresFailedLanding(rig.pool),
-    readOnlyRepositories: postgresReadOnlyRepositories(rig.pool),
-    ticketBriefs: postgresTicketBrief(rig.pool),
+    ...schedulerBriefingReads(rig.pool),
   };
 }
 

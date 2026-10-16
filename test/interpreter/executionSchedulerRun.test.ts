@@ -333,6 +333,9 @@ function serviceWith(
       repositories: () =>
         Promise.resolve({ read: "Repositories", repositories: [] }),
     },
+    dependencyDeliveries: {
+      deliveries: () => Promise.resolve({ read: "Deliveries", deliveries: [] }),
+    },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     workerRuntime,
@@ -1446,6 +1449,55 @@ test("the project's other repositories read for this execution reach its briefin
       `${briefingLabels.readOnlyRepositories} ${sibling}`,
     ),
   );
+});
+
+test("what the dependencies delivered, when it cannot be read, holds the attempt instead", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  assert.equal(
+    await executionSchedulerLaunch(
+      {
+        ...service,
+        dependencyDeliveries: {
+          deliveries: () => Promise.resolve({ read: "Unavailable" as const }),
+        },
+      },
+      epoch,
+    ),
+    0,
+  );
+  assert.deepEqual(calls, ["ended:Withdrawn:PolicyUnavailable"]);
+});
+
+test("what the dependencies delivered, read for this execution, reaches its briefing", async () => {
+  const placements: AttemptPlacement[] = [];
+  const asked: unknown[] = [];
+  await executionSchedulerLaunch(
+    {
+      ...placingService([], placements),
+      dependencyDeliveries: {
+        deliveries: (partitionRead, executionRead) => {
+          asked.push({ partition: partitionRead, execution: executionRead });
+          return Promise.resolve({
+            read: "Deliveries" as const,
+            deliveries: [
+              {
+                dependency: asTicketId(12),
+                title: "Teach the importer to count rows",
+                change: { change: "Unsourced" as const },
+                report: "The importer counts its rows.",
+              },
+            ],
+          });
+        },
+      },
+    },
+    epoch,
+  );
+  assert.deepEqual(asked, [{ partition, execution: execution.execution }]);
+  const text = placements[0]?.invocation.briefing.text ?? "";
+  assert.ok(text.includes("Ticket 12: Teach the importer to count rows"), text);
+  assert.ok(text.includes("- Report: The importer counts its rows."), text);
 });
 
 test("prior work reports that cannot be read hold the attempt instead", async () => {

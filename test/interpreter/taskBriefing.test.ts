@@ -58,6 +58,7 @@ import {
   stageCommandsMax,
   authoredTaskConfigurationReadiness,
   composeTaskInvocation,
+  dependencyReportsCharsMax,
   pinnedTaskConfigurationReadiness,
   priorEvaluationReportsMax,
   priorWorkReportsMax,
@@ -91,10 +92,17 @@ import {
   type PolicyAuthorityGrant,
 } from "../../src/interpreter/taskAuthority.ts";
 import {
+  asGitObjectId,
+  asGitRefName,
   asRepositoryId,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
+import {
+  dependencyDeliveriesMax,
+  type DependencyDelivery,
+} from "../../src/interpreter/dependencyDelivery.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
 import {
   asBriefCheckLine,
@@ -465,6 +473,7 @@ function viewOf(parts: {
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly readOnlyRepositories?: readonly RepositoryId[];
+  readonly dependencyDeliveries?: readonly DependencyDelivery[];
   readonly priorWorkReports?: readonly string[];
   readonly priorEvaluationReports?: readonly string[];
   readonly failedLanding?: FailedLanding;
@@ -491,6 +500,7 @@ function viewOf(parts: {
     },
     runtime: parts.runtime ?? noFacts,
     readOnlyRepositories: parts.readOnlyRepositories ?? [],
+    dependencyDeliveries: parts.dependencyDeliveries ?? [],
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
     priorEvaluationReports: { reports: parts.priorEvaluationReports ?? [] },
     ...(parts.failedLanding === undefined
@@ -554,9 +564,67 @@ const conflictedLanding: FailedLanding = {
   conflicted: true,
 };
 
+const dependencyRepository = asRepositoryId(
+  "https://github.com/mimage/argus.git",
+);
+const dependencyLanded = asGitObjectId("5".repeat(40));
+const dependencyHead = asGitObjectId("3".repeat(40));
+const dependentBegan = asGitObjectId("8".repeat(40));
+
+/** A dependency whose pull request its landing merged, at a commit the ticket's work began from. */
+const mergedDependency: DependencyDelivery = {
+  dependency: asTicketId(12),
+  title: "Teach the importer to count rows",
+  repository: { repository: dependencyRepository, own: true },
+  change: {
+    change: "Landed",
+    commit: dependencyLanded,
+    ref: "main",
+    proposal: {
+      url: "https://github.com/mimage/argus/pull/41",
+      headRef: "chuggy/12",
+      headCommit: dependencyHead,
+      baseRef: "main",
+      status: "Merged",
+    },
+  },
+  history: {
+    commit: dependencyLanded,
+    began: dependentBegan,
+    startsAtBegan: true,
+    ancestry: "Ancestor",
+  },
+  report: "The importer counts the rows it read and fails when they differ.",
+};
+
+/** A dependency whose landing opened a pull request nobody has merged, so the ticket's work began without it. */
+const proposedDependency: DependencyDelivery = {
+  dependency: asTicketId(15),
+  title: "Report the dropped rows",
+  repository: { repository: dependencyRepository, own: true },
+  change: {
+    change: "Proposed",
+    proposal: {
+      url: "https://github.com/mimage/argus/pull/44",
+      headRef: "chuggy/15",
+      headCommit: dependencyHead,
+      baseRef: "main",
+      status: "Open",
+    },
+  },
+  history: {
+    commit: dependencyHead,
+    began: dependentBegan,
+    startsAtBegan: true,
+    ancestry: "NotAncestor",
+  },
+  report: "The importer names every row it dropped.",
+};
+
 const optionalSections: readonly BriefingSectionId[] = [
   "WhyItMatters",
   "AcceptanceAndConstraints",
+  "DependencyDeliveries",
   "FailedLanding",
   "PriorEvaluationReports",
   "PurposeInstructions",
@@ -592,6 +660,9 @@ function viewPresenting(
     runtime: present.has("RuntimeContext")
       ? { workspace: "/work/importer", changedFiles: [], handoff: [] }
       : noFacts,
+    dependencyDeliveries: present.has("DependencyDeliveries")
+      ? [mergedDependency]
+      : [],
     priorWorkReports: present.has("PriorWorkReports")
       ? ["The worker changed the importer and ran the focused gate."]
       : [],
@@ -1630,6 +1701,204 @@ test("read-only repositories past their bound, or unprintable, are refused rathe
       viewOf({
         readOnlyRepositories: [
           asRepositoryId("https://github.com/o/\u001b.git"),
+        ],
+      }),
+    ),
+    "TextUnreadable",
+  );
+});
+
+/** The lines the dependencies' section renders for a view, or nothing where it renders none. */
+function dependencyLines(view: BriefingView): readonly string[] | undefined {
+  return sectionLines(view, "DependencyDeliveries");
+}
+
+test("a dependency merged into the commit this job starts from is told where it landed, and that it is there", () => {
+  assert.deepEqual(
+    dependencyLines(viewOf({ dependencyDeliveries: [mergedDependency] })),
+    [
+      "This ticket depends on each ticket below, and each of them is done.",
+      "Ticket 12: Teach the importer to count rows",
+      "- Repository: https://github.com/mimage/argus.git, the one this job works in.",
+      `- Landed at commit ${dependencyLanded} on main.`,
+      "- Pull request: https://github.com/mimage/argus/pull/41",
+      "- It landed when its pull request from chuggy/12 was merged.",
+      `- Commit ${dependencyLanded} is in the history of ${dependentBegan}, the commit this job starts from.`,
+      "- Report: The importer counts the rows it read and fails when they differ.",
+    ],
+  );
+});
+
+test("a dependency whose pull request is unmerged is told as a pull request this job's commit does not hold", () => {
+  assert.deepEqual(
+    dependencyLines(viewOf({ dependencyDeliveries: [proposedDependency] })),
+    [
+      "This ticket depends on each ticket below, and each of them is done.",
+      "Ticket 15: Report the dropped rows",
+      "- Repository: https://github.com/mimage/argus.git, the one this job works in.",
+      "- Its landing opened a pull request and merged nothing.",
+      "- Pull request: https://github.com/mimage/argus/pull/44",
+      `- The pull request is from chuggy/15 at commit ${dependencyHead}.`,
+      "- It asks to merge into main, and was open when it was last read.",
+      `- Commit ${dependencyHead} is not in the history of ${dependentBegan}, the commit this job starts from.`,
+      "- Report: The importer names every row it dropped.",
+    ],
+  );
+});
+
+test("two dependencies are each told under their own name, in the order they were gathered", () => {
+  const lines = dependencyLines(
+    viewOf({ dependencyDeliveries: [mergedDependency, proposedDependency] }),
+  );
+  assert.deepEqual(
+    lines?.filter((line) => line.startsWith("Ticket ")),
+    [
+      "Ticket 12: Teach the importer to count rows",
+      "Ticket 15: Report the dropped rows",
+    ],
+  );
+  assert.equal(
+    lines?.filter((line) => line.startsWith("- Report: ")).length,
+    2,
+  );
+});
+
+test("a dependency that reported nothing is told without a report line, and one with no title by its number", () => {
+  const unreported: DependencyDelivery = {
+    dependency: mergedDependency.dependency,
+    change: mergedDependency.change,
+  };
+  const lines = dependencyLines(viewOf({ dependencyDeliveries: [unreported] }));
+  assert.equal(lines?.[1], "Ticket 12");
+  assert.equal(
+    lines?.some((line) => line.startsWith("- Report:")),
+    false,
+  );
+});
+
+test("a dependency in another repository says whether this job can read it, and asks nothing of its history", () => {
+  const sibling = asRepositoryId("https://github.com/mimage/rust-libs.git");
+  const elsewhere: DependencyDelivery = {
+    dependency: asTicketId(9),
+    repository: { repository: sibling, own: false },
+    change: {
+      change: "Committed",
+      commit: dependencyLanded,
+      ref: asGitRefName("refs/heads/chuggy/9"),
+    },
+  };
+  assert.deepEqual(
+    dependencyLines(
+      viewOf({
+        dependencyDeliveries: [elsewhere],
+        readOnlyRepositories: [sibling],
+      }),
+    )?.slice(1),
+    [
+      "Ticket 9",
+      "- Repository: https://github.com/mimage/rust-libs.git, another of this project's, which this job can read and fetch and never delivers to.",
+      `- Committed at ${dependencyLanded} on refs/heads/chuggy/9, and no landing carried it further.`,
+    ],
+  );
+  assert.equal(
+    dependencyLines(viewOf({ dependencyDeliveries: [elsewhere] }))?.[2],
+    "- Repository: https://github.com/mimage/rust-libs.git, which this job is not given.",
+  );
+});
+
+test("an evaluation is told the commit the ticket's work began at, which is not where it starts", () => {
+  const evaluated: DependencyDelivery = {
+    ...proposedDependency,
+    history: {
+      commit: dependencyLanded,
+      began: dependentBegan,
+      startsAtBegan: false,
+      ancestry: "Unknown",
+    },
+  };
+  for (const purpose of ["Review", "Check"] as const) {
+    assert.ok(
+      dependencyLines(
+        viewOf({ purpose, dependencyDeliveries: [evaluated] }),
+      )?.includes(
+        `- Whether commit ${dependencyLanded} is in the history of ${dependentBegan}, the commit this ticket's work began at, was not found out.`,
+      ),
+    );
+  }
+});
+
+test("a commanded stage is told nothing of what the dependencies delivered", () => {
+  for (const view of [
+    viewOf({ work: commandedWork, dependencyDeliveries: [mergedDependency] }),
+    viewOf({
+      purpose: "Check",
+      stage: 1,
+      evaluations: checkEvaluations,
+      dependencyDeliveries: [mergedDependency],
+    }),
+  ]) {
+    assert.equal(dependencyLines(view), undefined);
+  }
+});
+
+test("the dependencies' reports share one room: each is carried whole where it fits what the ones before it left", () => {
+  const sized = (dependency: number, chars: number): DependencyDelivery => ({
+    dependency: asTicketId(dependency),
+    change: { change: "Unsourced" },
+    report: "r".repeat(chars),
+  });
+  const first = dependencyReportsCharsMax - 2_000;
+  const lines = dependencyLines(
+    viewOf({
+      dependencyDeliveries: [
+        sized(1, first),
+        sized(2, 3_000),
+        sized(3, 2_000),
+        sized(4, 1),
+        sized(5, dependencyReportsCharsMax + 1),
+      ],
+    }),
+  );
+  const reports = lines?.filter((line) => line.startsWith("- Report: "));
+  assert.deepEqual(
+    reports?.map((line) =>
+      line ===
+      "- Report: not carried, because the reports before it fill the room this briefing gives them."
+        ? "uncarried"
+        : line.length - "- Report: ".length,
+    ),
+    [first, "uncarried", 2_000, "uncarried", "uncarried"],
+  );
+});
+
+test("dependencies past what a draft names, or unprintable, are refused rather than told", () => {
+  assert.equal(
+    blockedFault(
+      viewOf({
+        dependencyDeliveries: Array.from(
+          { length: dependencyDeliveriesMax + 1 },
+          (_unused, at) => ({
+            dependency: asTicketId(at + 1),
+            change: { change: "Unsourced" },
+          }),
+        ),
+      }),
+    ),
+    "TooManyLines",
+  );
+  assert.equal(
+    blockedFault(
+      viewOf({
+        dependencyDeliveries: [{ ...mergedDependency, title: "a\u001bb" }],
+      }),
+    ),
+    "TextUnreadable",
+  );
+  assert.equal(
+    blockedFault(
+      viewOf({
+        dependencyDeliveries: [
+          { ...mergedDependency, report: "ci.sh\u0007exited 1" },
         ],
       }),
     ),

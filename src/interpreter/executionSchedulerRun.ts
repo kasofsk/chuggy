@@ -185,6 +185,10 @@ import {
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import type {
+  DependencyDeliveriesPort,
+  DependencyDelivery,
+} from "./dependencyDelivery.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Principal } from "./principal.ts";
 import {
@@ -210,6 +214,7 @@ export interface ExecutionSchedulerService {
   readonly configurations: PinnedConfigurationPort;
   readonly runtimeFacts: RuntimeFactsPort;
   readonly readOnlyRepositories: ReadOnlyRepositoriesPort;
+  readonly dependencyDeliveries: DependencyDeliveriesPort;
   readonly priorWorkReports: PriorWorkReportsPort;
   readonly priorEvaluationReports: PriorEvaluationReportsPort;
   readonly failedLanding: FailedLandingPort;
@@ -544,6 +549,44 @@ async function schedulerReadOnlyRepositories(
   }
 }
 
+/** Reads what the ticket's dependencies delivered, as its dispatch pinned it. */
+async function schedulerDependencyDeliveries(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<
+  | { readonly dependencyDeliveries: readonly DependencyDelivery[] }
+  | BriefingUnready
+> {
+  const read = await service.dependencyDeliveries.deliveries(
+    execution.partition,
+    execution.execution,
+  );
+  switch (read.read) {
+    case "Deliveries":
+      return { dependencyDeliveries: read.deliveries };
+    case "Unavailable":
+      return { gathered: "Unavailable" };
+  }
+}
+
+/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, and what its dependencies delivered. */
+async function schedulerProjectContext(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+): Promise<
+  | {
+      readonly readOnlyRepositories: readonly RepositoryId[];
+      readonly dependencyDeliveries: readonly DependencyDelivery[];
+    }
+  | BriefingUnready
+> {
+  const readOnly = await schedulerReadOnlyRepositories(service, execution);
+  if ("gathered" in readOnly) return readOnly;
+  const dependencies = await schedulerDependencyDeliveries(service, execution);
+  if ("gathered" in dependencies) return dependencies;
+  return { ...readOnly, ...dependencies };
+}
+
 /** The durable move an ungatherable briefing input earns, one arm each. */
 async function schedulerUnready(
   service: ExecutionSchedulerService,
@@ -701,9 +744,9 @@ async function schedulerPrepare(
     await schedulerUnready(service, attempt, runtime);
     return undefined;
   }
-  const readOnly = await schedulerReadOnlyRepositories(service, execution);
-  if ("gathered" in readOnly) {
-    await schedulerUnready(service, attempt, readOnly);
+  const project = await schedulerProjectContext(service, execution);
+  if ("gathered" in project) {
+    await schedulerUnready(service, attempt, project);
     return undefined;
   }
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
@@ -726,7 +769,7 @@ async function schedulerPrepare(
     pin: execution,
     configuration,
     runtime,
-    ...readOnly,
+    ...project,
     priorWorkReports,
     ...rework,
     ...(brief === undefined ? {} : { brief }),

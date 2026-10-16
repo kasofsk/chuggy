@@ -1230,16 +1230,18 @@ async function finalizerDeclareHandoffs(
 }
 
 /**
- * One passed work execution of the project's ticket, with its result manifest,
- * its declared handoffs and their bytes in the rig's own store. The rows are
- * written as the migration owner because the scheduler that would write them is
- * another slice's deployable and is not what these cases are about.
+ * One passed work execution of the project's ticket, with its result manifest
+ * at the digest a case names or a fresh one, its declared handoffs and their
+ * bytes in the rig's own store. The rows are written as the migration owner
+ * because the scheduler that would write them is another slice's deployable and
+ * is not what these cases are about.
  */
 export async function finalizerPassedWork(
   rig: FinalizerRig,
   project: FinalizerProject,
   label: string,
   handoffs: readonly FinalizerHandoff[],
+  digest: string = finalizerDigest(),
 ): Promise<FinalizerWork> {
   const work: FinalizerWork = {
     execution: finalizerIdentity(`execution-${label}`),
@@ -1285,7 +1287,7 @@ export async function finalizerPassedWork(
       work.execution,
       work.attempt,
       request.ordinal,
-      finalizerDigest(),
+      digest,
     ],
   );
   await rig.harness.query(

@@ -42,6 +42,7 @@ import {
   type BriefImageReference,
   type ConfigurationPin,
   type DecisionMaterialization,
+  type DependencyPins,
   type ExecutionRequestBundle,
   type ExecutionRequestPlan,
   type NativeActionPlan,
@@ -151,8 +152,7 @@ function executionRequestBundle(
   input: DecisionInput,
   entry: Entry,
   index: number,
-  source: ExecutionSourceObservation | undefined,
-  images: readonly BriefImageReference[] | undefined,
+  { source, images, dependencies }: SpawnSources,
 ): ExecutionRequestBundle {
   const evidence =
     entry.event.type === "TicketFinalizationNeedsWork"
@@ -177,6 +177,7 @@ function executionRequestBundle(
           },
         }),
     ...(images === undefined || images.length === 0 ? {} : { images }),
+    ...(dependencies === undefined ? {} : { dependencies }),
   };
 }
 
@@ -191,8 +192,7 @@ function executeRequest(
   entry: Entry,
   obligations: readonly Obligation[],
   post: Replayed,
-  source: ExecutionSourceObservation | undefined,
-  images: readonly BriefImageReference[] | undefined,
+  spawn: SpawnSources,
 ): readonly ExecutionRequestPlan[] {
   const run = obligationsOf(entry, obligations, "ExecuteTask");
   const first = run[0];
@@ -209,7 +209,7 @@ function executeRequest(
       ticket,
       ticketVersion: entry.seq,
       kind: phase === "WorkTask" ? "SpawnWork" : "SpawnEvaluation",
-      bundle: executionRequestBundle(input, entry, first.index, source, images),
+      bundle: executionRequestBundle(input, entry, first.index, spawn),
       tasks: requestTasks(post, ticket, identities),
     },
   ];
@@ -304,6 +304,53 @@ function nativeActions(
   ];
 }
 
+/** What a failed finalization's evidence pins: the identities it named, and the target's commit as where the change starts again. */
+function inputBundleEvidenceReferences(
+  evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
+): readonly InputBundleReference[] {
+  return [
+    ...evidence.preparation,
+    {
+      kind: "FinalizationAttempt",
+      reference: evidence.attempt,
+      digest: evidence.attemptDigest,
+    },
+    { kind: "TargetCommit", reference: evidence.targetCommit },
+    { kind: "ChangeBase", reference: evidence.targetCommit },
+    ...(evidence.conflictManifest === undefined
+      ? []
+      : [
+          {
+            kind: "ConflictManifest" as const,
+            reference: evidence.conflictManifest,
+            ...(evidence.conflictManifestDigest === undefined
+              ? {}
+              : { digest: evidence.conflictManifestDigest }),
+          },
+        ]),
+  ];
+}
+
+/** What a dispatch pins of its ticket's dependencies: each accepted result, and the commits found in the dispatched history or not. */
+function inputBundleDependencyReferences(
+  dependencies: DependencyPins,
+): readonly InputBundleReference[] {
+  return [
+    ...dependencies.results.map((manifest) => ({
+      kind: "DependencyResult" as const,
+      reference: manifest,
+    })),
+    ...dependencies.ancestors.map((commit) => ({
+      kind: "DependencyAncestor" as const,
+      reference: commit,
+    })),
+    ...dependencies.nonAncestors.map((commit) => ({
+      kind: "DependencyNotAncestor" as const,
+      reference: commit,
+    })),
+  ];
+}
+
 /**
  * The references one spawn's bundle pins, in the order a holder reads them and
  * with no reference declared twice. A failed finalization contributes the exact
@@ -319,6 +366,7 @@ export function inputBundleReferencesOf(
   const evidence = bundle.evidence;
   const source = bundle.source;
   const images = bundle.images ?? [];
+  const dependencies = bundle.dependencies;
   const named: readonly InputBundleReference[] = [
     {
       kind: "ConfigurationRevision",
@@ -343,29 +391,10 @@ export function inputBundleReferencesOf(
             reference: manifest,
           })),
         ]),
-    ...(evidence === undefined
+    ...(evidence === undefined ? [] : inputBundleEvidenceReferences(evidence)),
+    ...(dependencies === undefined
       ? []
-      : [
-          ...evidence.preparation,
-          {
-            kind: "FinalizationAttempt" as const,
-            reference: evidence.attempt,
-            digest: evidence.attemptDigest,
-          },
-          { kind: "TargetCommit" as const, reference: evidence.targetCommit },
-          { kind: "ChangeBase" as const, reference: evidence.targetCommit },
-          ...(evidence.conflictManifest === undefined
-            ? []
-            : [
-                {
-                  kind: "ConflictManifest" as const,
-                  reference: evidence.conflictManifest,
-                  ...(evidence.conflictManifestDigest === undefined
-                    ? {}
-                    : { digest: evidence.conflictManifestDigest }),
-                },
-              ]),
-        ]),
+      : inputBundleDependencyReferences(dependencies)),
   ];
   const seen = new Set<string>();
   const references = named.filter((reference) => {
@@ -427,6 +456,8 @@ export interface SpawnSources {
   readonly pinned?: TicketSourceRecord;
   /** The ticket's own brief images, read at the same gather and carried onto every spawn's bundle alike. */
   readonly images?: readonly BriefImageReference[];
+  /** What a dispatch pins of its ticket's dependencies, which only a dispatch carries. */
+  readonly dependencies?: DependencyPins;
 }
 
 /** The event arms a finalizer's result is journalled at, each of which fulfils the request it answered. */
@@ -451,14 +482,7 @@ export function materializationOf(
 ): DecisionMaterialization {
   return {
     execution: [
-      ...executeRequest(
-        input,
-        entry,
-        obligations,
-        post,
-        spawn.source,
-        spawn.images,
-      ),
+      ...executeRequest(input, entry, obligations, post, spawn),
       ...cancelRequest(entry, obligations, pre),
     ],
     actions: nativeActions(entry, pre.graph, post.graph),

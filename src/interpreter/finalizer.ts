@@ -330,7 +330,10 @@ export type InputBundleReferenceKind =
   | "ConflictManifest"
   | "TargetCommit"
   | "ProjectArtifact"
-  | "ChangeBase";
+  | "ChangeBase"
+  | "DependencyResult"
+  | "DependencyAncestor"
+  | "DependencyNotAncestor";
 
 /** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
@@ -343,6 +346,9 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "TargetCommit",
     "ProjectArtifact",
     "ChangeBase",
+    "DependencyResult",
+    "DependencyAncestor",
+    "DependencyNotAncestor",
   ];
 
 /** The most references one bundle holds, so a bundle cannot grow into a payload. */

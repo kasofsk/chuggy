@@ -424,6 +424,7 @@ function briefed(
     configuration: read.configuration,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
+    dependencyDeliveries: [],
     priorWorkReports: { reports: [] },
     priorEvaluationReports: { reports: [] },
     brief: limitedRequest,

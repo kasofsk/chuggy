@@ -9,6 +9,7 @@ import {
 import type { ExecutionSourceObservationPort } from "./executionSource.ts";
 import type { ProjectArtifactPort } from "./finalizerPreparation.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { DependencyPinningPort } from "./dependencyDelivery.ts";
 import type { ReworkCap } from "./reworkCap.ts";
 import {
   observe,
@@ -33,6 +34,7 @@ export interface TicketServiceRuntimeService {
   readonly executionSources: ExecutionSourceObservationPort;
   readonly ticketBriefs: TicketBriefPort;
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
+  readonly dependencyPinning: DependencyPinningPort;
   readonly owner: OwnerId;
   readonly monotonicNow: () => number;
   readonly ticketConfig?: TicketServiceConfig;
@@ -178,6 +180,7 @@ export async function ticketServiceRunOnce(
     executionSources: service.executionSources,
     ticketBriefs: service.ticketBriefs,
     projectArtifacts: service.projectArtifacts,
+    dependencyPinning: service.dependencyPinning,
   };
   let activated = 0;
   let failed = 0;

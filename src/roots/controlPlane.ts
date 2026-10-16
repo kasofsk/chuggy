@@ -85,6 +85,16 @@ import {
   postgresPriorWorkReports,
 } from "../adapters/postgres/evaluationReports.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
+import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
+import {
+  postgresDependencyPins,
+  postgresDependencyResults,
+} from "../adapters/postgres/dependencyDeliveries.ts";
+import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
+import {
+  dependencyDeliveriesRead,
+  dependencyPinning,
+} from "../interpreter/dependencyDelivery.ts";
 import { artifactStore } from "../adapters/artifacts/artifactStore.ts";
 import { postgresPinnedConfigurations } from "../adapters/postgres/pinnedConfigurations.ts";
 import { postgresWorkerPoolRoster } from "../adapters/postgres/workerPool.ts";
@@ -510,6 +520,7 @@ export function ticketServiceProcessRoot(
     composeForgeRepositoryMinting(pool, config.forge),
   );
   const git = gitPromotion({ ...config.source, credentials });
+  const bindings = postgresProjectRepositoryBinding(pool);
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
     rework: checkedReworkCap(config.rework),
@@ -519,12 +530,26 @@ export function ticketServiceProcessRoot(
     owner: asOwnerId(config.owner),
     monotonicNow: () => performance.now(),
     executionSources: executionSourceObservation(
-      postgresProjectRepositoryBinding(pool),
+      bindings,
       git,
       postgresExecutionSourceHistory(pool),
     ),
     ticketBriefs: postgresTicketBrief(pool),
     projectArtifacts: artifactStore({ root: config.artifacts.root }),
+    dependencyPinning: dependencyPinning({
+      results: postgresDependencyResults(pool),
+      landings: postgresTicketLandings(pool),
+      bindings,
+      ancestry: gitCommitAncestry({
+        scratchDirectory: config.source.scratchDirectory,
+        identity: config.source.identity,
+        environment: config.source.environment,
+        credentials,
+        ...(config.source.credentialUsername === undefined
+          ? {}
+          : { credentialUsername: config.source.credentialUsername }),
+      }),
+    }),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(
@@ -571,6 +596,7 @@ export interface SchedulerProcessRootConfig {
     | "priorEvaluationReports"
     | "failedLanding"
     | "readOnlyRepositories"
+    | "dependencyDeliveries"
     | "ticketBriefs"
     | "workerPools"
     | "access"
@@ -611,6 +637,11 @@ export function schedulerProcessRootService(
     priorEvaluationReports: postgresPriorEvaluationReports(pool),
     failedLanding: postgresFailedLanding(pool),
     readOnlyRepositories: postgresReadOnlyRepositories(pool),
+    dependencyDeliveries: dependencyDeliveriesRead({
+      pinned: postgresDependencyPins(pool),
+      landings: postgresTicketLandings(pool),
+      briefs: postgresTicketBrief(pool),
+    }),
     ticketBriefs: postgresTicketBrief(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };

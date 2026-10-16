@@ -293,7 +293,7 @@ async function ticketLandingConflict(
 }
 
 /** One request's pull request, its link kept only where a report could carry it. */
-function ticketLandingProposal(
+export function ticketLandingProposal(
   proposal: TicketLandingProposal,
 ): TicketLandingProposal {
   const { url, ...rest } = proposal;

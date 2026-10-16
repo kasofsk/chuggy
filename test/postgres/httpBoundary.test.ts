@@ -407,6 +407,7 @@ async function ingressBriefedIntent(
     configuration: pinned.configuration,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
+    dependencyDeliveries: [],
     priorWorkReports: { reports: [] },
     priorEvaluationReports: { reports: [] },
     brief,

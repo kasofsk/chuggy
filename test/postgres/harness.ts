@@ -75,6 +75,10 @@ import { postgresOperationInbox } from "../../src/adapters/postgres/operationInb
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
+import { postgresTicketLandings } from "../../src/adapters/postgres/ticketLandings.ts";
+import { postgresDependencyResults } from "../../src/adapters/postgres/dependencyDeliveries.ts";
+import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import { dependencyPinning } from "../../src/interpreter/dependencyDelivery.ts";
 import { executionSourceObservation } from "../../src/interpreter/executionSourceObservation.ts";
 import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
 import { postgresProjectDecision } from "../../src/adapters/postgres/projectDecision.ts";
@@ -941,6 +945,17 @@ export function postgresHarnessWriter(
         throw new Error("postgres harness: a fixture brief names no image");
       },
     },
+    /**
+     * A dependency's result and landing are read from the harness's rows, and
+     * the one remote question a dispatch asks of a dependency is answered as
+     * not found out, because the harness holds no repository to ask.
+     */
+    dependencyPinning: dependencyPinning({
+      results: postgresDependencyResults(harness.writerPool),
+      landings: postgresTicketLandings(harness.writerPool),
+      bindings: postgresProjectRepositoryBinding(harness.writerPool),
+      ancestry: { ancestry: () => Promise.resolve("Unknown") },
+    }),
   };
 }
 

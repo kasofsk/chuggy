@@ -76,6 +76,8 @@ import type {
   ProjectArtifactId,
 } from "./finalizerPreparation.ts";
 import type { NativeActionResolution } from "./projectCommand.ts";
+import type { GitObjectId } from "./finalizer.ts";
+import type { ResultManifestId } from "./resultManifest.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import type { TicketDefinitionMaterial } from "./ticketDefinition.ts";
 
@@ -190,6 +192,21 @@ export interface ExecutionRequestBundle {
   };
   /** The brief's own images, read at the same gather the source observes and carried regardless of it. */
   readonly images?: readonly BriefImageReference[];
+  /** What a dispatch pinned of its ticket's dependencies; no other spawn pins it. */
+  readonly dependencies?: DependencyPins;
+}
+
+/**
+ * What a dispatch pins of its ticket's dependencies, each list in the order the
+ * dependencies ascend: the work result each one's journal accepted, and the
+ * commits their changes are at that the dispatched commit was found to descend
+ * from, and found not to. A commit that could not be answered for is in
+ * neither.
+ */
+export interface DependencyPins {
+  readonly results: readonly ResultManifestId[];
+  readonly ancestors: readonly GitObjectId[];
+  readonly nonAncestors: readonly GitObjectId[];
 }
 
 /** The kind part of a spawn bundle's derived identity, which the schema's backfill spells too. */

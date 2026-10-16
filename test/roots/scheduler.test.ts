@@ -1122,6 +1122,10 @@ const landingNone = "{ landing: async () => ({ read: 'Landing' }) }";
 const readOnlyNone =
   "{ repositories: async () => ({ read: 'Repositories', repositories: [] }) }";
 
+/** A port that answers no dependency of the ticket, as the program spells one. */
+const deliveriesNone =
+  "{ deliveries: async () => ({ read: 'Deliveries', deliveries: [] }) }";
+
 /**
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
@@ -1161,7 +1165,7 @@ function processProgram(
         configuration: async () => ({ read: 'Configuration', configuration }),
       },
       runtimeFacts: supplied.suppliedRuntimeFacts({ workspace: '/workspace' }),
-      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone},
+      priorWorkReports: ${reportsNone}, priorEvaluationReports: ${reportsNone}, failedLanding: ${landingNone}, readOnlyRepositories: ${readOnlyNone}, dependencyDeliveries: ${deliveriesNone},
       ticketBriefs: { brief: async () => undefined },
       practices: briefing.blessedPracticeCatalog,
       config: scheduler.executionSchedulerDefaults,
