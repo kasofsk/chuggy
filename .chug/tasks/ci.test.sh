@@ -17,6 +17,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/ci.sh"
 SELECT="$HERE/_ci-select.sh"
+IGNORED="$HERE/_ignored-inputs.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -53,6 +54,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	mkdir -p "$R/.chug/tasks"
 	cp "$SUT" "$R/.chug/tasks/ci.sh"
 	cp "$SELECT" "$R/.chug/tasks/_ci-select.sh"
+	cp "$IGNORED" "$R/.chug/tasks/_ignored-inputs.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -1007,8 +1009,9 @@ check "no suites found exits 2, not 0" 2 "$RC" "matched nothing"
 # arguments and the store's variables it was handed, and runs the command after
 # `--` — or, for a name STUB_TR_REUSE lists, prints a replayed log and the
 # REUSED line and exits STUB_TR_REUSE_RC, running nothing. Under STUB_TR_DIGEST
-# it also logs a digest of what its tools print, as track-record keys on it;
-# for the name STUB_TR_KILL gives, it kills the shell that ran it.
+# it also logs a digest of what its tools print, as track-record keys on it,
+# and each tool that fails, which would leave the gate unrecorded; for the name
+# STUB_TR_KILL gives, it kills the shell that ran it.
 TRBIN="$WORK/trbin"
 TRLOG="$WORK/tr.log"
 mkdir -p "$TRBIN"
@@ -1028,7 +1031,12 @@ while [ "$#" -gt 0 ]; do
 	--) shift; break ;;
 	--name) name="$2"; shift 2 ;;
 	--tool)
-		if [ -n "${STUB_TR_DIGEST:-}" ]; then tools="$tools$(sh -c "$2" 2>&1 | cksum)/"; fi
+		if [ -n "${STUB_TR_DIGEST:-}" ]; then
+			if ! sh -c "$2" >"$STUB_TR_LOG.out" 2>"$STUB_TR_LOG.err"; then
+				printf 'toolfail|%s|%s\n' "$name" "$2" >>"$STUB_TR_LOG"
+			fi
+			tools="$tools$(cksum <"$STUB_TR_LOG.out") $(cksum <"$STUB_TR_LOG.err")/"
+		fi
 		shift 2
 		;;
 	*) shift ;;
@@ -1053,8 +1061,8 @@ eval "$(awk '
 	/^record_tool_ignored=/ { open = 1 }
 	open { print; if ($0 !~ /\\$/) exit }
 ' "$SUT")"
-# Every gate the sequencer names is wrapped but check-roster.
-gate_calls="$(named_gates "$SUT" | grep -vcx check-roster)"
+# Every gate the sequencer names is wrapped but check-roster and doc-lint.
+gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint)"
 
 # The gate stage with the stub first on PATH and whatever VAR=value the case
 # names; the token is the case's to give.
@@ -1094,22 +1102,24 @@ for case in "no token|" "a token file that is not there|TRACK_RECORD_TOKEN_FILE=
 done
 
 # A token, in the variable or in a file, wraps every gate the sequencer calls
-# once but check-roster, named by its id, keyed on node, the install, the
-# ignored files and the salt and on what else its verdict reads, and never on
-# the platform. check-roster runs as it does unwrapped.
+# once but check-roster and doc-lint, named by its id, keyed on node, the
+# install, the ignored files and the salt and on what else its verdict reads,
+# and never on the platform. check-roster and doc-lint run as they do
+# unwrapped.
 printf 'trk_stub\n' > "$WORK/token"
 run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
 check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
 check "a wrapped clean run counts what it reused" 0 "$RC" "ci: all gates clean (0 reused)"
 check "check-roster still runs" 0 "$RC" "stub check-roster"
+check "doc-lint still runs" 0 "$RC" "stub doc-lint"
 recorded_log
 check "every gate the sequencer calls is wrapped once" 0 "$RC" "calls $gate_calls"
 refute "no gate is keyed on the platform" 0 "$RC" "|--platform|"
 refute "check-roster is not wrapped" 0 "$RC" "run|--name|check-roster|"
+refute "doc-lint is not wrapped" 0 "$RC" "run|--name|doc-lint|"
 check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
 common="--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
 for gate in \
-	"doc-lint|--|./.chug/tasks/doc-lint.sh|" \
 	"check-paths|${common}--tool|git log --diff-filter=D --name-only --format=|--|./.chug/tasks/check-paths.sh|" \
 	"source-static|--|./.chug/tasks/check-source.sh|--static|" \
 	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|" \
@@ -1155,43 +1165,58 @@ printf '#!/bin/sh\necho "track-record: REUSED check-model-api (recorded 2026-01-
 	> "$R/.chug/tasks/check-model.sh"
 git -C "$R" add -A
 run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1 \
-	"STUB_TR_REUSE=doc-lint source-unit .chug/tasks/passing.test.sh"
+	"STUB_TR_REUSE=check-figures source-unit .chug/tasks/passing.test.sh"
 check "a reused pass is counted, a gate's and a suite's alike" 0 "$RC" "ci: all gates clean (3 reused)"
-check "a reused gate's log is printed" 0 "$RC" "stub log replayed for doc-lint"
-refute "a reused gate does not run" 0 "$RC" "stub doc-lint"
+check "a reused gate's log is printed" 0 "$RC" "stub log replayed for check-figures"
+refute "a reused gate does not run" 0 "$RC" "stub check-figures"
 check "a reused suite says so" 0 "$RC" "    track-record: REUSED .chug/tasks/passing.test.sh (recorded"
 recorded_log
 check "a suite is wrapped, keyed on the platform too" 0 "$RC" \
 	"run|--name|.chug/tasks/passing.test.sh|$common--platform|--|sh|.chug/tasks/passing.test.sh|"
 
 # A REUSED line turns no failure into a pass and counts nothing then.
-stub_repo 1
+stub_failing() { # <gate> <exit> — every named gate stubbed clean but that one
+	stub_repo 0
+	printf '#!/bin/sh\necho stub %s\nexit %s\n' "$1" "$2" > "$R/.chug/tasks/$1.sh"
+	git -C "$R" add -A
+}
+stub_failing check-figures 1
 run_recorded TRACK_RECORD_TOKEN=t
-check "a wrapped finding exits 1" 1 "$RC" "1 gate(s) failed"
-stub_repo 2
+check "a wrapped finding exits 1" 1 "$RC" "ci: FAILED — check-figures"
+stub_failing check-figures 2
 run_recorded TRACK_RECORD_TOKEN=t
-check "a wrapped could-not-run exits 2" 2 "$RC" "could not run"
+check "a wrapped could-not-run exits 2" 2 "$RC" "ci: LINTER ERROR (2) — check-figures could not run"
 stub_repo 0
-run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=doc-lint STUB_TR_REUSE_RC=1
-check "a REUSED line on an exit of 1 is still a finding" 1 "$RC" "ci: FAILED — doc-lint"
-run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=doc-lint STUB_TR_REUSE_RC=2
-check "a REUSED line on an exit of 2 is still a could-not-run" 2 "$RC" "ci: LINTER ERROR (2) — doc-lint could not run"
-# A wrapped gate whose exit never came back is not a pass.
-run_recorded TRACK_RECORD_TOKEN=t STUB_TR_KILL=doc-lint
-check "a wrapped gate whose exit was lost could not run" 2 "$RC" "ci: LINTER ERROR (2) — doc-lint could not run"
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=check-figures STUB_TR_REUSE_RC=1
+check "a REUSED line on an exit of 1 is still a finding" 1 "$RC" "ci: FAILED — check-figures"
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=check-figures STUB_TR_REUSE_RC=2
+check "a REUSED line on an exit of 2 is still a could-not-run" 2 "$RC" \
+	"ci: LINTER ERROR (2) — check-figures could not run"
+# A wrapped gate whose exit never came back is not a pass, though the wrapped
+# gate before it passed.
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_KILL=check-paths
+check "a wrapped gate whose exit was lost could not run" 2 "$RC" "ci: LINTER ERROR (2) — check-paths could not run"
 
 # THE KEY SEES THE INSTALL AND THE IGNORED FILES. The stub digests what each
 # call's tools print, which is what track-record keys on. npm's record of the
-# install moves it, and so does an ignored file, by its presence and by its
-# content; what a run writes under node_modules, dist/ or .claude/ does not.
+# install moves it, and so does an ignored entry in scope: a file by its name
+# and content, a symlink by its target and never by what it points at, and
+# another repository by its name. What `npm ci`, a console's build and Claude
+# Code write while a run is under way does not, and nothing in scope makes a
+# tool fail. The ignores are the tree's own, and one that ignores Claude Code's
+# worktrees directory whole, so that git lists each worktree in it as an entry.
 stub_repo 0
-printf 'node_modules\ndist/\n' > "$R/.gitignore"
-mkdir -p "$R/node_modules" "$R/src"
+printf 'node_modules\ndist/\n.claude/worktrees/*\n' > "$R/.gitignore"
+printf '**/.claude/worktrees/\n*.gen\n.claude/*.lock\n' >> "$R/.git/info/exclude"
+mkdir -p "$R/node_modules" "$R/src" "$R/.claude"
 printf '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
+printf '{}\n' > "$R/.claude/settings.json"
 git -C "$R" add -A
-key_of() { # <label> — doc-lint's digest, kept under the label
+: > "$WORK/toolfails"
+key_of() { # <label> — check-figures' digest, kept under the label
 	run_recorded TRACK_RECORD_TOKEN=t STUB_TR_DIGEST=1
-	grep '^digest|doc-lint|' "$TRLOG" > "$WORK/key.$1"
+	grep '^digest|check-figures|' "$TRLOG" > "$WORK/key.$1"
+	grep '^toolfail|check-figures|' "$TRLOG" >> "$WORK/toolfails" || true
 }
 same_key() { # <label> <label>
 	if cmp -s "$WORK/key.$1" "$WORK/key.$2"; then echo "same key"; else echo "new key"; fi > "$WORK/.key"
@@ -1216,14 +1241,79 @@ printf 'src/renamed.ts\n' >> "$R/.git/info/exclude"
 key_of renamed
 same_key edited renamed
 check "an ignored file's name is a new key" 0 "$RC" "new key"
-mkdir -p "$R/node_modules/.vite" "$R/ui/console/dist" "$R/.claude"
-printf '.claude/\n' >> "$R/.git/info/exclude"
+mkdir -p "$R/test/fixtures/dist"
+printf 'export const table = []\n' > "$R/test/fixtures/dist/table.ts"
+key_of dist
+same_key renamed dist
+check "an ignored file under a dist/ outside a console is a new key" 0 "$RC" "new key"
+mkdir -p "$R/test/fixtures/node_modules/m"
+printf 'module.exports = 1\n' > "$R/test/fixtures/node_modules/m/index.js"
+key_of nested
+same_key dist nested
+check "an ignored file under a nested node_modules is a new key" 0 "$RC" "new key"
+ln -s ../test "$R/src/tests.gen"
+key_of linked
+same_key nested linked
+check "an ignored symlink to a directory is a new key" 0 "$RC" "new key"
+rm "$R/src/tests.gen"
+ln -s ../nowhere "$R/src/tests.gen"
+key_of relinked
+same_key linked relinked
+check "an ignored symlink's target is a new key, though it names nothing" 0 "$RC" "new key"
+printf 'one\n' > "$WORK/outside.txt"
+ln -s ../../outside.txt "$R/src/outside.gen"
+key_of pointing
+printf 'two\n' > "$WORK/outside.txt"
+key_of followed
+same_key pointing followed
+check "what an ignored symlink points at is not followed" 0 "$RC" "same key"
+mkdir -p "$R/scratch"
+printf 'scratch/\n' >> "$R/.git/info/exclude"
+git init -q "$R/scratch/other"
+key_of repository
+same_key followed repository
+check "another repository that is ignored is a new key" 0 "$RC" "new key"
+printf 'secret\n' > "$R/src/sealed.gen"
+chmod 000 "$R/src/sealed.gen"
+key_of sealed
+same_key repository sealed
+check "an ignored file it cannot read is a new key" 0 "$RC" "new key"
+mkdir -p "$R/node_modules/.vite" "$R/ui/console/dist" "$R/ui/chuggy-ui/node_modules/.vite" \
+	"$R/test/rig/node_modules/r"
 printf 'cache\n' > "$R/node_modules/.vite/deps.json"
 printf 'built\n' > "$R/ui/console/dist/index.html"
+printf 'cache\n' > "$R/ui/chuggy-ui/node_modules/.vite/deps.json"
+printf 'module.exports = 1\n' > "$R/test/rig/node_modules/r/index.js"
 printf 'lock\n' > "$R/.claude/scheduled_tasks.lock"
+git init -q "$R/.claude/worktrees/agent"
 key_of written
-same_key renamed written
-check "what a run writes under node_modules, dist/ and .claude/ is the same key" 0 "$RC" "same key"
+same_key sealed written
+check "what npm, a console's build and Claude Code write is the same key" 0 "$RC" "same key"
+OUT="$WORK/toolfails"
+refute "nothing in scope makes a tool fail" 0 0 "toolfail|"
+
+# The listing prints names and hashes on stdout alike, so a name is keyed even
+# where stderr cannot be opened; a listing that fails fails the tool rather
+# than reading as a tree with nothing ignored; and the workspaces whose
+# node_modules it leaves out are the ones package.json declares.
+set +e
+(cd "$R" && sh .chug/tasks/_ignored-inputs.sh 2>&-) > "$WORK/.raw"
+RC=$?
+set -e
+tr '\0' '\n' < "$WORK/.raw" > "$WORK/.listing"
+OUT="$WORK/.listing"
+check "an ignored file's name is on the listing's stdout" 0 "$RC" "src/renamed.ts"
+set +e
+(cd "$BARE" && sh "$IGNORED") > "$WORK/.raw" 2>&1
+RC=$?
+set -e
+OUT="$WORK/.raw"
+check "a listing that fails fails the tool" 128 "$RC" "not a git repository"
+declared="$(node -p "require('$ROOT/package.json').workspaces.slice().sort().join(' ')")"
+listed="$(sed -n 's/^workspaces="\(.*\)"$/\1/p' "$IGNORED" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+printf 'declared %s|\nlisted %s|\n' "$declared" "${listed% }" > "$WORK/.workspaces"
+OUT="$WORK/.workspaces"
+check "the workspaces left out are package.json's" 0 0 "listed $declared|"
 
 # A wrapped suite still has its cap.
 stub_repo 0

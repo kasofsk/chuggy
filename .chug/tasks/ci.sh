@@ -26,17 +26,18 @@
 # exits 1.
 #
 # A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN, given a Track Record token
-# and a `track-record` that runs. Every gate but check-roster, and every suite,
-# then runs under `track-record run`, keyed on the tracked tree as it is on
-# disk, the ignored files beside it, what npm installed, the version of node,
-# what else that gate's verdict reads, and the salt below. A key on record
-# replays its log instead of running, and only an exit of 0 is recorded. A
-# reused pass is a pass and nothing more: it is counted as one, and the clean
-# line says how many there were. What no key sees, a reused pass does not
-# check: a different server behind the same URL, a container reused by name, a
-# file outside the tree or outside the scope below, such as a package changed
-# under node_modules by hand. Without a token, or with TRACK_RECORD_OFF=1,
-# nothing is wrapped and every gate runs itself.
+# and a `track-record` that runs. Every gate but check-roster and doc-lint, and
+# every suite, then runs under `track-record run`, keyed on the tracked tree as
+# it is on disk, the ignored files beside it, what npm installed, the version
+# of node, what else that gate's verdict reads, and the salt below. A key on
+# record replays its log instead of running, and only an exit of 0 is
+# recorded. A reused pass is a pass and nothing more: it is counted as one,
+# and the clean line says how many there were. What no key sees, a reused
+# pass does not check: a different server behind the same URL, a container
+# reused by name, a file outside the tree or outside the scope
+# `_ignored-inputs.sh` keys, such as a package changed under node_modules by
+# hand. Without a token, or with TRACK_RECORD_OFF=1, nothing is wrapped and
+# every gate runs itself.
 #
 # Env:
 #   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
@@ -77,15 +78,11 @@ record_salt="chuggy-ci-1"
 
 # Every key also holds npm's own record of what it installed, since a lock that
 # changed after `npm ci` names packages that are not the ones installed, and
-# every ignored file a gate's walk can reach, by name and content. Out of that
-# scope are the install, which the record stands for, build output and Claude
-# Code's state: gates and the session write them while a run is under way, and
-# no gate reads them as its input.
+# the ignored files a gate's walk can reach, which `_ignored-inputs.sh` prints
+# and says the scope of.
 record_tool_node="node --version"
 record_tool_install="cat node_modules/.package-lock.json"
-record_tool_ignored="git ls-files -z --others --ignored --exclude-standard -- \
-':(glob,exclude)**/node_modules/**' ':(glob,exclude)**/dist/**' ':(glob,exclude)**/.claude/**' \
-| tee /dev/stderr | xargs -0 git hash-object --"
+record_tool_ignored="sh .chug/tasks/_ignored-inputs.sh"
 record=""
 # A token is read as track-record reads one, so a variable naming a file that
 # is not there wraps nothing rather than announcing reuse that cannot happen.
@@ -204,14 +201,16 @@ run_gate() { # <gate-id> <label> <script> [args...]
 	fi
 	set +e
 	record_hit=0
-	# check-roster judges the plugins installed on this machine, down to
-	# whether their files are there, and no key holds that for less than the
-	# gate costs to run.
-	if [ -n "$record" ] && [ "$gate_id" != "check-roster" ]; then
-		record_gate "$gate_id" "$@"
-	else
+	# check-roster and doc-lint run themselves, as each reads what no key holds
+	# for less than the gate costs to run: check-roster the plugins installed
+	# on this machine, down to whether their files are there, and doc-lint
+	# whatever a relative link names on disk, a console's build output
+	# included.
+	if [ -z "$record" ] || [ "$gate_id" = "check-roster" ] || [ "$gate_id" = "doc-lint" ]; then
 		"$@"
 		rc=$?
+	else
+		record_gate "$gate_id" "$@"
 	fi
 	set -e
 	case "$rc" in
