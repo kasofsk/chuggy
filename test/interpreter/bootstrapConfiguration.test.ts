@@ -39,6 +39,8 @@ import {
   bootstrapConfigurationPath,
   bootstrapImageCharsMax,
   bootstrapImageFault,
+  bootstrapPublicOriginCharsMax,
+  bootstrapPublicOriginFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type { BriefingSectionId } from "../../src/interpreter/briefingTemplate.ts";
 import {
@@ -102,16 +104,18 @@ test("it commands one review evaluation and no practices", () => {
   assert.equal(evaluations[0]?.purpose, "Review");
 });
 
-test("its briefed stages run as one Claude agent, with no setup and no files", () => {
+test("its briefed stages run as one Claude agent, with no arguments, no setup and no files", () => {
   assert.deepEqual(bootstrapReady().worker, {
-    mode: {
-      type: "SingleAgent",
-      agent: "Claude",
-      arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
-    },
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
     setup: [],
     files: [],
   });
+});
+
+test("neither the configuration nor the one it tells its worker to declare lists allowed tools, which restrict nothing where a job's agent bypasses permissions", () => {
+  const document = bootstrapConfiguration({ repository, defaultBranch, image });
+  assert.doesNotMatch(document, /allowedTools/u);
+  for (const line of toldLines()) assert.doesNotMatch(line, /allowedTools/u);
 });
 
 test("the seeded file is a declaration an import reads back under its name", () => {
@@ -397,13 +401,19 @@ const limitedRequest = asDraftBrief({
 function briefed(
   purpose: "Work" | "Review",
   section: BriefingSectionId,
+  publicOrigin?: string,
 ): readonly string[] {
   const pin = {
     configurationRevision: bootstrapConfigurationName,
     configurationDigest: "sha256:bootstrap",
   };
   const document: unknown = JSON.parse(
-    bootstrapConfiguration({ repository, defaultBranch, image }),
+    bootstrapConfiguration({
+      repository,
+      defaultBranch,
+      image,
+      ...(publicOrigin === undefined ? {} : { publicOrigin }),
+    }),
   );
   const read = pinnedTaskConfigurationReadiness(document, pin);
   if (read.readiness !== "Ready") assert.fail(read.fault);
@@ -525,15 +535,102 @@ test("each role is told that a limit the request puts on what may change does no
   );
 });
 
-test("the worker is told where the format is published, and that evaluations run in order and stop at a failure", () => {
-  const told = briefed("Work", "PurposeInstructions");
+/** The told line naming where every key chuggy reads is published. */
+function schemaLine(told: readonly string[]): string {
+  const found = told.filter((line) => line.startsWith("The JSON Schema at "));
+  assert.equal(found.length, 1);
+  return found[0] ?? "";
+}
+
+/** A deployment's public origin, with a port, so that a line naming only its host is visible. */
+const publicOrigin = "https://chuggy.example:8443";
+
+test("where the deployment names its public origin, the worker is told the schema's whole URL", () => {
+  const line = schemaLine(briefed("Work", "PurposeInstructions", publicOrigin));
   assert.ok(
-    told.some(
-      (line) =>
-        line.includes("JSON Schema") &&
-        line.includes(`GET ${nativeHttpRoutes.configurationSchema} `),
+    line.startsWith(
+      `The JSON Schema at ${publicOrigin}${nativeHttpRoutes.configurationSchema} names every key chuggy reads`,
+    ),
+    line,
+  );
+  assert.doesNotMatch(line, /\bGET\b/u);
+});
+
+test("where it names none, the worker is told the schema's route on the chuggy API, and nothing else in the line moves", () => {
+  const unnamed = schemaLine(briefed("Work", "PurposeInstructions"));
+  const where = `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`;
+  assert.ok(
+    unnamed.startsWith(`The JSON Schema at ${where} names every key`),
+    unnamed,
+  );
+  assert.equal(
+    unnamed.replace(where, "W"),
+    schemaLine(briefed("Work", "PurposeInstructions", publicOrigin)).replace(
+      `${publicOrigin}${nativeHttpRoutes.configurationSchema}`,
+      "W",
     ),
   );
+});
+
+/** An https origin of exactly `chars` code points. */
+function originOf(chars: number): string {
+  return `https://${"o".repeat(chars - "https://.test".length)}.test`;
+}
+
+test("an origin as long as the bound composes, and one longer does not", () => {
+  const longest = originOf(bootstrapPublicOriginCharsMax);
+  assert.equal([...longest].length, bootstrapPublicOriginCharsMax);
+  assert.equal(bootstrapPublicOriginFault(longest), undefined);
+  const composed = bootstrapConfiguration({
+    repository: asRepositoryId("r".repeat(finalizerIdentityCharsMax)),
+    defaultBranch,
+    image: "r/".concat("i".repeat(bootstrapImageCharsMax - 2)),
+    publicOrigin: longest,
+  });
+  assert.equal(releaseConfigurationReadiness(composed).readiness, "Ready");
+  assert.ok(composed.includes(longest));
+  const longer = originOf(bootstrapPublicOriginCharsMax + 1);
+  assert.equal(bootstrapPublicOriginFault(longer), "TextTooLong");
+  assert.throws(
+    () =>
+      bootstrapConfiguration({
+        repository,
+        defaultBranch,
+        image,
+        publicOrigin: longer,
+      }),
+    RangeError,
+  );
+});
+
+test("an origin is one only as a URL writes it, with nothing after it", () => {
+  for (const named of [
+    "https://chuggy.example",
+    "https://chuggy.example:8443",
+    "http://127.0.0.1:3000",
+  ])
+    assert.equal(bootstrapPublicOriginFault(named), undefined, named);
+  for (const malformed of [
+    "chuggy.example",
+    "https://chuggy.example/",
+    "https://chuggy.example/api",
+    "https://chuggy.example?x",
+    "https://chuggy.example#x",
+    "https://op@chuggy.example",
+    "https://chuggy.example:443",
+    "HTTPS://Chuggy.example",
+    "ftp://chuggy.example",
+    "",
+  ])
+    assert.equal(
+      bootstrapPublicOriginFault(malformed),
+      "OriginInvalid",
+      malformed,
+    );
+});
+
+test("the worker is told that evaluations run in order and stop at a failure", () => {
+  const told = briefed("Work", "PurposeInstructions");
   assert.ok(
     told.some(
       (line) =>
