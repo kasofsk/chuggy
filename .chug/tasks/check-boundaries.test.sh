@@ -47,8 +47,7 @@ run_in() { # <dir>
 fixture() {
 	rm -rf "$R"
 	mkdir -p "$R/src/domain" "$R/test"
-	git -C "$ROOT" show HEAD:tsconfig.json > "$R/tsconfig.json" 2>/dev/null ||
-		cp "$ROOT/tsconfig.json" "$R/tsconfig.json"
+	cp "$ROOT/tsconfig.json" "$R/tsconfig.json"
 	cp "$ROOT/.dependency-cruiser.cjs" "$R/.dependency-cruiser.cjs"
 	printf '%s\n' '{ "name": "fixture", "private": true, "type": "module" }' > "$R/package.json"
 	ln -s "$ROOT/node_modules" "$R/node_modules"

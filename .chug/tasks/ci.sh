@@ -36,7 +36,8 @@
 # pass does not check: a different server behind the same URL, a container
 # reused by name, a file outside the tree or outside the scope
 # `_ignored-inputs.sh` keys, such as a package changed under node_modules by
-# hand. Without a token, or with TRACK_RECORD_OFF=1, nothing is wrapped and
+# hand, and git's own state: HEAD, the index and history, except where a gate
+# keys them itself. Without a token, or with TRACK_RECORD_OFF=1, nothing is wrapped and
 # every gate runs itself.
 #
 # Env:
