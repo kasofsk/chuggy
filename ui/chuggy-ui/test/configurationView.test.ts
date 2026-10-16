@@ -117,6 +117,7 @@ test("a pinned tool flag is read ahead of the authority's own list", () => {
   expect(view.settings.credentials).toStrictEqual([
     "chuggy-github-worker",
     "claude-code",
+    "track-record",
   ]);
   expect(view.settings.access).toBe("Network · Workspace writable");
   expect(view.settings.setup).toStrictEqual(["npm ci"]);

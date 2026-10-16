@@ -3,10 +3,10 @@
   "name": "chuggy-development-fable",
   "configuration": {
     "version": 1,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:be94fcd8ab81defd285ebab9b34719a653107fbefc543de4bc41c363a434bafe",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:0efb9a93404a441e25bb24e9a6f37a630f4c73e4fd1dca7afb0ef2d43291f938",
     "authority": {
       "tools": ["claude-code", "shell"],
-      "credentials": ["chuggy-github-worker", "claude-code"],
+      "credentials": ["chuggy-github-worker", "claude-code", "track-record"],
       "network": true,
       "filesystem": "WriteWorkspace",
       "mayCompleteTask": false
