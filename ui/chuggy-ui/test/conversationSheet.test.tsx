@@ -1,7 +1,7 @@
 /**
  * What the sheets say of a conversation's sizes, matched against what it
  * draws: the text a phone reads and types at, what a finger is given to press,
- * the composer as one row, and the column a pane given the whole frame reads
+ * the composer's box and the row of controls under it, and the column a pane given the whole frame reads
  * in. The sizes themselves are a browser's to measure.
  */
 
@@ -92,25 +92,32 @@ test("on a narrow screen a conversation is read and typed at the size a phone do
   expect(token("--text-unzoomed")).toBe("16px");
 });
 
-test("the box and its control are one row, a line of the box as tall as the control", () => {
+test("the box holds the text alone, evenly inset, and its controls are a row under it as tall as a control", () => {
   const { input, send } = drawn("");
   const field = input.parentElement;
   if (field === null) throw new Error("the box stands in nothing");
-  expect(send.parentElement).toBe(field);
-  expect(wide(field, "display")).toBe("flex");
-  expect(wide(input, "padding")).toBe(
-    "calc((var(--conversation-control) - 1lh) / 2) 0",
-  );
-  for (const side of ["width", "height"])
-    expect(wide(send, side)).toBe("var(--conversation-control)");
-  expect(wide(field, "--conversation-control")).toBe("var(--height-icon)");
+  const controls = send.parentElement;
+  if (controls === null) throw new Error("the button stands in nothing");
+  expect(field.nextElementSibling).toBe(controls);
+  expect(wide(field, "padding")).toBe("var(--space-2) var(--space-3)");
+  expect(wide(input, "padding")).toBe("0px");
+  expect(wide(controls, "display")).toBe("flex");
+  const attach = document.createElement("button");
+  attach.className = "conversation-attach";
+  controls.prepend(attach);
+  for (const control of [attach, send])
+    for (const side of ["width", "height"])
+      expect(wide(control, side)).toBe("var(--conversation-control)");
+  expect(wide(controls, "--conversation-control")).toBe("var(--height-icon)");
 });
 
-test("on a narrow screen the control is the least a finger is given", () => {
-  const { input } = drawn("");
-  const field = input.parentElement;
-  if (field === null) throw new Error("the box stands in nothing");
-  expect(narrow(field, "--conversation-control")).toBe("var(--height-touch)");
+test("on a narrow screen the controls are the least a finger is given", () => {
+  const { send } = drawn("");
+  const controls = send.parentElement;
+  if (controls === null) throw new Error("the button stands in nothing");
+  expect(narrow(controls, "--conversation-control")).toBe(
+    "var(--height-touch)",
+  );
   expect(token("--height-touch")).toBe("44px");
 });
 

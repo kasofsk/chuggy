@@ -54,17 +54,8 @@
     cursor: pointer;
   }
 
-  /* The box and its control are one row, a line tall until the text needs
-   * more: a line of the box is as tall as the control, whose own size is the
-   * least a finger is given on a narrow screen, and the text sits in the
-   * middle of it. The control's mark keeps one size, so on that screen the
-   * room around it is the control's and the field gives up its own. */
   .conversation-field {
-    --conversation-control: var(--height-icon);
-    display: flex;
-    align-items: flex-end;
-    gap: var(--space-2);
-    padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-3);
   }
 
   /* The ring is the field's, not the textarea's: a box drawn around a box is
@@ -74,7 +65,7 @@
   }
 
   .conversation-input {
-    padding: calc((var(--conversation-control) - 1lh) / 2) 0;
+    padding: 0;
     background: transparent;
   }
 
@@ -86,7 +77,18 @@
     box-shadow: none;
   }
 
-  .conversation-send {
+  /* The controls are a row under the box, each as tall as the least a finger
+   * is given on a narrow screen. A mark keeps one size, so on that screen the
+   * room around it is the control's. */
+  .conversation-controls {
+    --conversation-control: var(--height-icon);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .conversation-send,
+  .conversation-attach {
     display: flex;
     flex: none;
     align-items: center;
@@ -97,6 +99,15 @@
     border: 0;
     background: transparent;
     cursor: pointer;
+  }
+
+  .conversation-attach {
+    margin-inline-end: auto;
+    color: var(--ink-3);
+  }
+
+  .conversation-attach:hover {
+    color: var(--ink-1);
   }
 
   .conversation-send-mark {
@@ -121,22 +132,20 @@
     color: var(--ink-3);
   }
 
-  /* The line over the box is there only while it says something. */
+  /* The line over the composer is there only while it says something. */
   .conversation-note:empty {
     display: none;
   }
 
   @media (max-width: 40em) {
-    .conversation-field {
+    .conversation-controls {
       --conversation-control: var(--height-touch);
-      padding-block: 0;
-      padding-inline-end: 0;
     }
   }
 
   /* The list stands over the thread rather than inside the composer, because
-   * the box it opens from is the last thing on the pane and a list below it
-   * would be off the bottom of the screen. */
+   * the composer it opens from is the last thing on the pane and a list below
+   * it would be off the bottom of the screen. */
   .conversation-mentions {
     position: absolute;
     bottom: 100%;
