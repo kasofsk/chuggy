@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 
 import type { ExecutionResponse } from "../../../src/contract/responses.ts";
 import {
+  runAttemptRefusal,
   runReasonAttempt,
   runReasonCharsMax,
   runReasonFullCharsMax,
@@ -96,6 +97,22 @@ test("a run a pool refused gives the pool's words, and only the newest run's", (
   expect(
     runRefusalOf(executionOf([refused("a1", 1), lost("a2", 2)])),
   ).toBeUndefined();
+});
+
+test("a refusal whose worker left text of its own gives way to that text", () => {
+  const refusal = "Worker could not start: the image has no git on its PATH";
+  const refused = runAttempt("a1", {
+    state: "Withdrawn",
+    evidence: "PlacementRefused",
+    error: { bytes: 57 },
+    refusal,
+  });
+  const execution = executionOf([refused]);
+  expect(
+    execution.attempts.map((attempt) => runAttemptRefusal(attempt)),
+  ).toEqual([undefined]);
+  expect(runRefusalOf(execution)).toBeUndefined();
+  expect(runReasonAttempt(execution)).toBe("a1");
 });
 
 test("a reason is the worker's first line, and its whole is kept", () => {

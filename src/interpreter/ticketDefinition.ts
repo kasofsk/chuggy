@@ -126,9 +126,8 @@ export function briefContentDigest(
 }
 
 /**
- * The digest a release stores for a task's workload. A workload that names no
- * size is digested as its image alone, so one released before a configuration
- * could name a size still digests to what its release stored.
+ * The digest a release stores for a task's workload: its image's alone where it
+ * names no size, and its image's and size's together where it does.
  */
 function ticketTaskWorkloadDigest(
   image: string,

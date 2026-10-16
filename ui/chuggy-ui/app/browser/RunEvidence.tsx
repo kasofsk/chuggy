@@ -33,7 +33,11 @@ import {
   runConfigurationSourceSentence,
 } from "../core/runConfiguration.ts";
 import type { RunConfigurationFile } from "../core/runConfiguration.ts";
-import { runReasonLeft, runReasonOf } from "../core/runReason.ts";
+import {
+  runAttemptRefusal,
+  runReasonLeft,
+  runReasonOf,
+} from "../core/runReason.ts";
 import type { RunReason } from "../core/runReason.ts";
 import { runSummaryOf } from "../core/runSummary.ts";
 import {
@@ -422,8 +426,7 @@ function RunAttempt(props: {
   readonly nowMs: number;
 }): ReactNode {
   const attempt = props.attempt;
-  const refusal =
-    attempt.refusal === undefined ? undefined : runReasonOf(attempt.refusal);
+  const refusal = runAttemptRefusal(attempt);
   return (
     <li
       className="grid gap-2 border-t border-edge pt-2"

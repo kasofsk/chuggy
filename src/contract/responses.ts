@@ -605,8 +605,8 @@ export const executionSummarySchema = z.object({
    */
   resources: z
     .object({
-      cpuMillis: ticketNumberSchema.optional(),
-      memoryMib: ticketNumberSchema.optional(),
+      cpuMillis: countSchema.optional(),
+      memoryMib: countSchema.optional(),
     })
     .optional(),
   status: z.enum(executionStatuses),

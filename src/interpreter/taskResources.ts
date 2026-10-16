@@ -5,7 +5,7 @@
  * EACH FIELD IS RESOLVED ON ITS OWN: the task kind's size, then
  * `ticketDefault`'s, and a field neither names is absent here, which every
  * placement reads as its deployment's own. A task that names neither field has
- * no size at all, so it runs as it did before a configuration could name one.
+ * no size at all, and runs with its deployment's CPUs and memory.
  */
 
 import { z } from "zod";

@@ -66,10 +66,12 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
   asTenantId,
   type Partition,
+  type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
@@ -459,6 +461,24 @@ async function plantedRunner(
     owner: named.principal(pool.dedicatedOwner),
     principal: named.principal(pool.principal),
   };
+  const allowed = pool.allowlist.map((project) => named.partition(project));
+  for (const project of allowed) await projectPlanted(project, home);
+  await plantedRunnerRows(
+    identity,
+    pool.capabilities,
+    live ? polledSecsAgo : undefined,
+    allowed.map((project) => project.project),
+  );
+  return identity;
+}
+
+/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise. */
+async function plantedRunnerRows(
+  identity: PersonalPlaneIdentity,
+  capabilities: readonly string[],
+  polledSecsAgo: number | undefined,
+  allowlist: readonly ProjectId[],
+): Promise<void> {
   await rig.harness.query(
     `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
       VALUES($1,$2,$3,$4,$5,
@@ -466,22 +486,18 @@ async function plantedRunner(
     [
       identity.tenant,
       identity.owner,
-      pool.capabilities,
+      capabilities,
       identity.principal,
       `chuggy-personal-${randomUUID()}`,
-      live,
-      polledSecsAgo,
+      polledSecsAgo !== undefined,
+      polledSecsAgo ?? 0,
     ],
   );
-  for (const allowed of pool.allowlist) {
-    const project = named.partition(allowed);
-    await projectPlanted(project, home);
+  for (const project of allowlist)
     await rig.harness.query(
       `INSERT INTO personal_runner_project(tenant,owner,project) VALUES($1,$2,$3)`,
-      [identity.tenant, identity.owner, project.project],
+      [identity.tenant, identity.owner, project],
     );
-  }
-  return identity;
 }
 
 type PersonalPlaneIdentity = PersonalRunnerIdentity & {
@@ -1143,6 +1159,42 @@ test("an execution released with a size is claimed asking for it, and its pod is
   assert.deepEqual(
     [memoryOnly.cpuMillis, memoryOnly.memoryMib],
     [settings.cpuMillis, 1_024],
+  );
+});
+
+test("an execution released with a size is claimed asking for it by its owner's own runner", async () => {
+  const label = "claim-sized-personal";
+  const project = await releasedUnder(label, pinned, 1, {
+    cpuMillis: 2_000,
+    memoryMib: 1_024,
+  });
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(runner, declaringAll(pinned), 0, [
+    project.partition.project,
+  ]);
+  await opened(project, false, { owner: runner.owner, fallback: "Strict" });
+  const ports = polling(() => randomUUID());
+  const answered = await workerPoolReconcile(
+    {
+      ...ports,
+      access: {
+        ...ports.access,
+        authorize: (principal) => Promise.resolve(memberAuthority(principal)),
+      },
+    },
+    runner,
+    { jobs: [], sessions: [] },
+    { wanted: 1, wantedSessions: 0 },
+    settings,
+  );
+  assert.deepEqual(
+    answered.assignments.map((taken) => [taken.cpuMillis, taken.memoryMib]),
+    [[2_000, 1_024]],
   );
 });
 

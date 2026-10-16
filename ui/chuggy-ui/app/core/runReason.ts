@@ -57,12 +57,25 @@ export function runReasonAttempt(
     : undefined;
 }
 
-/** What the pool said in refusing the newest attempt, where one refused it. */
+/**
+ * What the pool said in refusing an attempt, where one refused it and its
+ * worker left no text of its own. A pool that refuses for its image writes the
+ * same words as the worker's text, so the worker's stand for both.
+ */
+export function runAttemptRefusal(
+  attempt: ExecutionAttempt,
+): RunReason | undefined {
+  return attempt.refusal === undefined || runReasonLeft(attempt)
+    ? undefined
+    : runReasonOf(attempt.refusal);
+}
+
+/** What the pool said in refusing the newest attempt, as `runAttemptRefusal` reads it. */
 export function runRefusalOf(
   execution: ExecutionResponse,
 ): RunReason | undefined {
-  const refusal = runReasonNewest(execution)?.refusal;
-  return refusal === undefined ? undefined : runReasonOf(refusal);
+  const newest = runReasonNewest(execution);
+  return newest === undefined ? undefined : runAttemptRefusal(newest);
 }
 
 function runReasonCut(text: string, charsMax: number): string {
