@@ -63,6 +63,7 @@ import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
   kubernetesAttemptDigest,
+  kubernetesBudgetSized,
   kubernetesContainerResources,
   kubernetesCredentials,
   kubernetesMintedCredentialVolumes,
@@ -311,7 +312,9 @@ function kubernetesWorkerContainer(
         value,
       })),
     ],
-    resources: kubernetesContainerResources(config.resources),
+    resources: kubernetesContainerResources(
+      kubernetesBudgetSized(config.resources, placement.resources ?? {}),
+    ),
     securityContext: config.containerSecurityContext,
     volumeMounts: [
       {

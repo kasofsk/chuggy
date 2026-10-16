@@ -16,8 +16,11 @@
  *
  * WHAT IS STORED AND WHAT IS NOT. The requirement is stored whole because
  * nothing recovers it: it is a function of the configuration AND of platform
- * defaults that move between images. The briefing blocks are not, because they
- * are the pinned revision's own text and the ticket names that revision — a
+ * defaults that move between images. A task's size is stored in the workload
+ * beside its image, and a registration copies it onto the execution as it
+ * copies the requirement, since a pool reads the execution and never the
+ * configuration. The briefing blocks are not stored, because they are the
+ * pinned revision's own text and the ticket names that revision — a
  * second copy would be a stored duplicate of a derivable fact. What is kept for
  * them is the digest, which is what the journalled reference folds and which
  * folding does not give back. The brief is stored, beside the material, for the
@@ -44,12 +47,21 @@ import {
 import { digestFold } from "./resultManifest.ts";
 import { asDraftBrief, type DraftBrief } from "./ticketBrief.ts";
 import type { StageBlock } from "./taskConfiguration.ts";
+import {
+  asTaskResources,
+  materializeTaskResources,
+  type TaskResources,
+} from "./taskResources.ts";
 
 /** What one resolved task definition names, in the order the model's record spells it. */
 export interface TicketTaskMaterial {
   readonly key: ExecutionTaskKindKey;
-  /** The image the task runs in, which is what `workload` folds. */
-  readonly workload: { readonly image: string; readonly digest: string };
+  /** The image the task runs in and the size it runs with where it names one, which is what `workload` folds. */
+  readonly workload: {
+    readonly image: string;
+    readonly resources?: TaskResources;
+    readonly digest: string;
+  };
   /** The configuration block the briefing composes from, by the digest `inputs` folds. */
   readonly inputs: { readonly digest: string };
   readonly executionRequirements: MaterializedExecutionRequirement & {
@@ -113,6 +125,18 @@ export function briefContentDigest(
   });
 }
 
+/**
+ * The digest a release stores for a task's workload. A workload that names no
+ * size is digested as its image alone, so one released before a configuration
+ * could name a size still digests to what its release stored.
+ */
+function ticketTaskWorkloadDigest(
+  image: string,
+  resources: TaskResources | undefined,
+): string {
+  return materialDigest(resources === undefined ? image : { image, resources });
+}
+
 /** How an evaluation stage's key is spelled, which is what the requirement is qualified by. */
 const evaluationKeyPrefix = "Evaluation:";
 
@@ -150,16 +174,19 @@ function ticketTaskMaterial(
   key: ExecutionTaskKindKey,
 ): TicketTaskMaterial {
   const stage = taskKeyStage(key);
+  const kind = stage === undefined ? "Work" : "Evaluation";
   const requirement = materializeExecutionRequirement(
     configuration,
-    stage === undefined ? "Work" : "Evaluation",
+    kind,
     stage,
   );
+  const resources = materializeTaskResources(configuration, kind, stage);
   return {
     key,
     workload: {
       image: configuration.image,
-      digest: materialDigest(configuration.image),
+      ...(resources === undefined ? {} : { resources }),
+      digest: ticketTaskWorkloadDigest(configuration.image, resources),
     },
     inputs: { digest: materialDigest(taskInputsBlock(configuration, key)) },
     executionRequirements: {
@@ -221,6 +248,19 @@ export function ticketTaskKey(
   return evaluationTaskKey(stage);
 }
 
+/** The stored material of one task key, as the row holds it. */
+function ticketStoredTask(
+  stored: unknown,
+  key: ExecutionTaskKindKey,
+): Record<string, unknown> | undefined {
+  const tasks = (stored as { readonly tasks?: unknown } | null)?.tasks;
+  return Array.isArray(tasks)
+    ? (tasks as readonly Record<string, unknown>[]).find(
+        (task) => task["key"] === key,
+      )
+    : undefined;
+}
+
 /**
  * The requirement one task runs under, read back out of the stored material.
  * IT IS READ AND NOT RE-MATERIALIZED: the requirement folds in platform
@@ -232,14 +272,9 @@ export function ticketTaskRequirement(
   stored: unknown,
   key: ExecutionTaskKindKey,
 ): MaterializedExecutionRequirement & { readonly digest: string } {
-  const tasks = (stored as { readonly tasks?: unknown } | null)?.tasks;
-  const found = Array.isArray(tasks)
-    ? (tasks as readonly { readonly key?: unknown }[]).find(
-        (task) => task.key === key,
-      )
-    : undefined;
-  const requirement = (found as { readonly executionRequirements?: unknown })
-    ?.executionRequirements as Record<string, unknown> | undefined;
+  const requirement = ticketStoredTask(stored, key)?.[
+    "executionRequirements"
+  ] as Record<string, unknown> | undefined;
   const digest = requirement?.["digest"];
   const platformDefaultVersion = requirement?.["platformDefaultVersion"];
   if (typeof digest !== "string" || typeof platformDefaultVersion !== "number")
@@ -252,6 +287,25 @@ export function ticketTaskRequirement(
     platformDefaultVersion,
     digest,
   };
+}
+
+/**
+ * The size one task runs with, read back out of the stored material as the
+ * requirement is, and none where its release resolved none.
+ */
+export function ticketTaskResources(
+  stored: unknown,
+  key: ExecutionTaskKindKey,
+): TaskResources | undefined {
+  const workload = ticketStoredTask(stored, key)?.["workload"] as
+    { readonly resources?: unknown } | undefined;
+  if (workload === undefined)
+    throw new TypeError(
+      `ticket definition: the stored material resolves no workload for ${key}`,
+    );
+  return workload.resources === undefined
+    ? undefined
+    : asTaskResources(workload.resources);
 }
 
 /**

@@ -62,7 +62,10 @@ import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
-import { workerPoolCapabilitiesSchema } from "./workerPool.ts";
+import {
+  workerPoolCapabilitiesSchema,
+  workerPoolEvidenceCharsMax,
+} from "./workerPool.ts";
 import {
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
@@ -596,6 +599,16 @@ export const executionSummarySchema = z.object({
   request: identitySchema.optional(),
   worker: workerSchema.optional(),
   platformDefaultVersion: ticketNumberSchema,
+  /**
+   * The CPUs, in millis, and the memory, in MiB, its task was released with.
+   * A field absent is the deployment's own size, which this read cannot see.
+   */
+  resources: z
+    .object({
+      cpuMillis: ticketNumberSchema.optional(),
+      memoryMib: ticketNumberSchema.optional(),
+    })
+    .optional(),
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,
@@ -678,6 +691,8 @@ const executionAttemptSchema = z.object({
   run: executionRunSchema.optional(),
   /** The text this attempt's worker left saying why it ended, which is read on its own route. */
   error: z.object({ bytes: countSchema }).optional(),
+  /** What the pool that claimed this attempt said in refusing to run it, in its own words. */
+  refusal: z.string().min(1).max(workerPoolEvidenceCharsMax).optional(),
 });
 
 const executionResultSchema = z.object({

@@ -27,10 +27,13 @@ import type {
 import { apiExecution, apiExecutions } from "../../core/apiRoutes.ts";
 import { spanFigure, spendFigures, whenFigure } from "../../core/figures.ts";
 import type { Spend } from "../../core/figures.ts";
-import { executionRequirementLabel } from "../../core/labels.ts";
+import {
+  executionRequirementLabel,
+  executionSizeLabel,
+} from "../../core/labels.ts";
 import { projectListFolded } from "../../core/projectQueryKeys.ts";
 import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
-import { runReasonAttempt } from "../../core/runReason.ts";
+import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import { runResultLineOf } from "../../core/runResult.ts";
 import type { RunResultOpened } from "../../core/runResult.ts";
 import { generationLabel, runSpendOf } from "../../core/runTotals.ts";
@@ -137,9 +140,14 @@ function stageShortfall(stage: RanStage): string | undefined {
     : undefined;
 }
 
-/** A set's row note: where its artifact stands, and what the fabric did to it. */
+/** A set's row note: where its artifact stands, what the fabric did to it,
+ * and the size its task asked for where it named one. */
 function setNotes(set: TaskSet, standing: string | undefined): string {
-  return [standing, setRelaunches(set)]
+  return [
+    standing,
+    setRelaunches(set),
+    executionSizeLabel(set.executions[0]?.resources),
+  ]
     .flatMap((note) => (note === undefined ? [] : [note]))
     .join(" · ");
 }
@@ -291,8 +299,9 @@ function RunReasonLine(props: {
   );
 }
 
-/** The line beneath a row: its worker's reason where it left one, and
- * otherwise the opening of its result's report. */
+/** The line beneath a row: its worker's reason where it left one, the pool's
+ * where one refused to run it, and otherwise the opening of its result's
+ * report. */
 function SetRowReason(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
@@ -309,6 +318,9 @@ function SetRowReason(props: {
         attempt={reasoned}
       />
     );
+  const refusal = runRefusalOf(read);
+  if (refusal !== undefined)
+    return <LedgerReason line={refusal.line} full={refusal.full} />;
   const line = runResultLineOf(read);
   return line === undefined ? null : (
     <LedgerReason line={line.line} full={line.full} />

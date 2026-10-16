@@ -119,6 +119,7 @@ import type {
   TaskInvocation,
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
+import type { TaskResources } from "./taskResources.ts";
 import type {
   ExecutionCapability,
   ExecutionRequirement,
@@ -482,6 +483,8 @@ export interface LogicalExecution {
    */
   readonly agentCapability?: ExecutionCapability;
   readonly platformDefaultVersion: number;
+  /** The size its task was released with, absent where it names none and the deployment's is used. */
+  readonly resources?: TaskResources;
   readonly status: ExecutionStatus;
   readonly outcome?: ExecutionOutcome;
   readonly resultManifest?: ResultManifestId;
@@ -956,6 +959,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly requirementIdentity: string;
   readonly requirement: ExecutionRequirement;
   readonly requirementDigest: string;
+  /** The size the execution's task was released with, which a backend gives it in place of its own where named. */
+  readonly resources?: TaskResources;
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;

@@ -398,6 +398,8 @@ async function workerPoolClaimed(
   const found = await client.query<{
     requirement: unknown;
     runtime: string | null;
+    cpu_millis: number | null;
+    memory_mib: number | null;
   }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.pool},pool_principal=${identity.principal},
@@ -437,7 +439,7 @@ async function workerPoolClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement, a.runtime`,
+      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : workerPoolClaimedRow(row);

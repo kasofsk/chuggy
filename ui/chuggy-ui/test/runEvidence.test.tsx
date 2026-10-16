@@ -369,6 +369,49 @@ test("a reason longer than a row's line is drawn whole in the run's details", as
   ).toContain(pullFailed);
 });
 
+/** What a runner says of an assignment larger than its machine, as the worker core refuses one. */
+const tooLarge =
+  "the assignment asks for 8000 CPU millis and this machine has 4000";
+
+/** A run released with a size and refused by the one pool that claimed it, which blocks it unrun. */
+const refusedRun: RunPageServed = (() => {
+  const summary = runSummary({
+    outcome: "Blocked",
+    resources: { cpuMillis: 8_000, memoryMib: 16_384 },
+    runTotals: undefined,
+  });
+  return {
+    ticket,
+    executions: [summary],
+    execution: {
+      ...summary,
+      attempts: [
+        runAttempt("a1", {
+          state: "Withdrawn",
+          evidence: "PlacementRefused",
+          run: undefined,
+          refusal: tooLarge,
+        }),
+      ],
+    },
+    transcripts: [],
+  };
+})();
+
+test("a run no runner could size names the size on its row and the runner's refusal beneath it, asking for no worker's text", async () => {
+  const rendered = await ticketPage(refusedRun);
+  const row = rendered.container.querySelector(".ledger-row");
+  expect(row?.querySelector(".ledger-note")?.textContent).toBe(
+    "8 CPUs, 16 GiB",
+  );
+  const reason = row?.querySelector(".ledger-reason");
+  expect(reason?.textContent).toBe(tooLarge);
+  expect(
+    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
+  ).toContain(tooLarge);
+  expect(errorReads(rendered.reads)).toEqual([]);
+});
+
 test("the runs table scrolls itself rather than widening the run's details", async () => {
   await ticketPage(lostRun(pullFailed));
   const table = screen.getByRole("table", { name: "Runs" });

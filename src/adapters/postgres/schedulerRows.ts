@@ -81,6 +81,7 @@ import {
   executionAgentCapability,
   type RequirementSource,
 } from "../../interpreter/executionRequirement.ts";
+import type { TaskResources } from "../../interpreter/taskResources.ts";
 
 /** One execution row joined to the request and task row that authorized it. */
 export interface ExecutionRow {
@@ -112,6 +113,8 @@ export interface ExecutionRow {
   readonly requirement_digest: string;
   readonly requirement_source: string;
   readonly platform_default_version: string;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
   readonly status: string;
   readonly outcome: string | null;
   readonly result_manifest: string | null;
@@ -252,6 +255,21 @@ function executionRowAgentCapability(row: ExecutionRow) {
   return capability === undefined ? {} : { agentCapability: capability };
 }
 
+/** The size a registration copied, absent where it copied none and every field is the deployment's. */
+export function executionRowResources(row: {
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
+}): { readonly resources?: TaskResources } {
+  return row.cpu_millis === null && row.memory_mib === null
+    ? {}
+    : {
+        resources: {
+          ...(row.cpu_millis === null ? {} : { cpuMillis: row.cpu_millis }),
+          ...(row.memory_mib === null ? {} : { memoryMib: row.memory_mib }),
+        },
+      };
+}
+
 /** A task row's stage key as the index a port carries, which a work task has none of. */
 export function taskRowStage(stage: string | null): {
   readonly stage?: StageIndex;
@@ -298,6 +316,7 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
       row.platform_default_version,
       "platform default version",
     ),
+    ...executionRowResources(row),
     status: executionRowStatus(row.status),
     ...executionRowSettlement(row),
     attemptsOpened: projectRowCounter(row.attempts_opened, "attempts opened"),

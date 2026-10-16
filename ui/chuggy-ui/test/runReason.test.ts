@@ -6,6 +6,7 @@ import {
   runReasonCharsMax,
   runReasonFullCharsMax,
   runReasonOf,
+  runRefusalOf,
 } from "../app/core/runReason.ts";
 import {
   runAttempt,
@@ -75,6 +76,26 @@ test("a run that reported has no reason to give", () => {
     artifacts: [],
   };
   expect(runReasonAttempt(executionOf([reported], result))).toBeUndefined();
+});
+
+test("a run a pool refused gives the pool's words, and only the newest run's", () => {
+  const refusal =
+    "the assignment asks for 8000 CPU millis and this machine has 4000";
+  const refused = (attempt: string, number: number) =>
+    runAttempt(attempt, {
+      number,
+      state: "Withdrawn",
+      evidence: "PlacementRefused",
+      refusal,
+    });
+  expect(runRefusalOf(executionOf([refused("a1", 1)]))).toEqual({
+    line: refusal,
+    full: refusal,
+  });
+  expect(runReasonAttempt(executionOf([refused("a1", 1)]))).toBeUndefined();
+  expect(
+    runRefusalOf(executionOf([refused("a1", 1), lost("a2", 2)])),
+  ).toBeUndefined();
 });
 
 test("a reason is the worker's first line, and its whole is kept", () => {

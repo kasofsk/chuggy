@@ -73,6 +73,7 @@ import {
 import {
   checkedKubernetesPodSite,
   kubernetesAnnotationPrefix,
+  kubernetesBudgetSized,
   kubernetesContainerResources,
   kubernetesCredentials,
   kubernetesIdentityDigest,
@@ -226,13 +227,9 @@ function poolPlacementResources(
   config: KubernetesPoolPlacementConfig,
   assignment: WorkerPoolAssignment,
 ): ReturnType<typeof kubernetesContainerResources> {
-  return kubernetesContainerResources({
-    ...config.resources,
-    cpuRequest: `${String(assignment.cpuMillis)}m`,
-    cpuLimit: `${String(assignment.cpuMillis)}m`,
-    memoryRequest: `${String(assignment.memoryMib)}Mi`,
-    memoryLimit: `${String(assignment.memoryMib)}Mi`,
-  });
+  return kubernetesContainerResources(
+    kubernetesBudgetSized(config.resources, assignment),
+  );
 }
 
 /**

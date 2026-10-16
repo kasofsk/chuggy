@@ -373,6 +373,104 @@ test("a registration runs the requirement the release resolved, not the one the 
   }
 });
 
+/** The harness configuration naming a size for every task and a larger one for its work. */
+const sizedConfiguration: CanonicalConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(String(postgresHarnessConfiguration)) as Record<
+    string,
+    unknown
+  >),
+  evaluations: [{ instructions: ["Review it."], practices: [] }],
+  resources: {
+    ticketDefault: { memoryMib: 8_192 },
+    taskKindDefaults: { Work: { cpus: 8, memoryMib: 16_384 } },
+  },
+});
+
+/** Each execution's size, by the kind of its task. */
+async function executionSizes(project: SchedulerProject) {
+  return rig.harness.query(
+    `SELECT DISTINCT t.kind, e.cpu_millis, e.memory_mib
+       FROM execution e
+       JOIN execution_request_task t
+         ON t.tenant=e.tenant AND t.project=e.project
+        AND t.request=e.source_request AND t.task=e.task
+      WHERE e.tenant=$1 AND e.project=$2 ORDER BY t.kind`,
+    [project.partition.tenant, project.partition.project],
+  );
+}
+
+test("an execution registered under a configuration naming no size carries none, and runs on the deployment's", async () => {
+  const project = await schedulerProject(rig, "unsized", { tasks: 1 });
+  assert.equal(
+    (await registerAll(project, "unsized")).registered,
+    "Registered",
+  );
+  assert.deepEqual(await executionSizes(project), [
+    { kind: "Work", cpu_millis: null, memory_mib: null },
+  ]);
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  const execution = await rig.store.execution(
+    project.partition,
+    admitted.execution,
+  );
+  assert.ok(execution !== undefined);
+  assert.equal("resources" in execution, false);
+});
+
+/**
+ * THE SIZE IS THE RELEASE'S, like the requirement beside it: the revision is
+ * rewritten to name no size after the ticket is released, and the execution a
+ * later registration makes still asks for the one the release pinned.
+ */
+test("a released ticket keeps the size it was released with after its configuration names another", async () => {
+  const project = await schedulerProject(
+    rig,
+    "released-size",
+    { tasks: 1 },
+    sizedConfiguration,
+  );
+  await rig.harness.query(
+    `UPDATE configuration_revision SET canonical=$3 WHERE tenant=$1 AND project=$2`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      String(postgresHarnessConfiguration),
+    ],
+  );
+  const review = await schedulerEvaluationRequest(
+    rig,
+    project,
+    "released-size",
+    { cycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  );
+  assert.equal(
+    (await registerAll(project, "released-size")).registered,
+    "Registered",
+  );
+  const admitted = await rig.store.admit(project.cluster);
+  assert.ok(admitted.admitted === "Admitted");
+  assert.deepEqual(
+    (await rig.store.execution(project.partition, admitted.execution))
+      ?.resources,
+    { cpuMillis: 8_000, memoryMib: 16_384 },
+  );
+  await rig.store.registerSpawn(
+    await schedulerClaimFor(
+      rig,
+      project.partition,
+      review,
+      schedulerOwner("released-size"),
+    ),
+    executionSchedulerDefaults.nTasks,
+    schedulerInCluster,
+  );
+  assert.deepEqual(await executionSizes(project), [
+    { kind: "Evaluation", cpu_millis: null, memory_mib: 8_192 },
+    { kind: "Work", cpu_millis: 8_000, memory_mib: 16_384 },
+  ]);
+});
+
 /** A container requirement naming one image, in the shape a configuration states it. */
 const container = (image: string) => ({
   architecture: "Amd64",

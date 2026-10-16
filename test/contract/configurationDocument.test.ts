@@ -23,9 +23,12 @@ import test from "node:test";
 import { Ajv2020 } from "ajv/dist/2020.js";
 
 import {
+  configurationCpusMax,
   configurationDocumentJsonSchema,
   configurationImageGlibcVersionMin,
   configurationImageSchema,
+  configurationMemoryMibMax,
+  configurationMemoryMibMin,
 } from "../../src/contract/configurationDocument.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
@@ -221,6 +224,25 @@ const shapes: readonly unknown[] = [
   },
   {
     ...configuration,
+    evaluations: [{ purpose: "Check", checks: ["cargo test"] }],
+    resources: {
+      ticketDefault: { cpus: 4, memoryMib: 8_192 },
+      taskKindDefaults: {
+        Work: { cpus: configurationCpusMax },
+        "Evaluation:1": { memoryMib: configurationMemoryMibMax },
+      },
+    },
+  },
+  {
+    ...configuration,
+    resources: { taskKindDefaults: { Evaluation: { cpus: 1 } } },
+  },
+  {
+    ...configuration,
+    resources: { ticketDefault: { memoryMib: configurationMemoryMibMin } },
+  },
+  {
+    ...configuration,
     outputs: [{ name: "unreadable", renderer: "Image" }],
     finalizationApprovalRequired: "yes",
     evaluation: [{ purpose: "Check", checks: ["true"] }],
@@ -331,6 +353,23 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
     }),
     "ConfigurationInvalid:ReleaseShapeInvalid",
   ],
+  ...[
+    { ticketDefault: { cpus: 0 } },
+    { ticketDefault: { cpus: configurationCpusMax + 1 } },
+    { ticketDefault: { cpus: 1.5 } },
+    { ticketDefault: { memoryMib: configurationMemoryMibMin - 1 } },
+    { ticketDefault: { memoryMib: configurationMemoryMibMax + 1 } },
+    { ticketDefault: { memory: 8_192 } },
+    { taskKindDefaults: { "Evaluation:0": { cpus: 2 } } },
+    { taskKindDefaults: { Work: { cpus: "2" } } },
+    { workDefault: { cpus: 2 } },
+  ].map(
+    (resources) =>
+      [
+        declared({ ...configuration, resources }),
+        "ConfigurationInvalid:ReleaseShapeInvalid",
+      ] as const,
+  ),
   [
     declared({ ...configuration, brief: { ...brief, constraints: [""] } }),
     "ConfigurationInvalid:EmptyLine",
@@ -829,4 +868,64 @@ test("the published schema says of both images that any one works that holds the
     "chuggy holds none of the project's registry logins",
   ])
     assert.ok(header.description.includes(said), said);
+});
+
+/** The resources property a published configuration states, as far as this suite reads it. */
+interface PublishedResources {
+  readonly properties: {
+    readonly configuration: {
+      readonly properties: {
+        readonly resources: {
+          readonly description: string;
+          readonly additionalProperties: unknown;
+          readonly properties: {
+            readonly ticketDefault: {
+              readonly properties: Readonly<
+                Record<
+                  "cpus" | "memoryMib",
+                  {
+                    readonly minimum: number;
+                    readonly maximum: number;
+                    readonly description: string;
+                  }
+                >
+              >;
+            };
+            readonly taskKindDefaults: { readonly description: string };
+          };
+        };
+      };
+    };
+  };
+}
+
+test("the published schema says what a size is, the bounds the import holds it to, and that a field left out is the deployment's", () => {
+  const published: unknown = configurationDocumentJsonSchema();
+  const resources = (published as PublishedResources).properties.configuration
+    .properties.resources;
+  const size = resources.properties.ticketDefault.properties;
+  assert.equal(resources.additionalProperties, false);
+  assert.deepEqual(
+    [size.cpus.minimum, size.cpus.maximum],
+    [1, configurationCpusMax],
+  );
+  assert.deepEqual(
+    [size.memoryMib.minimum, size.memoryMib.maximum],
+    [configurationMemoryMibMin, configurationMemoryMibMax],
+  );
+  assert.ok(size.cpus.description.includes("CPUs"));
+  assert.ok(size.memoryMib.description.includes("MiB"));
+  for (const said of [
+    "request and its limit",
+    "is the deployment's own",
+    "keeps the size it was released with",
+    "refuses the job",
+    "Sessions are not sized here",
+  ])
+    assert.ok(resources.description.includes(said), said);
+  assert.ok(
+    resources.properties.taskKindDefaults.description.includes(
+      "executionRequirements.taskKindDefaults",
+    ),
+  );
 });

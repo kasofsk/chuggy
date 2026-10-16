@@ -31,6 +31,7 @@ import type {
   WorkerPoolClaimTerms,
   WorkerPoolExecutionHolds,
 } from "../../interpreter/workerPool.ts";
+import { executionRowResources } from "./schedulerRows.ts";
 
 /** What one claim binds beyond who claims: the assignment, its bearer's digest, and the projects its owner may still read. */
 export interface PersonalExecutionClaim {
@@ -53,6 +54,8 @@ export async function personalExecutionClaimed(
   const found = await client.query<{
     requirement: unknown;
     runtime: string | null;
+    cpu_millis: number | null;
+    memory_mib: number | null;
   }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.owner},pool_principal=${identity.principal},
@@ -85,19 +88,22 @@ export async function personalExecutionClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement, a.runtime`,
+      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : workerPoolClaimedRow(row);
 }
 
-/** What a claim's returned row says: its execution's requirement, and the runtime its attempt kept where it kept one. */
+/** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */
 export function workerPoolClaimedRow(row: {
   readonly requirement: unknown;
   readonly runtime: string | null;
+  readonly cpu_millis: number | null;
+  readonly memory_mib: number | null;
 }): WorkerPoolClaimed {
   return {
     requirement: asExecutionRequirement(row.requirement),
+    ...executionRowResources(row),
     ...(row.runtime === null ? {} : { runtime: row.runtime }),
   };
 }

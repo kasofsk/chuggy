@@ -34,6 +34,7 @@ import { mintedCredentialDirectory } from "../../contract/workerEnvironment.ts";
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
+import type { TaskResources } from "../../interpreter/taskResources.ts";
 
 /** What one container may request and may not exceed. */
 export interface KubernetesResourceBudget {
@@ -367,6 +368,27 @@ export function checkedKubernetesPodSite<Site extends KubernetesPodSite>(
   }
   kubernetesPositive(site.requestTimeoutSecsMax, "cluster request timeout");
   return site;
+}
+
+/**
+ * A budget with the CPU and memory a workload asked for as both its request
+ * and its limit, each the budget's own where the workload asked for none.
+ */
+export function kubernetesBudgetSized(
+  budget: KubernetesResourceBudget,
+  size: TaskResources,
+): KubernetesResourceBudget {
+  const cpu =
+    size.cpuMillis === undefined ? undefined : `${String(size.cpuMillis)}m`;
+  const memory =
+    size.memoryMib === undefined ? undefined : `${String(size.memoryMib)}Mi`;
+  return {
+    ...budget,
+    ...(cpu === undefined ? {} : { cpuRequest: cpu, cpuLimit: cpu }),
+    ...(memory === undefined
+      ? {}
+      : { memoryRequest: memory, memoryLimit: memory }),
+  };
 }
 
 /** The requests and limits one container is held to, which both pods spell alike. */

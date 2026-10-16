@@ -23,12 +23,10 @@
  * image's own entrypoint. A pool holding the attempt may pull the runtime as it
  * pulls the image.
  *
- * THE BOX IS THE DEPLOYMENT'S ANSWER AND NOT THE WORK'S. An execution
- * requirement in this tree names a platform, an image and capabilities and
- * says nothing about cores or memory, so the size an assignment carries is the
- * plane's own setting — the same budget `kubernetesWorkerLaunch` gives an
- * in-cluster attempt. A per-execution profile is a requirement change, and
- * this contract already has the field waiting for it.
+ * A JOB'S BOX IS THE ONE ITS TASK WAS RELEASED WITH. The execution keeps the
+ * CPUs and memory its configuration named, and an assignment asks for each
+ * field it names; a field it names none of is the plane's own setting. A
+ * session is sized by the plane alone.
  *
  * A SESSION IS THE SAME CHANNEL'S SECOND KIND. A pool states its room for
  * sessions apart, and what it holds is told apart by the rows each kind lives
@@ -63,6 +61,7 @@ import type {
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
 import type { ExecutionRequirement } from "./executionRequirement.ts";
+import type { TaskResources } from "./taskResources.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition, ProjectId } from "./projectStore.ts";
@@ -267,9 +266,10 @@ export interface WorkerPoolClients {
   remove(clientId: string): Promise<void>;
 }
 
-/** What one claim produced: the requirement the claimed attempt's execution recorded, and the runtime the attempt was opened under where it kept one. */
+/** What one claim produced: the requirement and the size the claimed attempt's execution recorded, and the runtime the attempt was opened under where it kept one. */
 export interface WorkerPoolClaimed {
   readonly requirement: ExecutionRequirement;
+  readonly resources?: TaskResources;
   readonly runtime?: string;
 }
 
@@ -349,7 +349,7 @@ export interface WorkerPoolPollSettings {
   readonly sessionsPerPollMax: number;
   readonly sessionsHeldMax: number;
   readonly deadlineSecs: number;
-  /** The box every assignment this plane hands out asks for, which is the deployment's. */
+  /** The box an assignment asks for in each field its execution names no size of, and every session's. */
   readonly cpuMillis: number;
   readonly memoryMib: number;
   readonly callbackUrl: string;
@@ -562,8 +562,8 @@ async function workerPoolClaims(
       assignment,
       ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
       ...workerPoolClaimedRuntime(row, settings.imageHosts),
-      cpuMillis: settings.cpuMillis,
-      memoryMib: settings.memoryMib,
+      cpuMillis: row.resources?.cpuMillis ?? settings.cpuMillis,
+      memoryMib: row.resources?.memoryMib ?? settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,
       callbackUrl: settings.callbackUrl,
       bearer,

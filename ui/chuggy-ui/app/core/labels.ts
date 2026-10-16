@@ -137,6 +137,33 @@ export function workerLabel(worker: Worker | undefined, image: string): Label {
   };
 }
 
+/** The millis one whole CPU is asked as, and the MiB one GiB is. */
+const cpuMillisPerCpu = 1_000;
+const mibPerGib = 1_024;
+
+/**
+ * The size an execution's task was released with, as a person reads it: whole
+ * CPUs, and memory in GiB where it is a whole number of them. A field the
+ * configuration named none of is the deployment's, which the wire does not
+ * say, so it is left out, and a task that named neither has no size to draw.
+ */
+export function executionSizeLabel(
+  resources: ExecutionSummary["resources"],
+): string | undefined {
+  const parts: string[] = [];
+  if (resources?.cpuMillis !== undefined) {
+    const cpus = resources.cpuMillis / cpuMillisPerCpu;
+    parts.push(`${String(cpus)} ${cpus === 1 ? "CPU" : "CPUs"}`);
+  }
+  if (resources?.memoryMib !== undefined)
+    parts.push(
+      resources.memoryMib % mibPerGib === 0
+        ? `${String(resources.memoryMib / mibPerGib)} GiB`
+        : `${String(resources.memoryMib)} MiB`,
+    );
+  return parts.length === 0 ? undefined : parts.join(", ");
+}
+
 /**
  * What an execution was placed on, with the platform it was placed on it for.
  * A capability task names what the site had to offer rather than an image, and

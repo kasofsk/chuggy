@@ -161,7 +161,7 @@ export async function schedulerLockExecution(
           c.canonical AS configuration_canonical,
             d.overrides::text AS configuration_overrides, e.requirement_identity,
           e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
-          e.platform_default_version::text AS platform_default_version, e.status, e.outcome,
+          e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
           e.result_manifest, e.completion_operation,
           (e.attempt_next - 1)::text AS attempts_opened,
           e.retries_spent::text AS retries_spent
