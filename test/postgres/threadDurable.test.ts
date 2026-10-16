@@ -765,6 +765,25 @@ async function threadListedActivity(partition: Partition): Promise<number> {
   return Date.parse(String(listed[0]?.lastActivityAt));
 }
 
+/** How many times a case reads the server's clock waiting for it to pass an instant. */
+const threadClockReadsMax = 1000;
+
+/**
+ * Returns once the server's clock reads a later millisecond than an activity
+ * the listing answered. A write begun after it stamps `now()` no earlier than
+ * that reading, so the listing cannot answer it as the same instant.
+ */
+async function threadListedActivityPassed(activity: number): Promise<void> {
+  for (let read = 0; read < threadClockReadsMax; read += 1) {
+    const [row] = await rig.sessions.harness.query(
+      "SELECT clock_timestamp()::text AS now",
+      [],
+    );
+    if (Date.parse(String(row?.["now"])) > activity) return;
+  }
+  assert.fail("the server's clock never read past the thread's activity");
+}
+
 /** When the row says the thread closed, which the listing's activity must agree with. */
 async function threadRowClosedAt(
   partition: Partition,
@@ -791,6 +810,7 @@ test("a thread's activity is its opening, its turns and its close", async () => 
   const listed = (await rig.threads.threads(partition, threadsAnsweredMax))[0];
   assert.equal(listed?.lastActivityAt, listed?.openedAt);
   const opened = await threadListedActivity(partition);
+  await threadListedActivityPassed(opened);
 
   await rig.threads.enqueueMessage({
     partition,
@@ -822,6 +842,7 @@ test("a thread with no turns still last moved when it closed", async () => {
   const member = threadRigMember(rig, partition, "closed-empty");
   const thread = await threadRigThread(rig, partition, member);
   const opened = await threadListedActivity(partition);
+  await threadListedActivityPassed(opened);
 
   await rig.threads.close({ partition, session: thread.session });
 
