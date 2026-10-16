@@ -16,7 +16,7 @@ import {
   phaseTags,
   type Phase,
 } from "../../domain/phase.ts";
-import { asTicketId, type TicketId } from "../../domain/ids.ts";
+import { asSafeInteger, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
   type NativeActionPage,
@@ -26,6 +26,7 @@ import {
   type ProjectReadQuery,
   type ProjectResource,
   ticketEscalationResource,
+  type RunnerLossResource,
   type TicketNativeAction,
   type TicketDependencyResource,
   type TicketPhaseFilter,
@@ -43,6 +44,12 @@ import {
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
 import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
+import { attemptEvidenceLabel } from "../../interpreter/executionScheduler.ts";
+import { asPrincipal } from "../../interpreter/principal.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../interpreter/schedulerIdentity.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
@@ -93,6 +100,8 @@ interface TicketProjectionRow {
   readonly seq: string;
   readonly escalation: string;
   readonly escalation_evidence: string | null;
+  /** The row `ticket_runner_loss` reads for the escalation, as JSON, and null where it reads none. */
+  readonly lost: string | null;
   readonly released_at: string | null;
   readonly changed_at: string | null;
   /**
@@ -334,6 +343,58 @@ function ticketResourceOpenDependencies(
   });
 }
 
+/** The loss as `to_jsonb` writes its row, every field unread until checked. */
+interface StoredRunnerLoss {
+  readonly execution?: unknown;
+  readonly attempt?: unknown;
+  readonly runner?: unknown;
+  readonly personal?: unknown;
+  readonly evidence?: unknown;
+  readonly error_bytes?: unknown;
+  readonly losses?: unknown;
+  readonly resumed?: unknown;
+}
+
+/** A count in the loss's JSON, which carries a bigint as a number. */
+function lossCount(value: unknown, what: string): number {
+  if (typeof value !== "number" || value < 0)
+    throw new Error(`native read: ${what} is not a count`);
+  return asSafeInteger(value, what);
+}
+
+/** The job a parked ticket waits on, where `ticket_runner_loss` reads it as lost on its runner. */
+function projectionRunnerLoss(
+  value: string | null,
+): RunnerLossResource | undefined {
+  if (value === null) return undefined;
+  const lost = JSON.parse(value) as StoredRunnerLoss;
+  const evidence =
+    typeof lost.evidence === "string"
+      ? attemptEvidenceLabel(lost.evidence)
+      : undefined;
+  if (
+    typeof lost.execution !== "string" ||
+    typeof lost.attempt !== "string" ||
+    typeof lost.runner !== "string" ||
+    typeof lost.personal !== "boolean" ||
+    evidence === undefined
+  )
+    throw new Error("native read: a runner loss is not whole");
+  return {
+    runner: lost.personal
+      ? { kind: "Personal", owner: asPrincipal(lost.runner) }
+      : { kind: "Pool", pool: lost.runner },
+    execution: asExecutionId(lost.execution),
+    attempt: asAttemptId(lost.attempt),
+    evidence,
+    ...(lost.error_bytes === null
+      ? {}
+      : { error: { bytes: lossCount(lost.error_bytes, "lost run error") } }),
+    losses: lossCount(lost.losses, "runner losses"),
+    resumed: lossCount(lost.resumed, "runner loss resumes"),
+  };
+}
+
 function ticketResource(row: TicketProjectionRow): TicketResource {
   const kind = projectionEscalation(row.escalation);
   return {
@@ -353,6 +414,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
           escalation: ticketEscalationResource(
             kind,
             projectionEvidence(row.escalation_evidence),
+            projectionRunnerLoss(row.lost),
           ),
         }),
     revokedDependencies: (row.revoked_dependencies ?? []).map((dependency) =>
@@ -493,6 +555,7 @@ async function readTicketsByActivity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+                 to_jsonb(l)::text AS lost,
                  coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
@@ -532,6 +595,7 @@ async function readTicketsByActivity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
             OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
@@ -549,6 +613,7 @@ async function readTicketsByIdentity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+               to_jsonb(l)::text AS lost,
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
@@ -588,6 +653,7 @@ async function readTicketsByIdentity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND t.ticket>${query.after ?? 0}
           AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
@@ -604,6 +670,7 @@ async function readTicketRow(
 ): Promise<(TicketProjectionRow & ReleasedBriefRow) | undefined> {
   const found = await pool.query<TicketProjectionRow & ReleasedBriefRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
+               to_jsonb(l)::text AS lost,
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
@@ -659,6 +726,7 @@ async function readTicketRow(
           LEFT JOIN draft_revision a
             ON a.tenant=e.tenant AND a.project=e.project AND a.ticket=e.ticket
            AND a.authoring_version=e.released_authoring_version
+          LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );

@@ -240,6 +240,12 @@ export const sourceUnrecordedResult = "SourceUnrecorded";
  */
 export const workResultUnrecordedResult = "WorkResultUnrecorded";
 export const finalizationFunction = "submit_finalization_result";
+/** Whether a ticket's escalation waits only on tasks lost on the runners that claimed them. */
+export const ticketRunnerLossFunction = "ticket_runner_loss";
+/** The escalated tickets the scheduler may resume as lost on their runners. */
+export const runnerLostTicketsFunction = "runner_lost_tickets";
+/** The scheduler's door for answering one such escalation as a person would. */
+export const runnerLossResumeFunction = "submit_runner_loss_resume";
 export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";

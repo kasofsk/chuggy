@@ -30,13 +30,13 @@ import type { ApiFailure } from "./apiRequest.ts";
 export function escalationKindSentence(kind: EscalationKind): string {
   switch (kind) {
     case "WorkFailureEscalated":
-      return "the work did not pass its evaluation";
+      return "the work failed or its run did not finish";
     case "EvaluationFailureEscalated":
       return "this ticket has failed evaluation more times than rework allows";
     case "WorkExecutionUnavailableEscalated":
       return "the platform could not run this ticket's contract";
     case "EvaluationBlockedEscalated":
-      return "the platform could not run this ticket's evaluation";
+      return "an evaluator could not run or its run did not finish";
     case "FinalizationUnavailableEscalated":
       return "the platform could not finalize this ticket";
   }

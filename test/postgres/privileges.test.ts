@@ -21,9 +21,12 @@ import {
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
+  runnerLossResumeFunction,
+  runnerLostTicketsFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
+  ticketRunnerLossFunction,
   ticketServiceRole,
   workerPlaneRole,
   workerRunBindingFunction,
@@ -887,7 +890,7 @@ test("the scheduler cannot write ticket state or append history", async () => {
   }
 });
 
-test("the scheduler reaches the decision mailbox through one function and no other door", async () => {
+test("the scheduler reaches the decision mailbox only through the doors built for it", async () => {
   for (const [statement, object] of [
     [
       `INSERT INTO decision_input
@@ -921,6 +924,23 @@ test("the scheduler reaches the decision mailbox through one function and no oth
     const refusal = await harness.attemptAs(schedulerRole, statement);
     assert.match(refusal ?? "", postgresHarnessDenial(object));
   }
+});
+
+test("only the scheduler finds and resumes a job lost on its runner, and only the API reads the loss", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(`${ticketRunnerLossFunction}(text,text,bigint)`),
+    [apiRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(`${runnerLostTicketsFunction}(bigint,integer)`),
+    [schedulerRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${runnerLossResumeFunction}(text,text,bigint,bigint,text,text,bigint,bigint)`,
+    ),
+    [schedulerRole],
+  );
 });
 
 test("the scheduler cannot rewrite a settlement, a result or its own entitlement", async () => {

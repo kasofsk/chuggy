@@ -33,6 +33,7 @@ import {
   type PhysicalAttempt,
   type ProfileResolved,
   type RequestClaim,
+  type RunnerLossResumed,
   type AttemptPlacementPort,
   type AttemptPlacementOutcome,
   type AttemptPlacement,
@@ -49,6 +50,7 @@ import {
   executionSchedulerObserve,
   executionSchedulerPass,
   executionSchedulerRegister,
+  executionSchedulerResume,
   type ExecutionSchedulerService,
 } from "../../src/interpreter/executionSchedulerRun.ts";
 import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
@@ -236,6 +238,14 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     fenceOldEpochAttempts: () => {
       calls.push("fenced");
       return Promise.resolve(0);
+    },
+    runnerLostTickets: () => Promise.resolve([]),
+    resumeRunnerLoss: (resume) => {
+      calls.push(`resumed:${String(resume.ticket.ticket)}`);
+      return Promise.resolve({
+        resumed: "Submitted",
+        operation: asOperationId("resume"),
+      });
     },
   };
 }
@@ -701,6 +711,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("unlaunched");
       return Promise.resolve([]);
     },
+    runnerLostTickets: () => {
+      calls.push("lost");
+      return Promise.resolve([]);
+    },
   };
   assert.deepEqual(
     await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
@@ -712,6 +726,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       admitted: 0,
       observed: 0,
       placed: 0,
+      resumed: 0,
       notices: [],
     },
   );
@@ -723,6 +738,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "observing",
     "reaped",
     "unlaunched",
+    "lost",
   ]);
 });
 
@@ -754,6 +770,8 @@ function passService(calls: string[]): ExecutionSchedulerService {
           : { admitted: "ClusterFull" },
       );
     },
+    runnerLostTickets: () =>
+      Promise.resolve([{ partition, ticket: execution.ticket }]),
   };
   return { ...service, store };
 }
@@ -769,9 +787,57 @@ test("a pass reports the count each of its steps moved", async () => {
       admitted: 1,
       observed: 0,
       placed: 1,
+      resumed: 1,
       notices: [],
     },
   );
+});
+
+test("a lost ticket is resumed under the retry budget and the mailbox's bounds, and only an answer the mailbox took counts", async () => {
+  const asked: string[] = [];
+  const answers: readonly RunnerLossResumed[] = [
+    { resumed: "Submitted", operation: asOperationId("resume-one") },
+    { resumed: "AlreadySubmitted", operation: asOperationId("resume-two") },
+    { resumed: "NotResumable" },
+    { resumed: "Backpressure" },
+  ];
+  const service = serviceWith([], runnable, placedOk);
+  const config = {
+    ...executionSchedulerDefaults,
+    attemptRetriesMax: 5,
+    resumesPerPassMax: 7,
+  };
+  const lost = answers.map((_answer, index) => ({
+    partition,
+    ticket: asTicketId(index + 1),
+  }));
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    runnerLostTickets: (lossesMax, ticketsMax) => {
+      asked.push(`lost:${String(lossesMax)}:${String(ticketsMax)}`);
+      return Promise.resolve(lost);
+    },
+    resumeRunnerLoss: (resume) => {
+      asked.push(
+        `resume:${String(resume.ticket.ticket)}:${String(resume.lossesMax)}`,
+      );
+      assert.deepEqual(resume.mailbox, ticketServiceDefaults);
+      const answer = answers[resume.ticket.ticket - 1];
+      assert.ok(answer !== undefined);
+      return Promise.resolve(answer);
+    },
+  };
+  assert.equal(
+    await executionSchedulerResume({ ...service, store, config }),
+    1,
+  );
+  assert.deepEqual(asked, [
+    "lost:5:7",
+    "resume:1:5",
+    "resume:2:5",
+    "resume:3:5",
+    "resume:4:5",
+  ]);
 });
 
 test("a pass observes every step it took, in the order it took them", async () => {

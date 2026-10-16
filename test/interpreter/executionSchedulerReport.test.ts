@@ -117,6 +117,8 @@ function recordingStore(
     attemptCleanupCompleted: unreached,
     unlaunched: unreached,
     fenceOldEpochAttempts: unreached,
+    runnerLostTickets: unreached,
+    resumeRunnerLoss: unreached,
   };
 }
 

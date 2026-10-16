@@ -9,7 +9,11 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { EscalationStep } from "../../core/codeLabels.ts";
 import { navRoutes } from "../../core/shellNav.ts";
-import type { TicketSlot as Slot } from "../../core/ticketSituation.ts";
+import type {
+  LostAttempt,
+  TicketSlot as Slot,
+} from "../../core/ticketSituation.ts";
+import { useRunReason } from "../RunEvidence.tsx";
 import { TicketNow } from "./TicketNow.tsx";
 
 import "./ticket.css";
@@ -30,11 +34,29 @@ function NeedsYouStep(props: {
   );
 }
 
+/** The first line of what the worker of a lost job kept, its whole on hover. */
+function NeedsYouReason(props: {
+  readonly partition: PartitionIdentity;
+  readonly reason: LostAttempt;
+}): ReactNode {
+  const reason = useRunReason(
+    props.partition,
+    props.reason.execution,
+    props.reason.attempt,
+  );
+  return reason === undefined ? null : (
+    <p className="ticket-card-reason" title={reason.full}>
+      {reason.line}
+    </p>
+  );
+}
+
 function NeedsYou(props: {
   readonly partition: PartitionIdentity;
   readonly detail: string;
   readonly step: EscalationStep | undefined;
   readonly more: string | undefined;
+  readonly reason: LostAttempt | undefined;
   readonly overrides: ReactNode;
   readonly actions: ReactNode;
 }): ReactNode {
@@ -51,6 +73,9 @@ function NeedsYou(props: {
       </p>
       {props.more === undefined ? null : (
         <p className="text-ink-3">{props.more}</p>
+      )}
+      {props.reason === undefined ? null : (
+        <NeedsYouReason partition={props.partition} reason={props.reason} />
       )}
       {props.overrides}
       <div className="ticket-card-actions">{props.actions}</div>
@@ -75,6 +100,7 @@ export function TicketSlot(props: {
           detail={slot.detail}
           step={slot.step}
           more={slot.more}
+          reason={slot.reason}
           overrides={props.overrides}
           actions={props.actions}
         />

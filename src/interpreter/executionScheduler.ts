@@ -778,6 +778,42 @@ export interface RequestClaim {
 }
 
 /**
+ * A ticket whose open escalation waits only on tasks lost on the runners that
+ * claimed them, and that the scheduler has not answered.
+ */
+export interface RunnerLostTicket {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+}
+
+/**
+ * What answering one such escalation is asked for: the ticket, the losses at
+ * which a person is left to answer it, and the mailbox's bounds, which the
+ * answer is admitted under as a person's is.
+ */
+export interface RunnerLossResume {
+  readonly ticket: RunnerLostTicket;
+  readonly lossesMax: number;
+  readonly mailbox: Pick<
+    TicketServiceConfig,
+    "ordinarySoftLimit" | "mailboxHardLimit"
+  >;
+}
+
+/**
+ * What answering it found: the answer is the resume a person would send at the
+ * escalation's desk, so the writer still decides it and refuses it where the
+ * desk closed first. `NotResumable` is a desk that closed, or one no longer a
+ * runner loss under the bound, before the answer reached it.
+ */
+export type RunnerLossResumed =
+  | { readonly resumed: "Submitted"; readonly operation: OperationId }
+  | { readonly resumed: "AlreadySubmitted"; readonly operation: OperationId }
+  | { readonly resumed: "NotResumable" }
+  | { readonly resumed: "Backpressure" }
+  | { readonly resumed: "NotAdmitted" };
+
+/**
  * The durable execution authority for one installation. Every call names its
  * partition except admission, which is a cluster-wide decision over durable
  * logical allocations and reads no project's tickets.
@@ -926,6 +962,19 @@ export interface ExecutionSchedulerStore {
     epoch: RecoveryEpoch,
     attemptsMax: number,
   ): Promise<number>;
+
+  /**
+   * At most `ticketsMax` tickets of active projects whose escalation waits
+   * only on tasks lost on their runners, each lost fewer than `lossesMax`
+   * times where it stands in its ticket.
+   */
+  runnerLostTickets(
+    lossesMax: number,
+    ticketsMax: number,
+  ): Promise<readonly RunnerLostTicket[]>;
+
+  /** Answers one such ticket's escalation with a resume, once, where it is still one. */
+  resumeRunnerLoss(resume: RunnerLossResume): Promise<RunnerLossResumed>;
 }
 
 /** The execution profile a backend enforces, resolved by policy and never weakened by authored content. */
@@ -1049,7 +1098,7 @@ export interface AttemptPlacementPort {
   ): Promise<AttemptErrorWritten>;
 }
 
-/** The authority kind every scheduler-submitted completion is scoped and audited under. */
+/** The authority kind every completion and resume the scheduler submits is scoped and audited under. */
 export const executionSchedulerAuthorityKind = "ExecutionScheduler";
 
 /** The longest bounded evidence label a stored attempt or incident row carries. */
@@ -1078,6 +1127,7 @@ export interface ExecutionSchedulerConfig extends Pick<DomainConfig, "nTasks"> {
   readonly placementBackoffSecs: number;
   readonly admissionsPerPassMax: number;
   readonly launchesPerPassMax: number;
+  readonly resumesPerPassMax: number;
   readonly projectBacklogMax: number;
   readonly installationBacklogMax: number;
   readonly backlogRetryAfterSeconds: number;
@@ -1094,6 +1144,7 @@ export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
   placementBackoffSecs: 15,
   admissionsPerPassMax: 32,
   launchesPerPassMax: 32,
+  resumesPerPassMax: 32,
   projectBacklogMax: 200,
   installationBacklogMax: 5_000,
   backlogRetryAfterSeconds: 5,

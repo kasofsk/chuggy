@@ -4,8 +4,9 @@
  *
  * EVERY PASS IS BOUNDED AND EVERY STEP IS A DURABLE MOVE. House rule 9 asks for
  * an explicit limit on anything that can grow, so a pass fences, reaps,
- * registers, cancels, admits, observes and launches at most its configured
- * count and returns; the loop that calls it again is a deployment's. Nothing
+ * registers, cancels, admits, observes, launches and resumes at most its
+ * configured count and returns; the loop that calls it again is a
+ * deployment's. Nothing
  * here retries in place, because a retry that outlives a process is a row
  * rather than a loop. The two sweeps are bounded like every other step, which
  * is what keeps a cluster-wide outage from locking every affected row in one
@@ -105,6 +106,16 @@
  * and the ledger's own move to `Cancelled` where none was. Which it was is
  * evidence rather than a model term, and `test/interpreter/runner.test.ts`
  * states the mapping and holds it to the model.
+ *
+ * A JOB LOST ON ITS RUNNER IS RESUMED AT ITS TICKET'S DESK. The pass answers
+ * the escalation it ends in with the resume a person would send, which the
+ * writer decides as it decides theirs and which runs the work, or the
+ * evaluator, again as a new task under a new execution. It does so only where
+ * every task the escalation waits on was lost on the runner that claimed it,
+ * and while each was lost there fewer times than `attemptRetriesMax` lets an
+ * attempt in the cluster be, so a job lost every time still reaches a person.
+ * What counts as lost, and where in a ticket the count is kept, are
+ * `src/adapters/postgres/schema/migrations/061-runner-loss.ts`'s.
  *
  * A WORKLOAD THAT MET A FAULT ITS WORKER CANNOT REPORT IS ENDED ON IT. A job
  * whose image could not be pulled, started or passed through the runtime's
@@ -242,6 +253,7 @@ export interface SchedulerPassReport {
   readonly admitted: number;
   readonly observed: number;
   readonly placed: number;
+  readonly resumed: number;
   readonly notices: readonly SchedulerPassNotice[];
 }
 
@@ -1134,6 +1146,34 @@ export async function executionSchedulerLaunch(
   return placed;
 }
 
+/**
+ * Answers a bounded batch of escalations whose tasks were lost on the runners
+ * that claimed them with a resume, counting the answers this pass submitted.
+ */
+export async function executionSchedulerResume(
+  service: ExecutionSchedulerService,
+): Promise<number> {
+  const config = checkedExecutionSchedulerConfig(
+    service.config,
+    service.ticketService,
+    service.finalizer,
+  );
+  const lost = await service.store.runnerLostTickets(
+    config.attemptRetriesMax,
+    config.resumesPerPassMax,
+  );
+  let resumed = 0;
+  for (const ticket of lost) {
+    const outcome = await service.store.resumeRunnerLoss({
+      ticket,
+      lossesMax: config.attemptRetriesMax,
+      mailbox: service.ticketService,
+    });
+    if (outcome.resumed === "Submitted") resumed += 1;
+  }
+  return resumed;
+}
+
 /** One bounded pass over every durable move the scheduler owns, in dependency order. */
 export async function executionSchedulerPass(
   service: ExecutionSchedulerService,
@@ -1148,6 +1188,7 @@ export async function executionSchedulerPass(
   const admitted = await executionSchedulerAdmit(service, cluster);
   const { observed, notices } = await executionSchedulerObserve(service, epoch);
   const placed = await executionSchedulerLaunch(service, epoch);
+  const resumed = await executionSchedulerResume(service);
   return {
     fenced,
     cleaned,
@@ -1156,6 +1197,7 @@ export async function executionSchedulerPass(
     admitted,
     observed,
     placed,
+    resumed,
     notices,
   };
 }

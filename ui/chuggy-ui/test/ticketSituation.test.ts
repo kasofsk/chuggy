@@ -138,6 +138,48 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
     detail: "Nowhere to run this work",
     step: "Runners",
     more: "Work cancelled",
+    reason: undefined,
+  });
+});
+
+/**
+ * The newcomer's evaluation clone died on her own runner: the card names the
+ * runner rather than a failed evaluation, says how often the scheduler resumed
+ * it, and reads the worker's own line off the attempt that kept one.
+ */
+test("a job lost on its runner says where, how often, and the attempt its worker spoke for", () => {
+  const silent = {
+    runner: { kind: "Pool" as const, pool: "runner-a" },
+    execution: "execution-1",
+    attempt: "attempt-3",
+    evidence: "RunFailed" as const,
+    losses: 3,
+    resumed: 2,
+  };
+  const kept = { ...silent, error: { bytes: 61 } };
+  const parked = (lost: typeof silent) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "EvaluationBlockedEscalated",
+            resumeAt: "ResumeEvaluation",
+            lost,
+          },
+        }),
+      }),
+    );
+  expect(parked(kept)).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Lost on runner-a",
+    step: "Runners",
+    more: "3 losses · 2 resumed automatically",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+  expect(parked(silent)).toMatchObject({
+    detail: "Lost on runner-a",
+    reason: undefined,
   });
 });
 

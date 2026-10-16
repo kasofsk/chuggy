@@ -1048,6 +1048,7 @@ function processExecutionFakes(observed: boolean): string {
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
       attemptEnded: async () => true,
       blockExecution: async () => ({ blocked: 'Blocked', operation: 'operation-one' }),
+      runnerLostTickets: async () => [],
     };
     const configuration = ${JSON.stringify(configuration)};
   `;

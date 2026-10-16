@@ -32,6 +32,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   AgenticRefusalsResponse,
+  RunnerLoss,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import {
@@ -47,7 +48,11 @@ import {
   operationRefusalSentence,
   operationStateSentence,
 } from "../core/codeSentences.ts";
-import { phaseLabel } from "../core/codeLabels.ts";
+import {
+  phaseLabel,
+  runnerLossDetail,
+  runnerLossLine,
+} from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { inboxProposalsHeld } from "../core/inboxProposals.ts";
 import {
@@ -141,6 +146,7 @@ import {
 } from "./TicketCells.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { useRunReason } from "./RunEvidence.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -408,9 +414,30 @@ function InboxActions(props: {
   );
 }
 
+/** The hover over a lost job's badge: the runner, how often it was lost and
+ * resumed, and the first line its worker kept where it kept one. */
+function InboxLostWhy(props: {
+  readonly partition: PartitionIdentity;
+  readonly lost: RunnerLoss;
+  readonly badge: string;
+}): ReactNode {
+  const lost = props.lost;
+  const reason = useRunReason(props.partition, lost.execution, lost.attempt);
+  const said = [runnerLossDetail(lost), runnerLossLine(lost)];
+  if (lost.error !== undefined && reason !== undefined) said.push(reason.line);
+  return (
+    <Tooltip text={said.join(" · ")}>
+      <span>
+        <Pill tone="parked">{props.badge}</Pill>
+      </span>
+    </Tooltip>
+  );
+}
+
 /** Why this ticket is here: its phase where the phase page reached it, and what
  * its open questions ask where it did not. */
 function InboxWhy(props: {
+  readonly partition: PartitionIdentity;
   readonly entry: InboxEntry;
   readonly row: ProjectTableRow | undefined;
 }): ReactNode {
@@ -425,6 +452,15 @@ function InboxWhy(props: {
           </Pill>
         ))}
       </div>
+    );
+  const lost = held.escalation?.lost;
+  if (lost !== undefined)
+    return (
+      <InboxLostWhy
+        partition={props.partition}
+        lost={lost}
+        badge={row.badge ?? phaseLabel(row.phase)}
+      />
     );
   const kind = held.escalation?.kind;
   return (
@@ -483,7 +519,7 @@ function InboxRow(props: {
         title={row?.title}
       />
       <td>
-        <InboxWhy entry={props.entry} row={row} />
+        <InboxWhy partition={props.partition} entry={props.entry} row={row} />
         <InboxProposalWhy
           ticket={props.entry.ticket}
           proposals={props.entry.proposals}

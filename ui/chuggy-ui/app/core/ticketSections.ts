@@ -20,6 +20,7 @@ import type {
   EscalationKind,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
+import type { TicketEscalation } from "../../../../src/contract/responses.ts";
 
 export const ticketSectionRoster = [
   "NeedsYou",
@@ -78,12 +79,14 @@ export function escalationBadgeLabel(kind: EscalationKind): string {
   }
 }
 
-/** An escalated ticket with no read of its escalation kind is still an open
- * human task, so the phase is what its badge says. */
+/** An escalated ticket with no read of its escalation is still an open human
+ * task, so the phase is what its badge says, and one whose job was lost on its
+ * runner says that rather than what failed. */
 export function ticketBadgeLabel(
   phase: TicketPhase,
-  kind: EscalationKind | undefined,
+  escalation: TicketEscalation | undefined,
 ): string | undefined {
-  if (kind !== undefined) return escalationBadgeLabel(kind);
+  if (escalation?.lost !== undefined) return "lost on runner";
+  if (escalation !== undefined) return escalationBadgeLabel(escalation.kind);
   return phase === "Escalated" ? "escalated" : undefined;
 }

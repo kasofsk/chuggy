@@ -40,6 +40,7 @@ import {
 } from "../../../../src/contract/rosters.ts";
 import type {
   LeadAbsenceResponse,
+  RunnerLoss,
   TicketEscalation,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
@@ -49,6 +50,7 @@ import {
   type MutationDeferralCode,
   type MutationRefusalCode,
 } from "./codeSentences.ts";
+import { creatorLabel } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
 import { stageLabel } from "./ticketLedger.ts";
@@ -320,12 +322,31 @@ export function escalationEvidenceLabel(
   return finalizationUnavailableKindLabel(evidence);
 }
 
+/** The runner a job was lost on: its pool's name, or the member whose own runner it is. */
+export function runnerLossDetail(lost: RunnerLoss): string {
+  return lost.runner.kind === "Pool"
+    ? `Lost on ${lost.runner.pool}`
+    : `Lost on ${creatorLabel(lost.runner.owner).text}'s runner`;
+}
+
+function countNoun(count: number, one: string, many: string): string {
+  return `${String(count)} ${count === 1 ? one : many}`;
+}
+
+/** How often the job was lost where it stands, and how many of those the scheduler resumed by itself. */
+export function runnerLossLine(lost: RunnerLoss): string {
+  const resumed = lost.resumed === 0 ? "none" : String(lost.resumed);
+  return `${countNoun(lost.losses, "loss", "losses")} · ${resumed} resumed automatically`;
+}
+
 /**
- * The one line beside the escalation: the wall's own label where the
- * escalation carries evidence, the kind's own generic word otherwise — a work
- * failure and a rework wall explain themselves, so neither ever carries one.
+ * The one line beside the escalation: the runner a job was lost on where it
+ * was, the wall's own label where the escalation carries evidence, the kind's
+ * own generic word otherwise — a work failure and a rework wall explain
+ * themselves, so neither ever carries one.
  */
 export function escalationDetail(escalation: TicketEscalation): string {
+  if (escalation.lost !== undefined) return runnerLossDetail(escalation.lost);
   return escalation.evidence === undefined
     ? escalationKindLabel(escalation.kind)
     : escalationEvidenceLabel(escalation.evidence);
@@ -335,11 +356,12 @@ export function escalationDetail(escalation: TicketEscalation): string {
 export type EscalationStep = "Runners";
 
 /** The page an escalation's one line leads to: where the project's work runs,
- * for a wall that is nothing being there to run it. */
+ * for a wall that is nothing being there to run it or a pool that lost it. */
 export function escalationStep(
   escalation: TicketEscalation,
 ): EscalationStep | undefined {
-  return escalation.evidence === "RequiredCapabilityUnavailable"
+  return escalation.evidence === "RequiredCapabilityUnavailable" ||
+    escalation.lost?.runner.kind === "Pool"
     ? "Runners"
     : undefined;
 }
