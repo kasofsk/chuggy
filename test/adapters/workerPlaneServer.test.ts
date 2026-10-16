@@ -25,6 +25,7 @@ import {
 import { resultManifestTextCharsMax } from "../../src/contract/workerDocuments.ts";
 import {
   nativeHttpPageItemsMax,
+  repositoryIdentityCharsMax,
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
@@ -1063,7 +1064,13 @@ const workerPlaneHeaviest: Readonly<
     }),
     status: 204,
   },
-  credential: { headers: json, payload: "{}", status: 404 },
+  credential: {
+    headers: { ...json, [workerContractHeader]: workerContractRelease },
+    payload: planeJsonHeaviest({
+      repository: planeTextHeaviest(repositoryIdentityCharsMax),
+    }),
+    status: 404,
+  },
 };
 
 test("every job route takes the heaviest body its caller may send, and refuses a byte past its bound", async () => {
@@ -1279,8 +1286,8 @@ function credentialPlane(
       ? {}
       : {
           credentials: {
-            attempt: (offered: unknown) => {
-              asked.push(offered);
+            attempt: (offered: unknown, repository: unknown) => {
+              asked.push({ authority: offered, repository });
               return Promise.resolve(minted);
             },
             session: () => Promise.resolve({ minted: "NotFound" } as const),
@@ -1304,7 +1311,100 @@ test("an attempt is answered the credential minted for its own authority", async
 
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(answered.json(), credential);
-  assert.deepEqual(asked, [authority], "the minting was handed something else");
+  assert.deepEqual(
+    asked,
+    [{ authority, repository: undefined }],
+    "the minting was handed something else",
+  );
+  await app.close();
+});
+
+/** A release in which an attempt may name a repository, and one before any could. */
+const credentialNaming = { [workerContractHeader]: workerContractRelease };
+const credentialUnnaming = { [workerContractHeader]: "1.7.0" };
+const credentialSibling = "https://github.com/kasofsk/chuggy-common.git";
+
+test("an attempt naming a repository is handed it, and one naming none is handed its own", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+  );
+
+  for (const call of [
+    { headers: json, payload: { repository: credentialSibling } },
+    { headers: json, payload: {} },
+    {},
+  ]) {
+    const answered = await app.inject({
+      method: "POST",
+      url: "/v1/credential",
+      ...call,
+      headers: { ...held, ...credentialNaming, ...call.headers },
+    });
+    assert.equal(answered.statusCode, 200, JSON.stringify(call));
+    assert.deepEqual(answered.json(), credential);
+  }
+  assert.deepEqual(asked, [
+    { authority, repository: credentialSibling },
+    { authority, repository: undefined },
+    { authority, repository: undefined },
+  ]);
+  await app.close();
+});
+
+test("a pod of a release before an attempt could name a repository is minted as it was, whatever body it sends", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+  );
+
+  for (const release of [credentialUnnaming, {}])
+    for (const payload of [
+      { repository: credentialSibling },
+      { unknown: true },
+    ]) {
+      const answered = await app.inject({
+        method: "POST",
+        url: "/v1/credential",
+        headers: { ...held, ...release, ...json },
+        payload,
+      });
+      assert.equal(answered.statusCode, 200, JSON.stringify(payload));
+      assert.deepEqual(answered.json(), credential);
+    }
+  assert.deepEqual(
+    asked,
+    Array.from({ length: 4 }, () => ({ authority, repository: undefined })),
+    "an earlier pod's body named a repository",
+  );
+  await app.close();
+});
+
+test("a body that is no credential request is refused before anything is minted", async () => {
+  const asked: unknown[] = [];
+  const app = credentialPlane(
+    { minted: "Credential", value: credential },
+    asked,
+  );
+
+  for (const payload of [
+    { unknown: true },
+    { repository: "" },
+    { repository: 7 },
+    { repository: "x".repeat(repositoryIdentityCharsMax + 1) },
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/credential",
+      headers: { ...held, ...credentialNaming, ...json },
+      payload,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(payload));
+    assert.deepEqual(refused.json(), { action: "stop" });
+  }
+  assert.deepEqual(asked, [], "a malformed request reached the minting");
   await app.close();
 });
 

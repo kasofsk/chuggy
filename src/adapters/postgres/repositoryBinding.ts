@@ -239,8 +239,8 @@ function postgresRepositoryLandingOutcome(
 }
 
 /**
- * One binding's landing, read and moved through the two doors the API holds
- * EXECUTE on. The point read is a door of its own rather than a search of the
+ * One binding's landing, read through a door the API and the worker plane
+ * hold EXECUTE on and moved through one only the API holds. The point read is a door of its own rather than a search of the
  * listing, because a project binding more repositories than the listing
  * answers would have the one asked about fall off the end of it.
  */

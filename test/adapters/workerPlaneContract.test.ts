@@ -115,7 +115,10 @@ import type {
   WorkerMode,
 } from "../../src/interpreter/taskConfiguration.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
+  workerContractProjectReads,
+  type WorkerContractRange,
   type SessionTaskRead,
   type WorkerArtifactReserved,
   type WorkerArtifactStored,
@@ -251,6 +254,9 @@ const workerUploadPathsWritten = [
   workerErrorPath,
 ] as const;
 
+/** A repository an attempt names for a credential beside its own. */
+const credentialRepository = "https://github.com/kasofsk/chuggy-common.git";
+
 /** A caller every route refuses before it reads a bearer. */
 const workerContractStranger: WorkerPlaneCase = {
   name: "a release the plane does not serve",
@@ -297,12 +303,18 @@ const workerPlaneCalls: Readonly<
 
 /**
  * What a harness sends a route as JSON: the name its release exports the
- * body's schema under, and bodies beside the route's call that between them
- * offer each optional field and leave it out. A route whose body no schema
- * reads, being bytes, the manifest's text or nothing, is `Unparsed`.
+ * body's schema under, bodies beside the route's call that between them offer
+ * each optional field and leave it out, and the releases that send one where
+ * a release before them sends none. A route whose body no schema reads, being
+ * bytes, the manifest's text or nothing, is `Unparsed`.
  */
 type WorkerPlaneRequest =
-  "Unparsed" | { readonly schema: string; readonly bodies: readonly object[] };
+  | "Unparsed"
+  | {
+      readonly schema: string;
+      readonly bodies: readonly object[];
+      readonly sent?: WorkerContractRange;
+    };
 
 const workerPlaneRequests: Readonly<
   Record<WorkerPlaneRouteName, WorkerPlaneRequest>
@@ -337,7 +349,11 @@ const workerPlaneRequests: Readonly<
     ],
   },
   runEnded: { schema: "workerRunEndedSchema", bodies: [] },
-  credential: "Unparsed",
+  credential: {
+    schema: "workerCredentialSchema",
+    bodies: [{}, { repository: credentialRepository }],
+    sent: workerContractProjectReads,
+  },
 };
 
 function workerPlaneAuthority(
@@ -868,7 +884,27 @@ const workerPlaneCases: Readonly<
       },
     })),
   ],
-  credential: [...workerPlaneStrangers, ...credentialCases],
+  credential: [
+    ...workerPlaneStrangers,
+    { ...workerPlaneMalformed, named: true },
+    ...credentialCases,
+    {
+      name: "an attempt naming another repository of its project",
+      named: true,
+      call: { headers: json, payload: { repository: credentialRepository } },
+      service: {
+        credentials: {
+          attempt: (_authority, repository) =>
+            Promise.resolve(
+              repository === credentialRepository
+                ? credentialsMinted.Credential
+                : credentialsMinted.NotFound,
+            ),
+          session: () => Promise.resolve(credentialsMinted.NotFound),
+        },
+      },
+    },
+  ],
 };
 
 /** The call each session route is driven with where a case changes nothing about it. */
@@ -1478,7 +1514,11 @@ function workerPlaneReplayed<Name extends string>(
     const request = Object.hasOwn(plane.requests, name)
       ? plane.requests[name]
       : "Unparsed";
-    if (request !== "Unparsed")
+    if (
+      request !== "Unparsed" &&
+      (request.sent === undefined ||
+        contractVersionAccepted(request.sent, older.release))
+    )
       test(`${route.method} ${route.path} takes every body a ${older.release} pod builds`, () =>
         workerPlaneBodiesTaken(plane, name, route, older, request));
   }

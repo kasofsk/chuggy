@@ -49,6 +49,12 @@ export const workerContractLiveStops: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which an attempt may name the repository it asks a credential for, which a pod of an earlier one never does. */
+export const workerContractProjectReads: WorkerContractRange = {
+  min: { major: 1, minor: 8 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

@@ -623,7 +623,8 @@ const runtimePublished = `registry.public.invalid/worker-runtime@sha256:${"e".re
 /**
  * What a claim returns: an image pinned on a published host, and a capability
  * requirement, which is handed out with no image; each beside the runtime its
- * attempt was opened under, which a release that reads none is never handed.
+ * attempt was opened under, which a release that reads none is never handed;
+ * and a pinned image whose attempt kept no runtime, which is handed none.
  */
 const claims = {
   pinned: {
@@ -644,6 +645,14 @@ const claims = {
     },
     runtime,
   },
+  unkept: {
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: pinned,
+    },
+  },
 } as const;
 
 test("a pool is handed the runtime its claim's attempt was opened under, on the public host", async () => {
@@ -663,6 +672,7 @@ test("a pool is handed the runtime its claim's attempt was opened under, on the 
 const poolReplayPolls = [
   ["a pinned image", ["live", "gone"], 1, 0, claims.pinned],
   ["a capability requirement", [], 1, 0, claims.capable],
+  ["an attempt that kept no runtime", [], 1, 0, claims.unkept],
   ["no room", ["live"], 0, 0, claims.pinned],
   ["nothing to claim", [], 1, 0, undefined],
   ["room for a session", [], 0, 1, undefined],

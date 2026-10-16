@@ -96,11 +96,10 @@ test("every runtime role may read only the migration ledger contract", async () 
   }
 });
 
-test("no runtime role but the API reads a project's bindings through the door", async () => {
+test("no runtime role but the API and the scheduler reads a project's bindings through the door", async () => {
   for (const role of [
     ticketServiceRole,
     selectorServiceRole,
-    schedulerRole,
     finalizerRole,
     workerPlaneRole,
     poolPlaneRole,
@@ -114,14 +113,18 @@ test("no runtime role but the API reads a project's bindings through the door", 
       postgresHarnessDenial(repositoryBindingListFunction),
       role,
     );
-  assert.equal(
-    await harness.attemptAs(
-      apiRole,
-      `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
-    ),
-    undefined,
-    "the role whose route answers the listing still holds the door",
-  );
+  for (const [role, why] of [
+    [apiRole, "the role whose route answers the listing still holds the door"],
+    [schedulerRole, "the role that tells a job what else it may read holds it"],
+  ] as const)
+    assert.equal(
+      await harness.attemptAs(
+        role,
+        `SELECT repository FROM ${repositoryBindingListFunction}('tenant','project',NULL)`,
+      ),
+      undefined,
+      why,
+    );
 });
 
 /**
@@ -484,15 +487,15 @@ test("the API reads one repository binding only through its boundary", async () 
 });
 
 /**
- * The worker plane holds a session to its project's own bindings before it
- * mints anything for the repository the session named, so it reads the binding
- * through the same door every other role does and holds nothing on the table.
+ * The worker plane holds a repository a pod names to its project's live
+ * bindings before it mints anything for it, so it reads the binding through the
+ * door that answers its retirement and holds nothing on the table.
  */
 test("the worker plane reads one repository binding only through its boundary", async () => {
   assert.equal(
     await harness.attemptAs(
       workerPlaneRole,
-      `SELECT * FROM ${repositoryBindingReadFunction}('tenant','project',NULL)`,
+      `SELECT * FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
     ),
     undefined,
   );
@@ -1305,45 +1308,51 @@ test("the binding every evidence function opens with is nobody's to call", async
 });
 
 /**
- * The two landing doors and the retirement. Reading a binding's landing, moving
- * it and ending the binding are the API's questions, asked on behalf of one
- * project by routes it already gates; every other runtime role reads a binding
- * as part of a row it already holds a door for, so none of them holds these.
+ * The two landing doors and the retirement: moving a binding's landing and
+ * ending the binding are the API's questions, asked on behalf of one project by
+ * routes it already gates. Reading one is the API's too, and the worker
+ * plane's, which holds a repository a pod names to its project's live
+ * bindings; every other runtime role reads a binding as part of a row it
+ * already holds a door for, so none of them holds these.
  */
-test("no runtime role but the API reads or moves a binding's landing, or retires one", async () => {
+test("no runtime role but the API moves a binding's landing or retires one, and only it and the worker plane read one", async () => {
   const calls = [
     [
       repositoryLandingReadFunction,
       `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      [apiRole, workerPlaneRole],
     ],
     [
       repositoryLandingWriteFunction,
       `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+      [apiRole],
     ],
     [
       repositoryRetirementWriteFunction,
       `SELECT outcome FROM ${repositoryRetirementWriteFunction}('tenant','project','repository')`,
+      [apiRole],
     ],
   ] as const;
-  for (const [door, call] of calls) {
+  for (const [door, call, holders] of calls) {
     for (const role of [
+      apiRole,
       ticketServiceRole,
       selectorServiceRole,
       schedulerRole,
       finalizerRole,
       workerPlaneRole,
       configurationImporterRole,
-    ])
-      assert.match(
-        (await harness.attemptAs(role, call)) ?? "",
-        postgresHarnessDenial(door),
-        `${role}: ${call}`,
-      );
-    assert.equal(
-      await harness.attemptAs(apiRole, call),
-      undefined,
-      `the role whose routes answer a binding holds the door: ${call}`,
-    );
+    ]) {
+      const refused = await harness.attemptAs(role, call);
+      if ((holders as readonly string[]).includes(role))
+        assert.equal(refused, undefined, `${role} holds the door: ${call}`);
+      else
+        assert.match(
+          refused ?? "",
+          postgresHarnessDenial(door),
+          `${role}: ${call}`,
+        );
+    }
   }
 });
 

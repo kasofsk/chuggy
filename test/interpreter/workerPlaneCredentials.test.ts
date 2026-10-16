@@ -1,9 +1,9 @@
 /**
  * What the plane mints for one pod, which is the whole of what a pod may obtain
- * by asking: the repository its own row names, the permission set its recorded
- * task kind needs, and a refusal that is kept apart from an outage all the way
- * out — because one leaves the pod on its launcher's mount and the other does
- * not.
+ * by asking: the permission set its recorded task kind needs on the repository
+ * its own row names, a read of any other its project binds live, and a refusal
+ * that is kept apart from an outage all the way out — because one leaves the
+ * pod on its launcher's mount and the other does not.
  */
 
 import assert from "node:assert/strict";
@@ -20,16 +20,18 @@ import {
 import type { ExecutionTaskKind } from "../../src/interpreter/executionRequirement.ts";
 import {
   asRepositoryId,
-  type RepositoryBinding,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import {
   asProjectId,
-  asRecoveryEpoch,
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import type { ProjectRepositoryBindingRead } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  asRepositoryLanding,
+  type ProjectRepositoryBound,
+  type ProjectRepositoryLandingStore,
+} from "../../src/interpreter/repositoryBinding.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
   asAttemptId,
@@ -48,6 +50,7 @@ const partition: Partition = {
 
 const repository = asRepositoryId("github.com/kasofsk/chuggy");
 const mirror = asRepositoryId("git.vteng.io/mirror/chuggy");
+const sibling = asRepositoryId("github.com/kasofsk/chuggy-common");
 
 const token = asForgeInstallationToken("ghs_0123456789abcdefghij");
 const expiresAtMs = 1_700_000_000_000;
@@ -85,11 +88,11 @@ interface Read {
 }
 
 function bindingsOf(
-  bound: RepositoryBinding | Error | undefined,
+  bound: ProjectRepositoryBound | Error | undefined,
   asked: Read[] = [],
-): ProjectRepositoryBindingRead {
+): Pick<ProjectRepositoryLandingStore, "landing"> {
   return {
-    binding: (partitionRead, named) => {
+    landing: (partitionRead, named) => {
       asked.push({ partition: partitionRead, named });
       return bound instanceof Error
         ? Promise.reject(bound)
@@ -98,8 +101,17 @@ function bindingsOf(
   };
 }
 
-function bindingOf(bound: RepositoryId): RepositoryBinding {
-  return { partition, repository: bound, recoveryEpoch: asRecoveryEpoch("1") };
+/** One binding as its project's point read answers it, live unless given the instant it retired at. */
+function bindingOf(
+  bound: RepositoryId,
+  retiredAt?: string,
+): ProjectRepositoryBound {
+  return {
+    repository: bound,
+    boundAt: "2026-10-01T00:00:00Z",
+    landing: asRepositoryLanding("Push"),
+    ...(retiredAt === undefined ? {} : { retiredAt }),
+  };
 }
 
 function authorityOf(
@@ -250,6 +262,90 @@ test("a binding store that could not be read is an outage, not an absent binding
   });
 
   assert.deepEqual(await minting.session(partition, repository), {
+    minted: "Unavailable",
+  });
+  assert.deepEqual(asked, [], "an unread binding was minted for");
+});
+
+test("an attempt naming its own repository, or none, is minted as its task kind always was", async () => {
+  for (const [taskKind, permissions] of [
+    ["Work", "write"],
+    ["Evaluation", "read"],
+  ] as const) {
+    const asked: Asked[] = [];
+    const read: Read[] = [];
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf(granted, asked),
+      bindings: bindingsOf(bindingOf(repository), read),
+    });
+
+    for (const named of [undefined, repository])
+      assert.deepEqual(await minting.attempt(authorityOf(taskKind), named), {
+        minted: "Credential",
+        value: {
+          username: forgeCredentialUsername,
+          password: token,
+          expiresAtMs,
+        },
+      });
+    assert.deepEqual(asked, [
+      { repository, tenant: partition.tenant, permissions },
+      { repository, tenant: partition.tenant, permissions },
+    ]);
+    assert.deepEqual(read, [], "its own repository was held to the bindings");
+  }
+});
+
+test("an attempt naming another repository its project binds is minted read, whatever its task kind", async () => {
+  for (const taskKind of ["Work", "Evaluation"] as const) {
+    const asked: Asked[] = [];
+    const read: Read[] = [];
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf(granted, asked),
+      bindings: bindingsOf(bindingOf(sibling), read),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf(taskKind), sibling), {
+      minted: "Credential",
+      value: {
+        username: forgeCredentialUsername,
+        password: token,
+        expiresAtMs,
+      },
+    });
+    assert.deepEqual(read, [{ partition, named: sibling }]);
+    assert.deepEqual(asked, [
+      { repository: sibling, tenant: partition.tenant, permissions: "read" },
+    ]);
+  }
+});
+
+test("a repository its project retired or never bound is minted nothing, for an attempt and a session", async () => {
+  for (const bound of [bindingOf(sibling, "2026-10-02T00:00:00Z"), undefined]) {
+    const asked: Asked[] = [];
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf(granted, asked),
+      bindings: bindingsOf(bound),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf("Work"), sibling), {
+      minted: "NotFound",
+    });
+    assert.deepEqual(await minting.session(partition, sibling), {
+      minted: "NotFound",
+    });
+    assert.deepEqual(asked, [], "a repository not bound live was minted for");
+  }
+});
+
+test("an attempt's named repository whose binding could not be read is an outage, not a refusal", async () => {
+  const asked: Asked[] = [];
+  const minting = workerPlaneCredentialMinting({
+    tokens: tokensOf(granted, asked),
+    bindings: bindingsOf(new Error("the store did not answer")),
+  });
+
+  assert.deepEqual(await minting.attempt(authorityOf("Work"), sibling), {
     minted: "Unavailable",
   });
   assert.deepEqual(asked, [], "an unread binding was minted for");

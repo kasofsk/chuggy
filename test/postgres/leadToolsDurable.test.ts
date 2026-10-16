@@ -30,7 +30,9 @@ import {
   finalizerRole,
   poolPlaneRole,
   projectDraftsReadFunction,
+  repositoryBindingListFunction,
   repositoryBindingReadFunction,
+  repositoryLandingReadFunction,
   schedulerRole,
   selectorServiceRole,
   ticketServiceRole,
@@ -512,9 +514,16 @@ const leadToolDoors: readonly {
       ticketServiceRole,
       configurationImporterRole,
       schedulerRole,
-      workerPlaneRole,
       poolPlaneRole,
     ],
+  },
+  {
+    door: `${repositoryLandingReadFunction}(text,text,text)`,
+    holders: [apiRole, workerPlaneRole],
+  },
+  {
+    door: `${repositoryBindingListFunction}(text,text,bigint)`,
+    holders: [apiRole, schedulerRole],
   },
 ];
 
@@ -584,8 +593,8 @@ test("the scheduler's own credential can read a project's repository binding", a
 });
 
 /**
- * The plane reads a binding to hold a session's named repository to what its
- * project actually binds, and that read is all it holds: the table behind the
+ * The plane reads a binding to hold a repository a pod names to what its
+ * project binds live, and that read is all it holds: the table behind the
  * function stays out of reach, so the plane can learn what a project binds and
  * never which projects bind anything.
  */
@@ -596,7 +605,7 @@ test("the worker plane's own credential reads a binding through the function and
     assert.deepEqual(
       (
         await plane.query(
-          `SELECT repository FROM ${repositoryBindingReadFunction}($1,$2,NULL)`,
+          `SELECT repository,retired_at FROM ${repositoryLandingReadFunction}($1,$2,'repository')`,
           [partition.tenant, partition.project],
         )
       ).rows,

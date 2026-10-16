@@ -138,7 +138,11 @@ const workerContractReleaseAnswers = z.record(
   z.string(),
   z.record(
     z.string(),
-    z.union([z.literal("empty"), workerContractReleaseSchema]),
+    z.union([
+      z.literal("empty"),
+      z.literal("bytes"),
+      workerContractReleaseSchema,
+    ]),
   ),
 );
 
