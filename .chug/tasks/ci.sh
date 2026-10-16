@@ -18,7 +18,15 @@
 # so a run no gate is selected for is a run with nothing changed: it exits 0
 # having proved nothing, and its last line is that and not a verdict.
 #
+# AN UNTRACKED FILE IS ONE MOST GATES NEVER READ. Selection counts a file no
+# ignore file names as changed, but most gates list what they read with
+# `git ls-files`, which leaves it out, so a clean run would vouch for a file it
+# did not check. The run names those files first, and while one is left it does
+# not end clean: the last line counts them, and a run that would have exited 0
+# exits 1.
+#
 # Env:
+#   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
 #   CHUG_CI_BASE=<ref>            override the default origin/main or main base
 #   CHUG_CI_FULL=1                force every gate and shell suite
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
@@ -42,6 +50,26 @@ echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 failed=0
 errored=0
 ran=0
+
+untracked_shown_max=20
+untracked_count=0
+untracked_unlisted=0
+if ! untracked="$(git -c core.quotePath=false ls-files --others --exclude-standard)"; then
+	echo "ci: LINTER ERROR — could not list the files git does not track; this is not a pass"
+	untracked_unlisted=1
+	untracked=""
+fi
+if [ -n "$untracked" ]; then
+	untracked_count="$(printf '%s\n' "$untracked" | wc -l | tr -d ' ')"
+	echo "ci: $untracked_count untracked file(s), which most gates do not read:"
+	printf '%s\n' "$untracked" | head -n "$untracked_shown_max" | sed 's/^/ci:   /'
+	if [ "$untracked_count" -gt "$untracked_shown_max" ]; then
+		echo "ci:   and $((untracked_count - untracked_shown_max)) more"
+	fi
+	if [ "${CHUG_CI_ALLOW_UNTRACKED:-0}" = "1" ]; then
+		echo "ci: CHUG_CI_ALLOW_UNTRACKED=1, so they do not fail the run"
+	fi
+fi
 
 run_gate() { # <label> <script> [args...]
 	label="$1"
@@ -182,14 +210,23 @@ run_selected_gate check-model "check-model" ./.chug/tasks/check-model.sh
 run_selected_gate check-model-api "check-model-api" ./.chug/tasks/check-model-api.sh
 
 printf '\n'
+status=0
 if [ "$errored" -gt 0 ]; then
 	echo "ci: $errored gate(s) could not run, $failed failed"
-	exit 2
-fi
-if [ "$failed" -gt 0 ]; then
+	status=2
+elif [ "$failed" -gt 0 ]; then
 	echo "ci: $failed gate(s) failed"
-	exit 1
+	status=1
 fi
+if [ "$untracked_count" -gt 0 ] && [ "${CHUG_CI_ALLOW_UNTRACKED:-0}" != "1" ]; then
+	echo "ci: $untracked_count untracked file(s) went unchecked; git add them or ignore them"
+	[ "$status" -ne 0 ] || status=1
+fi
+if [ "$untracked_unlisted" -eq 1 ]; then
+	echo "ci: the files git does not track could not be listed; this is not a pass"
+	status=2
+fi
+[ "$status" -eq 0 ] || exit "$status"
 if [ "$ran" -eq 0 ]; then
 	echo "ci: no gate selected; nothing ran"
 	exit 0
