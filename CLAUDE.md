@@ -34,6 +34,8 @@ The pre-commit hook runs the fast subset. It needs that `git config` because git
 
 `.chug/tasks/ci.sh` and `just check` run only the gates affected since the merge base with `origin/main`, falling back to local `main`. Set `CHUG_CI_BASE` to override that base; an absent or unresolvable base falls back to full coverage. `just check-full` forces every gate through `CHUG_CI_FULL=1`. Changed runs print every skipped gate, and shell gate suites run only when their gate, their suite, a shared shell harness, or another file the suite reads changed.
 
+With `track-record` on PATH (`go install github.com/kasofsk/track-record/cmd/track-record@v<version>`, the version `images/worker/Dockerfile` pins as `TRACK_RECORD_VERSION`) and `TRACK_RECORD_TOKEN_FILE` naming a token, `ci.sh` reuses a pass already on record for the same tree instead of running the gate again, and `just check-full` runs every gate fresh while still recording. The rest of the knobs are in its header.
+
 Gate scripts live in `.chug/tasks/`, each with a sibling `*.test.sh`. The
 slowest by far is `check-model.sh`, which is why it runs last and never in the
 hook. A gate exits 0 clean, 1 on a finding, **2 when it could not run** — and 2 is not a pass. Not every gate uses all three: `check-roster` has no finding state, because everything it can detect is the environment. The sequencing lives in `.chug/tasks/ci.sh`; the justfile is a thin wrapper, and the hook calls the scripts directly because `just` may not be installed.

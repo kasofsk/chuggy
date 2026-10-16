@@ -17,6 +17,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 . "$HERE/_suite.sh"
 SUT="$HERE/ci.sh"
 SELECT="$HERE/_ci-select.sh"
+IGNORED="$HERE/_ignored-inputs.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -27,7 +28,9 @@ R="$WORK/repo"
 # and answers a question the case did not ask. These are ci.sh's own Env block
 # and the base `_ci-select.sh` reads, less CHUG_CI_SHELL_SUITES — the recursion
 # guard, which each case that reaches the suite stage sets for itself.
-unset CHUG_CI_ALLOW_UNTRACKED CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS
+unset CHUG_CI_ALLOW_UNTRACKED CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS \
+	TRACK_RECORD_TOKEN TRACK_RECORD_TOKEN_FILE TRACK_RECORD_URL TRACK_RECORD_NAMESPACE \
+	TRACK_RECORD_FRESH TRACK_RECORD_OFF
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -51,6 +54,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	mkdir -p "$R/.chug/tasks"
 	cp "$SUT" "$R/.chug/tasks/ci.sh"
 	cp "$SELECT" "$R/.chug/tasks/_ci-select.sh"
+	cp "$IGNORED" "$R/.chug/tasks/_ignored-inputs.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -999,6 +1003,324 @@ check "a suite past its cap fails the run" 1 "$RC" "slow.test.sh ran past the 1s
 stub_repo 0
 run_ci
 check "no suites found exits 2, not 0" 2 "$RC" "matched nothing"
+
+# A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN. The stub stands in for
+# track-record: it answers the probe with STUB_TR_VERSION_RC, logs each call's
+# arguments and the store's variables it was handed, and runs the command after
+# `--` — or, for a name STUB_TR_REUSE lists, prints a replayed log and the
+# REUSED line and exits STUB_TR_REUSE_RC, running nothing. Under STUB_TR_DIGEST
+# it also logs a digest of what its tools print, as track-record keys on it,
+# and each tool that fails, which would leave the gate unrecorded; for the name
+# STUB_TR_KILL gives, it kills the shell that ran it.
+TRBIN="$WORK/trbin"
+TRLOG="$WORK/tr.log"
+mkdir -p "$TRBIN"
+cat > "$TRBIN/track-record" <<'STUB'
+#!/bin/sh
+if [ "$1" = "--version" ]; then exit "${STUB_TR_VERSION_RC:-0}"; fi
+{
+	printf '%s|' "$@"
+	printf '\n'
+	printf 'env|FRESH=%s|URL=%s|NAMESPACE=%s|\n' "${TRACK_RECORD_FRESH-unset}" \
+		"${TRACK_RECORD_URL-unset}" "${TRACK_RECORD_NAMESPACE-unset}"
+} >>"$STUB_TR_LOG"
+name=""
+tools=""
+while [ "$#" -gt 0 ]; do
+	case "$1" in
+	--) shift; break ;;
+	--name) name="$2"; shift 2 ;;
+	--tool)
+		if [ -n "${STUB_TR_DIGEST:-}" ]; then
+			if ! sh -c "$2" >"$STUB_TR_LOG.out" 2>"$STUB_TR_LOG.err"; then
+				printf 'toolfail|%s|%s\n' "$name" "$2" >>"$STUB_TR_LOG"
+			fi
+			tools="$tools$(cksum <"$STUB_TR_LOG.out") $(cksum <"$STUB_TR_LOG.err")/"
+		fi
+		shift 2
+		;;
+	*) shift ;;
+	esac
+done
+if [ -n "${STUB_TR_DIGEST:-}" ]; then printf 'digest|%s|%s\n' "$name" "$tools" >>"$STUB_TR_LOG"; fi
+if [ "$name" = "${STUB_TR_KILL:-}" ]; then kill -KILL "$PPID"; exit 0; fi
+for listed in ${STUB_TR_REUSE:-}; do
+	if [ "$listed" = "$name" ]; then
+		echo "stub log replayed for $name"
+		echo "track-record: REUSED $name (recorded 2026-01-01T00:00:00Z by stub)" >&2
+		exit "${STUB_TR_REUSE_RC:-0}"
+	fi
+done
+exec "$@"
+STUB
+chmod +x "$TRBIN/track-record"
+salt="$(sed -n 's/^record_salt="\(.*\)"$/\1/p' "$SUT")"
+record_tool_node="" record_tool_install="" record_tool_ignored=""
+eval "$(awk '
+	/^record_tool_(node|install)=/ { print; next }
+	/^record_tool_ignored=/ { open = 1 }
+	open { print; if ($0 !~ /\\$/) exit }
+' "$SUT")"
+# Every gate the sequencer names is wrapped but check-roster and doc-lint.
+gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint)"
+
+# The gate stage with the stub first on PATH and whatever VAR=value the case
+# names; the token is the case's to give.
+run_recorded() { # [VAR=value...]
+	OUT="$WORK/.out"
+	: > "$TRLOG"
+	set +e
+	(cd "$R" && env PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" CHUG_CI_SHELL_SUITES=0 "$@" \
+		./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+# The log as $OUT, with the calls counted into it.
+recorded_log() {
+	cp "$TRLOG" "$WORK/.log"
+	printf 'calls %s\n' "$(grep -c '^run|' "$TRLOG" || true)" >> "$WORK/.log"
+	OUT="$WORK/.log"
+}
+
+# Without a token, with a token file that is missing or holds none, with a
+# track-record that does not run, and with TRACK_RECORD_OFF=1, the run is the
+# one it is with no track-record at all.
+stub_repo 0
+run_gates_only
+cp "$OUT" "$WORK/.plain"
+printf ' \n' > "$WORK/blank-token"
+for case in "no token|" "a token file that is not there|TRACK_RECORD_TOKEN_FILE=$WORK/absent-token" \
+	"a token file that holds none|TRACK_RECORD_TOKEN_FILE=$WORK/blank-token" \
+	"a track-record that does not run|TRACK_RECORD_TOKEN=t STUB_TR_VERSION_RC=1" \
+	"TRACK_RECORD_OFF=1|TRACK_RECORD_TOKEN=t TRACK_RECORD_OFF=1"; do
+	# shellcheck disable=SC2086 # the case's assignments are words by construction
+	run_recorded ${case#*|}
+	if cmp -s "$OUT" "$WORK/.plain"; then echo "same output" >> "$OUT"; fi
+	check "${case%%|*} leaves the run as it is with no track-record" 0 "$RC" "same output"
+	recorded_log
+	check "${case%%|*} wraps nothing" 0 "$RC" "calls 0"
+done
+
+# A token, in the variable or in a file, wraps every gate the sequencer calls
+# once but check-roster and doc-lint, named by its id, keyed on node, the
+# install, the ignored files and the salt and on what else its verdict reads,
+# and never on the platform. check-roster and doc-lint run as they do
+# unwrapped.
+printf 'trk_stub\n' > "$WORK/token"
+run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
+check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
+check "a wrapped clean run counts what it reused" 0 "$RC" "ci: all gates clean (0 reused)"
+check "check-roster still runs" 0 "$RC" "stub check-roster"
+check "doc-lint still runs" 0 "$RC" "stub doc-lint"
+recorded_log
+check "every gate the sequencer calls is wrapped once" 0 "$RC" "calls $gate_calls"
+refute "no gate is keyed on the platform" 0 "$RC" "|--platform|"
+refute "check-roster is not wrapped" 0 "$RC" "run|--name|check-roster|"
+refute "doc-lint is not wrapped" 0 "$RC" "run|--name|doc-lint|"
+check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
+common="--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
+for gate in \
+	"check-paths|${common}--tool|git log --diff-filter=D --name-only --format=|--|./.chug/tasks/check-paths.sh|" \
+	"source-static|--|./.chug/tasks/check-source.sh|--static|" \
+	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|" \
+	"check-conformance|${common}--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
+	"check-random|${common}--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
+	"check-postgres|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-postgres.sh|" \
+	"check-queries|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-queries.sh|" \
+	"check-keto|${common}--env|CHUG_KETO_READ_URL|--env|CHUG_KETO_WRITE_URL|--env|CHUG_KETO_IMAGE|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-keto.sh|" \
+	"check-model|--|./.chug/tasks/check-model.sh|"; do
+	id="${gate%%|*}"
+	shape="${gate#*|}"
+	case "$shape" in --\|*) shape="$common$shape" ;; esac
+	check "$id is keyed on what its verdict reads" 0 "$RC" "run|--name|$id|$shape"
+	case "$shape" in "$common--|"*) ;; *) keyed=$((${keyed:-0} + 1)) ;; esac
+done
+# Every gate the table does not key on more is keyed on nothing more.
+printf 'plain %s\n' "$(grep -cF "|$common--|./" "$TRLOG" || true)" >> "$OUT"
+check "a gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" "plain $((gate_calls - keyed))"
+
+run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_URL=http://store.test TRACK_RECORD_NAMESPACE=elsewhere
+recorded_log
+check "the store and namespace can be named" 0 "$RC" "env|FRESH=unset|URL=http://store.test|NAMESPACE=elsewhere|"
+
+# A full run asks every gate fresh, and still records; the variable alone
+# does the same without forcing every gate.
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_FULL=1
+check "a full run says it reuses nothing" 0 "$RC" "and none on record is reused"
+recorded_log
+check "a full run wraps every gate" 0 "$RC" "calls $gate_calls"
+refute "a full run asks no gate for a pass on record" 0 "$RC" "FRESH=unset"
+run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_FRESH=1
+recorded_log
+refute "TRACK_RECORD_FRESH=1 reaches every gate" 0 "$RC" "FRESH=unset"
+
+# A reused pass is counted as a pass and as reused, from track-record's own
+# line for that gate or suite — check-model prints the line of check-model-api,
+# whose name begins with its own, and that counts for neither; a gate's
+# replayed log is printed, and a suite's REUSED line is.
+stub_repo 0
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/passing.test.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/ran.test.sh"
+printf '#!/bin/sh\necho "track-record: REUSED check-model-api (recorded 2026-01-01T00:00:00Z by stub)" >&2\nexit 0\n' \
+	> "$R/.chug/tasks/check-model.sh"
+git -C "$R" add -A
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1 \
+	"STUB_TR_REUSE=check-figures source-unit .chug/tasks/passing.test.sh"
+check "a reused pass is counted, a gate's and a suite's alike" 0 "$RC" "ci: all gates clean (3 reused)"
+check "a reused gate's log is printed" 0 "$RC" "stub log replayed for check-figures"
+refute "a reused gate does not run" 0 "$RC" "stub check-figures"
+check "a reused suite says so" 0 "$RC" "    track-record: REUSED .chug/tasks/passing.test.sh (recorded"
+recorded_log
+check "a suite is wrapped, keyed on the platform too" 0 "$RC" \
+	"run|--name|.chug/tasks/passing.test.sh|$common--platform|--|sh|.chug/tasks/passing.test.sh|"
+
+# A REUSED line turns no failure into a pass and counts nothing then.
+stub_failing() { # <gate> <exit> — every named gate stubbed clean but that one
+	stub_repo 0
+	printf '#!/bin/sh\necho stub %s\nexit %s\n' "$1" "$2" > "$R/.chug/tasks/$1.sh"
+	git -C "$R" add -A
+}
+stub_failing check-figures 1
+run_recorded TRACK_RECORD_TOKEN=t
+check "a wrapped finding exits 1" 1 "$RC" "ci: FAILED — check-figures"
+stub_failing check-figures 2
+run_recorded TRACK_RECORD_TOKEN=t
+check "a wrapped could-not-run exits 2" 2 "$RC" "ci: LINTER ERROR (2) — check-figures could not run"
+stub_repo 0
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=check-figures STUB_TR_REUSE_RC=1
+check "a REUSED line on an exit of 1 is still a finding" 1 "$RC" "ci: FAILED — check-figures"
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_REUSE=check-figures STUB_TR_REUSE_RC=2
+check "a REUSED line on an exit of 2 is still a could-not-run" 2 "$RC" \
+	"ci: LINTER ERROR (2) — check-figures could not run"
+# A wrapped gate whose exit never came back is not a pass, though the wrapped
+# gate before it passed.
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_KILL=check-paths
+check "a wrapped gate whose exit was lost could not run" 2 "$RC" "ci: LINTER ERROR (2) — check-paths could not run"
+
+# THE KEY SEES THE INSTALL AND THE IGNORED FILES. The stub digests what each
+# call's tools print, which is what track-record keys on. npm's record of the
+# install moves it, and so does an ignored entry in scope: a file by its name
+# and content, a symlink by its target and never by what it points at, and
+# another repository by its name. What `npm ci`, a console's build and Claude
+# Code write while a run is under way does not, and nothing in scope makes a
+# tool fail. The ignores are the tree's own, and one that ignores Claude Code's
+# worktrees directory whole, so that git lists each worktree in it as an entry.
+stub_repo 0
+printf 'node_modules\ndist/\n.claude/worktrees/*\n' > "$R/.gitignore"
+printf '**/.claude/worktrees/\n*.gen\n.claude/*.lock\n' >> "$R/.git/info/exclude"
+mkdir -p "$R/node_modules" "$R/src" "$R/.claude"
+printf '{"packages":{"node_modules/a":{"version":"1.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
+printf '{}\n' > "$R/.claude/settings.json"
+git -C "$R" add -A
+: > "$WORK/toolfails"
+key_of() { # <label> — check-figures' digest, kept under the label
+	run_recorded TRACK_RECORD_TOKEN=t STUB_TR_DIGEST=1
+	grep '^digest|check-figures|' "$TRLOG" > "$WORK/key.$1"
+	grep '^toolfail|check-figures|' "$TRLOG" >> "$WORK/toolfails" || true
+}
+same_key() { # <label> <label>
+	if cmp -s "$WORK/key.$1" "$WORK/key.$2"; then echo "same key"; else echo "new key"; fi > "$WORK/.key"
+	OUT="$WORK/.key"
+}
+key_of base
+printf '{"packages":{"node_modules/a":{"version":"2.0.0"}}}\n' > "$R/node_modules/.package-lock.json"
+key_of install
+same_key base install
+check "an install from another lock is a new key" 0 "$RC" "new key"
+printf 'export {}\n' > "$R/src/generated.ts"
+printf 'src/generated.ts\n' >> "$R/.git/info/exclude"
+key_of ignored
+same_key install ignored
+check "an ignored file is a new key" 0 "$RC" "new key"
+printf 'export const generated = 1\n' > "$R/src/generated.ts"
+key_of edited
+same_key ignored edited
+check "an ignored file's content is a new key" 0 "$RC" "new key"
+mv "$R/src/generated.ts" "$R/src/renamed.ts"
+printf 'src/renamed.ts\n' >> "$R/.git/info/exclude"
+key_of renamed
+same_key edited renamed
+check "an ignored file's name is a new key" 0 "$RC" "new key"
+mkdir -p "$R/test/fixtures/dist"
+printf 'export const table = []\n' > "$R/test/fixtures/dist/table.ts"
+key_of dist
+same_key renamed dist
+check "an ignored file under a dist/ outside a console is a new key" 0 "$RC" "new key"
+mkdir -p "$R/test/fixtures/node_modules/m"
+printf 'module.exports = 1\n' > "$R/test/fixtures/node_modules/m/index.js"
+key_of nested
+same_key dist nested
+check "an ignored file under a nested node_modules is a new key" 0 "$RC" "new key"
+ln -s ../test "$R/src/tests.gen"
+key_of linked
+same_key nested linked
+check "an ignored symlink to a directory is a new key" 0 "$RC" "new key"
+rm "$R/src/tests.gen"
+ln -s ../nowhere "$R/src/tests.gen"
+key_of relinked
+same_key linked relinked
+check "an ignored symlink's target is a new key, though it names nothing" 0 "$RC" "new key"
+printf 'one\n' > "$WORK/outside.txt"
+ln -s ../../outside.txt "$R/src/outside.gen"
+key_of pointing
+printf 'two\n' > "$WORK/outside.txt"
+key_of followed
+same_key pointing followed
+check "what an ignored symlink points at is not followed" 0 "$RC" "same key"
+mkdir -p "$R/scratch"
+printf 'scratch/\n' >> "$R/.git/info/exclude"
+git init -q "$R/scratch/other"
+key_of repository
+same_key followed repository
+check "another repository that is ignored is a new key" 0 "$RC" "new key"
+printf 'secret\n' > "$R/src/sealed.gen"
+chmod 000 "$R/src/sealed.gen"
+key_of sealed
+same_key repository sealed
+check "an ignored file it cannot read is a new key" 0 "$RC" "new key"
+mkdir -p "$R/node_modules/.vite" "$R/ui/console/dist" "$R/ui/chuggy-ui/node_modules/.vite" \
+	"$R/test/rig/node_modules/r"
+printf 'cache\n' > "$R/node_modules/.vite/deps.json"
+printf 'built\n' > "$R/ui/console/dist/index.html"
+printf 'cache\n' > "$R/ui/chuggy-ui/node_modules/.vite/deps.json"
+printf 'module.exports = 1\n' > "$R/test/rig/node_modules/r/index.js"
+printf 'lock\n' > "$R/.claude/scheduled_tasks.lock"
+git init -q "$R/.claude/worktrees/agent"
+key_of written
+same_key sealed written
+check "what npm, a console's build and Claude Code write is the same key" 0 "$RC" "same key"
+OUT="$WORK/toolfails"
+refute "nothing in scope makes a tool fail" 0 0 "toolfail|"
+
+# The listing prints names and hashes on stdout alike, so a name is keyed even
+# where stderr cannot be opened; a listing that fails fails the tool rather
+# than reading as a tree with nothing ignored; and the workspaces whose
+# node_modules it leaves out are the ones package.json declares.
+set +e
+(cd "$R" && sh .chug/tasks/_ignored-inputs.sh 2>&-) > "$WORK/.raw"
+RC=$?
+set -e
+tr '\0' '\n' < "$WORK/.raw" > "$WORK/.listing"
+OUT="$WORK/.listing"
+check "an ignored file's name is on the listing's stdout" 0 "$RC" "src/renamed.ts"
+set +e
+(cd "$BARE" && sh "$IGNORED") > "$WORK/.raw" 2>&1
+RC=$?
+set -e
+OUT="$WORK/.raw"
+check "a listing that fails fails the tool" 128 "$RC" "not a git repository"
+declared="$(node -p "require('$ROOT/package.json').workspaces.slice().sort().join(' ')")"
+listed="$(sed -n 's/^workspaces="\(.*\)"$/\1/p' "$IGNORED" | tr ' ' '\n' | LC_ALL=C sort | tr '\n' ' ')"
+printf 'declared %s|\nlisted %s|\n' "$declared" "${listed% }" > "$WORK/.workspaces"
+OUT="$WORK/.workspaces"
+check "the workspaces left out are package.json's" 0 0 "listed $declared|"
+
+# A wrapped suite still has its cap.
+stub_repo 0
+printf '#!/bin/sh\nexec sleep 5\n' > "$R/.chug/tasks/slow.test.sh"
+git -C "$R" add -A
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1 CHUG_CI_SUITE_TIMEOUT_SECS=1
+check "a wrapped suite past its cap fails the run" 1 "$RC" "slow.test.sh ran past the 1s cap"
 
 OUT="$BARE/.out"
 set +e

@@ -30,7 +30,7 @@
 #     some other arm already took. Those are `test/domain/deciders.test.ts`'s.
 #   - NOT THE INVARIANTS AGAINST THE MACHINE. The states here are the model's
 #     own OUTPUT. What stands behind `allInvariants` in this tree is the
-#     unseeded randomized run `.chug/tasks/check-model.sh` makes over the
+#     randomized run `.chug/tasks/check-model.sh` makes over the
 #     full-roster instances, plus the deterministic witness and refinement
 #     suites, which assert it at every step of the particular traces they walk.
 #     There is no `quint verify` here and no inductive proof, and the rows

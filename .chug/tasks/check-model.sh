@@ -7,6 +7,13 @@
 # PATH: a verdict that depends on which version happens to be installed is not
 # a verdict. A version this gate does not expect is a could-not-run.
 #
+# THE RANDOMIZED RUNS ARE SEEDED FROM THE TREE WHEN A PASS CAN BE RECORDED.
+# `track-record run` hands the gate the key a pass is recorded under as
+# TRACK_RECORD_KEY, and its leading hex digits, as many as quint's simulator
+# takes for a seed, seed both runs: a pass on record is the one sweep that
+# reproduces it, and a tree that differs anywhere sweeps afresh. Without a key
+# the runs are unseeded and sweep afresh every time.
+#
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
@@ -47,6 +54,15 @@ modules="$(git ls-files 'model/*.qnt' 'model/mc/*.qnt' 'model/tests/*.qnt' || tr
 if [ -z "$modules" ]; then
 	echo "check-model: LINTER ERROR — no model modules found; the glob matched nothing"
 	exit 2
+fi
+
+seed=""
+if [ -n "${TRACK_RECORD_KEY:-}" ]; then
+	if ! printf '%s\n' "$TRACK_RECORD_KEY" | grep -Eqx '[0-9a-f]{16,}'; then
+		echo "check-model: LINTER ERROR — TRACK_RECORD_KEY is not a key, so it cannot seed the randomized runs"
+		exit 2
+	fi
+	seed="0x$(printf '%.16s' "$TRACK_RECORD_KEY")"
 fi
 
 failed=0
@@ -140,8 +156,12 @@ for r in unit witness hazard; do
 		model/tests/chuggy_refinement_test.qnt
 done
 
-echo "--- invariants (randomized)"
-if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main=mc_chuggy \
+if [ -n "$seed" ]; then
+	echo "--- invariants (randomized, seeded $seed from TRACK_RECORD_KEY)"
+else
+	echo "--- invariants (randomized)"
+fi
+if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main=mc_chuggy ${seed:+"--seed=$seed"} \
 		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
 	:
 else
@@ -151,7 +171,7 @@ else
 		"the ticket instance violated an invariant"
 fi
 
-if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner \
+if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner ${seed:+"--seed=$seed"} \
 		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then
 	:
 else

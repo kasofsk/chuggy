@@ -14,7 +14,8 @@
 # answers the same every time — in a tree whose only CI is local gates, a red
 # that surfaces in an unrelated commit's check is a cost this gate declines to
 # impose. Fresh exploration is one variable away (CHUG_WALK_SEED_BASE), and the
-# model gate's unseeded runs keep exploring the same state space on every check.
+# model gate's randomized runs explore the same state space afresh on every tree
+# they check.
 #
 # A FINDING CARRIES ITS REPRODUCTION: the instance and the seed, which are the
 # whole run — and, when the failing step produced a decision, a shrunk
