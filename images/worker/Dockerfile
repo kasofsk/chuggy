@@ -3,6 +3,10 @@
 # lock and the `runtime` stage installs it.
 ARG ZOD_VERSION=4.5.4
 
+# The Track Record the image ships, declared here for the same reason: the
+# `track-record` stage builds it and the `worker` stage holds the binary to it.
+ARG TRACK_RECORD_VERSION=0.1.0
+
 # The base every stage builds from. The image one attempt runs in is built by
 # the fabric, in a pod whose only way out of the cluster is public HTTPS on
 # 443.
@@ -37,6 +41,18 @@ FROM node:26.7.0-trixie@sha256:40fd8249a701dab7431d15074ac4cf4f1c18eecd713807599
 # The digest is the multi-architecture index's, read on 2026-10-15 with
 #   docker buildx imagetools inspect node:24.22.0-trixie-slim
 FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS runtime-node
+
+# Track Record's client, installed by `go install` at its module's tag, whose
+# content the Go checksum database holds to what every install of that tag
+# gets. It is built without cgo, so the binary links against nothing and needs
+# nothing of the image it is copied into.
+#
+# The digest is the multi-architecture index's, read on 2026-10-15 with
+#   docker buildx imagetools inspect golang:1.27.2-trixie
+FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS track-record
+ARG TRACK_RECORD_VERSION
+RUN CGO_ENABLED=0 go install -trimpath \
+    "github.com/kasofsk/track-record/cmd/track-record@v${TRACK_RECORD_VERSION}"
 
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
@@ -342,6 +358,17 @@ RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
   && rm /tmp/keto.tgz \
   && keto version
 USER 1000:1000
+
+# THE IMAGE SHIPS TRACK RECORD'S CLIENT, which reuses a pass on record rather
+# than running a command again. The build fails unless the image's user runs it
+# and it reports the version this file names.
+ARG TRACK_RECORD_VERSION
+COPY --from=track-record /go/bin/track-record /usr/local/bin/track-record
+RUN version="$(track-record --version)" \
+  && if [ "$version" != "track-record v${TRACK_RECORD_VERSION}" ]; then \
+       echo "the image ships $version, and this file names Track Record ${TRACK_RECORD_VERSION}"; \
+       exit 1; \
+     fi
 
 # THE PRACTICES THE TREE DECLARES ARE INSTALLED FOR THE IMAGE'S USER. An agent
 # here is told to invoke them by name, and `check-roster` refuses a tree whose
