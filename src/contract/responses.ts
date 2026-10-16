@@ -230,6 +230,31 @@ export const executionRunSchema = z.object({
 });
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
+/** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
+export const runnerSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("Pool"), pool: identitySchema }),
+  z.strictObject({ kind: z.literal("Personal"), owner: identitySchema }),
+]);
+export type Runner = z.infer<typeof runnerSchema>;
+
+/**
+ * The job a parked ticket waits on where every task it waits on was lost on
+ * the runner that claimed it: the runner, the newest such attempt, how it
+ * ended and the size of the text its worker kept, which is read on that
+ * attempt's own route, how many times the job was lost where it stands in the
+ * ticket, and how many of those losses the scheduler resumed by itself.
+ */
+export const runnerLossSchema = z.strictObject({
+  runner: runnerSchema,
+  execution: identitySchema,
+  attempt: identitySchema,
+  evidence: z.enum(attemptEvidences),
+  error: z.object({ bytes: countSchema }).optional(),
+  losses: countSchema,
+  resumed: countSchema,
+});
+export type RunnerLoss = z.infer<typeof runnerLossSchema>;
+
 /**
  * Where a parked ticket stands: which wall parked it, what the fabric said
  * about that wall, and where a resume would re-enter it — present exactly when
@@ -249,6 +274,8 @@ export const ticketEscalationSchema = z.object({
     ])
     .optional(),
   resumeAt: z.enum(resumePoints),
+  /** Present where the wall is a job lost on its runner rather than one that failed. */
+  lost: runnerLossSchema.optional(),
 });
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 

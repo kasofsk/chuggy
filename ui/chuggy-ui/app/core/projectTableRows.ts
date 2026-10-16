@@ -128,7 +128,7 @@ export function projectTableRow(
       ticket.creator === undefined ? undefined : creatorLabel(ticket.creator),
     phase: ticket.phase,
     section: ticketSectionOf(ticket.phase),
-    badge: ticketBadgeLabel(ticket.phase, ticket.escalation?.kind),
+    badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
     executionRead: read,
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,

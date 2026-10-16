@@ -142,6 +142,11 @@ import {
 import { resolvedSelectorSettings } from "../../src/interpreter/selector.ts";
 import type { Refusal } from "../../src/interpreter/refusal.ts";
 import { ticketEscalationResource } from "../../src/interpreter/nativeWeb.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../src/interpreter/schedulerIdentity.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import {
   asAuthorityKind,
@@ -368,6 +373,46 @@ test("a wall with nothing said about it still names where it re-enters", () => {
       ...ticketCarried,
     }),
   );
+});
+
+test("a wall a runner lost names the runner, the attempt and how often", () => {
+  const lost = {
+    runner: { kind: "Personal" as const, owner: asPrincipal("member-1") },
+    execution: asExecutionId("execution-1"),
+    attempt: asAttemptId("attempt-1"),
+    evidence: "RunFailed" as const,
+    error: { bytes: 61 },
+    losses: 3,
+    resumed: 2,
+  };
+  const parked = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      escalation: ticketEscalationResource(
+        "WorkFailureEscalated",
+        undefined,
+        lost,
+      ),
+      ...ticketCarried,
+    }).body,
+  );
+  assert.deepEqual(parked.escalation, {
+    kind: "WorkFailureEscalated",
+    resumeAt: "ResumeWork",
+    lost,
+  });
+  for (const runner of [
+    { kind: "Pool", owner: "member-1" },
+    { kind: "Personal", owner: "member-1", pool: "runner-a" },
+  ])
+    assert.throws(() =>
+      ticketResponseSchema.parse({
+        ...parked,
+        escalation: { ...parked.escalation, lost: { ...lost, runner } },
+      }),
+    );
 });
 
 test("a ticket's open actions carry a fence and only answers their kind asks for", () => {

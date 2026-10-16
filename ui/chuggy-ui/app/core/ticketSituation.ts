@@ -18,6 +18,7 @@ import {
   escalationStep,
   nativeActionKindLabel,
   revokedDependencyLine,
+  runnerLossLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
 import { settledFigure, sinceFigure } from "./figures.ts";
@@ -41,6 +42,12 @@ export interface RunningNow {
   readonly run: string;
 }
 
+/** The attempt whose worker's text says why a job was lost, read on its own route. */
+export interface LostAttempt {
+  readonly execution: string;
+  readonly attempt: string;
+}
+
 export type TicketSlot =
   | {
       readonly slot: "NeedsYou";
@@ -48,6 +55,7 @@ export type TicketSlot =
       /** The page the way past it is on, drawn beside the detail. */
       readonly step: EscalationStep | undefined;
       readonly more: string | undefined;
+      readonly reason: LostAttempt | undefined;
     }
   | { readonly slot: "Now"; readonly running: RunningNow }
   | { readonly slot: "Nothing" };
@@ -129,18 +137,29 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
       detail: blocked,
       step: undefined,
       more: undefined,
+      reason: undefined,
     };
   const escalation = ticket.escalation;
+  const lost = escalation?.lost;
   if (escalation !== undefined)
     return {
       slot: "NeedsYou",
       detail: escalationDetail(escalation),
       step: escalationStep(escalation),
-      more: escalationDetailLine(escalation.kind, {
-        lastSet:
-          reads.ledger === undefined ? undefined : ledgerLastSet(reads.ledger),
-        stageCount: reads.stageCount,
-      }),
+      more:
+        lost === undefined
+          ? escalationDetailLine(escalation.kind, {
+              lastSet:
+                reads.ledger === undefined
+                  ? undefined
+                  : ledgerLastSet(reads.ledger),
+              stageCount: reads.stageCount,
+            })
+          : runnerLossLine(lost),
+      reason:
+        lost?.error === undefined
+          ? undefined
+          : { execution: lost.execution, attempt: lost.attempt },
     };
   const question = reads.open?.[0];
   if (question === undefined) return undefined;
@@ -149,6 +168,7 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
     detail: nativeActionKindLabel(question.kind),
     step: undefined,
     more: undefined,
+    reason: undefined,
   };
 }
 

@@ -64,9 +64,30 @@ test("no two kinds are drawn with the same badge", () => {
 });
 
 test("an escalated row's badge is its kind", () => {
-  expect(ticketBadgeLabel("Escalated", "EvaluationFailureEscalated")).toBe(
-    "rework budget spent",
-  );
+  expect(
+    ticketBadgeLabel("Escalated", {
+      kind: "EvaluationFailureEscalated",
+      resumeAt: "ResumeRework",
+    }),
+  ).toBe("rework budget spent");
+});
+
+test("a row whose job was lost on its runner says so rather than what failed", () => {
+  const lost = {
+    runner: { kind: "Pool" as const, pool: "runner-a" },
+    execution: "execution-1",
+    attempt: "attempt-1",
+    evidence: "RunFailed" as const,
+    losses: 1,
+    resumed: 0,
+  };
+  for (const kind of [
+    "WorkFailureEscalated",
+    "EvaluationBlockedEscalated",
+  ] as const)
+    expect(
+      ticketBadgeLabel("Escalated", { kind, resumeAt: "ResumeWork", lost }),
+    ).toBe("lost on runner");
 });
 
 test("a row with nothing to answer for carries no badge", () => {

@@ -125,6 +125,7 @@ import {
   type RunTurnsQuery,
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
+import type { AttemptEvidence } from "./executionScheduler.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -275,6 +276,28 @@ export type OperationResource =
   | (OperationResourceBase & { readonly state: "Answered" })
   | (OperationResourceBase & { readonly state: "Cancelled" });
 
+/** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
+export type RunnerResource =
+  | { readonly kind: "Pool"; readonly pool: string }
+  | { readonly kind: "Personal"; readonly owner: Principal };
+
+/**
+ * The job a parked ticket waits on where every task it waits on was lost on
+ * the runner that claimed it: the newest such attempt, how many times the job
+ * was lost where it stands in the ticket, and how many of those the scheduler
+ * resumed by itself.
+ */
+export interface RunnerLossResource {
+  readonly runner: RunnerResource;
+  readonly execution: ExecutionId;
+  readonly attempt: AttemptId;
+  readonly evidence: AttemptEvidence;
+  /** The text its worker kept, which is read on the attempt's own route. */
+  readonly error?: { readonly bytes: number };
+  readonly losses: number;
+  readonly resumed: number;
+}
+
 /**
  * Where a parked ticket stands, as its own read and a project's page both carry
  * it: the wall, what the fabric said about that wall, and where a resume
@@ -285,6 +308,8 @@ export interface TicketEscalationResource {
   readonly kind: EscalationKind;
   readonly evidence?: string;
   readonly resumeAt: ResumePoint;
+  /** Present where the wall is a job lost on its runner. */
+  readonly lost?: RunnerLossResource;
 }
 
 /**
@@ -311,12 +336,14 @@ export function ticketEscalationResumeAt(kind: EscalationKind): ResumePoint {
 export function ticketEscalationResource(
   kind: EscalationKind,
   evidence?: string,
+  lost?: RunnerLossResource,
 ): TicketEscalationResource {
   const resumeAt = ticketEscalationResumeAt(kind);
   return {
     kind,
     ...(evidence === undefined ? {} : { evidence }),
     resumeAt,
+    ...(lost === undefined ? {} : { lost }),
   };
 }
 

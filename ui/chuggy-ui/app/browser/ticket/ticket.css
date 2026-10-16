@@ -109,6 +109,15 @@
     border-color: color-mix(in srgb, var(--tone-parked) 30%, var(--edge));
   }
 
+  /* What a lost job's worker said, as the worker wrote it. */
+  .ticket-card-reason {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+  }
+
   .ticket-card-actions {
     display: flex;
     flex-wrap: wrap;

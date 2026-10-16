@@ -63,6 +63,8 @@ import {
   operationStateLabel,
   operationStepLabel,
   phaseLabel,
+  runnerLossDetail,
+  runnerLossLine,
   ticketActionEffect,
   ticketLandingStateLabel,
 } from "../app/core/codeLabels.ts";
@@ -228,6 +230,61 @@ test("only the wall that is nothing to run the work leads to Runners", () => {
         resumeAt: "ResumeWork",
       }),
     ).toBe("Runners");
+  }
+});
+
+const lostOnPool = {
+  runner: { kind: "Pool" as const, pool: "runner-a" },
+  execution: "execution-1",
+  attempt: "attempt-1",
+  evidence: "RunFailed" as const,
+  losses: 3,
+  resumed: 2,
+};
+
+/**
+ * A job lost on its runner is said as that, never as the work or the
+ * evaluation failing, whichever wall the machine parked it at.
+ */
+test("a job lost on its runner names the runner and how often it was resumed", () => {
+  for (const kind of [
+    "WorkFailureEscalated",
+    "EvaluationBlockedEscalated",
+  ] as const) {
+    const escalation = {
+      kind,
+      resumeAt: "ResumeWork" as const,
+      lost: lostOnPool,
+    };
+    expect(escalationDetail(escalation)).toBe("Lost on runner-a");
+    expect(escalationStep(escalation)).toBe("Runners");
+  }
+  expect(runnerLossLine(lostOnPool)).toBe("3 losses · 2 resumed automatically");
+  expect(runnerLossLine({ ...lostOnPool, losses: 1, resumed: 0 })).toBe(
+    "1 loss · none resumed automatically",
+  );
+  const personal = {
+    ...lostOnPool,
+    runner: {
+      kind: "Personal" as const,
+      owner: "23:https://issuer.example/alice",
+    },
+  };
+  expect(runnerLossDetail(personal)).toBe("Lost on alice's runner");
+  expect(
+    escalationStep({
+      kind: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
+      lost: personal,
+    }),
+  ).toBeUndefined();
+  for (const said of [
+    runnerLossDetail(lostOnPool),
+    runnerLossDetail(personal),
+    runnerLossLine(lostOnPool),
+  ]) {
+    expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(said).not.toMatch(/[.:;]/u);
   }
 });
 

@@ -58,6 +58,7 @@ import { migration057 } from "./057-attempt-runtime.ts";
 import { migration058 } from "./058-project-reads.ts";
 import { migration059 } from "./059-execution-resources.ts";
 import { migration060 } from "./060-merge-waits.ts";
+import { migration061 } from "./061-runner-loss.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -121,4 +122,5 @@ export const migrations: readonly Migration[] = [
   migration058,
   migration059,
   migration060,
+  migration061,
 ];
