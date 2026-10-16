@@ -526,24 +526,49 @@ run_last_commit
 check "the directed model selects the replay that reads it" 0 "$RC" "stub check-conformance"
 check "the directed model selects the random replay" 0 "$RC" "stub check-random"
 
-# The console is a workspace the root lockfile pins, and what Prettier leaves
-# out is part of what it checks.
+# The console is a workspace the root lockfile pins, and npm reads every
+# workspace's manifest before it runs a script in one. Its format script takes
+# Prettier's settings and what Prettier leaves out from the root, and its
+# bundler takes the root's compiler settings for the contract it imports. The
+# replays run under the module type the root manifest declares and the schema
+# library the lockfile pins, which the generated API imports.
 stub_repo 0
+mkdir -p "$R/test/rig"
 printf '{}\n' > "$R/package-lock.json"
 printf 'model/\n' > "$R/.prettierignore"
+printf '{}\n' > "$R/.prettierrc.json"
+printf '{}\n' > "$R/tsconfig.json"
+printf '{}\n' > "$R/test/rig/package.json"
 commit_all baseline
 printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
 commit_all lock
 run_last_commit
 refute "a lockfile change selects the console" 0 "$RC" "check-console: SKIPPED"
+check "a lockfile change selects the replay" 0 "$RC" "stub check-conformance"
+check "a lockfile change selects the random replay" 0 "$RC" "stub check-random"
 printf '{ "private": true }\n' > "$R/package.json"
 commit_all manifest
 run_last_commit
 refute "a package manifest change selects the console" 0 "$RC" "check-console: SKIPPED"
+check "a package manifest change selects the replay" 0 "$RC" "stub check-conformance"
+check "a package manifest change selects the random replay" 0 "$RC" "stub check-random"
 printf 'dist/\n' > "$R/.prettierignore"
 commit_all ignore
 run_last_commit
 refute "what Prettier leaves out selects the static checks" 0 "$RC" "check-source static: SKIPPED"
+refute "what Prettier leaves out selects the console" 0 "$RC" "check-console: SKIPPED"
+printf '{ "semi": false }\n' > "$R/.prettierrc.json"
+commit_all prettier
+run_last_commit
+refute "Prettier's settings select the console" 0 "$RC" "check-console: SKIPPED"
+printf '{ "compilerOptions": {} }\n' > "$R/tsconfig.json"
+commit_all compiler
+run_last_commit
+refute "the root's compiler settings select the console" 0 "$RC" "check-console: SKIPPED"
+printf '{ "private": true }\n' > "$R/test/rig/package.json"
+commit_all workspace
+run_last_commit
+refute "another workspace's manifest selects the console" 0 "$RC" "check-console: SKIPPED"
 
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
 # on any change but a page's: a sheet outside the console is a kind none of
