@@ -102,16 +102,18 @@ test("it commands one review evaluation and no practices", () => {
   assert.equal(evaluations[0]?.purpose, "Review");
 });
 
-test("its briefed stages run as one Claude agent, with no setup and no files", () => {
+test("its briefed stages run as one Claude agent, with no arguments, no setup and no files", () => {
   assert.deepEqual(bootstrapReady().worker, {
-    mode: {
-      type: "SingleAgent",
-      agent: "Claude",
-      arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
-    },
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
     setup: [],
     files: [],
   });
+});
+
+test("neither the configuration nor the one it tells its worker to declare lists allowed tools, which restrict nothing where a job's agent bypasses permissions", () => {
+  const document = bootstrapConfiguration({ repository, defaultBranch, image });
+  assert.doesNotMatch(document, /allowedTools/u);
+  for (const line of toldLines()) assert.doesNotMatch(line, /allowedTools/u);
 });
 
 test("the seeded file is a declaration an import reads back under its name", () => {

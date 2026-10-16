@@ -114,11 +114,15 @@ export function bootstrapImageFault(
   );
 }
 
-/** The agent every briefed stage runs as. */
+/**
+ * The agent every briefed stage runs as, with no arguments: a job runs its
+ * agent with permissions bypassed, where a list of allowed tools restricts
+ * nothing.
+ */
 const bootstrapWorkerMode = {
   type: "SingleAgent",
   agent: "Claude",
-  arguments: ["--allowedTools=Bash,Edit,Read,Write,Glob,Grep"],
+  arguments: [],
 } as const;
 
 /**
