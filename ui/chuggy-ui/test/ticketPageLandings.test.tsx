@@ -18,6 +18,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import {
+  landingAwaitingMerge,
   landingConflicted,
   landingConflictPath,
   landingHeld,
@@ -280,6 +281,29 @@ test("a held landing draws its age and hold on its row, and on the status bar wh
   expect(container.querySelector(".ticket-status-line")?.textContent).toContain(
     "Held 12m · Target unreadable",
   );
+});
+
+test("a landing whose merge waits on the forge says so on its row, its detail and the status bar", async () => {
+  const checkedAt = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
+  const container = await drawn(
+    () => answer(landingsRead([landingAwaitingMerge(3, checkedAt)])),
+    { phase: "Finalization" },
+  );
+  const [row] = landingRows(groupOf(container, 3));
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Landing",
+    "Waiting",
+    "Blocked · behind · checked 2m agoforge.example.test",
+  ]);
+  expect(within(row).getByRole("link").getAttribute("href")).toBe(
+    landingPullRequest,
+  );
+  const line = container.querySelector<HTMLElement>(".ticket-status-line");
+  expect(line?.textContent).toContain("Blocked · behind · checked 2m ago");
+  const detail = await detailOpened(row);
+  expect(detail.textContent).toContain("Merge statebehind");
+  expect(detail.textContent).toContain("Checked");
 });
 
 test("a running landing's pull request is a link on the status bar while finalizing", async () => {

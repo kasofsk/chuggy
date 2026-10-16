@@ -27,6 +27,14 @@
  * about it and every later pass reads a reading that belongs to the create it
  * is looking at.
  *
+ * A MERGE THE FORGE'S OWN RULES REFUSED IS THE ONE RELEASE THAT KEEPS ITS
+ * READING. That reading is what the merge waits on, so nothing in flight with a
+ * reading still standing is a wait rather than a release, and every later
+ * reading overwrites it without spending a reading a merge in flight may take;
+ * the next merge is what clears it. A row answered as a moved head is read the
+ * same way, and `merge_heard_at` is when the forge was last heard about the
+ * merge at all, which is what either wait is aged from.
+ *
  * NO WRITE OUTLIVES THE CLAIM THAT AUTHORIZED IT. Every write here reads the
  * current epoch and rechecks the claim under the request row's lock, because
  * the first of them authorizes a call to the forge and the rest answer one: a
@@ -77,6 +85,7 @@ import {
   asForgeBindingId,
   asProposalDisplayUrl,
   asProposalMarker,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
   proposalEvidenceCharsMax,
@@ -85,6 +94,7 @@ import {
   type ChangeProposalCreationStored,
   type ChangeProposalEvidence,
   type ChangeProposalMergeAnswer,
+  type ChangeProposalMergeConcluded,
   type ChangeProposalMergeReconciliationAnswer,
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
@@ -139,6 +149,7 @@ interface ChangeProposalRow {
   readonly merge_refusals: string;
   readonly merge_declines: string;
   readonly merge_readings: string;
+  readonly merge_heard_secs: string | null;
 }
 
 /** The columns one answer writes, whichever arm it came back on. */
@@ -169,6 +180,7 @@ const changeProposalStoredEvidenceSchema = z.object({
   body: z.string(),
   status: z.string(),
   mergeability: z.string().optional(),
+  mergeState: z.string().optional(),
   mergeCommit: z.string().optional(),
   url: z.string().optional(),
 });
@@ -217,6 +229,9 @@ function changeProposalEvidenceOf(
             "change proposal mergeability",
           ),
         }),
+    ...(value.mergeState === undefined
+      ? {}
+      : { mergeState: asProposalMergeState(value.mergeState) }),
     ...(value.mergeCommit === undefined
       ? {}
       : { mergeCommit: asGitObjectId(value.mergeCommit) }),
@@ -311,15 +326,11 @@ function changeProposalReconciledOf(
   }
 }
 
-/** What the row says the merge came to, narrowed to the closed set a row records. */
+/** What the row says a concluded merge came to, narrowed to the closed set a row records. */
 function changeProposalMergedOf(
-  row: ChangeProposalRow & { readonly merge: string },
-): ChangeProposalMergeAnswer {
-  const merged = finalizerRowValue(
-    allChangeProposalMergeAnswers,
-    row.merge,
-    "change proposal merge",
-  );
+  row: ChangeProposalRow,
+  merged: ChangeProposalMergeConcluded["merged"],
+): ChangeProposalMergeConcluded {
   switch (merged) {
     case "Merged": {
       if (row.merge_commit === null) {
@@ -327,8 +338,6 @@ function changeProposalMergedOf(
       }
       return { merged, mergeCommit: asGitObjectId(row.merge_commit) };
     }
-    case "HeadMoved":
-      return { merged };
     case "NotMergeable": {
       if (row.merge_reason === null) {
         throw new Error("finalizer row: a refused merge names no reason");
@@ -386,18 +395,55 @@ function changeProposalMergeReadOf(
   }
 }
 
+/** What the row says the last reading of the merge came to, absent where none stands. */
+function changeProposalMergeReadingOf(
+  row: ChangeProposalRow,
+): ChangeProposalMergeReconciliationStored | undefined {
+  const reading = row.merge_reading;
+  return reading === null
+    ? undefined
+    : changeProposalMergeReadOf({ ...row, merge_reading: reading });
+}
+
+/** How many seconds before this read the forge was last heard about the merge, which every waiting row has been. */
+function changeProposalMergeHeardAgeOf(row: ChangeProposalRow): number {
+  if (row.merge_heard_secs === null) {
+    throw new Error("finalizer row: a waiting merge was never heard about");
+  }
+  const age = Number(row.merge_heard_secs);
+  if (!Number.isSafeInteger(age)) {
+    throw new Error("finalizer row: a waiting merge's age is not a count");
+  }
+  return age;
+}
+
+/** The merge half of a row its merge settled, a moved head being one that waits on whoever moved it. */
+function mergingAnsweredOf(
+  row: ChangeProposalRow & { readonly merge: string },
+): ChangeProposalMerging {
+  const merged = finalizerRowValue(
+    allChangeProposalMergeAnswers,
+    row.merge,
+    "change proposal merge",
+  );
+  return merged === "HeadMoved"
+    ? {
+        merging: "Moved",
+        reading: changeProposalMergeReadingOf(row),
+        heardAgeSecs: changeProposalMergeHeardAgeOf(row),
+      }
+    : { merging: "Answered", merge: changeProposalMergedOf(row, merged) };
+}
+
 /**
- * Which of the four states the merge half of the row stands in. A row nobody
- * has asked a merge of is apart from one whose merges have all been released,
- * because the second has spent something and the first has not.
+ * Which state the merge half of the row stands in. A row nobody has asked a
+ * merge of is apart from one whose merges have all been released, because the
+ * second has spent something and the first has not, and a release that kept
+ * its reading is a merge waiting on the forge.
  */
 function mergingOf(row: ChangeProposalRow): ChangeProposalMerging {
   const merge = row.merge;
-  if (merge !== null)
-    return {
-      merging: "Answered",
-      merge: changeProposalMergedOf({ ...row, merge }),
-    };
+  if (merge !== null) return mergingAnsweredOf({ ...row, merge });
   const attempts = projectRowCounter(
     row.merge_attempts,
     "change proposal merge attempts",
@@ -412,13 +458,21 @@ function mergingOf(row: ChangeProposalRow): ChangeProposalMerging {
     "change proposal merge declines",
   );
   const merges = attempts - declines;
-  if (attempts === refusals + declines) return { merging: "Idle", merges };
+  const reading = changeProposalMergeReadingOf(row);
+  if (attempts === refusals + declines)
+    return reading === undefined
+      ? { merging: "Idle", merges }
+      : {
+          merging: "Waiting",
+          merges,
+          reading,
+          heardAgeSecs: changeProposalMergeHeardAgeOf(row),
+        };
   if (attempts !== refusals + declines + 1) {
     throw new Error(
       "finalizer row: a change proposal counts more merges in flight than one",
     );
   }
-  const reading = row.merge_reading;
   return {
     merging: "Unanswered",
     merges,
@@ -426,10 +480,7 @@ function mergingOf(row: ChangeProposalRow): ChangeProposalMerging {
       row.merge_readings,
       "change proposal merge readings",
     ),
-    reading:
-      reading === null
-        ? undefined
-        : changeProposalMergeReadOf({ ...row, merge_reading: reading }),
+    reading,
   };
 }
 
@@ -520,7 +571,10 @@ export async function finalizerChangeProposalRead(
             merge_attempts::text AS merge_attempts,
             merge_refusals::text AS merge_refusals,
             merge_declines::text AS merge_declines,
-            merge_readings::text AS merge_readings
+            merge_readings::text AS merge_readings,
+            CASE WHEN merge_heard_at IS NOT NULL
+                 THEN floor(extract(epoch FROM (now() - merge_heard_at)))
+                        ::bigint::text END AS merge_heard_secs
        FROM finalization_change_proposal
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}`,
@@ -761,7 +815,8 @@ export function finalizerChangeProposalRecord(
 }
 
 /**
- * Counts the attempt one merge is about to be made under. A row already
+ * Counts the attempt one merge is about to be made under, clearing the reading
+ * a wait kept because the next reading is about this merge. A row already
  * counting a merge nobody heard back from, one already answered, one holding no
  * evidence of a proposal to address, and one whose claim has been retired are
  * each left exactly as they stand.
@@ -774,7 +829,10 @@ export async function finalizerChangeProposalMergeAttempt(
     return { wrote: "Nothing" };
   const marked = await client.query(
     sql`UPDATE finalization_change_proposal
-        SET merge_attempts = merge_attempts + 1
+        SET merge_attempts = merge_attempts + 1,
+            merge_reading = NULL,
+            merge_reading_contradiction = NULL,
+            merge_reading_evidence = NULL
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}
         AND merge IS NULL
@@ -829,7 +887,30 @@ export function finalizerChangeProposalMergeDecline(
   return finalizerChangeProposalMergeReleased(client, claim, "Declined");
 }
 
-/** Records what the merge answered, over the attempt still in flight. */
+/**
+ * Records that the forge's own rules refused the merge in flight, which spends
+ * the attempt and keeps the reading that found the proposal blocked as what
+ * the merge now waits on.
+ */
+export async function finalizerChangeProposalMergeWait(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_refusals = merge_refusals + 1
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines + 1
+        AND merge_reading = 'Unmerged'`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** Records what the merge answered, over the attempt still in flight, as the moment the forge was last heard. */
 async function finalizerChangeProposalMerged(
   client: pg.PoolClient,
   claim: FinalizationClaim,
@@ -841,7 +922,8 @@ async function finalizerChangeProposalMerged(
     sql`UPDATE finalization_change_proposal
         SET merge = ${merged.merged},
             merge_reason = ${merged.merged === "NotMergeable" ? merged.reason : null},
-            merge_commit = ${merged.merged === "Merged" ? merged.mergeCommit : null}
+            merge_commit = ${merged.merged === "Merged" ? merged.mergeCommit : null},
+            merge_heard_at = now()
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}
         AND merge IS NULL
@@ -864,9 +946,11 @@ function changeProposalMergeReadingColumns(
 }
 
 /**
- * Records what one reading of the merge read and counts it, over the merge it
- * was taken about. A reading is only ever taken about a merge nobody heard back
- * from, so a row that has since been answered or released takes none.
+ * Records what one reading of the merge read, over the merge it was taken
+ * about, and counts it only against a merge in flight. A reading is taken about
+ * a merge nobody heard back from and about one waiting on the forge, so a row
+ * released with nothing to wait on or settled by anything but a moved head
+ * takes none.
  */
 async function finalizerChangeProposalMergeRead(
   client: pg.PoolClient,
@@ -881,11 +965,19 @@ async function finalizerChangeProposalMergeRead(
         SET merge_reading = ${columns.kind},
             merge_reading_contradiction = ${columns.contradiction},
             merge_reading_evidence = ${columns.evidence}::jsonb,
-            merge_readings = merge_readings + 1
+            merge_readings = merge_readings
+              + CASE WHEN merge IS NULL
+                      AND merge_attempts = merge_refusals + merge_declines + 1
+                     THEN 1 ELSE 0 END,
+            merge_heard_at = now()
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}
-        AND merge IS NULL
-        AND merge_attempts = merge_refusals + merge_declines + 1`,
+        AND ((merge IS NULL
+              AND merge_attempts = merge_refusals + merge_declines + 1)
+             OR (merge IS NULL
+                 AND merge_attempts = merge_refusals + merge_declines
+                 AND merge_reading IS NOT NULL)
+             OR merge = 'HeadMoved')`,
   );
   return recorded.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
 }

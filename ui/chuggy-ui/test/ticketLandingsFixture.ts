@@ -85,6 +85,36 @@ export function landingRunning(cycle: number): TicketLandingResponse {
   };
 }
 
+/**
+ * A landing of `cycle` whose pull request waits on the forge, last asked at
+ * `checkedAt`: on the forge's own rules, which said `mergeState`, or on a head
+ * somebody else moved.
+ */
+export function landingAwaitingMerge(
+  cycle: number,
+  checkedAt: string,
+  reason: "Blocked" | "HeadMoved" = "Blocked",
+  mergeState = "behind",
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "AwaitingMerge",
+    wait: { reason, checkedAt },
+    attempt: landingAttempt,
+    proposal: {
+      url: landingPullRequest,
+      headRef: "chug/ticket-68",
+      baseRef: "main",
+      creation: "Created",
+      ...(reason === "HeadMoved" ? { merge: "HeadMoved" as const } : {}),
+      mergeability: "Blocked",
+      mergeState,
+    },
+  };
+}
+
 /** A landing of `cycle` held on an unreadable target since `since`. */
 export function landingHeld(
   cycle: number,

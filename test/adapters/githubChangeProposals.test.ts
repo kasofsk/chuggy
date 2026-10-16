@@ -31,6 +31,7 @@ import {
   asForgeCredential,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
   changeProposalMergeRequest,
@@ -50,6 +51,7 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { proposalMergeStateCharsMax } from "../../src/contract/http.ts";
 import { fixtureForge, type ForgeRecorder } from "./forgeFixtures.ts";
 
 /** The secret the fixture composition hands out, which must reach one header and nothing else. */
@@ -253,7 +255,11 @@ test("a created proposal is asked for once, addressed and headed exactly", async
   const created = await fixtureAdapter(recorder).create(request);
   assert.deepEqual(created, {
     created: "Created",
-    evidence: { ...fixtureEvidence(request), mergeability: "Unknown" },
+    evidence: {
+      ...fixtureEvidence(request),
+      mergeability: "Unknown",
+      mergeState: asProposalMergeState("unknown"),
+    },
   });
   assert.equal(recorder.calls.length, 1);
   const call = recorder.calls[0];
@@ -544,7 +550,11 @@ test("a repository the forge spells its own way is the one this request addresse
   ]);
   assert.deepEqual(await fixtureAdapter(creating).create(request), {
     created: "Created",
-    evidence: { ...fixtureEvidence(request), mergeability: "Unknown" },
+    evidence: {
+      ...fixtureEvidence(request),
+      mergeability: "Unknown",
+      mergeState: asProposalMergeState("unknown"),
+    },
   });
   const reading = fixtureForge([
     fixtureAnswer(200, [fixtureListedPull(request, answered)]),
@@ -965,9 +975,37 @@ test("what this forge says about merging a proposal reaches its evidence", async
       await fixtureAdapter(recorder).readByNumber(fixtureMergeRequest()),
       {
         read: "Found",
-        evidence: { ...fixtureEvidence(request), mergeability },
+        evidence: {
+          ...fixtureEvidence(request),
+          mergeability,
+          mergeState: asProposalMergeState(answered.mergeable_state),
+        },
       },
       JSON.stringify(answered),
+    );
+  }
+});
+
+test("the forge's own word for where a merge stands is carried only where a row could hold it", async () => {
+  const request = fixtureRequest();
+  for (const said of ["", "x".repeat(proposalMergeStateCharsMax + 1)]) {
+    const recorder = fixtureForge([
+      fixtureAnswer(
+        200,
+        fixtureNumberedPull(request, {
+          mergeable: true,
+          mergeable_state: said,
+        }),
+      ),
+    ]);
+    const read = await fixtureAdapter(recorder).readByNumber(
+      fixtureMergeRequest(),
+    );
+    assert.equal(read.read, "Found", JSON.stringify(said.length));
+    assert.equal(
+      read.read === "Found" ? "mergeState" in read.evidence : true,
+      false,
+      "a word no row could hold is left out rather than refusing the reading",
     );
   }
 });
@@ -996,7 +1034,11 @@ test("a proposal read out of a collection says nothing about merging", async () 
   );
   assert.deepEqual(asked, {
     read: "Found",
-    evidence: { ...fixtureEvidence(request), mergeability: "Mergeable" },
+    evidence: {
+      ...fixtureEvidence(request),
+      mergeability: "Mergeable",
+      mergeState: asProposalMergeState("clean"),
+    },
   });
   assert.equal(
     numbered.calls[0]?.url,

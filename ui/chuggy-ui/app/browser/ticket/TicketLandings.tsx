@@ -90,6 +90,7 @@ function LandingProposalFields(props: {
     ["Merge", proposal.merge],
     ["Reason", proposal.mergeReason],
     ["Mergeability", proposal.mergeability],
+    ["Merge state", proposal.mergeState],
   ];
   return (
     <>
@@ -159,6 +160,11 @@ function LandingDetail(props: {
       <LandingConflicts detail={detail} />
       {detail.proposal === undefined ? null : (
         <LandingProposalFields proposal={detail.proposal} />
+      )}
+      {detail.checkedAt === undefined ? null : (
+        <Field name="Checked">
+          <Figure figure={sinceFigure(detail.checkedAt, props.nowMs)} />
+        </Field>
       )}
     </Fields>
   );

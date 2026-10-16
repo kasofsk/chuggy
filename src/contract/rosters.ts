@@ -68,12 +68,12 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * it. The five left out stay holds, each for its own reason:
  * `ApprovalDeclined` is a human's answer, which a resume would put to the same
  * human again; `ProposalRefused` is that answer or a pin the rows contradict,
- * and neither is reachability; `ProposalHeadMoved` is a landing to rebuild
- * rather than one to retry; `ContradictoryEvidence` is durable rows
+ * and neither is reachability; `ContradictoryEvidence` is durable rows
  * disagreeing, which is a defect for telemetry and not a desk item; and
- * `ProposalMergeBlocked` cannot be told apart from a merge no reviewer has
- * reached yet, so it must not park a ticket that is merely waiting on a human
- * at the forge.
+ * `ProposalMergeBlocked` and `ProposalHeadMoved` are merges waiting on the
+ * forge, read again until somebody merges or closes the proposal, and a wait
+ * cannot be told apart from one no reviewer has reached yet, so neither may
+ * park a ticket that is merely waiting on a human there.
  */
 export const finalizationUnavailableKinds = [
   "RepositoryUnbound",
@@ -435,6 +435,7 @@ export const ticketLandingStates = [
   "Running",
   "Held",
   "AwaitingApproval",
+  "AwaitingMerge",
   "Failed",
   "Unavailable",
   "Landed",
@@ -468,7 +469,10 @@ export const changeProposalMerges = [
 ] as const;
 
 /** Why a stored change proposal was not mergeable, restating `allChangeProposalUnmergeableSettled`. */
-export const changeProposalMergeReasons = ["Conflict", "Blocked"] as const;
+export const changeProposalMergeReasons = ["Conflict"] as const;
+
+/** What a merge waiting on the forge waits on, restating `allChangeProposalMergeWaits`. */
+export const changeProposalMergeWaits = ["Blocked", "HeadMoved"] as const;
 
 /** What a forge last said of merging a proposal, restating `allChangeProposalMergeabilities`. */
 export const changeProposalMergeabilities = [

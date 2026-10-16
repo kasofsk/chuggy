@@ -29,6 +29,7 @@ import {
   changeProposalMergeabilityLabel,
   changeProposalMergeLabel,
   changeProposalMergeReasonLabel,
+  changeProposalMergeWaitLabel,
   finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
@@ -63,6 +64,8 @@ export interface TicketLandingProposal {
   readonly merge: string | undefined;
   readonly mergeReason: string | undefined;
   readonly mergeability: string | undefined;
+  /** The forge's own word for where the merge stands, as it said it. */
+  readonly mergeState: string | undefined;
   readonly mergeCommit: Label | undefined;
 }
 
@@ -76,12 +79,21 @@ export interface TicketLandingDetail {
   readonly conflicts: readonly string[];
   readonly conflictsCut: boolean;
   readonly proposal: TicketLandingProposal | undefined;
+  /** When the forge was last asked about a merge that waits on it. */
+  readonly checkedAt: string | undefined;
 }
 
 /** The hold a landing waits on, and since when. */
 export interface TicketLandingHold {
   readonly label: string;
   readonly since: string;
+}
+
+/** What a landing's merge waits on at the forge, what the forge said, and when it was asked. */
+export interface TicketLandingWait {
+  readonly label: string;
+  readonly mergeState: string | undefined;
+  readonly checkedAt: string;
 }
 
 /** One landing as every part of the page draws it. */
@@ -95,6 +107,7 @@ export interface TicketLanding {
   readonly failure: string | undefined;
   readonly conflictCount: number;
   readonly hold: TicketLandingHold | undefined;
+  readonly wait: TicketLandingWait | undefined;
   readonly link: TicketDeliveryLink | undefined;
   readonly landedCommit: Label | undefined;
   readonly detail: TicketLandingDetail;
@@ -142,6 +155,7 @@ function ticketLandingProposal(
       proposal.mergeability === undefined
         ? undefined
         : changeProposalMergeabilityLabel(proposal.mergeability),
+    mergeState: proposal.mergeState,
     mergeCommit:
       proposal.mergeCommit === undefined
         ? undefined
@@ -164,6 +178,7 @@ function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
     conflicts: read.conflict?.paths ?? [],
     conflictsCut: read.conflict?.truncated ?? false,
     proposal: ticketLandingProposal(read.proposal),
+    checkedAt: read.state === "AwaitingMerge" ? read.wait.checkedAt : undefined,
   };
 }
 
@@ -186,6 +201,14 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
         ? {
             label: finalizationUnavailableKindLabel(read.hold.kind),
             since: read.hold.since,
+          }
+        : undefined,
+    wait:
+      read.state === "AwaitingMerge"
+        ? {
+            label: changeProposalMergeWaitLabel(read.wait.reason),
+            mergeState: read.proposal?.mergeState,
+            checkedAt: read.wait.checkedAt,
           }
         : undefined,
     link: ticketLandingLink(read.proposal?.url),
@@ -217,6 +240,24 @@ function ticketLandingHeldFor(hold: TicketLandingHold, nowMs: number): string {
   return Number.isFinite(sinceMs)
     ? `Held ${agoText(nowMs, sinceMs)} · ${hold.label}`
     : `Held · ${hold.label}`;
+}
+
+/**
+ * What a landing's merge waits on, the forge's own word where it adds to it,
+ * and how long ago the forge was asked.
+ */
+function ticketLandingWaitText(wait: TicketLandingWait, nowMs: number): string {
+  const checkedMs = Date.parse(wait.checkedAt);
+  return [
+    wait.label,
+    ...(wait.mergeState === undefined ||
+    wait.mergeState.toLowerCase() === wait.label.toLowerCase()
+      ? []
+      : [wait.mergeState]),
+    ...(Number.isFinite(checkedMs)
+      ? [`checked ${agoText(nowMs, checkedMs)} ago`]
+      : []),
+  ].join(" · ");
 }
 
 /** What a landing's row says beside its pill, as text, a link and a commit. */
@@ -253,6 +294,15 @@ export function ticketLandingFragment(
             ? undefined
             : ticketLandingHeldFor(landing.hold, nowMs),
         link: undefined,
+        commit: undefined,
+      };
+    case "AwaitingMerge":
+      return {
+        text:
+          landing.wait === undefined
+            ? undefined
+            : ticketLandingWaitText(landing.wait, nowMs),
+        link: landing.link,
         commit: undefined,
       };
     case "Running":
@@ -338,6 +388,7 @@ export function ticketLandingCurrent(
     case "Running":
     case "Held":
     case "AwaitingApproval":
+    case "AwaitingMerge":
       return newest;
     case "Failed":
     case "Unavailable":

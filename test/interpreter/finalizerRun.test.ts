@@ -23,8 +23,10 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalDisplayUrl,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
+  proposalMergeRereadSecs,
   type ChangeProposalCreated,
   type ChangeProposalEvidence,
   type ChangeProposalForges,
@@ -274,6 +276,8 @@ interface FinalizerRecorder
   proposalMergeReadings: number;
   proposalMerge?: ChangeProposalMergeAnswer;
   proposalMergeReading?: ChangeProposalMergeReconciliationStored | undefined;
+  /** How many seconds ago the store says the forge was last heard about the merge, which a case moves to stand for the clock. */
+  proposalMergeHeardAgeSecs: number;
   /** Whether this store can hold the evidence an answer carries at all. */
   unstorable?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
@@ -392,9 +396,12 @@ function recordedProposalOf(
 /**
  * The merge half of that row, which keeps its own counters exactly as the
  * create's half keeps its: an attempt is counted before the merge it stands
- * for, the answer is written once, and a released attempt takes its reading
- * with it. A merge is asked only of a row whose create was answered, which is
- * the evidence the number comes out of.
+ * for, the answer is written once, a released attempt takes its reading with
+ * it unless the forge's own rules refused it, when the reading is what it
+ * waits on, a reading of a waiting merge counts against no merge in flight, and
+ * every write that heard the forge makes it heard just now. A merge is asked
+ * only of a row whose create was answered, which is the evidence the number
+ * comes out of.
  */
 function recordingProposalMerges(
   store: () => FinalizerRecorder,
@@ -403,6 +410,7 @@ function recordingProposalMerges(
   | "markChangeProposalMergeAttempt"
   | "refuseChangeProposalMergeAttempt"
   | "declineChangeProposalMergeAttempt"
+  | "waitChangeProposalMergeAttempt"
   | "recordChangeProposalMerge"
 > {
   return {
@@ -416,27 +424,31 @@ function recordingProposalMerges(
       )
         return Promise.resolve({ wrote: "Nothing" });
       own.proposalMergeAttempts += 1;
+      own.proposalMergeReading = undefined;
       return Promise.resolve({ wrote: "Row" });
     },
-    refuseChangeProposalMergeAttempt: () => {
+    refuseChangeProposalMergeAttempt: () =>
+      proposalMergeReleased(store(), "proposalMergeRefusals"),
+    declineChangeProposalMergeAttempt: () =>
+      proposalMergeReleased(store(), "proposalMergeDeclines"),
+    waitChangeProposalMergeAttempt: () => {
       const own = store();
-      if (!proposalMergeReleasable(own))
+      if (
+        !proposalMergeReleasable(own) ||
+        own.proposalMergeReading?.reconciled !== "Unmerged"
+      )
         return Promise.resolve({ wrote: "Nothing" });
       own.proposalMergeRefusals += 1;
-      own.proposalMergeReading = undefined;
-      return Promise.resolve({ wrote: "Row" });
-    },
-    declineChangeProposalMergeAttempt: () => {
-      const own = store();
-      if (!proposalMergeReleasable(own))
-        return Promise.resolve({ wrote: "Nothing" });
-      own.proposalMergeDeclines += 1;
-      own.proposalMergeReading = undefined;
       return Promise.resolve({ wrote: "Row" });
     },
     recordChangeProposalMerge: (record) => {
       const own = store();
-      if (own.dropResults === true || !proposalMergeReleasable(own))
+      const inFlight = proposalMergeReleasable(own);
+      const admitted =
+        record.result.records === "Merge"
+          ? inFlight
+          : inFlight || proposalMergeAwaited(own);
+      if (own.dropResults === true || !admitted)
         return Promise.resolve({ wrote: "Nothing" });
       if (record.result.records === "Merge")
         own.proposalMerge = record.result.merged;
@@ -445,12 +457,24 @@ function recordingProposalMerges(
           own.unstorable === true
             ? { reconciled: "Unstorable" }
             : record.result.reconciled;
-        own.proposalMergeReadings += 1;
+        if (inFlight) own.proposalMergeReadings += 1;
       }
+      own.proposalMergeHeardAgeSecs = 0;
       own.mergeResults.push(record);
       return Promise.resolve({ wrote: "Row" });
     },
   };
+}
+
+/** Whether the row's merge waits on the forge: refused by its rules with the reading kept, or answered as a moved head. */
+function proposalMergeAwaited(own: FinalizerRecorder): boolean {
+  if (own.proposalMerge !== undefined)
+    return own.proposalMerge.merged === "HeadMoved";
+  return (
+    own.proposalMergeAttempts > 0 &&
+    own.proposalMergeAttempts === proposalMergeReleasesOf(own) &&
+    own.proposalMergeReading !== undefined
+  );
 }
 
 /** The attempts something has caught up with, whether or not they spent a create. */
@@ -499,6 +523,18 @@ function proposalMergeReleasesOf(own: FinalizerRecorder): number {
   return own.proposalMergeRefusals + own.proposalMergeDeclines;
 }
 
+/** Releases the merge in flight, counting it under `counted` and taking its reading with it. */
+function proposalMergeReleased(
+  own: FinalizerRecorder,
+  counted: "proposalMergeRefusals" | "proposalMergeDeclines",
+): Promise<{ readonly wrote: "Row" | "Nothing" }> {
+  if (!proposalMergeReleasable(own))
+    return Promise.resolve({ wrote: "Nothing" });
+  own[counted] += 1;
+  own.proposalMergeReading = undefined;
+  return Promise.resolve({ wrote: "Row" });
+}
+
 /** Whether one merge is in flight, which is what a release and an answer both need. */
 function proposalMergeReleasable(own: FinalizerRecorder): boolean {
   return (
@@ -507,20 +543,30 @@ function proposalMergeReleasable(own: FinalizerRecorder): boolean {
   );
 }
 
-/** Which of the four states the fixture's merge counters put its row in. */
+/** Which state the fixture's merge counters put its row in. */
 function proposalMergingOf(own: FinalizerRecorder): ChangeProposalMerging {
   const merge = own.proposalMerge;
+  const heardAgeSecs = own.proposalMergeHeardAgeSecs;
+  if (merge?.merged === "HeadMoved")
+    return {
+      merging: "Moved",
+      reading: own.proposalMergeReading,
+      heardAgeSecs,
+    };
   if (merge !== undefined) return { merging: "Answered", merge };
   if (own.proposalMergeAttempts === 0) return { merging: "Unasked" };
   const merges = own.proposalMergeAttempts - own.proposalMergeDeclines;
-  return own.proposalMergeAttempts === proposalMergeReleasesOf(own)
-    ? { merging: "Idle", merges }
-    : {
-        merging: "Unanswered",
-        merges,
-        readings: own.proposalMergeReadings,
-        reading: own.proposalMergeReading,
-      };
+  const reading = own.proposalMergeReading;
+  if (own.proposalMergeAttempts === proposalMergeReleasesOf(own))
+    return reading === undefined
+      ? { merging: "Idle", merges }
+      : { merging: "Waiting", merges, reading, heardAgeSecs };
+  return {
+    merging: "Unanswered",
+    merges,
+    readings: own.proposalMergeReadings,
+    reading,
+  };
 }
 
 /** The empty ledgers a fixture store starts with, one per kind of move it records. */
@@ -568,6 +614,7 @@ function recordingProposalCounters(): Pick<
   | "proposalMergeRefusals"
   | "proposalMergeDeclines"
   | "proposalMergeReadings"
+  | "proposalMergeHeardAgeSecs"
 > {
   return {
     proposalAttempts: 0,
@@ -578,6 +625,7 @@ function recordingProposalCounters(): Pick<
     proposalMergeRefusals: 0,
     proposalMergeDeclines: 0,
     proposalMergeReadings: 0,
+    proposalMergeHeardAgeSecs: 0,
   };
 }
 
@@ -1785,7 +1833,22 @@ test("a create nobody heard back from is read by its marker, and the merge is as
   assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 
-test("a merge the forge's own rules blocked is held for an operator and never asked again", async () => {
+/** What a proposal the forge's own rules will not let merge says of itself, `mergeable_state` as read. */
+const blockedEvidence: Partial<ChangeProposalEvidence> = {
+  mergeability: "Blocked",
+  mergeState: asProposalMergeState("blocked"),
+};
+
+/**
+ * A merging case whose forge refuses the merge for its own rules and whose
+ * reading finds them still standing, with every hold it reports kept.
+ */
+function blockedCase(bounds: Partial<typeof finalizerDefaults> = {}): {
+  readonly store: FinalizerRecorder;
+  readonly forge: ForgeRecorder;
+  readonly service: FinalizerService;
+  readonly emitted: FinalizerHoldReason[];
+} {
   const emitted: FinalizerHoldReason[] = [];
   const store = recordingStore([
     proposedView("request-one", "PullRequestMerge"),
@@ -1793,8 +1856,212 @@ test("a merge the forge's own rules blocked is held for an operator and never as
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "NotMergeable", reason: "Blocked" };
+  forge.numberEvidence = blockedEvidence;
   const service = {
-    ...mergingService(store, forge),
+    ...mergingService(store, forge, bounds),
+    metrics: finalizerTelemetry({
+      ...silentFinalizerMetrics,
+      holding: (reason) => emitted.push(reason),
+    }),
+  };
+  return { store, forge, service, emitted };
+}
+
+/** Drives a blocked case from nothing to the merge waiting on the forge: the create, the merge, its reading, and the wait. */
+async function blockedWaiting(
+  service: FinalizerService,
+  store: FinalizerRecorder,
+): Promise<void> {
+  for (let pass = 0; pass < 4; pass += 1) await passOver(service);
+  assert.equal(
+    proposalMergingOf(store).merging,
+    "Waiting",
+    "the refused merge was released to wait on the forge",
+  );
+}
+
+/** Makes the fixture's clock say the forge was last heard about the merge long enough ago to be asked again. */
+function rereadDue(store: FinalizerRecorder): void {
+  store.proposalMergeHeardAgeSecs = proposalMergeRereadSecs;
+}
+
+test("a merge the forge's own rules blocked waits on them, and is merged once a reading finds them cleared", async () => {
+  const { store, forge, service, emitted } = blockedCase();
+  await blockedWaiting(service, store);
+
+  assert.equal(forge.merges.length, 1);
+  assert.deepEqual(emitted, ["ProposalMergeBlocked"]);
+  assert.equal(
+    store.proposalMergeRefusals,
+    1,
+    "the blocked merge is spent, so a forge that keeps refusing exhausts them",
+  );
+  assert.equal(store.proposalMergeReading?.reconciled, "Unmerged");
+
+  forge.numberEvidence = {
+    mergeability: "Mergeable",
+    mergeState: asProposalMergeState("clean"),
+  };
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  rereadDue(store);
+  const reading = await passOver(service);
+
+  assert.equal(reading.proposals, 1);
+  assert.equal(forge.numbered.length, 2);
+  assert.equal(
+    store.proposalMergeReadings,
+    1,
+    "a reading of a waiting merge spends none of a merge's own readings",
+  );
+
+  const merging = await passOver(service);
+
+  assert.equal(merging.proposals, 1);
+  assert.equal(forge.merges.length, 2, "the cleared proposal was merged again");
+  assert.equal(
+    store.proposalMergeReading,
+    undefined,
+    "the new merge is read back on readings of its own",
+  );
+
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a merge waiting on the forge is read again only once the cadence has passed, never every pass", async () => {
+  const { store, forge, service, emitted } = blockedCase();
+  await blockedWaiting(service, store);
+  const read = forge.numbered.length;
+
+  for (const heardAgeSecs of [0, proposalMergeRereadSecs - 1]) {
+    store.proposalMergeHeardAgeSecs = heardAgeSecs;
+    const held = await passOver(service);
+    assert.equal(held.proposals, 0, String(heardAgeSecs));
+    assert.equal(held.holds, 1, String(heardAgeSecs));
+  }
+  assert.equal(
+    forge.numbered.length,
+    read,
+    "no pass inside it reached the forge",
+  );
+
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(forge.numbered.length, read + 1);
+  assert.equal(store.proposalMergeHeardAgeSecs, 0);
+
+  await passOver(service);
+  assert.equal(
+    forge.numbered.length,
+    read + 1,
+    "the reading just taken starts the cadence again",
+  );
+  assert.deepEqual(emitted, Array(4).fill("ProposalMergeBlocked"));
+  assert.equal(forge.merges.length, 1);
+});
+
+test("a re-read the forge could not answer stays due, and counts toward the dwell as any unreachable forge does", async () => {
+  const { store, forge, service } = blockedCase({ holdPassesMax: 2 });
+  await blockedWaiting(service, store);
+  forge.numberRead = "Unavailable";
+  rereadDue(store);
+  const read = forge.numbered.length;
+
+  await passOver(service);
+  await passOver(service);
+
+  assert.equal(forge.numbered.length, read + 2, "each pass asked again");
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "ProposalUnavailable" },
+  ]);
+});
+
+test("a waiting merge somebody else made lands the finalization on their merge", async () => {
+  const { store, forge, service } = blockedCase();
+  await blockedWaiting(service, store);
+
+  forge.numberEvidence = {
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("f")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.equal(forge.merges.length, 1, "nothing was merged a second time");
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a waiting merge closed unmerged is held as a proposal no reading can land, and escalated once the dwell is spent", async () => {
+  const { store, forge, service } = blockedCase({ holdPassesMax: 3 });
+  await blockedWaiting(service, store);
+
+  forge.numberEvidence = { status: "Closed" };
+  rereadDue(store);
+  await passOver(service);
+  const read = forge.numbered.length;
+  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+
+  assert.equal(
+    forge.numbered.length,
+    read,
+    "a closed proposal is not read again",
+  );
+  assert.equal(forge.merges.length, 1);
+  assert.deepEqual(store.holds.slice(-3), Array(3).fill("ProposalAbsent"));
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "ProposalAbsent" },
+  ]);
+});
+
+test("a required check that has already failed waits as a pending one does, read on the cadence and never escalated", async () => {
+  const { store, forge, service, emitted } = blockedCase({ holdPassesMax: 2 });
+  await blockedWaiting(service, store);
+  const read = forge.numbered.length;
+  const cadences = 4;
+
+  for (let cadence = 0; cadence < cadences; cadence += 1) {
+    rereadDue(store);
+    await passOver(service);
+    await passOver(service);
+  }
+
+  assert.equal(
+    forge.numbered.length,
+    read + cadences,
+    "one reading a cadence, each finding mergeable_state blocked again",
+  );
+  assert.equal(forge.merges.length, 1, "a blocked proposal is never merged");
+  assert.deepEqual(store.concluded, [], "a wait on the forge never escalates");
+  assert.ok(
+    store.holds.every((kind) => kind === undefined),
+    "a wait records no hold a resume could clear",
+  );
+  assert.ok(emitted.every((reason) => reason === "ProposalMergeBlocked"));
+  assert.equal(
+    store.proposalMergeReading?.reconciled === "Unmerged"
+      ? store.proposalMergeReading.evidence.mergeState
+      : undefined,
+    "blocked",
+  );
+});
+
+test("a moved head waits on whoever moved it, is never merged again, and lands on their merge", async () => {
+  const emitted: FinalizerHoldReason[] = [];
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "HeadMoved" };
+  const service = {
+    ...mergingService(store, forge, { holdPassesMax: 2 }),
     metrics: finalizerTelemetry({
       ...silentFinalizerMetrics,
       holding: (reason) => emitted.push(reason),
@@ -1805,14 +2072,29 @@ test("a merge the forge's own rules blocked is held for an operator and never as
   await passOver(service);
   const held = await passOver(service);
 
-  assert.equal(held.conclusions, 0);
-  assert.equal(
-    held.proposals,
-    0,
-    "a blocked merge spends no further forge act",
-  );
-  assert.deepEqual(emitted, ["ProposalMergeBlocked"]);
-  assert.equal(forge.merges.length, 1);
+  assert.equal(held.proposals, 0);
+  assert.deepEqual(emitted, ["ProposalHeadMoved"]);
+
+  forge.numberEvidence = { mergeability: "Mergeable" };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  await passOver(service);
+
+  assert.equal(forge.numbered.length, 1);
+  assert.equal(forge.merges.length, 1, "a moved head is merged by nobody here");
+  assert.deepEqual(store.concluded, [], "and its wait never escalates");
+
+  forge.numberEvidence = {
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("f")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 
 test("a merge the forge refused for a conflict fails this finalization as a preparation's conflict does", async () => {

@@ -149,8 +149,14 @@
  * accept — so an unreadable base is a hold, and making that branch is nobody's
  * job here.
  *
+ * A MERGE WAITING ON THE FORGE IS ASKED AGAIN ON A CADENCE, NEVER EVERY PASS.
+ * The request is redrawn whenever its claim lapses, as every held one is, and
+ * the store ages the wait by the database's clock, so a pass that finds it read
+ * too recently holds without reaching the forge and one that finds it due
+ * spends a proposal act like any other reading.
+ *
  * NOTHING HERE READS A CLOCK. Every lease and expiry is a duration handed to the
- * store, which asks the database what time it is.
+ * store, and every age is one the store reads, both from the database's clock.
  *
  * THE REPORT COUNTS HOLDS AND THE SINK NAMES THEM. Every hold goes through
  * `finalizerHold`, which is what keeps the count and the observations in
@@ -200,6 +206,7 @@ import {
   type FinalizationProposalGathered,
   type FinalizationProposalMergeRecording,
   type FinalizationProposalRecording,
+  type ChangeProposalWritten,
   type FinalizerProposalStore,
   type StoredChangeProposal,
 } from "./finalizationProposal.ts";
@@ -1420,22 +1427,42 @@ async function finalizerReconcileProposal(
 /**
  * Releases the merge attempt in flight so that a later pass may ask for
  * another, spending the merge it stood for where the forge may have made it and
- * nothing where the forge would not.
+ * nothing where the forge would not, and keeping the reading a merge the
+ * forge's own rules refused waits on.
  */
 async function finalizerReleaseProposalMergeAttempt(
   service: FinalizerService,
   view: FinalizationView,
-  released: "Refused" | "Declined",
+  released: "Refused" | "Declined" | "Waiting",
   tally: FinalizerTally,
   hold: FinalizerHoldReason | undefined,
 ): Promise<void> {
-  const wrote =
-    released === "Refused"
-      ? await service.store.refuseChangeProposalMergeAttempt(view.claim)
-      : await service.store.declineChangeProposalMergeAttempt(view.claim);
+  const wrote = await finalizerReleasedProposalMerge(
+    service.store,
+    view.claim,
+    released,
+  );
   if (wrote.wrote !== "Row")
     finalizerHold(service, tally, "ProposalUnrecorded");
   else if (hold !== undefined) finalizerHold(service, tally, hold);
+}
+
+/** The one write that releases a merge attempt the way the pure step named. */
+function finalizerReleasedProposalMerge(
+  store: FinalizerProposalStore,
+  claim: FinalizationClaim,
+  released: "Refused" | "Declined" | "Waiting",
+): Promise<ChangeProposalWritten> {
+  switch (released) {
+    case "Refused":
+      return store.refuseChangeProposalMergeAttempt(claim);
+    case "Declined":
+      return store.declineChangeProposalMergeAttempt(claim);
+    case "Waiting":
+      return store.waitChangeProposalMergeAttempt(claim);
+    default:
+      return assertNever(released);
+  }
 }
 
 /** Performs the one recording a forge answer about merging authorizes, which the pure step named. */
@@ -1579,6 +1606,30 @@ async function finalizerMergeConflicted(
   );
 }
 
+/** Releases the merge attempt as the proposal step decided, a wait keeping its reading and holding on the forge's rules. */
+function finalizerProposalMergeReleased(
+  service: FinalizerService,
+  view: FinalizationView,
+  decide: "RefuseMergeAttempt" | "WaitMergeAttempt",
+  tally: FinalizerTally,
+): Promise<void> {
+  return decide === "WaitMergeAttempt"
+    ? finalizerReleaseProposalMergeAttempt(
+        service,
+        view,
+        "Waiting",
+        tally,
+        "ProposalMergeBlocked",
+      )
+    : finalizerReleaseProposalMergeAttempt(
+        service,
+        view,
+        "Refused",
+        tally,
+        undefined,
+      );
+}
+
 /** Performs the one act the proposal step named, every arm of it a durable move or a hold. */
 async function finalizerProposalDecided(
   service: FinalizerService,
@@ -1620,12 +1671,12 @@ async function finalizerProposalDecided(
       await finalizerReconcileProposalMerge(service, view, decision, tally);
       return;
     case "RefuseMergeAttempt":
-      await finalizerReleaseProposalMergeAttempt(
+    case "WaitMergeAttempt":
+      await finalizerProposalMergeReleased(
         service,
         view,
-        "Refused",
+        decision.decide,
         tally,
-        undefined,
       );
       return;
     case "RecordMergeConflict":

@@ -22,7 +22,9 @@ import {
   allChangeProposalCreationsStored,
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
+  allChangeProposalMergeWaits,
   allChangeProposalUnmergeableSettled,
+  asProposalMergeState,
 } from "../../interpreter/changeProposal.ts";
 import {
   allFinalizationAttemptOutcomes,
@@ -40,6 +42,7 @@ import {
   type TicketLandingProposal,
   type TicketLandingRecord,
   type TicketLandingsStore,
+  type TicketLandingWait,
 } from "../../interpreter/ticketLandings.ts";
 import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -74,6 +77,9 @@ interface TicketLandingRow {
   readonly mergeability: string | null;
   readonly merge_commit: string | null;
   readonly landed_commit: string | null;
+  readonly merge_state: string | null;
+  readonly merge_wait: string | null;
+  readonly merge_heard_at: string | null;
 }
 
 /** The event names a conclusion is journalled under, beside the conclusion each names. */
@@ -193,9 +199,28 @@ function ticketLandingProposal(
     headRef: finalizerRowPresent(row.head_ref, "head ref"),
     baseRef: finalizerRowPresent(row.base_ref, "base ref"),
     ...ticketLandingProposalCodes(row),
+    ...(row.merge_state === null
+      ? {}
+      : { mergeState: asProposalMergeState(row.merge_state) }),
     ...(row.merge_commit === null
       ? {}
       : { mergeCommit: asGitObjectId(row.merge_commit) }),
+  };
+}
+
+function ticketLandingWait(
+  row: TicketLandingRow,
+): TicketLandingWait | undefined {
+  if (row.merge_wait === null) return undefined;
+  return {
+    reason: finalizerRowValue(
+      allChangeProposalMergeWaits,
+      row.merge_wait,
+      "merge wait",
+    ),
+    checkedAt: asPublicInstant(
+      finalizerRowPresent(row.merge_heard_at, "merge heard at"),
+    ),
   };
 }
 
@@ -204,6 +229,7 @@ function ticketLandingRecord(row: TicketLandingRow): TicketLandingRecord {
   const hold = ticketLandingHold(row);
   const attempt = ticketLandingAttempt(row);
   const proposal = ticketLandingProposal(row);
+  const wait = ticketLandingWait(row);
   return {
     cycle: projectRowCounter(
       finalizerRowPresent(row.work_cycle, "work cycle"),
@@ -227,6 +253,7 @@ function ticketLandingRecord(row: TicketLandingRow): TicketLandingRecord {
       : { conflictManifest: asProjectArtifactId(row.conflict_manifest) }),
     approvalOpen: finalizerRowPresent(row.approval_open, "approval open"),
     ...(proposal === undefined ? {} : { proposal }),
+    ...(wait === undefined ? {} : { wait }),
     ...(row.landed_commit === null
       ? {}
       : { landedCommit: asGitObjectId(row.landed_commit) }),
@@ -250,7 +277,9 @@ async function ticketLandingsRead(
                to_char(l.prepared_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS prepared_at,
                l.conflict_manifest,l.approval_open,l.proposed,l.head_ref,
                l.base_ref,l.creation,l.url,l.merge,l.merge_reason,
-               l.mergeability,l.merge_commit,l.landed_commit
+               l.mergeability,l.merge_commit,l.landed_commit,l.merge_state,
+               l.merge_wait,
+               to_char(l.merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS merge_heard_at
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true

@@ -54,6 +54,7 @@ import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-
 import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-attempt-runtime.ts";
 import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
 import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
+import { migration060 } from "../../src/adapters/postgres/schema/migrations/060-merge-waits.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -10453,5 +10454,86 @@ test("059 keeps every execution that stood on the deployment's size, bounds a si
           `${column} ${String(value)}`,
         );
     }
+  });
+});
+
+/** A proposal over request-5's prepared attempt and its permit as an installation before 060 left one, with `merged` written over it. */
+function mergeWaitProposal060(merged: string): string {
+  return `${deletionPartition}
+  ${renamedFinalization(renamedAttemptPrepared)};
+  INSERT INTO commit_permit
+    (tenant,project,permit,attempt,recovery_epoch,lifecycle_generation)
+  VALUES('tenant-5','project-5','permit-5','attempt-5','epoch-5',1);
+  INSERT INTO finalization_change_proposal
+    (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+     base_ref,base_commit,title,body,attempts,creation,creation_evidence)
+  VALUES('tenant-5','project-5','request-5','permit-5',repeat('e',64),
+         'refs/heads/chuggy/ticket',repeat('c',40),'refs/heads/main',
+         repeat('a',40),'ticket: land it','land it',1,'Created',
+         '{"status":"Open"}');
+  ${merged}`;
+}
+
+/** Whether the proposal 060 found was given its opening as when the forge was last heard about its merge, or nothing. */
+async function mergeHeardKept060(
+  subject: pg.Pool,
+): Promise<readonly { readonly unheard: boolean; readonly opened: boolean }[]> {
+  return (
+    await subject.query<{ unheard: boolean; opened: boolean }>(
+      `SELECT merge_heard_at IS NULL AS unheard,
+              merge_heard_at IS NOT DISTINCT FROM opened_at AS opened
+         FROM finalization_change_proposal`,
+    )
+  ).rows;
+}
+
+test("060 ages every merge an installation had asked about from its proposal's opening, leaves one never asked unheard, and settles a refusal only on a conflict", async () => {
+  for (const [merged, heard] of [
+    [
+      `UPDATE finalization_change_proposal
+          SET merge_attempts=1, merge_reading='Unmerged', merge_readings=1,
+              merge_reading_evidence='{"status":"Open","mergeability":"Blocked"}'`,
+      { unheard: false, opened: true },
+    ],
+    [
+      "UPDATE finalization_change_proposal SET merge_attempts=1, merge='HeadMoved'",
+      { unheard: false, opened: true },
+    ],
+    ["", { unheard: true, opened: false }],
+  ] as const)
+    await migrationDatabase("merge_waits", async (subject) => {
+      await installationBefore(subject, migration060.version);
+      await subject.query(mergeWaitProposal060(merged));
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration060.version),
+      );
+      assert.deepEqual(await mergeHeardKept060(subject), [heard], merged);
+    });
+
+  await migrationDatabase("merge_waits_reason", async (subject) => {
+    await installationBefore(subject, migration060.version);
+    await subject.query(
+      mergeWaitProposal060(
+        "UPDATE finalization_change_proposal SET merge_attempts=1",
+      ),
+    );
+    await postgresMigrate(subject);
+    const answered = (reason: string) =>
+      subject
+        .query(
+          `UPDATE finalization_change_proposal
+              SET merge='NotMergeable', merge_reason=$1`,
+          [reason],
+        )
+        .then(
+          () => undefined,
+          (failure: unknown) => String(failure),
+        );
+    assert.match(
+      String(await answered("Blocked")),
+      /finalization_change_proposal_merge_is_whole/u,
+      "the forge's own rules may lift, so no row settles on them",
+    );
+    assert.equal(await answered("Conflict"), undefined);
   });
 });

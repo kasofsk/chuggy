@@ -22,6 +22,7 @@ import {
   ticketLandingSummary,
 } from "../app/core/ticketLandings.ts";
 import {
+  landingAwaitingMerge,
   landingConflicted,
   landingHeld,
   landingLanded,
@@ -50,6 +51,41 @@ test("a held landing says how long it has been held and on what", () => {
   expect(ticketLandingFragment(landing, nowMs).text).toBe(
     "Held 12m · Target unreadable",
   );
+});
+
+test("a landing whose merge waits on the forge says on what, what the forge said, and when it was asked", () => {
+  const landing = ticketLandingOf(
+    landingAwaitingMerge(2, "2026-10-07T14:57:00Z"),
+  );
+  expect(landing.word).toBe("Waiting");
+  expect(landing.tone).toBe("parked");
+  expect(ticketLandingFragment(landing, nowMs)).toEqual({
+    text: "Blocked · behind · checked 3m ago",
+    link: { href: landingPullRequest, host: "forge.example.test" },
+    commit: undefined,
+  });
+  expect(landing.detail.proposal?.mergeState).toBe("behind");
+  expect(landing.detail.checkedAt).toBe("2026-10-07T14:57:00Z");
+  expect(ticketLandingCurrent([landing])).toBe(landing);
+});
+
+test("a required check that failed reads as the forge's own word, which the fragment does not say twice", () => {
+  expect(
+    ticketLandingFragment(
+      ticketLandingOf(
+        landingAwaitingMerge(2, "2026-10-07T14:59:30Z", "Blocked", "blocked"),
+      ),
+      nowMs,
+    ).text,
+  ).toBe("Blocked · checked 30s ago");
+  expect(
+    ticketLandingFragment(
+      ticketLandingOf(
+        landingAwaitingMerge(2, "2026-10-07T14:00:00Z", "HeadMoved", "clean"),
+      ),
+      nowMs,
+    ).text,
+  ).toBe("Head moved · clean · checked 1h ago");
 });
 
 test("a landed landing offers its pull request under its host and its commit short", () => {

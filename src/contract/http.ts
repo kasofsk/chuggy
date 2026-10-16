@@ -225,6 +225,9 @@ export const workerErrorPath = ".chuggy/worker-error.txt";
 /** The longest label the agent runtime names its own outcome with. */
 export const runOutcomeLabelCharsMax = 64;
 
+/** The longest word a forge names where a pull request's merge stands with. */
+export const proposalMergeStateCharsMax = 64;
+
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 

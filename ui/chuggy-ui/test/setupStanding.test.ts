@@ -177,9 +177,21 @@ test("a ticket being landed is done once a landing of it landed or opened a pull
 
 /** A landing in `state` that opened a pull request, where the state is one that carries nothing of its own. */
 function proposedIn(
-  state: Exclude<TicketLandingResponse["state"], "Held" | "Landed">,
+  state: Exclude<
+    TicketLandingResponse["state"],
+    "Held" | "AwaitingMerge" | "Landed"
+  >,
 ): TicketLandingResponse {
   return { ...setupSiteProposed("https://example.org/pull/1"), state };
+}
+
+/** A landing whose pull request waits on the forge's own rules to merge. */
+function proposedWaiting(): TicketLandingResponse {
+  return {
+    ...setupSiteProposed("https://example.org/pull/1"),
+    state: "AwaitingMerge",
+    wait: { reason: "Blocked", checkedAt: "2026-10-07T14:02:11.000000Z" },
+  };
 }
 
 test("a pull request counts only on a landing that has neither failed nor been invalidated, whatever other landing the ticket has had", async () => {
@@ -190,12 +202,16 @@ test("a pull request counts only on a landing that has neither failed nor been i
   const counted: string[] = [];
   for (const state of ticketLandingStates) {
     if (state === "Held" || state === "Landed") continue;
-    const [stands] = (await landed([proposedIn(state)])) ?? [];
+    const [stands] =
+      (await landed([
+        state === "AwaitingMerge" ? proposedWaiting() : proposedIn(state),
+      ])) ?? [];
     if (stands === "done") counted.push(state);
   }
   expect(counted).toEqual([
     "Running",
     "AwaitingApproval",
+    "AwaitingMerge",
     "Unavailable",
     "Proposed",
   ]);

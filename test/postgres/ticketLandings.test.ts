@@ -595,6 +595,97 @@ test("a live landing whose hold is recorded answers Held with the kind, the pass
   });
 });
 
+/** When the forge was last heard about the project's merge, as the read is expected to spell it. */
+async function mergeHeardAt(project: FinalizerProject): Promise<string> {
+  const [row] = await rig.harness.query(
+    `SELECT to_char(merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS at
+       FROM finalization_change_proposal WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  );
+  return String(row?.["at"]);
+}
+
+/** A merge the forge's own rules refused, its reading kept as what it waits on. */
+const mergeWaitedAs = (said: string) =>
+  [
+    `merge_attempts=1, merge_refusals=1, merge_reading='Unmerged',
+     merge_reading_evidence=$4::jsonb, merge_readings=1, merge_heard_at=now()`,
+    said,
+  ] as const;
+
+test("a landing whose merge waits on the forge's own rules answers AwaitingMerge, on what, when the forge was last heard, and the word it said", async () => {
+  const project = await finalizing("merge-waits", "PullRequestMerge");
+  const promoted = await promotion(project, "merge-waits");
+  await proposalOver(
+    project,
+    promoted,
+    createdAs(forgeSaid("Open", { url: pullRequest })),
+    mergeWaitedAs(
+      forgeSaid("Open", { mergeability: "Blocked", mergeState: "behind" }),
+    ),
+  );
+  const [landing] = (await landingsOf(project))?.landings ?? [];
+  assert.equal(landing?.state, "AwaitingMerge");
+  assert.deepEqual(landing.wait, {
+    reason: "Blocked",
+    checkedAt: await mergeHeardAt(project),
+  });
+  assert.deepEqual(landing.proposal, {
+    url: pullRequest,
+    headRef,
+    baseRef: "refs/heads/main",
+    creation: "Created",
+    mergeability: "Blocked",
+    mergeState: "behind",
+  });
+});
+
+test("a merge answered as a moved head waits on whoever moved it, and a merge in flight or a recorded hold is no wait", async () => {
+  const moved = await finalizing("merge-moved", "PullRequestMerge");
+  await proposalOver(
+    moved,
+    await promotion(moved, "merge-moved"),
+    createdAs(forgeSaid("Open", { url: pullRequest })),
+    ["merge_attempts=1, merge=$4, merge_heard_at=now()", "HeadMoved"],
+  );
+  const [waiting] = (await landingsOf(moved))?.landings ?? [];
+  assert.equal(waiting?.state, "AwaitingMerge");
+  assert.deepEqual(waiting.wait, {
+    reason: "HeadMoved",
+    checkedAt: await mergeHeardAt(moved),
+  });
+
+  const flight = await finalizing("merge-flight", "PullRequestMerge");
+  await proposalOver(
+    flight,
+    await promotion(flight, "merge-flight"),
+    createdAs(forgeSaid("Open", { url: pullRequest })),
+    mergeReadAs("Unmerged", forgeSaid("Open", { mergeability: "Blocked" })),
+  );
+  assert.equal(
+    (await landingsOf(flight))?.landings[0]?.state,
+    "Running",
+    "a reading of a merge still in flight is not yet a wait",
+  );
+
+  const held = await finalizing("merge-held", "PullRequestMerge");
+  await proposalOver(
+    held,
+    await promotion(held, "merge-held"),
+    createdAs(forgeSaid("Open", { url: pullRequest })),
+    mergeWaitedAs(forgeSaid("Open", { mergeability: "Blocked" })),
+  );
+  await postgresFinalizer(rig.pool).recordHold({
+    claim: await finalizerClaim(rig, held, finalizerIdentity("owner")),
+    kind: "ProposalUnavailable",
+  });
+  assert.equal(
+    (await landingsOf(held))?.landings[0]?.state,
+    "Held",
+    "a hold recorded since the last reading is what holds it now",
+  );
+});
+
 test("a concluded landing whose hold columns are still set answers how it concluded and no hold, and one that escalated answers Unavailable", async () => {
   const landed = await finalizing("held-then-landed", "Push");
   const landedClaim = await finalizerClaim(

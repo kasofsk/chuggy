@@ -83,6 +83,7 @@ import { z } from "zod";
 import { asBoundedText } from "../../interpreter/boundedText.ts";
 import {
   asProposalDisplayUrl,
+  asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
   proposalBodyCharsMax,
@@ -476,6 +477,20 @@ function githubChangeProposalsMergeabilityOf(
   return { mergeability: pull.mergeable === true ? "Mergeable" : "Unknown" };
 }
 
+/** The forge's own word the mergeability was read out of, absent where it said none or none a row could hold. */
+function githubChangeProposalsMergeStateOf(
+  pull: GithubPullRequest,
+): Pick<ChangeProposalEvidence, "mergeState"> {
+  const state =
+    pull.mergeable_state === undefined
+      ? undefined
+      : githubChangeProposalsBranded(
+          pull.mergeable_state,
+          asProposalMergeState,
+        );
+  return state === undefined ? {} : { mergeState: state };
+}
+
 /**
  * The commit a merge left, which this forge names on an open proposal as the
  * trial merge it would make, so only a merged proposal carries one.
@@ -615,6 +630,7 @@ function githubChangeProposalsEvidenceOf(
       body,
       status,
       ...githubChangeProposalsMergeabilityOf(pull),
+      ...githubChangeProposalsMergeStateOf(pull),
       ...merge,
       ...githubChangeProposalsUrlOf(pull, host),
     },
