@@ -46,6 +46,7 @@ test("selecting a plan draws its program, and the body sends the selection and n
     { ...catalogForm(), overrides: { practices: [] } },
     offers,
     { work: "quick", evaluation: "gated" },
+    bound,
   );
   expect(form.program.map((stage) => stage.evaluators.length)).toStrictEqual([
     2, 1,
@@ -64,6 +65,47 @@ test("selecting a plan draws its program, and the body sends the selection and n
   expect("overrides" in sent.body).toBe(false);
 });
 
+test("selecting a finalizer that names a landing seeds the form with it, and a landing the reader moved stands", () => {
+  const offer = creationCatalogOffer();
+  const { configuration } = offer.initialization;
+  const catalog = JSON.parse(configuration.canonical) as {
+    finalizers: Record<string, unknown>;
+  };
+  catalog.finalizers["proposed"] = {
+    landing: { mode: "PullRequest", target: "refs/heads/release" },
+  };
+  const landed = [
+    {
+      ...offer,
+      initialization: {
+        ...offer.initialization,
+        configuration: { ...configuration, canonical: JSON.stringify(catalog) },
+      },
+    },
+  ];
+  const form = creationFormFrom(landed, bound);
+  expect([form.landingMode, form.targetBranchName]).toStrictEqual(["Push", ""]);
+  const proposed = creationSelectionChosen(
+    form,
+    landed,
+    { finalization: "proposed" },
+    bound,
+  );
+  expect([proposed.landingMode, proposed.targetBranchName]).toStrictEqual([
+    "PullRequest",
+    "release",
+  ]);
+  const back = creationSelectionChosen(proposed, landed, {}, bound);
+  expect([back.landingMode, back.targetBranchName]).toStrictEqual(["Push", ""]);
+  const moved = creationSelectionChosen(
+    { ...form, landingMode: "None" },
+    landed,
+    { finalization: "proposed" },
+    bound,
+  );
+  expect(moved.landingMode).toBe("None");
+});
+
 test("a form selecting nothing sends no selection", () => {
   const sent = creationBodyFrom(offers, catalogForm(), bound);
   expect(sent.assembled === "Body" && "selection" in sent.body).toBe(false);
@@ -78,10 +120,15 @@ const context: TicketYamlContext = {
 };
 
 test("a selection written as YAML reads back as the same form", () => {
-  const form = creationSelectionChosen(catalogForm(), offers, {
-    evaluation: "gated",
-    finalization: "approved",
-  });
+  const form = creationSelectionChosen(
+    catalogForm(),
+    offers,
+    {
+      evaluation: "gated",
+      finalization: "approved",
+    },
+    [],
+  );
   const read = ticketYamlRead(ticketYamlOf(form, context), context);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);

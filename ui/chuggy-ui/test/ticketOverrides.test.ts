@@ -250,6 +250,7 @@ test("choosing another configuration keeps what was overridden", () => {
     creationForm({ configuration: "r3", overrides }),
     offers,
     "r4",
+    [],
   );
   expect(chosen.overrides).toStrictEqual(overrides);
 });

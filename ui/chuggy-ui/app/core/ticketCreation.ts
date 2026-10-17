@@ -51,6 +51,7 @@ import { operationStateSentence } from "./codeSentences.ts";
 import {
   configurationCatalogInitialization,
   configurationCatalogOf,
+  configurationCatalogSelected,
   type ConfigurationCatalog,
 } from "./configurationCatalog.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
@@ -479,33 +480,90 @@ export function creationFormFrom(
     images: [],
     checks: [],
     branchName: "",
-    targetBranchName: "",
     repository,
-    landingMode: creationLandingDefault(repositories, repository),
+    ...creationLandingSeed(offers, repositories, {
+      configuration,
+      selection: {},
+      repository,
+    }),
     overrides: {},
     selection: {},
   };
 }
 
+/** A form's landing as a reader sees it: its mode, and the text of its target box. */
+type CreationLanding = Pick<
+  TicketCreationForm,
+  "landingMode" | "targetBranchName"
+>;
+
 /**
- * The form with another repository named. A landing the reader has not moved
- * takes the new repository's default and a moved one stands, because the seed
- * is a starting point and the choice is theirs.
+ * The landing a form is seeded with: the one the finalizer its selection
+ * lands with names, which the ticket takes where its brief names none, and
+ * otherwise its repository's, with no target.
  */
+function creationLandingSeed(
+  offers: readonly CreationOffer[],
+  repositories: readonly ProjectRepositoryResponse[],
+  form: Pick<TicketCreationForm, "configuration" | "selection" | "repository">,
+): CreationLanding {
+  const catalog = creationCatalogOf(
+    creationOfferOf(offers, form.configuration),
+  );
+  const finalizer =
+    catalog === undefined
+      ? undefined
+      : configurationCatalogSelected(catalog, form.selection).finalization;
+  const landing = catalog?.finalizers.find(
+    (each) => each.name === finalizer,
+  )?.landing;
+  if (landing === undefined)
+    return {
+      landingMode: creationLandingDefault(repositories, form.repository),
+      targetBranchName: "",
+    };
+  const target = landing.target ?? "";
+  return {
+    landingMode: landing.mode,
+    targetBranchName: target.startsWith(briefBranchPrefix)
+      ? target.slice(briefBranchPrefix.length)
+      : target,
+  };
+}
+
+/**
+ * A form with something its landing is seeded from changed: a landing the
+ * reader has not moved from the seed takes the new one, and a moved one
+ * stands, because the seed is a starting point and the choice is theirs.
+ */
+function creationLandingReseeded(
+  form: TicketCreationForm,
+  changed: TicketCreationForm,
+  offers: readonly CreationOffer[],
+  repositories: readonly ProjectRepositoryResponse[],
+): TicketCreationForm {
+  const seeded = creationLandingSeed(offers, repositories, form);
+  const unmoved =
+    form.landingMode === seeded.landingMode &&
+    form.targetBranchName === seeded.targetBranchName;
+  return unmoved
+    ? { ...changed, ...creationLandingSeed(offers, repositories, changed) }
+    : changed;
+}
+
+/** The form with another repository named, its landing reseeded where unmoved. */
 export function creationRepositoryChosen(
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
   repository: string,
+  offers: readonly CreationOffer[],
 ): TicketCreationForm {
-  const seeded = creationLandingDefault(repositories, form.repository);
-  return {
-    ...form,
-    repository,
-    landingMode:
-      form.landingMode === seeded
-        ? creationLandingDefault(repositories, repository)
-        : form.landingMode,
-  };
+  return creationLandingReseeded(
+    form,
+    { ...form, repository },
+    offers,
+    repositories,
+  );
 }
 
 /** A program as the widths of its stages, which is all one differs from
@@ -515,14 +573,15 @@ function creationProgramWidths(program: readonly CreationStage[]): string {
 }
 
 /**
- * The form drawn under another configuration or selection. A program the
- * reader has not moved takes the new default and a moved one stands, as a
- * landing does under another repository; everything typed is kept.
+ * The form drawn under another configuration or selection. A program or a
+ * landing the reader has not moved takes the new default and a moved one
+ * stands, as under another repository; everything typed is kept.
  */
 function creationDrawnChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
   drawn: Pick<TicketCreationForm, "configuration" | "selection">,
+  repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
   const seeded =
     creationOfferDrawn(offers, form)?.initialization.defaults ??
@@ -533,11 +592,12 @@ function creationDrawnChosen(
   const unmoved =
     creationProgramWidths(form.program) ===
     creationProgramWidths(seeded.program);
-  return {
-    ...form,
-    ...drawn,
-    program: unmoved ? chosen.program : form.program,
-  };
+  return creationLandingReseeded(
+    form,
+    { ...form, ...drawn, program: unmoved ? chosen.program : form.program },
+    offers,
+    repositories,
+  );
 }
 
 /** The form with another configuration named, and no selection, whose names were the last one's. */
@@ -545,11 +605,14 @@ export function creationConfigurationChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
   name: string,
+  repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return creationDrawnChosen(form, offers, {
-    configuration: name,
-    selection: {},
-  });
+  return creationDrawnChosen(
+    form,
+    offers,
+    { configuration: name, selection: {} },
+    repositories,
+  );
 }
 
 /** The form with another selection from the catalog it is drawn under. */
@@ -557,11 +620,14 @@ export function creationSelectionChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
   selection: ConfigurationSelection,
+  repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return creationDrawnChosen(form, offers, {
-    configuration: form.configuration,
-    selection,
-  });
+  return creationDrawnChosen(
+    form,
+    offers,
+    { configuration: form.configuration, selection },
+    repositories,
+  );
 }
 
 /** A browser's newline, as the one newline this tree stores an intent under. */

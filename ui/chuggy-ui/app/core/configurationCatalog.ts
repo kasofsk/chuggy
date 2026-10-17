@@ -18,6 +18,10 @@ import { z } from "zod";
 
 import { workloadConfigurationVersion } from "../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
+import {
+  briefFinalizationModes,
+  type BriefFinalizationMode,
+} from "../../../../src/contract/rosters.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
 import { configurationModelLabelOf } from "./configurationView.ts";
 
@@ -48,6 +52,13 @@ const catalogSchema = z.looseObject({
       z.string(),
       z.looseObject({
         approvalRequired: z.boolean().optional().catch(undefined),
+        landing: z
+          .looseObject({
+            mode: z.enum(briefFinalizationModes),
+            target: z.string().optional().catch(undefined),
+          })
+          .optional()
+          .catch(undefined),
       }),
     )
     .optional()
@@ -81,6 +92,11 @@ export interface CatalogPlanStage {
 export interface CatalogFinalizer {
   readonly name: string;
   readonly approvalRequired: boolean;
+  /** The landing a ticket it lands takes where its brief names none, and its target where it names one. */
+  readonly landing?: {
+    readonly mode: BriefFinalizationMode;
+    readonly target?: string;
+  };
 }
 
 export interface ConfigurationCatalog {
@@ -134,6 +150,16 @@ export function configurationCatalogOf(
       ([name, finalizer]) => ({
         name,
         approvalRequired: finalizer.approvalRequired ?? false,
+        ...(finalizer.landing === undefined
+          ? {}
+          : {
+              landing: {
+                mode: finalizer.landing.mode,
+                ...(finalizer.landing.target === undefined
+                  ? {}
+                  : { target: finalizer.landing.target }),
+              },
+            }),
       }),
     ),
     defaults: {

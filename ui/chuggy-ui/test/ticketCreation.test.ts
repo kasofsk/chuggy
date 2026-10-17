@@ -626,13 +626,13 @@ test("changing repositories re-seeds an untouched landing and leaves a touched o
   const bound = [...twoBindings, creationBinding(docs)];
   const seeded = creationFormFrom(creationOffers, bound);
   const onPush = { ...seeded, repository: soleRepository };
-  expect(creationRepositoryChosen(onPush, bound, fabric)).toStrictEqual({
+  expect(creationRepositoryChosen(onPush, bound, fabric, [])).toStrictEqual({
     ...onPush,
     repository: fabric,
     landingMode: "PullRequest",
   });
   const touched = { ...onPush, landingMode: "PullRequest" as const };
-  expect(creationRepositoryChosen(touched, bound, docs)).toStrictEqual({
+  expect(creationRepositoryChosen(touched, bound, docs, [])).toStrictEqual({
     ...touched,
     repository: docs,
   });

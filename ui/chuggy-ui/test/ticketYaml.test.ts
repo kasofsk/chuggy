@@ -249,7 +249,12 @@ test("a project offering one configuration draws no key for it, and refuses one"
 
 test("a project offering several writes the choice first, by name, and reads it back", () => {
   const form = {
-    ...creationConfigurationChosen(several.base, several.offers, "development"),
+    ...creationConfigurationChosen(
+      several.base,
+      several.offers,
+      "development",
+      [],
+    ),
     intent: "ship it",
     checks: ["npm test"],
   };
@@ -393,7 +398,12 @@ test("the vocabulary offers the configurations by name, and a program only under
     { label: "development-sonnet", detail: "n-sonnet" },
   ]);
   const chosen = ticketYamlVocabulary(
-    creationConfigurationChosen(several.base, several.offers, "development"),
+    creationConfigurationChosen(
+      several.base,
+      several.offers,
+      "development",
+      [],
+    ),
     several,
   ).map((key) => key.key);
   expect(chosen).toContain("checks");

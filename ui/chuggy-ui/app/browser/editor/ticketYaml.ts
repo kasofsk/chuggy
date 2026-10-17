@@ -717,7 +717,12 @@ function ticketYamlNamed(
   );
   if (read.took === "Problem") return { form: empty, naming: "Refused" };
   return {
-    form: creationConfigurationChosen(empty, context.offers, read.value),
+    form: creationConfigurationChosen(
+      empty,
+      context.offers,
+      read.value,
+      context.repositories,
+    ),
     naming: read.value === "" ? "Unnamed" : "Named",
   };
 }
@@ -751,6 +756,7 @@ function ticketYamlStart(
           named.form,
           context.offers,
           selection.value,
+          context.repositories,
         ),
       };
 }

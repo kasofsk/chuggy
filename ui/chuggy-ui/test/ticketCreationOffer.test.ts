@@ -411,7 +411,7 @@ test("choosing a configuration takes its defaults and keeps what was typed", () 
     intent: "ship the thing",
     checks: ["npm test"],
   };
-  const chosen = creationConfigurationChosen(typed, several, "development");
+  const chosen = creationConfigurationChosen(typed, several, "development", []);
   expect(chosen).toStrictEqual({
     ...typed,
     configuration: "development",
@@ -421,6 +421,7 @@ test("choosing a configuration takes its defaults and keeps what was typed", () 
     chosen,
     several,
     "development-sonnet",
+    [],
   );
   expect(moved.program).toStrictEqual(sonnet.initialization.defaults.program);
   expect(moved.title).toBe("Ship it");
@@ -432,7 +433,8 @@ test("a program the reader moved stands under another configuration", () => {
     program: [creationStageOf(3, 1)],
   };
   expect(
-    creationConfigurationChosen(widened, several, "development-sonnet").program,
+    creationConfigurationChosen(widened, several, "development-sonnet", [])
+      .program,
   ).toStrictEqual([creationStageOf(3, 1)]);
 });
 
