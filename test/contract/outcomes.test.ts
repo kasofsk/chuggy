@@ -9,6 +9,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { errorCodes } from "fastify";
 import { z } from "zod";
 
 import {
@@ -142,6 +143,64 @@ test("a raise from inside the server tells the caller nothing about it", () => {
     "The request is invalid.",
   );
   assert.equal(refusalMessage(new RangeError("")), "The request is invalid.");
+});
+
+/** A fault carrying Fastify's own words for an empty body under a code this API does not name. */
+const unnamedBodyFault = Object.assign(
+  new Error(new errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY().message),
+  { statusCode: 400, code: "FST_ERR_UNNAMED" },
+);
+
+test("a body Fastify refused is named in this API's words, at Fastify's status, by its code alone", () => {
+  const cases: readonly (readonly [Error, number, string, RegExp])[] = [
+    [
+      new errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY(),
+      400,
+      "InvalidRequest",
+      /^The request body is empty/u,
+    ],
+    [
+      new errorCodes.FST_ERR_CTP_INVALID_JSON_BODY(),
+      400,
+      "InvalidRequest",
+      /^The request body could not be parsed as JSON/u,
+    ],
+    [
+      new errorCodes.FST_ERR_CTP_INVALID_MEDIA_TYPE(),
+      415,
+      "InvalidRequest",
+      /^The request media type is not one this route reads/u,
+    ],
+    [
+      new errorCodes.FST_ERR_CTP_INVALID_CONTENT_LENGTH(),
+      400,
+      "InvalidRequest",
+      /^The request body is not the length/u,
+    ],
+    [
+      new errorCodes.FST_ERR_CTP_BODY_TOO_LARGE(),
+      413,
+      "BodyTooLarge",
+      /^The request body is too large/u,
+    ],
+    [unnamedBodyFault, 400, "InvalidRequest", /^The request is invalid\.$/u],
+  ];
+  for (const [failure, status, code, saying] of populated(
+    cases,
+    "the body faults",
+  )) {
+    const refusal = failureResponse(failure);
+    assert.equal(refusal.status, status, failure.message);
+    const outcome = classified(refusal);
+    assert.equal(
+      outcome.outcome === "Rejected" ? outcome.code : undefined,
+      code,
+      failure.message,
+    );
+    const { message } = errorEnvelopeSchema.parse(refusal.body).error;
+    assert.match(message, saying);
+    assert.doesNotMatch(message, /application\/json/u);
+  }
 });
 
 test("a refusal renders bounded issues and a bounded reason", () => {

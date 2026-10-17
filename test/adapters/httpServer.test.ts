@@ -8,6 +8,7 @@ import { configurationDocumentJsonSchema } from "../../src/contract/configuratio
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   imageMediaTypes,
+  nativeHttpBodyBytesMax,
   nativeHttpMediaType,
 } from "../../src/contract/http.ts";
 import {
@@ -1608,6 +1609,72 @@ test("a draft's deletion reaches the store however its bodyless request is frame
     calls,
     bodylessFramings.map(() => "deleteDraft:1"),
   );
+});
+
+test("a body the parsers refuse is answered at Fastify's status in this API's own words, and reaches no store", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const drafts = "/api/v1/tenants/tenant/projects/project/drafts";
+  const refused = [
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body is empty/u,
+    },
+    {
+      method: "PUT",
+      url: `${drafts}/1`,
+      type: nativeHttpMediaType,
+      payload: "",
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body is empty/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      payload: "{",
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body could not be parsed as JSON/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: "application/xml",
+      payload: "<draft/>",
+      status: 415,
+      code: "InvalidRequest",
+      saying: /^The request media type is not one this route reads/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      payload: JSON.stringify({ padding: "x".repeat(nativeHttpBodyBytesMax) }),
+      status: 413,
+      code: "BodyTooLarge",
+      saying: /^The request body is too large/u,
+    },
+  ] as const;
+  for (const { method, url, type, status, code, saying, ...sent } of refused) {
+    const answered = await app.inject({
+      method,
+      url,
+      headers: { authorization: "Bearer valid", "content-type": type },
+      ...sent,
+    });
+    const { error } = answered.json<HttpErrorEnvelope>();
+    assert.equal(answered.statusCode, status, error.message);
+    assert.equal(error.code, code, error.message);
+    assert.match(error.message, saying);
+    assert.doesNotMatch(error.message, /application\/json/u);
+  }
+  assert.deepEqual(calls, []);
 });
 
 test("a drafts page routes its cursor and its bound, and nothing else", async () => {

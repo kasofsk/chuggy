@@ -254,14 +254,48 @@ function requestShapeFault(failure: unknown): boolean {
   );
 }
 
+function transportFaultField(failure: unknown, field: string): unknown {
+  return typeof failure === "object" && failure !== null
+    ? (failure as Readonly<Record<string, unknown>>)[field]
+    : undefined;
+}
+
 function transportFaultStatus(failure: unknown): number | undefined {
-  if (typeof failure !== "object" || failure === null) return undefined;
-  const status = (failure as Readonly<Record<string, unknown>>)["statusCode"];
+  const status = transportFaultField(failure, "statusCode");
   return typeof status === "number" &&
     status >= clientFaultStatusMin &&
     status <= clientFaultStatusMax
     ? status
     : undefined;
+}
+
+/**
+ * Why Fastify refused a body before any route ran, keyed by its error code. Its
+ * own messages are not relayed, since its JSON ones name `application/json` and
+ * this API reads a type of its own.
+ */
+const transportFaultReasons: ReadonlyMap<string, string> = new Map([
+  [
+    "FST_ERR_CTP_EMPTY_JSON_BODY",
+    "The request body is empty, but its media type says it carries JSON.",
+  ],
+  [
+    "FST_ERR_CTP_INVALID_JSON_BODY",
+    "The request body could not be parsed as JSON.",
+  ],
+  [
+    "FST_ERR_CTP_INVALID_MEDIA_TYPE",
+    "The request media type is not one this route reads.",
+  ],
+  [
+    "FST_ERR_CTP_INVALID_CONTENT_LENGTH",
+    "The request body is not the length its content-length header gives.",
+  ],
+]);
+
+function transportFaultReason(failure: unknown): string | undefined {
+  const code = transportFaultField(failure, "code");
+  return typeof code === "string" ? transportFaultReasons.get(code) : undefined;
 }
 
 /**
@@ -277,7 +311,8 @@ export function failureResponse(failure: unknown): NativeHttpResponse {
       413,
       nativeHttpError("BodyTooLarge", "The request body is too large."),
     );
-  if (status !== undefined) return invalidRequest(status);
+  if (status !== undefined)
+    return invalidRequest(status, transportFaultReason(failure));
   if (requestShapeFault(failure))
     return invalidRequest(400, invalidRequestReason(failure));
   return response(
