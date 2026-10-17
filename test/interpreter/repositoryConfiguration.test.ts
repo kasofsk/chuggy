@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -16,6 +17,7 @@ import {
   type ProjectRepositoryBindingRead,
   type RepositoryConfigurationIgnored,
   type RepositoryConfigurationImportOutcome,
+  type RepositoryConfigurationReferenced,
   type RepositoryConfigurationImportPorts,
   type RepositoryConfigurationSnapshotRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -96,6 +98,20 @@ test("every declaration this tree makes imports, each one releasable", () => {
     name.endsWith(".json"),
   );
   assert.ok(names.includes("basic-coding.json"));
+  const referenced = new Map<string, RepositoryConfigurationReferenced>(
+    readdirSync(repositoryDeclarationRoot, {
+      recursive: true,
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isFile())
+      .map((entry) => {
+        const path = join(entry.parentPath, entry.name);
+        return [
+          path,
+          { path, found: "File", content: readFileSync(path, "utf8") },
+        ];
+      }),
+  );
   const found = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -104,6 +120,7 @@ test("every declaration this tree makes imports, each one releasable", () => {
       kind: "File",
       content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
     })),
+    referenced,
   });
   assert.equal(found.readiness, "Ready", JSON.stringify(found));
   if (found.readiness !== "Ready") return;
