@@ -6,7 +6,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
-import { imageMediaTypes } from "../../src/contract/http.ts";
+import {
+  imageMediaTypes,
+  nativeHttpBodyBytesMax,
+  nativeHttpMediaType,
+} from "../../src/contract/http.ts";
 import {
   briefIntentCharsMax,
   briefLineCharsMax,
@@ -1568,6 +1572,107 @@ test("a draft refused for its intent is told the field and what to change", asyn
     const envelope = answered.json<HttpErrorEnvelope>();
     assert.equal(envelope.error.code, "InvalidRequest");
     assert.match(envelope.error.message, saying);
+  }
+  assert.deepEqual(calls, []);
+});
+
+/** The ways a bodyless request arrives, the first two being how a session's tool and a plain client send one. */
+const bodylessFramings: readonly Readonly<Record<string, string>>[] = [
+  { "content-type": nativeHttpMediaType },
+  {},
+  { "content-type": nativeHttpMediaType, "content-length": "0" },
+  { "transfer-encoding": "chunked" },
+  { "content-type": "application/octet-stream" },
+];
+
+test("a draft's deletion reaches the store however its bodyless request is framed, the API's own media type included", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  for (const framing of bodylessFramings) {
+    const answered = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/tenants/tenant/projects/project/drafts/1?expectedVersion=1",
+      headers: {
+        authorization: "Bearer valid",
+        accept: nativeHttpMediaType,
+        ...framing,
+      },
+    });
+    assert.equal(answered.statusCode, 404, JSON.stringify(framing));
+    assert.equal(
+      answered.json<HttpErrorEnvelope>().error.code,
+      "NotFound",
+      "the store's own answer, not a refusal of the framing",
+    );
+  }
+  assert.deepEqual(
+    calls,
+    bodylessFramings.map(() => "deleteDraft:1"),
+  );
+});
+
+test("a body the parsers refuse is answered at Fastify's status in this API's own words, and reaches no store", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const drafts = "/api/v1/tenants/tenant/projects/project/drafts";
+  const refused = [
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body is empty/u,
+    },
+    {
+      method: "PUT",
+      url: `${drafts}/1`,
+      type: nativeHttpMediaType,
+      payload: "",
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body is empty/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      payload: "{",
+      status: 400,
+      code: "InvalidRequest",
+      saying: /^The request body could not be parsed as JSON/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: "application/xml",
+      payload: "<draft/>",
+      status: 415,
+      code: "InvalidRequest",
+      saying: /^The request media type is not one this route reads/u,
+    },
+    {
+      method: "POST",
+      url: drafts,
+      type: nativeHttpMediaType,
+      payload: JSON.stringify({ padding: "x".repeat(nativeHttpBodyBytesMax) }),
+      status: 413,
+      code: "BodyTooLarge",
+      saying: /^The request body is too large/u,
+    },
+  ] as const;
+  for (const { method, url, type, status, code, saying, ...sent } of refused) {
+    const answered = await app.inject({
+      method,
+      url,
+      headers: { authorization: "Bearer valid", "content-type": type },
+      ...sent,
+    });
+    const { error } = answered.json<HttpErrorEnvelope>();
+    assert.equal(answered.statusCode, status, error.message);
+    assert.equal(error.code, code, error.message);
+    assert.match(error.message, saying);
+    assert.doesNotMatch(error.message, /application\/json/u);
   }
   assert.deepEqual(calls, []);
 });

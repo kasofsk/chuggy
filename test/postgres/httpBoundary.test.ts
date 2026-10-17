@@ -561,3 +561,93 @@ test("real HTTP ingress files a draft's overrides and a released ticket's read a
     await harness.close();
   }
 });
+
+/** How a draft is deleted: by a DELETE with no body, framed as a session's tool frames one or as a plain client does. */
+const ingressDeletionHeaders: readonly Readonly<Record<string, string>>[] = [
+  {
+    authorization: "Bearer token",
+    accept: nativeHttpMediaType,
+    "content-type": nativeHttpMediaType,
+  },
+  { authorization: "Bearer token" },
+];
+
+/**
+ * Files a draft and deletes it with a bodyless DELETE framed by `headers`, first
+ * behind the `authoringVersion` its read reports and then at it.
+ */
+async function ingressDraftDeleted(
+  root: string,
+  revision: string,
+  repository: string,
+  headers: Readonly<Record<string, string>>,
+): Promise<void> {
+  const { ticket } = await ingressDraft(root, revision, repository, "Do it.");
+  const draft = `${root}/drafts/${String(ticket)}`;
+  const read = await fetch(draft, { headers: ingressHeaders });
+  const { authoringVersion } = draftResponseSchema.parse(await read.json());
+  const deletion = (expectedVersion: number) =>
+    fetch(`${draft}?expectedVersion=${String(expectedVersion)}`, {
+      method: "DELETE",
+      headers,
+      redirect: "manual",
+    });
+  const stale = await deletion(authoringVersion - 1);
+  assert.deepEqual(
+    { status: stale.status, body: await stale.json() },
+    {
+      status: 409,
+      body: {
+        error: { code: "DraftChanged", message: "The draft has changed." },
+        currentVersion: authoringVersion,
+      },
+    },
+  );
+  const deleted = await deletion(authoringVersion);
+  const answered = await deleted.text();
+  assert.equal(deleted.status, 200, answered);
+  assert.equal(
+    draftResponseSchema.parse(JSON.parse(answered)).state,
+    "Deleted",
+  );
+}
+
+/**
+ * A draft's deletion over the REAL composition, fenced on the `authoringVersion`
+ * its read reports, and sent by `fetch` as a session's tool sends it. A fence
+ * behind that version is a conflict naming the current one, and leaves the
+ * draft in place.
+ */
+test("real HTTP ingress deletes a draft at the version its read reports, under the API's media type with no body or with no media type", async () => {
+  const harness = await postgresHarnessOpen();
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "http-draft-deletion",
+  );
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate"]),
+  });
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-draft-deletion")
+      .authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  assert.equal(configured.created, "Created");
+  const { pool, app } = composedIngress(harness.access);
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  try {
+    for (const headers of ingressDeletionHeaders)
+      await ingressDraftDeleted(root, revision, repository, headers);
+  } finally {
+    await app.close();
+    await pool.end();
+    await harness.close();
+  }
+});

@@ -1317,13 +1317,13 @@ function registerPersonalRunners(
 }
 
 /**
- * The allowlist routes take no body, so they read none: a proxy may forward a
- * bodyless write as an empty chunked body or under some media type, and a
- * parser refusing that would refuse the write before it is seen.
+ * Registers routes that take no body in a scope that reads none. A client or a
+ * proxy may send a bodyless write under a media type or as an empty chunked
+ * body, and a parser refusing that would refuse the write before it is seen.
  */
-function registerPersonalRunnerProjects(
+function registerBodylessRoutes(
   app: FastifyInstance,
-  runners: PersonalRunnerService,
+  routes: (scope: FastifyInstance) => void,
 ): void {
   void app.register((scope, _options, registered) => {
     scope.removeAllContentTypeParsers();
@@ -1334,8 +1334,17 @@ function registerPersonalRunnerProjects(
         parsed(null, undefined);
       },
     );
-    registerPersonalRunnerProjectRoutes(scope, runners);
+    routes(scope);
     registered();
+  });
+}
+
+function registerPersonalRunnerProjects(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  registerBodylessRoutes(app, (scope) => {
+    registerPersonalRunnerProjectRoutes(scope, runners);
   });
 }
 
@@ -1927,14 +1936,24 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
       nativeHttpSend(reply, draftRevisionResponse(result));
     },
   );
-  app.delete(`${root}/:ticket`, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["expectedVersion"]);
-    const result = await web.deleteDraft(principalOf(request), {
-      partition: partitionOf(request),
-      ticket: asTicketIdField(record(request.params), "ticket"),
-      expectedVersion: integerField(query, "expectedVersion"),
+  registerDraftDeletion(app, web);
+}
+
+/** A draft is deleted by its address and the version in its query, never by a body. */
+function registerDraftDeletion(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerBodylessRoutes(app, (scope) => {
+    scope.delete(nativeHttpRoutes.draft, async (request, reply) => {
+      const query = fieldsOnly(request.query, ["expectedVersion"]);
+      const result = await web.deleteDraft(principalOf(request), {
+        partition: partitionOf(request),
+        ticket: asTicketIdField(record(request.params), "ticket"),
+        expectedVersion: integerField(query, "expectedVersion"),
+      });
+      nativeHttpSend(reply, draftDeletionResponse(result));
     });
-    nativeHttpSend(reply, draftDeletionResponse(result));
   });
 }
 
