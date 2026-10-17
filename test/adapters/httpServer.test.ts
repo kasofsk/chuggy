@@ -6,7 +6,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
-import { imageMediaTypes } from "../../src/contract/http.ts";
+import {
+  imageMediaTypes,
+  nativeHttpMediaType,
+} from "../../src/contract/http.ts";
 import {
   briefIntentCharsMax,
   briefLineCharsMax,
@@ -1570,6 +1573,41 @@ test("a draft refused for its intent is told the field and what to change", asyn
     assert.match(envelope.error.message, saying);
   }
   assert.deepEqual(calls, []);
+});
+
+/** The ways a bodyless request arrives, the first two being how a session's tool and a plain client send one. */
+const bodylessFramings: readonly Readonly<Record<string, string>>[] = [
+  { "content-type": nativeHttpMediaType },
+  {},
+  { "content-type": nativeHttpMediaType, "content-length": "0" },
+  { "transfer-encoding": "chunked" },
+  { "content-type": "application/octet-stream" },
+];
+
+test("a draft's deletion reaches the store however its bodyless request is framed, the API's own media type included", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  for (const framing of bodylessFramings) {
+    const answered = await app.inject({
+      method: "DELETE",
+      url: "/api/v1/tenants/tenant/projects/project/drafts/1?expectedVersion=1",
+      headers: {
+        authorization: "Bearer valid",
+        accept: nativeHttpMediaType,
+        ...framing,
+      },
+    });
+    assert.equal(answered.statusCode, 404, JSON.stringify(framing));
+    assert.equal(
+      answered.json<HttpErrorEnvelope>().error.code,
+      "NotFound",
+      "the store's own answer, not a refusal of the framing",
+    );
+  }
+  assert.deepEqual(
+    calls,
+    bodylessFramings.map(() => "deleteDraft:1"),
+  );
 });
 
 test("a drafts page routes its cursor and its bound, and nothing else", async () => {
