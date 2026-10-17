@@ -711,11 +711,11 @@ function repositoryConfigurationSnapshots(
 /**
  * The reach route's service: where a ticket landed and what was reported are
  * read over the API pool, and ancestry is asked of one adapter for the whole
- * process, over the scratch the configuration reader opens and behind what the
- * reads keep of its answers. A deployment naming no scratch root can ask
- * nothing, so every commit is `Unknown` there; the route is composed either
- * way, because a path nothing serves is answered by the authentication hook
- * and not as a resource that is not there.
+ * process, over the scratch root the configuration reader is given and behind
+ * what the reads keep of its answers. A deployment naming no scratch root can
+ * ask nothing, so every commit is `Unknown` there; the route is composed
+ * either way, because a path nothing serves is answered by the authentication
+ * hook and not as a resource that is not there.
  */
 export function nativeActionReach(
   pools: Pick<NativePools, "pool">,

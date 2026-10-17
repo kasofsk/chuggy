@@ -15,7 +15,22 @@
  * already fetched, and only where the configuration directory declares
  * nothing. The configuration directory's own read keeps the bound it is
  * refused past, so a large `.chug/` is named in part rather than refused.
+ *
+ * A READ FETCHES ONE COMMIT AND ITS TREES, AND THEN EACH BLOB IT READS. The
+ * commit comes shallow and without contents, so no earlier commit and no file
+ * the read does not ask for is transferred, and `cat-file` fetches each blob it
+ * is asked for under the credential the commit was fetched with. A blob read is
+ * a read of the remote, so one that fails says the commit is not held yet
+ * rather than refusing it. The remote is named and configured on each call,
+ * because git takes a remote given only by its address as the promisor's name,
+ * and a filesystem path is not a name it accepts.
+ *
+ * THE SCRATCH IS A DIRECTORY OF ITS OWN beneath the root this adapter is given.
+ * git believes a shallow file wherever it finds one, and a history left shallow
+ * here would be wrong for any reader answering from the whole of it.
  */
+
+import { join } from "node:path";
 
 import { textCodePointsCount } from "../../contract/http.ts";
 import { assertNever } from "../../domain/assertNever.ts";
@@ -23,6 +38,7 @@ import type {
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
+  RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import {
   repositoryActionRoot,
@@ -135,10 +151,31 @@ type GitRepositoryConfigurationFetched =
       readonly evidence: RepositoryGitEvidence;
     };
 
+/** A commit fetched into the scratch, and the credential its blobs are fetched under as they are read. */
+interface GitRepositoryConfigurationCommit {
+  readonly request: RepositoryDeclarationSnapshotRequest;
+  readonly credential?: RepositoryCredential;
+}
+
+/** What reading one blob came to: its text, past the bound it is read under, or not fetched. */
+type GitRepositoryConfigurationBlobRead =
+  | { readonly blob: "Text"; readonly text: string }
+  | { readonly blob: "TooLarge" }
+  | { readonly blob: "Unfetched" };
+
 const gitRepositoryConfigurationTreeOutputBytesMax =
   (repositoryDeclarationsMax + 1) * 512;
 const gitRepositoryConfigurationBlobOutputBytesMax =
   repositoryDeclarationFileCharsMax * 4 + 1;
+
+/** The directory beneath the given root this adapter's scratch is opened in, which no repository's digest can name. */
+const gitRepositoryConfigurationScratchDirectory = "configuration";
+
+/** The name the repository is given as the promisor remote a read fetches from. */
+const gitRepositoryConfigurationRemote = "configuration-source";
+
+/** What a fetch leaves out of the commit, each blob being fetched only as it is read. */
+const gitRepositoryConfigurationFilter = "blob:none";
 
 /** A credential that resolved to none, as evidence: which way, and the mint's cause where it gave one. */
 function gitRepositoryConfigurationCredentialEvidence(
@@ -193,6 +230,26 @@ function gitRepositoryConfigurationExited(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/**
+ * The repository as the promisor remote of one call, configured on the call
+ * and so already registered when a fetch would write it into the scratch. The
+ * address is a configuration value, which a repository beginning with a dash
+ * cannot turn into an option.
+ */
+function gitRepositoryConfigurationRemoteArguments(
+  repository: RepositoryId,
+): readonly string[] {
+  const remote = `remote.${gitRepositoryConfigurationRemote}`;
+  return [
+    "-c",
+    `${remote}.url=${repository}`,
+    "-c",
+    `${remote}.promisor=true`,
+    "-c",
+    `${remote}.partialclonefilter=${gitRepositoryConfigurationFilter}`,
+  ];
+}
+
 async function gitRepositoryConfigurationFetch(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
@@ -215,13 +272,14 @@ async function gitRepositoryConfigurationFetch(
     ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
     argv: [
+      ...gitRepositoryConfigurationRemoteArguments(repository),
       "fetch",
       "--quiet",
       "--no-tags",
-      ...scratchRemoteArguments(
-        repository,
-        `+${request.commit}:refs/chuggy/configuration/${request.commit}`,
-      ),
+      "--depth=1",
+      `--filter=${gitRepositoryConfigurationFilter}`,
+      gitRepositoryConfigurationRemote,
+      `+${request.commit}:refs/chuggy/configuration/${request.commit}`,
     ],
   });
   return gitRepositoryConfigurationExited(fetched)
@@ -236,7 +294,7 @@ function gitRepositoryConfigurationEntries(
   const skipped: string[] = [];
   for (const row of stdout.split("\0")) {
     if (row === "") continue;
-    const matched = /^(\d{6}) blob ([0-9a-f]+) +\d+\t([^\0]+)$/u.exec(row);
+    const matched = /^(\d{6}) blob ([0-9a-f]+)\t([^\0]+)$/u.exec(row);
     if (matched === null) return undefined;
     const [, mode, object, path] = matched;
     if (mode === undefined || object === undefined || path === undefined)
@@ -251,6 +309,7 @@ function gitRepositoryConfigurationEntries(
   return { entries, skipped };
 }
 
+/** One directory's entries at a fetched commit, listed without their sizes, which a scratch holding no blob would fetch every one of to print. */
 async function gitRepositoryConfigurationTree(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
@@ -259,49 +318,84 @@ async function gitRepositoryConfigurationTree(
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
     timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: ["ls-tree", "-r", "-z", "--long", request.commit, "--", root],
+    argv: ["ls-tree", "-r", "-z", request.commit, "--", root],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
   if (!gitRepositoryConfigurationExited(ran)) return "Refused";
   return gitRepositoryConfigurationEntries(ran.stdout) ?? "Refused";
 }
 
+/**
+ * One blob of a fetched commit, fetched from the repository as it is read
+ * under the commit's credential and the local bound. A blob the scratch does
+ * not hold arrives whole before `cat-file` writes any of it, so the output
+ * bound says how large it is and never how much was transferred.
+ */
+async function gitRepositoryConfigurationBlob(
+  own: GitRepositoryConfigurationState,
+  commit: GitRepositoryConfigurationCommit,
+  object: string,
+): Promise<GitRepositoryConfigurationBlobRead> {
+  const repository = commit.request.repository.repository;
+  const ran = await scratchRun(own.scratch, {
+    repository,
+    ...(commit.credential === undefined
+      ? {}
+      : { credential: commit.credential }),
+    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    argv: [
+      ...gitRepositoryConfigurationRemoteArguments(repository),
+      "cat-file",
+      "blob",
+      object,
+    ],
+    outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
+  });
+  if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling")
+    return { blob: "TooLarge" };
+  if (!gitRepositoryConfigurationExited(ran)) return { blob: "Unfetched" };
+  return textCodePointsCount(ran.stdout) > repositoryDeclarationFileCharsMax
+    ? { blob: "TooLarge" }
+    : { blob: "Text", text: ran.stdout };
+}
+
 async function gitRepositoryConfigurationFile(
   own: GitRepositoryConfigurationState,
-  request: RepositoryDeclarationSnapshotRequest,
+  commit: GitRepositoryConfigurationCommit,
   entry: GitRepositoryConfigurationEntry,
-): Promise<RepositoryDeclarationFile | undefined> {
+): Promise<RepositoryDeclarationFile | "Refused" | "Unfetched"> {
   if (
     entry.mode !== "100644" &&
     entry.mode !== "100755" &&
     entry.mode !== "120000"
   )
-    return undefined;
-  const ran = await scratchRun(own.scratch, {
-    repository: request.repository.repository,
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: ["cat-file", "blob", entry.object],
-    outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
-  });
-  if (!gitRepositoryConfigurationExited(ran)) return undefined;
-  if (textCodePointsCount(ran.stdout) > repositoryDeclarationFileCharsMax)
-    return undefined;
-  return {
-    path: entry.path,
-    kind: entry.mode === "120000" ? "Symlink" : "File",
-    content: ran.stdout,
-  };
+    return "Refused";
+  const read = await gitRepositoryConfigurationBlob(own, commit, entry.object);
+  switch (read.blob) {
+    case "Text":
+      return {
+        path: entry.path,
+        kind: entry.mode === "120000" ? "Symlink" : "File",
+        content: read.text,
+      };
+    case "TooLarge":
+      return "Refused";
+    case "Unfetched":
+      return "Unfetched";
+    default:
+      return assertNever(read);
+  }
 }
 
 async function gitRepositoryConfigurationFiles(
   own: GitRepositoryConfigurationState,
-  request: RepositoryDeclarationSnapshotRequest,
+  commit: GitRepositoryConfigurationCommit,
   entries: readonly GitRepositoryConfigurationEntry[],
-): Promise<readonly RepositoryDeclarationFile[] | undefined> {
+): Promise<readonly RepositoryDeclarationFile[] | "Refused" | "Unfetched"> {
   const files: RepositoryDeclarationFile[] = [];
   for (const entry of entries) {
-    const file = await gitRepositoryConfigurationFile(own, request, entry);
-    if (file === undefined) return undefined;
+    const file = await gitRepositoryConfigurationFile(own, commit, entry);
+    if (file === "Refused" || file === "Unfetched") return file;
     files.push(file);
   }
   return files;
@@ -312,7 +406,10 @@ async function gitRepositoryConfigurationFetched(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
 ): Promise<
-  | { readonly read: "Fetched" }
+  | {
+      readonly read: "Fetched";
+      readonly commit: GitRepositoryConfigurationCommit;
+    }
   | Exclude<RepositoryDeclarationSnapshotRead, { readonly read: "Snapshot" }>
 > {
   const authorization = await gitRepositoryConfigurationCredential(
@@ -325,12 +422,14 @@ async function gitRepositoryConfigurationFetched(
       unavailable: "Credential",
       evidence: authorization.evidence,
     };
+  const credential =
+    authorization.authorized === "Credential"
+      ? authorization.credential
+      : undefined;
   const fetched = await gitRepositoryConfigurationFetch(
     own,
     request,
-    authorization.authorized === "Credential"
-      ? authorization.credential
-      : undefined,
+    credential,
   );
   if (fetched.fetched === "Unavailable")
     return {
@@ -343,7 +442,13 @@ async function gitRepositoryConfigurationFetched(
     };
   return fetched.fetched === "Absent"
     ? { read: "Absent" }
-    : { read: "Fetched" };
+    : {
+        read: "Fetched",
+        commit: {
+          request,
+          ...(credential === undefined ? {} : { credential }),
+        },
+      };
 }
 
 /** The JSON blobs one commit's tree holds under `root`, which are none where it holds no such directory. */
@@ -358,12 +463,12 @@ async function gitRepositoryConfigurationDirectory(
   if (tree === "Refused") return { read: "Refused" };
   const files = await gitRepositoryConfigurationFiles(
     own,
-    request,
+    fetched.commit,
     tree.entries,
   );
-  return files === undefined
-    ? { read: "Refused" }
-    : { read: "Snapshot", files, skipped: tree.skipped };
+  if (files === "Refused") return { read: "Refused" };
+  if (files === "Unfetched") return { read: "Absent" };
+  return { read: "Snapshot", files, skipped: tree.skipped };
 }
 
 function gitRepositoryConfigurationListingEntries(
@@ -413,16 +518,14 @@ async function gitRepositoryConfigurationReferencedEntry(
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
     timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: ["ls-tree", "-z", "--long", request.commit, "--", path],
+    argv: ["ls-tree", "-z", request.commit, "--", path],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
   if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling") return "Absent";
   if (!gitRepositoryConfigurationExited(ran)) return "Refused";
   for (const row of ran.stdout.split("\0")) {
     const matched =
-      /^(\d{6}) (?:blob|tree|commit) ([0-9a-f]+) +(?:\d+|-)\t([^\0]+)$/u.exec(
-        row,
-      );
+      /^(\d{6}) (?:blob|tree|commit) ([0-9a-f]+)\t([^\0]+)$/u.exec(row);
     const [, mode, object, listed] = matched ?? [];
     if (mode !== undefined && object !== undefined && listed === path)
       return { mode, object, path };
@@ -433,12 +536,12 @@ async function gitRepositoryConfigurationReferencedEntry(
 /** One referenced path as found: a regular file's text, a symbolic link, a blob past the bound, or nothing a file. */
 async function gitRepositoryConfigurationReferencedFile(
   own: GitRepositoryConfigurationState,
-  request: RepositoryDeclarationSnapshotRequest,
+  commit: GitRepositoryConfigurationCommit,
   path: string,
-): Promise<RepositoryConfigurationReferenced | "Refused"> {
+): Promise<RepositoryConfigurationReferenced | "Refused" | "Unfetched"> {
   const entry = await gitRepositoryConfigurationReferencedEntry(
     own,
-    request,
+    commit.request,
     path,
   );
   if (entry === "Refused") return "Refused";
@@ -446,18 +549,17 @@ async function gitRepositoryConfigurationReferencedFile(
   if (entry.mode === "120000") return { path, found: "Symlink" };
   if (entry.mode !== "100644" && entry.mode !== "100755")
     return { path, found: "Absent" };
-  const ran = await scratchRun(own.scratch, {
-    repository: request.repository.repository,
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: ["cat-file", "blob", entry.object],
-    outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
-  });
-  if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling")
-    return { path, found: "TooLarge" };
-  if (!gitRepositoryConfigurationExited(ran)) return "Refused";
-  return textCodePointsCount(ran.stdout) > repositoryDeclarationFileCharsMax
-    ? { path, found: "TooLarge" }
-    : { path, found: "File", content: ran.stdout };
+  const read = await gitRepositoryConfigurationBlob(own, commit, entry.object);
+  switch (read.blob) {
+    case "Text":
+      return { path, found: "File", content: read.text };
+    case "TooLarge":
+      return { path, found: "TooLarge" };
+    case "Unfetched":
+      return "Unfetched";
+    default:
+      return assertNever(read);
+  }
 }
 
 /** The files a catalog names at the commit its snapshot was read at, fetched again under the same rule. */
@@ -483,10 +585,11 @@ async function gitRepositoryConfigurationReferenced(
   for (const path of paths) {
     const file = await gitRepositoryConfigurationReferencedFile(
       own,
-      request,
+      fetched.commit,
       path,
     );
     if (file === "Refused") return { read: "Refused", refused: "Snapshot" };
+    if (file === "Unfetched") return { read: "Absent", absent: "Commit" };
     files.push(file);
   }
   return { read: "Referenced", files };
@@ -589,7 +692,10 @@ export function gitRepositoryConfiguration(
   RepositoryDefaultBranchPort {
   const own: GitRepositoryConfigurationState = {
     scratch: scratchOpen({
-      directory: options.scratchDirectory,
+      directory: join(
+        options.scratchDirectory,
+        gitRepositoryConfigurationScratchDirectory,
+      ),
       identity: options.identity,
       environment: options.environment,
       credentialUsername:

@@ -3,18 +3,26 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
+  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
+import { gitCommitAncestry } from "../../src/adapters/git/gitCommitAncestry.ts";
 import { gitRepositoryConfiguration } from "../../src/adapters/git/gitRepositoryConfiguration.ts";
-import type { GitEnvironment } from "../../src/adapters/git/gitRun.ts";
+import {
+  gitCredentialHelperText,
+  type GitEnvironment,
+} from "../../src/adapters/git/gitRun.ts";
+import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
 import {
   asGitObjectId,
   asRepositoryCredential,
@@ -106,29 +114,48 @@ function fixtureCredentials(
   return { credential: () => Promise.resolve(resolved) };
 }
 
+/** The credential every port is given unless a test says otherwise. */
+const fixtureCredential: CredentialResolved = {
+  resolved: "Credential",
+  credential: asRepositoryCredential("credential"),
+};
+
+/** The root every port of one fixture opens its scratch beneath. */
+function fixtureScratch(fixture: Fixture): string {
+  return join(fixture.directory, "scratch");
+}
+
 function fixturePort(
   fixture: Fixture,
-  resolved: CredentialResolved = {
-    resolved: "Credential",
-    credential: asRepositoryCredential("credential"),
-  },
-  stoodIn?: GitEnvironment,
+  resolved: CredentialResolved = fixtureCredential,
+  environment: GitEnvironment = process.env,
+  remoteTimeoutSecsMax?: number,
 ) {
   return gitRepositoryConfiguration({
-    scratchDirectory: join(fixture.directory, "scratch"),
+    scratchDirectory: fixtureScratch(fixture),
     identity: { name: "chug", email: "chug@example.test" },
-    environment: stoodIn ?? process.env,
+    environment,
     credentials: fixtureCredentials(resolved),
-    ...(stoodIn === undefined ? {} : { remoteTimeoutSecsMax: 1 }),
+    ...(remoteTimeoutSecsMax === undefined ? {} : { remoteTimeoutSecsMax }),
   });
 }
 
-/** A port whose `ls-remote` goes through the git stand-in one way, every other call reaching git as it is. */
-function fixtureStoodIn(fixture: Fixture, fault: GitStandInFault) {
+/** A port whose calls of one verb go through the git stand-in one way, every other call reaching git as it is. */
+function fixtureStoodIn(
+  fixture: Fixture,
+  verb: string,
+  fault: GitStandInFault,
+  remoteTimeoutSecsMax?: number,
+) {
   const standIn = join(fixture.directory, "stand-in");
-  const path = gitStandInOpen(standIn, ["ls-remote"]);
-  gitStandInFaulted(standIn, "ls-remote", fault);
-  return fixturePort(fixture, undefined, { ...process.env, PATH: path });
+  const path = gitStandInOpen(standIn, [verb]);
+  gitStandInFaulted(standIn, verb, fault);
+  return fixturePort(
+    fixture,
+    undefined,
+    { ...process.env, PATH: path },
+    remoteTimeoutSecsMax,
+  );
 }
 
 test("a moving branch cannot change a snapshot pinned to an earlier commit", async (t) => {
@@ -500,7 +527,7 @@ test("an ls-remote that outlived its bound says it timed out, on the head and on
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "one"));
-  const port = fixtureStoodIn(fixture, "Stalled");
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 1);
   const repository = fixtureBinding(fixture.remote);
   const evidence = { git: "ls-remote", stopped: "Timeout" };
 
@@ -524,7 +551,7 @@ test("what git wrote when it failed reaches nothing the read answers", async (t)
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "one"));
-  const port = fixtureStoodIn(fixture, "Said");
+  const port = fixtureStoodIn(fixture, "ls-remote", "Said");
   const repository = fixtureBinding(fixture.remote);
 
   const answers = [
@@ -743,4 +770,226 @@ test("a referenced read of a commit the remote does not hold says so as a snapsh
     ),
     { read: "Absent", absent: "Commit" },
   );
+});
+
+/** Has the fixture's remote honour a filter, as a forge does, so a fetch asking for less than everything is given less. */
+function fixtureFiltering(fixture: Fixture): void {
+  fixtureGit(fixture.remote, "config", "uploadpack.allowFilter", "true");
+}
+
+/** The blob one path stands at in one commit of the seed. */
+function fixtureBlob(fixture: Fixture, commit: string, path: string): string {
+  return fixtureGit(fixture.seed, "rev-parse", `${commit}:${path}`);
+}
+
+/**
+ * Every object of one type held in any repository under the scratch root,
+ * listed from each object store alone, which no listing fetches into.
+ */
+function fixtureHeld(fixture: Fixture, type: "commit" | "blob"): string[] {
+  const root = fixtureScratch(fixture);
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((entry) => basename(entry) === "HEAD")
+    .map((entry) => join(root, dirname(entry)))
+    .filter((repository) => existsSync(join(repository, "objects")))
+    .flatMap((repository) =>
+      fixtureGit(
+        repository,
+        "cat-file",
+        "--batch-all-objects",
+        "--batch-check=%(objecttype) %(objectname)",
+      ).split("\n"),
+    )
+    .filter((row) => row.startsWith(`${type} `))
+    .map((row) => row.slice(type.length + 1))
+    .sort();
+}
+
+test("a read holds the commit it is asked at and the files it read, and no earlier commit and no file beside them", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  const work = `${repositoryConfigurationRoot}work.json`;
+  fixtureWrite(fixture, work, "old\n");
+  fixtureWrite(fixture, "large.bin", "old\n".repeat(1 << 18));
+  fixtureCommit(fixture, "earlier");
+  fixtureWrite(fixture, work, "new\n");
+  fixtureWrite(fixture, "large.bin", "new\n".repeat(1 << 18));
+  const commit = fixtureCommit(fixture, "read");
+
+  assert.deepEqual(
+    await fixturePort(fixture).snapshot({
+      repository: fixtureBinding(fixture.remote),
+      commit: asGitObjectId(commit),
+    }),
+    {
+      read: "Snapshot",
+      files: [{ path: work, kind: "File", content: "new\n" }],
+    },
+  );
+  assert.deepEqual(fixtureHeld(fixture, "commit"), [commit]);
+  assert.deepEqual(fixtureHeld(fixture, "blob"), [
+    fixtureBlob(fixture, commit, work),
+  ]);
+});
+
+test("from a remote honouring the filter, each file arrives as its directory or its path is read, and none before", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  const nested = `${repositoryConfigurationRoot}nested/work.json`;
+  const link = `${repositoryConfigurationRoot}link.json`;
+  const build = `${repositoryActionRoot}build.json`;
+  fixtureWrite(fixture, nested, "nested\n");
+  symlinkSync("nested/work.json", join(fixture.seed, link));
+  fixtureWrite(fixture, build, "build\n");
+  fixtureWrite(fixture, `${promptRoot}work.md`, "Do the work.\n");
+  fixtureWrite(
+    fixture,
+    `${promptRoot}large.md`,
+    "x".repeat(repositoryDeclarationFileCharsMax + 1),
+  );
+  const commit = fixtureCommit(fixture, "one of each");
+  const port = fixturePort(fixture);
+  const request = {
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId(commit),
+  };
+  const blobs = (...paths: string[]) =>
+    paths.map((path) => fixtureBlob(fixture, commit, path)).sort();
+
+  assert.deepEqual(await port.actionSnapshot(request), {
+    read: "Snapshot",
+    files: [{ path: build, kind: "File", content: "build\n" }],
+  });
+  assert.deepEqual(fixtureHeld(fixture, "blob"), blobs(build));
+  assert.deepEqual(await port.snapshot(request), {
+    read: "Snapshot",
+    files: [
+      { path: link, kind: "Symlink", content: "nested/work.json" },
+      { path: nested, kind: "File", content: "nested\n" },
+    ],
+  });
+  assert.deepEqual(fixtureHeld(fixture, "blob"), blobs(build, link, nested));
+  assert.deepEqual(
+    await port.referenced(request, [
+      `${promptRoot}work.md`,
+      `${promptRoot}large.md`,
+    ]),
+    {
+      read: "Referenced",
+      files: [
+        {
+          path: `${promptRoot}work.md`,
+          found: "File",
+          content: "Do the work.\n",
+        },
+        { path: `${promptRoot}large.md`, found: "TooLarge" },
+      ],
+    },
+  );
+});
+
+/**
+ * What the remote runs in place of building a pack directly: it writes the
+ * secret the fetch that asked was given, read through the adapter's own
+ * helper text, and then builds the pack.
+ */
+const fixtureServeText = [
+  "#!/bin/sh",
+  'here=$(dirname "$0")',
+  '"$here/helper" get | grep "^password=" >> "$here/served"',
+  'exec "$@"',
+  "",
+].join("\n");
+
+/** The environment of a port whose remote writes the secret of each fetch it serves a pack to, in order. */
+function fixtureServing(fixture: Fixture): GitEnvironment {
+  const here = fixture.directory;
+  writeFileSync(join(here, "helper"), gitCredentialHelperText, { mode: 0o700 });
+  writeFileSync(join(here, "serve"), fixtureServeText, { mode: 0o755 });
+  writeFileSync(
+    join(here, "gitconfig"),
+    `[uploadpack]\n\tpackObjectsHook = ${join(here, "serve")}\n`,
+  );
+  return { ...process.env, GIT_CONFIG_GLOBAL: join(here, "gitconfig") };
+}
+
+/** The secret each fetch the remote served a pack to was given, in the order served. */
+function fixtureServed(fixture: Fixture): readonly string[] {
+  const served = join(fixture.directory, "served");
+  if (!existsSync(served)) return [];
+  return readFileSync(served, "utf8").split("\n").filter(Boolean);
+}
+
+test("the commit and each blob a read fetches are fetched under the one credential", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}build.json`, "build\n");
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}test.json`, "test\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "two declarations"));
+  const port = fixturePort(fixture, fixtureCredential, fixtureServing(fixture));
+
+  const read = await port.snapshot({
+    repository: fixtureBinding(fixture.remote),
+    commit,
+  });
+  assert.deepEqual(
+    read.read === "Snapshot" ? read.files.map((file) => file.content) : read,
+    ["build\n", "test\n"],
+  );
+  assert.deepEqual(
+    fixtureServed(fixture),
+    ["password=credential", "password=credential", "password=credential"],
+    "the commit and each of its blobs were served to a fetch given the credential",
+  );
+});
+
+test("a read leaves the history the ancestry reader answers from whole, under the scratch root they share", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "old\n");
+  const earlier = asGitObjectId(fixtureCommit(fixture, "earlier"));
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "new\n");
+  const tip = asGitObjectId(fixtureCommit(fixture, "tip"));
+  const repository = fixtureBinding(fixture.remote);
+  const ancestry = gitCommitAncestry({
+    scratchDirectory: fixtureScratch(fixture),
+    identity: { name: "chug", email: "chug@example.test" },
+    environment: process.env,
+    credentials: fixtureCredentials(fixtureCredential),
+  });
+
+  const read = await fixturePort(fixture).snapshot({ repository, commit: tip });
+  assert.equal(read.read, "Snapshot");
+  assert.equal(
+    existsSync(join(fixtureScratch(fixture), scratchDigestOf(fixture.remote))),
+    false,
+    "the read wrote nothing where the ancestry reader keeps this repository",
+  );
+  assert.equal(
+    await ancestry.ancestry({ repository, candidate: earlier, tip }),
+    "Ancestor",
+  );
+});
+
+test("a blob of the commit that could not be fetched is a commit not held yet, and never a refusal", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  fixtureWrite(fixture, `${repositoryActionRoot}build.json`, "build\n");
+  fixtureWrite(fixture, `${promptRoot}work.md`, "Do the work.\n");
+  const port = fixtureStoodIn(fixture, "cat-file", "Failed");
+  const request = {
+    repository: fixtureBinding(fixture.remote),
+    commit: asGitObjectId(fixtureCommit(fixture, "one of each")),
+  };
+
+  assert.deepEqual(await port.snapshot(request), {
+    read: "Absent",
+    absent: "Commit",
+  });
+  assert.deepEqual(await port.actionSnapshot(request), { read: "Absent" });
+  assert.deepEqual(await port.referenced(request, [`${promptRoot}work.md`]), {
+    read: "Absent",
+    absent: "Commit",
+  });
 });
