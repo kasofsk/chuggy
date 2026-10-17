@@ -282,6 +282,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     configurationRevision: revision,
     configurationVersion,
     overrides: { work: { instructions: ["Do it this way."] } },
+    selection: { work: "build" },
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
     runTotals,
     ...ticketCarried,

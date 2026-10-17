@@ -44,12 +44,13 @@ afterEach(() => {
 });
 
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 
 function canonicalOf(name: string): string {
-  const raw = declarations[`../../../.chug/configurations/${name}.json`];
+  const raw =
+    declarations[`../../../test/fixtures/configurations/${name}.json`];
   if (raw === undefined) throw new Error(`no ${name} configuration declared`);
   return JSON.stringify(
     (JSON.parse(raw) as { readonly configuration: unknown }).configuration,

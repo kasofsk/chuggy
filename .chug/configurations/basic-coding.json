@@ -2,63 +2,80 @@
   "version": 1,
   "name": "basic-coding",
   "configuration": {
-    "version": 1,
+    "version": 2,
     "image": "worker:v1",
-    "worker": {
-      "mode": {
-        "type": "SingleAgent",
-        "agent": "Claude",
-        "arguments": [
-          "--allowedTools=Bash,Edit,Read,Write,Glob,Grep"
-        ]
+    "workloads": {
+      "build": {
+        "runner": "Agent",
+        "prompt": {
+          "text": "Implement the change this ticket asks for, and nothing else on it. Follow the repository's checked-in agent instructions, add focused regression coverage, and run the checks relevant to the files you changed. Do not perform destructive operations without approval. Report a pass only for work you have verified running, or a failure naming what stopped you."
+        },
+        "worker": {
+          "mode": {
+            "type": "SingleAgent",
+            "agent": "Claude",
+            "arguments": [
+              "--allowedTools=Bash,Edit,Read,Write,Glob,Grep"
+            ]
+          },
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        }
       },
-      "setup": [
-        "npm ci"
-      ],
-      "files": []
-    },
-    "brief": {
-      "motivation": [
-        "Implement the ticket's requested repository change."
-      ],
-      "acceptanceCriteria": [
-        "The ticket-specific acceptance criteria are satisfied."
-      ],
-      "constraints": [
-        "Follow the repository's checked-in agent instructions and do not perform destructive operations without approval."
-      ]
-    },
-    "practices": [
-      "RegressionCoverage",
-      "AcceptanceCriteria"
-    ],
-    "work": {
-      "instructions": [
-        "Implement the requested change, add focused regression coverage, and run the checks relevant to the files changed."
-      ]
-    },
-    "review": {
-      "instructions": [
-        "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
-      ]
-    },
-    "evaluations": [
-      {
-        "purpose": "Check",
-        "checks": [
+      "ci": {
+        "runner": "Commands",
+        "commands": [
           ".chug/tasks/ci.sh"
-        ]
-      },
-      {
-        "purpose": "Review",
-        "instructions": [
-          "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
         ],
-        "practices": [
-          "ChangedCallPaths",
-          "AcceptanceCriteria"
-        ]
+        "worker": {
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        }
+      },
+      "review": {
+        "runner": "Agent",
+        "purpose": "Review",
+        "prompt": {
+          "path": ".chug/tasks/review-change.md"
+        },
+        "worker": {
+          "mode": {
+            "type": "SingleAgent",
+            "agent": "Claude",
+            "arguments": [
+              "--allowedTools=Bash,Edit,Read,Write,Glob,Grep"
+            ]
+          },
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        }
       }
-    ]
+    },
+    "plans": {
+      "standard": [
+        {
+          "name": "checks",
+          "evaluators": [
+            "ci"
+          ]
+        },
+        {
+          "name": "review",
+          "evaluators": [
+            "review"
+          ]
+        }
+      ]
+    },
+    "defaults": {
+      "work": "build",
+      "evaluation": "standard"
+    }
   }
 }

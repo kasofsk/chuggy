@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "name": "chuggy-development",
+  "configuration": {
+    "version": 1,
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:0efb9a93404a441e25bb24e9a6f37a630f4c73e4fd1dca7afb0ef2d43291f938",
+    "authority": {
+      "tools": ["claude-code", "shell"],
+      "credentials": ["chuggy-github-worker", "claude-code", "track-record"],
+      "network": true,
+      "filesystem": "WriteWorkspace",
+      "mayCompleteTask": false
+    },
+    "worker": {
+      "mode": {
+        "type": "SingleAgent",
+        "agent": "Claude",
+        "arguments": [
+          "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+          "--model=opus"
+        ]
+      },
+      "setup": ["npm ci"],
+      "files": []
+    },
+    "brief": {
+      "motivation": [
+        "Develop Chuggy itself in the same repository-native environment used by its maintainers."
+      ],
+      "acceptanceCriteria": [
+        "The ticket-specific acceptance criteria are satisfied and the relevant repository checks pass."
+      ],
+      "constraints": [
+        "Read CLAUDE.md and .chug/tasks/review-change.md before changing the repository."
+      ]
+    },
+    "practices": [
+      "RegressionCoverage",
+      "AcceptanceCriteria"
+    ],
+    "work": {
+      "instructions": [
+        "Implement the requested change and add focused regression coverage.",
+        "`.chug/tasks/ci.sh` runs the gates the change affects and no others. While you work, the test file or the single gate in hand is enough. Run `ci.sh` once the change is complete; if a gate is red, fix it, run that gate until it is clean, and run `ci.sh` again. Report the work as passing only after a run of `ci.sh` that ends clean: a gate that could not run is not a pass."
+      ]
+    },
+    "review": {
+      "instructions": [
+        "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+      ]
+    },
+    "evaluations": [
+      {
+        "purpose": "Check",
+        "checks": [
+          ".chug/tasks/ci.sh"
+        ]
+      },
+      {
+        "purpose": "Review",
+        "instructions": [
+          "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
+        ],
+        "practices": [
+          "ChangedCallPaths",
+          "AcceptanceCriteria"
+        ]
+      }
+    ]
+  }
+}

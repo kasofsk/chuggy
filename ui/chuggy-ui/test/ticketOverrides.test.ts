@@ -4,8 +4,9 @@
  * mode in each shape a mode names one, and a field given back.
  *
  * The documents with a mode naming its model as an argument and naming none
- * are the ones this repository declares, read from `.chug/configurations/`
- * rather than copied.
+ * are the version 1 configurations this repository declared before its
+ * catalogs, kept in `test/fixtures/configurations/` since overrides apply to
+ * that version alone.
  */
 
 import { expect, test } from "vitest";
@@ -33,12 +34,13 @@ import {
 } from "./ticketCreationFixture.ts";
 
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 
 function declared(name: string): unknown {
-  const raw = declarations[`../../../.chug/configurations/${name}.json`];
+  const raw =
+    declarations[`../../../test/fixtures/configurations/${name}.json`];
   if (raw === undefined) throw new Error(`no ${name} configuration declared`);
   return (JSON.parse(raw) as { readonly configuration: unknown }).configuration;
 }

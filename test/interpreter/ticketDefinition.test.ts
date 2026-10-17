@@ -324,7 +324,7 @@ test("what the contract offers a parked ticket leaves every repository configura
     [...parkedTicketOverrideFields, "work.instructions"].sort(),
     [...overridableFields].sort(),
   );
-  const directory = new URL("../../.chug/configurations/", import.meta.url);
+  const directory = new URL("../fixtures/configurations/", import.meta.url);
   const names = readdirSync(directory).filter((name) => name.endsWith(".json"));
   assert.ok(names.length > 0);
   const brief = asDraftBrief({

@@ -166,7 +166,7 @@ export function repositoryConfigurationReferences(
   return [...paths];
 }
 
-/** One workload with its prompt's text replaced by what the file it names held. */
+/** One workload with its prompt's text replaced by what the file it names held, and its prompt's other keys left for the shape to judge. */
 function repositoryConfigurationPromptResolved(
   workload: unknown,
   referenced: RepositoryConfigurationReferencedFiles,
@@ -177,7 +177,10 @@ function repositoryConfigurationPromptResolved(
   const text = repositoryConfigurationReferencedText(file, path);
   if ("fault" in text) return text;
   const record = repositoryConfigurationRecord(workload) ?? {};
-  return { workload: { ...record, prompt: { path, text: text.text } } };
+  const prompt = repositoryConfigurationRecord(record["prompt"]);
+  return {
+    workload: { ...record, prompt: { ...prompt, path, text: text.text } },
+  };
 }
 
 /**

@@ -1,12 +1,11 @@
 /**
  * The canonical configuration document, read into what the panel draws.
  *
- * The shapes this tree's declarations take — a worker with no authority or
- * pinned model, one with both, and one with another model pinned — are read
- * from the files themselves rather than a copied fixture, so a shape those files
- * change reaches this suite without anyone updating it by hand. A document
- * naming no worker, which no file here declares and a stored revision still
- * may, is written inline. What follows is the reader refusing nothing: a
+ * The shapes the version 1 configurations this tree declared before its
+ * catalogs take — a worker with no authority or pinned model, one with both,
+ * and one with another model pinned — are read from those documents, kept in
+ * `test/fixtures/configurations/`. A document naming no worker, which none of
+ * them declares and a stored revision still may, is written inline. What follows is the reader refusing nothing: a
  * document that is not JSON, one with nothing in it, and the two ways a
  * `worker.mode` can fail to say what this reads for a `SingleAgent` Claude run.
  */
@@ -18,16 +17,15 @@ import {
   practiceLabel,
 } from "../app/core/configurationView.ts";
 
-/** Every declared configuration's raw text, read at build time by Vite rather
- * than by Node's own `fs`, since `.chug/` is a dot directory a glob skips
- * unless told to search it. */
+/** Every fixture configuration's raw text, read at build time by Vite rather
+ * than by Node's own `fs`. */
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 
 function declaredConfiguration(name: string): string {
-  const path = `../../../.chug/configurations/${name}.json`;
+  const path = `../../../test/fixtures/configurations/${name}.json`;
   const raw = declarations[path];
   if (raw === undefined)
     throw new Error(`no configuration declared as ${name}`);

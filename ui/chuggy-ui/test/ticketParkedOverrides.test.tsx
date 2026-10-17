@@ -68,13 +68,15 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Read at build time by Vite, since `.chug/` is a dot directory a glob skips unless told. */
+/** The version 1 fixtures, read at build time by Vite. */
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 const sonnetRaw =
-  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
+  declarations[
+    "../../../test/fixtures/configurations/chuggy-development-sonnet.json"
+  ];
 if (sonnetRaw === undefined)
   throw new Error("no chuggy-development-sonnet configuration declared");
 const canonical = JSON.stringify(

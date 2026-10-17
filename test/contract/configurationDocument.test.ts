@@ -17,7 +17,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -44,6 +44,10 @@ import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  repositoryConfigurationReferences,
+  type RepositoryConfigurationReferenced,
+} from "../../src/interpreter/repositoryConfigurationReference.ts";
 import { pickFrom, randomOf, type Random } from "../random/random.ts";
 
 const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
@@ -52,6 +56,33 @@ const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const commit = asGitObjectId("a".repeat(40));
+
+/** One file a catalog names, as this checkout holds it. */
+function treeReferenced(path: string): RepositoryConfigurationReferenced {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() === true
+    ? { path, found: "File", content: readFileSync(path, "utf8") }
+    : { path, found: "Absent" };
+}
+
+/** Every file one declaration's catalog names, read from this checkout as an import reads a commit. */
+function treeReferences(
+  content: string,
+): ReadonlyMap<string, RepositoryConfigurationReferenced> {
+  const declared: unknown = JSON.parse(content);
+  const configuration =
+    typeof declared === "object" && declared !== null
+      ? (declared as { readonly configuration?: unknown }).configuration
+      : undefined;
+  const referenced = new Map<string, RepositoryConfigurationReferenced>();
+  for (;;) {
+    const unread = repositoryConfigurationReferences(
+      configuration,
+      referenced,
+    ).filter((path) => !referenced.has(path));
+    if (unread.length === 0) return referenced;
+    for (const path of unread) referenced.set(path, treeReferenced(path));
+  }
+}
 
 /** What an import answers for one file: Ready, or its fault and the configuration's. */
 function imported(content: string): string {
@@ -65,6 +96,7 @@ function imported(content: string): string {
         content,
       },
     ],
+    referenced: treeReferences(content),
   });
   if (readiness.readiness === "Ready") return "Ready";
   const [refusal] = readiness.faults;
@@ -86,6 +118,7 @@ const heldFaults = [
   "ConfigurationInvalid:WorkerInvalid",
   "ConfigurationInvalid:WorkerUndeclared",
   "ConfigurationInvalid:ReleaseShapeInvalid",
+  "ConfigurationInvalid:CatalogNameUnknown",
 ];
 
 /** Asserts the schema takes a file the import takes, and refuses one the import refuses but for a held fault. */
@@ -456,6 +489,22 @@ test("a file whose shape the import refuses the schema refuses", () => {
 
 /** A file the import refuses for a rule the schema says it cannot state, and the fault it refuses it for. */
 const heldRules: readonly (readonly [unknown, string])[] = [
+  [
+    declared({
+      version: 2,
+      image: "worker:v1",
+      workloads: {
+        build: {
+          runner: "Agent",
+          prompt: { text: "Build." },
+          worker: { mode: claude, setup: [], files: [] },
+        },
+      },
+      plans: { standard: [{ name: "review", evaluators: ["build"] }] },
+      defaults: { work: "build", evaluation: "absent" },
+    }),
+    "ConfigurationInvalid:CatalogNameUnknown",
+  ],
   [
     declared({ ...configuration, review: { instructions: [], token: "t" } }),
     "ConfigurationInvalid",

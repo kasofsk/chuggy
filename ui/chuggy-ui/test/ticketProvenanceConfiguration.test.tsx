@@ -3,9 +3,10 @@
  * one structural rule the Brief and Provenance rows must keep: the accordion
  * row is the only heading either draws, never a second one repeating it.
  *
- * The canonical body is read from `chuggy-development-sonnet.json` itself, not
- * a copied fixture, so the settings grid, the Instructions and the Evaluation
- * list are asserted against what the repository actually declares; the Review
+ * The canonical body is read from the version 1 `chuggy-development-sonnet.json`
+ * this repository declared before its catalogs, so the settings grid, the
+ * Instructions and the Evaluation list are asserted against a document that
+ * was really declared; the Review
  * tab, which a declared document with stages never draws, is asserted over the
  * same document with its stages taken out.
  */
@@ -41,14 +42,15 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-/** Read at build time by Vite rather than by Node's own `fs`, since `.chug/`
- * is a dot directory a glob skips unless told to search it. */
+/** The version 1 fixtures, read at build time by Vite rather than by Node's own `fs`. */
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 const sonnetRaw =
-  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
+  declarations[
+    "../../../test/fixtures/configurations/chuggy-development-sonnet.json"
+  ];
 if (sonnetRaw === undefined)
   throw new Error("no chuggy-development-sonnet configuration declared");
 const declared: unknown = JSON.parse(sonnetRaw);

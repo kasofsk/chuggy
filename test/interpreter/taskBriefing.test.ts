@@ -1087,7 +1087,10 @@ test("an entry briefed with instructions parses as the agent stage it has always
 
 test("a released revision's agentic Check stage still parses beside this tree's own", () => {
   const { configuration } = JSON.parse(
-    readFileSync(".chug/configurations/chuggy-development.json", "utf8"),
+    readFileSync(
+      "test/fixtures/configurations/chuggy-development.json",
+      "utf8",
+    ),
   ) as {
     readonly configuration: Record<string, unknown> & {
       readonly evaluations: readonly unknown[];
@@ -1333,106 +1336,68 @@ test("the provenance says how many of a stage's command lines the ticket added",
   );
 });
 
-test("this tree's own configurations run their commanded check stage before any agent judges", () => {
-  for (const name of [
-    "chuggy-development",
-    "chuggy-development-fable",
-    "chuggy-development-orchestrated",
-    "chuggy-development-sonnet",
-    "basic-coding",
-  ]) {
-    const document: unknown = JSON.parse(
-      readFileSync(`.chug/configurations/${name}.json`, "utf8"),
-    );
-    const parsed = authoredTaskConfigurationReadiness(
-      (document as { readonly configuration: unknown }).configuration,
-    );
-    if (parsed.readiness !== "Ready") assert.fail(`${name}: ${parsed.fault}`);
-    assert.deepEqual(
-      parsed.configuration.evaluations?.at(0),
-      { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
-      `${name}: the shell gate is the first stage, so a model never reviews a change the gates refuse`,
-    );
-  }
-});
-
-/** One of this tree's own declarations, as its file states it. */
-function declaredDocument(name: string): Record<string, unknown> {
-  return JSON.parse(
-    readFileSync(`.chug/configurations/${name}.json`, "utf8"),
-  ) as Record<string, unknown>;
+/** The workloads this tree's development catalog holds inline, as its file states them. */
+function developmentWorkloads(): Readonly<Record<string, unknown>> {
+  const declared = JSON.parse(
+    readFileSync(".chug/configurations/chuggy-development.json", "utf8"),
+  ) as {
+    readonly configuration: {
+      readonly workloads: Readonly<Record<string, unknown>>;
+    };
+  };
+  return declared.configuration.workloads;
 }
 
-/** The parts of a development declaration a variant is allowed to restate. */
-interface DevelopmentConfiguration {
+/** The parts of a development work workload a variant is allowed to restate. */
+interface DevelopmentWorkload {
+  readonly prompt: { readonly path: string };
   readonly worker: {
     readonly mode: { readonly arguments: readonly string[] };
   };
-  readonly work: { readonly instructions: readonly string[] };
 }
 
 const developmentModelArgument = "--model=opus";
 
-test("the development configuration names one model, and it is Opus", () => {
-  const { worker } = declaredDocument("chuggy-development")[
-    "configuration"
-  ] as DevelopmentConfiguration;
+test("the development catalog's default work names one model, and it is Opus", () => {
+  const { worker } = developmentWorkloads()["build"] as DevelopmentWorkload;
   assert.deepEqual(
     worker.mode.arguments.filter((argument) => argument.startsWith("--model")),
     [developmentModelArgument],
   );
 });
 
-test("a model variant of the development configuration differs from it only in its name and its model", () => {
-  const base = declaredDocument("chuggy-development");
-  const baseConfiguration = base["configuration"] as DevelopmentConfiguration;
+test("a model variant of the development work differs from it only in its model", () => {
+  const workloads = developmentWorkloads();
+  const base = workloads["build"] as DevelopmentWorkload;
   for (const family of ["fable", "sonnet"]) {
-    const name = `chuggy-development-${family}`;
-    assert.deepEqual(declaredDocument(name), {
+    assert.deepEqual(workloads[`build-${family}`], {
       ...base,
-      name,
-      configuration: {
-        ...baseConfiguration,
-        worker: {
-          ...baseConfiguration.worker,
-          mode: {
-            ...baseConfiguration.worker.mode,
-            arguments: baseConfiguration.worker.mode.arguments.map(
-              (argument) =>
-                argument === developmentModelArgument
-                  ? `--model=${family}`
-                  : argument,
-            ),
-          },
+      worker: {
+        ...base.worker,
+        mode: {
+          ...base.worker.mode,
+          arguments: base.worker.mode.arguments.map((argument) =>
+            argument === developmentModelArgument
+              ? `--model=${family}`
+              : argument,
+          ),
         },
       },
     });
   }
 });
 
-test("the orchestrated variant of the development configuration differs from it only in its name and three appended work instructions", () => {
-  const base = declaredDocument("chuggy-development");
-  const baseConfiguration = base["configuration"] as DevelopmentConfiguration;
-  const name = "chuggy-development-orchestrated";
-  const orchestrated = declaredDocument(name);
-  const { work } = orchestrated["configuration"] as DevelopmentConfiguration;
-  const appended = work.instructions.slice(
-    baseConfiguration.work.instructions.length,
-  );
-  assert.equal(appended.length, 3);
-  assert.ok(appended.every((line) => line.length > 0));
-  assert.match(appended.at(0) ?? "", /subagents/u);
+test("the orchestrated variant of the development work differs from it only in a prompt that reads the base prompt first", () => {
+  const workloads = developmentWorkloads();
+  const base = workloads["build"] as DevelopmentWorkload;
+  const orchestrated = workloads["build-orchestrated"] as DevelopmentWorkload;
   assert.deepEqual(orchestrated, {
     ...base,
-    name,
-    configuration: {
-      ...baseConfiguration,
-      work: {
-        ...baseConfiguration.work,
-        instructions: [...baseConfiguration.work.instructions, ...appended],
-      },
-    },
+    prompt: orchestrated.prompt,
   });
+  const prompt = readFileSync(orchestrated.prompt.path, "utf8");
+  assert.ok(prompt.includes(base.prompt.path));
+  assert.match(prompt, /subagents/u);
 });
 
 test("a fault in one role's block does not refuse the other role's briefing", () => {

@@ -1,6 +1,7 @@
 /** A catalog's referenced files, read at the import's commit and stored inline beside their paths. */
 
 import assert from "node:assert/strict";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
@@ -25,6 +26,10 @@ import {
   type RepositoryConfigurationReferenced,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryConfigurationReferencesMax } from "../../src/interpreter/repositoryConfigurationReference.ts";
+import {
+  selectedCatalogEntries,
+  workloadConfigurationReadiness,
+} from "../../src/interpreter/workloadConfiguration.ts";
 import {
   repositoryDeclarationRoot,
   type RepositoryDeclarationFile,
@@ -153,6 +158,29 @@ test("a prompt naming a path holds what the file held, whatever text it was writ
     found.declarations[0]?.canonical ?? "",
     /Something else/u,
   );
+});
+
+test("a key a prompt naming a path does not take is refused as one written inline is, not dropped when the file is read", () => {
+  const written = {
+    ...catalog,
+    workloads: {
+      ...catalog.workloads,
+      build: {
+        runner: "Agent",
+        prompt: { path: workPrompt, purpose: "Review" },
+        worker,
+      },
+    },
+  };
+  const found = repositoryConfigurationImportReadiness({
+    repository,
+    commit,
+    files: [catalogDeclaration(written)],
+    referenced: referencedOf(everyFile),
+  });
+  assert.equal(found.readiness, "Refused");
+  if (found.readiness !== "Refused") return;
+  assert.equal(found.faults[0]?.fault, "ConfigurationInvalid");
 });
 
 test("a reference the commit does not hold as a regular file refuses its declaration and names it", () => {
@@ -323,4 +351,71 @@ test("a reference read that cannot reach the commit is the outcome a snapshot sa
     result: "Unavailable",
     unavailable: "Repository",
   });
+});
+
+/** This tree's own declarations, read from the checkout as an import reads a commit. */
+async function treeDeclarations(): Promise<
+  readonly RepositoryConfigurationDeclaration[]
+> {
+  const files = readdirSync(repositoryConfigurationRoot)
+    .filter((name) => name.endsWith(".json"))
+    .map((name): RepositoryDeclarationFile => ({
+      path: `${repositoryConfigurationRoot}${name}`,
+      kind: "File",
+      content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
+    }));
+  const stored: RepositoryConfigurationDeclaration[] = [];
+  const outcome = await importRepositoryConfigurations({
+    partition: binding.partition,
+    repository,
+    commit,
+    authority: {
+      kind: asAuthorityKind("Service"),
+      subject: asAuthoritySubject("importer"),
+    },
+    ports: {
+      bindings: { binding: () => Promise.resolve(binding) },
+      snapshots: {
+        snapshot: () => Promise.resolve({ read: "Snapshot", files }),
+        referenced: (_request, paths) =>
+          Promise.resolve({
+            read: "Referenced",
+            files: paths.map((path) =>
+              existsSync(path)
+                ? file(path, readFileSync(path, "utf8"))
+                : { path, found: "Absent" as const },
+            ),
+          }),
+      },
+      store: {
+        importRepositoryConfigurations: (input) => {
+          stored.push(...input.declarations);
+          return Promise.resolve({ imported: "Imported" });
+        },
+      },
+    },
+  });
+  assert.equal(outcome.result, "Imported", JSON.stringify(outcome));
+  return stored;
+}
+
+test("this tree's own catalogs import, and each runs the gates before any agent judges", async () => {
+  const declarations = await treeDeclarations();
+  assert.ok(declarations.length > 0);
+  for (const declared of declarations) {
+    const ready = workloadConfigurationReadiness(
+      JSON.parse(declared.canonical),
+    );
+    if (ready.readiness !== "Ready")
+      assert.fail(`${declared.name}: ${ready.fault}`);
+    const selected = selectedCatalogEntries(ready.configuration, undefined);
+    if (selected.selected !== "Selected")
+      assert.fail(`${declared.name}: the defaults select nothing`);
+    const first = selected.value.plan.stages[0]?.evaluators[0]?.workload;
+    assert.deepEqual(
+      first?.runner === "Commands" ? first.commands : undefined,
+      [".chug/tasks/ci.sh"],
+      `${declared.name}: the shell gate is the first stage, so a model never reviews a change the gates refuse`,
+    );
+  }
 });
