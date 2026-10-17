@@ -36,7 +36,7 @@ export interface RunnerPackage {
   readonly program: string;
   /** The platforms a token minted for it lets a runner declare: the ones it runs on. */
   readonly platforms: readonly string[];
-  /** The platforms of the machine itself a runner declares with `--host`, where the package runs work there. */
+  /** The platforms of the machine itself a runner declares beside its containers' with `--host`, none where they are the same. */
   readonly hostPlatforms: readonly string[];
   /** What a machine needs before the install, in one line. */
   readonly needs: string;
@@ -79,7 +79,7 @@ export const runnerPackageOffered: RunnerPackage = runnerPackages.linux;
 /** What a reader asks a runner to declare beside its platforms. */
 export interface RunnerAsk {
   readonly package: RunnerPackageName;
-  /** Whether it runs work on the machine itself, where the package can. */
+  /** Whether it runs work that pins no image on the machine itself. */
   readonly host: boolean;
   /** The capabilities it declares it meets, as the reader typed them. */
   readonly capabilities: readonly string[];
@@ -183,11 +183,7 @@ export function runnerCapabilityLabel(capability: string): string {
 /** Whose a registered machine is: one of the project's pools, or the reader's own. */
 export type RunnerKind = "Pool" | "Personal";
 
-/**
- * What a reader's choices ask, with what the token is minted for, or why it
- * cannot be: the machine itself is asked for only where the package runs work
- * there.
- */
+/** What a reader's choices ask, with what the token is minted for, or why it cannot be. */
 export function runnerAskRead(
   chosen: RunnerPackageName,
   host: boolean,
@@ -199,7 +195,7 @@ export function runnerAskRead(
   if ("refused" in read) return read;
   const ask: RunnerAsk = {
     package: chosen,
-    host: host && runnerPackages[chosen].hostPlatforms.length > 0,
+    host,
     capabilities: read.capabilities,
   };
   const minted = runnerMintCapabilities(ask);
@@ -217,7 +213,7 @@ export function runnerRegisterCommand(
   ask: Pick<RunnerAsk, "host" | "capabilities"> = runnerAskDefault,
 ): string {
   const personal = kind === "Personal" ? " --personal" : "";
-  const host = ask.host && installed.hostPlatforms.length > 0 ? " --host" : "";
+  const host = ask.host ? " --host" : "";
   const declared = ask.capabilities
     .map((capability) => ` --capability ${capability}`)
     .join("");

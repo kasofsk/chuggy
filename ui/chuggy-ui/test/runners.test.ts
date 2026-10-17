@@ -168,7 +168,7 @@ test("setup offers the Linux package: what it needs, the command that installs i
   });
 });
 
-test("a Mac's package runs Linux work in its VM, and declares the Mac itself only where asked", () => {
+test("a Mac's package runs Linux work in its VM, and declares the Mac itself only where asked, as a Linux machine's declares nothing more", () => {
   expect(runnerPackages.darwin).toStrictEqual({
     label: "Mac",
     program: "chuggy-darwin",
@@ -196,7 +196,7 @@ test("a Mac's package runs Linux work in its VM, and declares the Mac itself onl
     ],
   });
   expect(runnerAskRead("linux", true, "")).toStrictEqual({
-    ask: { package: "linux", host: false, capabilities: [] },
+    ask: { package: "linux", host: true, capabilities: [] },
     capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
   });
 });
@@ -260,7 +260,9 @@ test("the register command names the package's program, the console's own origin
       "Pool",
       { host: true, capabilities: [] },
     ),
-  ).toBe("chuggy-linux register --api https://chuggy.test --token=tok_en-1");
+  ).toBe(
+    "chuggy-linux register --api https://chuggy.test --token=tok_en-1 --host",
+  );
 });
 
 test("a member's own runner is registered by the same command, marked personal", () => {

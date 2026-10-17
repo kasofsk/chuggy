@@ -1,6 +1,6 @@
 /**
  * What a registration token is minted for, asked before it is: the package
- * the machine runs, whether a Mac runs work on itself, and the capabilities
+ * the machine runs, whether it runs work on itself, and the capabilities
  * the runner declares it meets. A mint is refused here before it is sent where
  * what was typed is not a capability, and a refused mint returns to the ask.
  */
@@ -22,7 +22,7 @@ import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
 const runnerPackageNames = Object.keys(runnerPackages) as RunnerPackageName[];
 
-/** The machine a runner is made of, and on a Mac whether it runs work on itself. */
+/** The machine a runner is made of, and whether it runs work on itself. */
 function RunnerMachine(props: {
   readonly chosen: RunnerPackageName;
   readonly onChoose: (chosen: RunnerPackageName) => void;
@@ -43,18 +43,16 @@ function RunnerMachine(props: {
           if (name !== undefined) props.onChoose(name);
         }}
       />
-      {offered.hostPlatforms.length > 0 ? (
-        <div className="grid gap-1">
-          <Checkbox
-            label="Run work that pins no image on the Mac itself"
-            checked={props.host}
-            onChange={props.onHost}
-          />
-          <span className="text-xs font-regular">
-            Nothing isolates that work from your account on the Mac.
-          </span>
-        </div>
-      ) : null}
+      <div className="grid gap-1">
+        <Checkbox
+          label="Run work that pins no image on the machine itself"
+          checked={props.host}
+          onChange={props.onHost}
+        />
+        <span className="text-xs font-regular">
+          Nothing isolates that work from your account on the machine.
+        </span>
+      </div>
     </>
   );
 }
@@ -109,10 +107,10 @@ function RunnerAskPresses(props: {
 }
 
 /**
- * The ask, while it is filled in and while its token is minted. The mint is
- * the caller's, a project's pool token or a member's own. It takes the focus
- * as it is drawn only where nothing holds it, as the steps do, since the press
- * that opened it can be gone from under it.
+ * The ask, while it is filled in and while the caller mints its token, a
+ * project's pool token or a member's own. It takes the focus as it is drawn
+ * only where nothing holds it, as the steps do, since the press that opened it
+ * can be gone from under it.
  */
 export function RunnerAskForm(props: {
   readonly mint: Extract<RunnerMint, { readonly mint: "Asking" | "Minting" }>;

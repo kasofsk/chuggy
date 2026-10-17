@@ -176,7 +176,7 @@ async function addRunner(
     await turned(() => {
       fireEvent.click(
         screen.getByRole("checkbox", {
-          name: "Run work that pins no image on the Mac itself",
+          name: "Run work that pins no image on the machine itself",
         }),
       );
     });

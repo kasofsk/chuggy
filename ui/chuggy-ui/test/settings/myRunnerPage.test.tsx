@@ -16,6 +16,7 @@ import { myRunnerWithheld } from "../../app/core/myRunner.ts";
 import { answer, drawnStrict, press, settled } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
+import { resizeObserverStubbed } from "../resizeObserver.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -64,6 +65,7 @@ let drawing: Drawing = { granted: true, runner: undefined };
 
 beforeEach(() => {
   drawing = { granted: true, runner: undefined };
+  resizeObserverStubbed();
 });
 
 afterEach(() => {
