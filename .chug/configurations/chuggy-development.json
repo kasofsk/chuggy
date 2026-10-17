@@ -3,7 +3,7 @@
   "name": "chuggy-development",
   "configuration": {
     "version": 2,
-    "image": "registry.chuggy.internal/chuggy/worker@sha256:0efb9a93404a441e25bb24e9a6f37a630f4c73e4fd1dca7afb0ef2d43291f938",
+    "image": "registry.chuggy.internal/chuggy/worker@sha256:6c351228ee60d7bb77d5aed573a9c0a2996aff63031fe06ec80b8634c6f6d868",
     "workloads": {
       "build": {
         "runner": "Agent",
