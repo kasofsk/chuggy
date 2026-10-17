@@ -740,6 +740,8 @@ export interface DraftInitialization {
    * brief carrying them unreleasable against this configuration.
    */
   readonly commandedCheckStage?: number;
+  /** The same fact in words, stated whether or not a stage takes them. */
+  readonly commandedCheckStageNote: string;
 }
 
 export type DraftInitializationRead =
@@ -751,7 +753,7 @@ export type DraftInitializationRead =
 
 export interface DraftInitializationSnapshot extends Omit<
   DraftInitialization,
-  "defaults" | "choices" | "commandedCheckStage"
+  "defaults" | "choices" | "commandedCheckStage" | "commandedCheckStageNote"
 > {
   readonly domain: Config;
 }
@@ -828,6 +830,25 @@ export function ticketCommandedCheckStage(
     return firstCommandedCheckStage(ticket.configuration);
   const first = selectedFirstCommandsEvaluator(ticket.selection);
   return first === undefined ? undefined : first.stage - 1;
+}
+
+/**
+ * Where a ticket's own check lines join, said in words: the stage counted from
+ * one, by its own name where a catalog's plan names it, and where no stage takes
+ * them, that a brief carrying them is refused.
+ */
+export function ticketCommandedCheckStageNote(
+  ticket: TicketConfiguration,
+): string {
+  const stage = ticketCommandedCheckStage(ticket);
+  if (stage === undefined)
+    return "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.";
+  const name =
+    ticket.version === 2
+      ? ticket.selection.plan.stages[stage]?.name
+      : undefined;
+  const named = name === undefined ? "" : `, named "${name}"`;
+  return `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one${named}, after the commands this configuration runs there.`;
 }
 
 /**

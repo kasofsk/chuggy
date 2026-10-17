@@ -1329,6 +1329,67 @@ test("a revised draft answers its landing the same way, a revision dropping the 
   });
 });
 
+/** A ready version 1 document whose second evaluation stage runs check commands. */
+const checkedConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(readyConfiguration) as Record<string, unknown>),
+  evaluations: [
+    { instructions: ["Review it."], practices: [] },
+    { purpose: "Check", checks: ["npm test"] },
+  ],
+});
+
+test("draft initialization says in words which stage a brief's checks run in, and that a configuration commanding none refuses them", async () => {
+  for (const [canonical, stage, note] of [
+    [
+      checkedConfiguration,
+      1,
+      "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
+    ],
+    [
+      catalogConfiguration,
+      1,
+      'A brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands this configuration runs there.',
+    ],
+    [
+      readyConfiguration,
+      undefined,
+      "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
+    ],
+  ] as const) {
+    const revision = asConfigurationRevisionId("revision");
+    const { web } = boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      Promise.resolve({
+        configuration: {
+          partition,
+          revision,
+          canonical,
+          digest: "a".repeat(64),
+        },
+        projectSequence: 0,
+        dependencyCandidates: [],
+        dependencyCandidatesTruncated: false,
+        domain: refinementInstance,
+      }),
+    );
+    const result = await web.initializeDraft(principal, partition, revision);
+    const initialized =
+      result.result === "Authorized" &&
+      result.value.initialized === "Initialized"
+        ? result.value.value
+        : undefined;
+    assert.deepEqual(
+      {
+        stage: initialized?.commandedCheckStage,
+        note: initialized?.commandedCheckStageNote,
+      },
+      { stage, note },
+    );
+  }
+});
+
 test("every run evidence read authorizes before it reaches a store", async () => {
   const execution = asExecutionId("execution");
   const attempt = asAttemptId("attempt");

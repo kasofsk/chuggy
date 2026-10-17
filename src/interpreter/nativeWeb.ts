@@ -80,6 +80,7 @@ import {
   checkedDraftPageQuery,
   draftInitializationPolicy,
   ticketCommandedCheckStage,
+  ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
@@ -974,6 +975,9 @@ function nativeDraftInitializationMethod(
             ...(commandedCheckStage === undefined
               ? {}
               : { commandedCheckStage }),
+            commandedCheckStageNote: ticketCommandedCheckStageNote(
+              readiness.ticket,
+            ),
             ...draftInitializationPolicy(snapshot.domain, readiness.ticket),
           },
         },

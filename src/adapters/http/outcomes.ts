@@ -2027,6 +2027,7 @@ export function draftInitializationResponse(
     ...(value.commandedCheckStage === undefined
       ? {}
       : { commandedCheckStage: value.commandedCheckStage }),
+    commandedCheckStageNote: value.commandedCheckStageNote,
   });
 }
 

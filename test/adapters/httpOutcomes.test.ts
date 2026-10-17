@@ -497,6 +497,7 @@ test("draft initialization outcomes remain discriminated at HTTP", () => {
         },
         dependencyCandidates: [id(1)],
         dependencyCandidatesTruncated: false,
+        commandedCheckStageNote: "No stage takes checks.",
       },
     },
   });

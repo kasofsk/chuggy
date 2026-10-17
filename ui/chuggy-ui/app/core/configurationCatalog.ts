@@ -219,8 +219,9 @@ export function configurationCatalogSelection(
 /**
  * An initialization read under the catalog's defaults, as it reads under this
  * selection instead: the selected plan's program, its stage count as the most
- * a program holds, and the first stage a commands workload runs in. A plan
- * the catalog does not hold leaves it as read.
+ * a program holds, and the first stage a commands workload runs in, without the
+ * note the server wrote of the plan it read. A plan the catalog does not hold
+ * leaves it as read.
  */
 export function configurationCatalogInitialization(
   initialization: DraftInitializationResponse,
@@ -242,6 +243,7 @@ export function configurationCatalogInitialization(
   );
   const rest: DraftInitializationResponse = { ...initialization };
   delete rest.commandedCheckStage;
+  delete rest.commandedCheckStageNote;
   return {
     ...rest,
     defaults: {

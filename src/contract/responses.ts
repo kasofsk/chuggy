@@ -1174,6 +1174,11 @@ export const draftInitializationResponseSchema = z.object({
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
   commandedCheckStage: countSchema.optional(),
+  /**
+   * Where a brief's checks run, in words, or that this configuration refuses
+   * them. It is absent from a server that predates it.
+   */
+  commandedCheckStageNote: z.string().min(1).optional(),
 });
 export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema

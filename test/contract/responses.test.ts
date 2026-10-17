@@ -1248,6 +1248,7 @@ function initializationBody(): Record<string, unknown> {
         },
         dependencyCandidates: [asTicketId(1), asTicketId(2)],
         dependencyCandidatesTruncated: false,
+        commandedCheckStageNote: "No stage takes checks.",
       },
     },
   }).body as Record<string, unknown>;
@@ -1281,6 +1282,14 @@ test("a created and a revised draft parse with the landing their write stored", 
       (body) => draftWrittenResponseSchema.parse(body).landing,
     ),
     [landing, landing],
+  );
+});
+
+test("an initialization parses with what its note says of checks", () => {
+  assert.equal(
+    draftInitializationResponseSchema.parse(initializationBody())
+      .commandedCheckStageNote,
+    "No stage takes checks.",
   );
 });
 
