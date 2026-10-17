@@ -3054,6 +3054,50 @@ test("a draft's selection is written with its revision and read back, and a cata
   );
 });
 
+test("the scheduler's read of a released catalog ticket answers each task the workload its selection puts there", async (t) => {
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    undefined,
+    { evaluation: "tested" },
+  );
+  const decide = await fixtureWriter(fixture, "selection-pinned");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  const scheduler = schedulerRolePool();
+  t.after(() => scheduler.end());
+  const pin = await fixture.store.configuration(
+    fixture.partition,
+    fixture.revision,
+  );
+  assert.ok(pin !== undefined);
+  const read = (
+    task:
+      | { taskKind: "Work" }
+      | { taskKind: "Evaluation"; stage: number; evaluator: number },
+  ) =>
+    postgresPinnedConfigurations(scheduler).configuration(fixture.partition, {
+      configurationRevision: fixture.revision,
+      configurationDigest: pin.digest,
+      ticket: fixture.draft.ticket,
+      ...task,
+    });
+  const runner = async (task: Parameters<typeof read>[0]) => {
+    const found = await read(task);
+    return found.read === "Configuration" && "workload" in found.configuration
+      ? found.configuration.workload.runner
+      : found;
+  };
+  assert.equal(await runner({ taskKind: "Work" }), "Agent");
+  assert.equal(
+    await runner({ taskKind: "Evaluation", stage: 0, evaluator: 1 }),
+    "Commands",
+  );
+  assert.deepEqual(
+    await read({ taskKind: "Evaluation", stage: 1, evaluator: 1 }),
+    { read: "Incompatible", fault: "WorkloadUnselected" },
+  );
+});
+
 test("a release selecting what its catalog does not hold is refused under that fault", async () => {
   const fixture = await draftFixture(
     catalogConfiguration,
@@ -3089,9 +3133,10 @@ async function pinnedWorkInstructions(
       configurationRevision: fixture.revision,
       configurationDigest: pin.digest,
       ticket: fixture.draft.ticket,
+      taskKind: "Work",
     },
   );
-  return read.read === "Configuration"
+  return read.read === "Configuration" && "work" in read.configuration
     ? read.configuration.work.instructions
     : read;
 }

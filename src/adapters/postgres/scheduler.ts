@@ -387,6 +387,7 @@ interface ExecutionCreateInput {
   task: string;
   kind: string;
   stage: string | null;
+  evaluator: string | null;
   definition: string;
   configuration_revision: string;
   configuration_digest: string;
@@ -411,6 +412,7 @@ async function schedulerCreateExecutions(
 ): Promise<number | undefined> {
   const inputs =
     await client.query<ExecutionCreateInput>(sql`SELECT t.task::text AS task,t.kind,t.stage::text AS stage,
+       t.evaluator::text AS evaluator,
        d.definition::text AS definition,q.configuration_revision,
        q.configuration_digest,q.capacity_account,a.cluster,
        r.authority_subject AS owner,f.fallback AS owner_fallback
@@ -444,6 +446,9 @@ async function schedulerCreateExecutions(
       input.stage === null
         ? undefined
         : projectRowCounter(input.stage, "task stage"),
+      input.evaluator === null
+        ? undefined
+        : projectRowCounter(input.evaluator, "task evaluator"),
     );
     const materialized = ticketTaskRequirement(definition, key);
     const resources = ticketTaskResources(definition, key);
@@ -803,13 +808,14 @@ async function schedulerLockForLaunch(
 ): Promise<LaunchRow> {
   const found = await client.query<LaunchRow>(
     sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
-            t.kind AS task_kind, t.stage::text AS stage, e.source_request,
+            t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
             e.configuration_revision, e.configuration_digest,
             c.canonical AS configuration_canonical,
-            d.overrides::text AS configuration_overrides, e.requirement_identity,
+            d.overrides::text AS configuration_overrides,
+            d.selection::text AS configuration_selection, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
             e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
@@ -1181,13 +1187,14 @@ async function schedulerUnlaunched(
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
   const waiting = await client.query<ExecutionRow>(
     sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket, e.task::text AS task,
-            t.kind AS task_kind, t.stage::text AS stage, e.source_request,
+            t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator, e.source_request,
             q.input_bundle, q.input_bundle_digest,
             q.authorizing_seq::text AS source_seq, q.effect_position::text AS source_effect,
             q.ticket_version::text AS ticket_version, e.account, e.cluster,
             e.configuration_revision, e.configuration_digest,
             c.canonical AS configuration_canonical,
-            d.overrides::text AS configuration_overrides, e.requirement_identity,
+            d.overrides::text AS configuration_overrides,
+            d.selection::text AS configuration_selection, e.requirement_identity,
             e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
             e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
             e.result_manifest, e.completion_operation,
@@ -1302,14 +1309,15 @@ async function schedulerExecution(
 ): Promise<LogicalExecution | undefined> {
   const found = await pool.query<ExecutionRow>(
     sql`SELECT e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket,
-               e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
+               e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator,
                e.source_request, q.input_bundle, q.input_bundle_digest,
                q.authorizing_seq::text AS source_seq,
                q.effect_position::text AS source_effect,
                q.ticket_version::text AS ticket_version, e.account, e.cluster,
                e.configuration_revision, e.configuration_digest,
                c.canonical AS configuration_canonical,
-            d.overrides::text AS configuration_overrides, e.requirement_identity,
+            d.overrides::text AS configuration_overrides,
+            d.selection::text AS configuration_selection, e.requirement_identity,
                e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
                e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status,
                e.outcome, e.result_manifest, e.completion_operation,

@@ -15,8 +15,13 @@
  * A TEMPLATE OWNS A ROLE AND TICKET DATA FILLS ITS SLOTS, which is the shape
  * #97 settles against a caller assembling a sequence of blocks. The two
  * sections below are the ones no ticket may write — what the agent is and what
- * it must report — and they are the two that are never empty, so a briefing
- * that carries nothing else still says who is reading it and what comes back.
+ * it must report — and a framed briefing never leaves them empty, so one that
+ * carries nothing else still says who is reading it and what comes back.
+ *
+ * A WORKLOAD'S PROMPT IS ITS OWN AND THE FRAMING IS OPT-IN. A catalog's
+ * workload is briefed with its prompt first and as written, under no heading,
+ * and the two sections a template owns frame it only where the workload asks
+ * for them; so wording here reaches a workload's agent only by its choice.
  *
  * A CARRIER SELECTS THE WORDING, NOT A SECOND TEMPLATE. A stage whose
  * configuration names commands is run by the worker itself, so its sections
@@ -77,6 +82,7 @@ export const allBriefingCarriers: readonly BriefingCarrier[] = [
 
 /** The sections a briefing is made of, named so a rendered one can be inspected by identity. */
 export type BriefingSectionId =
+  | "Prompt"
   | "RoleInstructions"
   | "TicketIntent"
   | "TicketLinks"
@@ -95,6 +101,7 @@ export type BriefingSectionId =
 
 /** The fixed order #97 pins, and the only statement of it in this tree. */
 export const briefingSectionOrder: readonly BriefingSectionId[] = [
+  "Prompt",
   "RoleInstructions",
   "TicketIntent",
   "TicketLinks",
@@ -112,14 +119,14 @@ export const briefingSectionOrder: readonly BriefingSectionId[] = [
   "RequiredResult",
 ];
 
-/** The sections a template owns outright, which are the ones that are never empty. */
+/** The sections a template owns outright, which are the ones a framed briefing never leaves empty. */
 export const briefingTemplateSections: readonly BriefingSectionId[] = [
   "RoleInstructions",
   "RequiredResult",
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 10;
+export const briefingTemplateVersion = 11;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -128,6 +135,8 @@ export function briefingHeading(
   carrier: BriefingCarrier,
 ): string {
   switch (section) {
+    case "Prompt":
+      return "Prompt";
     case "RoleInstructions":
       return carrier === "Commands" ? "What this stage is" : "Your role";
     case "TicketIntent":

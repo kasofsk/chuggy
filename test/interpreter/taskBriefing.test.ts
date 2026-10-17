@@ -73,6 +73,7 @@ import {
   runtimeHandoffLinesMax,
   type BlessedPractice,
   type BriefingFault,
+  type PinnedTaskConfiguration,
   type BriefingProvenanceSection,
   type BriefingSection,
   type BriefingView,
@@ -479,7 +480,7 @@ function viewOf(parts: {
   readonly failedLanding?: FailedLanding;
   readonly ticketBrief?: DraftBrief;
   readonly grant?: PolicyAuthorityGrant;
-}): BriefingView {
+}): BriefingView & { readonly configuration: PinnedTaskConfiguration } {
   const block = parts.block ?? { instructions: [] };
   return {
     purpose: parts.purpose ?? "Work",

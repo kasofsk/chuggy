@@ -170,7 +170,8 @@ import {
   type FailedLanding,
   type FailedLandingPort,
   type PinnedConfigurationPort,
-  type PinnedTaskConfiguration,
+  type PinnedConfiguration,
+  pinnedWorkloadTaskOf,
   type PracticeCatalog,
   type PriorEvaluationReports,
   type PriorEvaluationReportsPort,
@@ -496,7 +497,7 @@ type BriefingUnready =
 async function schedulerConfiguration(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-): Promise<PinnedTaskConfiguration | BriefingUnready> {
+): Promise<PinnedConfiguration | BriefingUnready> {
   const read = await service.configurations.configuration(
     execution.partition,
     execution,
@@ -718,9 +719,13 @@ interface TaskLaunch {
 /** Selects the authored evaluation role after its pinned configuration has been read. */
 function schedulerTaskPurpose(
   execution: LogicalExecution,
-  configuration: PinnedTaskConfiguration,
+  configuration: PinnedConfiguration,
 ): TaskPurpose {
   if (execution.taskKind === "Work") return "Work";
+  if (pinnedWorkloadTaskOf(configuration))
+    return configuration.workload.runner === "Commands"
+      ? "Check"
+      : (configuration.workload.purpose ?? "Review");
   return execution.stage === undefined
     ? "Review"
     : (configuration.evaluations?.[execution.stage]?.purpose ?? "Review");

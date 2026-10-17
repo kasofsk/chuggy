@@ -8,7 +8,9 @@
  * and the overrides the ticket holds beside its definition — the ones its
  * last release or update stored, or ones an escalation took since — which the
  * same role reads; it does not grant access to drafts or
- * any authoring write. What it answers is the revision with those applied.
+ * any authoring write. What it answers is the revision with those applied,
+ * or, for a catalog, the one workload the task runs under the selection the
+ * ticket's release stored beside them.
  *
  * ABSENCE, INCOMPATIBILITY AND OUTAGE ARE DIFFERENT RESULTS. No row is the
  * definitive `Missing`; a row whose canonical document cannot satisfy the
@@ -23,16 +25,55 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { configurationWithOverrides } from "../../contract/configurationOverrides.ts";
-import type { PinnedConfigurationPort } from "../../interpreter/taskBriefing.ts";
+import { declaredConfigurationVersion } from "../../interpreter/authoring.ts";
+import type {
+  ConfigurationRead,
+  PinnedConfigurationPort,
+  PinnedConfigurationTask,
+} from "../../interpreter/taskBriefing.ts";
 import { pinnedTaskConfigurationReadiness } from "../../interpreter/taskBriefing.ts";
+import {
+  pinnedWorkloadTask,
+  workloadTaskPositionOf,
+} from "../../interpreter/workloadTask.ts";
 import { configurationRevisionDigest } from "./digest.ts";
-import { storedOverridesOf } from "./ticketBrief.ts";
+import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 
-/** One pinned revision, with the overrides its ticket holds. */
+/** One pinned revision, with the overrides and the selection its ticket holds. */
 interface PinnedConfigurationRow {
   readonly canonical: string;
   readonly digest: string;
   readonly overrides: string | null;
+  readonly selection: string | null;
+}
+
+/** The one workload a catalog's task runs, or the fault of a catalog that names none for it. */
+function postgresPinnedWorkloadTask(
+  document: unknown,
+  row: PinnedConfigurationRow,
+  task: PinnedConfigurationTask,
+): ConfigurationRead {
+  const pin = {
+    configurationRevision: task.configurationRevision,
+    configurationDigest: row.digest,
+  };
+  const position = workloadTaskPositionOf(
+    task.taskKind,
+    task.stage,
+    task.evaluator,
+  );
+  const pinned =
+    position === undefined
+      ? undefined
+      : pinnedWorkloadTask(
+          document,
+          pin,
+          storedSelectionOf(row.selection),
+          position,
+        );
+  return pinned === undefined
+    ? { read: "Incompatible", fault: "WorkloadUnselected" }
+    : { read: "Configuration", configuration: pinned };
 }
 
 /** Answers the exact revision a scheduler pass pinned, without a mutable-current read. */
@@ -44,7 +85,8 @@ export function postgresPinnedConfigurations(
       let found: pg.QueryResult<PinnedConfigurationRow>;
       try {
         found = await pool.query<PinnedConfigurationRow>(
-          sql`SELECT c.canonical,c.digest,d.overrides::text AS overrides
+          sql`SELECT c.canonical,c.digest,d.overrides::text AS overrides,
+                 d.selection::text AS selection
             FROM configuration_revision c
             LEFT JOIN ticket_definition d
               ON d.tenant=c.tenant AND d.project=c.project AND d.ticket=${pin.ticket}
@@ -60,6 +102,12 @@ export function postgresPinnedConfigurations(
         return { read: "Incompatible", fault: "DigestMismatch" };
       let document: unknown;
       try {
+        if (declaredConfigurationVersion(JSON.parse(row.canonical)) === 2)
+          return postgresPinnedWorkloadTask(
+            JSON.parse(row.canonical),
+            row,
+            pin,
+          );
         document = configurationWithOverrides(
           JSON.parse(row.canonical),
           storedOverridesOf(row.overrides),

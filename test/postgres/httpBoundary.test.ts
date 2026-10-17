@@ -397,7 +397,7 @@ async function ingressBriefedIntent(
   const brief = await postgresTicketBrief(scheduler).brief(partition, ticket);
   const pinned = await postgresPinnedConfigurations(scheduler).configuration(
     partition,
-    { ...pin, ticket },
+    { ...pin, ticket, taskKind: "Work" },
   );
   if (brief === undefined || pinned.read !== "Configuration")
     assert.fail("the released ticket has no brief or no pinned configuration");
