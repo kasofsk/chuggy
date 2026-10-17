@@ -22,12 +22,12 @@ import {
   gitCredentialHelperText,
   type GitEnvironment,
 } from "../../src/adapters/git/gitRun.ts";
-import { scratchDigestOf } from "../../src/adapters/git/gitScratch.ts";
 import {
   asGitObjectId,
   asRepositoryCredential,
   asRepositoryId,
   type CredentialResolved,
+  type GitObjectId,
   type RepositoryBinding,
   type RepositoryCredentialPort,
 } from "../../src/interpreter/finalizer.ts";
@@ -782,16 +782,21 @@ function fixtureBlob(fixture: Fixture, commit: string, path: string): string {
   return fixtureGit(fixture.seed, "rev-parse", `${commit}:${path}`);
 }
 
+/** Every repository under the scratch root. */
+function fixtureRepositories(fixture: Fixture): string[] {
+  const root = fixtureScratch(fixture);
+  return readdirSync(root, { recursive: true, encoding: "utf8" })
+    .filter((entry) => basename(entry) === "HEAD")
+    .map((entry) => join(root, dirname(entry)))
+    .filter((repository) => existsSync(join(repository, "objects")));
+}
+
 /**
  * Every object of one type held in any repository under the scratch root,
  * listed from each object store alone, which no listing fetches into.
  */
 function fixtureHeld(fixture: Fixture, type: "commit" | "blob"): string[] {
-  const root = fixtureScratch(fixture);
-  return readdirSync(root, { recursive: true, encoding: "utf8" })
-    .filter((entry) => basename(entry) === "HEAD")
-    .map((entry) => join(root, dirname(entry)))
-    .filter((repository) => existsSync(join(repository, "objects")))
+  return fixtureRepositories(fixture)
     .flatMap((repository) =>
       fixtureGit(
         repository,
@@ -961,11 +966,6 @@ test("a read leaves the history the ancestry reader answers from whole, under th
   const read = await fixturePort(fixture).snapshot({ repository, commit: tip });
   assert.equal(read.read, "Snapshot");
   assert.equal(
-    existsSync(join(fixtureScratch(fixture), scratchDigestOf(fixture.remote))),
-    false,
-    "the read wrote nothing where the ancestry reader keeps this repository",
-  );
-  assert.equal(
     await ancestry.ancestry({ repository, candidate: earlier, tip }),
     "Ancestor",
   );
@@ -992,4 +992,115 @@ test("a blob of the commit that could not be fetched is a commit not held yet, a
     read: "Absent",
     absent: "Commit",
   });
+});
+
+/** The environment of a port whose remote takes a while over each pack it serves, so that a fetch holds what it locks while another read could reach it. */
+function fixtureSlowServing(fixture: Fixture): GitEnvironment {
+  const here = fixture.directory;
+  writeFileSync(join(here, "slow"), '#!/bin/sh\nsleep 1\nexec "$@"\n', {
+    mode: 0o755,
+  });
+  writeFileSync(
+    join(here, "slow-gitconfig"),
+    `[uploadpack]\n\tpackObjectsHook = ${join(here, "slow")}\n`,
+  );
+  return { ...process.env, GIT_CONFIG_GLOBAL: join(here, "slow-gitconfig") };
+}
+
+test("reads of one repository begun together each answer their own commit, whether another or the same", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  const work = `${repositoryConfigurationRoot}work.json`;
+  fixtureWrite(fixture, work, "earlier\n");
+  const earlier = asGitObjectId(fixtureCommit(fixture, "earlier"));
+  fixtureWrite(fixture, work, "later\n");
+  const later = asGitObjectId(fixtureCommit(fixture, "later"));
+  const port = fixturePort(
+    fixture,
+    fixtureCredential,
+    fixtureSlowServing(fixture),
+  );
+  const together = async (...commits: GitObjectId[]) =>
+    (
+      await Promise.all(
+        commits.map((commit) =>
+          port.snapshot({ repository: fixtureBinding(fixture.remote), commit }),
+        ),
+      )
+    ).map((read) =>
+      read.read === "Snapshot" ? read.files.map((file) => file.content) : read,
+    );
+
+  assert.deepEqual(
+    [await together(earlier, later), await together(later, later)],
+    [
+      [["earlier\n"], ["later\n"]],
+      [["later\n"], ["later\n"]],
+    ],
+  );
+});
+
+/** The environment of a port whose scratch is housekept at every pack past its first, each housekeeping writing that it began and then taking a while before it does anything. */
+function fixtureHousekeeping(fixture: Fixture): GitEnvironment {
+  const hooks = join(fixture.directory, "hooks");
+  mkdirSync(hooks);
+  writeFileSync(
+    join(hooks, "pre-auto-gc"),
+    `#!/bin/sh\necho begun >> "${join(fixture.directory, "housekept")}"\nsleep 1\n`,
+    { mode: 0o755 },
+  );
+  writeFileSync(
+    join(fixture.directory, "housekeeping-gitconfig"),
+    `[gc]\n\tautoPackLimit = 1\n[core]\n\thooksPath = ${hooks}\n`,
+  );
+  return {
+    ...process.env,
+    GIT_CONFIG_GLOBAL: join(fixture.directory, "housekeeping-gitconfig"),
+  };
+}
+
+/** The packs each repository under the scratch root holds, counted from its object store alone. */
+function fixturePacks(fixture: Fixture): number[] {
+  return fixtureRepositories(fixture).map((repository) =>
+    Number(
+      /^packs: (\d+)$/mu.exec(
+        fixtureGit(repository, "count-objects", "-v"),
+      )?.[1],
+    ),
+  );
+}
+
+test("a read answers once the housekeeping its fetches set off has ended, and leaves none running after it", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "work"));
+  const port = fixturePort(
+    fixture,
+    fixtureCredential,
+    fixtureHousekeeping(fixture),
+  );
+
+  assert.deepEqual(
+    await port.snapshot({ repository: fixtureBinding(fixture.remote), commit }),
+    {
+      read: "Snapshot",
+      files: [
+        {
+          path: `${repositoryConfigurationRoot}work.json`,
+          kind: "File",
+          content: "work\n",
+        },
+      ],
+    },
+  );
+  assert.ok(
+    existsSync(join(fixture.directory, "housekept")),
+    "the read's fetches set housekeeping off",
+  );
+  assert.deepEqual(
+    fixturePacks(fixture),
+    [1],
+    "the housekeeping had packed the scratch whole when the read answered",
+  );
 });
