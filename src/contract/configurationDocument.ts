@@ -39,8 +39,8 @@ import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
 import { workerRuntimeDirectory } from "./workerEnvironment.ts";
 import {
+  workerPoolCapabilitiesMax,
   workerPoolCapabilitySchema,
-  workerPoolRequirementCapabilitiesMax,
 } from "./workerPool.ts";
 import { workerImageCharsMax } from "./workerPool.ts";
 import {
@@ -48,6 +48,10 @@ import {
   commandLinesMax,
   filesystemAccesses,
 } from "./workerTask.ts";
+
+/** The most a requirement names beside its platform, which its assignment carries within a pool's bound. */
+export const configurationRequirementCapabilitiesMax =
+  workerPoolCapabilitiesMax - 1;
 
 /** The one envelope version this tree reads. */
 export const configurationDocumentVersion = 1;
@@ -443,7 +447,7 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     capabilities: z
       .array(workerPoolCapabilitySchema)
       .min(1)
-      .max(workerPoolRequirementCapabilitiesMax)
+      .max(configurationRequirementCapabilitiesMax)
       .refine(
         (capabilities) => new Set(capabilities).size === capabilities.length,
       )

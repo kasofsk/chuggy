@@ -9,6 +9,7 @@
  * rather than a browser's.
  */
 
+import { configurationRequirementCapabilitiesMax } from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
@@ -67,7 +68,6 @@ import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   workerPoolCapabilitiesSchema,
   workerPoolCapabilitySchema,
-  workerPoolRequirementCapabilitiesMax,
   workerPoolEvidenceCharsMax,
 } from "./workerPool.ts";
 import {
@@ -564,7 +564,7 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     capabilities: z
       .array(workerPoolCapabilitySchema)
       .min(1)
-      .max(workerPoolRequirementCapabilitiesMax),
+      .max(configurationRequirementCapabilitiesMax),
   }),
 ]);
 

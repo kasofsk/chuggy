@@ -29,12 +29,10 @@ import {
   configurationImageSchema,
   configurationMemoryMibMax,
   configurationMemoryMibMin,
+  configurationRequirementCapabilitiesMax,
 } from "../../src/contract/configurationDocument.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
-import {
-  workerImageCharsMax,
-  workerPoolRequirementCapabilitiesMax,
-} from "../../src/contract/workerPool.ts";
+import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
@@ -388,7 +386,7 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
         ticketDefault: {
           ...capabilityRequirement,
           capabilities: Array.from(
-            { length: workerPoolRequirementCapabilitiesMax + 1 },
+            { length: configurationRequirementCapabilitiesMax + 1 },
             (_unused, index) => `Tool:T${String(index)}`,
           ),
         },
