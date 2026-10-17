@@ -190,7 +190,8 @@ function bootstrapAgentSkeleton(purpose: string, prompt: string): string {
  */
 function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
   return [
-    `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there. Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
+    `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}, with the prompt files under .chug/ it names; a limit the request sets on what may change does not stop you writing them.`,
+    `Each file in ${repositoryConfigurationRoot} is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
     `C is {"version":${String(workloadConfigurationVersion)},"image":I,"workloads":{"work":W,"checks":K,"review":R},"plans":{"standard":[{"name":"checks","evaluators":["checks"]},{"name":"review","evaluators":["review"]}]},"defaults":{"work":"work","evaluation":"standard"}}: the workloads a ticket may run, the plan its change is held to, and the work and plan a ticket selecting none runs.`,
     `W is ${bootstrapAgentSkeleton("", "P")}, P the path of a file under .chug/ holding the prompt the worker is handed, as written; R is ${bootstrapAgentSkeleton('"purpose":"Review",', "Q")}, Q the path of one telling a reviewer what to hold a change to.`,
     `K is {"runner":"Commands","commands":[L],"worker":{"setup":[L],"files":[]}}, which runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit. A plan's stages run in the order listed and a failed stage ends evaluation, so the cheap checks stage goes before the review.`,
@@ -209,7 +210,7 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
  */
 const bootstrapReviewLines: readonly string[] = [
   "Review the change against what the repository itself asks of one and against the ticket's acceptance criteria.",
-  `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot}. Hold those files to the criteria above, and do not fail the change for writing them.`,
+  `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot} with the prompt files under .chug/ it names. Hold those files to the criteria above, and do not fail the change for writing them.`,
   "Do not fail it for changing more than the request allowed either, where the more is those files or a lockfile their setup needs or writes.",
   "Whether later tickets run on what the change declares is settled after it lands, by chuggy and outside the change: it is no criterion, and nothing missing from the change on that account is a finding.",
 ];
@@ -233,7 +234,7 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
     ],
     constraints: [
       `The repository's default branch is ${input.defaultBranch}.`,
-      `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}: they are written whatever the request says, and writing them does not go against it.`,
+      `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}, nor the prompt files under .chug/ they name: they are written whatever the request says, and writing them does not go against it.`,
       "The same holds for a lockfile that the setup declared in those files needs or writes and this change commits.",
     ],
   };

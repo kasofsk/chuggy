@@ -763,11 +763,24 @@ export function draftInitializationPolicy(
     choices: {
       programStagesMax: Math.min(
         config.maxStages,
-        ticket === undefined ? config.maxStages : program.length,
+        draftInitializationStagesMax(config, ticket),
       ),
       evaluatorsMax: config.nTasks,
     },
   };
+}
+
+/**
+ * The most stages a program may have: as many as a catalog's selected plan or
+ * a document's `evaluations` list, and the domain's bound where neither
+ * names any.
+ */
+function draftInitializationStagesMax(
+  config: Config,
+  ticket: TicketConfiguration | undefined,
+): number {
+  if (ticket?.version === 2) return ticket.selection.plan.stages.length;
+  return ticket?.configuration.evaluations?.length ?? config.maxStages;
 }
 
 /**

@@ -62,13 +62,8 @@ import { configurationRevisionDigest } from "./digest.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
-interface DraftRow extends ConfigurationVersionRow {
-  readonly ticket: string;
-  readonly authoring_version: string;
-  readonly state: string;
-  readonly released_authoring_version: string | null;
-  readonly configuration_revision: string;
-  readonly authoring: string;
+/** A draft's brief, overrides and selection, as both a draft and a page of drafts answer them. */
+interface DraftBriefColumns {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
@@ -80,6 +75,15 @@ interface DraftRow extends ConfigurationVersionRow {
   readonly checks: string[] | null;
   readonly overrides: string | null;
   readonly selection: string | null;
+}
+
+interface DraftRow extends ConfigurationVersionRow, DraftBriefColumns {
+  readonly ticket: string;
+  readonly authoring_version: string;
+  readonly state: string;
+  readonly released_authoring_version: string | null;
+  readonly configuration_revision: string;
+  readonly authoring: string;
 }
 
 interface ConfigurationRow extends ConfigurationVersionRow {
@@ -270,23 +274,12 @@ function draftResourceOf(partition: Partition, row: DraftRow): DraftResource {
  * nullable to the query checker, so the four the relation declares `NOT NULL`
  * are narrowed here rather than assumed.
  */
-interface DraftPageRow extends ConfigurationVersionRow {
+interface DraftPageRow extends ConfigurationVersionRow, DraftBriefColumns {
   readonly ticket: string | null;
   readonly authoring_version: string | null;
   readonly state: string | null;
   readonly configuration_revision: string | null;
   readonly authoring: string | null;
-  readonly title: string | null;
-  readonly intent: string | null;
-  readonly branch: string | null;
-  readonly repository: string | null;
-  readonly finalization_mode: string | null;
-  readonly finalization_target: string | null;
-  readonly links: string[] | null;
-  readonly images: string[] | null;
-  readonly checks: string[] | null;
-  readonly overrides: string | null;
-  readonly selection: string | null;
 }
 
 function draftPageColumn(value: string | null, what: string): string {

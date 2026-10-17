@@ -362,8 +362,9 @@ export async function importRepositoryConfigurations(input: {
 
 /**
  * Every file the snapshot's catalogs name, read until what they name is read.
- * Each round reads at least one path not yet read, and a snapshot naming more
- * than an import reads stops reading for readiness to refuse.
+ * Each round reads at least one path not yet read, so one more round than an
+ * import reads paths is as many as it can take, and a snapshot naming more
+ * than that stops reading for readiness to refuse.
  */
 async function importRepositoryConfigurationsReferenced(
   snapshots: RepositoryConfigurationSnapshotPort,
@@ -377,7 +378,7 @@ async function importRepositoryConfigurationsReferenced(
     >
 > {
   const referenced = new Map<string, RepositoryConfigurationReferenced>();
-  for (;;) {
+  for (let round = 0; round <= repositoryConfigurationReferencesMax; round++) {
     const named = repositoryConfigurationImportReferences(files, referenced);
     const unread = named.filter((path) => !referenced.has(path));
     if (
@@ -393,6 +394,7 @@ async function importRepositoryConfigurationsReferenced(
       if (!referenced.has(path))
         referenced.set(path, { path, found: "Absent" });
   }
+  return referenced;
 }
 
 /** A reference read that found nothing to read, as the outcome a snapshot saying the same is. */

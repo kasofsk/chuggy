@@ -593,6 +593,36 @@ test("each role is told that a limit the request puts on what may change does no
   );
 });
 
+/** How the brief names the files outside the configuration directory that the catalog's workloads read. */
+const promptFiles = "prompt files under .chug/";
+
+test("the prompt files the worker is told to write outside the configuration directory are beyond a request's limit for each role", () => {
+  assert.ok(
+    toldLines().some((line) =>
+      line.includes("P the path of a file under .chug/"),
+    ),
+    "the worker is asked for prompt files outside the configuration directory",
+  );
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) => /\blimit\b/u.test(line) && line.includes(promptFiles),
+    ),
+  );
+  for (const purpose of ["Work", "Review"] as const)
+    assert.ok(
+      briefed(purpose, "AcceptanceAndConstraints").some(
+        (line) => line.includes("does not reach") && line.includes(promptFiles),
+      ),
+      purpose,
+    );
+  assert.ok(
+    briefed("Review", "Prompt").some(
+      (line) => line.includes(promptFiles) && /\bdo not fail\b/iu.test(line),
+    ),
+    "a reviewer does not fail the change for them",
+  );
+});
+
 /** The told line naming where every key chuggy reads is published. */
 function schemaLine(told: readonly string[]): string {
   const found = told.filter((line) => line.startsWith("The JSON Schema at "));

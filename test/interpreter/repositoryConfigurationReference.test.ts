@@ -282,11 +282,16 @@ const binding: RepositoryBinding = {
   recoveryEpoch: asRecoveryEpoch("epoch"),
 };
 
-test("an import reads a catalog's workload files, then the prompts they name, at the commit it imports", async () => {
-  const asked: (readonly string[])[] = [];
-  const stored: RepositoryConfigurationDeclaration[] = [];
-  const held = referencedOf(everyFile);
-  const outcome = await importRepositoryConfigurations({
+type ImportPorts = Parameters<
+  typeof importRepositoryConfigurations
+>[0]["ports"];
+
+/** An import of this repository at the commit, by the importer, through `snapshots` and into `store`. */
+function imported(
+  snapshots: ImportPorts["snapshots"],
+  store: ImportPorts["store"],
+) {
+  return importRepositoryConfigurations({
     partition: binding.partition,
     repository,
     commit,
@@ -296,26 +301,36 @@ test("an import reads a catalog's workload files, then the prompts they name, at
     },
     ports: {
       bindings: { binding: () => Promise.resolve(binding) },
-      snapshots: {
-        snapshot: () =>
-          Promise.resolve({ read: "Snapshot", files: [catalogDeclaration()] }),
-        referenced: (request, paths) => {
-          assert.equal(request.commit, commit);
-          asked.push([...paths].sort());
-          return Promise.resolve({
-            read: "Referenced",
-            files: paths.flatMap((path) => held.get(path) ?? []),
-          });
-        },
-      },
-      store: {
-        importRepositoryConfigurations: (input) => {
-          stored.push(...input.declarations);
-          return Promise.resolve({ imported: "Imported" });
-        },
-      },
+      snapshots,
+      store,
     },
   });
+}
+
+test("an import reads a catalog's workload files, then the prompts they name, at the commit it imports", async () => {
+  const asked: (readonly string[])[] = [];
+  const stored: RepositoryConfigurationDeclaration[] = [];
+  const held = referencedOf(everyFile);
+  const outcome = await imported(
+    {
+      snapshot: () =>
+        Promise.resolve({ read: "Snapshot", files: [catalogDeclaration()] }),
+      referenced: (request, paths) => {
+        assert.equal(request.commit, commit);
+        asked.push([...paths].sort());
+        return Promise.resolve({
+          read: "Referenced",
+          files: paths.flatMap((path) => held.get(path) ?? []),
+        });
+      },
+    },
+    {
+      importRepositoryConfigurations: (input) => {
+        stored.push(...input.declarations);
+        return Promise.resolve({ imported: "Imported" });
+      },
+    },
+  );
   assert.deepEqual(outcome, { result: "Imported", declarations: 1 });
   assert.deepEqual(asked, [
     [workPrompt, reviewWorkload].sort(),
@@ -325,28 +340,18 @@ test("an import reads a catalog's workload files, then the prompts they name, at
 });
 
 test("a reference read that cannot reach the commit is the outcome a snapshot saying so is", async () => {
-  const outcome = await importRepositoryConfigurations({
-    partition: binding.partition,
-    repository,
-    commit,
-    authority: {
-      kind: asAuthorityKind("Service"),
-      subject: asAuthoritySubject("importer"),
+  const outcome = await imported(
+    {
+      snapshot: () =>
+        Promise.resolve({ read: "Snapshot", files: [catalogDeclaration()] }),
+      referenced: () =>
+        Promise.resolve({ read: "Unavailable", unavailable: "Repository" }),
     },
-    ports: {
-      bindings: { binding: () => Promise.resolve(binding) },
-      snapshots: {
-        snapshot: () =>
-          Promise.resolve({ read: "Snapshot", files: [catalogDeclaration()] }),
-        referenced: () =>
-          Promise.resolve({ read: "Unavailable", unavailable: "Repository" }),
-      },
-      store: {
-        importRepositoryConfigurations: () =>
-          Promise.reject(new Error("nothing is stored")),
-      },
+    {
+      importRepositoryConfigurations: () =>
+        Promise.reject(new Error("nothing is stored")),
     },
-  });
+  );
   assert.deepEqual(outcome, {
     result: "Unavailable",
     unavailable: "Repository",
@@ -365,36 +370,26 @@ async function treeDeclarations(): Promise<
       content: readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"),
     }));
   const stored: RepositoryConfigurationDeclaration[] = [];
-  const outcome = await importRepositoryConfigurations({
-    partition: binding.partition,
-    repository,
-    commit,
-    authority: {
-      kind: asAuthorityKind("Service"),
-      subject: asAuthoritySubject("importer"),
+  const outcome = await imported(
+    {
+      snapshot: () => Promise.resolve({ read: "Snapshot", files }),
+      referenced: (_request, paths) =>
+        Promise.resolve({
+          read: "Referenced",
+          files: paths.map((path) =>
+            existsSync(path)
+              ? file(path, readFileSync(path, "utf8"))
+              : { path, found: "Absent" as const },
+          ),
+        }),
     },
-    ports: {
-      bindings: { binding: () => Promise.resolve(binding) },
-      snapshots: {
-        snapshot: () => Promise.resolve({ read: "Snapshot", files }),
-        referenced: (_request, paths) =>
-          Promise.resolve({
-            read: "Referenced",
-            files: paths.map((path) =>
-              existsSync(path)
-                ? file(path, readFileSync(path, "utf8"))
-                : { path, found: "Absent" as const },
-            ),
-          }),
-      },
-      store: {
-        importRepositoryConfigurations: (input) => {
-          stored.push(...input.declarations);
-          return Promise.resolve({ imported: "Imported" });
-        },
+    {
+      importRepositoryConfigurations: (input) => {
+        stored.push(...input.declarations);
+        return Promise.resolve({ imported: "Imported" });
       },
     },
-  });
+  );
   assert.equal(outcome.result, "Imported", JSON.stringify(outcome));
   return stored;
 }

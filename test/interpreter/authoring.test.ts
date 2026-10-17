@@ -79,6 +79,23 @@ test("the evaluator bound is the task bound, not the stage bound", () => {
   assert.deepEqual(policy.choices, { programStagesMax: 2, evaluatorsMax: 3 });
 });
 
+test("a version 1 configuration listing no evaluations leaves a program the domain's bound", () => {
+  const readiness = releaseConfigurationReadiness(
+    canonicalConfigurationOf(JSON.parse(readyConfiguration) as unknown),
+  );
+  assert.equal(readiness.readiness, "Ready");
+  if (readiness.readiness !== "Ready" || readiness.configuration.version !== 1)
+    return;
+  assert.equal(readiness.configuration.evaluations, undefined);
+  assert.equal(
+    draftInitializationPolicy(
+      { ...refinementInstance, maxStages: 4 },
+      { version: 1, configuration: readiness.configuration },
+    ).choices.programStagesMax,
+    4,
+  );
+});
+
 test("stage-specific configuration bounds the authored evaluation program", () => {
   const parsed = JSON.parse(readyConfiguration) as Record<string, unknown>;
   const readiness = releaseConfigurationReadiness(
