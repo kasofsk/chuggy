@@ -404,6 +404,15 @@ export type SchedulerFreshness = (typeof schedulerFreshnesses)[number];
 export const draftStates = ["Draft", "Released", "Deleted"] as const;
 export type DraftState = (typeof draftStates)[number];
 
+/** Who named the landing a write stored a draft's brief with, in the order the write asks. */
+export const draftLandingSources = [
+  "Brief",
+  "Finalizer",
+  "Repository",
+  "Default",
+] as const;
+export type DraftLandingSource = (typeof draftLandingSources)[number];
+
 /**
  * How a finalization lands one ticket's work on the reference its brief names:
  * by advancing that reference, by opening a change proposal into it, or by

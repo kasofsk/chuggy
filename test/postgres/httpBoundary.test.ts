@@ -9,6 +9,7 @@ import { nativeHttpMediaType } from "../../src/contract/http.ts";
 import {
   draftInitializationResponseSchema,
   draftResponseSchema,
+  draftWrittenResponseSchema,
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
   leadInquiryResponseSchema,
@@ -322,6 +323,22 @@ const ingressHeaders = {
   "content-type": nativeHttpMediaType,
 };
 
+/** The authoring a draft is filed with through the real door, as the wire carries it. */
+const ingressAuthoring = {
+  dependencies: [...plainAuthoring.deps],
+  program: plainAuthoring.prog,
+};
+
+/** The fence a draft is filed against, read fresh from the real door. */
+async function ingressFence(root: string, revision: string) {
+  const initialized = await fetch(`${root}/draft-initializations/${revision}`, {
+    headers: ingressHeaders,
+  });
+  assert.equal(initialized.status, 200);
+  return draftInitializationResponseSchema.parse(await initialized.json())
+    .fence;
+}
+
 /** Files one draft through the real door with `intent` and reads it back over the wire. */
 async function ingressDraft(
   root: string,
@@ -330,13 +347,7 @@ async function ingressDraft(
   intent: string,
   overrides?: ConfigurationOverrides,
 ): Promise<DraftResponse> {
-  const initialized = await fetch(`${root}/draft-initializations/${revision}`, {
-    headers: ingressHeaders,
-  });
-  assert.equal(initialized.status, 200);
-  const { fence } = draftInitializationResponseSchema.parse(
-    await initialized.json(),
-  );
+  const fence = await ingressFence(root, revision);
   const filed = await fetch(`${root}/drafts`, {
     method: "POST",
     headers: ingressHeaders,
@@ -344,10 +355,7 @@ async function ingressDraft(
       configurationRevision: revision,
       configurationDigest: fence.configurationDigest,
       expectedProjectSequence: fence.projectSequence,
-      authoring: {
-        dependencies: [...plainAuthoring.deps],
-        program: plainAuthoring.prog,
-      },
+      authoring: ingressAuthoring,
       brief: { intent, links: [], repository },
       ...(overrides === undefined ? {} : { overrides }),
     }),
@@ -645,6 +653,125 @@ test("real HTTP ingress deletes a draft at the version its read reports, under t
   try {
     for (const headers of ingressDeletionHeaders)
       await ingressDraftDeleted(root, revision, repository, headers);
+  } finally {
+    await app.close();
+    await pool.end();
+    await harness.close();
+  }
+});
+
+/** Files one draft through the real door with `brief`, against a fence read fresh. */
+async function ingressLandingCreated(
+  root: string,
+  revision: string,
+  brief: object,
+) {
+  const fence = await ingressFence(root, revision);
+  return ingressLandingWritten(`${root}/drafts`, "POST", {
+    configurationRevision: revision,
+    configurationDigest: fence.configurationDigest,
+    expectedProjectSequence: fence.projectSequence,
+    authoring: ingressAuthoring,
+    brief,
+  });
+}
+
+/** One draft write's status, the draft it answers and the landing beside it. */
+async function ingressLandingWritten(
+  path: string,
+  method: "POST" | "PUT",
+  body: object,
+) {
+  const written = await fetch(path, {
+    method,
+    headers: ingressHeaders,
+    body: JSON.stringify(body),
+  });
+  const answered = await written.text();
+  assert.equal(written.status, method === "POST" ? 201 : 200, answered);
+  return draftWrittenResponseSchema.parse(JSON.parse(answered));
+}
+
+/** A project whose one repository is bound to land by pull request, and a configuration to file drafts against. */
+async function ingressLandingProject(harness: PostgresHarness) {
+  const partition = await postgresHarnessProject(harness.store, "http-landing");
+  harness.access.grant({
+    partition,
+    principal,
+    access: new Set(["Read", "Mutate"]),
+  });
+  const repository = await postgresHarnessBinding(harness, partition);
+  await harness.query(
+    `UPDATE project_repository SET landing_mode='PullRequest'
+      WHERE tenant=$1 AND project=$2 AND repository=$3`,
+    [partition.tenant, partition.project, repository],
+  );
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-landing").authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  assert.equal(configured.created, "Created");
+  return { partition, repository, revision };
+}
+
+/**
+ * Where a draft's landing came from, over the REAL composition: a landing no
+ * brief names is the repository's, which the server's own function resolves
+ * from the binding, so a suite over a double would only agree with itself.
+ */
+test("real HTTP ingress answers each draft write's landing and who named it, the repository's resolved from its binding", async () => {
+  const harness = await postgresHarnessOpen();
+  const { partition, repository, revision } =
+    await ingressLandingProject(harness);
+  const { pool, app } = composedIngress(harness.access);
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  const brief = {
+    intent: "Land it.",
+    links: [],
+    repository,
+    branch: "refs/heads/work",
+  };
+  try {
+    const created = await ingressLandingCreated(root, revision, brief);
+    assert.deepEqual(created.landing, {
+      mode: "PullRequest",
+      source: "Repository",
+    });
+    const revise = async (expectedVersion: number, written: object) =>
+      (
+        await ingressLandingWritten(
+          `${root}/drafts/${String(created.ticket)}`,
+          "PUT",
+          {
+            expectedVersion,
+            configurationRevision: revision,
+            authoring: ingressAuthoring,
+            brief: written,
+          },
+        )
+      ).landing;
+    assert.deepEqual(
+      await revise(1, { ...brief, finalization: { mode: "Push" } }),
+      { mode: "Push", source: "Brief" },
+    );
+    assert.deepEqual(
+      await revise(2, brief),
+      { mode: "PullRequest", source: "Repository" },
+      "a revision naming no landing takes the repository's again",
+    );
+    assert.deepEqual(
+      (
+        await ingressLandingCreated(root, revision, {
+          intent: "Land it.",
+          links: [],
+        })
+      ).landing,
+      { mode: "Push", source: "Default" },
+    );
   } finally {
     await app.close();
     await pool.end();

@@ -331,6 +331,7 @@ const draft = {
   configurationRevision: configuration.revision,
   authoring: plainAuthoring,
 };
+const landing = { mode: "Push", source: "Default" } as const;
 
 test("configuration outcomes are closed and location-bearing", () => {
   assert.equal(configurationResponse(undefined).status, 404);
@@ -385,7 +386,7 @@ test("draft resources encode sets as stable JSON arrays", () => {
   assert.equal(
     draftCreationResponse({
       result: "Authorized",
-      value: { created: "Created", draft },
+      value: { created: "Created", draft, landing },
     }).status,
     201,
   );
@@ -537,7 +538,7 @@ test("draft creation maps every closed result, a branchless landing among them",
 
 test("draft revision and deletion map every closed result", () => {
   const revisions = [
-    { value: { revised: "Revised", draft }, status: 200 },
+    { value: { revised: "Revised", draft, landing }, status: 200 },
     { value: { revised: "NotFound" }, status: 404 },
     { value: { revised: "Stale", currentVersion: 3 }, status: 409 },
     { value: { revised: "NotDraft", state: "Released" }, status: 409 },

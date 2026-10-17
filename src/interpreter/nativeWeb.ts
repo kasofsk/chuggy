@@ -68,6 +68,7 @@ import type {
   DraftCreated,
   DraftInitializationRead,
   DraftDeleted,
+  DraftLanding,
   DraftPage,
   DraftPageQuery,
   DraftResource,
@@ -593,6 +594,24 @@ export type NativeCancellation =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly cancellation: Cancelled };
 
+/** What creating a draft answers: the store's answer, a created draft beside the landing its brief was stored with. */
+export type NativeDraftCreated =
+  | Exclude<DraftCreated, { readonly created: "Created" }>
+  | {
+      readonly created: "Created";
+      readonly draft: DraftResource;
+      readonly landing: DraftLanding;
+    };
+
+/** What revising a draft answers: the store's answer, a revised draft beside the landing its brief was stored with. */
+export type NativeDraftRevised =
+  | Exclude<DraftRevised, { readonly revised: "Revised" }>
+  | {
+      readonly revised: "Revised";
+      readonly draft: DraftResource;
+      readonly landing: DraftLanding;
+    };
+
 export interface NativeWeb {
   submit(
     principal: Principal,
@@ -754,7 +773,7 @@ export interface NativeWeb {
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
     },
-  ): Promise<AuthorizedResult<DraftCreated>>;
+  ): Promise<AuthorizedResult<NativeDraftCreated>>;
   initializeDraft(
     principal: Principal,
     partition: Partition,
@@ -773,7 +792,7 @@ export interface NativeWeb {
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
     },
-  ): Promise<AuthorizedResult<DraftRevised>>;
+  ): Promise<AuthorizedResult<NativeDraftRevised>>;
   deleteDraft(
     principal: Principal,
     input: {
@@ -1078,6 +1097,12 @@ function draftRevisionImagesRefusal(
     : { revised: "Unavailable", retryAfterSeconds: bound.retryAfterSeconds };
 }
 
+/** The brief a draft is stored with, and who named its landing where that is known before the store writes it. */
+interface NativeDraftBriefLanded {
+  readonly brief: DraftBrief;
+  readonly source?: Extract<DraftLanding["source"], "Brief" | "Finalizer">;
+}
+
 /**
  * The brief a draft is stored with: as written, or, where it names no landing
  * and the finalizer its catalog selection lands with names one, with that
@@ -1091,8 +1116,9 @@ async function nativeDraftBriefLanded(
     readonly brief: DraftBrief;
     readonly selection?: ConfigurationSelection;
   },
-): Promise<DraftBrief> {
-  if (input.brief.finalization !== undefined) return input.brief;
+): Promise<NativeDraftBriefLanded> {
+  if (input.brief.finalization !== undefined)
+    return { brief: input.brief, source: "Brief" };
   const configuration = await authoring.configuration(
     input.partition,
     input.configurationRevision,
@@ -1105,15 +1131,101 @@ async function nativeDraftBriefLanded(
           input.selection,
         )?.finalizer?.landing;
   return landing === undefined
-    ? input.brief
+    ? { brief: input.brief }
     : {
-        ...input.brief,
-        finalization: asBriefFinalization(
-          "target" in landing && landing.target !== undefined
-            ? { mode: landing.mode, target: landing.target }
-            : { mode: landing.mode },
-        ),
+        brief: {
+          ...input.brief,
+          finalization: asBriefFinalization(
+            "target" in landing && landing.target !== undefined
+              ? { mode: landing.mode, target: landing.target }
+              : { mode: landing.mode },
+          ),
+        },
+        source: "Finalizer",
       };
+}
+
+/**
+ * The landing a written draft's brief was stored with, as the store read it
+ * back, and who named it. A landing neither the brief nor its finalizer named is
+ * the store's to resolve: the repository's where the brief names one, and
+ * `briefFinalizationDefault` where it names none.
+ */
+function nativeDraftLanding(
+  landed: NativeDraftBriefLanded,
+  draft: DraftResource,
+): DraftLanding {
+  const stored = draft.brief?.finalization;
+  if (stored === undefined)
+    throw new Error("native web: a written draft answered no landing");
+  return {
+    ...stored,
+    source:
+      landed.source ??
+      (landed.brief.repository === undefined ? "Default" : "Repository"),
+  };
+}
+
+/** `createDraft`, refusing an image the project does not hold before the store is asked. */
+function nativeDraftCreationMethod(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+  projectArtifacts?: ProjectArtifactPort,
+): NativeWeb["createDraft"] {
+  return (principal, input) =>
+    authorizedProjectMutation(
+      access,
+      principal,
+      input.partition,
+      async (authority): Promise<NativeDraftCreated> => {
+        const bound = await nativeBriefImagesBound(
+          projectArtifacts,
+          input.partition,
+          input.brief.images,
+        );
+        if (bound.bound !== "Bound") return draftCreationImagesRefusal(bound);
+        const landed = await nativeDraftBriefLanded(authoring, input);
+        const created = await authoring.createDraft({
+          ...input,
+          brief: landed.brief,
+          authority,
+        });
+        return created.created === "Created"
+          ? { ...created, landing: nativeDraftLanding(landed, created.draft) }
+          : created;
+      },
+    );
+}
+
+/** `reviseDraft`, refusing an image the project does not hold before the store is asked. */
+function nativeDraftRevisionMethod(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+  projectArtifacts?: ProjectArtifactPort,
+): NativeWeb["reviseDraft"] {
+  return (principal, input) =>
+    authorizedProjectMutation(
+      access,
+      principal,
+      input.partition,
+      async (authority): Promise<NativeDraftRevised> => {
+        const bound = await nativeBriefImagesBound(
+          projectArtifacts,
+          input.partition,
+          input.brief.images,
+        );
+        if (bound.bound !== "Bound") return draftRevisionImagesRefusal(bound);
+        const landed = await nativeDraftBriefLanded(authoring, input);
+        const revised = await authoring.reviseDraft({
+          ...input,
+          brief: landed.brief,
+          authority,
+        });
+        return revised.revised === "Revised"
+          ? { ...revised, landing: nativeDraftLanding(landed, revised.draft) }
+          : revised;
+      },
+    );
 }
 
 function nativeAuthoringMethods(
@@ -1130,38 +1242,8 @@ function nativeAuthoringMethods(
         input.partition,
         (authority) => authoring.createConfiguration({ ...input, authority }),
       ),
-    createDraft: (principal, input) =>
-      authorizedProjectMutation(
-        access,
-        principal,
-        input.partition,
-        async (authority) => {
-          const bound = await nativeBriefImagesBound(
-            projectArtifacts,
-            input.partition,
-            input.brief.images,
-          );
-          if (bound.bound !== "Bound") return draftCreationImagesRefusal(bound);
-          const brief = await nativeDraftBriefLanded(authoring, input);
-          return authoring.createDraft({ ...input, brief, authority });
-        },
-      ),
-    reviseDraft: (principal, input) =>
-      authorizedProjectMutation(
-        access,
-        principal,
-        input.partition,
-        async (authority) => {
-          const bound = await nativeBriefImagesBound(
-            projectArtifacts,
-            input.partition,
-            input.brief.images,
-          );
-          if (bound.bound !== "Bound") return draftRevisionImagesRefusal(bound);
-          const brief = await nativeDraftBriefLanded(authoring, input);
-          return authoring.reviseDraft({ ...input, brief, authority });
-        },
-      ),
+    createDraft: nativeDraftCreationMethod(access, authoring, projectArtifacts),
+    reviseDraft: nativeDraftRevisionMethod(access, authoring, projectArtifacts),
     deleteDraft: (principal, input) =>
       authorizedProjectMutation(
         access,

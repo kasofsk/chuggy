@@ -16,8 +16,10 @@ import {
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
+  draftCreationResponse,
   draftInitializationResponse,
   draftResponse,
+  draftRevisionResponse,
   executionResponse,
   executionsResponse,
   forgeAppsResponse,
@@ -58,6 +60,7 @@ import {
   draftInitializationResponseSchema,
   draftResponseSchema,
   draftsResponseSchema,
+  draftWrittenResponseSchema,
   executionRequirementSchema,
   executionResponseSchema,
   executionsResponseSchema,
@@ -132,6 +135,7 @@ import {
 } from "../../src/contract/http.ts";
 import { asTaskId, asTicketId } from "../../src/domain/ids.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import { asBriefFinalization } from "../../src/interpreter/ticketBrief.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -1257,6 +1261,27 @@ test("a draft and its initialization parse with the authoring the wire carries",
   assert.equal(initialization.fence.projectSequence, 9);
   assert.equal(initialization.choices.programStagesMax, 4);
   assert.equal(initialization.choices.evaluatorsMax, 3);
+});
+
+test("a created and a revised draft parse with the landing their write stored", () => {
+  const landing = {
+    ...asBriefFinalization({ mode: "PullRequest", target: "refs/heads/main" }),
+    source: "Finalizer",
+  } as const;
+  const created = draftCreationResponse({
+    result: "Authorized",
+    value: { created: "Created", draft: draftResource, landing },
+  });
+  const revised = draftRevisionResponse({
+    result: "Authorized",
+    value: { revised: "Revised", draft: draftResource, landing },
+  });
+  assert.deepEqual(
+    [created.body, revised.body].map(
+      (body) => draftWrittenResponseSchema.parse(body).landing,
+    ),
+    [landing, landing],
+  );
 });
 
 test("a hand-assembled read drops an unknown field at every depth", () => {

@@ -33,7 +33,11 @@ import type { Worker } from "./workerCatalog.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
-import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
+import type {
+  BriefFinalization,
+  DraftBrief,
+  ReleaseBrief,
+} from "./ticketBrief.ts";
 import type { BoundaryRefusalCode } from "./refusal.ts";
 import {
   authoredTaskConfigurationReadiness,
@@ -847,6 +851,20 @@ export type DraftRevised =
   | { readonly revised: "ArtifactNotBound" }
   | { readonly revised: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly revised: "LandingUnbranched" };
+
+/**
+ * Who named the landing a write stored a draft's brief with, in the order the
+ * write asks: the brief, the finalizer its catalog selection lands with, the
+ * repository it names, and `briefFinalizationDefault` where none of them does,
+ * which is a brief naming no repository.
+ */
+export type DraftLandingSource =
+  "Brief" | "Finalizer" | "Repository" | "Default";
+
+/** The landing one write stored a draft's brief with, and who named it. */
+export type DraftLanding = BriefFinalization & {
+  readonly source: DraftLandingSource;
+};
 
 export type DraftDeleted =
   | { readonly deleted: "Deleted"; readonly draft: DraftResource }
