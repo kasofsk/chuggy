@@ -17,6 +17,8 @@ import {
   type TicketConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import { refinementInstance } from "../actor/harness.ts";
+import { handoffApprovalRequired } from "../../src/interpreter/finalizerPreparation.ts";
+import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -329,4 +331,18 @@ test("a stored catalog release is read back per evaluator, and a stored document
   assert.equal(ticketTaskRequirement(material, key).value.mode, "Container");
   const document = { tasks: [{ key: "Evaluation:1" }] };
   assert.equal(ticketTaskKey(document, "Evaluation", 1, 2), "Evaluation:1");
+});
+
+test("a catalog asks for approval only where the finalizer its ticket selects does", () => {
+  assert.equal(handoffApprovalRequired(canonical), false);
+  assert.equal(
+    handoffApprovalRequired(canonical, { finalization: "gated" }),
+    true,
+  );
+  assert.equal(
+    handoffApprovalRequired(canonical, { finalization: "absent" }),
+    undefined,
+    "a selection the catalog does not hold is a policy finalization cannot read",
+  );
+  assert.deepEqual(catalogSelectedFinalizer(catalog, undefined), {});
 });

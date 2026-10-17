@@ -80,6 +80,11 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
+import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
+import {
+  catalogSelectedFinalizer,
+  declaredConfigurationVersion,
+} from "./workloadConfiguration.ts";
 import {
   candidateBytesMax,
   candidateExecutionsMax,
@@ -183,6 +188,8 @@ export interface HandoffGathering {
   readonly work: readonly HandoffWork[];
   readonly artifacts: readonly HandoffArtifact[];
   readonly sources: readonly HandoffSource[];
+  /** The catalog entries the ticket was released selecting, which a version 1 ticket holds none of. */
+  readonly selection?: ConfigurationSelection;
 }
 
 /** The passed work one finalization promotes, and the revision that work ran under. */
@@ -247,9 +254,14 @@ export type HandoffAccepted =
     }
   | { readonly accepted: "NoPassedWork" };
 
-/** Whether the pinned revision asks a person to approve one candidate, or says nothing this module reads. */
+/**
+ * Whether the pinned revision asks a person to approve one candidate, or says
+ * nothing this module reads. A catalog asks it of the finalizer the ticket's
+ * selection lands with, and one that selects none asks for no approval.
+ */
 export function handoffApprovalRequired(
   canonical: CanonicalConfiguration,
+  selection?: ConfigurationSelection,
 ): boolean | undefined {
   let parsed: unknown;
   try {
@@ -259,6 +271,12 @@ export function handoffApprovalRequired(
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return undefined;
+  }
+  if (declaredConfigurationVersion(parsed) === 2) {
+    const selected = catalogSelectedFinalizer(parsed, selection);
+    return selected === undefined
+      ? undefined
+      : (selected.finalizer?.approvalRequired ?? false);
   }
   const asked = (parsed as Record<string, unknown>)[approvalRequiredField];
   if (asked === undefined) return false;
@@ -370,7 +388,10 @@ export function handoffAccepted(gathering: HandoffGathering): HandoffAccepted {
       configuration,
     };
   }
-  const approvalRequired = handoffApprovalRequired(first.canonical);
+  const approvalRequired = handoffApprovalRequired(
+    first.canonical,
+    gathering.selection,
+  );
   if (approvalRequired === undefined) {
     return {
       accepted: "Refused",

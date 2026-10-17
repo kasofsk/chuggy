@@ -43,6 +43,7 @@ import {
   type TaskConfigurationFault,
 } from "./taskConfiguration.ts";
 import {
+  declaredConfigurationVersion,
   selectedCatalogEntries,
   selectedFirstCommandsEvaluator,
   workloadConfigurationReadiness,
@@ -50,6 +51,7 @@ import {
   type WorkloadConfiguration,
   type WorkloadConfigurationFault,
 } from "./workloadConfiguration.ts";
+export { declaredConfigurationVersion } from "./workloadConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 
@@ -188,13 +190,6 @@ export function canonicalConfigurationOf(
   value: unknown,
 ): CanonicalConfiguration {
   return asCanonicalConfiguration(canonicalJson(value));
-}
-
-/** The version a parsed document says it is, which is how every reader tells the two apart. */
-export function declaredConfigurationVersion(value: unknown): unknown {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as { readonly version?: unknown }).version
-    : undefined;
 }
 
 /**

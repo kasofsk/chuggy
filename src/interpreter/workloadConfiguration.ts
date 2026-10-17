@@ -36,6 +36,13 @@ type WorkloadReadonly<Value> = Value extends object
   ? { readonly [Key in keyof Value]: WorkloadReadonly<Value[Key]> }
   : Value;
 
+/** The version a parsed document says it is, which is how every reader tells the two apart. */
+export function declaredConfigurationVersion(value: unknown): unknown {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as { readonly version?: unknown }).version
+    : undefined;
+}
+
 /** An agent workload whose prompt text is held, which is the only kind a ready catalog holds. */
 export type AgentWorkload = WorkloadReadonly<
   Omit<z.output<typeof agentWorkloadSchema>, "prompt"> & {
@@ -274,4 +281,21 @@ export function selectedFirstCommandsEvaluator(
       return { stage: stageIndex + 1, evaluator: evaluatorIndex + 1 };
   }
   return undefined;
+}
+
+/**
+ * The finalizer a ticket's selection lands it with, read out of the stored
+ * catalog: none where the selection and the defaults name none, and undefined
+ * where the catalog or the selection cannot be read.
+ */
+export function catalogSelectedFinalizer(
+  value: unknown,
+  selection: ConfigurationSelection | undefined,
+): { readonly finalizer?: Finalizer } | undefined {
+  const ready = workloadConfigurationReadiness(value);
+  if (ready.readiness !== "Ready") return undefined;
+  const selected = selectedCatalogEntries(ready.configuration, selection);
+  if (selected.selected !== "Selected") return undefined;
+  const finalizer = selected.value.finalizer?.finalizer;
+  return finalizer === undefined ? {} : { finalizer };
 }
