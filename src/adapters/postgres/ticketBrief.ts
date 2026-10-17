@@ -1,6 +1,7 @@
 /**
  * PostgreSQL reads of the brief a draft carries, and of the one its ticket was
- * released with, and of the configuration overrides stored beside each.
+ * released with, and of the configuration overrides and selection stored
+ * beside each.
  *
  * THEY ARE TWO BRIEFS ONCE A DRAFT REOPENS. The draft's brief is one row its
  * author revises in place, and a Pending ticket's draft takes revisions nobody
@@ -16,6 +17,10 @@ import {
   configurationOverridesSchema,
   type ConfigurationOverrides,
 } from "../../contract/configurationOverrides.ts";
+import {
+  configurationSelectionSchema,
+  type ConfigurationSelection,
+} from "../../contract/configurationSelection.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -140,6 +145,24 @@ export function storedOverridesText(
   overrides: ConfigurationOverrides | undefined,
 ): string | null {
   return overrides === undefined ? null : JSON.stringify(overrides);
+}
+
+/** The selection one column stored, or none where it stored none. */
+export function storedSelectionOf(
+  stored: string | null,
+): ConfigurationSelection | undefined {
+  return stored === null
+    ? undefined
+    : configurationSelectionSchema.parse(JSON.parse(stored));
+}
+
+/** The selection as a column stores it, null where it selects nothing. */
+export function storedSelectionText(
+  selection: ConfigurationSelection | undefined,
+): string | null {
+  return selection === undefined || Object.keys(selection).length === 0
+    ? null
+    : JSON.stringify(selection);
 }
 
 /**

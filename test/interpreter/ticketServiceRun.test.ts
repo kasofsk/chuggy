@@ -636,6 +636,7 @@ function updating(ordinal: number): DecisionInput {
         configurationRevision: "revision-updated",
         configurationDigest: "digest-updated",
         configurationCanonical: "{}",
+        program: [],
       },
     },
   };

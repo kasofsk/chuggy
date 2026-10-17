@@ -125,6 +125,8 @@ import {
   releasedBriefOf,
   storedOverridesOf,
   storedOverridesText,
+  storedSelectionOf,
+  storedSelectionText,
 } from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
@@ -559,17 +561,18 @@ async function decisionTicketDefinition(
       ? null
       : JSON.stringify(draftRelease.brief);
   const overrides = storedOverridesText(draftRelease.overrides);
+  const selection = storedSelectionText(draftRelease.selection);
   if (draftRelease.release === "Release") {
     await client.query(
-      sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief,overrides)
+      sql`INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief,overrides,selection)
          VALUES (${partition.tenant},${partition.project},${draftRelease.ticket},
-                 ${definition}::jsonb,${digest},${brief}::jsonb,${overrides}::jsonb)`,
+                 ${definition}::jsonb,${digest},${brief}::jsonb,${overrides}::jsonb,${selection}::jsonb)`,
     );
     return;
   }
   const replaced = await client.query(
     sql`UPDATE ticket_definition SET definition=${definition}::jsonb,digest=${digest},
-           brief=${brief}::jsonb,overrides=${overrides}::jsonb
+           brief=${brief}::jsonb,overrides=${overrides}::jsonb,selection=${selection}::jsonb
      WHERE tenant=${partition.tenant} AND project=${partition.project}
        AND ticket=${draftRelease.ticket}`,
   );
@@ -670,6 +673,8 @@ async function decisionReleaseOutcome(
       ? undefined
       : asRepositoryId(revision.repository),
     fence.overrides,
+    fence.selection,
+    fence.program,
   );
   if (readiness.readiness === "Incomplete")
     return releaseRefused(draftReleaseRefusalCode(readiness.fault));
@@ -731,10 +736,11 @@ async function overridesChangeTicket(
     repository: string | null;
     brief: string | null;
     overrides: string | null;
+    selection: string | null;
     authoring: string;
   }>(
     sql`SELECT c.canonical,c.digest,p.repository,d.brief::text AS brief,
-            d.overrides::text AS overrides,r.authoring
+            d.overrides::text AS overrides,d.selection::text AS selection,r.authoring
       FROM ticket_projection t
       JOIN configuration_revision c
         ON c.tenant=t.tenant AND c.project=t.project
@@ -768,6 +774,7 @@ async function overridesChangeTicket(
         row.repository === null ? undefined : asRepositoryId(row.repository),
       authoring: parseDraftAuthoring(row.authoring),
       brief,
+      selection: storedSelectionOf(row.selection),
     },
     held: storedOverridesOf(row.overrides),
   };

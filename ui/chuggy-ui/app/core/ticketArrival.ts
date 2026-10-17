@@ -39,6 +39,7 @@ const ticketFieldOwnReadOnly = {
   configurationRevision: true,
   configurationVersion: true,
   overrides: true,
+  selection: true,
   program: true,
   runTotals: true,
 } as const satisfies Record<TicketField, boolean>;

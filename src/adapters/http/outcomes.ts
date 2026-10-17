@@ -871,6 +871,7 @@ function draftBody(draft: DraftResource): unknown {
     },
     ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
     ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
+    ...(draft.selection === undefined ? {} : { selection: draft.selection }),
   };
 }
 

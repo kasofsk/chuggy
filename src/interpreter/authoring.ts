@@ -475,6 +475,7 @@ export interface DraftResource {
   readonly authoring: ReleaseAuthoring;
   readonly brief?: DraftBrief;
   readonly overrides?: ConfigurationOverrides;
+  readonly selection?: ConfigurationSelection;
 }
 
 export interface ConfigurationRevisionResource {
@@ -884,6 +885,7 @@ export interface AuthoringStore {
     readonly authoring: ReleaseAuthoring;
     readonly brief: DraftBrief;
     readonly overrides?: ConfigurationOverrides;
+    readonly selection?: ConfigurationSelection;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
     readonly partition: Partition;
@@ -894,6 +896,7 @@ export interface AuthoringStore {
     readonly authoring: ReleaseAuthoring;
     readonly brief: DraftBrief;
     readonly overrides?: ConfigurationOverrides;
+    readonly selection?: ConfigurationSelection;
   }): Promise<DraftRevised>;
   deleteDraft(input: {
     readonly partition: Partition;

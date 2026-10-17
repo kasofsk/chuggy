@@ -61,6 +61,7 @@ import { migration060 } from "./060-merge-waits.ts";
 import { migration061 } from "./061-runner-loss.ts";
 import { migration062 } from "./062-dependency-deliveries.ts";
 import { migration063 } from "./063-catalog-selection-refusals.ts";
+import { migration064 } from "./064-draft-selection.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -127,4 +128,5 @@ export const migrations: readonly Migration[] = [
   migration061,
   migration062,
   migration063,
+  migration064,
 ];

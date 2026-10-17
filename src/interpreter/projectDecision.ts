@@ -55,7 +55,9 @@
  * settled are outcomes a caller must handle, not exceptions it may ignore.
  */
 
+import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import type { Entry } from "../actor/journal.ts";
 import type {
   Escalation,
@@ -122,6 +124,13 @@ export interface DraftReleaseFence extends ConfigurationPin {
    * applied, and they are stored beside the brief for every later reader.
    */
   readonly overrides?: ConfigurationOverrides;
+  /**
+   * What the draft revision selects of a catalog, absent where it takes every
+   * default. It is stored beside the overrides for the same readers.
+   */
+  readonly selection?: ConfigurationSelection;
+  /** The evaluation program the draft revision asks for, which a catalog's selected plan bounds. */
+  readonly program: ReleaseAuthoringProgram;
   /**
    * What this release resolved, written beside its entry. The references the
    * entry carries are folds of the digests in it, so the row is what says what

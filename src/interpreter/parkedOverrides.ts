@@ -11,6 +11,7 @@
  */
 
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import {
   draftReleaseReadiness,
   draftReleaseRefusalCode,
@@ -32,6 +33,7 @@ export interface ParkedTicketResolution {
   readonly configurationRepository: RepositoryId | undefined;
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief | undefined;
+  readonly selection?: ConfigurationSelection | undefined;
 }
 
 export type ParkedOverridesVerdict =
@@ -56,6 +58,7 @@ function parkedOverridesDefinitionDigest(
     ticket.brief,
     ticket.configurationRepository,
     overrides,
+    ticket.selection,
   );
   if (readiness.readiness === "Incomplete")
     return { resolved: "Unready", fault: readiness.fault };

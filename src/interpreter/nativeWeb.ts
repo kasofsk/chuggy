@@ -396,6 +396,8 @@ export interface TicketResource {
   readonly configurationVersion?: ConfigurationVersion;
   /** What the ticket's last release or update replaced of that configuration. */
   readonly overrides?: ConfigurationOverrides;
+  /** What the ticket's last release or update selected of that configuration. */
+  readonly selection?: ConfigurationSelection;
   /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which is what its evaluation runs; its draft may since hold another.
@@ -749,6 +751,7 @@ export interface NativeWeb {
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
+      readonly selection?: ConfigurationSelection;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
   initializeDraft(
@@ -767,6 +770,7 @@ export interface NativeWeb {
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
+      readonly selection?: ConfigurationSelection;
     },
   ): Promise<AuthorizedResult<DraftRevised>>;
   deleteDraft(

@@ -9,6 +9,7 @@
  * rather than a browser's.
  */
 
+import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
 import {
@@ -355,6 +356,12 @@ export const ticketResponseSchema = z.object({
    * it overrides nothing. Only the ticket's own read carries it.
    */
   overrides: configurationOverridesSchema.optional(),
+  /**
+   * What the ticket selected of that configuration's catalog at its last
+   * release or update, absent where it took every default. Only the ticket's
+   * own read carries it.
+   */
+  selection: configurationSelectionSchema.optional(),
   /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which its draft may since have been revised past. Only the ticket's
@@ -1114,6 +1121,7 @@ export const draftResponseSchema = z.object({
   authoring: authoringResponseSchema,
   brief: briefResponseSchema.optional(),
   overrides: configurationOverridesSchema.optional(),
+  selection: configurationSelectionSchema.optional(),
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 
