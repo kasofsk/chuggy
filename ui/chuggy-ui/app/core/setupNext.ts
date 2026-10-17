@@ -30,7 +30,7 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
-import { runnerPackageOffered } from "./runners.ts";
+import { runnerPackageOffered, runnerPackages } from "./runners.ts";
 import { selectorSettingsSection } from "./selectorSettingsForm.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
@@ -300,7 +300,7 @@ function setupRunnerMend(
       );
     case "Mac":
       return setupHand(
-        `${setupRunnerIs}. This machine is a Mac and ${setupMacNone}, so it cannot be one. A runner needs a machine with ${runnerPackageOffered.needs}: on one, open ${page}, ${pressed} and do what it shows there. Tell me once the runner is running.`,
+        `${setupRunnerIs}. This machine is a Mac and ${setupMacNone}, but a Mac runs one with ${runnerPackages.darwin.program}, added by hand: open ${page}, ${pressed}, choose Mac and do what it shows there. Tell me once the runner is running.`,
         setupRunnerRunning,
       );
     case "Serviceless":

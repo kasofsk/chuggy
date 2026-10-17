@@ -16,6 +16,8 @@ import { sessionRunnerStandings } from "../../../src/contract/rosters.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   runnerAddPlace,
+  runnerAskRead,
+  runnerCapabilitiesTyped,
   runnerCapabilityLabel,
   runnerPackageOffered,
   runnerPackages,
@@ -152,11 +154,13 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   ).toStrictEqual({ saved: "Written", placement: hosted });
 });
 
-test("the package offered is the Linux one: what it needs, the command that installs its current release, and its guide", () => {
+test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {
   expect(runnerPackageOffered).toBe(runnerPackages.linux);
   expect(runnerPackageOffered).toStrictEqual({
+    label: "Linux",
     program: "chuggy-linux",
     platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+    hostPlatforms: [],
     needs: "Linux · Node 24 · Docker or Podman",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
@@ -164,7 +168,63 @@ test("the package offered is the Linux one: what it needs, the command that inst
   });
 });
 
-test("the register command names the package's program, the console's own origin and the token, and nothing else", () => {
+test("a Mac's package runs Linux work in its VM, and declares the Mac itself only where asked", () => {
+  expect(runnerPackages.darwin).toStrictEqual({
+    label: "Mac",
+    program: "chuggy-darwin",
+    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+    hostPlatforms: ["Platform:MacOS:Amd64", "Platform:MacOS:Arm64"],
+    needs: "macOS · Node 24 · Colima",
+    installCommand:
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+    guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+  });
+  const asked = runnerAskRead("darwin", true, "Agent:Claude, Tool:Xcode");
+  expect(asked).toStrictEqual({
+    ask: {
+      package: "darwin",
+      host: true,
+      capabilities: ["Agent:Claude", "Tool:Xcode"],
+    },
+    capabilities: [
+      "Platform:Linux:Amd64",
+      "Platform:Linux:Arm64",
+      "Platform:MacOS:Amd64",
+      "Platform:MacOS:Arm64",
+      "Agent:Claude",
+      "Tool:Xcode",
+    ],
+  });
+  expect(runnerAskRead("linux", true, "")).toStrictEqual({
+    ask: { package: "linux", host: false, capabilities: [] },
+    capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+  });
+});
+
+test("capabilities typed are refused where one is not a capability, is a platform, or is named twice, and where there are more than a runner declares", () => {
+  expect(runnerCapabilitiesTyped("  ")).toStrictEqual({ capabilities: [] });
+  expect(runnerCapabilitiesTyped("has-dash, Tool:Bazel\nx_1")).toStrictEqual({
+    capabilities: ["has-dash", "Tool:Bazel", "x_1"],
+  });
+  expect(runnerCapabilitiesTyped("Tool:Ba.zel")).toStrictEqual({
+    refused:
+      "Tool:Ba.zel is not a capability: letters, digits, _, : and -, beginning with a letter or digit",
+  });
+  expect(runnerCapabilitiesTyped("Platform:MacOS:Arm64")).toStrictEqual({
+    refused:
+      "Platform:MacOS:Arm64 is a platform, which the runner finds of its machine",
+  });
+  expect(runnerCapabilitiesTyped("a a")).toStrictEqual({
+    refused: "A capability is named twice",
+  });
+  const many = Array.from({ length: 63 }, (_, at) => `Tool:${String(at)}`);
+  expect(runnerAskRead("linux", false, many.join(" "))).toStrictEqual({
+    refused:
+      "A runner declares at most 64 capabilities, its platforms among them",
+  });
+});
+
+test("the register command names the package's program, the console's own origin and the token, and what was asked of it", () => {
   expect(
     runnerRegisterCommand(
       runnerPackageOffered,
@@ -181,6 +241,26 @@ test("the register command names the package's program, the console's own origin
       "Pool",
     ),
   ).toBe("chuggy-darwin register --api https://chuggy.test --token=tok_en-1");
+  expect(
+    runnerRegisterCommand(
+      runnerPackages.darwin,
+      "https://chuggy.test",
+      "tok_en-1",
+      "Personal",
+      { host: true, capabilities: ["Agent:Claude", "Tool:Xcode"] },
+    ),
+  ).toBe(
+    "chuggy-darwin register --personal --api https://chuggy.test --token=tok_en-1 --host --capability Agent:Claude --capability Tool:Xcode",
+  );
+  expect(
+    runnerRegisterCommand(
+      runnerPackageOffered,
+      "https://chuggy.test",
+      "tok_en-1",
+      "Pool",
+      { host: true, capabilities: [] },
+    ),
+  ).toBe("chuggy-linux register --api https://chuggy.test --token=tok_en-1");
 });
 
 test("a member's own runner is registered by the same command, marked personal", () => {
@@ -224,14 +304,14 @@ function roster(count: number): PanelState<WorkerPoolsResponse> {
   };
 }
 
-const adding = { administers: true, roster: roster(0), stepsDrawn: false };
+const adding = { administers: true, roster: roster(0), opened: false };
 
 test("a reader who may add is drawn the control under an empty roster's line, and in the head once a runner is registered", () => {
   expect(runnerAddPlace(adding)).toBe("Empty");
   expect(runnerAddPlace({ ...adding, roster: roster(1) })).toBe("Head");
-  expect(
-    runnerAddPlace({ ...adding, roster: roster(1), stepsDrawn: true }),
-  ).toBe("Head");
+  expect(runnerAddPlace({ ...adding, roster: roster(1), opened: true })).toBe(
+    "Head",
+  );
 });
 
 test("a reader who may not add is drawn the control nowhere, whatever the roster holds", () => {
@@ -253,7 +333,7 @@ test("the control is drawn nowhere while the roster is unread, and in the head w
 });
 
 test("an empty roster's control is not drawn again under the steps it opened", () => {
-  expect(runnerAddPlace({ ...adding, stepsDrawn: true })).toBeUndefined();
+  expect(runnerAddPlace({ ...adding, opened: true })).toBeUndefined();
 });
 
 test("a platform is drawn by its parts and any other capability as spelled", () => {

@@ -19,7 +19,6 @@ import type { ReactNode } from "react";
 import type {
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
-  WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
 import type { ApiResult } from "../../core/apiRequest.ts";
 import {
@@ -35,10 +34,10 @@ import { panelReason } from "../../core/freshness.ts";
 import { myRunnerAddable, myRunnerWithheld } from "../../core/myRunner.ts";
 import {
   runnerCapabilityLabel,
-  runnerPackageOffered,
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
+import type { RunnerMint } from "../../core/runners.ts";
 import {
   useApiPorts,
   usePanelInventory,
@@ -51,6 +50,7 @@ import {
   personalRunnerReread,
   usePersonalRunner,
 } from "../personalRunner.ts";
+import { RunnerAskForm } from "../RunnerAsk.tsx";
 import { RunnerSteps } from "../RunnerSteps.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -64,12 +64,6 @@ import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
 /** No frame names this read, so a fresh visit is what reaches it. */
 const personalRunnerPermitResource = "personal-runner-permit";
-
-type MyRunnerMint =
-  | { readonly mint: "Idle" }
-  | { readonly mint: "Minting" }
-  | { readonly mint: "Minted"; readonly minted: WorkerPoolTokenResponse }
-  | { readonly mint: "Failed"; readonly reason: string };
 
 /** Where a change to the runner got to: sent, or refused with why. */
 type MyRunnerWrite =
@@ -109,15 +103,16 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
   };
 }
 
-/** The press that mints a token, and the steps it is handed over in. */
+/** The press that opens the ask a token is minted for, and the steps it is handed over in. */
 function MyRunnerRegister(props: { readonly tenant: string }): ReactNode {
   const ports = useApiPorts();
   const client = useQueryClient();
-  const [mint, setMint] = useState<MyRunnerMint>({ mint: "Idle" });
+  const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
   if (mint.mint === "Minted")
     return (
       <RunnerSteps
         minted={mint.minted}
+        ask={mint.ask}
         kind="Personal"
         onDone={() => {
           setMint({ mint: "Idle" });
@@ -125,37 +120,30 @@ function MyRunnerRegister(props: { readonly tenant: string }): ReactNode {
         }}
       />
     );
+  if (mint.mint === "Asking" || mint.mint === "Minting")
+    return (
+      <RunnerAskForm
+        mint={mint}
+        onMint={setMint}
+        minted={(capabilities) =>
+          apiMintPersonalRunnerToken(ports, props.tenant, {
+            capabilities: [...capabilities],
+            lifetimeSecs: runnerTokenLifetimeSecs,
+          })
+        }
+      />
+    );
   return (
     <div className="flex flex-wrap items-center gap-2">
       <EmptyState label="No runner registered" />
       <Button
         size="sm"
-        busy={mint.mint === "Minting"}
-        disabled={mint.mint === "Minting"}
         onClick={() => {
-          setMint({ mint: "Minting" });
-          void (async () => {
-            const minted = await apiMintPersonalRunnerToken(
-              ports,
-              props.tenant,
-              {
-                capabilities: [...runnerPackageOffered.platforms],
-                lifetimeSecs: runnerTokenLifetimeSecs,
-              },
-            );
-            setMint(
-              minted.outcome === "Ok"
-                ? { mint: "Minted", minted: minted.value }
-                : { mint: "Failed", reason: panelReason(minted) },
-            );
-          })();
+          setMint({ mint: "Asking" });
         }}
       >
         Register runner
       </Button>
-      {mint.mint === "Failed" ? (
-        <Notice tone="danger" inline detail={`Refused · ${mint.reason}`} />
-      ) : null}
     </div>
   );
 }

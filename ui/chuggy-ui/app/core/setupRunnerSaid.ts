@@ -13,6 +13,7 @@
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
+import { runnerPackages } from "./runners.ts";
 
 /** The container engines the runner package runs its work in, the package's own default first. */
 export const setupEngines = ["docker", "podman"] as const;
@@ -518,8 +519,8 @@ export function setupRunnerNoteSaid(
 
 const setupUnchanged = "so nothing was changed on this machine";
 
-/** Why a Mac is not a machine a runner is put on, said wherever one is met. */
-export const setupMacNone = "chuggy has no runner for a Mac yet";
+/** Why setup puts no runner on a Mac, said wherever one is met. */
+export const setupMacNone = "chuggy setup puts a runner only on Linux";
 const setupTryAgain = "if the person asks to try again";
 const setupLookAgain = "if the person asks to look again";
 const setupElsewhere =
@@ -794,9 +795,10 @@ function setupMachineSaid(
   switch (stop.stop) {
     case "Mac":
       return {
-        found: "this machine is a Mac, and chuggy's runner runs on Linux",
-        tell: `${setupMacNone}, and chuggy setup cannot set one up here, ${setupUnchanged}. The work on your tickets needs a runner on a Linux machine. Tell me once one is running there.`,
-        when: setupElsewhere,
+        found:
+          "this machine is a Mac, and chuggy setup puts a runner only on Linux",
+        tell: `${setupMacNone} and cannot set one up here, ${setupUnchanged}. A Mac runs one with ${runnerPackages.darwin.program}, added by hand, and a Linux machine runs one too. Tell me once one is running.`,
+        when: "once the person says a runner is running",
         again: "Status",
       };
     case "Serviceless":

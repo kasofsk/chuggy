@@ -9,11 +9,16 @@ import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
   WorkerPoolsResponse,
+  WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   hostedRunsNotGrantedCode,
   placementRoutes,
 } from "../../../../src/contract/rosters.ts";
+import {
+  workerPoolCapabilitiesMax,
+  workerPoolCapabilitySchema,
+} from "../../../../src/contract/workerPool.ts";
 import type {
   PlacementRoute,
   PlacementRouteSource,
@@ -25,10 +30,14 @@ import type { PanelState } from "./freshness.ts";
 
 /** A runner package as the console hands it to a reader. */
 export interface RunnerPackage {
+  /** What a reader chooses it as: the machine it runs on. */
+  readonly label: string;
   /** The program the package installs, which registers the machine. */
   readonly program: string;
   /** The platforms a token minted for it lets a runner declare: the ones it runs on. */
   readonly platforms: readonly string[];
+  /** The platforms of the machine itself a runner declares with `--host`, where the package runs work there. */
+  readonly hostPlatforms: readonly string[];
   /** What a machine needs before the install, in one line. */
   readonly needs: string;
   /** The command that installs the package's current release. */
@@ -40,17 +49,93 @@ export interface RunnerPackage {
 /** The packages a machine is made a runner with, an entry a package. */
 export const runnerPackages = {
   linux: {
+    label: "Linux",
     program: "chuggy-linux",
     platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+    hostPlatforms: [],
     needs: "Linux · Node 24 · Docker or Podman",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
   },
+  darwin: {
+    label: "Mac",
+    program: "chuggy-darwin",
+    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+    hostPlatforms: ["Platform:MacOS:Amd64", "Platform:MacOS:Arm64"],
+    needs: "macOS · Node 24 · Colima",
+    installCommand:
+      "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+    guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
+  },
 } as const satisfies Record<string, RunnerPackage>;
 
-/** The package `Add runner` hands over, which is the one the console offers. */
+/** A package by the name the reader chooses it under. */
+export type RunnerPackageName = keyof typeof runnerPackages;
+
+/** The package chuggy setup installs, on the Linux machine it runs on. */
 export const runnerPackageOffered: RunnerPackage = runnerPackages.linux;
+
+/** What a reader asks a runner to declare beside its platforms. */
+export interface RunnerAsk {
+  readonly package: RunnerPackageName;
+  /** Whether it runs work on the machine itself, where the package can. */
+  readonly host: boolean;
+  /** The capabilities it declares it meets, as the reader typed them. */
+  readonly capabilities: readonly string[];
+}
+
+/** The ask a press makes where the reader chose nothing. */
+export const runnerAskDefault: RunnerAsk = {
+  package: "linux",
+  host: false,
+  capabilities: [],
+};
+
+/**
+ * The capabilities a reader typed, split on spaces and commas, or why they are
+ * not: each must be a capability, none a platform, which the runner finds of
+ * its machine, and none twice.
+ */
+export function runnerCapabilitiesTyped(
+  typed: string,
+): { readonly capabilities: readonly string[] } | { readonly refused: string } {
+  const capabilities = typed.split(/[\s,]+/u).filter((word) => word !== "");
+  for (const capability of capabilities) {
+    if (!workerPoolCapabilitySchema.safeParse(capability).success)
+      return {
+        refused: `${capability} is not a capability: letters, digits, _, : and -, beginning with a letter or digit`,
+      };
+    if (capability.startsWith("Platform:"))
+      return {
+        refused: `${capability} is a platform, which the runner finds of its machine`,
+      };
+  }
+  if (new Set(capabilities).size !== capabilities.length)
+    return { refused: "A capability is named twice" };
+  return { capabilities };
+}
+
+/**
+ * What a token minted for the ask lets a runner declare: its package's
+ * platforms, the machine's own where it runs work there, and the reader's
+ * capabilities, or why there are too many.
+ */
+export function runnerMintCapabilities(
+  ask: RunnerAsk,
+): { readonly capabilities: string[] } | { readonly refused: string } {
+  const offered = runnerPackages[ask.package];
+  const capabilities = [
+    ...offered.platforms,
+    ...(ask.host ? offered.hostPlatforms : []),
+    ...ask.capabilities,
+  ];
+  return capabilities.length > workerPoolCapabilitiesMax
+    ? {
+        refused: `A runner declares at most ${String(workerPoolCapabilitiesMax)} capabilities, its platforms among them`,
+      }
+    : { capabilities };
+}
 
 /** How long a minted token stays redeemable, which is the time a reader has to paste it. */
 export const runnerTokenLifetimeSecs = 3600;
@@ -98,16 +183,61 @@ export function runnerCapabilityLabel(capability: string): string {
 /** Whose a registered machine is: one of the project's pools, or the reader's own. */
 export type RunnerKind = "Pool" | "Personal";
 
-/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's or as the reader's own. */
+/**
+ * What a reader's choices ask, with what the token is minted for, or why it
+ * cannot be: the machine itself is asked for only where the package runs work
+ * there.
+ */
+export function runnerAskRead(
+  chosen: RunnerPackageName,
+  host: boolean,
+  typed: string,
+):
+  | { readonly ask: RunnerAsk; readonly capabilities: readonly string[] }
+  | { readonly refused: string } {
+  const read = runnerCapabilitiesTyped(typed);
+  if ("refused" in read) return read;
+  const ask: RunnerAsk = {
+    package: chosen,
+    host: host && runnerPackages[chosen].hostPlatforms.length > 0,
+    capabilities: read.capabilities,
+  };
+  const minted = runnerMintCapabilities(ask);
+  return "refused" in minted
+    ? minted
+    : { ask, capabilities: minted.capabilities };
+}
+
+/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's or as the reader's own, declaring what the reader asked. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,
   token: string,
   kind: RunnerKind,
+  ask: Pick<RunnerAsk, "host" | "capabilities"> = runnerAskDefault,
 ): string {
   const personal = kind === "Personal" ? " --personal" : "";
-  return `${installed.program} register${personal} --api ${origin} --token=${token}`;
+  const host = ask.host && installed.hostPlatforms.length > 0 ? " --host" : "";
+  const declared = ask.capabilities
+    .map((capability) => ` --capability ${capability}`)
+    .join("");
+  return `${installed.program} register${personal} --api ${origin} --token=${token}${host}${declared}`;
 }
+
+/**
+ * Where minting a registration token has got to: nothing pressed, the ask the
+ * reader fills in with why the last was refused, the mint, and the steps the
+ * token is handed over in with what it was minted for.
+ */
+export type RunnerMint =
+  | { readonly mint: "Idle" }
+  | { readonly mint: "Asking"; readonly reason?: string }
+  | { readonly mint: "Minting" }
+  | {
+      readonly mint: "Minted";
+      readonly minted: WorkerPoolTokenResponse;
+      readonly ask: RunnerAsk;
+    };
 
 /** Where `Add runner` is drawn: in the panel's head, or under the line an empty roster is said in. */
 export type RunnerAddPlace = "Head" | "Empty";
@@ -116,17 +246,18 @@ export type RunnerAddPlace = "Head" | "Empty";
  * Where a reader who may add a runner is drawn the control: under an empty
  * roster's line, where it is the one thing to do, and in the head otherwise.
  * Nowhere while the roster is unread, so it is not drawn in one place and then
- * the other, and nowhere under the steps an empty roster's control opened.
+ * the other, and nowhere under the ask or steps an empty roster's control
+ * opened.
  */
 export function runnerAddPlace(view: {
   readonly administers: boolean;
   readonly roster: PanelState<WorkerPoolsResponse>;
-  readonly stepsDrawn: boolean;
+  readonly opened: boolean;
 }): RunnerAddPlace | undefined {
   if (!view.administers || view.roster.state === "Pending") return undefined;
   if (view.roster.state !== "Ready" || view.roster.value.pools.length > 0)
     return "Head";
-  return view.stepsDrawn ? undefined : "Empty";
+  return view.opened ? undefined : "Empty";
 }
 
 /** Every kind's route, written as two placements: work and evaluation, and a

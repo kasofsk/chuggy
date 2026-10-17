@@ -1593,9 +1593,9 @@ test("a read the site hides once the run has acted is the person's to take up as
 
 test("on a Mac runner says it cannot set one up and names no page, before it asks a site anything or looks at the machine, signed in or not", async () => {
   const lines = [
-    "found: this machine is a Mac, and chuggy's runner runs on Linux",
-    "tell: chuggy has no runner for a Mac yet, and chuggy setup cannot set one up here, so nothing was changed on this machine. The work on your tickets needs a runner on a Linux machine. Tell me once one is running there.",
-    `rule: Run node ${machineScript} ${flags} only once the person says a runner is running on another machine.`,
+    "found: this machine is a Mac, and chuggy setup puts a runner only on Linux",
+    "tell: chuggy setup puts a runner only on Linux and cannot set one up here, so nothing was changed on this machine. A Mac runs one with chuggy-darwin, added by hand, and a Linux machine runs one too. Tell me once one is running.",
+    `rule: Run node ${machineScript} ${flags} only once the person says a runner is running.`,
     stop,
   ];
   const signed = await fresh();
@@ -1862,7 +1862,7 @@ test("the bare command says why this machine cannot take a runner where it canno
       machine.platform = "darwin";
     }),
   ).toEqual([
-    `tell: ${runnerIs}. This machine is a Mac and chuggy has no runner for a Mac yet, so it cannot be one. A runner needs a machine`.slice(
+    `tell: ${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand`.slice(
       0,
       tellHead,
     ),

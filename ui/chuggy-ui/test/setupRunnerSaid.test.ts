@@ -50,7 +50,11 @@ function said(kind: Kind): readonly (readonly [string, number, string])[] {
 /** Every stop, each way it is made, as what it says was found, what it exits with and the command its rule names. */
 const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   Mac: [
-    ["this machine is a Mac, and chuggy's runner runs on Linux", 2, "Status"],
+    [
+      "this machine is a Mac, and chuggy setup puts a runner only on Linux",
+      2,
+      "Status",
+    ],
   ],
   Unread: [
     [

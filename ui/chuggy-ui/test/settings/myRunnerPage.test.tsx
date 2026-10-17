@@ -106,9 +106,11 @@ test("a member the workspace has not let register a runner is told why and offer
   expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
 });
 
-test("a member the workspace lets register one is handed the personal command for their token", async () => {
+test("a member the workspace lets register one asks what it is for, and is handed the personal command for their token", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+  await press("Create token");
   expect(
     sent
       .filter((one) => one.method === "POST")

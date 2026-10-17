@@ -10,7 +10,13 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -24,9 +30,11 @@ import {
   scriptedFetch,
   sectionOf,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { styleless } from "./styleless.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -50,6 +58,7 @@ const copied: string[] = [];
 
 beforeEach(() => {
   copied.length = 0;
+  resizeObserverStubbed();
 });
 
 afterEach(() => {
@@ -149,6 +158,37 @@ function add(): HTMLElement {
   return screen.getByRole("button", { name: "Add runner" });
 }
 
+/** Opens the ask, fills it in as given, and mints. */
+async function addRunner(
+  asked: {
+    readonly machine?: string;
+    readonly host?: boolean;
+    readonly typed?: string;
+  } = {},
+): Promise<void> {
+  await press("Add runner");
+  const machine = asked.machine;
+  if (machine !== undefined)
+    await turned(() => {
+      fireEvent.click(screen.getByRole("radio", { name: machine }));
+    });
+  if (asked.host === true)
+    await turned(() => {
+      fireEvent.click(
+        screen.getByRole("checkbox", {
+          name: "Run work that pins no image on the Mac itself",
+        }),
+      );
+    });
+  if (asked.typed !== undefined)
+    await turned(() => {
+      fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+        target: { value: asked.typed },
+      });
+    });
+  await press("Create token");
+}
+
 test("a reader who may choose nothing is offered no runner to add, and still reads the runners", async () => {
   await drawPage({ placement: { ...granted, choices: [] } });
   expect(screen.queryByRole("button", { name: "Add runner" })).toBeNull();
@@ -195,7 +235,7 @@ test("a project with no pool says so and no more to a reader who may not add", a
 
 test("adding a runner mints a token for the Linux platforms", async () => {
   const sent = await drawPage({ written: [minted()] });
-  await press("Add runner");
+  await addRunner();
   const mint = sent.find((one) => one.method === "POST");
   expect(mint?.url.endsWith("/worker-pool-registration-tokens")).toBe(true);
   expect(mint?.body).toStrictEqual({
@@ -206,7 +246,7 @@ test("adding a runner mints a token for the Linux platforms", async () => {
 
 test("a minted token is handed over in three steps, a list: install, register, and the guide for what is left", async () => {
   await drawPage({ written: [minted()] });
-  await press("Add runner");
+  await addRunner();
   expect(
     within(steps())
       .getAllByRole("listitem")
@@ -232,22 +272,26 @@ test("a minted token is handed over in three steps, a list: install, register, a
 
 test("each command is copied by its own control, which says Copied for itself alone", async () => {
   await drawPage({ written: [minted(), minted()] });
-  await press("Add runner");
+  await addRunner();
   expect([said("Install"), said("Register")]).toStrictEqual(["", ""]);
   await press("Copy install command");
   expect(copied).toStrictEqual([install]);
   expect([said("Install"), said("Register")]).toStrictEqual(["Copied", ""]);
   await press("Done");
-  await press("Add runner");
+  await addRunner();
   await press("Copy register command");
   expect(copied).toStrictEqual([install, register]);
   expect([said("Install"), said("Register")]).toStrictEqual(["", "Copied"]);
   expect(within(step("Finish")).queryByRole("button")).toBeNull();
 });
 
-test("the steps take the focus as they are drawn, since an empty roster's Add runner is gone from under them", async () => {
+test("the ask and then the steps take the focus as they are drawn, since an empty roster's Add runner is gone from under them", async () => {
   await drawPage({ listed: none, written: [minted()] });
   await press("Add runner");
+  expect(document.activeElement).toBe(
+    screen.getByRole("form", { name: "Runner" }),
+  );
+  await press("Create token");
   expect(document.activeElement).toBe(steps());
   expect(screen.queryByRole("button", { name: "Add runner" })).toBeNull();
   expect(
@@ -259,7 +303,7 @@ test("the steps leave the focus with whatever holds it as they are drawn", async
   await drawPage({ listed: none, written: [minted()] });
   const elsewhere = document.body.appendChild(document.createElement("input"));
   elsewhere.focus();
-  await press("Add runner");
+  await addRunner();
   expect(steps()).toBeTruthy();
   expect(document.activeElement).toBe(elsewhere);
   elsewhere.remove();
@@ -268,7 +312,7 @@ test("the steps leave the focus with whatever holds it as they are drawn", async
 test("Done puts the steps away and reads the pools again, and an empty roster offers Add runner again", async () => {
   const sent = await drawPage({ listed: none, written: [minted()] });
   const before = sent.filter((one) => one.url.endsWith("/worker-pools")).length;
-  await press("Add runner");
+  await addRunner();
   await press("Done");
   expect(screen.queryByRole("list", { name: "Add runner" })).toBeNull();
   expect(document.body.textContent).not.toContain("tok-1");
@@ -282,11 +326,57 @@ test("a mint the API refuses says so and draws no step", async () => {
   await drawPage({
     written: [answer({ error: { code: "Forbidden", message: "no" } }, 403)],
   });
-  await press("Add runner");
+  await addRunner();
   expect(
     within(sectionOf("Runners")).getByText(/^Refused · /u).textContent,
   ).toContain("Forbidden");
   expect(screen.queryByRole("list", { name: "Add runner" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Setup guide" })).toBeNull();
+  expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();
+  await press("Cancel");
+  expect(screen.queryByRole("form", { name: "Runner" })).toBeNull();
   expect(add().closest("header")).not.toBeNull();
+});
+
+test("a Mac asked to run work on itself and to declare capabilities mints a token for them, and its steps install and register it so", async () => {
+  const sent = await drawPage({ written: [minted()] });
+  await addRunner({
+    machine: "Mac",
+    host: true,
+    typed: "Agent:Claude Tool:Xcode",
+  });
+  expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
+    capabilities: [
+      "Platform:Linux:Amd64",
+      "Platform:Linux:Arm64",
+      "Platform:MacOS:Amd64",
+      "Platform:MacOS:Arm64",
+      "Agent:Claude",
+      "Tool:Xcode",
+    ],
+    lifetimeSecs: 3600,
+  });
+  expect(step("Install").textContent).toContain("macOS · Node 24 · Colima");
+  expect(step("Install").querySelector("code")?.textContent).toBe(
+    "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
+  );
+  expect(step("Register").querySelector("code")?.textContent).toBe(
+    "chuggy-darwin register --api https://chuggy.test --token=tok-1 --host --capability Agent:Claude --capability Tool:Xcode",
+  );
+});
+
+test("capabilities typed that are not ones are refused before anything is minted", async () => {
+  const sent = await drawPage({ written: [minted()] });
+  await addRunner({ typed: "Platform:Linux:Amd64" });
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+  expect(
+    screen.getByText(
+      "Platform:Linux:Amd64 is a platform, which the runner finds of its machine",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("textbox", { name: "Capabilities" })
+      .getAttribute("aria-invalid"),
+  ).toBe("true");
 });
