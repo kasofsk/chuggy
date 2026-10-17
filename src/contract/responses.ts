@@ -67,6 +67,7 @@ import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   workerPoolCapabilitiesSchema,
   workerPoolCapabilitySchema,
+  workerPoolRequirementCapabilitiesMax,
   workerPoolEvidenceCharsMax,
 } from "./workerPool.ts";
 import {
@@ -560,7 +561,10 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     mode: z.literal("Capability"),
     operatingSystem: z.enum(operatingSystems),
     architecture: z.enum(architectures),
-    capabilities: z.array(workerPoolCapabilitySchema).min(1),
+    capabilities: z
+      .array(workerPoolCapabilitySchema)
+      .min(1)
+      .max(workerPoolRequirementCapabilitiesMax),
   }),
 ]);
 

@@ -34,6 +34,7 @@ import {
   releasedTicketDefinition,
   ticketDefinitionMaterial,
   ticketTaskMaterialAt,
+  ticketTaskRequirement,
   ticketTaskResources,
 } from "../../src/interpreter/ticketDefinition.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -559,4 +560,31 @@ test("a stored task's size is read back as it was released, and a task released 
     () => ticketTaskResources(unsized, "Evaluation:3"),
     /resolves no workload/,
   );
+});
+
+test("a requirement released under its mode's former name is read as the current one, and handed on as it was stored, which its digest is of", () => {
+  const value = {
+    mode: "ContainerCapability",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    capabilities: ["Agent:Claude"],
+  };
+  const material = {
+    tasks: [
+      {
+        key: "Work",
+        executionRequirements: {
+          value,
+          source: "TicketDefault",
+          platformDefaultVersion: 1,
+          digest: "digest-of-the-stored-bytes",
+        },
+      },
+    ],
+  };
+  const read = ticketTaskRequirement(material, "Work");
+  assert.equal(read.value.mode, "Capability");
+  assert.deepEqual(read.stored, value);
+  assert.equal(JSON.stringify(read.stored), JSON.stringify(value));
+  assert.equal(read.digest, "digest-of-the-stored-bytes");
 });

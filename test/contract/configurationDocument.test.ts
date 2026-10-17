@@ -31,7 +31,10 @@ import {
   configurationMemoryMibMin,
 } from "../../src/contract/configurationDocument.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
-import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
+import {
+  workerImageCharsMax,
+  workerPoolRequirementCapabilitiesMax,
+} from "../../src/contract/workerPool.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
@@ -372,6 +375,23 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
         platformDefault: containerRequirement,
         platformDefaultVersion: 1,
         taskKindDefaults: { "Evaluation:0": containerRequirement },
+      },
+    }),
+    "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    declared({
+      ...configuration,
+      executionRequirements: {
+        platformDefault: containerRequirement,
+        platformDefaultVersion: 1,
+        ticketDefault: {
+          ...capabilityRequirement,
+          capabilities: Array.from(
+            { length: workerPoolRequirementCapabilitiesMax + 1 },
+            (_unused, index) => `Tool:T${String(index)}`,
+          ),
+        },
       },
     }),
     "ConfigurationInvalid:ReleaseShapeInvalid",

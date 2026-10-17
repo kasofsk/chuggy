@@ -38,7 +38,10 @@ import {
 import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
 import { workerRuntimeDirectory } from "./workerEnvironment.ts";
-import { workerPoolCapabilitySchema } from "./workerPool.ts";
+import {
+  workerPoolCapabilitySchema,
+  workerPoolRequirementCapabilitiesMax,
+} from "./workerPool.ts";
 import { workerImageCharsMax } from "./workerPool.ts";
 import {
   briefingLineCharsMax,
@@ -440,6 +443,7 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     capabilities: z
       .array(workerPoolCapabilitySchema)
       .min(1)
+      .max(workerPoolRequirementCapabilitiesMax)
       .refine(
         (capabilities) => new Set(capabilities).size === capabilities.length,
       )
