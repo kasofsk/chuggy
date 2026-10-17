@@ -357,7 +357,7 @@ test("a pool that reads a runtime is handed its attempt's, under the public host
   );
   const capable = await reconciledOne(
     {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
       architecture: "Amd64",
       capabilities: ["Agent:Codex"],
@@ -408,7 +408,7 @@ test("an execution released with no size asks for the plane's box, and one relea
 
 test("a capability requirement is handed out with its platform and capabilities and no image", async () => {
   const { assignment } = await reconciledOne({
-    mode: "ContainerCapability",
+    mode: "Capability",
     operatingSystem: "Linux",
     architecture: "Amd64",
     capabilities: ["Agent:Codex"],
@@ -420,17 +420,19 @@ test("a capability requirement is handed out with its platform and capabilities 
   assert.equal("image" in assignment, false);
 });
 
-test("a native requirement a claim returned is refused rather than handed to a pool", async () => {
-  await assert.rejects(
-    reconciledOne({
-      mode: "Native",
-      architecture: "Arm64",
-      driver: "XcodeBuild",
-      xcodeVersionMin: 17,
-      sdkVersionMin: 18,
-    }),
-    /claimed a native requirement/u,
-  );
+test("capabilities a project named for itself reach the pool as it named them", async () => {
+  const { assignment } = await reconciledOne({
+    mode: "Capability",
+    operatingSystem: "MacOS",
+    architecture: "Arm64",
+    capabilities: ["Tool:Xcode", "Simulator:iOS"],
+  });
+  assert.deepEqual(assignment["capabilities"], [
+    "Platform:MacOS:Arm64",
+    "Tool:Xcode",
+    "Simulator:iOS",
+  ]);
+  assert.equal("image" in assignment, false);
 });
 
 test("a room that is not a whole count refuses the poll", async () => {

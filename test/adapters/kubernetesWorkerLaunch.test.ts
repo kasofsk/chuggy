@@ -893,21 +893,21 @@ test("idempotent absence is accepted but a refused deletion remains unavailable"
   }
 });
 
-const nativeRequirement = {
-  mode: "Native",
+/** A requirement stated as capabilities, which this backend runs only on an image policy resolved for it. */
+const unresolvedRequirement = {
+  mode: "Capability",
+  operatingSystem: "MacOS",
   architecture: "Arm64",
-  driver: "XcodeBuild",
-  xcodeVersionMin: 1,
-  sdkVersionMin: 1,
+  capabilities: ["Tool:Xcode"],
 } as const;
 
-test("a native requirement is a definitive inability for a container backend", async () => {
+test("a capability requirement policy resolved no image for is a definitive inability for a container backend", async () => {
   const workers = kubernetesWorkerLaunch(
     config,
     recordingCluster([], answering(201)),
   );
   assert.deepEqual(
-    await workers.place({ ...placement, requirement: nativeRequirement }),
+    await workers.place({ ...placement, requirement: unresolvedRequirement }),
     { placed: "Denied", reason: "RequiredCapabilityUnavailable" },
   );
 });
@@ -918,7 +918,7 @@ test("a placement this backend cannot serve never reaches the cluster", async ()
     config,
     recordingCluster(reached, answering(201)),
   );
-  await workers.place({ ...placement, requirement: nativeRequirement });
+  await workers.place({ ...placement, requirement: unresolvedRequirement });
   assert.deepEqual(reached, []);
 });
 
@@ -1022,7 +1022,7 @@ test("a capability requirement runs the image selected by scheduler policy", asy
   await workers.place({
     ...placement,
     requirement: {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
       architecture: "Amd64",
       capabilities: ["Agent:Codex"],

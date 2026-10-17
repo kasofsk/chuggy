@@ -38,6 +38,7 @@ import {
 import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
 import { workerRuntimeDirectory } from "./workerEnvironment.ts";
+import { workerPoolCapabilitySchema } from "./workerPool.ts";
 import { workerImageCharsMax } from "./workerPool.ts";
 import {
   briefingLineCharsMax,
@@ -103,19 +104,6 @@ export const allOperatingSystems = ["Linux", "MacOS"] as const;
 
 /** Every architecture a platform names, so a suite iterates rather than restates. */
 export const allArchitectures = ["Amd64", "Arm64"] as const;
-
-/** Every execution capability, so a suite iterates rather than restates. */
-export const allExecutionCapabilities = [
-  "Agent:Claude",
-  "Agent:Codex",
-] as const;
-
-/** Every driver a native requirement names. */
-const allNativeDrivers = [
-  "XcodeBuild",
-  "XcodeTesting",
-  "IosSimulatorTesting",
-] as const;
 
 /** The faults a check in this document names by its message, which an import reports once every shape holds. */
 export const configurationContentFaults = [
@@ -442,22 +430,22 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     image: configurationImageSchema,
   }),
   z.strictObject({
-    mode: z.literal("ContainerCapability"),
+    mode: z
+      .enum(["Capability", "ContainerCapability"])
+      .transform(() => "Capability" as const)
+      .describe(
+        "ContainerCapability is this mode's former name, read as Capability.",
+      ),
     ...configurationPlatformShape,
     capabilities: z
-      .array(z.enum(allExecutionCapabilities))
+      .array(workerPoolCapabilitySchema)
       .min(1)
       .refine(
         (capabilities) => new Set(capabilities).size === capabilities.length,
       )
-      .describe("The importer also holds that each is named at most once."),
-  }),
-  z.strictObject({
-    mode: z.literal("Native"),
-    architecture: z.enum(allArchitectures),
-    driver: z.enum(allNativeDrivers),
-    xcodeVersionMin: z.number().int().positive(),
-    sdkVersionMin: z.number().int().positive(),
+      .describe(
+        "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once.",
+      ),
   }),
 ]);
 
@@ -482,7 +470,7 @@ export const executionRequirementsSchema = z
       .optional(),
   })
   .describe(
-    'The importer also holds two rules here. platformDefault is {"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":image} with the configuration\'s own image, or, where worker.mode names an agent, a ContainerCapability requirement on Linux and Amd64. ticketDefault and every taskKindDefaults entry refine platformDefault: the same mode and architecture, the same operating system where the mode names one, every capability platformDefault names, and for Native the same driver and no lower minimum versions.',
+    'The importer also holds two rules here. platformDefault is {"mode":"Container","operatingSystem":"Linux","architecture":"Amd64","image":image} with the configuration\'s own image, or, where worker.mode names an agent, a Capability requirement on Linux and Amd64. ticketDefault and every taskKindDefaults entry refine platformDefault: the same mode, operating system and architecture, and every capability platformDefault names.',
   );
 
 /** The most CPUs one task asks for. */

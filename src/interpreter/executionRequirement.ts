@@ -2,15 +2,15 @@ import type { z } from "zod";
 
 import {
   allArchitectures,
-  allExecutionCapabilities,
   allOperatingSystems,
   executionRequirementSchema,
   releaseConfigurationHeaderSchema,
   type executionRequirementsSchema,
 } from "../contract/configurationDocument.ts";
+import type { workerPoolCapabilitySchema } from "../contract/workerPool.ts";
 
-/** The platform and capability rosters, surfaced where a requirement is materialized. */
-export { allArchitectures, allExecutionCapabilities, allOperatingSystems };
+/** The platform rosters, surfaced where a requirement is materialized. */
+export { allArchitectures, allOperatingSystems };
 export type OperatingSystem = (typeof allOperatingSystems)[number];
 export type Architecture = (typeof allArchitectures)[number];
 export type ExecutionTaskKind = "Work" | "Evaluation";
@@ -19,31 +19,21 @@ export interface Platform {
   readonly operatingSystem: OperatingSystem;
   readonly architecture: Architecture;
 }
-export type NativeDriver =
-  "XcodeBuild" | "XcodeTesting" | "IosSimulatorTesting";
-export type ExecutionCapability = (typeof allExecutionCapabilities)[number];
+/** A token a project and its runners agree on; nothing here enumerates them. */
+export type ExecutionCapability = z.output<typeof workerPoolCapabilitySchema>;
 
 export type ContainerExecutionRequirement = Readonly<
   Platform & { readonly mode: "Container"; readonly image: string }
 >;
 export type CapabilityExecutionRequirement = Readonly<
   Platform & {
-    readonly mode: "ContainerCapability";
+    readonly mode: "Capability";
     readonly capabilities: readonly ExecutionCapability[];
   }
 >;
-export type NativeExecutionRequirement = Readonly<{
-  readonly mode: "Native";
-  readonly architecture: Architecture;
-  readonly driver: NativeDriver;
-  readonly xcodeVersionMin: number;
-  readonly sdkVersionMin: number;
-}>;
 
 export type ExecutionRequirement =
-  | ContainerExecutionRequirement
-  | CapabilityExecutionRequirement
-  | NativeExecutionRequirement;
+  ContainerExecutionRequirement | CapabilityExecutionRequirement;
 
 export type RequirementSource =
   "TaskKindDefault" | "TicketDefault" | "PlatformDefault";
@@ -101,23 +91,13 @@ function refines(
       value.operatingSystem === baseline.operatingSystem &&
       value.architecture === baseline.architecture
     );
-  if (
-    value.mode === "ContainerCapability" &&
-    baseline.mode === "ContainerCapability"
-  )
+  if (value.mode === "Capability" && baseline.mode === "Capability")
     return (
       value.operatingSystem === baseline.operatingSystem &&
       value.architecture === baseline.architecture &&
       baseline.capabilities.every((capability) =>
         value.capabilities.includes(capability),
       )
-    );
-  if (value.mode === "Native" && baseline.mode === "Native")
-    return (
-      value.architecture === baseline.architecture &&
-      value.driver === baseline.driver &&
-      value.xcodeVersionMin >= baseline.xcodeVersionMin &&
-      value.sdkVersionMin >= baseline.sdkVersionMin
     );
   return false;
 }
@@ -132,9 +112,8 @@ function refines(
 function requirementForAgent(
   value: ExecutionRequirement,
   capability: ExecutionCapability | undefined,
-): ExecutionRequirement | undefined {
+): ExecutionRequirement {
   if (capability === undefined || value.mode === "Container") return value;
-  if (value.mode === "Native") return undefined;
   return {
     ...value,
     capabilities: [...new Set([...value.capabilities, capability])],
@@ -165,11 +144,10 @@ export function executionAgentCapability(
 function platformDefaultComparable(
   value: ExecutionRequirement,
   capability: ExecutionCapability,
-): ExecutionRequirement | undefined {
-  if (value.mode === "Native") return undefined;
+): ExecutionRequirement {
   if (value.mode === "Container")
     return {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: value.operatingSystem,
       architecture: value.architecture,
       capabilities: [capability],
@@ -197,15 +175,9 @@ function platformDefaultMatchesLegacy(
     (platformDefault.mode === "Container" && legacy.mode === "Container")
   )
     return JSON.stringify(platformDefault) === JSON.stringify(legacy);
-  const effectiveDefault = platformDefaultComparable(
-    platformDefault,
-    capability,
-  );
-  const effectiveLegacy = platformDefaultComparable(legacy, capability);
-  return (
-    effectiveDefault !== undefined &&
-    effectiveLegacy !== undefined &&
-    refines(effectiveDefault, effectiveLegacy)
+  return refines(
+    platformDefaultComparable(platformDefault, capability),
+    platformDefaultComparable(legacy, capability),
   );
 }
 
@@ -305,16 +277,8 @@ export function materializeWorkloadExecutionRequirement(
     architecture: "Amd64",
     image: workload.image ?? catalogImage,
   };
-  const selected = requirementForAgent(
-    value,
-    executionAgentCapability(workload),
-  );
-  if (selected === undefined)
-    throw new TypeError(
-      "single-agent worker requires a container execution requirement",
-    );
   return {
-    value: selected,
+    value: requirementForAgent(value, executionAgentCapability(workload)),
     source:
       workload.executionRequirement === undefined
         ? "PlatformDefault"
@@ -336,12 +300,6 @@ export function materializeExecutionRequirement(
   const kindDefault =
     parsed.taskKindDefaults?.[executionTaskKindKey(configuration, kind, stage)];
   const value = kindDefault ?? parsed.ticketDefault ?? parsed.platformDefault;
-  const capability = executionAgentCapability(configuration);
-  const selected = requirementForAgent(value, capability);
-  if (selected === undefined)
-    throw new TypeError(
-      "single-agent worker requires a container execution requirement",
-    );
   const source: RequirementSource =
     kindDefault !== undefined
       ? "TaskKindDefault"
@@ -349,7 +307,7 @@ export function materializeExecutionRequirement(
         ? "TicketDefault"
         : "PlatformDefault";
   return {
-    value: selected,
+    value: requirementForAgent(value, executionAgentCapability(configuration)),
     source,
     platformDefaultVersion: parsed.platformDefaultVersion,
   };

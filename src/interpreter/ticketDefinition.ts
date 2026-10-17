@@ -382,7 +382,11 @@ function ticketStoredTask(
 export function ticketTaskRequirement(
   stored: unknown,
   key: TicketTaskKey,
-): MaterializedExecutionRequirement & { readonly digest: string } {
+): MaterializedExecutionRequirement & {
+  readonly digest: string;
+  /** The value as it was stored, which the digest is of, under whichever name its mode had then. */
+  readonly stored: unknown;
+} {
   const requirement = ticketStoredTask(stored, key)?.[
     "executionRequirements"
   ] as Record<string, unknown> | undefined;
@@ -397,6 +401,7 @@ export function ticketTaskRequirement(
     source: asRequirementSource(requirement?.["source"]),
     platformDefaultVersion,
     digest,
+    stored: requirement?.["value"],
   };
 }
 

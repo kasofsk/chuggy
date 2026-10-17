@@ -638,7 +638,7 @@ const claims = {
   },
   capable: {
     requirement: {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
       architecture: "Amd64",
       capabilities: ["Agent:Codex"],

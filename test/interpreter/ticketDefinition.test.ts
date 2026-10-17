@@ -438,7 +438,7 @@ test("an agent named where the requirement is a container capability moves the d
       ...document,
       executionRequirements: {
         platformDefault: {
-          mode: "ContainerCapability",
+          mode: "Capability",
           operatingSystem: "Linux",
           architecture: "Amd64",
           capabilities: ["Agent:Claude"],

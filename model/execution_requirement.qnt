@@ -21,7 +21,7 @@ module execution_requirement {
     execution: int,
     value: ExecutionRequirement,
     identity: int,
-    digest: int,
+    digest: RequirementDigest,
     source: RequirementSource,
     agent: AgentConstraint,
     platformDefaultVersion: int
@@ -37,9 +37,9 @@ module execution_requirement {
   pure def candidate(m: int -> ExecutionRequirement, key: int): RequirementCandidate =
     if (m.keys().contains(key)) Requested(m.get(key)) else NoRequirement
 
-  /// Exact image/platform values make container requirements closed. Native
-  /// version minima may only move upward relative to the platform contract;
-  /// lowering one would widen the eligible worker set.
+  /// Exact image/platform values make container requirements closed, and a
+  /// capability selection may only add to the platform contract's: dropping one
+  /// would widen the eligible worker set.
   pure def refines(value: ExecutionRequirement, baseline: ExecutionRequirement): bool =
     match value {
       | ContainerRequirement(v) => match baseline {
@@ -57,21 +57,11 @@ module execution_requirement {
             }
           | _ => false
         }
-      | NativeRequirement(v) => match baseline {
-          | NativeRequirement(b) => and {
-              v.architecture == b.architecture,
-              v.driver == b.driver,
-              v.xcodeVersionMin >= b.xcodeVersionMin,
-              v.sdkVersionMin >= b.sdkVersionMin
-            }
-          | _ => false
-        }
     }
 
   pure def wellFormed(value: ExecutionRequirement): bool = match value {
     | ContainerRequirement(v) => v.image > 0
     | CapabilityRequirement(v) => v.capabilities.size() > 0
-    | NativeRequirement(v) => and { v.xcodeVersionMin > 0, v.sdkVersionMin > 0 }
   }
 
   /// A requirement is authored for a kind of task, for a ticket or for the
@@ -92,19 +82,17 @@ module execution_requirement {
   /// configuration selected is what runs. A container selection is therefore
   /// materialized as it stands and the agent constrains the site's entry for
   /// that image; only a selection stated as capabilities names workers rather
-  /// than an image, so only that one takes the agent among its own. A single
-  /// agent has no reading on a native selection.
+  /// than an image, so only that one takes the agent among its own.
   pure def requirementForWorker(
     selected: ExecutionRequirement, workerMode: WorkerMode
-  ): RequirementCandidate = match workerMode {
-    | LegacyWorker => Requested(selected)
+  ): ExecutionRequirement = match workerMode {
+    | LegacyWorker => selected
     | SingleAgentWorker(agent) => match selected {
-        | ContainerRequirement(_) => Requested(selected)
-        | CapabilityRequirement(capability) => Requested(CapabilityRequirement({
+        | ContainerRequirement(_) => selected
+        | CapabilityRequirement(capability) => CapabilityRequirement({
             ...capability,
             capabilities: capability.capabilities.union(Set(agent))
-          }))
-        | NativeRequirement(_) => NoRequirement
+          })
       }
   }
 
@@ -118,7 +106,7 @@ module execution_requirement {
   /// them; a site that publishes nothing about it has not said the image fails
   /// to provide one, so the selection stands. A selection stated as
   /// capabilities carries the agent among its own and is admitted against a
-  /// session's inventory instead, and no site provides an agent natively.
+  /// session's inventory instead.
   pure def siteAdmits(
     value: ExecutionRequirement, agent: AgentConstraint, published: ImageCapabilities
   ): bool = match agent {
@@ -129,54 +117,37 @@ module execution_requirement {
             | CapabilitiesDeclared(provided) => provided.contains(required)
           }
         | CapabilityRequirement(capability) => capability.capabilities.contains(required)
-        | NativeRequirement(_) => false
       }
   }
 
-  /// Digest calculation is deliberately canonical and total over the closed
-  /// variants. The identity belongs to the execution and is not configuration.
-  pure def requirementDigest(value: ExecutionRequirement): int = match value {
-    | ContainerRequirement(v) =>
-        1000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
-          (if (v.architecture == Arm64) 10000 else 0) + v.image
-    | CapabilityRequirement(v) =>
-        3000000 + (if (v.operatingSystem == MacOS) 100000 else 0) +
-          (if (v.architecture == Arm64) 10000 else 0) +
-          (if (v.capabilities.contains(AgentClaude)) 100 else 0) +
-          (if (v.capabilities.contains(AgentCodex)) 200 else 0)
-    | NativeRequirement(v) =>
-        2000000 + (if (v.architecture == Arm64) 100000 else 0) +
-          (match v.driver {
-            | XcodeBuild => 10000
-            | XcodeTesting => 20000
-            | IosSimulatorTesting => 30000
-          }) + v.xcodeVersionMin * 100 + v.sdkVersionMin
-  }
+  /// A digest is canonical: two values share one exactly when they are equal,
+  /// so the model takes the value as its own digest and the implementation
+  /// hashes its canonical bytes. The identity belongs to the execution and is
+  /// not configuration.
+  type RequirementDigest = ExecutionRequirement
+  pure def requirementDigest(value: ExecutionRequirement): RequirementDigest = value
 
   pure def materialize(
     execution: int, taskKind: int, ticket: int,
     defaults: RequirementDefaults, workerMode: WorkerMode
   ): MaterializationResult =
     val selected = selectedRequirement(taskKind, ticket, defaults)
-    match requirementForWorker(selected.value, workerMode) {
-      | NoRequirement => RequirementRefused
-      | Requested(value) =>
-          if (and {
-            defaults.platformDefaultVersion > 0,
-            wellFormed(defaults.platformDefault),
-            wellFormed(value),
-            refines(selected.value, defaults.platformDefault)
-          }) Materialized({
-            execution: execution,
-            value: value,
-            identity: execution,
-            digest: requirementDigest(value),
-            source: selected.source,
-            agent: agentConstraint(workerMode),
-            platformDefaultVersion: defaults.platformDefaultVersion
-          })
-          else RequirementRefused
-    }
+    val value = requirementForWorker(selected.value, workerMode)
+    if (and {
+      defaults.platformDefaultVersion > 0,
+      wellFormed(defaults.platformDefault),
+      wellFormed(value),
+      refines(selected.value, defaults.platformDefault)
+    }) Materialized({
+      execution: execution,
+      value: value,
+      identity: execution,
+      digest: requirementDigest(value),
+      source: selected.source,
+      agent: agentConstraint(workerMode),
+      platformDefaultVersion: defaults.platformDefaultVersion
+    })
+    else RequirementRefused
 
   /// Re-observation is idempotent, but neither a wider nor merely different
   /// value can replace what logical execution creation committed.

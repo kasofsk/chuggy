@@ -247,7 +247,7 @@ test("an agent capability resolves to the last offered image that provides it", 
     await policy.profileFor({
       ...executionOf("Work"),
       requirement: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: ["Agent:Claude"],
@@ -280,7 +280,7 @@ test("an agent capability resolves to an offered image that provides it", async 
     await policy.profileFor({
       ...execution,
       requirement: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: ["Agent:Codex"],
@@ -319,7 +319,7 @@ test("an agent capability does not resolve to an image on the wrong platform", a
     await policy.profileFor({
       ...execution,
       requirement: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: ["Agent:Codex"],
@@ -339,7 +339,7 @@ test("an offered image publishing no capability provides the legacy Claude capab
   const capability = {
     ...execution,
     requirement: {
-      mode: "ContainerCapability" as const,
+      mode: "Capability" as const,
       operatingSystem: "Linux" as const,
       architecture: "Amd64" as const,
       capabilities: ["Agent:Claude" as const],
@@ -353,26 +353,28 @@ test("an offered image publishing no capability provides the legacy Claude capab
   });
 });
 
-test("a native requirement is refused by capability and never by policy", async () => {
+test("a capability requirement offered to pools is admitted with no image, whatever this site offers", async () => {
   const policy = suppliedExecutionPolicy({
     profiles: new Map([["Work", work]]),
     routing,
     imagesOffered: offered,
   });
-  const native = executionOf("Work");
-  assert.deepEqual(
-    await policy.profileFor({
-      ...native,
-      requirement: {
-        mode: "Native",
-        architecture: "Arm64",
-        driver: "XcodeBuild",
-        xcodeVersionMin: 1,
-        sdkVersionMin: 1,
-      },
-    }),
-    { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
-  );
+  const requirement = {
+    mode: "Capability",
+    operatingSystem: "MacOS",
+    architecture: "Arm64",
+    capabilities: ["Tool:Xcode"],
+  } as const;
+  const execution = { ...executionOf("Work"), requirement };
+  assert.deepEqual(await policy.profileFor({ ...execution, route: "Pool" }), {
+    resolved: "Profile",
+    profile: work.profile,
+    grant,
+  });
+  assert.deepEqual(await policy.profileFor(execution), {
+    resolved: "Denied",
+    reason: "RequiredCapabilityUnavailable",
+  });
 });
 
 test("a policy offering no image at all, or an empty one, is refused where it is composed", () => {

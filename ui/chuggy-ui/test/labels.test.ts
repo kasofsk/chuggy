@@ -151,11 +151,11 @@ test("an execution whose task was released with a size names it, and one with no
   expect(executionSizeLabel(undefined)).toBeUndefined();
 });
 
-test("a capability execution names its platform and what it asked the site for", () => {
+test("a capability execution names its platform and what it asked its runner for", () => {
   const drawn = executionRequirementLabel({
     ...containerExecution,
     requirement: {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
       architecture: "Amd64",
       capabilities: ["Agent:Claude", "Agent:Codex"],
@@ -165,19 +165,18 @@ test("a capability execution names its platform and what it asked the site for",
   expect(drawn.title).toBe("Agent:Claude, Agent:Codex");
 });
 
-test("a native execution names the toolchain floor it asked for", () => {
+test("a capability its project named for itself is drawn as written, namespace aside", () => {
   const drawn = executionRequirementLabel({
     ...containerExecution,
     requirement: {
-      mode: "Native",
+      mode: "Capability",
+      operatingSystem: "MacOS",
       architecture: "Arm64",
-      driver: "XcodeTesting",
-      xcodeVersionMin: 16,
-      sdkVersionMin: 18,
+      capabilities: ["Tool:Xcode", "gpu"],
     },
   });
-  expect(drawn.text).toBe("Arm64 XcodeTesting, xcode ≥ 16, sdk ≥ 18");
-  expect(drawn.title).toBe(drawn.text);
+  expect(drawn.text).toBe("MacOS/Arm64 Xcode, gpu");
+  expect(drawn.title).toBe("Tool:Xcode, gpu");
 });
 
 test("a creator is drawn as the subject its issuer gave them, the whole authority kept for the hover", () => {

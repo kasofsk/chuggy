@@ -166,9 +166,7 @@ export function executionSizeLabel(
 
 /**
  * What an execution was placed on, with the platform it was placed on it for.
- * A capability task names what the site had to offer rather than an image, and
- * a native task names no image either, so its label is the toolchain floor it
- * asked for and there is nothing further to reveal.
+ * A capability task names what its runner had to meet rather than an image.
  */
 export function executionRequirementLabel(execution: ExecutionSummary): Label {
   const requirement = execution.requirement;
@@ -180,16 +178,12 @@ export function executionRequirementLabel(execution: ExecutionSummary): Label {
         title: worker.title,
       };
     }
-    case "ContainerCapability": {
+    case "Capability": {
       const capabilities = requirement.capabilities;
       return {
         text: `${requirement.operatingSystem}/${requirement.architecture} ${capabilitiesShortened(capabilities)}`,
         title: capabilities.join(", "),
       };
-    }
-    case "Native": {
-      const text = `${requirement.architecture} ${requirement.driver}, xcode ≥ ${String(requirement.xcodeVersionMin)}, sdk ≥ ${String(requirement.sdkVersionMin)}`;
-      return { text, title: text };
     }
   }
 }

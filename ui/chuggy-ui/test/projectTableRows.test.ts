@@ -242,7 +242,7 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
     projectTableRunsOn({
       ...container,
       requirement: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: ["Agent:Claude"],
@@ -253,14 +253,13 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
     projectTableRunsOn({
       ...container,
       requirement: {
-        mode: "Native",
+        mode: "Capability",
+        operatingSystem: "MacOS",
         architecture: "Arm64",
-        driver: "XcodeTesting",
-        xcodeVersionMin: 16,
-        sdkVersionMin: 18,
+        capabilities: ["Tool:Xcode"],
       },
     }),
-  ).toEqual({ text: "XcodeTesting", title: "XcodeTesting" });
+  ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
 });
 
 test("the rows of one section are that section's and in the order read", () => {

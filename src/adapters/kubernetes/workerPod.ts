@@ -11,8 +11,8 @@
  * one and its placement's where policy resolved a capability, and whether this
  * site runs that image was `ExecutionPolicy`'s answer before the attempt was
  * placed; what is left here is what a container backend cannot serve whatever
- * policy said, which is a native requirement or a capability policy resolved
- * no image for.
+ * policy said, which is a capability requirement policy resolved no image
+ * for.
  *
  * A POD IS NAMED FOR ITS ATTEMPT AND FOR NOTHING ELSE. `AttemptPlacementPort`
  * places and cancels the same fenced attempt, so the name has to be derivable
@@ -206,11 +206,7 @@ function kubernetesWorkerImage(
 ): { readonly image: string } | { readonly reason: BlockedReason } {
   if (placement.requirement.mode === "Container")
     return { image: placement.requirement.image };
-  if (
-    placement.requirement.mode === "ContainerCapability" &&
-    placement.image !== undefined
-  )
-    return { image: placement.image };
+  if (placement.image !== undefined) return { image: placement.image };
   return { reason: "RequiredCapabilityUnavailable" };
 }
 

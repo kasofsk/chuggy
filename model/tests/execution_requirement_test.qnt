@@ -4,32 +4,29 @@ module execution_requirement_test {
 
   pure def container(image: int): ExecutionRequirement = ContainerRequirement({
     operatingSystem: Linux, architecture: Amd64, image: image })
-  pure val nativeBase: ExecutionRequirement = NativeRequirement({
-    architecture: Arm64, driver: XcodeBuild,
-    xcodeVersionMin: 16, sdkVersionMin: 18 })
+  pure def capable(capabilities: Set[ExecutionCapability]): ExecutionRequirement =
+    CapabilityRequirement({ operatingSystem: MacOS, architecture: Arm64,
+      capabilities: capabilities })
+  pure val capabilityBase: ExecutionRequirement = capable(Set("Tool:Xcode"))
   pure val defaults: RequirementDefaults = {
     taskKinds: Map(), tickets: Map(),
-    platformDefault: nativeBase, platformDefaultVersion: 7
+    platformDefault: capabilityBase, platformDefaultVersion: 7
   }
 
   run precedenceIsKindThenTicketThenPlatformTest =
-    val kind = NativeRequirement({ architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 18, sdkVersionMin: 20 })
-    val ticket = NativeRequirement({ architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 17, sdkVersionMin: 19 })
+    val kind = capable(Set("Tool:Xcode", "Simulator:iOS"))
+    val ticket = capable(Set("Tool:Xcode", "Host:Signing"))
     val configured = { ...defaults,
       taskKinds: Map(2 -> kind), tickets: Map(3 -> ticket) }
     assert(and {
       selectedRequirement(2, 3, configured) == { value: kind, source: TaskKindDefault },
       selectedRequirement(4, 3, configured) == { value: ticket, source: TicketDefault },
-      selectedRequirement(4, 5, configured) == { value: nativeBase, source: PlatformDefault }
+      selectedRequirement(4, 5, configured) == { value: capabilityBase, source: PlatformDefault }
     })
 
   run tasksInOneTicketMayMaterializeDifferentRequirementsTest =
-    val first = NativeRequirement({ architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 17, sdkVersionMin: 18 })
-    val second = NativeRequirement({ architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 18, sdkVersionMin: 19 })
+    val first = capable(Set("Tool:Xcode", "Simulator:iOS"))
+    val second = capable(Set("Tool:Xcode", "Host:Signing"))
     val configured = { ...defaults, taskKinds: Map(2 -> first, 4 -> second) }
     match materialize(101, 2, 3, configured, LegacyWorker) {
       | Materialized(a) => match materialize(102, 4, 3, configured, LegacyWorker) {
@@ -55,10 +52,10 @@ module execution_requirement_test {
 
   run singleAgentWorkerKeepsThePinnedImageAndConstrainsItTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
-    match materialize(101, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
+    match materialize(101, 2, 3, migrated, SingleAgentWorker("Agent:Codex")) {
       | Materialized(pinned) => assert(and {
           pinned.value == container(42),
-          pinned.agent == RequiredAgent(AgentCodex),
+          pinned.agent == RequiredAgent("Agent:Codex"),
           pinned.digest == requirementDigest(container(42))
         })
       | RequirementRefused => assert(false)
@@ -66,19 +63,19 @@ module execution_requirement_test {
 
   run siteRefusesAPinnedImageItDeclaresWithoutTheAgentTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
-    match materialize(101, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
+    match materialize(101, 2, 3, migrated, SingleAgentWorker("Agent:Codex")) {
       | Materialized(pinned) => assert(and {
           not(siteAdmits(pinned.value, pinned.agent,
-            CapabilitiesDeclared(Set(AgentClaude)))),
+            CapabilitiesDeclared(Set("Agent:Claude")))),
           siteAdmits(pinned.value, pinned.agent,
-            CapabilitiesDeclared(Set(AgentClaude, AgentCodex)))
+            CapabilitiesDeclared(Set("Agent:Claude", "Agent:Codex")))
         })
       | RequirementRefused => assert(false)
     }
 
   run siteAdmitsAPinnedImageItDeclaresNoCapabilitiesForTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
-    match materialize(101, 2, 3, migrated, SingleAgentWorker(AgentCodex)) {
+    match materialize(101, 2, 3, migrated, SingleAgentWorker("Agent:Codex")) {
       | Materialized(pinned) =>
           assert(siteAdmits(pinned.value, pinned.agent, CapabilitiesUndeclared))
       | RequirementRefused => assert(false)
@@ -87,12 +84,17 @@ module execution_requirement_test {
   run siteRefusesAnAgentACapabilitySelectionDoesNotNameTest =
     assert(not(siteAdmits(
       CapabilityRequirement({ operatingSystem: Linux, architecture: Amd64,
-        capabilities: Set(AgentClaude) }),
-      RequiredAgent(AgentCodex), CapabilitiesUndeclared)))
+        capabilities: Set("Agent:Claude") }),
+      RequiredAgent("Agent:Codex"), CapabilitiesUndeclared)))
 
-  run siteProvidesNoAgentToANativeSelectionTest =
-    assert(not(siteAdmits(
-      nativeBase, RequiredAgent(AgentCodex), CapabilitiesUndeclared)))
+  run anOpenCapabilityCarriesTheAgentBesideItTest =
+    match materialize(101, 2, 3, defaults, SingleAgentWorker("Agent:Claude")) {
+      | Materialized(pinned) => assert(and {
+          pinned.value == capable(Set("Tool:Xcode", "Agent:Claude")),
+          siteAdmits(pinned.value, pinned.agent, CapabilitiesUndeclared)
+        })
+      | RequirementRefused => assert(false)
+    }
 
   run aWorkerNamingNoAgentConstrainsNoSiteEntryTest =
     val migrated = defaultsFromLegacyReleaseImage(42, 1)
@@ -100,7 +102,7 @@ module execution_requirement_test {
       | Materialized(pinned) => assert(and {
           pinned.agent == NoAgent,
           siteAdmits(pinned.value, pinned.agent,
-            CapabilitiesDeclared(Set(AgentClaude)))
+            CapabilitiesDeclared(Set("Agent:Claude")))
         })
       | RequirementRefused => assert(false)
     }
@@ -108,25 +110,20 @@ module execution_requirement_test {
   run singleAgentWorkerAddsItsAgentToAnAuthoredCapabilityRequirementTest =
     val capability = CapabilityRequirement({
       operatingSystem: Linux, architecture: Amd64,
-      capabilities: Set(AgentClaude) })
+      capabilities: Set("Agent:Claude") })
     val configured = {
       taskKinds: Map(), tickets: Map(),
       platformDefault: capability, platformDefaultVersion: 1
     }
-    match materialize(101, 2, 3, configured, SingleAgentWorker(AgentCodex)) {
+    match materialize(101, 2, 3, configured, SingleAgentWorker("Agent:Codex")) {
       | Materialized(pinned) => assert(and {
           pinned.value == CapabilityRequirement({
             operatingSystem: Linux, architecture: Amd64,
-            capabilities: Set(AgentClaude, AgentCodex) }),
+            capabilities: Set("Agent:Claude", "Agent:Codex") }),
           siteAdmits(pinned.value, pinned.agent, CapabilitiesUndeclared)
         })
       | RequirementRefused => assert(false)
     }
-
-  run singleAgentWorkerRefusesANativeRequirementTest =
-    assert(materialize(
-      101, 2, 3, defaults, SingleAgentWorker(AgentCodex)
-    ) == RequirementRefused)
 
   run changingDefaultDoesNotRewritePinnedRequirementTest =
     val oldConfig = defaultsFromLegacyReleaseImage(42, 1)
@@ -145,14 +142,11 @@ module execution_requirement_test {
     }
 
   run malformedRequirementsAreRefusedTest =
-    val malformed = { ...defaults, platformDefault: NativeRequirement({
-      architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 0, sdkVersionMin: 18 }) }
+    val malformed = { ...defaults, platformDefault: capable(Set()) }
     assert(materialize(101, 2, 3, malformed, LegacyWorker) == RequirementRefused)
 
   run wideningOverrideIsRefusedTest =
-    val widened = NativeRequirement({ architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 15, sdkVersionMin: 17 })
+    val widened = capable(Set("Simulator:iOS"))
     val configured = { ...defaults, taskKinds: Map(2 -> widened) }
     assert(materialize(101, 2, 3, configured, LegacyWorker) == RequirementRefused)
 
@@ -163,6 +157,8 @@ module execution_requirement_test {
   run digestIsStableForEqualValuesAndDistinctForExamplesTest = assert(and {
     requirementDigest(container(42)) == requirementDigest(container(42)),
     requirementDigest(container(42)) != requirementDigest(container(43)),
-    requirementDigest(container(42)) != requirementDigest(nativeBase)
+    requirementDigest(container(42)) != requirementDigest(capabilityBase),
+    requirementDigest(capable(Set("Tool:Xcode", "Simulator:iOS"))) !=
+      requirementDigest(capable(Set("Tool:Xcode", "Host:Signing")))
   })
 }

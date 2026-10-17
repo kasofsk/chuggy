@@ -150,26 +150,12 @@ export type ExecutionTaskKind = (typeof executionTaskKinds)[number];
 export const briefingCarriers = ["Agent", "Commands"] as const;
 export type BriefingCarrier = (typeof briefingCarriers)[number];
 
-/** The platform halves a container requirement names, and the native driver's. */
+/** The platform halves a requirement names. */
 export const operatingSystems = ["Linux", "MacOS"] as const;
 export type OperatingSystem = (typeof operatingSystems)[number];
 
 export const architectures = ["Amd64", "Arm64"] as const;
 export type Architecture = (typeof architectures)[number];
-
-export const nativeDrivers = [
-  "XcodeBuild",
-  "XcodeTesting",
-  "IosSimulatorTesting",
-] as const;
-export type NativeDriver = (typeof nativeDrivers)[number];
-
-/**
- * What a capability requirement asks a site for in place of an exact image.
- * The site resolves it to a runtime that offers every capability named.
- */
-export const executionCapabilities = ["Agent:Claude", "Agent:Codex"] as const;
-export type ExecutionCapability = (typeof executionCapabilities)[number];
 
 /** Which default a materialized requirement came from, narrowest first. */
 export const requirementSources = [

@@ -23,17 +23,12 @@
  * against the plane's bound.
  *
  * ONE INVENTORY, BECAUSE A POLL ADVERTISES NONE. What a pool runs is what its
- * registration declares among its capability tokens: platforms and agent
- * capabilities. The model matches a session's observed inventory in
+ * registration declares among its capability tokens: platforms, and
+ * whatever else its owner declared. The model matches a session's observed inventory in
  * `canAssign` and a retained one in `placementOutcome`, and here both are the
  * registration's, which is `inventoryObservationSafe` holding by there being
  * one copy. So a configured pool's inventory is already its poll's, and
  * `placementOutcome` does not match it again for a pool it would place.
- *
- * NO POOL OFFERS A NATIVE SURFACE. The native arm asks for a macOS platform,
- * an installed driver and toolchain minima that no pool declares, so it is
- * false for every pool, and a native requirement is definitively incompatible
- * with all of them.
  *
  * THE POLICY THE REGISTRY HAS NO COLUMN FOR IS DATA, NOT AN OMISSION. Class,
  * drain, trust, the allowance of secrets and source, an owner and an allowlist are
@@ -220,15 +215,13 @@ export function workerPoolInventoryMatches(
   switch (requirement.mode) {
     case "Container":
       return pool.capabilities.includes(workerPoolPlatformToken(requirement));
-    case "ContainerCapability":
+    case "Capability":
       return (
         pool.capabilities.includes(workerPoolPlatformToken(requirement)) &&
         requirement.capabilities.every((capability) =>
           pool.capabilities.includes(capability),
         )
       );
-    case "Native":
-      return false;
   }
 }
 

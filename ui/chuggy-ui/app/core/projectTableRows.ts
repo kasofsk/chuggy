@@ -71,19 +71,17 @@ export interface ProjectTableRow {
 
 /** What the task was placed on, named where the catalog names it: a container
  * is its worker or the image the catalog holds no worker for, a capability task
- * is what it asked the site for, and a native task is its driver. */
+ * is what it asked its runner for. */
 export function projectTableRunsOn(execution: ExecutionSummary): Label {
   const requirement = execution.requirement;
   switch (requirement.mode) {
     case "Container":
       return workerLabel(execution.worker, requirement.image);
-    case "ContainerCapability":
+    case "Capability":
       return {
         text: capabilitiesShortened(requirement.capabilities),
         title: requirement.capabilities.join(", "),
       };
-    case "Native":
-      return { text: requirement.driver, title: requirement.driver };
   }
 }
 

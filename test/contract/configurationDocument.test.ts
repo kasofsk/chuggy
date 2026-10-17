@@ -151,7 +151,7 @@ const codex = {
   model: "gpt-5",
 };
 const capabilityRequirement = {
-  mode: "ContainerCapability",
+  mode: "Capability",
   operatingSystem: "Linux",
   architecture: "Amd64",
   capabilities: ["Agent:Codex"],
@@ -620,6 +620,7 @@ const mutationLeaves: readonly unknown[] = [
   "RegressionCoverage",
   "NotAPractice",
   "Container",
+  "Capability",
   "ContainerCapability",
   "Native",
   "MacOS",

@@ -2,18 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  asExecutionRequirement,
   executionAgentCapability,
   executionRequirementConfigurationIsValid,
   materializeExecutionRequirement,
 } from "../../src/interpreter/executionRequirement.ts";
 
-const native = (xcodeVersionMin: number, sdkVersionMin: number) => ({
-  mode: "Native" as const,
-  architecture: "Arm64" as const,
-  driver: "XcodeBuild" as const,
-  xcodeVersionMin,
-  sdkVersionMin,
-});
 const container = (
   image: string,
   operatingSystem: "Linux" | "MacOS" = "Linux",
@@ -142,7 +136,7 @@ test("a configuration key inside a configuration is ignored like any other key t
     },
     executionRequirements: {
       platformDefault: {
-        mode: "ContainerCapability" as const,
+        mode: "Capability" as const,
         operatingSystem: "Linux" as const,
         architecture: "Amd64" as const,
         capabilities: ["Agent:Claude" as const],
@@ -170,7 +164,7 @@ test("a configuration key inside a configuration is ignored like any other key t
 
 test("a single agent is added to an authored capability requirement", () => {
   const authoredCapability = {
-    mode: "ContainerCapability" as const,
+    mode: "Capability" as const,
     operatingSystem: "Linux" as const,
     architecture: "Amd64" as const,
     capabilities: ["Agent:Claude" as const],
@@ -194,21 +188,39 @@ test("a single agent is added to an authored capability requirement", () => {
   );
 });
 
-test("a single-agent worker refuses a native execution requirement", () => {
+test("a single agent joins capabilities its project named for itself", () => {
+  const authored = {
+    mode: "Capability" as const,
+    operatingSystem: "Linux" as const,
+    architecture: "Amd64" as const,
+    capabilities: ["Tool:Bazel", "Cache:Warm"],
+  };
   const configuration = {
     version: 1,
     image: "legacy-worker:v1",
     worker: codexWorker,
     executionRequirements: {
-      platformDefault: native(16, 18),
+      platformDefault: authored,
       platformDefaultVersion: 1,
     },
   };
-  assert.equal(executionRequirementConfigurationIsValid(configuration), false);
-  assert.throws(
-    () => materializeExecutionRequirement(configuration, "Work"),
-    /malformed or widening/u,
+  assert.deepEqual(
+    materializeExecutionRequirement(configuration, "Work").value,
+    { ...authored, capabilities: [...authored.capabilities, "Agent:Codex"] },
   );
+});
+
+test("a capability requirement stored under its former name reads under its current one", () => {
+  const stored = {
+    mode: "ContainerCapability",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    capabilities: ["Agent:Claude"],
+  };
+  assert.deepEqual(asExecutionRequirement(stored), {
+    ...stored,
+    mode: "Capability",
+  });
 });
 
 test("a kind default outranks the ticket's, which outranks the platform's", () => {
@@ -364,7 +376,13 @@ test("malformed and widening requirement configurations are refused", () => {
       version: 1,
       image: "legacy",
       executionRequirements: {
-        platformDefault: native(16, 18),
+        platformDefault: {
+          mode: "Native",
+          architecture: "Arm64",
+          driver: "XcodeBuild",
+          xcodeVersionMin: 16,
+          sdkVersionMin: 18,
+        },
         platformDefaultVersion: 1,
       },
     }),

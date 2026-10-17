@@ -133,14 +133,6 @@ function workloadPlacementSingular(workload: Workload): boolean {
   );
 }
 
-/** Whether a workload an agent carries out runs somewhere an agent can run. */
-function workloadPlacementAgentRunnable(workload: Workload): boolean {
-  return (
-    workload.runner === "Commands" ||
-    workload.executionRequirement?.mode !== "Native"
-  );
-}
-
 /**
  * Whether one parsed document is a ready catalog, and the first fault where it
  * is not. The order is the order a reader fixes them in: the shape, then what
@@ -160,13 +152,7 @@ export function workloadConfigurationReadiness(
     return { readiness: "Incomplete", fault: "WorkloadUnresolved" };
   if (!workloadConfigurationNamesKnown(parsed.data))
     return { readiness: "Incomplete", fault: "CatalogNameUnknown" };
-  if (
-    !resolved.every(
-      (workload) =>
-        workloadPlacementSingular(workload) &&
-        workloadPlacementAgentRunnable(workload),
-    )
-  )
+  if (!resolved.every(workloadPlacementSingular))
     return { readiness: "Incomplete", fault: "WorkloadPlacementInvalid" };
   return {
     readiness: "Ready",

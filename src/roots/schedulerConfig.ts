@@ -28,6 +28,7 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../contract/http.ts";
+import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
   postgresLimitsDefault,
@@ -262,9 +263,7 @@ const schedulerOfferedImageSchema = z
       }),
     operatingSystem: z.enum(["Linux", "MacOS"]).optional(),
     architecture: z.enum(["Amd64", "Arm64"]).optional(),
-    capabilities: z
-      .array(z.enum(["Agent:Claude", "Agent:Codex"]))
-      .max(2)
+    capabilities: workerPoolCapabilitiesSchema
       .refine((values) => new Set(values).size === values.length, {
         message: "contains a duplicate capability",
       })

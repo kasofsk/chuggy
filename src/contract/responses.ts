@@ -66,6 +66,7 @@ import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   workerPoolCapabilitiesSchema,
+  workerPoolCapabilitySchema,
   workerPoolEvidenceCharsMax,
 } from "./workerPool.ts";
 import {
@@ -87,7 +88,6 @@ import {
   changeProposalMerges,
   draftStates,
   escalationKinds,
-  executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -98,7 +98,6 @@ import {
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
-  nativeDrivers,
   notificationKinds,
   type NativeActionKind,
   type NativeActionResolution,
@@ -546,8 +545,7 @@ export type SelectorSettingsHistoryResponse = z.infer<
 
 /**
  * What a task was required to run on, as the scheduler materialized it: an
- * exact image, the capabilities a site must offer, or a native toolchain
- * floor. The arms are strict because the interpreter refuses a requirement
+ * exact image, or the capabilities a runner must meet. The arms are strict because the interpreter refuses a requirement
  * carrying a key outside the mode it names, and `test/contract/rosters.test.ts`
  * holds the modes against the interpreter's own union.
  */
@@ -559,17 +557,10 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     image: z.string().min(1),
   }),
   z.strictObject({
-    mode: z.literal("ContainerCapability"),
+    mode: z.literal("Capability"),
     operatingSystem: z.enum(operatingSystems),
     architecture: z.enum(architectures),
-    capabilities: z.array(z.enum(executionCapabilities)).min(1),
-  }),
-  z.strictObject({
-    mode: z.literal("Native"),
-    architecture: z.enum(architectures),
-    driver: z.enum(nativeDrivers),
-    xcodeVersionMin: ticketNumberSchema,
-    sdkVersionMin: ticketNumberSchema,
+    capabilities: z.array(workerPoolCapabilitySchema).min(1),
   }),
 ]);
 

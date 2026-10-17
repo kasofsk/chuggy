@@ -454,7 +454,7 @@ async function schedulerCreateExecutions(
     const resources = ticketTaskResources(definition, key);
     const execution = `${executionStem}-${input.task}`;
     const requirementIdentity = execution;
-    const requirementValue = JSON.stringify(materialized.value);
+    const requirementValue = JSON.stringify(materialized.stored);
     const requirementDigest = materialized.digest;
     const inserted = await client.query(sql`INSERT INTO execution
        (tenant,project,execution,ticket,task,source_request,account,cluster,
