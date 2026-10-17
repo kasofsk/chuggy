@@ -369,6 +369,8 @@ function fixtureConfigurations(
           }),
       },
       snapshots: {
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
         snapshot: (request) => {
           wrote.snapshots.push(request);
           return Promise.resolve(

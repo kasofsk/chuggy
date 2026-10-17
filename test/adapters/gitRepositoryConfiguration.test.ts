@@ -679,3 +679,68 @@ test("an action directory holding as many documents as one read takes is read wh
     repositoryDeclarationsMax,
   );
 });
+
+/** Where the reference tests write the files a catalog would name. */
+const promptRoot = `${repositoryDeclarationRoot}prompts/`;
+
+test("a referenced path is read exactly: a file's text, a symbolic link, and nothing a file as absent", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${promptRoot}work.md`, "Do the work.\n");
+  fixtureWrite(fixture, `${promptRoot}nested/review.md`, "Review it.\n");
+  symlinkSync("work.md", join(fixture.seed, `${promptRoot}link.md`));
+  fixtureWrite(
+    fixture,
+    `${promptRoot}large.md`,
+    "x".repeat(repositoryDeclarationFileCharsMax + 1),
+  );
+  const commit = fixtureCommit(fixture, "referenced files");
+
+  assert.deepEqual(
+    await fixturePort(fixture).referenced(
+      {
+        repository: fixtureBinding(fixture.remote),
+        commit: asGitObjectId(commit),
+      },
+      [
+        `${promptRoot}work.md`,
+        `${promptRoot}link.md`,
+        `${promptRoot}nested`,
+        `${promptRoot}*.md`,
+        `${promptRoot}missing.md`,
+        `${promptRoot}large.md`,
+      ],
+    ),
+    {
+      read: "Referenced",
+      files: [
+        {
+          path: `${promptRoot}work.md`,
+          found: "File",
+          content: "Do the work.\n",
+        },
+        { path: `${promptRoot}link.md`, found: "Symlink" },
+        { path: `${promptRoot}nested`, found: "Absent" },
+        { path: `${promptRoot}*.md`, found: "Absent" },
+        { path: `${promptRoot}missing.md`, found: "Absent" },
+        { path: `${promptRoot}large.md`, found: "TooLarge" },
+      ],
+    },
+  );
+});
+
+test("a referenced read of a commit the remote does not hold says so as a snapshot does", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${promptRoot}work.md`, "Do the work.\n");
+  fixtureCommit(fixture, "referenced files");
+
+  assert.deepEqual(
+    await fixturePort(fixture).referenced(
+      {
+        repository: fixtureBinding(fixture.remote),
+        commit: asGitObjectId("b".repeat(40)),
+      },
+      [`${promptRoot}work.md`],
+    ),
+    { read: "Absent", absent: "Commit" },
+  );
+});

@@ -228,6 +228,8 @@ test("partition imports continue after one partition is refused", async () => {
         },
       },
       snapshots: {
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
         snapshot: () => {
           calls.push("snapshot");
           return Promise.resolve({ read: "Snapshot", files: [] });
@@ -297,6 +299,8 @@ test("each of one project's repositories imports against its own binding", async
       asked,
     ),
     snapshots: {
+      referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
       snapshot: () => Promise.resolve({ read: "Snapshot", files: [] }),
     },
     store: {
@@ -470,7 +474,10 @@ function importAgainst(
     },
     ports: {
       bindings: boundRepositories(new Map([[repository, "epoch"]]), []),
-      snapshots: { snapshot: () => Promise.resolve(read) },
+      snapshots: {
+        snapshot: () => Promise.resolve(read),
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+      },
       store: {
         importRepositoryConfigurations: () =>
           Promise.resolve({ imported: "Imported" }),

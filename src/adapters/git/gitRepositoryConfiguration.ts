@@ -33,6 +33,8 @@ import {
   repositoryConfigurationIgnoredField,
   repositoryConfigurationRoot,
   type RepositoryConfigurationIgnored,
+  type RepositoryConfigurationReferenced,
+  type RepositoryConfigurationReferencedRead,
   type RepositoryConfigurationSnapshotPort,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchPort,
@@ -305,12 +307,14 @@ async function gitRepositoryConfigurationFiles(
   return files;
 }
 
-/** The JSON blobs one commit's tree holds under `root`, which are none where it holds no such directory. */
-async function gitRepositoryConfigurationDirectory(
+/** The commit fetched into the scratch under whatever credential the source gives, or why it is not. */
+async function gitRepositoryConfigurationFetched(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
-  root: string,
-): Promise<GitRepositoryConfigurationDirectoryRead> {
+): Promise<
+  | { readonly read: "Fetched" }
+  | Exclude<RepositoryDeclarationSnapshotRead, { readonly read: "Snapshot" }>
+> {
   const authorization = await gitRepositoryConfigurationCredential(
     own,
     request.repository,
@@ -337,7 +341,19 @@ async function gitRepositoryConfigurationDirectory(
         fetched.evidence,
       ),
     };
-  if (fetched.fetched === "Absent") return { read: "Absent" };
+  return fetched.fetched === "Absent"
+    ? { read: "Absent" }
+    : { read: "Fetched" };
+}
+
+/** The JSON blobs one commit's tree holds under `root`, which are none where it holds no such directory. */
+async function gitRepositoryConfigurationDirectory(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+  root: string,
+): Promise<GitRepositoryConfigurationDirectoryRead> {
+  const fetched = await gitRepositoryConfigurationFetched(own, request);
+  if (fetched.read !== "Fetched") return fetched;
   const tree = await gitRepositoryConfigurationTree(own, request, root);
   if (tree === "Refused") return { read: "Refused" };
   const files = await gitRepositoryConfigurationFiles(
@@ -383,6 +399,97 @@ async function gitRepositoryConfigurationListing(
   return entries === undefined
     ? { listed: "Unlisted" }
     : { listed: "Entries", entries };
+}
+
+/**
+ * One path's entry in a fetched commit, matched exactly: a request naming a
+ * directory lists what it holds, none of which is the path asked for.
+ */
+async function gitRepositoryConfigurationReferencedEntry(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+  path: string,
+): Promise<GitRepositoryConfigurationEntry | "Absent" | "Refused"> {
+  const ran = await scratchRun(own.scratch, {
+    repository: request.repository.repository,
+    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    argv: ["ls-tree", "-z", "--long", request.commit, "--", path],
+    outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
+  });
+  if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling") return "Absent";
+  if (!gitRepositoryConfigurationExited(ran)) return "Refused";
+  for (const row of ran.stdout.split("\0")) {
+    const matched =
+      /^(\d{6}) (?:blob|tree|commit) ([0-9a-f]+) +(?:\d+|-)\t([^\0]+)$/u.exec(
+        row,
+      );
+    const [, mode, object, listed] = matched ?? [];
+    if (mode !== undefined && object !== undefined && listed === path)
+      return { mode, object, path };
+  }
+  return "Absent";
+}
+
+/** One referenced path as found: a regular file's text, a symbolic link, a blob past the bound, or nothing a file. */
+async function gitRepositoryConfigurationReferencedFile(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+  path: string,
+): Promise<RepositoryConfigurationReferenced | "Refused"> {
+  const entry = await gitRepositoryConfigurationReferencedEntry(
+    own,
+    request,
+    path,
+  );
+  if (entry === "Refused") return "Refused";
+  if (entry === "Absent") return { path, found: "Absent" };
+  if (entry.mode === "120000") return { path, found: "Symlink" };
+  if (entry.mode !== "100644" && entry.mode !== "100755")
+    return { path, found: "Absent" };
+  const ran = await scratchRun(own.scratch, {
+    repository: request.repository.repository,
+    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    argv: ["cat-file", "blob", entry.object],
+    outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
+  });
+  if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling")
+    return { path, found: "TooLarge" };
+  if (!gitRepositoryConfigurationExited(ran)) return "Refused";
+  return textCodePointsCount(ran.stdout) > repositoryDeclarationFileCharsMax
+    ? { path, found: "TooLarge" }
+    : { path, found: "File", content: ran.stdout };
+}
+
+/** The files a catalog names at the commit its snapshot was read at, fetched again under the same rule. */
+async function gitRepositoryConfigurationReferenced(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+  paths: readonly string[],
+): Promise<RepositoryConfigurationReferencedRead> {
+  const fetched = await gitRepositoryConfigurationFetched(own, request);
+  switch (fetched.read) {
+    case "Fetched":
+      break;
+    case "Absent":
+      return { read: "Absent", absent: "Commit" };
+    case "Unavailable":
+      return fetched;
+    case "Refused":
+      return { read: "Refused", refused: "Snapshot" };
+    default:
+      return assertNever(fetched);
+  }
+  const files: RepositoryConfigurationReferenced[] = [];
+  for (const path of paths) {
+    const file = await gitRepositoryConfigurationReferencedFile(
+      own,
+      request,
+      path,
+    );
+    if (file === "Refused") return { read: "Refused", refused: "Snapshot" };
+    files.push(file);
+  }
+  return { read: "Referenced", files };
 }
 
 /** One directory's read in the configuration port's terms, where a tree declaring none has no directory to import. */
@@ -502,6 +609,8 @@ export function gitRepositoryConfiguration(
   };
   return {
     snapshot: (request) => gitRepositoryConfigurationDeclared(own, request),
+    referenced: (request, paths) =>
+      gitRepositoryConfigurationReferenced(own, request, paths),
     actionSnapshot: async (request) => {
       const read = await gitRepositoryConfigurationDirectory(
         own,

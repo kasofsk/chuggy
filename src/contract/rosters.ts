@@ -519,6 +519,8 @@ export const repositoryConfigurationFaults = [
   "ConfigurationInvalid",
   "DuplicateName",
   "DuplicatePath",
+  "ReferenceAbsent",
+  "TooManyReferences",
 ] as const;
 export type RepositoryConfigurationFault =
   (typeof repositoryConfigurationFaults)[number];

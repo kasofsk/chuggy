@@ -729,6 +729,8 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     ConfigurationInvalid: true,
     DuplicateName: true,
     DuplicatePath: true,
+    ReferenceAbsent: true,
+    TooManyReferences: true,
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));

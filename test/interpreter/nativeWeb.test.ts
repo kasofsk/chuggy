@@ -451,6 +451,8 @@ function repositoryImportPorts(
       },
     },
     snapshots: {
+      referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
       snapshot: ({ commit }) => {
         calls.push(`snapshot:${commit}`);
         return Promise.resolve({
@@ -725,6 +727,8 @@ test("repository imports refuse invalid declarations without writing", async () 
   const subject = boundary(true, openExecutionBacklogGuard, {
     ...ports,
     snapshots: {
+      referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
       snapshot: () => {
         calls.push("snapshot:invalid");
         return Promise.resolve({

@@ -193,6 +193,8 @@ function fixture(input: FixtureInput): Fixture {
         },
       },
       snapshots: {
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
         snapshot: (request) => {
           asked.push(`snapshot ${request.repository.repository}`);
           return Promise.resolve(

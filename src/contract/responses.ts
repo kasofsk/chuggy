@@ -1096,6 +1096,8 @@ export const repositoryConfigurationRefusalSchema = z.object({
   path: z.string().min(1),
   fault: z.enum(repositoryConfigurationFaults),
   configurationFault: identitySchema.optional(),
+  /** The file the refused one names by reference, where that file is what was refused. */
+  reference: z.string().min(1).optional(),
 });
 
 export const repositoryConfigurationRefusalsSchema = z.object({

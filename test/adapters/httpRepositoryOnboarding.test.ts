@@ -321,6 +321,8 @@ function fixtureServiceConfigurations(
     imports: {
       bindings: { binding: () => Promise.resolve(undefined) },
       snapshots: {
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
         snapshot: () =>
           Promise.resolve({ read: "Unavailable", unavailable: "Repository" }),
       },
