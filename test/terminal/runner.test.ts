@@ -980,10 +980,10 @@ test("on a Mac runner says it cannot set one up and asks nothing of the machine 
   assert.equal(done.code, 2, done.stdout);
   assert.equal(
     done.lines[0],
-    "found: this machine is a Mac, and chuggy's runner runs on Linux",
+    "found: this machine is a Mac, and chuggy setup puts a runner only on Linux",
   );
   assert.deepEqual(done.lines.slice(-2), [
-    `rule: Run node ${program} ${flags} only once the person says a runner is running on another machine.`,
+    `rule: Run node ${program} ${flags} only once the person says a runner is running.`,
     "next: stop",
   ]);
   assert.deepEqual(on.machine.calls(), []);
@@ -993,7 +993,7 @@ test("on a Mac runner says it cannot set one up and asks nothing of the machine 
   assert.equal(bare.code, 0, bare.stdout);
   assert.match(
     bare.lines.at(-3) ?? "",
-    /^tell: .* This machine is a Mac and chuggy has no runner for a Mac yet, so it cannot be one\. /u,
+    /^tell: .* This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: /u,
   );
   assert.ok(!bare.stdout.includes(" runner --workspace"), bare.stdout);
   assert.deepEqual(acts(on), []);

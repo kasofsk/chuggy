@@ -23,9 +23,6 @@ import { workerImageFaults } from "./workerEnvironment.ts";
 export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
-/** The most a requirement names beside its platform, which its assignment carries within a pool's bound. */
-export const workerPoolRequirementCapabilitiesMax =
-  workerPoolCapabilitiesMax - 1;
 export const workerPoolEvidenceCharsMax = 4_096;
 /** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;

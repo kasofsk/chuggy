@@ -34,10 +34,7 @@
         "Read CLAUDE.md and .chug/tasks/review-change.md before changing the repository."
       ]
     },
-    "practices": [
-      "RegressionCoverage",
-      "AcceptanceCriteria"
-    ],
+    "practices": ["RegressionCoverage", "AcceptanceCriteria"],
     "work": {
       "instructions": [
         "Implement the requested change and add focused regression coverage.",
@@ -52,19 +49,14 @@
     "evaluations": [
       {
         "purpose": "Check",
-        "checks": [
-          ".chug/tasks/ci.sh"
-        ]
+        "checks": [".chug/tasks/ci.sh"]
       },
       {
         "purpose": "Review",
         "instructions": [
           "Read .chug/tasks/review-change.md and review the change exactly as that brief requires."
         ],
-        "practices": [
-          "ChangedCallPaths",
-          "AcceptanceCriteria"
-        ]
+        "practices": ["ChangedCallPaths", "AcceptanceCriteria"]
       }
     ]
   }
