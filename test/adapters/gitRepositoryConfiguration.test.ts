@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -17,7 +18,10 @@ import { basename, dirname, join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { gitCommitAncestry } from "../../src/adapters/git/gitCommitAncestry.ts";
-import { gitRepositoryConfiguration } from "../../src/adapters/git/gitRepositoryConfiguration.ts";
+import {
+  gitRepositoryConfiguration,
+  gitRepositoryConfigurationReadsInFlightMax,
+} from "../../src/adapters/git/gitRepositoryConfiguration.ts";
 import {
   gitCredentialHelperText,
   type GitEnvironment,
@@ -45,6 +49,7 @@ import {
 } from "../../src/interpreter/repositoryDeclaration.ts";
 import {
   gitStandInFaulted,
+  gitStandInLines,
   gitStandInMarker,
   gitStandInOpen,
   type GitStandInFault,
@@ -97,11 +102,14 @@ function fixtureCommit(fixture: Fixture, message: string): string {
   return fixtureGit(fixture.seed, "rev-parse", "HEAD");
 }
 
-function fixtureBinding(repository: string): RepositoryBinding {
+function fixtureBinding(
+  repository: string,
+  project = "project",
+): RepositoryBinding {
   return {
     partition: {
       tenant: asTenantId("tenant"),
-      project: asProjectId("project"),
+      project: asProjectId(project),
     },
     repository: asRepositoryId(repository),
     recoveryEpoch: asRecoveryEpoch("epoch"),
@@ -127,7 +135,7 @@ function fixtureScratch(fixture: Fixture): string {
 
 function fixturePort(
   fixture: Fixture,
-  resolved: CredentialResolved = fixtureCredential,
+  resolved: CredentialResolved | RepositoryCredentialPort = fixtureCredential,
   environment: GitEnvironment = process.env,
   remoteTimeoutSecsMax?: number,
 ) {
@@ -135,7 +143,8 @@ function fixturePort(
     scratchDirectory: fixtureScratch(fixture),
     identity: { name: "chug", email: "chug@example.test" },
     environment,
-    credentials: fixtureCredentials(resolved),
+    credentials:
+      "resolved" in resolved ? fixtureCredentials(resolved) : resolved,
     ...(remoteTimeoutSecsMax === undefined ? {} : { remoteTimeoutSecsMax }),
   });
 }
@@ -896,21 +905,26 @@ test("from a remote honouring the filter, each file arrives as its directory or 
 /**
  * What the remote runs in place of building a pack directly: it writes the
  * secret the fetch that asked was given, read through the adapter's own
- * helper text, and then builds the pack.
+ * helper text, pauses as long as it is told, and then builds the pack.
  */
-const fixtureServeText = [
-  "#!/bin/sh",
-  'here=$(dirname "$0")',
-  '"$here/helper" get | grep "^password=" >> "$here/served"',
-  'exec "$@"',
-  "",
-].join("\n");
+function fixtureServeText(pauseSecs: number): string {
+  return [
+    "#!/bin/sh",
+    'here=$(dirname "$0")',
+    '"$here/helper" get | grep "^password=" >> "$here/served"',
+    `sleep ${String(pauseSecs)}`,
+    'exec "$@"',
+    "",
+  ].join("\n");
+}
 
-/** The environment of a port whose remote writes the secret of each fetch it serves a pack to, in order. */
-function fixtureServing(fixture: Fixture): GitEnvironment {
+/** The environment of a port whose remote writes the secret of each fetch it serves a pack to, in order, and can take a while over each pack, so that a fetch holds what it locks while another read could reach it. */
+function fixtureServing(fixture: Fixture, pauseSecs = 0): GitEnvironment {
   const here = fixture.directory;
   writeFileSync(join(here, "helper"), gitCredentialHelperText, { mode: 0o700 });
-  writeFileSync(join(here, "serve"), fixtureServeText, { mode: 0o755 });
+  writeFileSync(join(here, "serve"), fixtureServeText(pauseSecs), {
+    mode: 0o755,
+  });
   writeFileSync(
     join(here, "gitconfig"),
     `[uploadpack]\n\tpackObjectsHook = ${join(here, "serve")}\n`,
@@ -994,19 +1008,6 @@ test("a blob of the commit that could not be fetched is a commit not held yet, a
   });
 });
 
-/** The environment of a port whose remote takes a while over each pack it serves, so that a fetch holds what it locks while another read could reach it. */
-function fixtureSlowServing(fixture: Fixture): GitEnvironment {
-  const here = fixture.directory;
-  writeFileSync(join(here, "slow"), '#!/bin/sh\nsleep 1\nexec "$@"\n', {
-    mode: 0o755,
-  });
-  writeFileSync(
-    join(here, "slow-gitconfig"),
-    `[uploadpack]\n\tpackObjectsHook = ${join(here, "slow")}\n`,
-  );
-  return { ...process.env, GIT_CONFIG_GLOBAL: join(here, "slow-gitconfig") };
-}
-
 test("reads of one repository begun together each answer their own commit, whether another or the same", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureFiltering(fixture);
@@ -1018,7 +1019,7 @@ test("reads of one repository begun together each answer their own commit, wheth
   const port = fixturePort(
     fixture,
     fixtureCredential,
-    fixtureSlowServing(fixture),
+    fixtureServing(fixture, 1),
   );
   const together = async (...commits: GitObjectId[]) =>
     (
@@ -1040,7 +1041,7 @@ test("reads of one repository begun together each answer their own commit, wheth
   );
 });
 
-/** The environment of a port whose scratch is housekept at every pack past its first, each housekeeping writing that it began and then taking a while before it does anything. */
+/** The environment of a port whose scratch is housekept at every pack past its first, by gc on every git, each housekeeping writing that it began and then taking a while before it does anything. */
 function fixtureHousekeeping(fixture: Fixture): GitEnvironment {
   const hooks = join(fixture.directory, "hooks");
   mkdirSync(hooks);
@@ -1051,7 +1052,7 @@ function fixtureHousekeeping(fixture: Fixture): GitEnvironment {
   );
   writeFileSync(
     join(fixture.directory, "housekeeping-gitconfig"),
-    `[gc]\n\tautoPackLimit = 1\n[core]\n\thooksPath = ${hooks}\n`,
+    `[gc]\n\tautoPackLimit = 1\n[maintenance]\n\tstrategy = gc\n[core]\n\thooksPath = ${hooks}\n`,
   );
   return {
     ...process.env,
@@ -1103,4 +1104,188 @@ test("a read answers once the housekeeping its fetches set off has ended, and le
     [1],
     "the housekeeping had packed the scratch whole when the read answered",
   );
+});
+
+/** A read as the shape of its answer alone, which is what reads begun together are told apart by. */
+function fixtureAnswer(read: {
+  readonly read: string;
+  readonly absent?: string;
+}): string {
+  return read.absent === undefined ? read.read : `${read.read}/${read.absent}`;
+}
+
+test("a read begun while as many reads of its repository as may be are in flight is a commit not held yet at once, and runs no git", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "work"));
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 1);
+  const answered: number[] = [];
+
+  const answers = await Promise.all(
+    Array.from(
+      { length: gitRepositoryConfigurationReadsInFlightMax + 1 },
+      async (_, begun) => {
+        const read = await port.snapshot({
+          repository: fixtureBinding(fixture.remote),
+          commit,
+        });
+        answered.push(begun);
+        return fixtureAnswer(read);
+      },
+    ),
+  );
+  assert.deepEqual(answers, [
+    ...Array<string>(gitRepositoryConfigurationReadsInFlightMax).fill(
+      "Unavailable",
+    ),
+    "Absent/Commit",
+  ]);
+  assert.equal(
+    answered[0],
+    gitRepositoryConfigurationReadsInFlightMax,
+    "the read begun past the count answered before any read it found in flight",
+  );
+  assert.equal(
+    gitStandInLines(join(fixture.directory, "stand-in")).filter(
+      (line) => line === "ls-remote",
+    ).length,
+    gitRepositoryConfigurationReadsInFlightMax,
+    "the read begun past the count asked the remote nothing",
+  );
+});
+
+test("probes of one repository begun together that stall each stop at their own bound, and none waits for another", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "work"));
+  const boundSecs = 1;
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", boundSecs);
+  const begunMs = performance.now();
+
+  const answers = await Promise.all(
+    Array.from(
+      { length: gitRepositoryConfigurationReadsInFlightMax },
+      async () => {
+        const read = await port.snapshot({
+          repository: fixtureBinding(fixture.remote),
+          commit,
+        });
+        return {
+          answer: fixtureAnswer(read),
+          secs: (performance.now() - begunMs) / 1000,
+        };
+      },
+    ),
+  );
+  assert.deepEqual(
+    answers.map(({ answer }) => answer),
+    Array<string>(gitRepositoryConfigurationReadsInFlightMax).fill(
+      "Unavailable",
+    ),
+  );
+  const slowestSecs = Math.max(...answers.map(({ secs }) => secs));
+  assert.ok(
+    slowestSecs < 2 * boundSecs,
+    `the slowest probe answered after ${String(slowestSecs)}s, past one bound of its own`,
+  );
+});
+
+test("a read fetches under a credential resolved once its turn has come, after the read before it has ended", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureFiltering(fixture);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "work"));
+  const environment = fixtureServing(fixture, 1);
+  let minted = 0;
+  const port = fixturePort(
+    fixture,
+    {
+      credential: () => {
+        minted += 1;
+        const credential = `credential-${String(minted)}`;
+        appendFileSync(
+          join(fixture.directory, "served"),
+          `minted=${credential}\n`,
+        );
+        return Promise.resolve({
+          resolved: "Credential",
+          credential: asRepositoryCredential(credential),
+        });
+      },
+    },
+    environment,
+  );
+  const read = () =>
+    port.snapshot({ repository: fixtureBinding(fixture.remote), commit });
+
+  assert.deepEqual((await Promise.all([read(), read()])).map(fixtureAnswer), [
+    "Snapshot",
+    "Snapshot",
+  ]);
+  assert.deepEqual(fixtureServed(fixture), [
+    "minted=credential-1",
+    "minted=credential-2",
+    "minted=credential-3",
+    "password=credential-3",
+    "password=credential-3",
+    "minted=credential-4",
+    "password=credential-4",
+  ]);
+});
+
+test("a credential source that raises once a read's turn has come ends that read alone, and leaves no read of it counted", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
+  const commit = asGitObjectId(fixtureCommit(fixture, "work"));
+  const calls = new Map<string, number>();
+  const held = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const port = fixturePort(fixture, {
+    credential: async (binding) => {
+      const project = binding.partition.project;
+      const call = (calls.get(project) ?? 0) + 1;
+      calls.set(project, call);
+      if (project === "project" || call % 2 === 1) return fixtureCredential;
+      if (project === "held") {
+        held.resolve(undefined);
+        await release.promise;
+      }
+      throw new Error("the credential source raised");
+    },
+  });
+  const read = (project?: string) =>
+    port.snapshot({
+      repository: fixtureBinding(fixture.remote, project),
+      commit,
+    });
+  const snapshot = {
+    read: "Snapshot",
+    files: [
+      {
+        path: `${repositoryConfigurationRoot}work.json`,
+        kind: "File",
+        content: "work\n",
+      },
+    ],
+  };
+
+  const raising = read("held");
+  const timer = setTimeout(() => {
+    held.reject(new Error("the read never resolved a credential in its turn"));
+  }, 10_000);
+  t.after(() => {
+    clearTimeout(timer);
+  });
+  await held.promise;
+  const queued = read();
+  release.resolve(undefined);
+  await assert.rejects(raising, /the credential source raised/u);
+  assert.deepEqual(await queued, snapshot);
+  for (
+    let raised = 0;
+    raised < gitRepositoryConfigurationReadsInFlightMax;
+    raised++
+  )
+    await assert.rejects(read("raising"), /the credential source raised/u);
+  assert.deepEqual(await read(), snapshot);
 });

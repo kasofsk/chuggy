@@ -29,18 +29,23 @@
  * git believes a shallow file wherever it finds one, and a history left shallow
  * here would be wrong for any reader answering from the whole of it.
  *
- * A REPOSITORY IS READ ONE READ AT A TIME. A fetch of a commit holds the
- * scratch's shallow lock while it transfers, and git refuses a second fetch
- * that finds the lock rather than waiting for it, so a read begun while another
- * of the same repository is in flight waits for that one to end. The wait is
- * for the whole read and not its fetch alone, because the housekeeping any
- * fetch can set off, a blob's included, rewrites the shallow file under the
- * same lock; that housekeeping is kept inside the call that set it off rather
- * than left running past it. A read's credential is resolved before it waits,
- * so what it waits on is git calls under their own bounds. A shallow lock left
- * by a fetch killed outright makes every later read of that repository a commit
- * not held yet, and such a scratch is repaired by removing its directory and
- * starting the process again, never by hand inside it.
+ * A REPOSITORY IS READ ONE READ AT A TIME, BY A STATED COUNT OF READS AT MOST.
+ * A fetch of a commit holds the scratch's shallow lock while it transfers, and
+ * git refuses a second fetch that finds the lock rather than waiting for it, so
+ * a read fetches only once the read of that repository before it has ended. The
+ * wait is for the whole of that read and not its fetch alone, because the
+ * housekeeping any fetch can set off, a blob's included, can rewrite the
+ * shallow file under the same lock; that housekeeping is kept inside the call
+ * that set it off rather than left running past it. The probe of the remote
+ * takes no lock and is asked before the wait, so an outage stops each read at
+ * its own bound. The credential the commit and its blobs are fetched under is
+ * resolved once the read's turn has come, because one resolved before a long
+ * wait can have expired by its end. A read begun while as many of its
+ * repository's reads as may be are in flight is a commit not held yet at once,
+ * with no git run. A shallow lock left by a fetch killed outright makes every
+ * later read of that repository a commit not held yet, and such a scratch is
+ * repaired by removing its directory and starting the process again, never by
+ * hand inside it.
  */
 
 import { join } from "node:path";
@@ -115,11 +120,20 @@ export const gitRepositoryConfigurationDefaults = {
   remoteTimeoutSecsMax: 300,
 } as const;
 
-/** The scratch, the credential source, and for each repository being read the end of the last read of it begun, which the next one waits for. */
+/** The most reads of one repository in flight at once, the one whose turn it is among them; a read begun past it waits for none of them. */
+export const gitRepositoryConfigurationReadsInFlightMax = 4;
+
+/** One repository's reads in flight, and the end of the last of them to have come to wait for its turn, which the next one waits for. */
+interface GitRepositoryConfigurationTurns {
+  reads: number;
+  last: Promise<void>;
+}
+
+/** The scratch, the credential source, and the reads in flight of each repository being read. */
 interface GitRepositoryConfigurationState {
   readonly scratch: GitScratch;
   readonly credentials: RepositoryCredentialPort;
-  readonly turns: Map<RepositoryId, Promise<void>>;
+  readonly turns: Map<RepositoryId, GitRepositoryConfigurationTurns>;
 }
 
 interface GitRepositoryConfigurationEntry {
@@ -157,14 +171,11 @@ type GitRepositoryConfigurationAuthorization =
       readonly evidence: RepositoryCredentialEvidence;
     };
 
-/** What a fetch of one commit came to, a probe that failed saying how. */
-type GitRepositoryConfigurationFetched =
-  | { readonly fetched: "Fetched" }
-  | { readonly fetched: "Absent" }
-  | {
-      readonly fetched: "Unavailable";
-      readonly evidence: RepositoryGitEvidence;
-    };
+/** A read that could not reach the repository or a credential for it. */
+type GitRepositoryConfigurationUnavailable = Extract<
+  RepositoryDeclarationSnapshotRead,
+  { readonly read: "Unavailable" }
+>;
 
 /** A commit fetched into the scratch, and the credential its blobs are fetched under as they are read. */
 interface GitRepositoryConfigurationCommit {
@@ -280,23 +291,58 @@ function gitRepositoryConfigurationFetchArguments(
   ];
 }
 
+/** A credential the source could not answer for, as the read it comes to. */
+function gitRepositoryConfigurationCredentialUnavailable(
+  authorization: Extract<
+    GitRepositoryConfigurationAuthorization,
+    { readonly authorized: "Unavailable" }
+  >,
+): GitRepositoryConfigurationUnavailable {
+  return {
+    read: "Unavailable",
+    unavailable: "Credential",
+    evidence: authorization.evidence,
+  };
+}
+
+/** Asks the remote for its refs under whatever credential the source gives, which takes nothing in the scratch, and says why where it did not answer. */
+async function gitRepositoryConfigurationProbe(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+): Promise<"Answered" | GitRepositoryConfigurationUnavailable> {
+  const authorization = await gitRepositoryConfigurationCredential(
+    own,
+    request.repository,
+  );
+  if (authorization.authorized === "Unavailable")
+    return gitRepositoryConfigurationCredentialUnavailable(authorization);
+  const repository = request.repository.repository;
+  const probe = await scratchRun(own.scratch, {
+    repository,
+    ...(authorization.authorized === "Credential"
+      ? { credential: authorization.credential }
+      : {}),
+    timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
+    argv: ["ls-remote", ...scratchRemoteArguments(repository)],
+  });
+  if (gitRepositoryConfigurationExited(probe)) return "Answered";
+  return {
+    read: "Unavailable",
+    unavailable: "Repository",
+    evidence: gitRepositoryConfigurationEvidence(
+      authorization,
+      scratchGitEvidence("ls-remote", probe),
+    ),
+  };
+}
+
+/** Fetches one commit, shallow and without its blobs, answering whether it is held now. */
 async function gitRepositoryConfigurationFetch(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
   credential: RepositoryCredential | undefined,
-): Promise<GitRepositoryConfigurationFetched> {
+): Promise<boolean> {
   const repository = request.repository.repository;
-  const probe = await scratchRun(own.scratch, {
-    repository,
-    ...(credential === undefined ? {} : { credential }),
-    timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
-    argv: ["ls-remote", ...scratchRemoteArguments(repository)],
-  });
-  if (!gitRepositoryConfigurationExited(probe))
-    return {
-      fetched: "Unavailable",
-      evidence: scratchGitEvidence("ls-remote", probe),
-    };
   const fetched = await scratchRun(own.scratch, {
     repository,
     ...(credential === undefined ? {} : { credential }),
@@ -312,9 +358,7 @@ async function gitRepositoryConfigurationFetch(
       `+${request.commit}:refs/chuggy/configuration/${request.commit}`,
     ],
   });
-  return gitRepositoryConfigurationExited(fetched)
-    ? { fetched: "Fetched" }
-    : { fetched: "Absent" };
+  return gitRepositoryConfigurationExited(fetched);
 }
 
 function gitRepositoryConfigurationEntries(
@@ -431,27 +475,47 @@ async function gitRepositoryConfigurationFiles(
   return files;
 }
 
-/** Runs one read of a repository once every read of it begun earlier has ended, and forgets the repository once none begun after it is waiting. */
-async function gitRepositoryConfigurationInTurn<Found>(
+/** Counts one read of a repository in, or answers nothing where as many of its reads as may be are in flight already. */
+function gitRepositoryConfigurationBegun(
   own: GitRepositoryConfigurationState,
   repository: RepositoryId,
+): GitRepositoryConfigurationTurns | undefined {
+  const turns = own.turns.get(repository) ?? {
+    reads: 0,
+    last: Promise.resolve(),
+  };
+  if (turns.reads >= gitRepositoryConfigurationReadsInFlightMax)
+    return undefined;
+  turns.reads += 1;
+  own.turns.set(repository, turns);
+  return turns;
+}
+
+/** Counts one read of a repository out however it ended, forgetting the repository once none of its reads is in flight. */
+function gitRepositoryConfigurationEnded(
+  own: GitRepositoryConfigurationState,
+  repository: RepositoryId,
+  turns: GitRepositoryConfigurationTurns,
+): void {
+  turns.reads -= 1;
+  if (turns.reads === 0) own.turns.delete(repository);
+}
+
+/** Runs one read once the read of its repository that came to wait before it has ended, however that one ended. */
+function gitRepositoryConfigurationInTurn<Found>(
+  turns: GitRepositoryConfigurationTurns,
   reads: () => Promise<Found>,
 ): Promise<Found> {
-  const read = (own.turns.get(repository) ?? Promise.resolve()).then(reads);
-  const ended = read.then(
+  const read = turns.last.then(reads);
+  turns.last = read.then(
     () => undefined,
     () => undefined,
   );
-  own.turns.set(repository, ended);
-  try {
-    return await read;
-  } finally {
-    if (own.turns.get(repository) === ended) own.turns.delete(repository);
-  }
+  return read;
 }
 
-/** Fetches the commit under whatever credential the source gives and reads it in the repository's turn, or says why it was not fetched. */
-async function gitRepositoryConfigurationFetched<Found>(
+/** Fetches the commit under the credential the source gives once the read's turn has come, and reads it. */
+async function gitRepositoryConfigurationFetchedInTurn<Found>(
   own: GitRepositoryConfigurationState,
   request: RepositoryDeclarationSnapshotRequest,
   reads: (commit: GitRepositoryConfigurationCommit) => Promise<Found>,
@@ -461,49 +525,44 @@ async function gitRepositoryConfigurationFetched<Found>(
     request.repository,
   );
   if (authorization.authorized === "Unavailable")
-    return {
-      read: "Unavailable",
-      unavailable: "Credential",
-      evidence: authorization.evidence,
-    };
+    return gitRepositoryConfigurationCredentialUnavailable(authorization);
   const credential =
     authorization.authorized === "Credential"
       ? authorization.credential
       : undefined;
-  return gitRepositoryConfigurationInTurn(
-    own,
-    request.repository.repository,
-    async (): Promise<GitRepositoryConfigurationCommitRead<Found>> => {
-      const fetched = await gitRepositoryConfigurationFetch(
-        own,
-        request,
-        credential,
-      );
-      switch (fetched.fetched) {
-        case "Fetched":
-          return {
-            read: "Fetched",
-            found: await reads({
-              request,
-              ...(credential === undefined ? {} : { credential }),
-            }),
-          };
-        case "Absent":
-          return { read: "Absent" };
-        case "Unavailable":
-          return {
-            read: "Unavailable",
-            unavailable: "Repository",
-            evidence: gitRepositoryConfigurationEvidence(
-              authorization,
-              fetched.evidence,
-            ),
-          };
-        default:
-          return assertNever(fetched);
-      }
-    },
-  );
+  if (!(await gitRepositoryConfigurationFetch(own, request, credential)))
+    return { read: "Absent" };
+  return {
+    read: "Fetched",
+    found: await reads({
+      request,
+      ...(credential === undefined ? {} : { credential }),
+    }),
+  };
+}
+
+/**
+ * Probes the remote, then fetches the commit and reads it in the repository's
+ * turn, or says why it was not fetched. A read begun past the count in flight
+ * is a commit not held yet, with no credential resolved and no git run.
+ */
+async function gitRepositoryConfigurationFetched<Found>(
+  own: GitRepositoryConfigurationState,
+  request: RepositoryDeclarationSnapshotRequest,
+  reads: (commit: GitRepositoryConfigurationCommit) => Promise<Found>,
+): Promise<GitRepositoryConfigurationCommitRead<Found>> {
+  const repository = request.repository.repository;
+  const turns = gitRepositoryConfigurationBegun(own, repository);
+  if (turns === undefined) return { read: "Absent" };
+  try {
+    const probed = await gitRepositoryConfigurationProbe(own, request);
+    if (probed !== "Answered") return probed;
+    return await gitRepositoryConfigurationInTurn(turns, () =>
+      gitRepositoryConfigurationFetchedInTurn(own, request, reads),
+    );
+  } finally {
+    gitRepositoryConfigurationEnded(own, repository, turns);
+  }
 }
 
 /** The JSON blobs a fetched commit's tree holds under `root`, which are none where it holds no such directory. */
