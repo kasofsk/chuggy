@@ -64,7 +64,7 @@ function parkedOverridesDefinitionDigest(
     digest: materialDigest(
       ticketDefinitionMaterial({
         authoring: ticket.authoring,
-        configuration: readiness.configuration,
+        ticket: readiness.ticket,
         ...(ticket.brief === undefined ? {} : { brief: ticket.brief }),
       }),
     ),

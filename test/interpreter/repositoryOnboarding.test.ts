@@ -2419,8 +2419,8 @@ test("a ticket still releases against a bootstrap of an earlier text, under the 
     undefined,
   );
   assert.equal(released.readiness, "Ready");
-  if (released.readiness !== "Ready") return;
-  assert.deepEqual(released.configuration.brief.acceptanceCriteria, [
+  if (released.readiness !== "Ready" || released.ticket.version !== 1) return;
+  assert.deepEqual(released.ticket.configuration.brief.acceptanceCriteria, [
     earlierBootstrapCriterion,
   ]);
 });

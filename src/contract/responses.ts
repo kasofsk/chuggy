@@ -1028,10 +1028,22 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     image: z.string().min(1),
     worker: workerSchema.optional(),
     practices: page(z.string().min(1)),
-    workInstructionsCount: countSchema,
-    reviewInstructionsCount: countSchema,
+    workInstructionsCount: countSchema.optional(),
+    reviewInstructionsCount: countSchema.optional(),
     finalization: z.strictObject({ approvalRequired: z.boolean() }),
     evaluationStagesCount: countSchema,
+    catalog: z
+      .object({
+        workloads: page(z.string().min(1)),
+        plans: page(z.string().min(1)),
+        finalizers: page(z.string().min(1)),
+        defaults: z.object({
+          work: z.string().min(1),
+          evaluation: z.string().min(1),
+          finalization: z.string().min(1).optional(),
+        }),
+      })
+      .optional(),
   }),
 ]);
 export type ConfigurationSummary = z.infer<typeof configurationSummarySchema>;

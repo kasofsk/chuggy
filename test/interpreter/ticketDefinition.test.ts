@@ -70,6 +70,8 @@ const configuration: ReleaseConfiguration = (() => {
   );
   if (readiness.readiness !== "Ready")
     throw new Error(`the fixture configuration is ${readiness.fault}`);
+  if (readiness.configuration.version !== 1)
+    throw new Error("the fixture configuration is a catalog");
   return readiness.configuration;
 })();
 
@@ -88,7 +90,10 @@ function block(stage: number): unknown {
 }
 
 test("a release resolves one task definition per stage, from that stage's own block", () => {
-  const material = ticketDefinitionMaterial({ authoring, configuration });
+  const material = ticketDefinitionMaterial({
+    authoring,
+    ticket: { version: 1, configuration },
+  });
   assert.deepEqual(
     material.tasks.map((task) => task.key),
     ["Work", "Evaluation:1", "Evaluation:2"],
@@ -108,7 +113,10 @@ test("a release resolves one task definition per stage, from that stage's own bl
 });
 
 test("every evaluator of a stage runs that stage's definition, and no other stage's", () => {
-  const material = ticketDefinitionMaterial({ authoring, configuration });
+  const material = ticketDefinitionMaterial({
+    authoring,
+    ticket: { version: 1, configuration },
+  });
   const released = releasedTicketDefinition(asTicketId(1), authoring, material);
   const [first, second] = released.evaluationPlan.stages;
   const [one, two] = first?.evaluators ?? [];
@@ -137,7 +145,7 @@ test("a stored brief is read back only as the one its release's content digest n
   const brief = asDraftBrief({ intent: "Do the one thing.", links: [] });
   const released = ticketDefinitionMaterial({
     authoring,
-    configuration,
+    ticket: { version: 1, configuration },
     brief,
   });
   assert.deepEqual(
@@ -155,7 +163,10 @@ test("a stored brief is read back only as the one its release's content digest n
       ),
     /not the one the released content names/,
   );
-  const briefless = ticketDefinitionMaterial({ authoring, configuration });
+  const briefless = ticketDefinitionMaterial({
+    authoring,
+    ticket: { version: 1, configuration },
+  });
   assert.equal(
     releasedTicketBrief(undefined, briefless.content.digest),
     undefined,
@@ -182,7 +193,7 @@ test("a brief released before a brief could name an image is still the one its c
   assert.equal(
     ticketDefinitionMaterial({
       authoring,
-      configuration,
+      ticket: { version: 1, configuration },
       brief: asDraftBrief(briefBeforeImages),
     }).content.digest,
     digestBeforeImages,
@@ -196,7 +207,7 @@ test("the images a brief names are part of the content its release names", () =>
   });
   const released = ticketDefinitionMaterial({
     authoring,
-    configuration,
+    ticket: { version: 1, configuration },
     brief,
   });
   assert.notEqual(released.content.digest, digestBeforeImages);
@@ -232,7 +243,7 @@ function draftDefinition(
     authoring,
     ticketDefinitionMaterial({
       authoring,
-      configuration: readiness.configuration,
+      ticket: readiness.ticket,
     }),
   );
 }
@@ -243,7 +254,10 @@ test("a draft naming no overrides is defined exactly as its configuration is", (
     releasedTicketDefinition(
       asTicketId(1),
       authoring,
-      ticketDefinitionMaterial({ authoring, configuration }),
+      ticketDefinitionMaterial({
+        authoring,
+        ticket: { version: 1, configuration },
+      }),
     ),
   );
 });
@@ -466,11 +480,16 @@ function sizedConfiguration(resources: unknown): ReleaseConfiguration {
   );
   if (readiness.readiness !== "Ready")
     throw new Error(`the sized configuration is ${readiness.fault}`);
+  if (readiness.configuration.version !== 1)
+    throw new Error("the sized configuration is a catalog");
   return readiness.configuration;
 }
 
 test("a configuration that names no size releases each workload as its image alone, as a release before sizes did", () => {
-  const material = ticketDefinitionMaterial({ authoring, configuration });
+  const material = ticketDefinitionMaterial({
+    authoring,
+    ticket: { version: 1, configuration },
+  });
   for (const task of material.tasks)
     assert.deepEqual(task.workload, {
       image: "worker:v1",
@@ -486,10 +505,13 @@ test("a configuration that names no size releases each workload as its image alo
 test("a release pins each task's size in its workload, a task kind's over the configuration's, and folds it into the reference", () => {
   const material = ticketDefinitionMaterial({
     authoring,
-    configuration: sizedConfiguration({
-      ticketDefault: { cpus: 2, memoryMib: 4_096 },
-      taskKindDefaults: { Work: { cpus: 8, memoryMib: 16_384 } },
-    }),
+    ticket: {
+      version: 1,
+      configuration: sizedConfiguration({
+        ticketDefault: { cpus: 2, memoryMib: 4_096 },
+        taskKindDefaults: { Work: { cpus: 8, memoryMib: 16_384 } },
+      }),
+    },
   });
   const work = ticketTaskMaterialAt(material, "Work").workload;
   const review = ticketTaskMaterialAt(material, "Evaluation:1").workload;
@@ -512,7 +534,12 @@ test("a release pins each task's size in its workload, a task kind's over the co
 test("a stored task's size is read back as it was released, and a task released with none has none", () => {
   const sized = ticketDefinitionMaterial({
     authoring,
-    configuration: sizedConfiguration({ ticketDefault: { memoryMib: 8_192 } }),
+    ticket: {
+      version: 1,
+      configuration: sizedConfiguration({
+        ticketDefault: { memoryMib: 8_192 },
+      }),
+    },
   });
   const stored: unknown = JSON.parse(JSON.stringify(sized));
   assert.deepEqual(ticketTaskResources(stored, "Work"), { memoryMib: 8_192 });
@@ -520,7 +547,12 @@ test("a stored task's size is read back as it was released, and a task released 
     memoryMib: 8_192,
   });
   const unsized: unknown = JSON.parse(
-    JSON.stringify(ticketDefinitionMaterial({ authoring, configuration })),
+    JSON.stringify(
+      ticketDefinitionMaterial({
+        authoring,
+        ticket: { version: 1, configuration },
+      }),
+    ),
   );
   assert.equal(ticketTaskResources(unsized, "Work"), undefined);
   assert.throws(

@@ -26,6 +26,12 @@
  * folding does not give back. The brief is stored, beside the material, for the
  * requirement's reason: the draft it was resolved from is revised in place
  * while its ticket is Pending, so nothing else recovers the one a release took.
+ *
+ * A STAGE OR AN EVALUATOR. A version 1 configuration indexes stages, so its
+ * release resolves one task per stage and every evaluator of the stage runs
+ * it. A catalog's evaluators each run their own workload, so its release
+ * resolves one task per evaluator, keyed `Evaluation:S/E`; a reader asks for
+ * the evaluator's key and takes the stage's where the release resolved none.
  */
 
 import { createHash } from "node:crypto";
@@ -36,11 +42,16 @@ import type {
   TaskDefinition,
 } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
-import type { ReleaseAuthoring, ReleaseConfiguration } from "./authoring.ts";
+import type {
+  ReleaseAuthoring,
+  ReleaseConfiguration,
+  TicketConfiguration,
+} from "./authoring.ts";
 import {
   asExecutionRequirement,
   asRequirementSource,
   materializeExecutionRequirement,
+  materializeWorkloadExecutionRequirement,
   type ExecutionTaskKindKey,
   type MaterializedExecutionRequirement,
 } from "./executionRequirement.ts";
@@ -50,12 +61,21 @@ import type { StageBlock } from "./taskConfiguration.ts";
 import {
   asTaskResources,
   materializeTaskResources,
+  materializeWorkloadTaskResources,
   type TaskResources,
 } from "./taskResources.ts";
+import {
+  selectedEvaluatorWorkload,
+  type SelectedWorkload,
+} from "./workloadConfiguration.ts";
+
+/** The key one task's material is stored under: a stage's, or one evaluator's of it. */
+export type TicketTaskKey =
+  ExecutionTaskKindKey | `Evaluation:${number}/${number}`;
 
 /** What one resolved task definition names, in the order the model's record spells it. */
 export interface TicketTaskMaterial {
-  readonly key: ExecutionTaskKindKey;
+  readonly key: TicketTaskKey;
   /** The image the task runs in and the size it runs with where it names one, which is what `workload` folds. */
   readonly workload: {
     readonly image: string;
@@ -144,6 +164,11 @@ function evaluationTaskKey(stage: number): ExecutionTaskKindKey {
   return `${evaluationKeyPrefix}${stage}`;
 }
 
+/** The key one evaluator's definition is resolved and stored under. */
+function evaluatorTaskKey(stage: number, evaluator: number): TicketTaskKey {
+  return `${evaluationKeyPrefix}${stage}/${evaluator}`;
+}
+
 /** The stage a task key names, absent for the work task, which names none. */
 function taskKeyStage(key: ExecutionTaskKindKey): number | undefined {
   return key === "Work"
@@ -199,18 +224,80 @@ function ticketTaskMaterial(
   };
 }
 
+/** One catalog workload's task, resolved from the workload alone and the catalog's image. */
+function workloadTaskMaterial(
+  catalogImage: string,
+  key: TicketTaskKey,
+  selected: SelectedWorkload,
+): TicketTaskMaterial {
+  const { workload } = selected;
+  const image = workload.image ?? catalogImage;
+  const requirement = materializeWorkloadExecutionRequirement(
+    workload,
+    catalogImage,
+  );
+  const resources = materializeWorkloadTaskResources(workload.resources);
+  return {
+    key,
+    workload: {
+      image,
+      ...(resources === undefined ? {} : { resources }),
+      digest: ticketTaskWorkloadDigest(image, resources),
+    },
+    inputs: { digest: materialDigest(workload) },
+    executionRequirements: {
+      ...requirement,
+      digest: materialDigest(requirement.value),
+    },
+    resultContract: {
+      schemaVersion: resultManifestSchemaVersion,
+      digest: materialDigest({ schemaVersion: resultManifestSchemaVersion }),
+    },
+  };
+}
+
+/** The tasks a catalog ticket resolves: its work, and one per evaluator its program draws. */
+function workloadTicketTasks(
+  ticket: Extract<TicketConfiguration, { readonly version: 2 }>,
+  authoring: ReleaseAuthoring,
+): readonly TicketTaskMaterial[] {
+  const image = ticket.configuration.image;
+  return [
+    workloadTaskMaterial(image, "Work", ticket.selection.work),
+    ...authoring.prog.flatMap((stage) =>
+      stage.evaluators.map((entry) => {
+        const selected = selectedEvaluatorWorkload(
+          ticket.selection,
+          stage.key,
+          entry.key,
+        );
+        if (selected === undefined)
+          throw new RangeError(
+            `ticket definition: the plan holds no evaluator ${entry.key} in stage ${stage.key}`,
+          );
+        return workloadTaskMaterial(
+          image,
+          evaluatorTaskKey(stage.key, entry.key),
+          selected,
+        );
+      }),
+    ),
+  ];
+}
+
 /**
  * Resolves everything one release freezes: the brief it was taken from, the
  * landing it concludes under, one task definition for work and one per stage
- * the author's plan names. Pure — the caller reads the revision and the brief,
- * and this resolves them.
+ * or evaluator the author's plan names. Pure — the caller reads the revision
+ * and the brief, and this resolves them.
  */
 export function ticketDefinitionMaterial(input: {
   readonly authoring: ReleaseAuthoring;
-  readonly configuration: ReleaseConfiguration;
+  readonly ticket: TicketConfiguration;
   readonly brief?: DraftBrief;
 }): TicketDefinitionMaterial {
   const finalization = input.brief?.finalization;
+  const { ticket } = input;
   const keys: readonly ExecutionTaskKindKey[] = [
     "Work",
     ...input.authoring.prog.map((stage) => evaluationTaskKey(stage.key)),
@@ -221,14 +308,17 @@ export function ticketDefinitionMaterial(input: {
       ...(finalization === undefined ? {} : finalization),
       digest: materialDigest(finalization ?? {}),
     },
-    tasks: keys.map((key) => ticketTaskMaterial(input.configuration, key)),
+    tasks:
+      ticket.version === 2
+        ? workloadTicketTasks(ticket, input.authoring)
+        : keys.map((key) => ticketTaskMaterial(ticket.configuration, key)),
   };
 }
 
 /** The material one task key names, which a release resolved for every key its plan reaches. */
 export function ticketTaskMaterialAt(
   material: TicketDefinitionMaterial,
-  key: ExecutionTaskKindKey,
+  key: TicketTaskKey,
 ): TicketTaskMaterial {
   const found = material.tasks.find((task) => task.key === key);
   if (found === undefined)
@@ -236,21 +326,43 @@ export function ticketTaskMaterialAt(
   return found;
 }
 
-/** The key one task's material is resolved and stored under, for the readers of a stored row. */
+/** The material one evaluator runs: its own where the release resolved one, and its stage's otherwise. */
+function ticketEvaluatorMaterial(
+  material: TicketDefinitionMaterial,
+  stage: number,
+  evaluator: number,
+): TicketTaskMaterial {
+  const own = evaluatorTaskKey(stage, evaluator);
+  return material.tasks.some((task) => task.key === own)
+    ? ticketTaskMaterialAt(material, own)
+    : ticketTaskMaterialAt(material, evaluationTaskKey(stage));
+}
+
+/**
+ * The key one task's material is stored under, for the readers of a stored
+ * row: the evaluator's where the stored material resolved one, and its stage's
+ * otherwise.
+ */
 export function ticketTaskKey(
+  stored: unknown,
   kind: "Work" | "Evaluation",
   stage: number | undefined,
-): ExecutionTaskKindKey {
+  evaluator?: number,
+): TicketTaskKey {
   if (kind === "Work") return "Work";
   if (stage === undefined)
     throw new TypeError("ticket definition: an evaluation task names no stage");
-  return evaluationTaskKey(stage);
+  if (evaluator === undefined) return evaluationTaskKey(stage);
+  const own = evaluatorTaskKey(stage, evaluator);
+  return ticketStoredTask(stored, own) === undefined
+    ? evaluationTaskKey(stage)
+    : own;
 }
 
 /** The stored material of one task key, as the row holds it. */
 function ticketStoredTask(
   stored: unknown,
-  key: ExecutionTaskKindKey,
+  key: TicketTaskKey,
 ): Record<string, unknown> | undefined {
   const tasks = (stored as { readonly tasks?: unknown } | null)?.tasks;
   return Array.isArray(tasks)
@@ -269,7 +381,7 @@ function ticketStoredTask(
  */
 export function ticketTaskRequirement(
   stored: unknown,
-  key: ExecutionTaskKindKey,
+  key: TicketTaskKey,
 ): MaterializedExecutionRequirement & { readonly digest: string } {
   const requirement = ticketStoredTask(stored, key)?.[
     "executionRequirements"
@@ -294,7 +406,7 @@ export function ticketTaskRequirement(
  */
 export function ticketTaskResources(
   stored: unknown,
-  key: ExecutionTaskKindKey,
+  key: TicketTaskKey,
 ): TaskResources | undefined {
   const workload = ticketStoredTask(stored, key)?.["workload"] as
     { readonly resources?: unknown } | undefined;
@@ -337,11 +449,7 @@ function taskDefinitionOf(task: TicketTaskMaterial): TaskDefinition {
   };
 }
 
-/**
- * The whole definition a release freezes onto its ticket. Every evaluator of a
- * stage runs that stage's definition, because a stage is what a configuration
- * indexes and an evaluator key is a slot within it.
- */
+/** The whole definition a release freezes onto its ticket, each evaluator at the material it runs. */
 export function releasedTicketDefinition(
   ticket: TicketId,
   authoring: ReleaseAuthoring,
@@ -353,18 +461,15 @@ export function releasedTicketDefinition(
     dependencies: authoring.deps,
     workConfiguration: taskDefinitionOf(ticketTaskMaterialAt(material, "Work")),
     evaluationPlan: {
-      stages: authoring.prog.map((stage) => {
-        const task = taskDefinitionOf(
-          ticketTaskMaterialAt(material, evaluationTaskKey(stage.key)),
-        );
-        return {
-          key: stage.key,
-          evaluators: stage.evaluators.map((entry) => ({
-            key: entry.key,
-            task,
-          })),
-        };
-      }),
+      stages: authoring.prog.map((stage) => ({
+        key: stage.key,
+        evaluators: stage.evaluators.map((entry) => ({
+          key: entry.key,
+          task: taskDefinitionOf(
+            ticketEvaluatorMaterial(material, stage.key, entry.key),
+          ),
+        })),
+      })),
     },
     finalizationConfiguration: digestFold(material.finalization.digest),
   };

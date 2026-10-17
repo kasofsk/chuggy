@@ -439,6 +439,7 @@ async function schedulerCreateExecutions(
     const kind = executionRowTaskKind(input.kind);
     const definition = JSON.parse(input.definition) as unknown;
     const key = ticketTaskKey(
+      definition,
       kind,
       input.stage === null
         ? undefined

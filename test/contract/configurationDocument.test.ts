@@ -686,11 +686,26 @@ function publishedAt(...keys: readonly (string | number)[]): object {
   return node;
 }
 
-/** The node the published schema states a configuration's field in. */
+/** The position the published schema states one configuration version at among the configuration's variants. */
+function publishedVersion(version: number): number {
+  const variants = publishedAt("properties", "configuration", "oneOf");
+  assert.ok(Array.isArray(variants));
+  const position = (
+    variants as readonly {
+      readonly properties?: { readonly version?: { readonly const?: unknown } };
+    }[]
+  ).findIndex((variant) => variant.properties?.version?.const === version);
+  assert.ok(position !== -1, `version ${String(version)}`);
+  return position;
+}
+
+/** The node the published schema states a version 1 configuration's field in. */
 function publishedField(field: string, ...keys: readonly (string | number)[]) {
   return publishedAt(
     "properties",
     "configuration",
+    "oneOf",
+    publishedVersion(1),
     "properties",
     field,
     ...keys,
@@ -845,9 +860,13 @@ interface PublishedImages {
 }
 
 test("the published schema says of both images that any one works that holds the runtime's needs, and that a digest is not required", () => {
-  const published: unknown = configurationDocumentJsonSchema();
-  const configuration = (published as PublishedImages).properties.configuration
-    .properties;
+  const configuration = publishedAt(
+    "properties",
+    "configuration",
+    "oneOf",
+    publishedVersion(1),
+    "properties",
+  ) as PublishedImages["properties"]["configuration"]["properties"];
   const header = configuration.image as {
     readonly maxLength: number;
     readonly pattern: string;
@@ -900,9 +919,9 @@ interface PublishedResources {
 }
 
 test("the published schema says what a size is, the bounds the import holds it to, and that a field left out is the deployment's", () => {
-  const published: unknown = configurationDocumentJsonSchema();
-  const resources = (published as PublishedResources).properties.configuration
-    .properties.resources;
+  const resources = publishedField(
+    "resources",
+  ) as PublishedResources["properties"]["configuration"]["properties"]["resources"];
   const size = resources.properties.ticketDefault.properties;
   assert.equal(resources.additionalProperties, false);
   assert.deepEqual(

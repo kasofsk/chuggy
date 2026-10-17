@@ -91,19 +91,20 @@ test("stage-specific configuration bounds the authored evaluation program", () =
     }),
   );
   assert.equal(readiness.readiness, "Ready");
-  if (readiness.readiness !== "Ready") return;
+  if (readiness.readiness !== "Ready" || readiness.configuration.version !== 1)
+    return;
+  const ticket = {
+    version: 1,
+    configuration: readiness.configuration,
+  } as const;
   assert.equal(
-    draftInitializationPolicy(
-      { ...refinementInstance, maxStages: 4 },
-      readiness.configuration,
-    ).choices.programStagesMax,
+    draftInitializationPolicy({ ...refinementInstance, maxStages: 4 }, ticket)
+      .choices.programStagesMax,
     2,
   );
   assert.deepEqual(
-    draftInitializationPolicy(
-      { ...refinementInstance, maxStages: 4 },
-      readiness.configuration,
-    ).defaults.prog,
+    draftInitializationPolicy({ ...refinementInstance, maxStages: 4 }, ticket)
+      .defaults.prog,
     [
       { key: 1, evaluators: [{ key: 1 }] },
       { key: 2, evaluators: [{ key: 1 }] },
@@ -580,8 +581,8 @@ test("a release judges the configuration its overrides make, and refuses one the
     { worker: { mode: codex } },
   );
   assert.equal(overridden.readiness, "Ready");
-  if (overridden.readiness === "Ready")
-    assert.deepEqual(overridden.configuration.worker, {
+  if (overridden.readiness === "Ready" && overridden.ticket.version === 1)
+    assert.deepEqual(overridden.ticket.configuration.worker, {
       files: [],
       mode: codex,
       setup: [],

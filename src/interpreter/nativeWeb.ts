@@ -78,9 +78,10 @@ import {
   checkedConfigurationPageQuery,
   checkedDraftPageQuery,
   draftInitializationPolicy,
-  releaseConfigurationReadiness,
+  ticketCommandedCheckStage,
+  ticketConfigurationReadiness,
 } from "./authoring.ts";
-import { firstCommandedCheckStage } from "./taskConfiguration.ts";
+import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
@@ -754,6 +755,7 @@ export interface NativeWeb {
     principal: Principal,
     partition: Partition,
     revision: ConfigurationRevisionId,
+    selection?: ConfigurationSelection,
   ): Promise<AuthorizedResult<DraftInitializationRead>>;
   reviseDraft(
     principal: Principal,
@@ -899,7 +901,7 @@ function nativeDraftInitializationMethod(
   authoring: AuthoringStore,
 ): Pick<NativeWeb, "initializeDraft"> {
   return {
-    initializeDraft: async (principal, partition, revision) => {
+    initializeDraft: async (principal, partition, revision, selection) => {
       const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };
       const snapshot = await authoring.initializeDraft(
@@ -917,17 +919,24 @@ function nativeDraftInitializationMethod(
           result: "Authorized",
           value: { initialized: "PolicyUnavailable" },
         };
-      const readiness = releaseConfigurationReadiness(
+      const readiness = ticketConfigurationReadiness(
         snapshot.configuration.canonical,
+        undefined,
+        undefined,
+        selection,
       );
       if (readiness.readiness === "Incomplete")
         return {
           result: "Authorized",
-          value: { initialized: "ConfigurationIncomplete" },
+          value: {
+            initialized:
+              readiness.fault === "SelectionUnknown" ||
+              readiness.fault === "SelectionUnsupported"
+                ? "SelectionUnknown"
+                : "ConfigurationIncomplete",
+          },
         };
-      const commandedCheckStage = firstCommandedCheckStage(
-        readiness.configuration,
-      );
+      const commandedCheckStage = ticketCommandedCheckStage(readiness.ticket);
       return {
         result: "Authorized",
         value: {
@@ -941,10 +950,7 @@ function nativeDraftInitializationMethod(
             ...(commandedCheckStage === undefined
               ? {}
               : { commandedCheckStage }),
-            ...draftInitializationPolicy(
-              snapshot.domain,
-              readiness.configuration,
-            ),
+            ...draftInitializationPolicy(snapshot.domain, readiness.ticket),
           },
         },
       };

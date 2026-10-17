@@ -16,7 +16,7 @@ import {
   releaseConfigurationReadiness,
   type CanonicalConfiguration,
   type ConfigurationRevisionId,
-  type ReleaseConfiguration,
+  type DeclaredConfiguration,
   type ReleaseConfigurationFault,
 } from "./authoring.ts";
 import type {
@@ -175,7 +175,7 @@ export interface RepositoryConfigurationDeclaration {
   readonly path: RepositoryConfigurationPath;
   readonly revision: ConfigurationRevisionId;
   readonly canonical: CanonicalConfiguration;
-  readonly configuration: ReleaseConfiguration;
+  readonly configuration: DeclaredConfiguration;
 }
 
 export type RepositoryConfigurationFault =

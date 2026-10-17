@@ -245,7 +245,7 @@ async function releaseDraftSource(
     readiness.readiness === "Ready"
       ? ticketDefinitionMaterial({
           authoring,
-          configuration: readiness.configuration,
+          ticket: readiness.ticket,
           ...(brief === undefined ? {} : { brief }),
         })
       : undefined;

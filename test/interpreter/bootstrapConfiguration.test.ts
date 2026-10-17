@@ -97,7 +97,8 @@ test("it commands one review evaluation and no practices", () => {
     bootstrapConfiguration({ repository, defaultBranch, image }),
   );
   assert.equal(readiness.readiness, "Ready");
-  if (readiness.readiness !== "Ready") return;
+  if (readiness.readiness !== "Ready" || readiness.configuration.version !== 1)
+    return;
   assert.deepEqual(readiness.configuration.practices, []);
   const evaluations = readiness.configuration.evaluations ?? [];
   assert.equal(evaluations.length, 1);
@@ -203,6 +204,8 @@ function bootstrapReady(): ReleaseConfiguration {
   );
   assert.equal(readiness.readiness, "Ready");
   if (readiness.readiness !== "Ready") throw new Error("unreleasable");
+  if (readiness.configuration.version !== 1)
+    throw new Error("the bootstrap is a catalog");
   return readiness.configuration;
 }
 
@@ -290,6 +293,8 @@ test("a declaration written to the shape its worker is told, at every bound it i
     }).readiness,
     "Ready",
   );
+  assert.equal(declaration.configuration.version, 1);
+  if (declaration.configuration.version !== 1) return;
   const declared = declaration.configuration.worker;
   assert.equal(declared?.setup.length, atEveryBound.lines);
   assert.deepEqual(
@@ -689,14 +694,23 @@ test("the worker is told its shell lines carry the commit the change started fro
   assert.ok(published.includes(`reads it as ${guardedChangeBase}`));
 });
 
-/** The fields the published schema names in a configuration. */
+/** The fields the published schema names in a version 1 configuration, which is the version the bootstrap is. */
 function publishedConfigurationFields(): readonly string[] {
   const published = configurationDocumentJsonSchema() as {
     readonly properties?: {
-      readonly configuration?: { readonly properties?: object };
+      readonly configuration?: {
+        readonly oneOf?: readonly {
+          readonly properties?: {
+            readonly version?: { readonly const?: unknown };
+          };
+        }[];
+      };
     };
   };
-  return Object.keys(published.properties?.configuration?.properties ?? {});
+  const variant = published.properties?.configuration?.oneOf?.find(
+    (each) => each.properties?.version?.const === 1,
+  );
+  return Object.keys(variant?.properties ?? {});
 }
 
 test("the worker is told of every field the published schema names in a configuration, and what becomes of one it does not", () => {
@@ -785,10 +799,12 @@ test("the seeded document left under another name is one an import takes, so a c
     "an import takes it as the repository's own",
   );
   assert.ok(
-    imported.declarations.every((declaration) =>
-      toldLines(declaration.configuration).some((line) =>
-        writesConfiguration.test(line),
-      ),
+    imported.declarations.every(
+      (declaration) =>
+        declaration.configuration.version === 1 &&
+        toldLines(declaration.configuration).some((line) =>
+          writesConfiguration.test(line),
+        ),
     ),
     "and it asks its ticket what the criterion says no file left may",
   );

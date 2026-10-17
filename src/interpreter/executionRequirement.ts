@@ -285,6 +285,44 @@ export function executionTaskKindKey(
     : `Evaluation:${stage as number}`;
 }
 
+/**
+ * The requirement one catalog workload runs under: its own where it states one,
+ * and otherwise the image it names or the catalog's, on the platform a bare
+ * image has always meant. Nothing the catalog states reaches a workload that
+ * states its own, so there is no default for it to refine.
+ */
+export function materializeWorkloadExecutionRequirement(
+  workload: {
+    readonly image?: string | undefined;
+    readonly executionRequirement?: ExecutionRequirement | undefined;
+    readonly worker?: unknown;
+  },
+  catalogImage: string,
+): MaterializedExecutionRequirement {
+  const value: ExecutionRequirement = workload.executionRequirement ?? {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: workload.image ?? catalogImage,
+  };
+  const selected = requirementForAgent(
+    value,
+    executionAgentCapability(workload),
+  );
+  if (selected === undefined)
+    throw new TypeError(
+      "single-agent worker requires a container execution requirement",
+    );
+  return {
+    value: selected,
+    source:
+      workload.executionRequirement === undefined
+        ? "PlatformDefault"
+        : "TaskKindDefault",
+    platformDefaultVersion: 1,
+  };
+}
+
 export function materializeExecutionRequirement(
   configuration: unknown,
   kind: ExecutionTaskKind,

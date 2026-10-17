@@ -29,8 +29,10 @@
 
 import { z } from "zod";
 
+import { briefFinalizationSchema } from "./brief.ts";
 import {
   configurationCanonicalCharsMax,
+  nativeHttpDraftEvaluatorsMax,
   repositoryConfigurationNameCharsMax,
 } from "./http.ts";
 import { outputRenderers } from "./rosters.ts";
@@ -46,8 +48,11 @@ import {
 /** The one envelope version this tree reads. */
 export const configurationDocumentVersion = 1;
 
-/** The one configuration version a release reads. */
+/** The configuration version whose stages are blocks of one document. */
 export const releaseConfigurationVersion = 1;
+
+/** The configuration version that is a catalog of independent workloads. */
+export const workloadConfigurationVersion = 2;
 
 /** The directory an import reads, from the repository root. */
 export const repositoryConfigurationRoot = ".chug/configurations/";
@@ -594,6 +599,186 @@ export const releaseConfigurationSchema = z
     `What a ticket runs on. A key not named here is kept as written and ignored. The importer also holds that no key at any depth contains password, secret or token, or credential other than as the credentials that ends it, in any letter case, and that the configuration as JSON with its keys sorted and no whitespace is at most ${String(configurationCanonicalCharsMax)} UTF-16 code units.`,
   );
 
+/** The longest path a catalog names another repository file by, in code points. */
+export const configurationReferencePathCharsMax = 256;
+
+/** The most entries one catalog map holds. */
+export const configurationCatalogEntriesMax = 64;
+
+/** The longest name a catalog entry or a plan stage is held under. */
+const configurationCatalogNameCharsMax = 64;
+
+/**
+ * A repository file a catalog names: relative to the repository root, under
+ * `.chug/`, with no empty, `.` or `..` segment and no backslash or control
+ * character.
+ */
+export const configurationReferencePathPattern =
+  // eslint-disable-next-line no-control-regex
+  /^\.chug(?:\/(?!\.\.?(?:\/|$))[^/\\\u0000-\u001f\u007f-\u009f]+)+$/u;
+
+/** A path naming one repository file, read at the commit a configuration is imported from. */
+export const configurationReferencePathSchema = z
+  .string()
+  .max(configurationReferencePathCharsMax)
+  .regex(configurationReferencePathPattern)
+  .describe(
+    "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link.",
+  );
+
+/** Text a prompt may hold: lines broken by newlines, tabs, and no other control character or lone surrogate. */
+export const configurationPromptTextPattern =
+  // eslint-disable-next-line no-control-regex
+  /^[^\u0000-\u0008\u000b-\u001f\u007f-\u009f\ud800-\udfff]*$/u;
+
+/** The words an agent workload is briefed with, as written. */
+const configurationPromptTextSchema = z
+  .string()
+  .min(1)
+  .max(configurationCanonicalCharsMax)
+  .regex(configurationPromptTextPattern);
+
+/** A prompt by its text, by the file holding it, or both once an import has read that file. */
+export const configurationPromptSchema = z
+  .strictObject({
+    path: configurationReferencePathSchema.optional(),
+    text: configurationPromptTextSchema.optional(),
+  })
+  .refine((prompt) => prompt.path !== undefined || prompt.text !== undefined)
+  .describe(
+    "The prompt rendered first and verbatim in the workload's briefing. A repository file names its path, and the import stores the text it read beside that path; a configuration authored through the API names its text.",
+  );
+
+/** A name one catalog entry is held under and referred to by. */
+export const configurationCatalogNameSchema = z
+  .string()
+  .max(configurationCatalogNameCharsMax)
+  .regex(/^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$/u);
+
+/** What a workload installs before it runs. */
+const configurationPreparationSchema = z.strictObject(
+  configurationWorkerFields,
+);
+
+/** Where one workload runs and what it runs with, each in place of the catalog's default. */
+const workloadPlacementShape = {
+  image: configurationImageSchema.optional(),
+  executionRequirement: executionRequirementSchema.optional(),
+  resources: configurationResourceSizeSchema.optional(),
+};
+
+/** A workload an agent carries out: its own prompt, worker and authority, with every framing opt-in. */
+export const agentWorkloadSchema = z.strictObject({
+  runner: z.literal("Agent"),
+  purpose: z
+    .enum(["Review", "Check"])
+    .optional()
+    .describe(
+      "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+    ),
+  prompt: configurationPromptSchema,
+  worker: configurationModeWorkerSchema,
+  authority: configurationAuthoritySchema.optional(),
+  framing: z
+    .enum(["Chuggy"])
+    .optional()
+    .describe(
+      "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+    ),
+  practices: configurationPracticesSchema.optional(),
+  brief: configurationBriefSchema.optional(),
+  ...workloadPlacementShape,
+});
+
+/** A workload the worker runs itself: command lines at the repository root, and no agent to brief. */
+export const commandsWorkloadSchema = z.strictObject({
+  runner: z.literal("Commands"),
+  commands: configurationCommandLinesSchema,
+  worker: configurationPreparationSchema.optional(),
+  authority: configurationAuthoritySchema.optional(),
+  ...workloadPlacementShape,
+});
+
+/** One workload, which is one of the two runners. */
+export const workloadSchema = z.discriminatedUnion("runner", [
+  agentWorkloadSchema,
+  commandsWorkloadSchema,
+]);
+
+/** Whether a map holds no more entries than a catalog map may. */
+function configurationCatalogBounded(map: Readonly<Record<string, unknown>>) {
+  return Object.keys(map).length <= configurationCatalogEntriesMax;
+}
+
+/** A catalog map: entries by name, bounded. */
+function configurationCatalogMap<Entry extends z.ZodType>(entry: Entry) {
+  return z
+    .record(configurationCatalogNameSchema, entry)
+    .refine(configurationCatalogBounded)
+    .describe(
+      `The importer also holds that it has at most ${String(configurationCatalogEntriesMax)} entries.`,
+    );
+}
+
+/** One stage of an evaluation plan: the workloads its evaluators run, by name. */
+export const evaluationPlanStageSchema = z.strictObject({
+  name: configurationCatalogNameSchema,
+  evaluators: z
+    .array(configurationCatalogNameSchema)
+    .min(1)
+    .max(nativeHttpDraftEvaluatorsMax),
+});
+
+/** The stages a change is held to, run in the order listed; a stage that fails ends evaluation. */
+export const evaluationPlanSchema = z
+  .array(evaluationPlanStageSchema)
+  .min(1)
+  .max(evaluationBlocksMax);
+
+/** How a ticket's passed work lands, and whether a person approves it first. */
+export const finalizerSchema = z.strictObject({
+  landing: briefFinalizationSchema
+    .optional()
+    .describe(
+      "The landing a ticket whose brief names none takes, in place of its repository's.",
+    ),
+  approvalRequired: z.boolean().optional(),
+});
+
+/** The catalog entries a ticket runs on where it selects none. */
+export const workloadDefaultsSchema = z.strictObject({
+  work: configurationCatalogNameSchema,
+  evaluation: configurationCatalogNameSchema,
+  finalization: configurationCatalogNameSchema.optional(),
+});
+
+/** The configuration that is a catalog: workloads, the plans that run them, finalizers, and the defaults. */
+export const workloadConfigurationSchema = z
+  .looseObject({
+    version: z.literal(workloadConfigurationVersion),
+    image: configurationImageSchema.describe(
+      "The image a workload naming none runs in.",
+    ),
+    workloads: configurationCatalogMap(
+      z.union([configurationReferencePathSchema, workloadSchema]),
+    ).describe(
+      "Each workload inline, or the path of a JSON file holding one, which the import reads and stores inline.",
+    ),
+    plans: configurationCatalogMap(evaluationPlanSchema),
+    finalizers: configurationCatalogMap(finalizerSchema).optional(),
+    defaults: workloadDefaultsSchema,
+    outputs: configurationOutputsSchema.optional(),
+  })
+  .describe(
+    `A catalog a ticket selects its work, its evaluation plan and its finalizer from. The importer also holds that every name a plan or the defaults use is in the catalog, and the size and key rules of a version 1 configuration: at most ${String(configurationCanonicalCharsMax)} UTF-16 code units once every referenced file is stored inline.`,
+  );
+
+/** The configuration one file declares, told apart by its version. */
+export const declaredConfigurationSchema = z.discriminatedUnion("version", [
+  releaseConfigurationSchema,
+  workloadConfigurationSchema,
+]);
+
 /** The name a configuration is declared under, which is one URL path segment exactly as written. */
 export const repositoryConfigurationNameSchema = z
   .string()
@@ -608,7 +793,7 @@ export const configurationDocumentSchema = z
   .strictObject({
     version: z.literal(configurationDocumentVersion),
     name: repositoryConfigurationNameSchema,
-    configuration: releaseConfigurationSchema,
+    configuration: declaredConfigurationSchema,
   })
   .meta({
     title: "chuggy repository configuration",

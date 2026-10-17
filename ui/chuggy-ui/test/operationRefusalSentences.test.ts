@@ -74,6 +74,9 @@ const samples: {
   ConfigurationFromAnotherRepository: {
     type: "ConfigurationFromAnotherRepository",
   },
+  SelectionUnknown: { type: "SelectionUnknown" },
+  SelectionUnsupported: { type: "SelectionUnsupported" },
+  ProgramExceedsPlan: { type: "ProgramExceedsPlan" },
   TicketCapacityReached: { type: "TicketCapacityReached" },
   FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
   OverridesMoveDefinition: { type: "OverridesMoveDefinition" },
