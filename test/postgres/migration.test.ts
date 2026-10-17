@@ -862,7 +862,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
     await subject.query<{ result: string; ticket: string | null }>(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -873,7 +873,7 @@ async function createdUnboundDraft(subject: pg.Pool) {
     await subject.query<{ result: string }>(
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring)],
     )
   ).rows;
@@ -992,8 +992,8 @@ test("the draft doors are owned and granted to their callers", async () => {
   await migrationDatabase("i91grants", async (subject) => {
     await postgresMigrate(subject);
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
   });
 });
@@ -1005,7 +1005,7 @@ async function createdOverriddenDraft(subject: pg.Pool, overrides: string) {
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-         NULL,NULL,'bound-91',$2,'User','author')`,
+         NULL,NULL,'bound-91',$2,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring), overrides],
     )
   ).rows;
@@ -1058,8 +1058,8 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
@@ -2224,7 +2224,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
           `SELECT result FROM ${draftCreateFunction}(
              'tenant-91','project-91','revision-91','digest-91',0,$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             NULL,NULL,'bound-91',NULL,'User','author')`,
+             NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
           [deletionFinalizerAuthoring()],
         )
       ).rows,
@@ -2245,7 +2245,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
           `SELECT result FROM ${draftReviseFunction}(
              'tenant-91','project-91',1,1,'revision-91',$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             'Push',NULL,'bound-91',NULL,'User','author')`,
+             'Push',NULL,'bound-91',NULL,NULL,'User','author')`,
           [deletionFinalizerAuthoring()],
         )
       ).rows,
@@ -8608,7 +8608,7 @@ async function updateRevised(
       `SELECT result, authoring_version::int AS version, state FROM ${draftReviseFunction}(
          'tenant-91','project-91',1,$1,'revision-91',$2,
          NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/branch-91',
-         NULL,NULL,'bound-91',NULL,'User','author')`,
+         NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
       [expected, authoring],
     )
   ).rows;

@@ -76,7 +76,12 @@ test("the form asks, and names no configuration it would send", () => {
 });
 
 test("choosing one leaves the carried checks, dependencies and program, and sends them", () => {
-  const chosen = creationConfigurationChosen(seed.form, offers, "development");
+  const chosen = creationConfigurationChosen(
+    seed.form,
+    offers,
+    "development",
+    [],
+  );
   expect(chosen.checks).toStrictEqual(["npm test"]);
   expect(chosen.dependencies).toStrictEqual([7, 40]);
   expect(chosen.program).toStrictEqual(original.authoring.program);

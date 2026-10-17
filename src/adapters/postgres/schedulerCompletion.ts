@@ -152,14 +152,15 @@ export async function schedulerLockExecution(
   const found = await client.query<ExecutionRow>(
     sql`SELECT
           e.tenant, e.project, e.execution, e.placement, e.owner, e.owner_fallback, e.ticket::text AS ticket,
-          e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage,
+          e.task::text AS task, t.kind AS task_kind, t.stage::text AS stage, t.evaluator::text AS evaluator,
           e.source_request, q.input_bundle, q.input_bundle_digest,
           q.authorizing_seq::text AS source_seq,
           q.effect_position::text AS source_effect,
           q.ticket_version::text AS ticket_version, e.account, e.cluster,
           e.configuration_revision, e.configuration_digest,
           c.canonical AS configuration_canonical,
-            d.overrides::text AS configuration_overrides, e.requirement_identity,
+            d.overrides::text AS configuration_overrides,
+            d.selection::text AS configuration_selection, e.requirement_identity,
           e.requirement_value::text AS requirement_value, e.requirement_digest, e.requirement_source,
           e.platform_default_version::text AS platform_default_version, e.cpu_millis, e.memory_mib, e.status, e.outcome,
           e.result_manifest, e.completion_operation,

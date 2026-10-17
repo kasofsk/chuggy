@@ -252,6 +252,25 @@ set -e
 check "a change to a declared configuration runs the console suites" 0 "$RC" "stub check-console"
 refute "a change to a declared configuration runs the unit suites" 0 "$RC" "check-source unit: SKIPPED"
 
+# A catalog's prompt is a markdown file the unit suites import the tree's own
+# catalogs through, so a change to one alone must select them although a
+# markdown change is otherwise not code.
+stub_repo 0
+mkdir -p "$R/.chug/prompts"
+printf 'Build it.\n' > "$R/.chug/prompts/work.md"
+git -C "$R" add -A
+git -C "$R" commit -qm baseline
+printf 'Build it well.\n' > "$R/.chug/prompts/work.md"
+git -C "$R" add -A
+git -C "$R" commit -qm prompt
+OUT="$WORK/.out"
+set +e
+(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "a change to a catalog's prompt runs the unit suites" 0 "$RC" "check-source unit: SKIPPED"
+
 # `check-keto`'s end-to-end suite composes the boundary over the postgres
 # harnesses, so a cone naming only the Keto adapter leaves the one suite that
 # proves a derived owner against a real authority unrun on a changed run.

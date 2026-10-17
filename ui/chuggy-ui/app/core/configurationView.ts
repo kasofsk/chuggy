@@ -129,6 +129,11 @@ function configurationModelOf(
   };
 }
 
+/** The model any document's mode names, labelled as the panel labels it. */
+export function configurationModelLabelOf(mode: unknown): ConfigurationModel {
+  return configurationModelOf(workerModeSchema.parse(mode));
+}
+
 /**
  * A worker's mode exactly as the document writes it. Unlike every reader
  * above, nothing in it is dropped for being unrecognised: a mode is sent back

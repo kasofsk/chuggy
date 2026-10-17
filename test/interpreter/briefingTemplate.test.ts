@@ -201,7 +201,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [10, "c2aad8edc00413bef79120ccb0ceb2a43784eaeb9ad36c2d3c9e44db6083746d"],
+    [11, "c419f95a23ef8fb7797f09430f046f417f8f62121c6bbcda155d0fdbdfd84275"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });

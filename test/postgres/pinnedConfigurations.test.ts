@@ -59,6 +59,7 @@ test("the scheduler role reads an authored pinned task configuration", async () 
     assert.deepEqual(
       await configurations.configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -114,13 +115,17 @@ test("a work stage that names commands survives the durable round trip", async (
       partition,
       {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       },
     );
     assert.equal(read.read, "Configuration");
     if (read.read !== "Configuration") return;
-    assert.deepEqual(read.configuration.work, work);
+    assert.deepEqual(
+      "work" in read.configuration ? read.configuration.work : undefined,
+      work,
+    );
   } finally {
     await pool.end();
     await harness.close();
@@ -173,15 +178,19 @@ test("the pinned read is exact across revisions, tenants, and projects", async (
       target,
       {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: pinned.digest,
       },
     );
     assert.equal(read.read, "Configuration");
     if (read.read === "Configuration")
-      assert.deepEqual(read.configuration.brief.motivation, [
-        "target revision",
-      ]);
+      assert.deepEqual(
+        "brief" in read.configuration
+          ? read.configuration.brief.motivation
+          : undefined,
+        ["target revision"],
+      );
   } finally {
     await pool.end();
     await harness.close();
@@ -200,6 +209,7 @@ test("an absent revision is Missing and an unreachable authority is Unavailable"
     assert.deepEqual(
       await configurations.configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: "absent",
         configurationDigest: "digest",
       }),
@@ -209,6 +219,7 @@ test("an absent revision is Missing and an unreachable authority is Unavailable"
     assert.deepEqual(
       await configurations.configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: "absent",
         configurationDigest: "digest",
       }),
@@ -243,6 +254,7 @@ test("a pre-contract revision without authored briefing content holds for replac
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -282,6 +294,7 @@ test("configuration bytes that contradict their stored digest are incompatible",
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: created.revision.digest,
       }),
@@ -302,6 +315,7 @@ test("configuration bytes that contradict their stored digest are incompatible",
     assert.deepEqual(
       await postgresPinnedConfigurations(pool).configuration(partition, {
         ticket: 1,
+        taskKind: "Work",
         configurationRevision: revision,
         configurationDigest: configurationRevisionDigest(unreadable),
       }),

@@ -17,7 +17,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import test from "node:test";
 
 import { Ajv2020 } from "ajv/dist/2020.js";
@@ -31,7 +31,10 @@ import {
   configurationMemoryMibMin,
 } from "../../src/contract/configurationDocument.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
-import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
+import {
+  workerImageCharsMax,
+  workerPoolRequirementCapabilitiesMax,
+} from "../../src/contract/workerPool.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
 import {
@@ -44,6 +47,10 @@ import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import {
+  repositoryConfigurationReferences,
+  type RepositoryConfigurationReferenced,
+} from "../../src/interpreter/repositoryConfigurationReference.ts";
 import { pickFrom, randomOf, type Random } from "../random/random.ts";
 
 const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
@@ -52,6 +59,33 @@ const schemaTakes = new Ajv2020({ strict: true, allErrors: true }).compile(
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const commit = asGitObjectId("a".repeat(40));
+
+/** One file a catalog names, as this checkout holds it. */
+function treeReferenced(path: string): RepositoryConfigurationReferenced {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() === true
+    ? { path, found: "File", content: readFileSync(path, "utf8") }
+    : { path, found: "Absent" };
+}
+
+/** Every file one declaration's catalog names, read from this checkout as an import reads a commit. */
+function treeReferences(
+  content: string,
+): ReadonlyMap<string, RepositoryConfigurationReferenced> {
+  const declared: unknown = JSON.parse(content);
+  const configuration =
+    typeof declared === "object" && declared !== null
+      ? (declared as { readonly configuration?: unknown }).configuration
+      : undefined;
+  const referenced = new Map<string, RepositoryConfigurationReferenced>();
+  for (;;) {
+    const unread = repositoryConfigurationReferences(
+      configuration,
+      referenced,
+    ).filter((path) => !referenced.has(path));
+    if (unread.length === 0) return referenced;
+    for (const path of unread) referenced.set(path, treeReferenced(path));
+  }
+}
 
 /** What an import answers for one file: Ready, or its fault and the configuration's. */
 function imported(content: string): string {
@@ -65,6 +99,7 @@ function imported(content: string): string {
         content,
       },
     ],
+    referenced: treeReferences(content),
   });
   if (readiness.readiness === "Ready") return "Ready";
   const [refusal] = readiness.faults;
@@ -86,6 +121,7 @@ const heldFaults = [
   "ConfigurationInvalid:WorkerInvalid",
   "ConfigurationInvalid:WorkerUndeclared",
   "ConfigurationInvalid:ReleaseShapeInvalid",
+  "ConfigurationInvalid:CatalogNameUnknown",
 ];
 
 /** Asserts the schema takes a file the import takes, and refuses one the import refuses but for a held fault. */
@@ -118,7 +154,7 @@ const codex = {
   model: "gpt-5",
 };
 const capabilityRequirement = {
-  mode: "ContainerCapability",
+  mode: "Capability",
   operatingSystem: "Linux",
   architecture: "Amd64",
   capabilities: ["Agent:Codex"],
@@ -347,6 +383,23 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
     declared({
       ...configuration,
       executionRequirements: {
+        platformDefault: containerRequirement,
+        platformDefaultVersion: 1,
+        ticketDefault: {
+          ...capabilityRequirement,
+          capabilities: Array.from(
+            { length: workerPoolRequirementCapabilitiesMax + 1 },
+            (_unused, index) => `Tool:T${String(index)}`,
+          ),
+        },
+      },
+    }),
+    "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    declared({
+      ...configuration,
+      executionRequirements: {
         platformDefault: { ...capabilityRequirement, capabilities: [] },
         platformDefaultVersion: 1,
       },
@@ -456,6 +509,22 @@ test("a file whose shape the import refuses the schema refuses", () => {
 
 /** A file the import refuses for a rule the schema says it cannot state, and the fault it refuses it for. */
 const heldRules: readonly (readonly [unknown, string])[] = [
+  [
+    declared({
+      version: 2,
+      image: "worker:v1",
+      workloads: {
+        build: {
+          runner: "Agent",
+          prompt: { text: "Build." },
+          worker: { mode: claude, setup: [], files: [] },
+        },
+      },
+      plans: { standard: [{ name: "review", evaluators: ["build"] }] },
+      defaults: { work: "build", evaluation: "absent" },
+    }),
+    "ConfigurationInvalid:CatalogNameUnknown",
+  ],
   [
     declared({ ...configuration, review: { instructions: [], token: "t" } }),
     "ConfigurationInvalid",
@@ -571,6 +640,7 @@ const mutationLeaves: readonly unknown[] = [
   "RegressionCoverage",
   "NotAPractice",
   "Container",
+  "Capability",
   "ContainerCapability",
   "Native",
   "MacOS",
@@ -686,11 +756,26 @@ function publishedAt(...keys: readonly (string | number)[]): object {
   return node;
 }
 
-/** The node the published schema states a configuration's field in. */
+/** The position the published schema states one configuration version at among the configuration's variants. */
+function publishedVersion(version: number): number {
+  const variants = publishedAt("properties", "configuration", "oneOf");
+  assert.ok(Array.isArray(variants));
+  const position = (
+    variants as readonly {
+      readonly properties?: { readonly version?: { readonly const?: unknown } };
+    }[]
+  ).findIndex((variant) => variant.properties?.version?.const === version);
+  assert.ok(position !== -1, `version ${String(version)}`);
+  return position;
+}
+
+/** The node the published schema states a version 1 configuration's field in. */
 function publishedField(field: string, ...keys: readonly (string | number)[]) {
   return publishedAt(
     "properties",
     "configuration",
+    "oneOf",
+    publishedVersion(1),
     "properties",
     field,
     ...keys,
@@ -845,9 +930,13 @@ interface PublishedImages {
 }
 
 test("the published schema says of both images that any one works that holds the runtime's needs, and that a digest is not required", () => {
-  const published: unknown = configurationDocumentJsonSchema();
-  const configuration = (published as PublishedImages).properties.configuration
-    .properties;
+  const configuration = publishedAt(
+    "properties",
+    "configuration",
+    "oneOf",
+    publishedVersion(1),
+    "properties",
+  ) as PublishedImages["properties"]["configuration"]["properties"];
   const header = configuration.image as {
     readonly maxLength: number;
     readonly pattern: string;
@@ -900,9 +989,9 @@ interface PublishedResources {
 }
 
 test("the published schema says what a size is, the bounds the import holds it to, and that a field left out is the deployment's", () => {
-  const published: unknown = configurationDocumentJsonSchema();
-  const resources = (published as PublishedResources).properties.configuration
-    .properties.resources;
+  const resources = publishedField(
+    "resources",
+  ) as PublishedResources["properties"]["configuration"]["properties"]["resources"];
   const size = resources.properties.ticketDefault.properties;
   assert.equal(resources.additionalProperties, false);
   assert.deepEqual(

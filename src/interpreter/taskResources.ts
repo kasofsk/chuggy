@@ -72,6 +72,23 @@ export function materializeTaskResources(
   );
 }
 
+/** The size one catalog workload runs with: its own, or none where it names none. */
+export function materializeWorkloadTaskResources(
+  size:
+    | {
+        readonly cpus?: number | undefined;
+        readonly memoryMib?: number | undefined;
+      }
+    | undefined,
+): TaskResources | undefined {
+  return taskResourcesNamed(
+    size?.cpus === undefined
+      ? undefined
+      : size.cpus * taskResourcesMillisPerCpu,
+    size?.memoryMib,
+  );
+}
+
 /** A stored size read back, refusing one no release writes. */
 export function asTaskResources(value: unknown): TaskResources {
   const parsed = taskResourcesStoredSchema.safeParse(value);

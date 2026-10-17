@@ -85,6 +85,20 @@ test("a ready row states three facts, and an incomplete one states none", () => 
   ).toBe(undefined);
 });
 
+test("a catalog's row names the work a ticket selecting none runs, among the workloads it holds", () => {
+  const ready = declared("r7", chuggy, "chuggy");
+  const catalog = {
+    workloads: ["build", "review"],
+    plans: ["review"],
+    finalizers: [],
+    defaults: { work: "build", evaluation: "review" },
+  };
+  expect(
+    repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
+      ?.worker,
+  ).toStrictEqual({ text: "build of 2 workloads", title: "build, review" });
+});
+
 /**
  * The walk is what makes a repository's rows findable at all, and it is bounded
  * rather than run to the end of a project's history: a listing that never stops

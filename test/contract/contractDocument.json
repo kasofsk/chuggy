@@ -847,6 +847,27 @@
             }
           },
           "additionalProperties": false
+        },
+        "selection": {
+          "type": "object",
+          "properties": {
+            "work": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "evaluation": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "finalization": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [
@@ -1157,6 +1178,27 @@
                 }
               },
               "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "selection": {
+          "type": "object",
+          "properties": {
+            "work": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "evaluation": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "finalization": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
             }
           },
           "additionalProperties": false

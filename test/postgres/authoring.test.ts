@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { ConfigurationSelection } from "../../src/contract/configurationSelection.ts";
 import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
@@ -242,6 +243,7 @@ async function draftOnRevision(
   repository: RepositoryId,
   brief: DraftBrief = postgresHarnessBrief,
   overrides?: ConfigurationOverrides,
+  selection?: ConfigurationSelection,
 ) {
   const store = postgresAuthoring(pool);
   const initialized = await store.initializeDraft(partition, revision, 100);
@@ -256,6 +258,7 @@ async function draftOnRevision(
     authoring: plainAuthoring,
     brief: { ...brief, repository },
     ...(overrides === undefined ? {} : { overrides }),
+    ...(selection === undefined ? {} : { selection }),
   });
   if (created.created !== "Created")
     throw new Error(`draft fixture was ${created.created}`);
@@ -267,6 +270,7 @@ async function draftFixture(
   canonical = postgresHarnessConfiguration,
   brief: DraftBrief = postgresHarnessBrief,
   overrides?: ConfigurationOverrides,
+  selection?: ConfigurationSelection,
 ) {
   const partition = await postgresHarnessProject(
     harness.store,
@@ -280,7 +284,14 @@ async function draftFixture(
     revision,
     canonical,
   });
-  return draftOnRevision(partition, revision, repository, brief, overrides);
+  return draftOnRevision(
+    partition,
+    revision,
+    repository,
+    brief,
+    overrides,
+    selection,
+  );
 }
 
 test("draft creation rejects a stale initialization fence", async () => {
@@ -2994,6 +3005,118 @@ test("a release whose overrides leave its configuration unready is refused as an
   );
 });
 
+/** A catalog whose default plan reviews and whose other plan runs the tests first. */
+const catalogConfiguration = canonicalConfigurationOf({
+  version: 2,
+  image: "worker:v2",
+  workloads: {
+    build: {
+      runner: "Agent",
+      prompt: { text: "Build it." },
+      worker: {
+        mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        setup: [],
+        files: [],
+      },
+    },
+    tests: { runner: "Commands", commands: ["npm test"] },
+  },
+  plans: {
+    standard: [{ name: "review", evaluators: ["build"] }],
+    tested: [{ name: "tests", evaluators: ["tests"] }],
+  },
+  defaults: { work: "build", evaluation: "standard" },
+});
+
+test("a draft's selection is written with its revision and read back, and a catalog ticket keeps the one it was released with", async () => {
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    undefined,
+    { evaluation: "tested" },
+  );
+  const { partition, store, draft } = fixture;
+  assert.deepEqual(draft.selection, { evaluation: "tested" });
+  const page = await store.drafts(partition, { limit: 10 });
+  assert.deepEqual(
+    page.drafts.find((held) => held.ticket === draft.ticket)?.selection,
+    { evaluation: "tested" },
+  );
+  const decide = await fixtureWriter(fixture, "selection-release");
+  const submission = releaseSubmission(fixture);
+  assert.equal(await decide(submission), "Committed");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT selection FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3",
+      [partition.tenant, partition.project, draft.ticket],
+    ),
+    [{ selection: { evaluation: "tested" } }],
+  );
+});
+
+test("the scheduler's read of a released catalog ticket answers each task the workload its selection puts there", async (t) => {
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    undefined,
+    { evaluation: "tested" },
+  );
+  const decide = await fixtureWriter(fixture, "selection-pinned");
+  assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+  const scheduler = schedulerRolePool();
+  t.after(() => scheduler.end());
+  const pin = await fixture.store.configuration(
+    fixture.partition,
+    fixture.revision,
+  );
+  assert.ok(pin !== undefined);
+  const read = (
+    task:
+      | { taskKind: "Work" }
+      | { taskKind: "Evaluation"; stage: number; evaluator: number },
+  ) =>
+    postgresPinnedConfigurations(scheduler).configuration(fixture.partition, {
+      configurationRevision: fixture.revision,
+      configurationDigest: pin.digest,
+      ticket: fixture.draft.ticket,
+      ...task,
+    });
+  const runner = async (task: Parameters<typeof read>[0]) => {
+    const found = await read(task);
+    return found.read === "Configuration" && "workload" in found.configuration
+      ? found.configuration.workload.runner
+      : found;
+  };
+  assert.equal(await runner({ taskKind: "Work" }), "Agent");
+  assert.equal(
+    await runner({ taskKind: "Evaluation", stage: 0, evaluator: 1 }),
+    "Commands",
+  );
+  assert.deepEqual(
+    await read({ taskKind: "Evaluation", stage: 1, evaluator: 1 }),
+    { read: "Incompatible", fault: "WorkloadUnselected" },
+  );
+});
+
+test("a release selecting what its catalog does not hold is refused under that fault", async () => {
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    undefined,
+    { evaluation: "absent" },
+  );
+  const decide = await fixtureWriter(fixture, "selection-unknown");
+  const submission = releaseSubmission(fixture);
+  assert.equal(await decide(submission), "Refused");
+  assert.deepEqual(
+    await harness.query(
+      "SELECT outcome_code FROM decision_input WHERE input_id=$1",
+      [submission.operation],
+    ),
+    [{ outcome_code: "SelectionUnknown" }],
+  );
+});
+
 /** The work instructions the scheduler's own read of the fixture's ticket answers. */
 async function pinnedWorkInstructions(
   fixture: Awaited<ReturnType<typeof draftFixture>>,
@@ -3010,9 +3133,10 @@ async function pinnedWorkInstructions(
       configurationRevision: fixture.revision,
       configurationDigest: pin.digest,
       ticket: fixture.draft.ticket,
+      taskKind: "Work",
     },
   );
-  return read.read === "Configuration"
+  return read.read === "Configuration" && "work" in read.configuration
     ? read.configuration.work.instructions
     : read;
 }

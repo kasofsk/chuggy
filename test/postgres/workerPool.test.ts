@@ -122,7 +122,7 @@ function poolConfiguration(
     },
     executionRequirements: {
       platformDefault: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: [`Agent:${agent}`],
@@ -291,7 +291,7 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
   );
   assert.deepEqual(claimed, {
     requirement: {
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
       architecture: "Amd64",
       capabilities: ["Agent:Claude"],
@@ -309,6 +309,27 @@ test("a pool claims only work marked for a pool, and only what it declared", asy
     await assignments.claim(pool, terms, second.assignment, second.bearer, []),
     undefined,
   );
+});
+
+test("a requirement stored as capabilities matches its pools under either name its mode has had", async () => {
+  for (const mode of ["Capability", "ContainerCapability"]) {
+    const requirement = JSON.stringify({
+      mode,
+      operatingSystem: "MacOS",
+      architecture: "Arm64",
+      capabilities: ["Tool:Xcode"],
+    });
+    const matched = (await rig.harness.query(
+      `SELECT public.worker_pool_inventory_matches($1::jsonb, $2::text[]) AS covered,
+              public.worker_pool_inventory_matches($1::jsonb, $3::text[]) AS short`,
+      [
+        requirement,
+        ["Platform:MacOS:Arm64", "Tool:Xcode"],
+        ["Platform:MacOS:Arm64"],
+      ],
+    )) as readonly { covered: boolean; short: boolean }[];
+    assert.deepEqual(matched, [{ covered: true, short: false }], mode);
+  }
 });
 
 /** Clears the runtime an attempt was opened under, as the owner, which is a row opened before attempts kept one. */

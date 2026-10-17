@@ -41,6 +41,7 @@ function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
     task: "1",
     task_kind: "Work",
     stage: null,
+    evaluator: null,
     source_request: "1:0:ExecuteTask",
     input_bundle: "1:0:InputBundle",
     input_bundle_digest: "b".repeat(64),
@@ -54,6 +55,7 @@ function rowOf(configuration: unknown, overrides?: unknown): ExecutionRow {
     configuration_canonical: JSON.stringify(configuration),
     configuration_overrides:
       overrides === undefined ? null : JSON.stringify(overrides),
+    configuration_selection: null,
     requirement_identity: "execution-one",
     requirement_value: JSON.stringify(pinned),
     requirement_digest: "a".repeat(64),
@@ -113,6 +115,47 @@ test("a registration under a worker that names no agent asks for none", () => {
       .agentCapability,
     undefined,
   );
+});
+
+test("a catalog's task asks for the agent its own workload names, at its evaluator's key", () => {
+  const worker = (agent: string, model?: string) => ({
+    mode: {
+      type: "SingleAgent",
+      agent,
+      arguments: [],
+      ...(model === undefined ? {} : { model }),
+    },
+    setup: [],
+    files: [],
+  });
+  const catalog = {
+    version: 2,
+    image: "worker:v2",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Build." },
+        worker: worker("Claude"),
+      },
+      second: {
+        runner: "Agent",
+        prompt: { text: "Read." },
+        worker: worker("Codex", "gpt-5-codex"),
+      },
+    },
+    plans: { pair: [{ name: "review", evaluators: ["build", "second"] }] },
+    defaults: { work: "build", evaluation: "pair" },
+  };
+  const work = executionRowLogical(rowOf(catalog));
+  const second = executionRowLogical({
+    ...rowOf(catalog),
+    task_kind: "Evaluation",
+    stage: "1",
+    evaluator: "2",
+  });
+  assert.equal(work.agentCapability, "Agent:Claude");
+  assert.equal(second.agentCapability, "Agent:Codex");
+  assert.equal(second.evaluator, 2);
 });
 
 test("an evaluation row's positive stage becomes the port's zero-based index", () => {

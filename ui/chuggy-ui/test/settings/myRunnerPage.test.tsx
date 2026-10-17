@@ -16,6 +16,7 @@ import { myRunnerWithheld } from "../../app/core/myRunner.ts";
 import { answer, drawnStrict, press, settled } from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
+import { resizeObserverStubbed } from "../resizeObserver.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -64,6 +65,7 @@ let drawing: Drawing = { granted: true, runner: undefined };
 
 beforeEach(() => {
   drawing = { granted: true, runner: undefined };
+  resizeObserverStubbed();
 });
 
 afterEach(() => {
@@ -106,9 +108,11 @@ test("a member the workspace has not let register a runner is told why and offer
   expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
 });
 
-test("a member the workspace lets register one is handed the personal command for their token", async () => {
+test("a member the workspace lets register one asks what it is for, and is handed the personal command for their token", async () => {
   const sent = await drawMyRunner();
   await press("Register runner");
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+  await press("Create token");
   expect(
     sent
       .filter((one) => one.method === "POST")

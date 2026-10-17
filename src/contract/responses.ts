@@ -9,6 +9,7 @@
  * rather than a browser's.
  */
 
+import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
 import {
@@ -65,6 +66,8 @@ import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   workerPoolCapabilitiesSchema,
+  workerPoolCapabilitySchema,
+  workerPoolRequirementCapabilitiesMax,
   workerPoolEvidenceCharsMax,
 } from "./workerPool.ts";
 import {
@@ -86,7 +89,6 @@ import {
   changeProposalMerges,
   draftStates,
   escalationKinds,
-  executionCapabilities,
   executionOutcomes,
   executionStatuses,
   executionTaskKinds,
@@ -97,7 +99,6 @@ import {
   nativeActionKindResolutions,
   nativeActionKinds,
   nativeActionResolutions,
-  nativeDrivers,
   notificationKinds,
   type NativeActionKind,
   type NativeActionResolution,
@@ -356,6 +357,12 @@ export const ticketResponseSchema = z.object({
    */
   overrides: configurationOverridesSchema.optional(),
   /**
+   * What the ticket selected of that configuration's catalog at its last
+   * release or update, absent where it took every default. Only the ticket's
+   * own read carries it.
+   */
+  selection: configurationSelectionSchema.optional(),
+  /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which its draft may since have been revised past. Only the ticket's
    * own read carries it, and only where a draft revision records it.
@@ -539,8 +546,7 @@ export type SelectorSettingsHistoryResponse = z.infer<
 
 /**
  * What a task was required to run on, as the scheduler materialized it: an
- * exact image, the capabilities a site must offer, or a native toolchain
- * floor. The arms are strict because the interpreter refuses a requirement
+ * exact image, or the capabilities a runner must meet. The arms are strict because the interpreter refuses a requirement
  * carrying a key outside the mode it names, and `test/contract/rosters.test.ts`
  * holds the modes against the interpreter's own union.
  */
@@ -552,17 +558,13 @@ export const executionRequirementSchema = z.discriminatedUnion("mode", [
     image: z.string().min(1),
   }),
   z.strictObject({
-    mode: z.literal("ContainerCapability"),
+    mode: z.literal("Capability"),
     operatingSystem: z.enum(operatingSystems),
     architecture: z.enum(architectures),
-    capabilities: z.array(z.enum(executionCapabilities)).min(1),
-  }),
-  z.strictObject({
-    mode: z.literal("Native"),
-    architecture: z.enum(architectures),
-    driver: z.enum(nativeDrivers),
-    xcodeVersionMin: ticketNumberSchema,
-    sdkVersionMin: ticketNumberSchema,
+    capabilities: z
+      .array(workerPoolCapabilitySchema)
+      .min(1)
+      .max(workerPoolRequirementCapabilitiesMax),
   }),
 ]);
 
@@ -1028,10 +1030,22 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
     image: z.string().min(1),
     worker: workerSchema.optional(),
     practices: page(z.string().min(1)),
-    workInstructionsCount: countSchema,
-    reviewInstructionsCount: countSchema,
+    workInstructionsCount: countSchema.optional(),
+    reviewInstructionsCount: countSchema.optional(),
     finalization: z.strictObject({ approvalRequired: z.boolean() }),
     evaluationStagesCount: countSchema,
+    catalog: z
+      .object({
+        workloads: page(z.string().min(1)),
+        plans: page(z.string().min(1)),
+        finalizers: page(z.string().min(1)),
+        defaults: z.object({
+          work: z.string().min(1),
+          evaluation: z.string().min(1),
+          finalization: z.string().min(1).optional(),
+        }),
+      })
+      .optional(),
   }),
 ]);
 export type ConfigurationSummary = z.infer<typeof configurationSummarySchema>;
@@ -1077,6 +1091,8 @@ export const repositoryConfigurationRefusalSchema = z.object({
   path: z.string().min(1),
   fault: z.enum(repositoryConfigurationFaults),
   configurationFault: identitySchema.optional(),
+  /** The file the refused one names by reference, where that file is what was refused. */
+  reference: z.string().min(1).optional(),
 });
 
 export const repositoryConfigurationRefusalsSchema = z.object({
@@ -1102,6 +1118,7 @@ export const draftResponseSchema = z.object({
   authoring: authoringResponseSchema,
   brief: briefResponseSchema.optional(),
   overrides: configurationOverridesSchema.optional(),
+  selection: configurationSelectionSchema.optional(),
 });
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 

@@ -75,13 +75,18 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { asResultManifestId } from "../../interpreter/resultManifest.ts";
 import { projectRowCounter } from "./rows.ts";
-import { storedOverridesOf } from "./ticketBrief.ts";
+import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 import {
   asExecutionRequirement,
   executionAgentCapability,
   type RequirementSource,
 } from "../../interpreter/executionRequirement.ts";
 import type { TaskResources } from "../../interpreter/taskResources.ts";
+import { declaredConfigurationVersion } from "../../interpreter/authoring.ts";
+import {
+  catalogWorkloadTask,
+  workloadTaskPositionOf,
+} from "../../interpreter/workloadTask.ts";
 
 /** One execution row joined to the request and task row that authorized it. */
 export interface ExecutionRow {
@@ -95,6 +100,7 @@ export interface ExecutionRow {
   readonly task: string;
   readonly task_kind: string;
   readonly stage: string | null;
+  readonly evaluator: string | null;
   readonly source_request: string;
   readonly input_bundle: string | null;
   readonly input_bundle_digest: string | null;
@@ -108,6 +114,8 @@ export interface ExecutionRow {
   readonly configuration_canonical: string;
   /** What the ticket holds overridden of that configuration, as text. */
   readonly configuration_overrides: string | null;
+  /** The catalog entries the ticket selected, as text, which a version 1 ticket holds none of. */
+  readonly configuration_selection: string | null;
   readonly requirement_identity: string;
   readonly requirement_value: string;
   readonly requirement_digest: string;
@@ -243,16 +251,43 @@ function executionRowSettlement(row: ExecutionRow) {
  * cannot move, and the overrides are the ones the ticket holds, which change
  * after its release only where the definition they resolve does not, so the
  * answer cannot drift from the configuration the requirement was
- * materialized out of.
+ * materialized out of. A catalog names it in the workload the task runs.
  */
 function executionRowAgentCapability(row: ExecutionRow) {
-  const capability = executionAgentCapability(
-    configurationWithOverrides(
-      JSON.parse(row.configuration_canonical) as unknown,
-      storedOverridesOf(row.configuration_overrides),
-    ),
-  );
+  const configuration = JSON.parse(row.configuration_canonical) as unknown;
+  const capability =
+    declaredConfigurationVersion(configuration) === 2
+      ? executionRowWorkloadCapability(row, configuration)
+      : executionAgentCapability(
+          configurationWithOverrides(
+            configuration,
+            storedOverridesOf(row.configuration_overrides),
+          ),
+        );
   return capability === undefined ? {} : { agentCapability: capability };
+}
+
+/** The agent the workload a catalog's task runs names, under the selection its ticket holds. */
+function executionRowWorkloadCapability(
+  row: ExecutionRow,
+  configuration: unknown,
+) {
+  const position = workloadTaskPositionOf(
+    executionRowTaskKind(row.task_kind),
+    taskRowStage(row.stage).stage,
+    taskRowEvaluator(row.evaluator).evaluator,
+  );
+  const task =
+    position === undefined
+      ? undefined
+      : catalogWorkloadTask(
+          configuration,
+          storedSelectionOf(row.configuration_selection),
+          position,
+        );
+  return task === undefined
+    ? undefined
+    : executionAgentCapability({ worker: task.workload.worker });
 }
 
 /** The size a registration copied, absent where it copied none and every field is the deployment's. */
@@ -279,6 +314,15 @@ export function taskRowStage(stage: string | null): {
     : { stage: asStageIndex(projectRowCounter(stage, "task stage") - 1) };
 }
 
+/** A task row's evaluator key, which counts from one as a program draws it and which a work task has none of. */
+export function taskRowEvaluator(evaluator: string | null): {
+  readonly evaluator?: number;
+} {
+  return evaluator === null
+    ? {}
+    : { evaluator: projectRowCounter(evaluator, "task evaluator") };
+}
+
 /** What one joined execution row says about itself. */
 export function executionRowLogical(row: ExecutionRow): LogicalExecution {
   if (row.input_bundle === null || row.input_bundle_digest === null)
@@ -295,6 +339,7 @@ export function executionRowLogical(row: ExecutionRow): LogicalExecution {
     task: asTaskId(projectRowCounter(row.task, "execution task")),
     taskKind: executionRowTaskKind(row.task_kind),
     ...taskRowStage(row.stage),
+    ...taskRowEvaluator(row.evaluator),
     sourceRequest: row.source_request,
     inputBundle: row.input_bundle,
     inputBundleDigest: row.input_bundle_digest,

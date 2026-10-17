@@ -11,24 +11,22 @@ module registered_runner {
   import execution_capacity.* from "./capacity"
 
   type RunnerClass = Personal | Dedicated | Shared
-  type ExecutionMode = Container | Native
   type OperatingSystem = Linux | MacOS
   type Architecture = Amd64 | Arm64
-  type ExecutionCapability = AgentClaude | AgentCodex
+  /// A capability is a token a project and its runners agree on, and nothing
+  /// here enumerates them: an agent is the token `Agent:<name>`, and a runner's
+  /// owner decides how it meets each one it declares.
+  type ExecutionCapability = str
   type Platform = { operatingSystem: OperatingSystem, architecture: Architecture }
   /// First delivery is explicit routing: enabling registered runners cannot
   /// redirect or reduce Kubernetes placement. Automatic spillover is absent.
   type ExecutionRoute = Kubernetes | RegisteredRunner
-  type NativeDriver = XcodeBuild | XcodeTesting | IosSimulatorTesting
   type ContainerExecutionRequirement = { operatingSystem: OperatingSystem, architecture: Architecture, image: int }
   type CapabilityExecutionRequirement = { operatingSystem: OperatingSystem, architecture: Architecture, capabilities: Set[ExecutionCapability] }
-  /// The bounded native surface is macOS-only by construction. A future
-  /// Android/native contract is another closed variant, not Native{os=Linux}.
-  type NativeExecutionRequirement = { architecture: Architecture, driver: NativeDriver, xcodeVersionMin: int, sdkVersionMin: int }
-  /// Closed invocation variants let Kubernetes/container requirements acquire
-  /// backend-specific fidelity without forcing native drivers into a generic
-  /// lowest-common-denominator interface.
-  type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | CapabilityRequirement(CapabilityExecutionRequirement) | NativeRequirement(NativeExecutionRequirement)
+  /// A requirement names the image a task runs on, which a runner must obtain
+  /// and run, or the capabilities it needs, which a runner meets however its
+  /// owner arranged: in an image of its own or on its host.
+  type ExecutionRequirement = ContainerRequirement(ContainerExecutionRequirement) | CapabilityRequirement(CapabilityExecutionRequirement)
   /// Whether a non-Personal runner may take an owned execution while its
   /// owner has a Personal runner configured for it: never under Strict, and
   /// under Preferred only while none of those runners is live. An execution
@@ -36,9 +34,7 @@ module registered_runner {
   type OwnerFallback = Strict | Preferred
   type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int, ownerOf: int, ownerFallback: OwnerFallback }
   type CapabilityInventory = {
-    containerPlatforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], nativePlatform: Platform,
-    nativeDrivers: Set[NativeDriver], xcodeVersion: int,
-    sdkVersions: Set[int], revision: int
+    platforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], revision: int
   }
   /// All authority here is administrator-owned, never advertised inventory.
   /// A Personal runner's `dedicatedOwner` is the member it serves and its
@@ -56,17 +52,12 @@ module registered_runner {
   pure def executionById(s: RunnerState, id: int): Execution = s.executions.get(id)
   pure def executionSet(s: RunnerState): Set[Execution] = s.executions.keys().map(id => s.executions.get(id))
   pure def inventoryMatches(r: ExecutionRequirement, i: CapabilityInventory): bool = match r {
-    | ContainerRequirement(c) => i.containerPlatforms.contains({
+    | ContainerRequirement(c) => i.platforms.contains({
         operatingSystem: c.operatingSystem, architecture: c.architecture })
     | CapabilityRequirement(c) => and {
-        i.containerPlatforms.contains({
+        i.platforms.contains({
           operatingSystem: c.operatingSystem, architecture: c.architecture }),
         c.capabilities.subseteq(i.executionCapabilities)
-      }
-    | NativeRequirement(n) => and {
-        i.nativePlatform == { operatingSystem: MacOS, architecture: n.architecture },
-        i.nativeDrivers.contains(n.driver), i.xcodeVersion >= n.xcodeVersionMin,
-        i.sdkVersions.exists(v => v >= n.sdkVersionMin)
       }
   }
   pure def policyAllows(r: Runner, e: Execution, p: ExecutionProfile): bool = and {

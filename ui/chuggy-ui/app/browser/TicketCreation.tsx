@@ -36,18 +36,27 @@ import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
+  configurationCatalogChoices,
+  configurationCatalogSelected,
+  configurationCatalogSelection,
+} from "../core/configurationCatalog.ts";
+import type { CatalogSelected } from "../core/configurationCatalog.ts";
+import {
   creationBodyFrom,
   creationBootstrapLine,
   creationBranchFieldHint,
   creationBranchProposed,
+  creationCatalogOf,
   creationConfigurationAsked,
   creationConfigurationChosen,
   creationConfigurationLabel,
   creationFormFrom,
   creationFormProposed,
+  creationOfferDrawn,
   creationOfferOf,
   creationRepositories,
   creationRepositoryChosen,
+  creationSelectionChosen,
   creationStart,
   creationStepSentence,
   creationSubmitEffect,
@@ -148,15 +157,19 @@ function ConfigurationLine(props: {
   );
 }
 
+/** An edit of a part whose choice reseeds what the form draws from the offers and the repositories. */
+type FormDrawn = FormEdit & {
+  readonly offers: readonly CreationOffer[];
+  readonly repositories: readonly ProjectRepositoryResponse[];
+};
+
 /**
  * Which configuration the ticket runs under: a line where the project offers
  * one, and a choice among them by name where it offers several, starting on
  * none the reader did not choose.
  */
-function Configuration(
-  props: FormEdit & { readonly offers: readonly CreationOffer[] },
-): ReactNode {
-  const { form, onChange, offers } = props;
+function Configuration(props: FormDrawn): ReactNode {
+  const { form, onChange, offers, repositories } = props;
   const chosen = creationOfferOf(offers, form.configuration);
   const sole = creationConfigurationAsked(offers, form.configuration)
     ? undefined
@@ -178,7 +191,9 @@ function Configuration(
               text: offer.name,
             }))}
             onChoose={(name) => {
-              onChange(creationConfigurationChosen(form, offers, name));
+              onChange(
+                creationConfigurationChosen(form, offers, name, repositories),
+              );
             }}
           />
         </div>
@@ -187,6 +202,58 @@ function Configuration(
       )}
       {bootstrap === undefined ? null : (
         <Notice tone="info" detail={bootstrap} />
+      )}
+    </>
+  );
+}
+
+/** What each field of a selection is called where it is chosen. */
+const selectionLabels: Readonly<Record<keyof CatalogSelected, string>> = {
+  work: "Work",
+  evaluation: "Evaluation",
+  finalization: "Finalizer",
+};
+
+/**
+ * What the ticket selects from the catalog it is drawn under, each field
+ * starting on the catalog's default and a finalizer asked only of a catalog
+ * that holds one. A configuration that is no catalog has nothing to select.
+ */
+function Selection(props: FormDrawn): ReactNode {
+  const { form, onChange, offers, repositories } = props;
+  const catalog = creationCatalogOf(
+    creationOfferOf(offers, form.configuration),
+  );
+  if (catalog === undefined) return null;
+  const selected = configurationCatalogSelected(catalog, form.selection);
+  const choices = configurationCatalogChoices(catalog);
+  return (
+    <>
+      {(["work", "evaluation", "finalization"] as const).map((field) =>
+        choices[field].length === 0 ? null : (
+          <div className="creation-row" key={field}>
+            <span>{selectionLabels[field]}</span>
+            <Picker
+              label={selectionLabels[field]}
+              value={selected[field] ?? ""}
+              placeholder="None"
+              options={choices[field]}
+              onChoose={(name) => {
+                onChange(
+                  creationSelectionChosen(
+                    form,
+                    offers,
+                    configurationCatalogSelection(catalog, {
+                      ...selected,
+                      [field]: name,
+                    }),
+                    repositories,
+                  ),
+                );
+              }}
+            />
+          </div>
+        ),
       )}
     </>
   );
@@ -389,12 +456,8 @@ function TargetBranch(props: FormEdit): ReactNode {
 
 /** The repository the work happens in, drawn only where the project holds a live
  * binding: holding none names none, and the form neither asks nor sends. */
-function Repository(
-  props: FormEdit & {
-    readonly repositories: readonly ProjectRepositoryResponse[];
-  },
-): ReactNode {
-  const { form, onChange, repositories } = props;
+function Repository(props: FormDrawn): ReactNode {
+  const { form, onChange, offers, repositories } = props;
   if (repositories.length === 0) return null;
   return (
     <div className="creation-row">
@@ -409,7 +472,9 @@ function Repository(
           text: repositoryLabel(binding.repository),
         }))}
         onChoose={(repository) => {
-          onChange(creationRepositoryChosen(form, repositories, repository));
+          onChange(
+            creationRepositoryChosen(form, repositories, repository, offers),
+          );
         }}
       />
     </div>
@@ -567,11 +632,13 @@ export function CreationFields(
     readonly api: CreationImagesApi;
   },
 ): ReactNode {
-  const { faults, form, onChange } = props;
-  const drawn = creationOfferOf(props.offers, form.configuration);
+  const { faults, form, onChange, offers, repositories } = props;
+  const drawn = creationOfferDrawn(offers, form);
+  const drawing: FormDrawn = { form, onChange, offers, repositories };
   return (
     <>
-      <Configuration form={form} onChange={onChange} offers={props.offers} />
+      <Configuration {...drawing} />
+      <Selection {...drawing} />
       <Fault field="configuration" faults={faults} />
       {props.partial === true ? (
         <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
@@ -592,11 +659,7 @@ export function CreationFields(
       )}
       <Branch form={form} onChange={onChange} proposed={props.branchProposed} />
       <Fault field="branch" faults={faults} />
-      <Repository
-        form={form}
-        onChange={onChange}
-        repositories={props.repositories}
-      />
+      <Repository {...drawing} />
       <Fault field="repository" faults={faults} />
       <Landing form={form} onChange={onChange} />
       <Fault field="landing" faults={faults} />
@@ -618,7 +681,9 @@ export function CreationFields(
         />
       )}
       <Fault field="authoring" faults={faults} />
-      <Overrides {...props} offer={drawn} />
+      {creationCatalogOf(drawn) === undefined ? (
+        <Overrides {...props} offer={drawn} />
+      ) : null}
       <Fault field="fence" faults={faults} />
     </>
   );

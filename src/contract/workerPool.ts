@@ -23,16 +23,19 @@ import { workerImageFaults } from "./workerEnvironment.ts";
 export const workerPoolTokenCharsMax = 63;
 export const workerPoolIdentityCharsMax = 256;
 export const workerPoolCapabilitiesMax = 64;
+/** The most a requirement names beside its platform, which its assignment carries within a pool's bound. */
+export const workerPoolRequirementCapabilitiesMax =
+  workerPoolCapabilitiesMax - 1;
 export const workerPoolEvidenceCharsMax = 4_096;
 /** The longest image reference an assignment names. */
 export const workerImageCharsMax = 512;
 
 /**
- * A capability token, free-form and per-project: a claim rather than a proof,
- * which is accepted knowingly because a project's owner knows the pools it
- * registered. The colon is admitted because this installation's own execution
- * capabilities are written `Agent:Claude`, and a token a pool cannot spell is a
- * token no pool can be registered for.
+ * A capability token, free-form and per-project: what a pool declares and
+ * what a requirement names, in one grammar, so a token a task can require is a
+ * token a pool can declare. A declaration is a claim rather than a proof,
+ * accepted knowingly because a project's owner knows the pools it registered
+ * and decides how each meets the tokens it declares.
  */
 export const workerPoolCapabilitySchema = z
   .string()
@@ -59,8 +62,9 @@ export const workerPoolAssignmentSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
   /**
    * The image the execution's requirement pinned, which is the image the
-   * workload runs. It is absent where the requirement names capabilities
-   * rather than an image, and the pool runs its own.
+   * workload runs, and the pool obtains it. It is absent where the
+   * requirement names capabilities rather than an image, and the pool meets
+   * them however its owner arranged: in an image of its own, or on its host.
    */
   image: workerPoolImageSchema.optional(),
   /**

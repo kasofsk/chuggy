@@ -14,27 +14,24 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type {
-  WorkerPoolsResponse,
-  WorkerPoolTokenResponse,
-} from "../../../../src/contract/responses.ts";
+import type { WorkerPoolsResponse } from "../../../../src/contract/responses.ts";
 import {
   apiExecutionPlacement,
   apiMintWorkerPoolToken,
   apiWorkerPools,
 } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
-import { panelReason } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import {
   runnerAddPlace,
   runnerCapabilityLabel,
-  runnerPackageOffered,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
+import type { RunnerMint } from "../core/runners.ts";
 import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
+import { RunnerAskForm } from "./RunnerAsk.tsx";
 import { RunnerSteps } from "./RunnerSteps.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
@@ -89,40 +86,20 @@ function RunnerRoster(props: {
   );
 }
 
-type RunnerMint =
-  | { readonly mint: "Idle" }
-  | { readonly mint: "Minting" }
-  | { readonly mint: "Minted"; readonly minted: WorkerPoolTokenResponse }
-  | { readonly mint: "Failed"; readonly reason: string };
-
-/** The press that mints a registration token, which only an administrator is offered. */
+/** The press that opens the ask a registration token is minted for, which only an administrator is offered. */
 function AddRunner(props: {
-  readonly partition: PartitionIdentity;
   readonly mint: RunnerMint;
   readonly onMint: (mint: RunnerMint) => void;
   /** Drawn as the one thing to do, which it is under an empty roster. */
   readonly leading: boolean;
 }): ReactNode {
-  const ports = useApiPorts();
   return (
     <Button
       size="sm"
       variant={props.leading ? "primary" : "default"}
-      busy={props.mint.mint === "Minting"}
-      disabled={props.mint.mint === "Minting"}
+      disabled={props.mint.mint !== "Idle"}
       onClick={() => {
-        props.onMint({ mint: "Minting" });
-        void (async () => {
-          const minted = await apiMintWorkerPoolToken(ports, props.partition, {
-            capabilities: [...runnerPackageOffered.platforms],
-            lifetimeSecs: runnerTokenLifetimeSecs,
-          });
-          props.onMint(
-            minted.outcome === "Ok"
-              ? { mint: "Minted", minted: minted.value }
-              : { mint: "Failed", reason: panelReason(minted) },
-          );
-        })();
+        props.onMint({ mint: "Asking" });
       }}
     >
       Add runner
@@ -137,20 +114,16 @@ function RunnersSection(props: {
   readonly administers: boolean;
 }): ReactNode {
   const client = useQueryClient();
+  const ports = useApiPorts();
   const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
   const { partition, roster } = props;
   const place = runnerAddPlace({
     administers: props.administers,
     roster,
-    stepsDrawn: mint.mint === "Minted",
+    opened: mint.mint !== "Idle",
   });
   const add = (
-    <AddRunner
-      partition={partition}
-      mint={mint}
-      onMint={setMint}
-      leading={place === "Empty"}
-    />
+    <AddRunner mint={mint} onMint={setMint} leading={place === "Empty"} />
   );
   return (
     <Panel
@@ -159,9 +132,22 @@ function RunnersSection(props: {
       about="Machines that run this project's agents."
       {...(place === "Head" ? { meta: add } : {})}
     >
+      {mint.mint === "Asking" || mint.mint === "Minting" ? (
+        <RunnerAskForm
+          mint={mint}
+          onMint={setMint}
+          minted={(capabilities) =>
+            apiMintWorkerPoolToken(ports, partition, {
+              capabilities: [...capabilities],
+              lifetimeSecs: runnerTokenLifetimeSecs,
+            })
+          }
+        />
+      ) : null}
       {mint.mint === "Minted" ? (
         <RunnerSteps
           minted={mint.minted}
+          ask={mint.ask}
           kind="Pool"
           onDone={() => {
             setMint({ mint: "Idle" });
@@ -174,9 +160,6 @@ function RunnersSection(props: {
             });
           }}
         />
-      ) : null}
-      {mint.mint === "Failed" ? (
-        <Notice tone="danger" inline detail={`Refused · ${mint.reason}`} />
       ) : null}
       <PanelUnready state={roster} />
       {roster.state === "Ready" ? (

@@ -553,7 +553,7 @@ test("where this machine could not take a runner the person is told why instead,
   const running = "once the person says the runner is running";
   expect(here({ lacks: "Runner", own: false }, { room: "Mac" })).toEqual(
     hand(
-      `${runnerIs}. This machine is a Mac and chuggy has no runner for a Mac yet, so it cannot be one. A runner needs a machine with Linux · Node 24 · Docker or Podman: on one, open ${pages}/runners, press Add runner and do what it shows there. Tell me once the runner is running.`,
+      `${runnerIs}. This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: open ${pages}/runners, press Add runner, choose Mac and do what it shows there. Tell me once the runner is running.`,
       running,
     ),
   );

@@ -161,21 +161,20 @@ function suppliedCapabilityAdmission(
 
 /**
  * Whether this site runs what the execution's pinned requirement names. A
- * native requirement is refused by capability rather than by policy: no
- * container image runs one, and the reason a caller reads should say which of
- * the two it ran into.
+ * requirement stated as capabilities is this site's to resolve only where it
+ * places the execution itself: one offered to pools is met by whichever pool
+ * declares them, however its owner arranged, and the images this site offers
+ * have no part in it.
  */
 function suppliedAdmission(
   config: SuppliedExecutionPolicyConfig,
   execution: LogicalExecution,
 ): { readonly denied: ProfileResolved } | { readonly image?: string } {
   const requirement = execution.requirement;
-  if (requirement.mode === "Native")
-    return {
-      denied: { resolved: "Denied", reason: "RequiredCapabilityUnavailable" },
-    };
-  return requirement.mode === "Container"
-    ? suppliedPinnedAdmission(execution.agentCapability)
+  if (requirement.mode === "Container")
+    return suppliedPinnedAdmission(execution.agentCapability);
+  return execution.route === "Pool"
+    ? {}
     : suppliedCapabilityAdmission(config.imagesOffered, requirement);
 }
 

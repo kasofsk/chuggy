@@ -462,6 +462,8 @@ export interface LogicalExecution {
   readonly taskKind: ExecutionTaskKind;
   /** Which stage of the released program an evaluation runs, zero-based. */
   readonly stage?: number;
+  /** Which evaluator of its stage an evaluation is, by the key its program draws, which counts from one. */
+  readonly evaluator?: number;
   readonly sourceRequest: string;
   readonly inputBundle: string;
   readonly inputBundleDigest: string;

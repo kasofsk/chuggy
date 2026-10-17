@@ -59,6 +59,8 @@
  * ticket service's own rows inside it.
  */
 
+import type { ConfigurationSelection } from "../../contract/configurationSelection.ts";
+import { storedSelectionOf } from "./ticketBrief.ts";
 import { randomUUID } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -232,6 +234,20 @@ async function preparationPassedSources(
   return found.rows;
 }
 
+/** The catalog entries the ticket was released selecting, none where it selected none. */
+async function preparationSelection(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<{ readonly selection?: ConfigurationSelection }> {
+  const { tenant, project } = claim.partition;
+  const found = await client.query<{ selection: string | null }>(
+    sql`SELECT selection::text AS selection FROM ticket_definition
+     WHERE tenant = ${tenant} AND project = ${project} AND ticket = ${claim.ticket}`,
+  );
+  const selection = storedSelectionOf(found.rows[0]?.selection ?? null);
+  return selection === undefined ? {} : { selection };
+}
+
 /** Everything the ticket's passed work declared, gathered before any decision runs. */
 export async function finalizerPreparationGathering(
   client: pg.PoolClient,
@@ -241,6 +257,7 @@ export async function finalizerPreparationGathering(
   const artifacts = await preparationPassedArtifacts(client, claim);
   const sources = await preparationPassedSources(client, claim);
   return {
+    ...(await preparationSelection(client, claim)),
     work: work.map((row): HandoffWork => ({
       execution: asExecutionId(row.execution),
       attempt: asAttemptId(row.attempt),

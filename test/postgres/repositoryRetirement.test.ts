@@ -482,6 +482,8 @@ test("the member import refuses a repository its project retired, and after anot
       undefined,
       undefined,
       {
+        referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
         snapshot: () =>
           Promise.resolve({
             read: "Snapshot",

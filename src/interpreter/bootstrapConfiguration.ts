@@ -2,11 +2,13 @@
  * The configuration a repository declaring none starts on, and the file a
  * repository this tree creates is seeded with.
  *
+ * IT IS A CATALOG OF TWO WORKLOADS, the work and the one reviewer its one plan
+ * runs, so a repository starts on the version it is told to declare.
+ *
  * IT COMMANDS NO CHECK, BECAUSE NOTHING IN THE REPOSITORY YET SAYS WHAT ONE IS.
- * An evaluation stage that briefs an agent is a configuration on its own, and
- * one commanding no check lines is what makes a ticket carrying them
- * unreleasable against it — the right refusal while the repository has declared
- * no checks to append them to.
+ * A plan with no commands evaluator is what makes a ticket carrying check lines
+ * unreleasable against it — the right refusal while the repository has
+ * declared no checks to append them to.
  *
  * IT NAMES THE REPOSITORY AND THE BRANCH IT STANDS AT, so the worker briefed by
  * it is told where it is before it is told what to do.
@@ -27,24 +29,28 @@
  * under another name, which an import takes like any other and which briefs
  * every later ticket to write the declarations again.
  *
+ * BOTH ITS WORKLOADS TAKE CHUGGY'S FRAMING AND THE ONE BRIEF, since what the
+ * brief says of the request's limit binds the worker and the reviewer alike.
+ *
  * IT TELLS ITS WORKER THE SHAPE OF WHAT IT ASKS FOR. The worker is handed a
  * rendered briefing and never a configuration document, so without the shape
  * the one thing it must write is a guess the import refuses after it lands.
  *
- * ITS STAGES RUN AS THE AGENT IT TELLS ITS WORKER TO DECLARE, so the
+ * ITS WORKLOADS RUN AS THE AGENT IT TELLS ITS WORKER TO DECLARE, so the
  * configuration a bootstrap ticket hands over runs on the worker it ran on.
  *
  * IT TELLS ITS WORKER WHAT AN IMAGE NEEDS. The image a deployment names is one
  * the repository may replace by any it builds or chooses, and the worker
  * choosing one has nothing else to learn chuggy's runtime's needs from.
  *
- * EVERY BRIEFING LINE IS BOUNDED BY WHAT IS PUT INTO IT. A repository identity
- * and a reference name are bounded where each is branded, the image and the
- * public origin by `bootstrapImageFault` and `bootstrapPublicOriginFault` where
- * a deployment names each, and the rest of every line is this file's own, so no
- * input composes a line past the bound release refuses one at — which the
- * generated document is checked against before it is returned, rather than at
- * the authoring door that would already have taken it.
+ * EVERY LINE IT WRITES IS BOUNDED BY WHAT IS PUT INTO IT. A repository
+ * identity and a reference name are bounded where each is branded, the image
+ * and the public origin by `bootstrapImageFault` and `bootstrapPublicOriginFault`
+ * where a deployment names each, and the rest of every line is this file's own,
+ * so no input composes a line, of its brief or of a prompt, past the bound a
+ * brief's line is held to — which the generated document is checked against
+ * before it is returned, rather than at the authoring door that would already
+ * have taken it.
  */
 
 import {
@@ -56,7 +62,7 @@ import {
   configurationDocumentVersion,
   configurationImageGlibcVersionMin,
   configurationImageSchema,
-  releaseConfigurationVersion,
+  workloadConfigurationVersion,
 } from "../contract/configurationDocument.ts";
 import { nativeHttpRoutes, textCodePointsCount } from "../contract/http.ts";
 import { bootstrapConfigurationName } from "../contract/responses.ts";
@@ -68,7 +74,6 @@ import type { GitRefName, RepositoryId } from "./finalizer.ts";
 import { workerRuntimeDirectory } from "../contract/workerEnvironment.ts";
 import { repositoryConfigurationRoot } from "./repositoryConfigurationIdentity.ts";
 import {
-  briefingLinesMax,
   taskConfigurationLineFault,
   type TicketBrief,
 } from "./taskConfiguration.ts";
@@ -128,7 +133,7 @@ function bootstrapSchemaLine(publicOrigin: string | undefined): string {
     publicOrigin === undefined
       ? `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`
       : `${publicOrigin}${nativeHttpRoutes.configurationSchema}`;
-  return `The JSON Schema at ${published} names every key chuggy reads, among them authority, executionRequirements, resources, work.commands, the model of a Codex mode, outputs and finalizationApprovalRequired, and shows Check stages that brief an agent. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`;
+  return `The JSON Schema at ${published} names every key chuggy reads, among them a catalog's finalizers and outputs, a workload's authority, framing, brief, practices, image, executionRequirement and resources, the model of a Codex mode, and agent workloads of the Check purpose. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`;
 }
 
 /** The longest public origin a bootstrap configuration can name. */
@@ -162,7 +167,7 @@ export function bootstrapPublicOriginFault(
 }
 
 /**
- * The agent every briefed stage runs as, with no arguments: a job runs its
+ * The agent every workload runs as, with no arguments: a job runs its
  * agent with permissions bypassed, where a list of allowed tools restricts
  * nothing.
  */
@@ -172,35 +177,40 @@ const bootstrapWorkerMode = {
   arguments: [],
 } as const;
 
+/** One agent workload's skeleton, its prompt the file the letter `prompt` stands for. */
+function bootstrapAgentSkeleton(purpose: string, prompt: string): string {
+  return `{"runner":"Agent",${purpose}"prompt":{"path":${prompt}},"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]}}`;
+}
+
 /**
- * What a worker is asked to do, then one simple declaration, in the letters
- * `N`, `C`, `I`, `S`, `E` and `L` stand for, the bounds its import refuses
- * past, where every key chuggy reads is published, and what an image needs.
+ * What a worker is asked to do, then one simple catalog, in the letters `N`,
+ * `C`, `I`, `W`, `K`, `R`, `P`, `Q` and `L` stand for, the bounds its import
+ * refuses past, where every key chuggy reads is published, and what an image
+ * needs.
  */
-function bootstrapWorkInstructions(
-  input: BootstrapConfigurationInput,
-): readonly string[] {
+function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
   return [
-    `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}; a limit the request sets on what may change does not stop you writing there. Each file there is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
-    `C is {"version":${String(releaseConfigurationVersion)},"image":I,"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]},"brief":{"motivation":S,"acceptanceCriteria":S,"constraints":S},"practices":[],"work":{"instructions":S},"review":{"instructions":S},"evaluations":[E]}, each S a list of at most ${String(briefingLinesMax)} sentences and motivation or acceptanceCriteria not empty.`,
-    `Each E is a stage every change is held to: {"purpose":"Check","checks":[L]} runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit; {"purpose":"Review","practices":[],"instructions":S} briefs a reviewer. Evaluations run in the order listed and a failed stage ends evaluation, so a cheap Check stage goes before a Review.`,
-    `Each sentence and each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty.`,
+    `Read the repository before changing anything in it. Do what this ticket asks for and, in the same change, write the repository's own configuration in ${repositoryConfigurationRoot}, with the prompt files under .chug/ it names; a limit the request sets on what may change does not stop you writing them.`,
+    `Each file in ${repositoryConfigurationRoot} is one JSON object and nothing more: {"version":${String(configurationDocumentVersion)},"name":N,"configuration":C}, N a name no other file there uses, of letters and digits with ".", "_" or "-" only between them; what follows is one simple file.`,
+    `C is {"version":${String(workloadConfigurationVersion)},"image":I,"workloads":{"work":W,"checks":K,"review":R},"plans":{"standard":[{"name":"checks","evaluators":["checks"]},{"name":"review","evaluators":["review"]}]},"defaults":{"work":"work","evaluation":"standard"}}: the workloads a ticket may run, the plan its change is held to, and the work and plan a ticket selecting none runs.`,
+    `W is ${bootstrapAgentSkeleton("", "P")}, P the path of a file under .chug/ holding the prompt the worker is handed, as written; R is ${bootstrapAgentSkeleton('"purpose":"Review",', "Q")}, Q the path of one telling a reviewer what to hold a change to.`,
+    `K is {"runner":"Commands","commands":[L],"worker":{"setup":[L],"files":[]}}, which runs from 1 to ${String(commandLinesMax)} shell lines L at the repository root and fails the change on a nonzero exit. A plan's stages run in the order listed and a failed stage ends evaluation, so the cheap checks stage goes before the review.`,
+    `Each line L is one line of 1 to ${String(briefingLineCharsMax)} characters, with no tab or line break in it. Each L runs under sh -eu with CHUG_CHANGE_BASE set to the commit the change started from where that is known, and unset otherwise, so a check of only what changed reads it as \${CHUG_CHANGE_BASE-} and runs everything where that is empty.`,
     bootstrapSchemaLine(input.publicOrigin),
     bootstrapImageLine(input.image),
     `I may instead be any image the repository builds or chooses, best one it already builds for its CI with what its checks need added. chuggy mounts its runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD, so the image needs /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++ (a current Debian or Ubuntu, not Alpine or musl), and a $HOME, workspace and temporary directory uid 1000 can write; a ticket on an image lacking one stops with a reason naming it.`,
-    "Command the checks the repository already runs, and put in setup the lines L, if any, that install what they need, such as npm ci or uv sync; setup runs at the repository root before every stage, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
+    "Command the checks the repository already runs, and put in each workload's setup the lines L, if any, that install what it needs, such as npm ci or uv sync; setup runs at the repository root before its workload does, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
   ];
 }
 
 /**
- * What a reviewer is told, held once for the review block the shape requires
- * and for the stage that briefs one. It repeats what the brief says of the
- * request's limit and of what follows a landing, as the two things a review
- * could otherwise fail a sound change for.
+ * What a reviewer is told. It repeats what the brief says of the request's
+ * limit and of what follows a landing, as the two things a review could
+ * otherwise fail a sound change for.
  */
-const bootstrapReviewInstructions: readonly string[] = [
+const bootstrapReviewLines: readonly string[] = [
   "Review the change against what the repository itself asks of one and against the ticket's acceptance criteria.",
-  `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot}. Hold those files to the criteria above, and do not fail the change for writing them.`,
+  `The change is two things together: what this ticket asks for, and the repository's own configuration in ${repositoryConfigurationRoot} with the prompt files under .chug/ it names. Hold those files to the criteria above, and do not fail the change for writing them.`,
   "Do not fail it for changing more than the request allowed either, where the more is those files or a lockfile their setup needs or writes.",
   "Whether later tickets run on what the change declares is settled after it lands, by chuggy and outside the change: it is no criterion, and nothing missing from the change on that account is a finding.",
 ];
@@ -224,9 +234,25 @@ function bootstrapBrief(input: BootstrapConfigurationInput): TicketBrief {
     ],
     constraints: [
       `The repository's default branch is ${input.defaultBranch}.`,
-      `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}: they are written whatever the request says, and writing them does not go against it.`,
+      `Where what this ticket asks for limits what may change, as "change nothing else" does, the limit does not reach the files under ${repositoryConfigurationRoot}, nor the prompt files under .chug/ they name: they are written whatever the request says, and writing them does not go against it.`,
       "The same holds for a lockfile that the setup declared in those files needs or writes and this change commits.",
     ],
+  };
+}
+
+/** One framed agent workload whose prompt is these lines, a paragraph each. */
+function bootstrapWorkload(
+  input: BootstrapConfigurationInput,
+  lines: readonly string[],
+  purpose: { readonly purpose?: "Review" },
+): unknown {
+  return {
+    runner: "Agent",
+    ...purpose,
+    prompt: { text: lines.join("\n\n") },
+    worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
+    framing: "Chuggy",
+    brief: bootstrapBrief(input),
   };
 }
 
@@ -235,23 +261,26 @@ function bootstrapConfigurationValue(
   input: BootstrapConfigurationInput,
 ): unknown {
   return {
-    version: releaseConfigurationVersion,
+    version: workloadConfigurationVersion,
     image: input.image,
-    worker: { mode: bootstrapWorkerMode, setup: [], files: [] },
-    brief: bootstrapBrief(input),
-    practices: [],
-    work: {
-      instructions: bootstrapWorkInstructions(input),
-    },
-    review: { instructions: bootstrapReviewInstructions },
-    evaluations: [
-      {
+    workloads: {
+      work: bootstrapWorkload(input, bootstrapWorkLines(input), {}),
+      review: bootstrapWorkload(input, bootstrapReviewLines, {
         purpose: "Review",
-        practices: [],
-        instructions: bootstrapReviewInstructions,
-      },
-    ],
+      }),
+    },
+    plans: { review: [{ name: "review", evaluators: ["review"] }] },
+    defaults: { work: "work", evaluation: "review" },
   };
+}
+
+/** Why the prompts' lines are not each one a brief could hold, if they are not. */
+function bootstrapPromptFault(
+  input: BootstrapConfigurationInput,
+): ReturnType<typeof taskConfigurationLineFault> {
+  return [...bootstrapWorkLines(input), ...bootstrapReviewLines]
+    .map(taskConfigurationLineFault)
+    .find((fault) => fault !== undefined);
 }
 
 /** One bootstrap configuration, canonically encoded and releasable as it stands. */
@@ -264,6 +293,9 @@ export function bootstrapConfiguration(
   const readiness = releaseConfigurationReadiness(canonical);
   if (readiness.readiness === "Incomplete")
     throw new RangeError(`bootstrap configuration: ${readiness.fault}`);
+  const fault = bootstrapPromptFault(input);
+  if (fault !== undefined)
+    throw new RangeError(`bootstrap configuration: ${fault}`);
   return canonical;
 }
 

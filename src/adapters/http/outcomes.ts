@@ -871,6 +871,7 @@ function draftBody(draft: DraftResource): unknown {
     },
     ...(draft.brief === undefined ? {} : { brief: briefBody(draft.brief) }),
     ...(draft.overrides === undefined ? {} : { overrides: draft.overrides }),
+    ...(draft.selection === undefined ? {} : { selection: draft.selection }),
   };
 }
 
@@ -1965,6 +1966,14 @@ export function draftInitializationResponse(
     );
   if (initialized.initialized === "PolicyUnavailable")
     return retry(503, 1, "DraftInitializationUnavailable");
+  if (initialized.initialized === "SelectionUnknown")
+    return response(
+      409,
+      nativeHttpError(
+        "SelectionUnknown",
+        "The selection names nothing the configuration holds.",
+      ),
+    );
   const value = initialized.value;
   return response(200, {
     configuration: value.configuration,

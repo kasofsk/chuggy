@@ -135,7 +135,7 @@ function workerConfiguration(
       },
       executionRequirements: {
         platformDefault: {
-          mode: "ContainerCapability",
+          mode: "Capability",
           operatingSystem: "Linux",
           architecture: "Amd64",
           capabilities: ["Agent:Claude"],

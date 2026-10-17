@@ -261,13 +261,24 @@ export const allTaskConfigurationFaults: readonly TaskConfigurationFault[] = [
   "TooManyLines",
 ];
 
-/** A definitive fault while reading authored content, including unreadable canonical bytes. */
+/**
+ * A definitive fault while reading authored content, including unreadable
+ * canonical bytes and a catalog that holds no workload for the task read.
+ */
 export type TaskConfigurationReadFault =
-  TaskConfigurationFault | "ConfigurationUnreadable" | "DigestMismatch";
+  | TaskConfigurationFault
+  | "ConfigurationUnreadable"
+  | "DigestMismatch"
+  | "WorkloadUnselected";
 
-/** Every read fault, which is every authored one and the two a read of its own adds. */
+/** Every read fault, which is every authored one and the ones a read of its own adds. */
 export const allTaskConfigurationReadFaults: readonly TaskConfigurationReadFault[] =
-  [...allTaskConfigurationFaults, "ConfigurationUnreadable", "DigestMismatch"];
+  [
+    ...allTaskConfigurationFaults,
+    "ConfigurationUnreadable",
+    "DigestMismatch",
+    "WorkloadUnselected",
+  ];
 
 /** A parsed authored briefing, or the bounded reason it cannot be one. */
 export type AuthoredTaskConfigurationReadiness =

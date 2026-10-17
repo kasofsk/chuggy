@@ -1,0 +1,12 @@
+{
+  "runner": "Commands",
+  "commands": [".chug/tasks/ci.sh"],
+  "worker": { "setup": ["npm ci"], "files": [] },
+  "authority": {
+    "tools": ["shell"],
+    "credentials": ["chuggy-github-worker", "track-record"],
+    "network": true,
+    "filesystem": "WriteWorkspace",
+    "mayCompleteTask": false
+  }
+}

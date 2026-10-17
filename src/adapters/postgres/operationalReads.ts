@@ -6,7 +6,12 @@ import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import {
   asConfigurationRevisionId,
   asCanonicalConfiguration,
+  declaredConfigurationVersion,
 } from "../../interpreter/authoring.ts";
+import {
+  catalogWorkloadTask,
+  workloadTaskPositionOf,
+} from "../../interpreter/workloadTask.ts";
 import {
   allAttemptStates,
   allExecutionOutcomes,
@@ -57,6 +62,7 @@ import {
   workerErrorPath,
 } from "../../contract/http.ts";
 import { projectRowCounter } from "./rows.ts";
+import { storedSelectionOf } from "./ticketBrief.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 import {
   postgresAttemptRuns,
@@ -92,6 +98,8 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly cpu_millis: number | null;
   readonly memory_mib: number | null;
   readonly canonical: string;
+  /** The catalog entries the ticket selected, as text, which a version 1 ticket holds none of. */
+  readonly selection: string | null;
   readonly status: string;
   readonly outcome: string | null;
   readonly retries_spent: string;
@@ -193,7 +201,10 @@ function executionIdentity(row: ExecutionViewRow): TaskIdentity {
 function executionSummaryCarrier(
   row: ExecutionViewRow,
 ): BriefingCarrier | undefined {
-  const parsed = authoredTaskConfigurationReadiness(JSON.parse(row.canonical));
+  const configuration = JSON.parse(row.canonical) as unknown;
+  if (declaredConfigurationVersion(configuration) === 2)
+    return executionSummaryWorkloadCarrier(row, configuration);
+  const parsed = authoredTaskConfigurationReadiness(configuration);
   if (parsed.readiness !== "Ready") return undefined;
   return briefingStageCarrier(
     parsed.configuration,
@@ -202,6 +213,32 @@ function executionSummaryCarrier(
       ? undefined
       : projectRowCounter(row.stage, "execution task stage") - 1,
   );
+}
+
+/** What carries out a catalog's task: the runner of the workload its ticket's selection puts there. */
+function executionSummaryWorkloadCarrier(
+  row: ExecutionViewRow,
+  configuration: unknown,
+): BriefingCarrier | undefined {
+  const position = workloadTaskPositionOf(
+    taskKind(row.task_kind),
+    row.stage === null
+      ? undefined
+      : projectRowCounter(row.stage, "execution task stage") - 1,
+    row.evaluator === null
+      ? undefined
+      : projectRowCounter(row.evaluator, "execution task evaluator"),
+  );
+  const task =
+    position === undefined
+      ? undefined
+      : catalogWorkloadTask(
+          configuration,
+          storedSelectionOf(row.selection),
+          position,
+        );
+  if (task === undefined) return undefined;
+  return task.workload.runner === "Commands" ? "Commands" : "Agent";
 }
 
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {
@@ -348,6 +385,9 @@ async function executionRows(
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
                e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               (SELECT d.selection::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS selection,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -441,6 +481,9 @@ async function oneExecution(
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
                e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               (SELECT d.selection::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS selection,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project

@@ -5,15 +5,12 @@
  */
 
 import { useEffect, useRef } from "react";
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
 import { instantFigure } from "../core/figures.ts";
-import {
-  runnerPackageOffered,
-  runnerRegisterCommand,
-} from "../core/runners.ts";
-import type { RunnerKind } from "../core/runners.ts";
+import { runnerPackages, runnerRegisterCommand } from "../core/runners.ts";
+import type { RunnerAsk, RunnerKind } from "../core/runners.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { currentOrigin } from "./ports.ts";
 import { Button } from "./ui/Button.tsx";
@@ -35,24 +32,34 @@ function RunnerStep(props: {
 }
 
 /**
- * The list takes the focus as it is drawn only where nothing holds it, which
- * is where a press leaves it once the control is disabled for the mint, so a
+ * An element that takes the focus as it is drawn only where nothing holds it,
+ * which is where a press leaves it once the control is disabled or gone, so a
  * reader who has since moved on keeps their place.
  */
+export function useFocusedUnheld<
+  Drawn extends HTMLElement,
+>(): RefObject<Drawn | null> {
+  const drawn = useRef<Drawn>(null);
+  useEffect(() => {
+    const element = drawn.current;
+    if (element === null) return;
+    const held = element.ownerDocument.activeElement;
+    if (held === null || held === element.ownerDocument.body) element.focus();
+  }, []);
+  return drawn;
+}
+
+/** The list takes the focus as it is drawn where nothing holds it. */
 export function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
+  /** What the token was minted for, which the register command declares. */
+  readonly ask: RunnerAsk;
   readonly kind: RunnerKind;
   readonly onDone: () => void;
 }): ReactNode {
   const nowMs = useNowMs();
-  const steps = useRef<HTMLOListElement>(null);
-  useEffect(() => {
-    const list = steps.current;
-    if (list === null) return;
-    const held = list.ownerDocument.activeElement;
-    if (held === null || held === list.ownerDocument.body) list.focus();
-  }, []);
-  const offered = runnerPackageOffered;
+  const steps = useFocusedUnheld<HTMLOListElement>();
+  const offered = runnerPackages[props.ask.package];
   const expires = new Date(props.minted.expiresAtMs).toISOString();
   return (
     <div className="border-edge grid min-w-0 gap-3 border-b pt-3 pb-4">
@@ -81,6 +88,7 @@ export function RunnerSteps(props: {
               currentOrigin(),
               props.minted.token,
               props.kind,
+              props.ask,
             )}
             copyLabel="Copy register command"
           />

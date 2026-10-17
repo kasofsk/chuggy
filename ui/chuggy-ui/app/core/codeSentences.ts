@@ -158,6 +158,12 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the configuration has no check stage; remove the brief's checks or name a configuration with one";
     case "ConfigurationFromAnotherRepository":
       return "the configuration was imported from another repository; name one from the brief's repository";
+    case "SelectionUnknown":
+      return "the draft selects a workload, plan or finalizer the configuration's catalog does not hold";
+    case "SelectionUnsupported":
+      return "only a version 2 configuration takes a selection, and it takes no overrides; revise the draft to ask the configuration for what it holds";
+    case "ProgramExceedsPlan":
+      return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
     case "TicketCapacityReached":
       return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
     case "FinalizationRequestClosed":

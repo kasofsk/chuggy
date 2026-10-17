@@ -282,6 +282,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     configurationRevision: revision,
     configurationVersion,
     overrides: { work: { instructions: ["Do it this way."] } },
+    selection: { work: "build" },
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
     runTotals,
     ...ticketCarried,
@@ -736,7 +737,7 @@ test("an open execution names its carrier and when its run started, and a page w
   assert.equal(older.executions[0]?.runStartedAt, undefined);
 });
 
-test("an execution names the image or the toolchain floor it ran on", () => {
+test("an execution names the image it ran on", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse(partition, {
       result: "Authorized",
@@ -752,22 +753,6 @@ test("an execution names the image or the toolchain floor it ran on", () => {
   assert.equal(page.executions[0]?.requirementSource, "PlatformDefault");
   assert.equal(page.executions[0]?.requirementIdentity, "requirement-one");
   assert.equal(page.executions[0]?.platformDefaultVersion, 1);
-  const native = executionResponseSchema.parse(
-    executionResponse({
-      ...execution,
-      requirement: {
-        mode: "Native",
-        architecture: "Arm64",
-        driver: "XcodeTesting",
-        xcodeVersionMin: 16,
-        sdkVersionMin: 18,
-      },
-    }).body,
-  );
-  assert.equal(
-    native.requirement.mode === "Native" && native.requirement.driver,
-    "XcodeTesting",
-  );
 });
 
 /**
@@ -775,12 +760,12 @@ test("an execution names the image or the toolchain floor it ran on", () => {
  * agent. It reaches the console through the execution page a ticket's cycles
  * are read from.
  */
-test("an execution asking the site for a capability parses as one", () => {
+test("an execution asking its runner for capabilities parses as one", () => {
   const capability: ExecutionRequirement = {
-    mode: "ContainerCapability",
-    operatingSystem: "Linux",
-    architecture: "Amd64",
-    capabilities: ["Agent:Claude"],
+    mode: "Capability",
+    operatingSystem: "MacOS",
+    architecture: "Arm64",
+    capabilities: ["Agent:Claude", "Tool:Xcode"],
   };
   assert.deepEqual(
     executionRequirementSchema.parse(capability as unknown),
@@ -826,7 +811,7 @@ test("a capability requirement asking for nothing is refused", () => {
   assert.throws(() =>
     executionsResponseSchema.parse(
       pageWithRequirement({
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: [],
@@ -835,14 +820,27 @@ test("a capability requirement asking for nothing is refused", () => {
   );
 });
 
-test("a capability outside the vocabulary the wire names is refused", () => {
+test("a capability no pool could declare is refused", () => {
+  assert.throws(() =>
+    executionsResponseSchema.parse(
+      pageWithRequirement({
+        mode: "Capability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent Claude"],
+      }),
+    ),
+  );
+});
+
+test("the wire sends a capability requirement only under its current name", () => {
   assert.throws(() =>
     executionsResponseSchema.parse(
       pageWithRequirement({
         mode: "ContainerCapability",
         operatingSystem: "Linux",
         architecture: "Amd64",
-        capabilities: ["Agent:Unnamed"],
+        capabilities: ["Agent:Claude"],
       }),
     ),
   );
@@ -857,11 +855,10 @@ test("a requirement carrying a key its mode does not name is refused", () => {
   assert.throws(() =>
     executionsResponseSchema.parse(
       pageWithRequirement({
-        mode: "Native",
-        architecture: "Arm64",
-        driver: "XcodeBuild",
-        xcodeVersionMin: 16,
-        sdkVersionMin: 18,
+        mode: "Capability",
+        operatingSystem: "Linux",
+        architecture: "Amd64",
+        capabilities: ["Agent:Claude"],
         image: "worker:v1",
       }),
     ),

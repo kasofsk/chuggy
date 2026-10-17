@@ -30,7 +30,7 @@ import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts"
 import {
   asCanonicalConfiguration,
   releaseConfigurationReadiness,
-  type ReleaseConfiguration,
+  type DeclaredConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import {
   bootstrapConfiguration,
@@ -43,6 +43,7 @@ import {
   bootstrapPublicOriginFault,
 } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type { BriefingSectionId } from "../../src/interpreter/briefingTemplate.ts";
+import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -54,16 +55,21 @@ import {
 import {
   repositoryConfigurationImportReadiness,
   repositoryConfigurationRoot,
+  type RepositoryConfigurationReferenced,
 } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   blessedPracticeCatalog,
   composeTaskInvocation,
-  pinnedTaskConfigurationReadiness,
 } from "../../src/interpreter/taskBriefing.ts";
 import {
   asBriefCheckLine,
   asDraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
+import type {
+  AgentWorkload,
+  WorkloadConfiguration,
+} from "../../src/interpreter/workloadConfiguration.ts";
+import { pinnedWorkloadTask } from "../../src/interpreter/workloadTask.ts";
 
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -92,24 +98,27 @@ test("it names the repository it configures and the branch it stands at", () => 
   assert.ok(encoded.includes(repositoryConfigurationRoot));
 });
 
-test("it commands one review evaluation and no practices", () => {
-  const readiness = releaseConfigurationReadiness(
-    bootstrapConfiguration({ repository, defaultBranch, image }),
-  );
-  assert.equal(readiness.readiness, "Ready");
-  if (readiness.readiness !== "Ready") return;
-  assert.deepEqual(readiness.configuration.practices, []);
-  const evaluations = readiness.configuration.evaluations ?? [];
-  assert.equal(evaluations.length, 1);
-  assert.equal(evaluations[0]?.purpose, "Review");
+test("it is a catalog whose one plan runs one reviewer, with no practices and nothing commanded", () => {
+  const catalog = bootstrapCatalog();
+  assert.deepEqual(catalog.plans, {
+    review: [{ name: "review", evaluators: ["review"] }],
+  });
+  assert.deepEqual(catalog.defaults, { work: "work", evaluation: "review" });
+  assert.deepEqual(Object.keys(catalog.workloads).sort(), ["review", "work"]);
+  assert.equal(bootstrapWorkload("review").purpose, "Review");
+  for (const name of ["work", "review"]) {
+    assert.equal(bootstrapWorkload(name).practices, undefined, name);
+    assert.equal(bootstrapWorkload(name).framing, "Chuggy", name);
+  }
 });
 
-test("its briefed stages run as one Claude agent, with no arguments, no setup and no files", () => {
-  assert.deepEqual(bootstrapReady().worker, {
-    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-    setup: [],
-    files: [],
-  });
+test("its workloads run as one Claude agent, with no arguments, no setup and no files", () => {
+  for (const name of ["work", "review"])
+    assert.deepEqual(bootstrapWorkload(name).worker, {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+      setup: [],
+      files: [],
+    });
 });
 
 test("neither the configuration nor the one it tells its worker to declare lists allowed tools, which restrict nothing where a job's agent bypasses permissions", () => {
@@ -188,30 +197,49 @@ function filled(skeleton: string, values: Record<string, string>): string {
   );
 }
 
-/** What the shape's lists are filled with: how many entries, each how long. */
+/** What the shape's command lines are filled with: how many, each how long. */
 interface Filling {
-  readonly sentences: number;
-  readonly sentenceChars: number;
   readonly lines: number;
   readonly lineChars: number;
 }
 
+/** The catalog a configuration is, failing the case where it is a version 1 document. */
+function catalogOf(
+  configuration: DeclaredConfiguration,
+): WorkloadConfiguration {
+  if (configuration.version !== 2) assert.fail("not a catalog");
+  return configuration;
+}
+
 /** The bootstrap configuration, as a release reads it. */
-function bootstrapReady(): ReleaseConfiguration {
+function bootstrapCatalog(): WorkloadConfiguration {
   const readiness = releaseConfigurationReadiness(
     bootstrapConfiguration({ repository, defaultBranch, image }),
   );
-  assert.equal(readiness.readiness, "Ready");
-  if (readiness.readiness !== "Ready") throw new Error("unreleasable");
-  return readiness.configuration;
+  if (readiness.readiness !== "Ready") assert.fail(readiness.fault);
+  return catalogOf(readiness.configuration);
 }
 
-/** The instruction lines a configuration's worker is told, the bootstrap's where none is named. */
+/** One agent workload of a catalog, the bootstrap's where none is named. */
+function bootstrapWorkload(
+  name: string,
+  catalog: WorkloadConfiguration = bootstrapCatalog(),
+): AgentWorkload {
+  const workload = catalog.workloads[name];
+  if (workload?.runner !== "Agent") assert.fail(`no agent workload ${name}`);
+  return workload;
+}
+
+/** The paragraphs of one prompt, each the line it was written as. */
+function promptLines(prompt: string): readonly string[] {
+  return prompt.split(/\n+/u);
+}
+
+/** The lines a catalog's work is prompted with, the bootstrap's where none is named. */
 function toldLines(
-  configuration: ReleaseConfiguration = bootstrapReady(),
+  catalog: WorkloadConfiguration = bootstrapCatalog(),
 ): readonly string[] {
-  const work = configuration.work;
-  return ("instructions" in work ? work.instructions : undefined) ?? [];
+  return promptLines(bootstrapWorkload("work", catalog).prompt.text);
 }
 
 /** The one number the told lines put where `pattern`'s group is. */
@@ -224,30 +252,43 @@ function toldBound(pattern: RegExp): number {
   return found[0] ?? Number.NaN;
 }
 
+/** Where the prompts of the file a worker writes are, as an import reads each. */
+const declaredPrompts: ReadonlyMap<string, RepositoryConfigurationReferenced> =
+  new Map(
+    [
+      `${repositoryDeclarationRoot}prompts/work.md`,
+      `${repositoryDeclarationRoot}prompts/review.md`,
+    ].map((path) => [
+      path,
+      { path, found: "File", content: `The prompt at ${path}.\n` },
+    ]),
+  );
+
 /** The file a worker writes from the skeletons it is told, filled to `filling`. */
 function declaredFile(filling: Filling): string {
   const told = toldLines();
-  const [envelope, configuration, ...stages] = told.flatMap(skeletons);
-  assert.ok(envelope !== undefined && configuration !== undefined);
-  assert.equal(stages.length, 2);
-  assert.ok(told.some((line) => line.includes(image)));
-  const sentences = JSON.stringify(
-    Array.from({ length: filling.sentences }, () =>
-      "s".repeat(filling.sentenceChars),
-    ),
+  const [envelope, configuration, work, review, checks, ...more] =
+    told.flatMap(skeletons);
+  assert.ok(
+    envelope !== undefined &&
+      configuration !== undefined &&
+      work !== undefined &&
+      review !== undefined &&
+      checks !== undefined,
   );
+  assert.deepEqual(more, []);
+  assert.ok(told.some((line) => line.includes(image)));
   const lines = Array.from({ length: filling.lines }, () =>
     JSON.stringify("true #".concat("l".repeat(filling.lineChars - 6))),
   ).join(",");
-  const stage = (skeleton: string): string =>
-    filled(skeleton, { S: sentences, L: lines });
+  const [workPrompt, reviewPrompt] = [...declaredPrompts.keys()];
   return filled(envelope, {
     N: JSON.stringify("default"),
     C: filled(configuration, {
       I: JSON.stringify(image),
-      S: sentences,
-      L: lines,
-      E: stages.map(stage).join(","),
+      W: filled(work, { P: JSON.stringify(workPrompt), L: lines }),
+      R: filled(review, { Q: JSON.stringify(reviewPrompt), L: lines }),
+      K: filled(checks, { L: lines }),
     }),
   });
 }
@@ -255,7 +296,7 @@ function declaredFile(filling: Filling): string {
 /** Where that file is written, which is directly in the directory an import reads. */
 const declaredPath = `${repositoryConfigurationRoot}default.json`;
 
-/** That file, put to an import as the one declaration its repository makes. */
+/** That file, put to an import as the one declaration its repository makes, beside the prompts it names. */
 function declaredTo(filling: Filling) {
   return repositoryConfigurationImportReadiness({
     repository,
@@ -263,17 +304,16 @@ function declaredTo(filling: Filling) {
     files: [
       { path: declaredPath, kind: "File", content: declaredFile(filling) },
     ],
+    referenced: declaredPrompts,
   });
 }
 
-/** The sentence telling one bound to a sentence and a check line alike, whole, opening its line. */
+/** The sentence telling the bound on a line, whole, opening its line. */
 const toldLineChars =
-  /^Each sentence and each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.(?: |$)/u;
+  /^Each line L is one line of 1 to (\d+) characters, with no tab or line break in it\.(?: |$)/u;
 
 /** Each list and line filled to the most its worker is told it may hold. */
 const atEveryBound: Filling = {
-  sentences: toldBound(/each S a list of at most (\d+) sentences/u),
-  sentenceChars: toldBound(toldLineChars),
   lines: toldBound(/runs from 1 to (\d+) shell lines/u),
   lineChars: toldBound(toldLineChars),
 };
@@ -290,29 +330,31 @@ test("a declaration written to the shape its worker is told, at every bound it i
     }).readiness,
     "Ready",
   );
-  const declared = declaration.configuration.worker;
-  assert.equal(declared?.setup.length, atEveryBound.lines);
-  assert.deepEqual(
-    { ...declared, setup: [] },
-    bootstrapReady().worker,
-    "the worker it declares runs as the agent the bootstrap ran as",
+  const declared = catalogOf(declaration.configuration);
+  for (const name of ["work", "review"]) {
+    const { worker } = bootstrapWorkload(name, declared);
+    assert.equal(worker.setup.length, atEveryBound.lines);
+    assert.deepEqual(
+      { ...worker, setup: [] },
+      bootstrapWorkload(name).worker,
+      "the worker it declares runs as the agent the bootstrap ran as",
+    );
+  }
+  assert.equal(
+    bootstrapWorkload("work", declared).prompt.text,
+    `The prompt at ${repositoryDeclarationRoot}prompts/work.md.\n`,
+    "its prompt is the file it names",
   );
 });
 
 test("one past any bound its worker is told is refused for that bound", () => {
   for (const [past, fault] of [
+    [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ReleaseShapeInvalid"],
+    [{ ...atEveryBound, lines: 0 }, "ReleaseShapeInvalid"],
     [
-      { ...atEveryBound, sentences: atEveryBound.sentences + 1 },
-      "TooManyLines",
+      { ...atEveryBound, lineChars: atEveryBound.lineChars + 1 },
+      "ReleaseShapeInvalid",
     ],
-    [
-      { ...atEveryBound, sentenceChars: atEveryBound.sentenceChars + 1 },
-      "TextTooLong",
-    ],
-    [{ ...atEveryBound, sentenceChars: 0 }, "EmptyLine"],
-    [{ ...atEveryBound, lines: atEveryBound.lines + 1 }, "ChecksInvalid"],
-    [{ ...atEveryBound, lines: 0 }, "ChecksInvalid"],
-    [{ ...atEveryBound, lineChars: atEveryBound.lineChars + 1 }, "TextTooLong"],
   ] as const) {
     const imported = declaredTo(past);
     assert.equal(imported.readiness, "Refused", JSON.stringify(past));
@@ -397,7 +439,10 @@ const limitedRequest = asDraftBrief({
   repository,
 });
 
-/** The lines one role is handed under the bootstrap for that request, in one section of its briefing. */
+/**
+ * The lines one role is handed under the bootstrap for that request, in one
+ * section of its briefing, its prompt a line to each paragraph.
+ */
 function briefed(
   purpose: "Work" | "Review",
   section: BriefingSectionId,
@@ -415,13 +460,20 @@ function briefed(
       ...(publicOrigin === undefined ? {} : { publicOrigin }),
     }),
   );
-  const read = pinnedTaskConfigurationReadiness(document, pin);
-  if (read.readiness !== "Ready") assert.fail(read.fault);
+  const configuration = pinnedWorkloadTask(
+    document,
+    pin,
+    undefined,
+    purpose === "Work"
+      ? { taskKind: "Work" }
+      : { taskKind: "Evaluation", stage: 0, evaluator: 1 },
+  );
+  assert.ok(configuration !== undefined);
   const outcome = composeTaskInvocation(blessedPracticeCatalog, {
     purpose,
     ...(purpose === "Review" ? { stage: 0 } : {}),
     pin,
-    configuration: read.configuration,
+    configuration,
     runtime: { changedFiles: [], handoff: [] },
     readOnlyRepositories: [],
     dependencyDeliveries: [],
@@ -440,7 +492,15 @@ function briefed(
   const rendered = outcome.invocation.briefing.sections.find(
     (held) => held.section === section,
   );
-  return rendered?.lines ?? [];
+  return (rendered?.lines ?? []).flatMap(promptLines);
+}
+
+/** The brief the bootstrap's workloads share, failing the case where they differ. */
+function bootstrapBrief() {
+  const { brief } = bootstrapWorkload("work");
+  assert.ok(brief !== undefined);
+  assert.deepEqual(bootstrapWorkload("review").brief, brief);
+  return brief;
 }
 
 /** How the brief names what a ticket's author wrote, apart from what the brief itself asks. */
@@ -453,15 +513,14 @@ const laterTickets = "later tickets";
 const beyondTheChange = /later tickets|\bruns? on\b/u;
 
 test("every acceptance criterion is settled by reading the change, and what follows a landing is motivation and no criterion", () => {
-  const { motivation, acceptanceCriteria, constraints } =
-    bootstrapReady().brief;
+  const { motivation, acceptanceCriteria, constraints } = bootstrapBrief();
   for (const criterion of acceptanceCriteria)
     assert.match(criterion, /\bchange\b/u);
   for (const line of [...acceptanceCriteria, ...constraints])
     assert.doesNotMatch(line, beyondTheChange);
   assert.ok(motivation.some((line) => line.includes(laterTickets)));
   assert.ok(
-    briefed("Review", "PurposeInstructions").some(
+    briefed("Review", "Prompt").some(
       (line) => line.includes(laterTickets) && line.includes("no criterion"),
     ),
     "the reviewer is told it is none",
@@ -470,9 +529,7 @@ test("every acceptance criterion is settled by reading the change, and what foll
 
 test("what the ticket asks for is a criterion of its own, and the worker is told to make it and the configuration in one change", () => {
   assert.ok(
-    bootstrapReady().brief.acceptanceCriteria.some((line) =>
-      line.includes(request),
-    ),
+    bootstrapBrief().acceptanceCriteria.some((line) => line.includes(request)),
   );
   assert.ok(
     toldLines().some(
@@ -514,12 +571,12 @@ test("each role is told that a limit the request puts on what may change does no
     );
   }
   assert.ok(
-    briefed("Work", "PurposeInstructions").some(
+    briefed("Work", "Prompt").some(
       (line) =>
         /\blimit\b/u.test(line) && line.includes(repositoryConfigurationRoot),
     ),
   );
-  const focus = briefed("Review", "PurposeInstructions");
+  const focus = briefed("Review", "Prompt");
   const unfailed = focus.filter((line) => /\bdo not fail\b/iu.test(line));
   assert.ok(
     unfailed.some((line) => line.includes(repositoryConfigurationRoot)),
@@ -536,6 +593,36 @@ test("each role is told that a limit the request puts on what may change does no
   );
 });
 
+/** How the brief names the files outside the configuration directory that the catalog's workloads read. */
+const promptFiles = "prompt files under .chug/";
+
+test("the prompt files the worker is told to write outside the configuration directory are beyond a request's limit for each role", () => {
+  assert.ok(
+    toldLines().some((line) =>
+      line.includes("P the path of a file under .chug/"),
+    ),
+    "the worker is asked for prompt files outside the configuration directory",
+  );
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) => /\blimit\b/u.test(line) && line.includes(promptFiles),
+    ),
+  );
+  for (const purpose of ["Work", "Review"] as const)
+    assert.ok(
+      briefed(purpose, "AcceptanceAndConstraints").some(
+        (line) => line.includes("does not reach") && line.includes(promptFiles),
+      ),
+      purpose,
+    );
+  assert.ok(
+    briefed("Review", "Prompt").some(
+      (line) => line.includes(promptFiles) && /\bdo not fail\b/iu.test(line),
+    ),
+    "a reviewer does not fail the change for them",
+  );
+});
+
 /** The told line naming where every key chuggy reads is published. */
 function schemaLine(told: readonly string[]): string {
   const found = told.filter((line) => line.startsWith("The JSON Schema at "));
@@ -547,7 +634,7 @@ function schemaLine(told: readonly string[]): string {
 const publicOrigin = "https://chuggy.example:8443";
 
 test("where the deployment names its public origin, the worker is told the schema's whole URL", () => {
-  const line = schemaLine(briefed("Work", "PurposeInstructions", publicOrigin));
+  const line = schemaLine(briefed("Work", "Prompt", publicOrigin));
   assert.ok(
     line.startsWith(
       `The JSON Schema at ${publicOrigin}${nativeHttpRoutes.configurationSchema} names every key chuggy reads`,
@@ -558,7 +645,7 @@ test("where the deployment names its public origin, the worker is told the schem
 });
 
 test("where it names none, the worker is told the schema's route on the chuggy API, and nothing else in the line moves", () => {
-  const unnamed = schemaLine(briefed("Work", "PurposeInstructions"));
+  const unnamed = schemaLine(briefed("Work", "Prompt"));
   const where = `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`;
   assert.ok(
     unnamed.startsWith(`The JSON Schema at ${where} names every key`),
@@ -566,7 +653,7 @@ test("where it names none, the worker is told the schema's route on the chuggy A
   );
   assert.equal(
     unnamed.replace(where, "W"),
-    schemaLine(briefed("Work", "PurposeInstructions", publicOrigin)).replace(
+    schemaLine(briefed("Work", "Prompt", publicOrigin)).replace(
       `${publicOrigin}${nativeHttpRoutes.configurationSchema}`,
       "W",
     ),
@@ -631,19 +718,19 @@ test("an origin is one only as a URL writes it, with nothing after it", () => {
 });
 
 test("the worker is told that evaluations run in order and stop at a failure", () => {
-  const told = briefed("Work", "PurposeInstructions");
+  const told = briefed("Work", "Prompt");
   assert.ok(
     told.some(
       (line) =>
         line.includes("in the order listed") &&
         line.includes("a failed stage ends evaluation") &&
-        line.includes("Check stage goes before a Review"),
+        line.includes("checks stage goes before the review"),
     ),
   );
 });
 
 test("the worker is told any image may stand for the one named, what chuggy's runtime needs of it, and whose a service is", () => {
-  const told = briefed("Work", "PurposeInstructions");
+  const told = briefed("Work", "Prompt");
   assert.ok(
     told.some(
       (line) =>
@@ -674,7 +761,7 @@ test("the worker is told any image may stand for the one named, what chuggy's ru
 const guardedChangeBase = "$" + "{CHUG_CHANGE_BASE-}";
 
 test("the worker is told its shell lines carry the commit the change started from, and how to read it unset under sh -eu", () => {
-  const told = briefed("Work", "PurposeInstructions");
+  const told = briefed("Work", "Prompt");
   assert.ok(
     told.some(
       (line) =>
@@ -689,20 +776,38 @@ test("the worker is told its shell lines carry the commit the change started fro
   assert.ok(published.includes(`reads it as ${guardedChangeBase}`));
 });
 
-/** The fields the published schema names in a configuration. */
+/** A published schema's object, as far as these fields are read from it. */
+interface PublishedObject {
+  readonly properties?: Readonly<
+    Record<string, PublishedObject & { readonly const?: unknown }>
+  >;
+  readonly additionalProperties?: PublishedObject;
+  readonly anyOf?: readonly PublishedObject[];
+  readonly oneOf?: readonly PublishedObject[];
+}
+
+/**
+ * The fields the published schema names in a catalog, which is the version the
+ * bootstrap is and tells its worker to write, and in each workload it holds.
+ */
 function publishedConfigurationFields(): readonly string[] {
-  const published = configurationDocumentJsonSchema() as {
-    readonly properties?: {
-      readonly configuration?: { readonly properties?: object };
-    };
-  };
-  return Object.keys(published.properties?.configuration?.properties ?? {});
+  const published = configurationDocumentJsonSchema() as PublishedObject;
+  const variant = published.properties?.["configuration"]?.oneOf?.find(
+    (each) => each.properties?.["version"]?.const === 2,
+  );
+  const workloads = (
+    variant?.properties?.["workloads"]?.additionalProperties?.anyOf ?? []
+  ).flatMap((each) => each.oneOf ?? []);
+  assert.equal(workloads.length, 2);
+  return [variant, ...workloads].flatMap((each) =>
+    Object.keys(each?.properties ?? {}),
+  );
 }
 
 test("the worker is told of every field the published schema names in a configuration, and what becomes of one it does not", () => {
   const told = toldLines().join("\n");
   const fields = publishedConfigurationFields();
-  assert.ok(fields.includes("outputs"));
+  assert.ok(fields.includes("outputs") && fields.includes("framing"));
   for (const field of fields) assert.ok(told.includes(field), field);
   assert.ok(
     toldLines().some(
@@ -712,7 +817,7 @@ test("the worker is told of every field the published schema names in a configur
   );
 });
 
-/** The names an import reads out of one tree of declaration files. */
+/** The names an import reads out of one tree of declaration files, beside the prompts they name. */
 function declaredNames(
   files: Parameters<typeof repositoryConfigurationImportReadiness>[0]["files"],
 ): readonly string[] {
@@ -720,6 +825,7 @@ function declaredNames(
     repository,
     commit,
     files,
+    referenced: declaredPrompts,
   });
   if (imported.readiness !== "Ready")
     assert.fail(JSON.stringify(imported.faults));
@@ -728,7 +834,7 @@ function declaredNames(
 
 test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare, so the change is told to delete it", () => {
   assert.ok(
-    bootstrapReady().brief.acceptanceCriteria.some(
+    bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes(`"${bootstrapConfigurationName}"`) &&
         line.includes(bootstrapConfigurationPath) &&
@@ -757,7 +863,7 @@ const writesConfiguration = /\bwrite the repository's\b.*\bconfiguration\b/u;
 
 test("the seeded document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
   assert.ok(
-    bootstrapReady().brief.acceptanceCriteria.some(
+    bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes("under another name") && writesConfiguration.test(line),
     ),
@@ -786,7 +892,7 @@ test("the seeded document left under another name is one an import takes, so a c
   );
   assert.ok(
     imported.declarations.every((declaration) =>
-      toldLines(declaration.configuration).some((line) =>
+      toldLines(catalogOf(declaration.configuration)).some((line) =>
         writesConfiguration.test(line),
       ),
     ),
@@ -814,7 +920,7 @@ test("the criterion on a declaration's file names where an import looks for one 
   const keys = Object.keys(envelope).map((key) => `"${key}"`);
   const listed = `exactly the keys ${keys.slice(0, -1).join(", ")} and ${keys.at(-1) ?? ""}`;
   assert.ok(
-    bootstrapReady().brief.acceptanceCriteria.some(
+    bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes(repositoryConfigurationRoot) &&
         line.includes(".json") &&
@@ -834,7 +940,7 @@ test("the criterion on a declaration's file names where an import looks for one 
 
 test("the criterion on a declaration's file says the version an import takes, and an import refuses a file of another", () => {
   assert.ok(
-    bootstrapReady().brief.acceptanceCriteria.some(
+    bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes(".json") && line.includes('"version" is the number 1'),
     ),

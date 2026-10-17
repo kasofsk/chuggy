@@ -444,15 +444,13 @@ function workerPoolClaimedPlacement(
         capabilities: [workerPoolPlatformToken(requirement)],
         image: workerPoolImageHosted(requirement.image, imageHosts),
       };
-    case "ContainerCapability":
+    case "Capability":
       return {
         capabilities: [
           workerPoolPlatformToken(requirement),
           ...requirement.capabilities,
         ],
       };
-    case "Native":
-      throw new Error("a worker pool claimed a native requirement");
   }
 }
 

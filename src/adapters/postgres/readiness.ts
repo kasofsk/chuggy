@@ -78,7 +78,11 @@ import {
   parseDraftAuthoring,
 } from "../../interpreter/authoring.ts";
 import { ticketDefinitionMaterial } from "../../interpreter/ticketDefinition.ts";
-import { draftBriefOf, storedOverridesOf } from "./ticketBrief.ts";
+import {
+  draftBriefOf,
+  storedOverridesOf,
+  storedSelectionOf,
+} from "./ticketBrief.ts";
 import {
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
@@ -166,6 +170,7 @@ interface ReleaseDraftRow {
   readonly images: string[] | null;
   readonly checks: string[] | null;
   readonly overrides: string | null;
+  readonly selection: string | null;
 }
 
 /** A release of a draft or an update of the ticket it released: both name the draft revision they pin. */
@@ -181,7 +186,8 @@ async function releaseDraftRow(
   command: DraftReleaseCommand,
 ): Promise<ReleaseDraftRow> {
   const revision = await pool.query<ReleaseDraftRow>(
-    sql`SELECT r.authoring,r.overrides::text AS overrides,c.digest,c.canonical,
+    sql`SELECT r.authoring,r.overrides::text AS overrides,r.selection::text AS selection,
+           c.digest,c.canonical,
            p.repository AS provenance_repository,
            b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
            (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
@@ -232,6 +238,7 @@ async function releaseDraftSource(
   const found = await releaseDraftRow(pool, partition, command);
   const brief = draftBriefOf(found);
   const overrides = storedOverridesOf(found.overrides);
+  const selection = storedSelectionOf(found.selection);
   const authoring = parseDraftAuthoring(found.authoring);
   const readiness = draftReleaseReadiness(
     asCanonicalConfiguration(found.canonical),
@@ -240,12 +247,14 @@ async function releaseDraftSource(
       ? undefined
       : asRepositoryId(found.provenance_repository),
     overrides,
+    selection,
+    authoring.prog,
   );
   const material =
     readiness.readiness === "Ready"
       ? ticketDefinitionMaterial({
           authoring,
-          configuration: readiness.configuration,
+          ticket: readiness.ticket,
           ...(brief === undefined ? {} : { brief }),
         })
       : undefined;
@@ -282,6 +291,8 @@ async function releaseDraftSource(
       configurationCanonical: found.canonical,
       ...(brief === undefined ? {} : { brief }),
       ...(overrides === undefined ? {} : { overrides }),
+      ...(selection === undefined ? {} : { selection }),
+      program: authoring.prog,
       ...(material === undefined ? {} : { definition: material }),
     },
   };

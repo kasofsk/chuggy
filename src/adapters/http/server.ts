@@ -105,6 +105,7 @@ import {
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
   parseRepositoryConfigurationImport,
+  parseConfigurationSelection,
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
@@ -1858,21 +1859,31 @@ function registerConfigurations(
   });
 }
 
-function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
-  const root = "/api/v1/tenants/:tenant/projects/:project/drafts";
+function registerDraftInitialization(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
   app.get(
     "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     async (request, reply) => {
+      const selection = parseConfigurationSelection(
+        fieldsOnly(request.query, ["work", "evaluation", "finalization"]),
+      );
       const result = await web.initializeDraft(
         principalOf(request),
         partitionOf(request),
         asConfigurationRevisionId(
           textField(record(request.params), "revision"),
         ),
+        selection,
       );
       nativeHttpSend(reply, draftInitializationResponse(result));
     },
   );
+}
+
+function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
+  const root = "/api/v1/tenants/:tenant/projects/:project/drafts";
   app.get(root, async (request, reply) => {
     const query = fieldsOnly(request.query, ["cursor", "limit"]);
     const cursor = query["cursor"];
@@ -2451,6 +2462,7 @@ export function createNativeHttpApp(
   registerNotifications(app, web);
   if (hub !== undefined) registerProjectEvents(app, web, hub);
   registerConfigurations(app, web);
+  registerDraftInitialization(app, web);
   registerDrafts(app, web);
   registerThreadReads(app, web);
   if (threadLive !== undefined) registerThreadLive(app, web, threadLive);

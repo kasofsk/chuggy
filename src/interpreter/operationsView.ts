@@ -171,8 +171,8 @@ export interface ExecutionSummary {
 
 /**
  * The same summary carrying the label the image its requirement pins is
- * catalogued under. A requirement that names no image of its own — a
- * capability's, or a native one's — keeps none.
+ * catalogued under. A requirement stated as capabilities names no image of
+ * its own, and keeps none.
  */
 export function executionSummaryLabelled(
   summary: ExecutionSummary,

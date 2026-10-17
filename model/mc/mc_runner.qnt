@@ -5,24 +5,23 @@ module mc_registered_runner {
   import execution_capacity.* from "../capacity"
 
   pure val inventory: CapabilityInventory = {
-    containerPlatforms: Set(
+    platforms: Set(
       { operatingSystem: MacOS, architecture: Arm64 },
       { operatingSystem: Linux, architecture: Arm64 }),
-    executionCapabilities: Set(AgentClaude, AgentCodex),
-    nativePlatform: { operatingSystem: MacOS, architecture: Arm64 },
-    nativeDrivers: Set(XcodeBuild, XcodeTesting, IosSimulatorTesting),
-    xcodeVersion: 16, sdkVersions: Set(18), revision: 1
+    executionCapabilities: Set(
+      "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
+    revision: 1
   }
   pure val changedInventory: CapabilityInventory = {
-    ...inventory, nativeDrivers: Set(XcodeTesting), revision: 2
+    ...inventory, executionCapabilities: Set("Simulator:iOS"), revision: 2
   }
   pure val profile: ExecutionProfile = {
     route: RegisteredRunner, personalRunnerAllowed: true, minimumTrust: 1,
     secretsRequired: false, sourceRequired: false, dedicatedOwnerRequired: 0,
     ownerOf: 7, ownerFallback: Preferred
   }
-  pure val requirement: ExecutionRequirement = NativeRequirement({
-    architecture: Arm64, driver: XcodeBuild, xcodeVersionMin: 16, sdkVersionMin: 18 })
+  pure val requirement: ExecutionRequirement = CapabilityRequirement({
+    operatingSystem: MacOS, architecture: Arm64, capabilities: Set("Tool:Xcode") })
   pure def execution(id: int): Execution = { id: id, project: 1, ticket: 1, task: id,
     account: 1, sourceSeq: 1, sourceEffect: id - 1, status: Launching }
   pure val profiles: int -> ExecutionProfile = Map(

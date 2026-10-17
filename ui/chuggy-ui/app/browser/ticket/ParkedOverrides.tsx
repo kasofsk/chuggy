@@ -49,6 +49,7 @@ import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
+import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
 
 /** What the save has come to, said on the card. */
 function ParkedOverridesNote(props: {
@@ -224,6 +225,7 @@ function ParkedOverridesEdit(props: {
   );
 }
 
+/** A parked ticket's overrides, drawn for none whose configuration is a catalog, which takes none. */
 export function ParkedOverrides(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: TicketResponse;
@@ -240,6 +242,11 @@ export function ParkedOverrides(props: {
     (ports) => apiConfiguration(ports, props.partition, revision),
   );
   if (revision === "") return null;
+  if (
+    state.state === "Ready" &&
+    configurationCatalogOf(state.value.canonical) !== undefined
+  )
+    return null;
   return (
     <Panel title="Overrides" collapsible={{ open: false }}>
       <PanelUnready state={state} />

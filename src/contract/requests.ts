@@ -30,6 +30,7 @@ import {
 import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
+import { configurationSelectionSchema } from "./configurationSelection.ts";
 import {
   briefFinalizationModes,
   forgeCredentialPermissions,
@@ -266,6 +267,7 @@ export const draftCreationSchema = z.strictObject({
   authoring: authoringSchema,
   brief: briefSchema,
   overrides: configurationOverridesSchema.optional(),
+  selection: configurationSelectionSchema.optional(),
 });
 
 export const draftRevisionSchema = z.strictObject({
@@ -274,6 +276,7 @@ export const draftRevisionSchema = z.strictObject({
   authoring: authoringSchema,
   brief: briefSchema,
   overrides: configurationOverridesSchema.optional(),
+  selection: configurationSelectionSchema.optional(),
 });
 
 export const submissionSchema = z.strictObject({

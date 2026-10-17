@@ -53,12 +53,21 @@ import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
 import type { BriefFinalizationMode } from "../../../../../src/contract/rosters.ts";
 import { landingEffect } from "../../core/codeLabels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
+import type { ConfigurationSelection } from "../../../../../src/contract/configurationSelection.ts";
+import {
+  configurationCatalogSelected,
+  configurationCatalogSelection,
+  type ConfigurationCatalog,
+} from "../../core/configurationCatalog.ts";
 import {
   creationBranchHint,
+  creationCatalogOf,
   creationConfigurationAsked,
   creationConfigurationChosen,
   creationFaultSentence,
+  creationOfferDrawn,
   creationOfferOf,
+  creationSelectionChosen,
   creationStageOf,
   creationTargetBranchHint,
 } from "../../core/ticketCreation.ts";
@@ -116,13 +125,21 @@ export interface TicketYamlReading {
 
 const ticketYamlLockedNote = " fixed once the ticket was released";
 
-/** What the named configuration draws the form under, a name nothing offers
- * drawing it under nothing. */
+/** What the named configuration draws the form under, as it reads under the
+ * form's selection, a name nothing offers drawing it under nothing. */
 function ticketYamlDrawn(
   context: TicketYamlContext,
-  configuration: string,
+  form: Pick<TicketCreationForm, "configuration" | "selection">,
 ): DraftInitializationResponse | undefined {
-  return creationOfferOf(context.offers, configuration)?.initialization;
+  return creationOfferDrawn(context.offers, form)?.initialization;
+}
+
+/** The catalog the named configuration is, none where it is no catalog. */
+function ticketYamlCatalog(
+  context: TicketYamlContext,
+  configuration: string,
+): ConfigurationCatalog | undefined {
+  return creationCatalogOf(creationOfferOf(context.offers, configuration));
 }
 
 /** Whether the form asks which configuration, decided by the form the screen
@@ -141,16 +158,21 @@ const ticketYamlConfigured: ReadonlySet<string> = new Set([
   "dependencies",
   "program",
   "overrides",
+  "selection",
 ]);
 
 /** The keys this project's form draws under one configuration, in the order
  * it draws them. */
 function ticketYamlKeys(
   context: TicketYamlContext,
-  configuration: string,
+  form: Pick<TicketCreationForm, "configuration" | "selection">,
   landing: BriefFinalizationMode,
 ): readonly string[] {
-  const drawn = ticketYamlDrawn(context, configuration);
+  const drawn = ticketYamlDrawn(context, form);
+  const chosen =
+    ticketYamlCatalog(context, form.configuration) === undefined
+      ? "overrides"
+      : "selection";
   return [
     ...(ticketYamlConfigurationOffered(context) ? ["configuration"] : []),
     "title",
@@ -162,7 +184,7 @@ function ticketYamlKeys(
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
     "landing",
     ...(landing === "None" ? [] : ["target"]),
-    ...(drawn === undefined ? [] : ["dependencies", "program", "overrides"]),
+    ...(drawn === undefined ? [] : ["dependencies", "program", chosen]),
   ];
 }
 
@@ -187,9 +209,13 @@ export function ticketYamlOf(
       evaluators: stage.evaluators.length,
     })),
     overrides: overridesNestedOf(form.overrides),
+    selection:
+      Object.keys(form.selection).length === 0
+        ? undefined
+        : { ...form.selection },
   };
   const shown = Object.fromEntries(
-    ticketYamlKeys(context, form.configuration, form.landingMode)
+    ticketYamlKeys(context, form, form.landingMode)
       .filter((key) => values[key] !== undefined)
       .map((key) => [key, values[key]]),
   );
@@ -295,6 +321,66 @@ function ticketYamlConfigurationOf(
         `name one of ${context.offers.map((offer) => offer.name).join(", ")}`,
       )
     : text;
+}
+
+const ticketYamlSelectionFields = [
+  "work",
+  "evaluation",
+  "finalization",
+] as const;
+
+/** The names one field of a selection may take: the catalog's workloads, plans or finalizers. */
+function ticketYamlSelectionNames(
+  catalog: ConfigurationCatalog,
+  field: (typeof ticketYamlSelectionFields)[number],
+): readonly string[] {
+  switch (field) {
+    case "work":
+      return catalog.workloads.map((workload) => workload.name);
+    case "evaluation":
+      return [...catalog.plans.keys()];
+    case "finalization":
+      return catalog.finalizers.map((finalizer) => finalizer.name);
+  }
+}
+
+/** The selection a text writes, each field a name the catalog holds and a field naming its default left out. */
+function ticketYamlSelectionOf(
+  node: unknown,
+  catalog: ConfigurationCatalog,
+): TicketYamlTook<ConfigurationSelection> {
+  if (node === undefined || (isScalar(node) && node.value === null))
+    return ticketYamlTook({});
+  if (!isMap(node))
+    return ticketYamlRefused(
+      `write the selection as a map of ${ticketYamlSelectionFields.join(", ")}`,
+    );
+  const named: Partial<Record<string, string>> = {};
+  for (const pair of node.items as readonly TicketYamlPair[]) {
+    const field = ticketYamlSelectionFields.find(
+      (one) => one === ticketYamlKeyNameOf(pair),
+    );
+    const at = ticketYamlSpanOf(pair.key);
+    if (field === undefined)
+      return ticketYamlRefused(
+        `a selection names ${ticketYamlSelectionFields.join(", ")}`,
+        at,
+      );
+    const names = ticketYamlSelectionNames(catalog, field);
+    const text = ticketYamlTextOf(pair.value);
+    if (text.took === "Problem" || !names.includes(text.value))
+      return ticketYamlRefused(
+        `name one of ${names.join(", ")}`,
+        ticketYamlSpanOf(pair.value),
+      );
+    named[field] = text.value;
+  }
+  return ticketYamlTook(
+    configurationCatalogSelection(
+      catalog,
+      configurationCatalogSelected(catalog, named),
+    ),
+  );
 }
 
 function ticketYamlDependenciesOf(node: unknown): TicketYamlTook<number[]> {
@@ -459,8 +545,9 @@ function ticketYamlConfiguredApplied(
   form: TicketCreationForm,
   context: TicketYamlContext,
 ): TicketYamlApplied {
-  const drawn = ticketYamlDrawn(context, form.configuration);
+  const drawn = ticketYamlDrawn(context, form);
   if (drawn === undefined) return ticketYamlNoKey(key);
+  if (key === "selection") return ticketYamlTook(form);
   if (key === "checks")
     return ticketYamlInto(ticketYamlTextsOf(value), (checks) => ({
       ...form,
@@ -535,6 +622,7 @@ function ticketYamlKeyApplied(
     case "dependencies":
     case "program":
     case "overrides":
+    case "selection":
       return ticketYamlConfiguredApplied(key, value, form, context);
     default:
       return ticketYamlNoKey(key);
@@ -554,6 +642,7 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     targetBranchName: "",
     repository: "",
     overrides: {},
+    selection: {},
   };
 }
 
@@ -603,26 +692,73 @@ function ticketYamlParsed(text: string): TicketYamlParsed {
  * is refused for. */
 type TicketYamlNaming = "Named" | "Unnamed" | "Refused";
 
+/** The value a text writes under one key, none where it writes no such key. */
+function ticketYamlWritten(
+  pairs: readonly TicketYamlPair[],
+  key: string,
+): unknown {
+  return pairs.find((pair) => ticketYamlKeyNameOf(pair) === key)?.value;
+}
+
 /**
  * The form a text starts from before its other keys are read: every key left
  * out, under the configuration the text names, and whether it names one.
  */
-function ticketYamlStart(
+function ticketYamlNamed(
   pairs: readonly TicketYamlPair[],
   context: TicketYamlContext,
 ): { readonly form: TicketCreationForm; readonly naming: TicketYamlNaming } {
   const empty = ticketYamlEmpty(context.base);
   if (!ticketYamlConfigurationOffered(context))
     return { form: empty, naming: "Named" };
-  const written = pairs.find(
-    (pair) => ticketYamlKeyNameOf(pair) === "configuration",
+  const read = ticketYamlConfigurationOf(
+    ticketYamlWritten(pairs, "configuration"),
+    context,
   );
-  const read = ticketYamlConfigurationOf(written?.value, context);
   if (read.took === "Problem") return { form: empty, naming: "Refused" };
   return {
-    form: creationConfigurationChosen(empty, context.offers, read.value),
+    form: creationConfigurationChosen(
+      empty,
+      context.offers,
+      read.value,
+      context.repositories,
+    ),
     naming: read.value === "" ? "Unnamed" : "Named",
   };
+}
+
+/**
+ * The form a text starts from, drawn under the selection it writes where its
+ * configuration is a catalog, since that decides the program and checks the
+ * other keys are read against. A selection naming what the catalog does not
+ * hold is reported at its own key.
+ */
+function ticketYamlStart(
+  pairs: readonly TicketYamlPair[],
+  context: TicketYamlContext,
+): {
+  readonly form: TicketCreationForm;
+  readonly naming: TicketYamlNaming;
+  readonly selection?: TicketYamlTook<ConfigurationSelection>;
+} {
+  const named = ticketYamlNamed(pairs, context);
+  const catalog = ticketYamlCatalog(context, named.form.configuration);
+  if (catalog === undefined || named.naming !== "Named") return named;
+  const selection = ticketYamlSelectionOf(
+    ticketYamlWritten(pairs, "selection"),
+    catalog,
+  );
+  return selection.took === "Problem"
+    ? { ...named, selection }
+    : {
+        ...named,
+        form: creationSelectionChosen(
+          named.form,
+          context.offers,
+          selection.value,
+          context.repositories,
+        ),
+      };
 }
 
 /** What a text naming no configuration is told where it writes a key one
@@ -642,9 +778,7 @@ export function ticketYamlRead(
     return { form: undefined, keys, problems: parsed.problems };
   const pairs = parsed.pairs;
   const start = ticketYamlStart(pairs, context);
-  const offered = new Set(
-    ticketYamlKeys(context, start.form.configuration, "Push"),
-  );
+  const offered = new Set(ticketYamlKeys(context, start.form, "Push"));
   const problems: TicketYamlProblem[] = [];
   let form = start.form;
   let undrawn = false;
@@ -660,9 +794,11 @@ export function ticketYamlRead(
       undrawn ||= start.naming === "Unnamed";
       continue;
     }
-    const applied = offered.has(key)
-      ? ticketYamlKeyApplied(key, pair.value, form, context)
-      : ticketYamlNoKey(key);
+    const applied = !offered.has(key)
+      ? ticketYamlNoKey(key)
+      : key === "selection" && start.selection !== undefined
+        ? ticketYamlInto(start.selection, () => form)
+        : ticketYamlKeyApplied(key, pair.value, form, context);
     if (applied.took === "Problem")
       problems.push({
         ...(applied.at ??
@@ -756,6 +892,10 @@ function ticketYamlConfiguredDescribed(
       hint: `what this ticket replaces of its configuration, each field whole, under the configuration's own names: ${overrideFields.join(", ")}`,
       values: [],
     },
+    selection: {
+      hint: `what this ticket runs from its catalog, each of ${ticketYamlSelectionFields.join(", ")} a name the catalog holds and its default where left out`,
+      values: [],
+    },
   };
 }
 
@@ -821,12 +961,13 @@ export function ticketYamlVocabulary(
   form: TicketCreationForm,
   context: TicketYamlContext,
 ): readonly TicketYamlKey[] {
-  const drawn = ticketYamlDrawn(context, form.configuration);
+  const drawn = ticketYamlDrawn(context, form);
   const described = ticketYamlDescribed(form, context, drawn);
   return [
-    ...ticketYamlKeys(context, form.configuration, form.landingMode).map(
-      (key) => ({ key, ...(described[key] ?? { hint: "", values: [] }) }),
-    ),
+    ...ticketYamlKeys(context, form, form.landingMode).map((key) => ({
+      key,
+      ...(described[key] ?? { hint: "", values: [] }),
+    })),
     ...ticketYamlNestedKeys(drawn),
   ];
 }

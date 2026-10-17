@@ -63,7 +63,11 @@ import {
 } from "./configurationVersion.ts";
 import { projectRowCounter } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
-import { releasedBriefOf, storedOverridesOf } from "./ticketBrief.ts";
+import {
+  releasedBriefOf,
+  storedOverridesOf,
+  storedSelectionOf,
+} from "./ticketBrief.ts";
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -128,11 +132,13 @@ interface TicketProjectionRow {
  * configuration revision the projection pins, with the label its version join
  * adds, and the authoring its draft held at the version that release or update
  * named, which a revision since cannot move. The overrides are the ones the
- * ticket holds now, which an escalation may have changed since.
+ * ticket holds now, which an escalation may have changed since; the selection
+ * is the one its last release or update stored.
  */
 interface ReleasedBriefRow extends ConfigurationVersionRow {
   readonly brief: string | null;
   readonly overrides: string | null;
+  readonly selection: string | null;
   readonly configuration_revision: string | null;
   readonly released_authoring: string | null;
 }
@@ -677,6 +683,7 @@ async function readTicketRow(
                m.authority_subject AS creator,
                b.brief::text AS brief,
                b.overrides::text AS overrides,
+               b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
@@ -743,6 +750,7 @@ async function readTicket(
   if (row === undefined) return undefined;
   const brief = releasedBriefOf(row.brief);
   const overrides = storedOverridesOf(row.overrides);
+  const selection = storedSelectionOf(row.selection);
   const configurationVersion = configurationVersionOf(row);
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
@@ -757,6 +765,7 @@ async function readTicket(
         }),
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
     ...(overrides === undefined ? {} : { overrides }),
+    ...(selection === undefined ? {} : { selection }),
     ...(row.released_authoring === null
       ? {}
       : { program: parseDraftAuthoring(row.released_authoring).prog }),

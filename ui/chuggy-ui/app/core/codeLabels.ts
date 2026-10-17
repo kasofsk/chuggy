@@ -708,6 +708,12 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "No check stage for brief checks";
     case "ConfigurationFromAnotherRepository":
       return "Configuration from another repository";
+    case "SelectionUnknown":
+      return "Selection names no catalog entry";
+    case "SelectionUnsupported":
+      return "Configuration cannot take this selection";
+    case "ProgramExceedsPlan":
+      return "Program exceeds the evaluation plan";
     case "TicketCapacityReached":
       return "Ticket capacity reached";
     case "FinalizationRequestClosed":

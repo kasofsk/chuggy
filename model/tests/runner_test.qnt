@@ -7,9 +7,8 @@ module registered_runner_test {
   pure val containerRequirement: ExecutionRequirement = ContainerRequirement({
     operatingSystem: MacOS, architecture: Arm64, image: 1
   })
-  pure val nativeRequirement: ExecutionRequirement = NativeRequirement({
-    architecture: Arm64, driver: XcodeBuild,
-    xcodeVersionMin: 16, sdkVersionMin: 18
+  pure val hostRequirement: ExecutionRequirement = CapabilityRequirement({
+    operatingSystem: MacOS, architecture: Arm64, capabilities: Set("Tool:Xcode")
   })
   pure val personalProfile: ExecutionProfile = {
     route: RegisteredRunner, personalRunnerAllowed: true, minimumTrust: 1,
@@ -17,13 +16,12 @@ module registered_runner_test {
     ownerOf: 7, ownerFallback: Preferred
   }
   pure val inventory: CapabilityInventory = {
-    containerPlatforms: Set(
+    platforms: Set(
       { operatingSystem: MacOS, architecture: Arm64 },
       { operatingSystem: Linux, architecture: Arm64 }),
-    executionCapabilities: Set(AgentClaude, AgentCodex),
-    nativePlatform: { operatingSystem: MacOS, architecture: Arm64 },
-    nativeDrivers: Set(XcodeBuild, XcodeTesting, IosSimulatorTesting),
-    xcodeVersion: 16, sdkVersions: Set(18), revision: 1
+    executionCapabilities: Set(
+      "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
+    revision: 1
   }
   pure val runner: Runner = {
     id: 1, account: 1, class: Personal, enabled: true, draining: false,
@@ -47,7 +45,7 @@ module registered_runner_test {
   pure val initial: RunnerState = {
     runners: Map(1 -> runner), sessions: Map(1 -> session),
     executions: Map(1 -> execution(1)),
-    placements: Map(1 -> placement(1, nativeRequirement)), assignments: Map()
+    placements: Map(1 -> placement(1, hostRequirement)), assignments: Map()
   }
 
   run ordinaryContainerUsesRunnerModelTest = assert(and {
@@ -56,11 +54,11 @@ module registered_runner_test {
   })
 
   run advertisedFactsCannotGrantSecretAuthorityTest =
-    val secretPlacement = { ...placement(1, nativeRequirement),
+    val secretPlacement = { ...placement(1, hostRequirement),
       profile: { ...personalProfile, secretsRequired: true } }
     val state = { ...initial, placements: Map(1 -> secretPlacement) }
     assert(and {
-      inventoryMatches(nativeRequirement, inventory),
+      inventoryMatches(hostRequirement, inventory),
       not(policyAllows(runner, execution(1), secretPlacement.profile)),
       not(canAssign(state, 1, 1, 10))
     })
@@ -79,10 +77,9 @@ module registered_runner_test {
     assert(placementOutcome(disconnect(initial, 1), 1) == Unavailable)
 
   run definitiveIncompatibilityTest =
-    val incompatible = NativeRequirement({
-      architecture: Arm64, driver: XcodeBuild,
-      xcodeVersionMin: 17, sdkVersionMin: 18
-    })
+    val incompatible = CapabilityRequirement({
+      operatingSystem: MacOS, architecture: Arm64,
+      capabilities: Set("Tool:AndroidStudio") })
     val state = { ...initial, placements: Map(1 -> placement(1, incompatible)) }
     assert(placementOutcome(state, 1) == DefinitiveIncompatibility)
 
@@ -149,18 +146,17 @@ module registered_runner_test {
     val reported = report(assigned, 10, 42)
     val verified = schedulerVerify(reported, 10)
     assert(and {
-      assigned.placements.get(1).requirement == nativeRequirement,
-      reported.placements.get(1).requirement == nativeRequirement,
-      verified.placements.get(1).requirement == nativeRequirement
+      assigned.placements.get(1).requirement == hostRequirement,
+      reported.placements.get(1).requirement == hostRequirement,
+      verified.placements.get(1).requirement == hostRequirement
     })
 
-  run boundedNativeDriverMustBeInstalledTest =
-    val xcodeTestRequirement = NativeRequirement({
-      architecture: Arm64, driver: XcodeTesting,
-      xcodeVersionMin: 16, sdkVersionMin: 18
-    })
-    val buildOnly = { ...inventory, nativeDrivers: Set(XcodeBuild) }
-    assert(not(inventoryMatches(xcodeTestRequirement, buildOnly)))
+  run everyRequiredCapabilityMustBeDeclaredTest =
+    val simulated = CapabilityRequirement({
+      operatingSystem: MacOS, architecture: Arm64,
+      capabilities: Set("Tool:Xcode", "Simulator:iOS") })
+    val buildOnly = { ...inventory, executionCapabilities: Set("Tool:Xcode") }
+    assert(not(inventoryMatches(simulated, buildOnly)))
 
   run duplicateAssignmentIdentityIsRefusedTest =
     val assigned = bindAssignment(initial, 10, 1, 1)
@@ -193,22 +189,22 @@ module registered_runner_test {
       activeCount(executionSet(takenOver)) == activeCount(executionSet(initial))
     })
 
-  run macNativeHostMayAlsoOfferLinuxContainersTest =
+  run macHostMayAlsoOfferLinuxContainersTest =
     val linuxContainer = ContainerRequirement({
       operatingSystem: Linux, architecture: Arm64, image: 7 })
     assert(and {
       inventoryMatches(linuxContainer, inventory),
-      inventoryMatches(nativeRequirement, inventory)
+      inventoryMatches(hostRequirement, inventory)
     })
 
   run capabilityRequirementMatchesOnlyAnInventoryThatProvidesItTest =
     val codex = CapabilityRequirement({
       operatingSystem: Linux, architecture: Arm64,
-      capabilities: Set(AgentCodex) })
+      capabilities: Set("Agent:Codex") })
     assert(and {
       inventoryMatches(codex, inventory),
       not(inventoryMatches(codex, {
-        ...inventory, executionCapabilities: Set(AgentClaude) }))
+        ...inventory, executionCapabilities: Set("Agent:Claude") }))
     })
 
   run enrolledCompatibleRunnerWithoutSessionIsUnavailableTest =
@@ -228,7 +224,7 @@ module registered_runner_test {
 
   run takeoverPublishesChangedInventoryAtomicallyTest =
     val changed = {
-      ...inventory, nativeDrivers: Set(XcodeTesting), revision: 2 }
+      ...inventory, executionCapabilities: Set("Simulator:iOS"), revision: 2 }
     val takenOver = takeOver(initial, 1, changed, 1)
     assert(and {
       takenOver.runners.get(1).retainedInventory == changed,
@@ -246,7 +242,7 @@ module registered_runner_test {
     })
 
   run personalRunnerRefusesAnotherOwnersExecutionTest =
-    val state = { ...initial, placements: Map(1 -> { ...placement(1, nativeRequirement),
+    val state = { ...initial, placements: Map(1 -> { ...placement(1, hostRequirement),
       profile: { ...personalProfile, ownerOf: 8 } }) }
     assert(and {
       not(canAssign(state, 1, 1, 10)),
@@ -256,7 +252,7 @@ module registered_runner_test {
   run personalRunnerRefusesOwnerlessExecutionTest =
     val ownerless = { ...runner, dedicatedOwner: 0 }
     val state = { ...initial, runners: Map(1 -> ownerless),
-      placements: Map(1 -> { ...placement(1, nativeRequirement),
+      placements: Map(1 -> { ...placement(1, hostRequirement),
         profile: { ...personalProfile, ownerOf: 0 } }) }
     assert(and {
       ownerless.dedicatedOwner == state.placements.get(1).profile.ownerOf,
@@ -296,7 +292,7 @@ module registered_runner_test {
   pure def fallback(f: OwnerFallback): RunnerState = { ...initial,
     runners: Map(1 -> runner, 2 -> { ...runner, id: 2, class: Dedicated, dedicatedOwner: 0, allowlist: Set() }),
     sessions: Map(1 -> session, 2 -> { ...session, runner: 2 }),
-    placements: Map(1 -> { ...placement(1, nativeRequirement),
+    placements: Map(1 -> { ...placement(1, hostRequirement),
       profile: { ...personalProfile, ownerFallback: f } }) }
 
   run preferredFallbackWaitsForLiveOwnerRunnerTest =
@@ -335,7 +331,7 @@ module registered_runner_test {
 
   run strictFallbackOwnerRunnerUnableLeavesDedicatedRouteTest =
     val state = fallback(Strict)
-    val unable = { ...runner, retainedInventory: { ...inventory, nativeDrivers: Set(XcodeTesting) } }
+    val unable = { ...runner, retainedInventory: { ...inventory, executionCapabilities: Set("Simulator:iOS") } }
     val incapable = { ...state, runners: state.runners.set(1, unable),
       sessions: state.sessions.set(1, { ...session, inventory: unable.retainedInventory }) }
     assert(and {

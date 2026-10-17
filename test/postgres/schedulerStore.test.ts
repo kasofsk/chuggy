@@ -315,7 +315,7 @@ const rewrittenConfiguration = JSON.stringify({
     platformDefault: {
       architecture: "Amd64",
       capabilities: ["Agent:Claude"],
-      mode: "ContainerCapability",
+      mode: "Capability",
       operatingSystem: "Linux",
     },
     platformDefaultVersion: 2,

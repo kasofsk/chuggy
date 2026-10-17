@@ -78,10 +78,12 @@ import {
   checkedConfigurationPageQuery,
   checkedDraftPageQuery,
   draftInitializationPolicy,
-  releaseConfigurationReadiness,
+  ticketCommandedCheckStage,
+  ticketConfigurationReadiness,
 } from "./authoring.ts";
-import { firstCommandedCheckStage } from "./taskConfiguration.ts";
-import type { DraftBrief } from "./ticketBrief.ts";
+import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
+import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
+import { catalogSelectedFinalizer } from "./workloadConfiguration.ts";
 import type { ConfigurationVersion } from "./repositoryConfigurationIdentity.ts";
 import {
   dispatchNeedsExecutionHeadroom,
@@ -395,6 +397,8 @@ export interface TicketResource {
   readonly configurationVersion?: ConfigurationVersion;
   /** What the ticket's last release or update replaced of that configuration. */
   readonly overrides?: ConfigurationOverrides;
+  /** What the ticket's last release or update selected of that configuration. */
+  readonly selection?: ConfigurationSelection;
   /**
    * The evaluation program the ticket's last release or update was resolved
    * from, which is what its evaluation runs; its draft may since hold another.
@@ -748,12 +752,14 @@ export interface NativeWeb {
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
+      readonly selection?: ConfigurationSelection;
     },
   ): Promise<AuthorizedResult<DraftCreated>>;
   initializeDraft(
     principal: Principal,
     partition: Partition,
     revision: ConfigurationRevisionId,
+    selection?: ConfigurationSelection,
   ): Promise<AuthorizedResult<DraftInitializationRead>>;
   reviseDraft(
     principal: Principal,
@@ -765,6 +771,7 @@ export interface NativeWeb {
       readonly authoring: ReleaseAuthoring;
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
+      readonly selection?: ConfigurationSelection;
     },
   ): Promise<AuthorizedResult<DraftRevised>>;
   deleteDraft(
@@ -899,7 +906,7 @@ function nativeDraftInitializationMethod(
   authoring: AuthoringStore,
 ): Pick<NativeWeb, "initializeDraft"> {
   return {
-    initializeDraft: async (principal, partition, revision) => {
+    initializeDraft: async (principal, partition, revision, selection) => {
       const authority = await access.authorize(principal, partition, "Mutate");
       if (authority === undefined) return { result: "NotFound" };
       const snapshot = await authoring.initializeDraft(
@@ -917,17 +924,24 @@ function nativeDraftInitializationMethod(
           result: "Authorized",
           value: { initialized: "PolicyUnavailable" },
         };
-      const readiness = releaseConfigurationReadiness(
+      const readiness = ticketConfigurationReadiness(
         snapshot.configuration.canonical,
+        undefined,
+        undefined,
+        selection,
       );
       if (readiness.readiness === "Incomplete")
         return {
           result: "Authorized",
-          value: { initialized: "ConfigurationIncomplete" },
+          value: {
+            initialized:
+              readiness.fault === "SelectionUnknown" ||
+              readiness.fault === "SelectionUnsupported"
+                ? "SelectionUnknown"
+                : "ConfigurationIncomplete",
+          },
         };
-      const commandedCheckStage = firstCommandedCheckStage(
-        readiness.configuration,
-      );
+      const commandedCheckStage = ticketCommandedCheckStage(readiness.ticket);
       return {
         result: "Authorized",
         value: {
@@ -941,10 +955,7 @@ function nativeDraftInitializationMethod(
             ...(commandedCheckStage === undefined
               ? {}
               : { commandedCheckStage }),
-            ...draftInitializationPolicy(
-              snapshot.domain,
-              readiness.configuration,
-            ),
+            ...draftInitializationPolicy(snapshot.domain, readiness.ticket),
           },
         },
       };
@@ -1067,6 +1078,44 @@ function draftRevisionImagesRefusal(
     : { revised: "Unavailable", retryAfterSeconds: bound.retryAfterSeconds };
 }
 
+/**
+ * The brief a draft is stored with: as written, or, where it names no landing
+ * and the finalizer its catalog selection lands with names one, with that
+ * landing in place of the repository's the store would otherwise resolve.
+ */
+async function nativeDraftBriefLanded(
+  authoring: AuthoringStore,
+  input: {
+    readonly partition: Partition;
+    readonly configurationRevision: ConfigurationRevisionId;
+    readonly brief: DraftBrief;
+    readonly selection?: ConfigurationSelection;
+  },
+): Promise<DraftBrief> {
+  if (input.brief.finalization !== undefined) return input.brief;
+  const configuration = await authoring.configuration(
+    input.partition,
+    input.configurationRevision,
+  );
+  const landing =
+    configuration === undefined
+      ? undefined
+      : catalogSelectedFinalizer(
+          JSON.parse(configuration.canonical),
+          input.selection,
+        )?.finalizer?.landing;
+  return landing === undefined
+    ? input.brief
+    : {
+        ...input.brief,
+        finalization: asBriefFinalization(
+          "target" in landing && landing.target !== undefined
+            ? { mode: landing.mode, target: landing.target }
+            : { mode: landing.mode },
+        ),
+      };
+}
+
 function nativeAuthoringMethods(
   access: ProjectAccess,
   authoring: AuthoringStore,
@@ -1092,9 +1141,9 @@ function nativeAuthoringMethods(
             input.partition,
             input.brief.images,
           );
-          return bound.bound === "Bound"
-            ? authoring.createDraft({ ...input, authority })
-            : draftCreationImagesRefusal(bound);
+          if (bound.bound !== "Bound") return draftCreationImagesRefusal(bound);
+          const brief = await nativeDraftBriefLanded(authoring, input);
+          return authoring.createDraft({ ...input, brief, authority });
         },
       ),
     reviseDraft: (principal, input) =>
@@ -1108,9 +1157,9 @@ function nativeAuthoringMethods(
             input.partition,
             input.brief.images,
           );
-          return bound.bound === "Bound"
-            ? authoring.reviseDraft({ ...input, authority })
-            : draftRevisionImagesRefusal(bound);
+          if (bound.bound !== "Bound") return draftRevisionImagesRefusal(bound);
+          const brief = await nativeDraftBriefLanded(authoring, input);
+          return authoring.reviseDraft({ ...input, brief, authority });
         },
       ),
     deleteDraft: (principal, input) =>

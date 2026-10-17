@@ -27,6 +27,9 @@ export type BoundaryRefusalCode =
   | "BriefNamesNoRepository"
   | "BriefChecksUncommanded"
   | "ConfigurationFromAnotherRepository"
+  | "SelectionUnknown"
+  | "SelectionUnsupported"
+  | "ProgramExceedsPlan"
   | "TicketCapacityReached"
   | "FinalizationRequestClosed"
   | "OverridesMoveDefinition";
@@ -42,6 +45,9 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "BriefNamesNoRepository",
   "BriefChecksUncommanded",
   "ConfigurationFromAnotherRepository",
+  "SelectionUnknown",
+  "SelectionUnsupported",
+  "ProgramExceedsPlan",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",

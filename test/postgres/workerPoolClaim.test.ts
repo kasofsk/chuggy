@@ -58,10 +58,7 @@ import {
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
-import {
-  allExecutionCapabilities,
-  type ExecutionRequirement,
-} from "../../src/interpreter/executionRequirement.ts";
+import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
 import {
   asPrincipal,
   type Principal,
@@ -528,13 +525,15 @@ async function claimedBy(
     throw new Error("worker pool claim suite: a planted claim took nothing");
 }
 
-/** What a pool declaring everything declares for one requirement: its platform, where it has one, and every capability. */
+/** What a pool declaring everything declares for one requirement: its platform, both agents, and every capability it names. */
 function declaringAll(requirement: ExecutionRequirement): readonly string[] {
   return [
-    ...(requirement.mode === "Native"
-      ? []
-      : [workerPoolPlatformToken(requirement)]),
-    ...allExecutionCapabilities,
+    ...new Set([
+      workerPoolPlatformToken(requirement),
+      "Agent:Claude",
+      "Agent:Codex",
+      ...(requirement.mode === "Capability" ? requirement.capabilities : []),
+    ]),
   ];
 }
 
@@ -1200,7 +1199,7 @@ test("an execution released with a size is claimed asking for it by its owner's 
 
 test("a capability requirement names no image, and its pod runs the pool's own", async () => {
   const assignment = await handedOut("claim-site-image", {
-    mode: "ContainerCapability",
+    mode: "Capability",
     operatingSystem: "Linux",
     architecture: "Amd64",
     capabilities: ["Agent:Claude"],

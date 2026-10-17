@@ -6,6 +6,10 @@
  * describes them — is `src/contract/`, which the browser imports too.
  */
 
+import {
+  configurationSelectionSchema,
+  type ConfigurationSelection,
+} from "../../contract/configurationSelection.ts";
 import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 import type { ConfigurationOverrides } from "../../contract/configurationOverrides.ts";
@@ -327,6 +331,7 @@ export interface ParsedDraftCreation {
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief;
   readonly overrides?: ConfigurationOverrides;
+  readonly selection?: ConfigurationSelection;
 }
 
 export interface ParsedDraftRevision {
@@ -335,6 +340,7 @@ export interface ParsedDraftRevision {
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief;
   readonly overrides?: ConfigurationOverrides;
+  readonly selection?: ConfigurationSelection;
 }
 
 function releaseAuthoring(value: ReleaseAuthoringBody): ReleaseAuthoring {
@@ -412,6 +418,13 @@ export function parseSelectorProjectSettings(body: unknown): {
   };
 }
 
+/** The catalog entries a draft initialization is asked for, by the query naming them. */
+export function parseConfigurationSelection(
+  query: Readonly<Record<string, unknown>>,
+): ConfigurationSelection {
+  return configurationSelectionSchema.parse(query);
+}
+
 export function parseDraftCreation(body: unknown): ParsedDraftCreation {
   const value = draftCreationSchema.parse(body);
   return {
@@ -423,6 +436,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     authoring: releaseAuthoring(value.authoring),
     brief: releaseBrief(value.brief),
     ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
+    ...(value.selection === undefined ? {} : { selection: value.selection }),
   };
 }
 
@@ -436,6 +450,7 @@ export function parseDraftRevision(body: unknown): ParsedDraftRevision {
     authoring: releaseAuthoring(value.authoring),
     brief: releaseBrief(value.brief),
     ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
+    ...(value.selection === undefined ? {} : { selection: value.selection }),
   };
 }
 

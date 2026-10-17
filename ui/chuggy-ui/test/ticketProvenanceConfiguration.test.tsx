@@ -3,9 +3,10 @@
  * one structural rule the Brief and Provenance rows must keep: the accordion
  * row is the only heading either draws, never a second one repeating it.
  *
- * The canonical body is read from `chuggy-development-sonnet.json` itself, not
- * a copied fixture, so the settings grid, the Instructions and the Evaluation
- * list are asserted against what the repository actually declares; the Review
+ * The canonical body is read from the version 1 `chuggy-development-sonnet.json`
+ * this repository declared before its catalogs, so the settings grid, the
+ * Instructions and the Evaluation list are asserted against a document that
+ * was really declared; the Review
  * tab, which a declared document with stages never draws, is asserted over the
  * same document with its stages taken out.
  */
@@ -22,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../../../src/contract/configurationSelection.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
@@ -34,6 +36,7 @@ import {
   ticketPageAmbientRoute,
   turned,
 } from "./screenHarness.tsx";
+import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
@@ -41,14 +44,15 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-/** Read at build time by Vite rather than by Node's own `fs`, since `.chug/`
- * is a dot directory a glob skips unless told to search it. */
+/** The version 1 fixtures, read at build time by Vite rather than by Node's own `fs`. */
 const declarations = import.meta.glob<string>(
-  "../../../.chug/configurations/*.json",
+  "../../../test/fixtures/configurations/*.json",
   { query: "?raw", import: "default", eager: true, exhaustive: true },
 );
 const sonnetRaw =
-  declarations["../../../.chug/configurations/chuggy-development-sonnet.json"];
+  declarations[
+    "../../../test/fixtures/configurations/chuggy-development-sonnet.json"
+  ];
 if (sonnetRaw === undefined)
   throw new Error("no chuggy-development-sonnet configuration declared");
 const declared: unknown = JSON.parse(sonnetRaw);
@@ -89,6 +93,7 @@ async function drawTicket(
   served: string = canonical,
   overrides?: ConfigurationOverrides,
   creator?: string,
+  selection?: ConfigurationSelection,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -123,6 +128,7 @@ async function drawTicket(
         configurationVersion: version,
         ...(overrides === undefined ? {} : { overrides }),
         ...(creator === undefined ? {} : { creator }),
+        ...(selection === undefined ? {} : { selection }),
       });
     },
   });
@@ -356,4 +362,21 @@ test("instructions the ticket overrode are drawn as the override, and the captio
     name: /^Instructions/u,
   });
   expect(within(heading).getByText("Overridden")).toBeDefined();
+});
+
+test("a catalog draws what the ticket selected of it: its work's prompt, its plan's stages and its finalizer", async () => {
+  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+    evaluation: "gated",
+    finalization: "approved",
+  });
+  await sectionOpened("Provenance");
+  expect(screen.getByText("build")).toBeDefined();
+  expect(screen.getByText("prompts/build.md")).toBeDefined();
+  expect(screen.getByText("Build it.")).toBeDefined();
+  expect(screen.getByText("gated")).toBeDefined();
+  expect(screen.getByText("Stage 2 · gates")).toBeDefined();
+  expect(screen.getByText("npm test")).toBeDefined();
+  expect(screen.getByText("approved")).toBeDefined();
+  expect(screen.getByText("Approved first")).toBeDefined();
+  expect(screen.queryByText("Do it fast.")).toBeNull();
 });

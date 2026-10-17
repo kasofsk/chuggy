@@ -41,6 +41,7 @@ import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts"
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  canonicalConfigurationOf,
   type AuthoringStore,
 } from "../../src/interpreter/authoring.ts";
 import { refinementInstance } from "../actor/harness.ts";
@@ -223,6 +224,7 @@ function boundary(
   runEvidenceContents?: RunEvidenceContentPort,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
+  authoring?: (calls: string[]) => AuthoringStore,
 ): {
   readonly web: ReturnType<typeof nativeWeb>;
   readonly calls: string[];
@@ -259,7 +261,7 @@ function boundary(
       access,
       reads,
       inbox,
-      authoringStore(calls, initialization),
+      authoring?.(calls) ?? authoringStore(calls, initialization),
       notifications,
       backlog,
       undefined,
@@ -451,6 +453,8 @@ function repositoryImportPorts(
       },
     },
     snapshots: {
+      referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
       snapshot: ({ commit }) => {
         calls.push(`snapshot:${commit}`);
         return Promise.resolve({
@@ -725,6 +729,8 @@ test("repository imports refuse invalid declarations without writing", async () 
   const subject = boundary(true, openExecutionBacklogGuard, {
     ...ports,
     snapshots: {
+      referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
+
       snapshot: () => {
         calls.push("snapshot:invalid");
         return Promise.resolve({
@@ -1084,8 +1090,78 @@ test("a draft naming an image its store holds, or naming none at all, reaches th
       { result: "Authorized", value: { created: "ConfigurationNotFound" } },
       `images: ${JSON.stringify(images)}`,
     );
-    assert.deepEqual(calls, ["authorize:Mutate", "createDraft"]);
+    assert.deepEqual(calls, [
+      "authorize:Mutate",
+      "read:configuration",
+      "createDraft",
+    ]);
   }
+});
+
+test("a draft naming no landing takes the one its catalog's selected finalizer names, and one naming its own keeps it", async () => {
+  const catalog = {
+    version: 2,
+    image: "worker:v2",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Build it." },
+        worker: {
+          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+          setup: [],
+          files: [],
+        },
+      },
+    },
+    plans: { standard: [{ name: "review", evaluators: ["build"] }] },
+    finalizers: {
+      proposed: { landing: { mode: "PullRequest", target: "refs/heads/main" } },
+    },
+    defaults: {
+      work: "build",
+      evaluation: "standard",
+      finalization: "proposed",
+    },
+  };
+  const stored: DraftBrief[] = [];
+  const authoring = (calls: string[]): AuthoringStore => ({
+    ...authoringStore(calls),
+    configuration: () =>
+      Promise.resolve({
+        partition,
+        revision: asConfigurationRevisionId("revision"),
+        canonical: canonicalConfigurationOf(catalog),
+        digest: "a".repeat(64),
+      }),
+    createDraft: (input) => {
+      stored.push(input.brief);
+      return Promise.resolve({ created: "ConfigurationNotFound" });
+    },
+  });
+  const { web } = boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    unreachableProjectArtifacts(),
+    undefined,
+    authoring,
+  );
+  await createDraftNaming(web, briefNamingImages([]));
+  await createDraftNaming(
+    web,
+    asDraftBrief({
+      intent: "Land it my way.",
+      links: [],
+      finalization: { mode: "Push" },
+    }),
+  );
+  assert.deepEqual(
+    stored.map((brief) => brief.finalization),
+    [{ mode: "PullRequest", target: "refs/heads/main" }, { mode: "Push" }],
+  );
 });
 
 test("every run evidence read authorizes before it reaches a store", async () => {

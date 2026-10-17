@@ -19,10 +19,9 @@
  * fallback reads the owner's personal pools; the guard is asked of the case's
  * pool, and the outcome of all of them.
  *
- * TWO REQUIREMENTS MATCH A CAPABILITY SUBSET VACUOUSLY: a container carries no
- * capabilities, and neither does a native one. So the table refuses a
- * container to a pool that declares nothing, and a native requirement to every
- * pool.
+ * A CONTAINER MATCHES A CAPABILITY SUBSET VACUOUSLY, since it carries no
+ * capabilities. So the table refuses a container to a pool that declares
+ * nothing.
  */
 
 import {
@@ -89,25 +88,12 @@ export const runnerTerm = {
     "r.class == Personal or p.profile.ownerFallback == Preferred or ownerRunners(s, e, p).size() == 0",
   live: "r.class == Personal or ownerRunners(s, e, p).forall(o => not(runnerIsLive(s, o)))",
   containerPlatform:
-    "ContainerRequirement: i.containerPlatforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
+    "ContainerRequirement: i.platforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilityPlatform:
-    "CapabilityRequirement: i.containerPlatforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
+    "CapabilityRequirement: i.platforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilitySubset:
     "CapabilityRequirement: c.capabilities.subseteq(i.executionCapabilities)",
-  nativePlatform:
-    "NativeRequirement: i.nativePlatform == { operatingSystem: MacOS, architecture: n.architecture }",
-  nativeDriver: "NativeRequirement: i.nativeDrivers.contains(n.driver)",
-  nativeXcode: "NativeRequirement: i.xcodeVersion >= n.xcodeVersionMin",
-  nativeSdk:
-    "NativeRequirement: i.sdkVersions.exists(v => v >= n.sdkVersionMin)",
 } as const;
-
-const native = [
-  runnerTerm.nativePlatform,
-  runnerTerm.nativeDriver,
-  runnerTerm.nativeXcode,
-  runnerTerm.nativeSdk,
-];
 
 const partition: Partition = {
   tenant: asTenantId("tenant-one"),
@@ -243,7 +229,7 @@ const assigned: readonly RunnerCase[] = [
   {
     ...assignable,
     name: "a pool declaring several platforms runs a container on any of them",
-    model: "macNativeHostMayAlsoOfferLinuxContainersTest",
+    model: "macHostMayAlsoOfferLinuxContainersTest",
     placement: {
       ...placement,
       requirement: { ...container, architecture: "Arm64" },
@@ -260,7 +246,7 @@ const assigned: readonly RunnerCase[] = [
     placement: {
       ...placement,
       requirement: {
-        mode: "ContainerCapability",
+        mode: "Capability",
         operatingSystem: "Linux",
         architecture: "Amd64",
         capabilities: ["Agent:Codex"],
@@ -681,7 +667,7 @@ const refusedByInventory: readonly RunnerCase[] = [
       placement: {
         ...placement,
         requirement: {
-          mode: "ContainerCapability",
+          mode: "Capability",
           operatingSystem: "Linux",
           architecture: "Amd64",
           capabilities: ["Agent:Codex"],
@@ -698,7 +684,7 @@ const refusedByInventory: readonly RunnerCase[] = [
       placement: {
         ...placement,
         requirement: {
-          mode: "ContainerCapability",
+          mode: "Capability",
           operatingSystem: "MacOS",
           architecture: "Arm64",
           capabilities: ["Agent:Claude"],
@@ -707,40 +693,45 @@ const refusedByInventory: readonly RunnerCase[] = [
     },
   ),
   refused(
-    "a native requirement is definitively incompatible with every pool",
-    native,
+    "a capability no pool declares is definitively incompatible with every pool",
+    [runnerTerm.capabilitySubset],
     "DefinitiveIncompatibility",
     {
       model: "definitiveIncompatibilityTest",
       placement: {
         ...placement,
         requirement: {
-          mode: "Native",
+          mode: "Capability",
+          operatingSystem: "MacOS",
           architecture: "Arm64",
-          driver: "XcodeBuild",
-          xcodeVersionMin: 17,
-          sdkVersionMin: 18,
+          capabilities: ["Tool:AndroidStudio"],
         },
+      },
+      pool: {
+        ...pool,
+        capabilities: ["Platform:MacOS:Arm64", "Tool:Xcode"],
       },
     },
   ),
   refused(
-    "no pool has a native driver installed",
-    native,
+    "a pool must declare every capability a requirement names",
+    [runnerTerm.capabilitySubset],
     "DefinitiveIncompatibility",
     {
-      model: "boundedNativeDriverMustBeInstalledTest",
+      model: "everyRequiredCapabilityMustBeDeclaredTest",
       placement: {
         ...placement,
         requirement: {
-          mode: "Native",
+          mode: "Capability",
+          operatingSystem: "MacOS",
           architecture: "Arm64",
-          driver: "XcodeTesting",
-          xcodeVersionMin: 16,
-          sdkVersionMin: 18,
+          capabilities: ["Tool:Xcode", "Simulator:iOS"],
         },
       },
-      pool: { ...pool, capabilities: ["Platform:MacOS:Arm64"] },
+      pool: {
+        ...pool,
+        capabilities: ["Platform:MacOS:Arm64", "Tool:Xcode"],
+      },
     },
   ),
 ];

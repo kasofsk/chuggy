@@ -47,9 +47,7 @@ import { test } from "node:test";
 import { workerPoolCapabilitySchema } from "../../src/contract/workerPool.ts";
 import {
   allArchitectures,
-  allExecutionCapabilities,
   allOperatingSystems,
-  type ExecutionCapability,
 } from "../../src/interpreter/executionRequirement.ts";
 import {
   allExecutionOutcomes,
@@ -429,13 +427,10 @@ test("the phase roster is the one model/runner.qnt declares", () => {
   ]);
 });
 
-test("each execution capability is the model's, spelled as this tree spells it", () => {
-  const spelling: Readonly<Record<string, ExecutionCapability>> = {
-    AgentClaude: "Agent:Claude",
-    AgentCodex: "Agent:Codex",
-  };
-  assert.deepEqual(Object.keys(spelling), runnerRoster("ExecutionCapability"));
-  assert.deepEqual(Object.values(spelling), [...allExecutionCapabilities]);
+test("an execution capability is any token, in the model as on the wire", () => {
+  assert.match(runnerSource(), /\n {2}type ExecutionCapability = str\n/);
+  for (const token of ["Agent:Claude", "Tool:Xcode", "gpu"])
+    assert.equal(workerPoolCapabilitySchema.safeParse(token).success, true);
 });
 
 test("each route is the model's, named as execution.placement stores it", () => {

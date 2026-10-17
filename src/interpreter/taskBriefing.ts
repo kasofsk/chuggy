@@ -139,6 +139,7 @@ import {
   type TaskConfigurationFault,
   type TaskConfigurationReadFault,
   type TicketBrief,
+  type WorkerConfiguration,
 } from "./taskConfiguration.ts";
 export {
   authoredTaskConfigurationReadiness,
@@ -193,6 +194,8 @@ import {
   type BriefIntent,
   type DraftBrief,
 } from "./ticketBrief.ts";
+import type { PinnedWorkloadTask } from "./workloadTask.ts";
+export type { PinnedWorkloadTask } from "./workloadTask.ts";
 import {
   resolveTaskAuthority,
   taskAuthorityGrant,
@@ -244,6 +247,16 @@ export const blessedPracticeCatalog: PracticeCatalog = new Map(
 /** One immutable authored configuration revision, as the release pinned it. */
 export interface PinnedTaskConfiguration
   extends ConfigurationPin, AuthoredTaskConfiguration {}
+
+/** What one task is briefed from: a version 1 configuration whole, or the one workload of a catalog it runs. */
+export type PinnedConfiguration = PinnedTaskConfiguration | PinnedWorkloadTask;
+
+/** Whether a pinned read is the one workload of a catalog rather than a version 1 configuration. */
+export function pinnedWorkloadTaskOf(
+  configuration: PinnedConfiguration,
+): configuration is PinnedWorkloadTask {
+  return "workload" in configuration;
+}
 
 /** Adds the immutable storage identity to an authored briefing that parsed successfully. */
 export function pinnedTaskConfigurationReadiness(
@@ -496,7 +509,7 @@ export function resolvePractices(
 export type ConfigurationRead =
   | {
       readonly read: "Configuration";
-      readonly configuration: PinnedTaskConfiguration;
+      readonly configuration: PinnedConfiguration;
     }
   | { readonly read: "Missing" }
   | {
@@ -505,15 +518,25 @@ export type ConfigurationRead =
     }
   | { readonly read: "Unavailable" };
 
+/** The task a pinned read is for: its ticket, its kind, and an evaluation's stage index and evaluator key. */
+export interface PinnedConfigurationTask extends ConfigurationPin {
+  readonly ticket: number;
+  readonly taskKind: "Work" | "Evaluation";
+  readonly stage?: number;
+  readonly evaluator?: number;
+}
+
 /**
  * The immutable authoring revisions, behind a typed port. Every call names the
  * revision it wants, so there is no way to spell a read of the current one,
- * and the ticket it is read for, whose released overrides it answers applied.
+ * and the task it is read for: a version 1 configuration is answered with its
+ * ticket's released overrides applied, and a catalog with the workload that
+ * task runs under its ticket's selection.
  */
 export interface PinnedConfigurationPort {
   configuration(
     partition: Partition,
-    pin: ConfigurationPin & { readonly ticket: number },
+    task: PinnedConfigurationTask,
   ): Promise<ConfigurationRead>;
 }
 
@@ -535,7 +558,7 @@ export interface BriefingView {
   readonly purpose: TaskPurpose;
   readonly stage?: number;
   readonly pin: ConfigurationPin;
-  readonly configuration: PinnedTaskConfiguration;
+  readonly configuration: PinnedConfiguration;
   readonly runtime: RuntimeFacts;
   readonly readOnlyRepositories: readonly RepositoryId[];
   /** What each of the ticket's dependencies delivered, in the order they ascend. */
@@ -558,6 +581,95 @@ function purposeBlock(
   return stage === undefined ? undefined : configuration.evaluations[stage];
 }
 
+/**
+ * What one task is briefed from, whichever version pinned it: the prompt it
+ * leads with, whether the template frames it, the brief and instructions it
+ * carries, the lines it runs, the practices it names, the authority it asks
+ * for and the worker it runs on. Every section and every request below reads
+ * this and nothing else of the configuration.
+ */
+interface BriefingTask {
+  readonly framed: boolean;
+  readonly prompt?: string;
+  readonly brief?: TicketBrief;
+  readonly instructions: readonly string[];
+  readonly commands?: readonly string[];
+  readonly ticketChecks: boolean;
+  readonly practices: readonly string[];
+  readonly authority: readonly AuthorityRequest[];
+  readonly worker?: WorkerConfiguration;
+}
+
+/** A version 1 configuration's task: the stage's block, framed, under the shared brief, authority and worker. */
+function briefingConfigurationTask(
+  configuration: PinnedTaskConfiguration,
+  purpose: TaskPurpose,
+  stage?: number,
+): BriefingTask | undefined {
+  const block = purposeBlock(configuration, purpose, stage);
+  if (block === undefined) return undefined;
+  const commands = blockCommandLines(block);
+  const commanded = firstCommandedCheckStage(configuration);
+  return {
+    framed: true,
+    brief: configuration.brief,
+    instructions: block.instructions ?? [],
+    ...(commands === undefined ? {} : { commands }),
+    ticketChecks:
+      purpose !== "Work" && commanded !== undefined && stage === commanded,
+    practices:
+      commands !== undefined
+        ? []
+        : "practices" in block
+          ? block.practices
+          : configuration.practices,
+    authority: [configuration.authority, block.authority].filter(
+      (request) => request !== undefined,
+    ),
+    ...(configuration.worker === undefined
+      ? {}
+      : { worker: configuration.worker }),
+  };
+}
+
+/** A catalog's task: its one workload, framed only where it asks to be, with only what it names. */
+function briefingWorkloadTask(task: PinnedWorkloadTask): BriefingTask {
+  const { workload } = task;
+  const authority =
+    workload.authority === undefined ? [] : [workload.authority];
+  if (workload.runner === "Commands")
+    return {
+      framed: false,
+      instructions: [],
+      commands: workload.commands,
+      ticketChecks: task.ticketChecks,
+      practices: [],
+      authority,
+      worker: {
+        mode: { type: "Commands", commands: workload.commands },
+        setup: workload.worker?.setup ?? [],
+        files: workload.worker?.files ?? [],
+      },
+    };
+  return {
+    framed: workload.framing === "Chuggy",
+    prompt: workload.prompt.text,
+    ...(workload.brief === undefined ? {} : { brief: workload.brief }),
+    instructions: [],
+    ticketChecks: false,
+    practices: workload.practices ?? [],
+    authority,
+    worker: workload.worker,
+  };
+}
+
+/** The task one view briefs, or none where its configuration covers no such stage. */
+function briefingTask(view: BriefingView): BriefingTask | undefined {
+  return pinnedWorkloadTaskOf(view.configuration)
+    ? briefingWorkloadTask(view.configuration)
+    : briefingConfigurationTask(view.configuration, view.purpose, view.stage);
+}
+
 /** What carries out one stage of a configuration, which its block's command lines decide; a ticket's own lines only join a stage that already has some. */
 export function briefingStageCarrier(
   configuration: AuthoredTaskConfiguration,
@@ -570,9 +682,9 @@ export function briefingStageCarrier(
     : "Commands";
 }
 
-/** The carrier one view renders under, which is the only thing the wording turns on. */
-function briefingCarrier(view: BriefingView): BriefingCarrier {
-  return briefingStageCarrier(view.configuration, view.purpose, view.stage);
+/** The carrier one task renders under, which is the only thing the wording turns on. */
+function briefingCarrier(task: BriefingTask): BriefingCarrier {
+  return task.commands === undefined ? "Agent" : "Commands";
 }
 
 /**
@@ -589,11 +701,11 @@ export const stageCommandsMax = commandLinesMax + briefChecksMax;
  * stage runs it alone whatever the ticket says: a ticket widens what its change
  * is held to, and never changes what the work is.
  */
-function briefingTicketChecks(view: BriefingView): readonly string[] {
-  const stage = firstCommandedCheckStage(view.configuration);
-  return view.purpose !== "Work" && stage !== undefined && view.stage === stage
-    ? (view.brief?.checks ?? [])
-    : [];
+function briefingTicketChecks(
+  view: BriefingView,
+  task: BriefingTask,
+): readonly string[] {
+  return task.ticketChecks ? (view.brief?.checks ?? []) : [];
 }
 
 /**
@@ -604,19 +716,11 @@ function briefingTicketChecks(view: BriefingView): readonly string[] {
  */
 function briefingStageCommands(
   view: BriefingView,
+  task: BriefingTask,
 ): readonly string[] | undefined {
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  const commands = block === undefined ? undefined : blockCommandLines(block);
-  return commands === undefined
+  return task.commands === undefined
     ? undefined
-    : [...commands, ...briefingTicketChecks(view)];
-}
-
-function purposePractices(view: BriefingView): readonly string[] | undefined {
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  if (block === undefined) return undefined;
-  if (briefingStageCommands(view) !== undefined) return [];
-  return "practices" in block ? block.practices : view.configuration.practices;
+    : [...task.commands, ...briefingTicketChecks(view, task)];
 }
 
 /** Whether the revision that came back is the one the durable execution row pinned. */
@@ -638,18 +742,23 @@ function briefingConfigurationFault(
 ): BriefingFault | undefined {
   const pinned = briefingPinFault(view);
   if (pinned !== undefined) return pinned;
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  if (block === undefined) return "StageNotCovered";
-  const brief = view.configuration.brief;
-  if (brief.motivation.length === 0 && brief.acceptanceCriteria.length === 0) {
+  const task = briefingTask(view);
+  if (task === undefined) return "StageNotCovered";
+  const brief = task.brief;
+  if (
+    !pinnedWorkloadTaskOf(view.configuration) &&
+    brief !== undefined &&
+    brief.motivation.length === 0 &&
+    brief.acceptanceCriteria.length === 0
+  ) {
     return "EmptyBrief";
   }
   return briefingListsFault([
-    [brief.motivation, briefingLinesMax],
-    [brief.acceptanceCriteria, briefingLinesMax],
-    [brief.constraints, briefingLinesMax],
-    [block.instructions, briefingLinesMax],
-    [briefingStageCommands(view), stageCommandsMax],
+    [brief?.motivation, briefingLinesMax],
+    [brief?.acceptanceCriteria, briefingLinesMax],
+    [brief?.constraints, briefingLinesMax],
+    [task.instructions, briefingLinesMax],
+    [briefingStageCommands(view, task), stageCommandsMax],
   ]);
 }
 
@@ -916,14 +1025,17 @@ function briefingRuntimeLines(
 /** A body for every section identity, which is what makes the order below a filter. */
 function briefingBodies(
   view: BriefingView,
+  task: BriefingTask,
   practices: readonly BlessedPractice[],
 ): Record<BriefingSectionId, readonly string[]> {
-  const block = purposeBlock(view.configuration, view.purpose, view.stage);
-  const commands = briefingStageCommands(view);
-  const carrier = briefingCarrier(view);
+  const commands = briefingStageCommands(view, task);
+  const carrier = briefingCarrier(task);
   const briefed = carrier === "Agent";
   return {
-    RoleInstructions: briefingRoleInstructions(view.purpose, carrier),
+    Prompt: task.prompt === undefined ? [] : [task.prompt],
+    RoleInstructions: task.framed
+      ? briefingRoleInstructions(view.purpose, carrier)
+      : [],
     TicketIntent:
       view.brief === undefined ? [] : briefingTicketIntentLines(view.brief),
     TicketLinks:
@@ -932,8 +1044,9 @@ function briefingBodies(
       view.brief === undefined
         ? []
         : briefingTicketImageLines(view.brief.images),
-    WhyItMatters: view.configuration.brief.motivation,
-    AcceptanceAndConstraints: briefingCriteriaLines(view.configuration.brief),
+    WhyItMatters: task.brief?.motivation ?? [],
+    AcceptanceAndConstraints:
+      task.brief === undefined ? [] : briefingCriteriaLines(task.brief),
     DependencyDeliveries: briefed ? briefingDependencyDeliveryLines(view) : [],
     FailedLanding:
       briefed && view.purpose === "Work" && view.failedLanding !== undefined
@@ -950,7 +1063,7 @@ function briefingBodies(
             view.priorWorkReports.reports,
           )
         : [],
-    PurposeInstructions: block?.instructions ?? [],
+    PurposeInstructions: task.instructions,
     CheckCommands: commands === undefined ? [] : commands.map(briefingBullet),
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
@@ -959,7 +1072,9 @@ function briefingBodies(
       view.runtime,
       view.readOnlyRepositories,
     ),
-    RequiredResult: briefingRequiredResult(view.purpose, carrier),
+    RequiredResult: task.framed
+      ? briefingRequiredResult(view.purpose, carrier)
+      : [],
   };
 }
 
@@ -998,9 +1113,15 @@ function briefingSectionsOrdered(
   return true;
 }
 
-/** One section as text, heading first, which is also what its retained size is measured over. */
+/**
+ * One section as text, heading first, which is also what its retained size is
+ * measured over. A workload's prompt is its own words and renders as written,
+ * with no heading in front of it.
+ */
 function briefingSectionText(section: BriefingSection): string {
-  return [`## ${section.heading}`, ...section.lines].join("\n");
+  return section.section === "Prompt"
+    ? section.lines.join("\n")
+    : [`## ${section.heading}`, ...section.lines].join("\n");
 }
 
 /** Renders the sections that have a body, in the one order this tree states. */
@@ -1008,8 +1129,13 @@ export function renderBriefing(
   view: BriefingView,
   practices: readonly BlessedPractice[],
 ): RenderedBriefing {
-  const bodies = briefingBodies(view, practices);
-  const carrier = briefingCarrier(view);
+  const task = briefingTask(view);
+  if (task === undefined)
+    throw new RangeError(
+      "task briefing: the configuration covers no such stage",
+    );
+  const bodies = briefingBodies(view, task, practices);
+  const carrier = briefingCarrier(task);
   const sections = briefingSectionOrder
     .filter((section) => bodies[section].length > 0)
     .map((section) => ({
@@ -1088,19 +1214,9 @@ export const briefingAuthorityFloor: AuthorityRequest = {
 
 /** Every structured request one composition folds, the template's own first. */
 function briefingAuthorityRequests(
-  view: BriefingView,
+  task: BriefingTask,
 ): readonly AuthorityRequest[] {
-  const shared = view.configuration.authority;
-  const block = purposeBlock(
-    view.configuration,
-    view.purpose,
-    view.stage,
-  )?.authority;
-  return [
-    briefingAuthorityFloor,
-    ...(shared === undefined ? [] : [shared]),
-    ...(block === undefined ? [] : [block]),
-  ];
+  return [briefingAuthorityFloor, ...task.authority];
 }
 
 /**
@@ -1111,9 +1227,10 @@ function briefingAuthorityRequests(
  */
 function briefingWorker(
   view: BriefingView,
+  task: BriefingTask,
 ): AuthoredTaskConfiguration["worker"] {
-  const commands = briefingStageCommands(view);
-  const worker = view.configuration.worker;
+  const commands = briefingStageCommands(view, task);
+  const worker = task.worker;
   if (commands === undefined) return worker;
   return {
     mode: { type: "Commands", commands },
@@ -1174,27 +1291,26 @@ export function composeTaskInvocation(
     briefingDependencyDeliveriesFault(view) ??
     briefingTicketBriefFault(view.brief);
   if (fault !== undefined) return { composed: "Blocked", fault };
-  const resolved = resolvePractices(
-    catalog,
-    view.purpose,
-    purposePractices(view) ?? [],
-  );
+  const task = briefingTask(view);
+  if (task === undefined)
+    return { composed: "Blocked", fault: "StageNotCovered" };
+  const resolved = resolvePractices(catalog, view.purpose, task.practices);
   if (resolved.resolved === "Refused") {
     return { composed: "Blocked", fault: resolved.fault };
   }
   const briefing = renderBriefing(view, resolved.practices);
-  const worker = briefingWorker(view);
+  const worker = briefingWorker(view, task);
   const invocation: TaskInvocation = {
     briefing,
     authority: resolveTaskAuthority(
       view.grant,
-      briefingAuthorityRequests(view),
+      briefingAuthorityRequests(task),
     ),
     provenance: briefingProvenance(
       briefing,
       view.pin,
       resolved.practices,
-      briefingTicketChecks(view).length,
+      briefingTicketChecks(view, task).length,
     ),
     ...(worker === undefined ? {} : { worker }),
   };

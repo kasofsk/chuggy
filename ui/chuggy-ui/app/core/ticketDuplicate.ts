@@ -86,7 +86,8 @@ export function ticketDuplicateRevoked(
 /**
  * The form a draft duplicates into. The configuration is the edit's match,
  * handed no revision of the draft's own, and otherwise wherever a new ticket
- * starts; a repository no live binding offers is cleared.
+ * starts, under no selection, whose names were the draft's catalog's; a
+ * repository no live binding offers is cleared.
  */
 export function ticketDuplicateSeed(input: {
   readonly draft: DraftResponse;
@@ -121,7 +122,11 @@ export function ticketDuplicateSeed(input: {
       ...edited,
       ...(ticket === undefined || ticket.phase === "Pending"
         ? {}
-        : { overrides: overridesHeldOf(ticket.overrides) }),
+        : {
+            overrides: overridesHeldOf(ticket.overrides),
+            selection: ticket.selection ?? {},
+          }),
+      ...(held === "" ? { selection: {} } : {}),
       dependencies: edited.dependencies.filter(
         (dependency) => !input.revoked.includes(dependency),
       ),
