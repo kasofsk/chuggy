@@ -52,6 +52,18 @@ export function repositoryConfigurations(
   return held;
 }
 
+/** A catalog's work, as the workload a ticket selecting none runs among the ones it may select. */
+function repositoryCatalogLabel(
+  catalog: NonNullable<
+    Extract<ConfigurationSummary, { readiness: "Ready" }>["catalog"]
+  >,
+): Label {
+  return {
+    text: `${catalog.defaults.work} of ${String(catalog.workloads.length)} workloads`,
+    title: catalog.workloads.join(", "),
+  };
+}
+
 export function repositoryConfigurationRow(
   summary: ConfigurationSummary,
 ): RepositoryConfigurationRow {
@@ -62,7 +74,10 @@ export function repositoryConfigurationRow(
       summary.readiness === "Incomplete"
         ? undefined
         : {
-            worker: workerLabel(summary.worker, summary.image),
+            worker:
+              summary.catalog === undefined
+                ? workerLabel(summary.worker, summary.image)
+                : repositoryCatalogLabel(summary.catalog),
             stages: String(summary.evaluationStagesCount),
             approval: approvalLabel(summary.finalization.approvalRequired),
           },

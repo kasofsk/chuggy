@@ -189,3 +189,67 @@ export function creationForm(
  * so drew no key for it, as it stands once the project offers several. */
 export const creationYamlKeptUnasked =
   'title: Ship it\nintent: |-\n  do it\nlinks: []\nbranch: ""\nlanding: Push\ntarget: ""\ndependencies: [ 7 ]\nprogram:\n  - evaluators: 2\n  - evaluators: 1\n';
+
+/** A catalog of several workloads, plans and finalizers, each prompt
+ * inline as an import resolves it. */
+export const creationCatalogCanonical = JSON.stringify({
+  version: 2,
+  image: "an-image",
+  workloads: {
+    build: {
+      runner: "Agent",
+      prompt: { path: "prompts/build.md", text: "Build it.\nTest it." },
+      worker: { mode: { type: "SingleAgent", agent: "Claude", arguments: [] } },
+    },
+    quick: {
+      runner: "Agent",
+      prompt: { text: "Do it fast." },
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Codex",
+          arguments: [],
+          model: "gpt-5-codex",
+        },
+      },
+    },
+    gates: { runner: "Commands", commands: ["npm test"] },
+    review: {
+      runner: "Agent",
+      purpose: "Review",
+      prompt: { text: "Review it." },
+      worker: { mode: { type: "SingleAgent", agent: "Claude", arguments: [] } },
+    },
+  },
+  plans: {
+    review: [{ name: "review", evaluators: ["review"] }],
+    gated: [
+      { name: "review", evaluators: ["review", "review"] },
+      { name: "gates", evaluators: ["gates"] },
+    ],
+  },
+  finalizers: {
+    land: { approvalRequired: false },
+    approved: { approvalRequired: true },
+  },
+  defaults: { work: "build", evaluation: "review", finalization: "land" },
+});
+
+/** An offer whose configuration is the catalog above, initialized under its defaults. */
+export function creationCatalogOffer(
+  listed: ConfigurationSummary = creationSummary("c1", "Ready"),
+): CreationOffer {
+  const offer = creationOffer(listed, {
+    choices: { programStagesMax: 1, evaluatorsMax: 3 },
+  });
+  return {
+    ...offer,
+    initialization: {
+      ...offer.initialization,
+      configuration: {
+        ...offer.initialization.configuration,
+        canonical: creationCatalogCanonical,
+      },
+    },
+  };
+}

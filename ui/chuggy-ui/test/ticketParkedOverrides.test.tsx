@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
@@ -105,6 +106,7 @@ interface Kept {
   readonly changed: ChangeAnswer;
   readonly posted: Record<string, unknown>[];
   overrides: ConfigurationOverrides | undefined;
+  readonly canonical: string;
   phase: string;
   sequence: number;
 }
@@ -176,7 +178,7 @@ function keptRoute(
     return answer({
       partition: atlas,
       revision,
-      canonical,
+      canonical: kept.canonical,
       digest: "d".repeat(64),
     });
   if (url.includes("/tickets/")) return answer(keptTicket(kept));
@@ -192,12 +194,14 @@ function serving(
   kind: string,
   changed: ChangeAnswer = "Answered",
   held?: ConfigurationOverrides,
+  served: string = canonical,
 ): Served {
   const kept: Kept = {
     kind,
     changed,
     posted: [],
     overrides: held,
+    canonical: served,
     phase: "Escalated",
     sequence: 7,
   };
@@ -342,6 +346,20 @@ test("a change keeps an override the card does not draw, as the ticket holds it"
 
 test("a ticket parked at its finalization is offered no overrides, its resume starting no worker", async () => {
   serving("FinalizationUnavailableEscalated");
+  const card = await drawn();
+  expect(
+    within(card).queryByRole("button", { name: /^Overrides/u }),
+  ).toBeNull();
+  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+});
+
+test("a ticket whose configuration is a catalog is offered no overrides, a catalog taking none", async () => {
+  serving(
+    "WorkFailureEscalated",
+    "Answered",
+    undefined,
+    creationCatalogCanonical,
+  );
   const card = await drawn();
   expect(
     within(card).queryByRole("button", { name: /^Overrides/u }),

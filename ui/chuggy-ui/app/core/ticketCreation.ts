@@ -29,6 +29,7 @@ import {
 } from "../../../../src/contract/brief.ts";
 import { imageMediaTypes } from "../../../../src/contract/http.ts";
 import type { ImageMediaType } from "../../../../src/contract/http.ts";
+import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
   briefFinalizationProposes,
@@ -47,6 +48,11 @@ import type { z } from "zod";
 
 import type { ApiFailure } from "./apiRequest.ts";
 import { operationStateSentence } from "./codeSentences.ts";
+import {
+  configurationCatalogInitialization,
+  configurationCatalogOf,
+  type ConfigurationCatalog,
+} from "./configurationCatalog.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
@@ -92,8 +98,13 @@ export interface TicketCreationForm extends CreationAuthoring {
    * reader's from the moment they move it. */
   readonly landingMode: BriefFinalizationMode;
   /** What this ticket replaces of its configuration, drawn only once a
-   * configuration is chosen and kept when another is. */
+   * configuration is chosen and kept when another is; sent only under a
+   * configuration that is no catalog. */
   readonly overrides: CreationOverrides;
+  /** What this ticket selects from a catalog, a field left out taking the
+   * catalog's default; sent only under a catalog, and cleared when another
+   * configuration is chosen, whose names are its own. */
+  readonly selection: ConfigurationSelection;
 }
 
 export type CreationField =
@@ -312,6 +323,32 @@ export function creationOfferOf(
   return offers.find((offer) => offer.name === name);
 }
 
+/** The catalog an offer is, none where it is a version 1 configuration. */
+export function creationCatalogOf(
+  offer: CreationOffer | undefined,
+): ConfigurationCatalog | undefined {
+  return offer === undefined
+    ? undefined
+    : configurationCatalogOf(offer.initialization.configuration.canonical);
+}
+
+/** The offer a form is drawn under, with its initialization as it reads under the form's selection. */
+export function creationOfferDrawn(
+  offers: readonly CreationOffer[],
+  form: Pick<TicketCreationForm, "configuration" | "selection">,
+): CreationOffer | undefined {
+  const offer = creationOfferOf(offers, form.configuration);
+  return offer === undefined
+    ? undefined
+    : {
+        ...offer,
+        initialization: configurationCatalogInitialization(
+          offer.initialization,
+          form.selection,
+        ),
+      };
+}
+
 /**
  * The name a form starts on: the sole offer of a read that missed none, where
  * there is no choice to make, and otherwise the one this reader chose last
@@ -446,6 +483,7 @@ export function creationFormFrom(
     repository,
     landingMode: creationLandingDefault(repositories, repository),
     overrides: {},
+    selection: {},
   };
 }
 
@@ -477,29 +515,53 @@ function creationProgramWidths(program: readonly CreationStage[]): string {
 }
 
 /**
- * The form with another configuration named. A program the reader has not
- * moved takes the new configuration's default and a moved one stands, as a
+ * The form drawn under another configuration or selection. A program the
+ * reader has not moved takes the new default and a moved one stands, as a
  * landing does under another repository; everything typed is kept.
  */
-export function creationConfigurationChosen(
+function creationDrawnChosen(
   form: TicketCreationForm,
   offers: readonly CreationOffer[],
-  name: string,
+  drawn: Pick<TicketCreationForm, "configuration" | "selection">,
 ): TicketCreationForm {
   const seeded =
-    creationOfferOf(offers, form.configuration)?.initialization.defaults ??
+    creationOfferDrawn(offers, form)?.initialization.defaults ??
     creationAuthoringUndrawn;
   const chosen =
-    creationOfferOf(offers, name)?.initialization.defaults ??
+    creationOfferDrawn(offers, drawn)?.initialization.defaults ??
     creationAuthoringUndrawn;
   const unmoved =
     creationProgramWidths(form.program) ===
     creationProgramWidths(seeded.program);
   return {
     ...form,
-    configuration: name,
+    ...drawn,
     program: unmoved ? chosen.program : form.program,
   };
+}
+
+/** The form with another configuration named, and no selection, whose names were the last one's. */
+export function creationConfigurationChosen(
+  form: TicketCreationForm,
+  offers: readonly CreationOffer[],
+  name: string,
+): TicketCreationForm {
+  return creationDrawnChosen(form, offers, {
+    configuration: name,
+    selection: {},
+  });
+}
+
+/** The form with another selection from the catalog it is drawn under. */
+export function creationSelectionChosen(
+  form: TicketCreationForm,
+  offers: readonly CreationOffer[],
+  selection: ConfigurationSelection,
+): TicketCreationForm {
+  return creationDrawnChosen(form, offers, {
+    configuration: form.configuration,
+    selection,
+  });
 }
 
 /** A browser's newline, as the one newline this tree stores an intent under. */
@@ -714,6 +776,7 @@ function creationFieldOf(
 ): CreationField | undefined {
   if (path[0] === "authoring") return "authoring";
   if (path[0] === "overrides") return undefined;
+  if (path[0] === "selection") return "configuration";
   if (path[0] !== "brief") return "fence";
   if (path[1] === "title") return "title";
   if (path[1] === "intent") return "intent";
@@ -930,10 +993,19 @@ function creationUndrawnFaults(
   };
 }
 
-/** The overrides a form sends, and no key at all where it holds none. */
-function creationOverridesOf(form: TicketCreationForm): {
-  readonly overrides?: unknown;
-} {
+/**
+ * What a form sends of its configuration's own choices: the selection under a
+ * catalog and the overrides under any other configuration, each with no key at
+ * all where it holds none.
+ */
+function creationChoicesOf(
+  form: TicketCreationForm,
+  offer: CreationOffer | undefined,
+): { readonly overrides?: unknown; readonly selection?: unknown } {
+  if (creationCatalogOf(offer) !== undefined)
+    return Object.keys(form.selection).length === 0
+      ? {}
+      : { selection: form.selection };
   const overrides = overridesNestedOf(form.overrides);
   return overrides === undefined ? {} : { overrides };
 }
@@ -949,7 +1021,8 @@ export function creationBodyFrom(
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
 ): CreationAssembly {
-  const drawn = creationOfferOf(offers, form.configuration)?.initialization;
+  const offer = creationOfferDrawn(offers, form);
+  const drawn = offer?.initialization;
   const branches = creationBranchesOf(form);
   const brief = creationBriefOf(
     form,
@@ -967,7 +1040,7 @@ export function creationBodyFrom(
       program: [...form.program],
     },
     brief,
-    ...creationOverridesOf(form),
+    ...creationChoicesOf(form, offer),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
   if (parsed.success && stated.length === 0)

@@ -23,6 +23,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
+import type { ConfigurationSelection } from "../../../src/contract/configurationSelection.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
@@ -35,6 +36,7 @@ import {
   ticketPageAmbientRoute,
   turned,
 } from "./screenHarness.tsx";
+import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm } from "./viewport.ts";
@@ -91,6 +93,7 @@ async function drawTicket(
   served: string = canonical,
   overrides?: ConfigurationOverrides,
   creator?: string,
+  selection?: ConfigurationSelection,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -125,6 +128,7 @@ async function drawTicket(
         configurationVersion: version,
         ...(overrides === undefined ? {} : { overrides }),
         ...(creator === undefined ? {} : { creator }),
+        ...(selection === undefined ? {} : { selection }),
       });
     },
   });
@@ -358,4 +362,21 @@ test("instructions the ticket overrode are drawn as the override, and the captio
     name: /^Instructions/u,
   });
   expect(within(heading).getByText("Overridden")).toBeDefined();
+});
+
+test("a catalog draws what the ticket selected of it: its work's prompt, its plan's stages and its finalizer", async () => {
+  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+    evaluation: "gated",
+    finalization: "approved",
+  });
+  await sectionOpened("Provenance");
+  expect(screen.getByText("build")).toBeDefined();
+  expect(screen.getByText("prompts/build.md")).toBeDefined();
+  expect(screen.getByText("Build it.")).toBeDefined();
+  expect(screen.getByText("gated")).toBeDefined();
+  expect(screen.getByText("Stage 2 · gates")).toBeDefined();
+  expect(screen.getByText("npm test")).toBeDefined();
+  expect(screen.getByText("approved")).toBeDefined();
+  expect(screen.getByText("Approved first")).toBeDefined();
+  expect(screen.queryByText("Do it fast.")).toBeNull();
 });

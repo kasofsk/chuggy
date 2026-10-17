@@ -36,18 +36,27 @@ import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
+  configurationCatalogChoices,
+  configurationCatalogSelected,
+  configurationCatalogSelection,
+} from "../core/configurationCatalog.ts";
+import type { CatalogSelected } from "../core/configurationCatalog.ts";
+import {
   creationBodyFrom,
   creationBootstrapLine,
   creationBranchFieldHint,
   creationBranchProposed,
+  creationCatalogOf,
   creationConfigurationAsked,
   creationConfigurationChosen,
   creationConfigurationLabel,
   creationFormFrom,
   creationFormProposed,
+  creationOfferDrawn,
   creationOfferOf,
   creationRepositories,
   creationRepositoryChosen,
+  creationSelectionChosen,
   creationStart,
   creationStepSentence,
   creationSubmitEffect,
@@ -187,6 +196,59 @@ function Configuration(
       )}
       {bootstrap === undefined ? null : (
         <Notice tone="info" detail={bootstrap} />
+      )}
+    </>
+  );
+}
+
+/** What each field of a selection is called where it is chosen. */
+const selectionLabels: Readonly<Record<keyof CatalogSelected, string>> = {
+  work: "Work",
+  evaluation: "Evaluation",
+  finalization: "Finalizer",
+};
+
+/**
+ * What the ticket selects from the catalog it is drawn under, each field
+ * starting on the catalog's default and a finalizer asked only of a catalog
+ * that holds one. A configuration that is no catalog has nothing to select.
+ */
+function Selection(
+  props: FormEdit & { readonly offers: readonly CreationOffer[] },
+): ReactNode {
+  const { form, onChange, offers } = props;
+  const catalog = creationCatalogOf(
+    creationOfferOf(offers, form.configuration),
+  );
+  if (catalog === undefined) return null;
+  const selected = configurationCatalogSelected(catalog, form.selection);
+  const choices = configurationCatalogChoices(catalog);
+  return (
+    <>
+      {(["work", "evaluation", "finalization"] as const).map((field) =>
+        choices[field].length === 0 ? null : (
+          <div className="creation-row" key={field}>
+            <span>{selectionLabels[field]}</span>
+            <Picker
+              label={selectionLabels[field]}
+              value={selected[field] ?? ""}
+              placeholder="None"
+              options={choices[field]}
+              onChoose={(name) => {
+                onChange(
+                  creationSelectionChosen(
+                    form,
+                    offers,
+                    configurationCatalogSelection(catalog, {
+                      ...selected,
+                      [field]: name,
+                    }),
+                  ),
+                );
+              }}
+            />
+          </div>
+        ),
       )}
     </>
   );
@@ -568,10 +630,11 @@ export function CreationFields(
   },
 ): ReactNode {
   const { faults, form, onChange } = props;
-  const drawn = creationOfferOf(props.offers, form.configuration);
+  const drawn = creationOfferDrawn(props.offers, form);
   return (
     <>
       <Configuration form={form} onChange={onChange} offers={props.offers} />
+      <Selection form={form} onChange={onChange} offers={props.offers} />
       <Fault field="configuration" faults={faults} />
       {props.partial === true ? (
         <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
@@ -618,7 +681,9 @@ export function CreationFields(
         />
       )}
       <Fault field="authoring" faults={faults} />
-      <Overrides {...props} offer={drawn} />
+      {creationCatalogOf(drawn) === undefined ? (
+        <Overrides {...props} offer={drawn} />
+      ) : null}
       <Fault field="fence" faults={faults} />
     </>
   );

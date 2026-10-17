@@ -141,6 +141,7 @@ export function editFormFrom(
     landingMode:
       finalization?.mode ?? creationLandingDefault(repositories, repository),
     overrides: overridesHeldOf(draft.overrides),
+    selection: draft.selection ?? {},
   };
 }
 
@@ -178,6 +179,9 @@ export function editRevisionFrom(
       ...(assembled.body.overrides === undefined
         ? {}
         : { overrides: assembled.body.overrides }),
+      ...(assembled.body.selection === undefined
+        ? {}
+        : { selection: assembled.body.selection }),
     }),
   };
 }
