@@ -405,6 +405,12 @@ export const ticketLandingConflictBytesMax = 2_048;
 /** How many of the entries under `.chug/` a configuration import read none of one answer names. */
 export const repositoryConfigurationIgnoredAnsweredMax = 10;
 
+/** How many entries one read of a repository directory answers before it says it was cut short. */
+export const repositoryTreeEntriesAnsweredMax = 1_000;
+
+/** The longest directory path, in code points, a read of a repository's tree is asked for. */
+export const repositoryTreeDirectoryCharsMax = 1_024;
+
 /**
  * How many repositories one installation's listing answers with at the most,
  * whatever bound a deployment sets: a deployment naming a wider one is refused
@@ -507,6 +513,7 @@ export const nativeHttpRoutes = {
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
+  projectRepositoryTree: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/tree`,
   executionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/execution-placement`,
   sessionPlacement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/session-placement`,
   ownerFallback: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/owner-fallback`,

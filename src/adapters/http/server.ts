@@ -210,11 +210,17 @@ import {
   notFound,
   sessionBearerRefusedResponse,
   actionReportResponse,
+  repositoryTreeResponse,
   ticketActionReachResponse,
   ticketLandingsResponse,
 } from "./outcomes.ts";
 import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
+import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asRepositoryTreeDirectory,
+  type RepositoryTreeReads,
+} from "../../interpreter/repositoryTree.ts";
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
@@ -2024,6 +2030,29 @@ function registerTicketLandings(
   );
 }
 
+function registerRepositoryTree(
+  app: FastifyInstance,
+  trees: RepositoryTreeReads,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.repositoryTree,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.repositoryTree.query.parse(
+        request.query,
+      );
+      return trees.read(principal, partition, {
+        repository: asRepositoryId(query.repository),
+        directory: asRepositoryTreeDirectory(query.directory ?? ""),
+        ...(query.commit === undefined
+          ? {}
+          : { commit: asGitObjectId(query.commit) }),
+      });
+    },
+    repositoryTreeResponse,
+  );
+}
+
 function registerEndpointSession(request: FastifyRequest): SessionId {
   return asSessionId(textField(record(request.params), "session"));
 }
@@ -2453,6 +2482,7 @@ export function createNativeHttpApp(
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
   ownerFallback?: ProjectOwnerFallbackAdministration,
+  repositoryTree?: RepositoryTreeReads,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2493,6 +2523,7 @@ export function createNativeHttpApp(
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   if (landings !== undefined) registerTicketLandings(app, landings);
+  if (repositoryTree !== undefined) registerRepositoryTree(app, repositoryTree);
   app.setErrorHandler((failure, _request, reply) => {
     nativeHttpSend(reply, failureResponse(failure));
   });

@@ -103,6 +103,7 @@ export const sessionBearerRouteClasses = {
   projectRepositoryLanding: partitionReplace,
   projectRepositoryRetirement: partitionReplace,
   projectRepositoryConfigurations: partitionReplace,
+  projectRepositoryTree: partitionRead,
   executionPlacement: { GET: "Partition", PUT: "Partition" },
   sessionPlacement: { GET: "Partition", PUT: "Partition" },
   ownerFallback: { GET: "Partition", PUT: "Partition" },

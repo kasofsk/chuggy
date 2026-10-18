@@ -80,6 +80,7 @@ const documentRouteNames = [
   "projectRepositoryConfigurations",
   "projectRepositoryLanding",
   "projectRepositoryRetirement",
+  "projectRepositoryTree",
   "projects",
   "runConfiguration",
   "runError",

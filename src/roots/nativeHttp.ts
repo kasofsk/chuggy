@@ -201,6 +201,7 @@ import {
 } from "../interpreter/ticketLandings.ts";
 import type { ProjectArtifactPort } from "../interpreter/finalizerPreparation.ts";
 import { gitCommitAncestry } from "../adapters/git/gitCommitAncestry.ts";
+import { gitRepositoryTree } from "../adapters/git/gitRepositoryTree.ts";
 import { systemPacing } from "../adapters/runtime/systemPacing.ts";
 import { actionReachAncestry } from "../interpreter/actionReachAncestry.ts";
 import type { CommitAncestryPort } from "../interpreter/commitAncestry.ts";
@@ -208,6 +209,11 @@ import {
   ticketActionReaches,
   type TicketActionReaches,
 } from "../interpreter/ticketActionReach.ts";
+import {
+  repositoryTreeReads,
+  type RepositoryTreeReads,
+} from "../interpreter/repositoryTree.ts";
+import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { bearerSecretReporters } from "../adapters/reporters/bearerSecret.ts";
 import { fluxSignatureReporters } from "../adapters/reporters/fluxSignature.ts";
 
@@ -735,6 +741,28 @@ export function nativeActionReach(
       monotonicNowMs: () => performance.now(),
     }),
     pacing: systemPacing,
+  });
+}
+
+/**
+ * The repository tree route's service: a binding is read over the API pool,
+ * and a tree is read by one adapter for the whole process over the scratch
+ * root the other git readers are given. A deployment naming no root says it
+ * cannot read, and the route is composed either way.
+ */
+export function nativeRepositoryTree(
+  pools: Pick<NativePools, "pool">,
+  access: ProjectAccess,
+  credentials: RepositoryCredentialPort,
+): RepositoryTreeReads {
+  const scratch = nativeGitScratch();
+  return repositoryTreeReads({
+    access,
+    bindings: postgresProjectRepositoryBinding(pools.pool),
+    source:
+      scratch === undefined
+        ? { readable: "Unconfigured" }
+        : gitRepositoryTree({ ...scratch, credentials }),
   });
 }
 
@@ -1519,8 +1547,7 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
-  const { artifacts, uploadBytesMax: artifactUploadBytesMax } =
-    nativeArtifacts();
+  const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const web = composeNativeWeb(
     pool,
@@ -1545,7 +1572,7 @@ async function main(): Promise<void> {
     postgresInstallationAuthority(pool),
     {
       ...nativeHttpLimitsDefault,
-      projectArtifactUploadBytesMax: artifactUploadBytesMax,
+      projectArtifactUploadBytesMax: uploadBytesMax,
     },
     hub,
     composeSelectorProjectSettings(pool, access),
@@ -1568,6 +1595,7 @@ async function main(): Promise<void> {
     nativeTicketLandings(pools, access, artifacts),
     nativePersonalRunners(pool, access),
     composeProjectOwnerFallback(pool, access),
+    nativeRepositoryTree(pools, access, forge.credentials),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

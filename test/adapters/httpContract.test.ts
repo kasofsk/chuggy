@@ -85,6 +85,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
   "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
   "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
+  "/api/v1/tenants/:tenant/projects/:project/repositories/tree",
   "/api/v1/tenants/:tenant/projects/:project/execution-placement",
   "/api/v1/tenants/:tenant/projects/:project/session-placement",
   "/api/v1/tenants/:tenant/projects/:project/owner-fallback",

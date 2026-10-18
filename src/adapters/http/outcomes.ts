@@ -181,6 +181,8 @@ import type {
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
 import type { ActionReported } from "../../interpreter/actionReport.ts";
 import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
+import type { RepositoryTreeResponse } from "../../contract/repositoryTree.ts";
+import type { RepositoryTreeListing } from "../../interpreter/repositoryTree.ts";
 import type {
   ProjectAbilitiesResponse,
   TicketLandingsResponse,
@@ -1408,6 +1410,19 @@ export function ticketActionReachResponse(
           commit: reach.commit,
           actions: reach.actions.map(ticketActionReachAction),
         };
+  return response(200, body);
+}
+
+/** A repository the caller may not read and one its project does not bind answer alike, and every read of a bound one is answered. */
+export function repositoryTreeResponse(
+  result: AuthorizedResult<RepositoryTreeListing>,
+): NativeHttpResponse {
+  if (result.result === "NotFound") return notFound();
+  const listing = result.value;
+  const body: RepositoryTreeResponse =
+    listing.read === "Listed"
+      ? { ...listing, entries: [...listing.entries] }
+      : listing;
   return response(200, body);
 }
 

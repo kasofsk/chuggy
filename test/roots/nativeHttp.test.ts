@@ -1640,6 +1640,99 @@ test("a deployment naming no scratch root serves the reach route, runs no git, a
   }
 });
 
+/**
+ * The root's own tree service over a pool binding `from`'s remote to the
+ * project, reading the root at the head and then a repository the project
+ * does not bind.
+ */
+function repositoryTreeProgram(from: ReachRepository): string {
+  return `
+    const root = await import('./src/roots/nativeHttp.ts');
+    const { existsSync } = await import('node:fs');
+    const asked = [];
+    const pool = {
+      query: async (query) => {
+        const named = query.values.find((value) => value === ${JSON.stringify(from.remote)});
+        asked.push(named === undefined ? 'binding other' : 'binding bound');
+        return {
+          rows: named === undefined ? [] : [{ repository: named, recovery_epoch: 'epoch' }],
+        };
+      },
+    };
+    const trees = root.nativeRepositoryTree(
+      { pool },
+      { authorize: async () => ({ kind: 'User', subject: 'reader' }) },
+      {
+        credential: async (binding) => {
+          asked.push('credential ' + binding.repository);
+          return { resolved: 'Credential', credential: 'fixture-secret' };
+        },
+      },
+    );
+    const partition = { tenant: 'vteng', project: 'chuggy' };
+    const bound = await trees.read('reader', partition, {
+      repository: ${JSON.stringify(from.remote)},
+      directory: '',
+    });
+    const other = await trees.read('reader', partition, {
+      repository: '/elsewhere/secret.git',
+      directory: '',
+    });
+    process.stdout.write(JSON.stringify({
+      bound, other, asked, scratchOpened: existsSync(${JSON.stringify(from.scratch)}),
+    }));
+  `;
+}
+
+test("the tree route's service reads a bound repository at its head in the scratch the deployment names, and refuses one the project does not bind", async (t) => {
+  const from = reachRepository(t);
+  const ran = await rootRead(
+    { HOME: from.directory, [gitScratchRootVariable]: from.scratch },
+    repositoryTreeProgram(from),
+  );
+  assert.equal(ran.code, 0, ran.out);
+  assert.deepEqual(JSON.parse(ran.out), {
+    bound: {
+      result: "Authorized",
+      value: {
+        read: "Listed",
+        entries: [],
+        truncated: false,
+        commit: from.tip,
+        directory: "",
+      },
+    },
+    other: { result: "NotFound" },
+    asked: [
+      "binding bound",
+      `credential ${from.remote}`,
+      `credential ${from.remote}`,
+      "binding other",
+    ],
+    scratchOpened: true,
+  });
+});
+
+test("a deployment naming no scratch root serves the tree route, runs no git, and says it cannot read", async (t) => {
+  const from = reachRepository(t);
+  for (const named of [{}, { [gitScratchRootVariable]: "" }]) {
+    const ran = await rootRead(
+      { HOME: from.directory, ...named },
+      repositoryTreeProgram(from),
+    );
+    assert.equal(ran.code, 0, ran.out);
+    assert.deepEqual(JSON.parse(ran.out), {
+      bound: {
+        result: "Authorized",
+        value: { read: "Unavailable", unavailable: "Scratch" },
+      },
+      other: { result: "NotFound" },
+      asked: ["binding bound", "binding other"],
+      scratchOpened: false,
+    });
+  }
+});
+
 /** One row of the landings door: a landing failed on a conflict whose manifest is `conflict-1`. */
 const landingsRow = {
   request: "request-1",

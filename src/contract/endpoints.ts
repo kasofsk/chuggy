@@ -1,6 +1,7 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import { fieldsOnly, integerField, textField } from "./fields.ts";
+import { repositoryTreeResponseSchema } from "./repositoryTree.ts";
 import { z } from "zod";
 import {
   nativeHttpRoutes,
@@ -67,6 +68,10 @@ const transcriptQuery = endpointQuery({
   after: endpointInteger("after", 0),
   limit: endpointInteger("limit", sessionStorePageBatchesMax),
 });
+function endpointText(name: string) {
+  return z.unknown().transform((value) => textField({ [name]: value }, name));
+}
+
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
 export const nativeHttpEndpoints = {
@@ -215,6 +220,16 @@ export const nativeHttpEndpoints = {
     method: "GET",
     path: nativeHttpRoutes.ticketLandings,
     response: ticketLandingsResponseSchema,
+  },
+  repositoryTree: {
+    method: "GET",
+    path: nativeHttpRoutes.projectRepositoryTree,
+    query: endpointQuery({
+      repository: endpointText("repository"),
+      directory: endpointText("directory").optional(),
+      commit: endpointText("commit").optional(),
+    }),
+    response: repositoryTreeResponseSchema,
   },
 } as const;
 
