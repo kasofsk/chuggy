@@ -59,12 +59,12 @@ export function postgresRepositoryConfigurationImportAttempts(
 ): RepositoryConfigurationImportAttempts {
   return {
     record: async (attempt) => {
-      await pool.query(
+      await pool.query<{ recorded: string | null }>(
         sql`SELECT record_repository_configuration_import(
               ${attempt.partition.tenant},${attempt.partition.project},
               ${attempt.repository},${attempt.commit ?? null},
               ${attempt.outcome.result},
-              ${attempt.outcome.result === "SnapshotAbsent" ? attempt.outcome.absent : null})`,
+              ${attempt.outcome.result === "SnapshotAbsent" ? attempt.outcome.absent : null})::text AS recorded`,
       );
     },
   };
@@ -108,7 +108,7 @@ async function readRepositoryConfigurationImportAttempts(
     absent: string | null;
   }>(
     sql`SELECT repository,
-               to_char(attempted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS attempted_at,
+               to_char(attempted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS attempted_at,
                repository_commit,result,absent
           FROM repository_configuration_import
          WHERE tenant=${partition.tenant} AND project=${partition.project}
