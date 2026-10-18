@@ -75,7 +75,6 @@ export const goldenConfig: KubernetesWorkerLaunchConfig = {
   runtimeImage: goldenRuntimeImage,
   workerPlaneUrl: "http://golden-plane.invalid:3001",
   capabilityFile: "/var/run/golden/capability/bearer",
-  workspacePath: "/workspace",
   credentialMounts: {
     forge: {
       secretName: "golden-forge",

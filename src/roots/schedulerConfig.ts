@@ -28,7 +28,6 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../contract/http.ts";
-import { workerWorkspaceDirectory } from "../contract/workerEnvironment.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
@@ -674,7 +673,6 @@ function schedulerWorkers(
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
     workerPlaneUrl: schedulerRequired(environment, "WORKER_PLANE_URL"),
     capabilityFile: schedulerRequired(environment, "WORKER_CAPABILITY_FILE"),
-    workspacePath: workerWorkspaceDirectory,
     credentialMounts: schedulerJson(
       environment,
       "WORKER_CREDENTIAL_MOUNTS",
@@ -829,7 +827,6 @@ function schedulerPodSite(
     requestTimeoutSecsMax: workers.requestTimeoutSecsMax,
     workerPlaneUrl: workers.workerPlaneUrl,
     capabilityFile: workers.capabilityFile,
-    workspacePath: workers.workspacePath,
     credentialMounts: workers.credentialMounts,
   };
 }

@@ -60,7 +60,6 @@ const config: KubernetesSessionLaunchConfig = {
   podNamePrefix: "chuggy-session",
   workerPlaneUrl: "http://chuggy-worker-plane.invalid:3001",
   capabilityFile: "/var/run/chuggy/session-capability/bearer",
-  workspacePath: "/workspace",
   credentialMounts: {
     "claude-code": {
       secretName: "claude-code-credential",

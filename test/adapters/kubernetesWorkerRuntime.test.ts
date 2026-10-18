@@ -15,6 +15,7 @@ import { test } from "node:test";
 import {
   workerJobCommand,
   workerRuntimeDirectory,
+  workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import type {
@@ -42,7 +43,6 @@ const site: KubernetesPodSite = {
   requestTimeoutSecsMax: 5,
   workerPlaneUrl: "http://plane.invalid:3001",
   capabilityFile: "/run/chuggy/capability",
-  workspacePath: "/srv/workspace",
   credentialMounts: {
     forge: {
       secretName: "forge",
@@ -147,9 +147,9 @@ test("the job mounts the tree the copy wrote, read-only, where the contract says
   assert.equal(tree.subPath, basename(workerRuntimeDirectory));
 });
 
-test("the job is told the site's workspace, which no image it names need know", () => {
+test("the job is told the contract's workspace, which no image it names need know", () => {
   assert.deepEqual(started.container.env.slice(job.container.env.length), [
-    { name: workerWorkspaceVariable, value: site.workspacePath },
+    { name: workerWorkspaceVariable, value: workerWorkspaceDirectory },
   ]);
 });
 
@@ -192,14 +192,13 @@ function siteCredentialAt(mountPath: string): Partial<KubernetesPodSite> {
 
 test("a site mounting anything at, inside or around the runtime's directory is refused, and one beside it is not", () => {
   for (const refused of [
-    { workspacePath: workerRuntimeDirectory },
-    { workspacePath: `${workerRuntimeDirectory}/` },
+    { capabilityFile: workerRuntimeDirectory },
+    { capabilityFile: `${workerRuntimeDirectory}/` },
     { capabilityFile: `${workerRuntimeDirectory}/capability` },
     siteCredentialAt(`${workerRuntimeDirectory}/token`),
-    { workspacePath: "/opt" },
-    { workspacePath: "/opt/" },
-    { workspacePath: "/" },
     { capabilityFile: "/opt" },
+    { capabilityFile: "/opt/" },
+    { capabilityFile: "/" },
     siteCredentialAt("/opt/token"),
   ])
     assert.throws(
@@ -211,8 +210,8 @@ test("a site mounting anything at, inside or around the runtime's directory is r
     );
   for (const accepted of [
     site,
-    { ...site, workspacePath: `${workerRuntimeDirectory}-workspace` },
-    { ...site, workspacePath: "/opt/workspace" },
+    { ...site, capabilityFile: `${workerRuntimeDirectory}-capability` },
+    { ...site, capabilityFile: "/opt/capability" },
     { ...site, ...siteCredentialAt("/opt/credentials/token") },
   ])
     assert.doesNotThrow(() => {

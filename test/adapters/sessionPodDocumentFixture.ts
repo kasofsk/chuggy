@@ -37,7 +37,6 @@ export const goldenConfig: KubernetesSessionLaunchConfig = {
   podNamePrefix: "golden-session",
   workerPlaneUrl: "http://golden-plane.invalid:3001",
   capabilityFile: "/var/run/golden/session-capability/bearer",
-  workspacePath: "/workspace",
   credentialMounts: {
     "claude-code": {
       secretName: "golden-claude-code",

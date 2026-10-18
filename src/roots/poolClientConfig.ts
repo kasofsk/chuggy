@@ -25,7 +25,6 @@
 
 import { z } from "zod";
 
-import { workerWorkspaceDirectory } from "../contract/workerEnvironment.ts";
 import type { KubernetesPoolPlacementConfig } from "../adapters/kubernetes/poolPlacement.ts";
 import type { ClientCredentialsConfig } from "../adapters/http/clientCredentials.ts";
 import type { PoolPlaneClientSettings } from "../adapters/http/poolPlaneClient.ts";
@@ -193,7 +192,7 @@ function poolClientSite(environment: PoolClientEnvironment): PoolClientSite {
         .map((issue) => `${issue.path.join(".")} ${issue.message}`)
         .join("; ")}`,
     );
-  return { ...parsed.data, workspacePath: workerWorkspaceDirectory };
+  return parsed.data;
 }
 
 export function poolClientConfig(

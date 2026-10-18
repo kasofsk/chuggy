@@ -11,8 +11,8 @@
  * its mailbox is, and which repository it reads.
  *
  * THE TWO ENDPOINTS ARE SITE DATA, NOT PLACEMENT DATA. The worker plane URL,
- * this installation's own API origin, the capability file and the workspace
- * path are on the launch configuration exactly as they are for a worker; a
+ * this installation's own API origin and the capability file are on the
+ * launch configuration exactly as they are for a worker; a
  * placement carrying them would be a placement carrying a cluster fact the port
  * is not supposed to know. The repository is the other way round: it is the
  * project's binding rather than the site's, so it arrives on the placement and
@@ -38,6 +38,7 @@ import {
   sessionTaskVariable,
   workerCredentialFilesVariable,
   workerTaskVariable,
+  workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
 import type {
@@ -320,10 +321,10 @@ function kubernetesSessionContainer(
         name: workerCredentialFilesVariable,
         value: JSON.stringify(credentials.files),
       },
-      { name: workerWorkspaceVariable, value: config.workspacePath },
+      { name: workerWorkspaceVariable, value: workerWorkspaceDirectory },
       {
         name: sessionConfigDirectoryVariable,
-        value: join(config.workspacePath, kubernetesSessionConfigDirectory),
+        value: join(workerWorkspaceDirectory, kubernetesSessionConfigDirectory),
       },
       { name: sessionModelVariable, value: config.model },
       ...Object.entries(config.environment).map(([name, value]) => ({
@@ -342,7 +343,7 @@ function kubernetesSessionContainer(
       },
       {
         name: kubernetesSessionWorkspaceVolume,
-        mountPath: config.workspacePath,
+        mountPath: workerWorkspaceDirectory,
         readOnly: false,
       },
       kubernetesMintedCredentialVolumes().mount,

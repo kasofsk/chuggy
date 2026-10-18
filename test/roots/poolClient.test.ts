@@ -97,13 +97,7 @@ test("a client is composed from its variables, the absent bounds defaulting", as
   assert.equal(found.client.passesMax, 1_000);
 });
 
-test("a pool places its jobs in the contract's workspace, and a site naming one of its own is refused", async () => {
-  const found = await parsed(environment);
-  assert.equal(found.refused, undefined);
-  assert.equal(
-    (found.parsed as { site: { workspacePath: string } }).site.workspacePath,
-    workerWorkspaceDirectory,
-  );
+test("a site naming a workspace, even the contract's, is refused", async () => {
   assert.match(
     String(
       (
@@ -111,7 +105,7 @@ test("a pool places its jobs in the contract's workspace, and a site naming one 
           ...environment,
           CHUG_POOL_CLIENT_SITE: JSON.stringify({
             ...site,
-            workspacePath: "/elsewhere",
+            workspacePath: workerWorkspaceDirectory,
           }),
         })
       ).refused,
