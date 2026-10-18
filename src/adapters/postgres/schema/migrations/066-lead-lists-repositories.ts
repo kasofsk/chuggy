@@ -3,9 +3,10 @@
  * are judged by names `list_repositories`, at the place the lead's roster
  * holds it.
  *
- * ONLY THE LIST THE BASELINE SEEDED MOVES. An installation whose allowlist an
- * owner has written keeps it, and a project's own allowlist is left alone too:
- * a list someone wrote is theirs.
+ * ONLY THE LIST THE BASELINE SEEDED MOVES. The installation's allowlist, now
+ * or at any revision of its history, is widened where it is still exactly that
+ * list, whoever stored it; any other is left as it is, as is every project's
+ * own allowlist.
  *
  * IT IS REWRITTEN IN PLACE, HISTORY INCLUDED, at the revision it stood at, as
  * 004 rewrote the observation budget, so a migrated installation and a fresh
