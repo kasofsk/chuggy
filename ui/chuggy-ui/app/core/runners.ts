@@ -18,6 +18,7 @@ import {
 import {
   workerPoolCapabilitiesMax,
   workerPoolCapabilitySchema,
+  workerPoolTokenCharsMax,
 } from "../../../../src/contract/workerPool.ts";
 import type {
   PlacementRoute,
@@ -92,6 +93,14 @@ export const runnerAskDefault: RunnerAsk = {
   capabilities: [],
 };
 
+/** What is wrong with a word that is not a capability, in a few words. */
+function runnerCapabilityFault(capability: string): string {
+  if (capability.length > workerPoolTokenCharsMax)
+    return `at most ${String(workerPoolTokenCharsMax)} characters`;
+  if (!/^[A-Za-z0-9]/u.test(capability)) return "start with a letter or digit";
+  return "use letters, digits, _, : and -";
+}
+
 /**
  * The capabilities a reader typed, split on spaces and commas, or why they are
  * not: each must be a capability, none a platform, which the runner finds of
@@ -104,7 +113,7 @@ export function runnerCapabilitiesTyped(
   for (const capability of capabilities) {
     if (!workerPoolCapabilitySchema.safeParse(capability).success)
       return {
-        refused: `${capability} · use letters, digits, _, : and -`,
+        refused: `${capability} · ${runnerCapabilityFault(capability)}`,
       };
     if (capability.startsWith("Platform:"))
       return {

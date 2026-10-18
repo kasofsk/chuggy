@@ -2,8 +2,8 @@
  * What a registration token is minted for, asked before it is: the package
  * the machine runs and, folded away since few runners need either, whether it
  * runs work on itself and the capabilities it declares it meets. A mint is
- * refused here before it is sent where what was typed is not a capability, and
- * a refused mint returns to the ask.
+ * refused here before it is sent where what was typed is not a capability, the
+ * fold opened to say why, and a refused mint returns to the ask.
  */
 
 import { useId, useState } from "react";
@@ -89,20 +89,20 @@ function RunnerCapabilities(props: {
   );
 }
 
-/** What few runners need, folded away until asked for, and open while what
- * was typed there is refused. */
+/** What few runners need, folded away until asked for. */
 function RunnerAdvanced(props: {
+  readonly open: boolean;
+  readonly onOpen: (open: boolean) => void;
   readonly host: boolean;
   readonly onHost: (host: boolean) => void;
   readonly typed: string;
   readonly onType: (typed: string) => void;
   readonly fault: string | undefined;
 }): ReactNode {
-  const [open, setOpen] = useState(false);
   return (
     <Disclosure
-      open={open || props.fault !== undefined}
-      onOpenChange={setOpen}
+      open={props.open}
+      onOpenChange={props.onOpen}
       label="Advanced"
       look={{ variant: "quiet", size: "sm" }}
       chevron
@@ -158,6 +158,7 @@ export function RunnerAskForm(props: {
   const [host, setHost] = useState(false);
   const [typed, setTyped] = useState("");
   const [fault, setFault] = useState<string | undefined>(undefined);
+  const [advanced, setAdvanced] = useState(false);
   const busy = props.mint.mint === "Minting";
   const form = useFocusedUnheld<HTMLFormElement>();
   return (
@@ -171,6 +172,7 @@ export function RunnerAskForm(props: {
         const read = runnerAskRead(chosen, host, typed);
         if ("refused" in read) {
           setFault(read.refused);
+          setAdvanced(true);
           return;
         }
         props.onMint({ mint: "Minting" });
@@ -186,6 +188,8 @@ export function RunnerAskForm(props: {
     >
       <RunnerMachine chosen={chosen} onChoose={setChosen} />
       <RunnerAdvanced
+        open={advanced}
+        onOpen={setAdvanced}
         host={host}
         onHost={setHost}
         typed={typed}

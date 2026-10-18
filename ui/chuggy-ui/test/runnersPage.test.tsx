@@ -364,6 +364,26 @@ test("a Mac asked to run work on itself and to declare capabilities mints a toke
   );
 });
 
+/** A refusal opens the fold it is drawn in, and the reader typing a fix there
+ * is not folded away from it. */
+test("a refusal of what was typed under a folded Advanced opens it, and it stays open while the reader fixes it", async () => {
+  const sent = await drawPage({ written: [minted()] });
+  await press("Add runner");
+  await press("Advanced");
+  const capabilities = (): HTMLElement =>
+    screen.getByRole("textbox", { name: "Capabilities" });
+  fireEvent.change(capabilities(), { target: { value: "_x" } });
+  await press("Advanced");
+  expect(screen.queryByRole("textbox", { name: "Capabilities" })).toBeNull();
+  await press("Create token");
+  expect(screen.getByText("_x · start with a letter or digit")).toBeTruthy();
+  await turned(() => {
+    fireEvent.change(capabilities(), { target: { value: "x" } });
+  });
+  expect(capabilities()).toBeTruthy();
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+});
+
 test("capabilities typed that are not ones are refused before anything is minted", async () => {
   const sent = await drawPage({ written: [minted()] });
   await addRunner({ typed: "Platform:Linux:Amd64" });

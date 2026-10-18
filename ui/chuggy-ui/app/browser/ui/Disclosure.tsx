@@ -1,7 +1,7 @@
 /**
  * A trigger and the body it shows, wired to each other and drawing no box of
- * their own, so the layout that held them as siblings still does. A trigger
- * whose label does not say it opens anything carries a chevron that does.
+ * their own, so the layout that held them as siblings still does. `chevron`
+ * draws one before the label, turned while the body is open.
  */
 
 import { Collapsible } from "radix-ui";

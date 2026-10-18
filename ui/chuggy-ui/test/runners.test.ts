@@ -209,6 +209,12 @@ test("capabilities typed are refused where one is not a capability, is a platfor
   expect(runnerCapabilitiesTyped("Tool:Ba.zel")).toStrictEqual({
     refused: "Tool:Ba.zel · use letters, digits, _, : and -",
   });
+  expect(runnerCapabilitiesTyped("Tool:Bazel - Tool:Go")).toStrictEqual({
+    refused: "- · start with a letter or digit",
+  });
+  expect(runnerCapabilitiesTyped(`T${"o".repeat(63)}`)).toStrictEqual({
+    refused: `T${"o".repeat(63)} · at most 63 characters`,
+  });
   expect(runnerCapabilitiesTyped("Platform:MacOS:Arm64")).toStrictEqual({
     refused: "Platform:MacOS:Arm64 is detected, not typed",
   });

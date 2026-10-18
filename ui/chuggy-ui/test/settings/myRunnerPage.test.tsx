@@ -152,15 +152,15 @@ test("a member the workspace lets register one asks what it is for, and is hande
 });
 
 /** The runner read again on its clock, as a page left open is, and drawn
- * while that read is still out. */
-async function polled(): Promise<() => Promise<void>> {
+ * while that read is still out; it answers none unless told otherwise. */
+async function polled(): Promise<(status?: number) => Promise<void>> {
   const held = heldAnswer();
   drawing.held = held.answered;
   await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
   await settled();
-  return async () => {
+  return async (status = 404) => {
     drawing.held = undefined;
-    held.release(answer({ error: { code: "NotFound" } }, 404));
+    held.release(answer({ error: { code: "NotFound" } }, status));
     await settled();
   };
 }
@@ -170,7 +170,7 @@ async function polled(): Promise<() => Promise<void>> {
  * that stands is no reason to take away what they are filling in, or the
  * command they were handed.
  */
-test("the ask and the steps a member was handed stand through a read of their runner that answers none again", async () => {
+test("the ask and the steps a member was handed stand through a read of their runner that answers none again, or fails", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   const sent = await drawMyRunner();
   await press("Register runner");
@@ -193,6 +193,14 @@ test("the ask and the steps a member was handed stand through a read of their ru
   const stepping = await polled();
   expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
   await stepping();
+  expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
+  await (
+    await polled()
+  )(502);
+  expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
+  await (
+    await polled()
+  )();
   expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
 });
 
