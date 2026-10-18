@@ -172,12 +172,11 @@ async function addRunner(
     await turned(() => {
       fireEvent.click(screen.getByRole("radio", { name: machine }));
     });
+  if (asked.host === true || asked.typed !== undefined) await press("Advanced");
   if (asked.host === true)
     await turned(() => {
       fireEvent.click(
-        screen.getByRole("checkbox", {
-          name: "Run work that pins no image on the machine itself",
-        }),
+        screen.getByRole("checkbox", { name: "Run jobs without a container" }),
       );
     });
   if (asked.typed !== undefined)
@@ -365,14 +364,32 @@ test("a Mac asked to run work on itself and to declare capabilities mints a toke
   );
 });
 
+/** A refusal opens the fold it is drawn in, and the reader typing a fix there
+ * is not folded away from it. */
+test("a refusal of what was typed under a folded Advanced opens it, and it stays open while the reader fixes it", async () => {
+  const sent = await drawPage({ written: [minted()] });
+  await press("Add runner");
+  await press("Advanced");
+  const capabilities = (): HTMLElement =>
+    screen.getByRole("textbox", { name: "Capabilities" });
+  fireEvent.change(capabilities(), { target: { value: "_x" } });
+  await press("Advanced");
+  expect(screen.queryByRole("textbox", { name: "Capabilities" })).toBeNull();
+  await press("Create token");
+  expect(screen.getByText("_x · start with a letter or digit")).toBeTruthy();
+  await turned(() => {
+    fireEvent.change(capabilities(), { target: { value: "x" } });
+  });
+  expect(capabilities()).toBeTruthy();
+  expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
+});
+
 test("capabilities typed that are not ones are refused before anything is minted", async () => {
   const sent = await drawPage({ written: [minted()] });
   await addRunner({ typed: "Platform:Linux:Amd64" });
   expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
   expect(
-    screen.getByText(
-      "Platform:Linux:Amd64 is a platform, which the runner finds of its machine",
-    ),
+    screen.getByText("Platform:Linux:Amd64 is detected, not typed"),
   ).toBeTruthy();
   expect(
     screen

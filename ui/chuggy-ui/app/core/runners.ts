@@ -18,6 +18,7 @@ import {
 import {
   workerPoolCapabilitiesMax,
   workerPoolCapabilitySchema,
+  workerPoolTokenCharsMax,
 } from "../../../../src/contract/workerPool.ts";
 import type {
   PlacementRoute,
@@ -92,6 +93,14 @@ export const runnerAskDefault: RunnerAsk = {
   capabilities: [],
 };
 
+/** What is wrong with a word that is not a capability, in a few words. */
+function runnerCapabilityFault(capability: string): string {
+  if (capability.length > workerPoolTokenCharsMax)
+    return `at most ${String(workerPoolTokenCharsMax)} characters`;
+  if (!/^[A-Za-z0-9]/u.test(capability)) return "start with a letter or digit";
+  return "use letters, digits, _, : and -";
+}
+
 /**
  * The capabilities a reader typed, split on spaces and commas, or why they are
  * not: each must be a capability, none a platform, which the runner finds of
@@ -104,15 +113,15 @@ export function runnerCapabilitiesTyped(
   for (const capability of capabilities) {
     if (!workerPoolCapabilitySchema.safeParse(capability).success)
       return {
-        refused: `${capability} is not a capability: letters, digits, _, : and -, beginning with a letter or digit`,
+        refused: `${capability} · ${runnerCapabilityFault(capability)}`,
       };
     if (capability.startsWith("Platform:"))
       return {
-        refused: `${capability} is a platform, which the runner finds of its machine`,
+        refused: `${capability} is detected, not typed`,
       };
   }
   if (new Set(capabilities).size !== capabilities.length)
-    return { refused: "A capability is named twice" };
+    return { refused: "A capability is listed twice" };
   return { capabilities };
 }
 
@@ -132,7 +141,7 @@ export function runnerMintCapabilities(
   ];
   return capabilities.length > workerPoolCapabilitiesMax
     ? {
-        refused: `A runner declares at most ${String(workerPoolCapabilitiesMax)} capabilities, its platforms among them`,
+        refused: `At most ${String(workerPoolCapabilitiesMax)} capabilities, platforms included`,
       }
     : { capabilities };
 }

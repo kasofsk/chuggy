@@ -1,8 +1,9 @@
 /**
  * What a registration token is minted for, asked before it is: the package
- * the machine runs, whether it runs work on itself, and the capabilities
- * the runner declares it meets. A mint is refused here before it is sent where
- * what was typed is not a capability, and a refused mint returns to the ask.
+ * the machine runs and, folded away since few runners need either, whether it
+ * runs work on itself and the capabilities it declares it meets. A mint is
+ * refused here before it is sent where what was typed is not a capability, the
+ * fold opened to say why, and a refused mint returns to the ask.
  */
 
 import { useId, useState } from "react";
@@ -15,6 +16,7 @@ import { runnerAskRead, runnerPackages } from "../core/runners.ts";
 import type { RunnerMint, RunnerPackageName } from "../core/runners.ts";
 import { Button } from "./ui/Button.tsx";
 import { Checkbox } from "./ui/Checkbox.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 import { Input } from "./ui/Input.tsx";
 import { useFocusedUnheld } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -22,38 +24,42 @@ import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
 const runnerPackageNames = Object.keys(runnerPackages) as RunnerPackageName[];
 
-/** The machine a runner is made of, and whether it runs work on itself. */
+/** The machine a runner is made of. */
 function RunnerMachine(props: {
   readonly chosen: RunnerPackageName;
   readonly onChoose: (chosen: RunnerPackageName) => void;
-  readonly host: boolean;
-  readonly onHost: (host: boolean) => void;
 }): ReactNode {
   const offered = runnerPackages[props.chosen];
   return (
-    <>
-      <ToggleGroup
-        label="Machine"
-        options={runnerPackageNames.map((name) => runnerPackages[name].label)}
-        value={offered.label}
-        onChange={(label) => {
-          const name = runnerPackageNames.find(
-            (each) => runnerPackages[each].label === label,
-          );
-          if (name !== undefined) props.onChoose(name);
-        }}
+    <ToggleGroup
+      label="Machine"
+      options={runnerPackageNames.map((name) => runnerPackages[name].label)}
+      value={offered.label}
+      onChange={(label) => {
+        const name = runnerPackageNames.find(
+          (each) => runnerPackages[each].label === label,
+        );
+        if (name !== undefined) props.onChoose(name);
+      }}
+    />
+  );
+}
+
+function RunnerHost(props: {
+  readonly host: boolean;
+  readonly onHost: (host: boolean) => void;
+}): ReactNode {
+  return (
+    <div className="grid gap-1">
+      <Checkbox
+        label="Run jobs without a container"
+        checked={props.host}
+        onChange={props.onHost}
       />
-      <div className="grid gap-1">
-        <Checkbox
-          label="Run work that pins no image on the machine itself"
-          checked={props.host}
-          onChange={props.onHost}
-        />
-        <span className="text-xs font-regular">
-          Nothing isolates that work from your account on the machine.
-        </span>
-      </div>
-    </>
+      <span className="text-xs font-regular">
+        Jobs with no image run directly on this machine, as you.
+      </span>
+    </div>
   );
 }
 
@@ -64,11 +70,11 @@ function RunnerCapabilities(props: {
 }): ReactNode {
   const faultId = useId();
   return (
-    <div className="grid w-full max-w-md gap-1">
+    <label className="grid w-full max-w-md gap-1 text-sm font-medium text-ink-3">
+      Capabilities
       <Input
         label="Capabilities"
         value={props.typed}
-        placeholder="Agent:Claude Tool:Bazel"
         onChange={props.onType}
         invalid={props.fault !== undefined}
         describedBy={faultId}
@@ -77,10 +83,39 @@ function RunnerCapabilities(props: {
         id={faultId}
         className={`text-xs ${props.fault === undefined ? "font-regular" : "text-tone-fail"}`}
       >
-        {props.fault ??
-          "What the runner declares it meets beside its platforms, as tasks require them. Optional."}
+        {props.fault ?? "Optional · what a task may require, like Tool:Bazel"}
       </span>
-    </div>
+    </label>
+  );
+}
+
+/** What few runners need, folded away until asked for. */
+function RunnerAdvanced(props: {
+  readonly open: boolean;
+  readonly onOpen: (open: boolean) => void;
+  readonly host: boolean;
+  readonly onHost: (host: boolean) => void;
+  readonly typed: string;
+  readonly onType: (typed: string) => void;
+  readonly fault: string | undefined;
+}): ReactNode {
+  return (
+    <Disclosure
+      open={props.open}
+      onOpenChange={props.onOpen}
+      label="Advanced"
+      look={{ variant: "quiet", size: "sm" }}
+      chevron
+    >
+      <div className="grid w-full gap-3">
+        <RunnerHost host={props.host} onHost={props.onHost} />
+        <RunnerCapabilities
+          typed={props.typed}
+          onType={props.onType}
+          fault={props.fault}
+        />
+      </div>
+    </Disclosure>
   );
 }
 
@@ -123,6 +158,7 @@ export function RunnerAskForm(props: {
   const [host, setHost] = useState(false);
   const [typed, setTyped] = useState("");
   const [fault, setFault] = useState<string | undefined>(undefined);
+  const [advanced, setAdvanced] = useState(false);
   const busy = props.mint.mint === "Minting";
   const form = useFocusedUnheld<HTMLFormElement>();
   return (
@@ -136,6 +172,7 @@ export function RunnerAskForm(props: {
         const read = runnerAskRead(chosen, host, typed);
         if ("refused" in read) {
           setFault(read.refused);
+          setAdvanced(true);
           return;
         }
         props.onMint({ mint: "Minting" });
@@ -149,13 +186,12 @@ export function RunnerAskForm(props: {
         })();
       }}
     >
-      <RunnerMachine
-        chosen={chosen}
-        onChoose={setChosen}
+      <RunnerMachine chosen={chosen} onChoose={setChosen} />
+      <RunnerAdvanced
+        open={advanced}
+        onOpen={setAdvanced}
         host={host}
         onHost={setHost}
-      />
-      <RunnerCapabilities
         typed={typed}
         onType={(value) => {
           setTyped(value);

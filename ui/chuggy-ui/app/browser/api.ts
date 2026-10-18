@@ -18,9 +18,14 @@
  * is the freshness a finished run's evidence needs and is not live.
  */
 
-import { queryOptions, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  hashKey,
+  queryOptions,
+  useQueries,
+  useQuery,
+} from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
@@ -95,6 +100,35 @@ function panelQueryState<T>(
     : panelStatePolled<T>(state);
 }
 
+/**
+ * An answer of absent, kept through the read after it, and for a polled read
+ * through a poll that failed, as a polled read's data is. A query holding no
+ * data is pending again from the moment it is read again, its error and all,
+ * so a resource the reader has none of would be drawn unread on every poll,
+ * and what a screen holds beneath that answer taken away with it.
+ */
+function usePanelAbsenceKept<T>(
+  key: ProjectQueryKey,
+  query: UseQueryResult<T>,
+  state: PanelState<T>,
+  polledMs: number | undefined,
+): PanelState<T> {
+  const keyed = hashKey(key);
+  const [kept, setKept] = useState<
+    { readonly keyed: string; readonly reason: string } | undefined
+  >(undefined);
+  const stands =
+    state.state === "Pending" ||
+    (state.state === "Failed" && polledMs !== undefined);
+  if (state.state === "Absent") {
+    if (kept?.keyed !== keyed || kept.reason !== state.reason)
+      setKept({ keyed, reason: state.reason });
+  } else if (!stands && kept !== undefined) setKept(undefined);
+  return stands && query.isFetched && kept?.keyed === keyed
+    ? { state: "Absent", reason: kept.reason }
+    : state;
+}
+
 function usePanelQuery<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
@@ -106,7 +140,12 @@ function usePanelQuery<T>(
     ...panelQueryOptions(ports, key, read, polledMs),
     enabled: asked,
   });
-  return panelQueryState(query, polledMs);
+  return usePanelAbsenceKept(
+    key,
+    query,
+    panelQueryState(query, polledMs),
+    polledMs,
+  );
 }
 
 /** One resource of one kind, written by the frame that names it — or a part
@@ -160,7 +199,12 @@ export function usePanelResourceSettled<T>(
   const key = projectResourceKey(partition, kind, resource);
   const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
   return {
-    state: panelQueryState(query, polledMs),
+    state: usePanelAbsenceKept(
+      key,
+      query,
+      panelQueryState(query, polledMs),
+      polledMs,
+    ),
     settled: query.isFetched,
   };
 }

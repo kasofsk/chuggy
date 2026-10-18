@@ -14,6 +14,8 @@ import { Collapsible } from "radix-ui";
 import { useId } from "react";
 import type { ReactNode } from "react";
 
+import { Chevron } from "./Chevron.tsx";
+
 import "./Panel.css";
 
 export const panelVariants = ["framed", "quiet", "section"] as const;
@@ -50,25 +52,6 @@ function panelLook(variant: PanelVariant | undefined): PanelLook {
   }
 }
 
-function PanelChevron(): ReactNode {
-  return (
-    <svg
-      viewBox="0 0 12 12"
-      aria-hidden="true"
-      className="panel-chevron size-3 shrink-0"
-    >
-      <path
-        d="M4 2 L8 6 L4 10"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
 function PanelMeta(props: { readonly meta: ReactNode }): ReactNode {
   if (props.meta === undefined) return null;
   return <span className="panel-meta">{props.meta}</span>;
@@ -101,7 +84,7 @@ function PanelCollapsible(props: {
         <Heading className="panel-title min-w-0 grow">
           <Collapsible.Trigger className="panel-trigger flex w-full min-w-0 items-center gap-2">
             <span className="min-w-0 grow">{props.title}</span>
-            <PanelChevron />
+            <Chevron className="panel-chevron" />
           </Collapsible.Trigger>
         </Heading>
         <PanelMeta meta={props.meta} />
