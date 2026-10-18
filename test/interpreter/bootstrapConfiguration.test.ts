@@ -774,6 +774,20 @@ test("the worker is told an image has docker only where its build installs it, a
   );
 });
 
+test("the worker is told where chuggy's docs on jobs start, for an agent to fetch", () => {
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) =>
+        line.includes(
+          "chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage",
+        ) &&
+        line.includes(
+          "start at https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt",
+        ),
+    ),
+  );
+});
+
 /** The one expansion of the change base that a line under `sh -eu` survives when it is unset. */
 const guardedChangeBase = "$" + "{CHUG_CHANGE_BASE-}";
 
