@@ -48,5 +48,10 @@
     "release": "1.9.0",
     "wire": "08667ca822a3875ea0999714d3475e4ed078168d18f881e528b7f9960bf6724f",
     "files": "6557192a485dca5b0e83d8aa55694a75f9c0b36e8b1a579bc3eff58133e713fc"
+  },
+  {
+    "release": "1.10.0",
+    "wire": "92561bb290d674ed04ee66d8c4d4195abe45d81ee9f8ce5474659da71dd60f5f",
+    "files": "afbbbcd1e40e4b6fe571dff0d879da44e2578eb2ffb81bf4c67fd7c59a4e144f"
   }
 ]

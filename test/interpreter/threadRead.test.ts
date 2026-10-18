@@ -1259,10 +1259,10 @@ test("a message naming more images than the bound is refused before a mailbox is
 });
 
 /**
- * An artifact this project wrote is named by its own media type and the path
- * the GET route answers it at, and the turn the session receives carries both.
+ * An artifact this project wrote is named by its own media type and the tool
+ * that reads it, and the turn the session receives carries both.
  */
-test("a message naming an image this project holds is accepted, and the turn names its media type and fetch path", async () => {
+test("a message naming an image this project holds is accepted, and the turn names its media type and the tool that reads it", async () => {
   const { web, held } = boundary(
     {},
     ["Read", "Mutate", "ExecuteHosted"],
@@ -1281,12 +1281,8 @@ test("a message naming an image this project holds is accepted, and the turn nam
   const enqueued = held.calls.find((call) => call.startsWith("enqueue:")) ?? "";
   assert.ok(enqueued.includes(anImage), enqueued);
   assert.ok(enqueued.includes("image/png"), enqueued);
-  assert.ok(
-    enqueued.includes(
-      `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/artifacts/`,
-    ),
-    enqueued,
-  );
+  assert.ok(enqueued.includes("read it with fetch_image"), enqueued);
+  assert.ok(!enqueued.includes("/artifacts/"), enqueued);
   assert.ok(enqueued.endsWith("look at this"), enqueued);
 });
 
@@ -1373,7 +1369,7 @@ test("checking a message's images reads the project's own store once per image, 
   ]);
 });
 
-test("every image checked names its own media type and the path this project's artifact route answers it at", async () => {
+test("every image checked names its own identity and media type", async () => {
   const store = fakeArtifactStore({
     read: "Content",
     content: new Uint8Array(),
@@ -1387,7 +1383,6 @@ test("every image checked names its own media type and the path this project's a
       {
         artifact: asProjectArtifactId(anImage),
         mediaType: "image/png",
-        path: `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/artifacts/${encodeURIComponent(anImage)}`,
       },
     ],
   });

@@ -12,6 +12,8 @@
  * silently, on every thread's first turn.
  */
 
+import type { ChuggyTool } from "./sessionTools.ts";
+
 /**
  * The standing rules a thread is bound by where its project has set none:
  * which channel its commands go through, and what a wake is. A project tool is
@@ -51,17 +53,19 @@ export const threadTurnBoundaryHeading = "# What your owner says";
 export const threadImagesHeading = "# Images with this message";
 
 /** What separates the fields of one line under `threadImagesHeading`, which
- * no artifact identity, media type or fetch path contains. */
+ * no artifact identity or media type contains. */
 const threadImageFieldSeparator = " — ";
 
+/** The tool a session reads a named image with. */
+const threadImageTool: ChuggyTool = "fetch_image";
+
 /** One line under `threadImagesHeading`: the image's identity, its media type,
- * and where a session fetches it. */
+ * and the tool a session reads it with. */
 export function threadImageLine(image: {
   readonly artifact: string;
   readonly mediaType: string;
-  readonly path: string;
 }): string {
-  return `- ${[image.artifact, image.mediaType, `fetch at ${image.path}`].join(threadImageFieldSeparator)}`;
+  return `- ${[image.artifact, image.mediaType, `read it with ${threadImageTool}`].join(threadImageFieldSeparator)}`;
 }
 
 /**

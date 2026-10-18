@@ -265,6 +265,26 @@ test("every route a project tool calls admits a session bearer in its own partit
   }
 });
 
+test("fetch_image's route reaches the project's image under a lead's and a thread's own bearer", async () => {
+  assert.equal(
+    chuggyToolRoutes.projectArtifact,
+    nativeHttpRoutes.projectArtifact,
+    "fetch_image calls no route",
+  );
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    await app.inject(
+      routeRequest(
+        `GET ${chuggyToolRoutes.projectArtifact}`,
+        own,
+        sessionToken,
+      ),
+    );
+    assert.deepEqual(reached, ["web.projectArtifact"], kind);
+  }
+});
+
 /** A project read that finds every project but one, recording each partition it was asked for. */
 function projectWeb(asked: string[]): ServedNativeWeb {
   return {

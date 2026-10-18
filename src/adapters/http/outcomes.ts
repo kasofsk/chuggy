@@ -125,7 +125,11 @@ import {
   repositoryConfigurationIgnoredField,
   type RepositoryConfigurationImportOutcome,
 } from "../../interpreter/repositoryConfiguration.ts";
-import { nativeHttpError, nativeHttpMediaType } from "../../contract/http.ts";
+import {
+  nativeHttpError,
+  nativeHttpMediaType,
+  projectArtifactEncoding,
+} from "../../contract/http.ts";
 import {
   encodeConfigurationCursor,
   encodeDraftCursor,
@@ -714,9 +718,9 @@ export function projectArtifactReadResponse(
   switch (result.fetched) {
     case "Content":
       return response(200, {
-        content: Buffer.from(result.content).toString("base64"),
+        content: Buffer.from(result.content).toString(projectArtifactEncoding),
         mediaType: result.mediaType,
-        encoding: "base64",
+        encoding: projectArtifactEncoding,
       });
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));

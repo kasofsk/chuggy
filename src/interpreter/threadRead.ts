@@ -78,11 +78,11 @@ import type { Partition } from "./projectStore.ts";
 import { projectArtifactFetched } from "./projectArtifact.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
-import { threadImageFetchPath, type ThreadSeededImage } from "./thread.ts";
 import {
   threadStanding,
   type ThreadProjectTexts,
   type ThreadSeededDraft,
+  type ThreadSeededImage,
   type ThreadSeededRefusal,
   type ThreadSeeding,
   type ThreadStanding,
@@ -630,10 +630,10 @@ export type ThreadMessageImagesChecked =
 
 /**
  * Each image a message named, checked against this project's own artifacts and
- * turned into what the turn names: its media type and where the session
- * fetches it. `NotFound` folds an artifact never written and one another
- * project's upload minted, for `projectArtifactFetched`'s own reason — a
- * member naming either is refused the same way, without being told which.
+ * turned into what the turn names: its identity and media type. `NotFound`
+ * folds an artifact never written and one another project's upload minted, for
+ * `projectArtifactFetched`'s own reason — a member naming either is refused the
+ * same way, without being told which.
  */
 export async function threadMessageImages(
   store: ProjectArtifactPort,
@@ -650,11 +650,7 @@ export async function threadMessageImages(
         checked: "Unavailable",
         retryAfterSeconds: fetched.retryAfterSeconds,
       };
-    named.push({
-      artifact,
-      mediaType: fetched.mediaType,
-      path: threadImageFetchPath(partition, artifact),
-    });
+    named.push({ artifact, mediaType: fetched.mediaType });
   }
   return { checked: "Images", images: named };
 }

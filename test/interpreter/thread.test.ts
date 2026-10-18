@@ -30,7 +30,6 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadConfigurationStanding,
-  threadImageFetchPath,
   threadImagesSection,
   threadPurposeStanding,
   threadStoppedStanding,
@@ -465,25 +464,17 @@ const seededImages = (count: number): ThreadSeededImage[] =>
   Array.from({ length: count }, (_unused, index) => ({
     artifact: `image/png:token-${String(index + 1)}`,
     mediaType: "image/png",
-    path: `/image-${String(index + 1)}`,
   }));
 
-test("an image's fetch path is the project artifact route, filled in", () => {
-  assert.equal(
-    threadImageFetchPath(partition, "image/png:token-1"),
-    "/api/v1/tenants/acme/projects/atlas/artifacts/image%2Fpng%3Atoken-1",
-  );
-});
-
-test("the images section names each one's identity, media type and fetch path", () => {
+test("the images section names each one's identity and media type, and the tool that reads it", () => {
   const section = threadImagesSection(seededImages(2));
 
   assert.equal(
     section,
     `${threadImagesHeading}
 
-- image/png:token-1 — image/png — fetch at /image-1
-- image/png:token-2 — image/png — fetch at /image-2`,
+- image/png:token-1 — image/png — read it with fetch_image
+- image/png:token-2 — image/png — read it with fetch_image`,
   );
 });
 
@@ -568,6 +559,35 @@ test("what a turn's images section names, the contract's reader reads back, with
   assert.deepEqual(threadImagesRead(threadSeedingText(seeding)), {
     before: threadSeedingText(seeding),
     artifacts: [],
+  });
+});
+
+/**
+ * A turn's text is kept as it was recorded, and a line of the older form names
+ * a fetch path in its last field where the tool now stands, so the reader
+ * reads one the same.
+ */
+test("a turn whose images section names a fetch path is read back the same", () => {
+  const seeding = {
+    standingRules: projectStandingRules,
+    drafts: [],
+    refusals: [],
+  };
+  const recorded = `${threadImagesHeading}
+
+- image/png:token-1 — image/png — fetch at /api/v1/tenants/acme/projects/atlas/artifacts/image%2Fpng%3Atoken-1
+- image/gif:token-2 — image/gif — fetch at /api/v1/tenants/acme/projects/atlas/artifacts/image%2Fgif%3Atoken-2`;
+
+  assert.deepEqual(
+    threadImagesRead(`${threadSeedingText(seeding)}\n\n${recorded}`),
+    {
+      before: threadSeedingText(seeding),
+      artifacts: ["image/png:token-1", "image/gif:token-2"],
+    },
+  );
+  assert.deepEqual(threadImagesRead(recorded), {
+    before: "",
+    artifacts: ["image/png:token-1", "image/gif:token-2"],
   });
 });
 

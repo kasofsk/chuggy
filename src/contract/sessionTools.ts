@@ -39,7 +39,11 @@
  * deliberately absent.
  */
 
-import { nativeHttpBodyBytesMax, nativeHttpRoutes } from "./http.ts";
+import {
+  nativeHttpBodyBytesMax,
+  nativeHttpRoutes,
+  projectArtifactUploadBytesMax,
+} from "./http.ts";
 import type { SessionCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
@@ -54,12 +58,23 @@ export {
 } from "./http.ts";
 export { briefLineCharsMax } from "./brief.ts";
 
+/** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
+export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
+
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
 
 /** What one tool answer may weigh, which is what the API answered and never more. */
 export const chuggyToolResponseBytesMax = nativeHttpBodyBytesMax;
+
+/**
+ * What `fetch_image`'s route may answer: the largest image an upload admits, as
+ * the base64 its JSON body carries, and an ordinary answer's bound for the
+ * fields around it.
+ */
+export const chuggyToolImageResponseBytesMax =
+  Math.ceil(projectArtifactUploadBytesMax / 3) * 4 + nativeHttpBodyBytesMax;
 
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
@@ -97,6 +112,7 @@ const chuggyToolRoster = {
     "read_thread",
     "read_thread_transcript",
     "list_repositories",
+    "fetch_image",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -207,6 +223,7 @@ export const chuggyToolRoutes = {
   thread: nativeHttpRoutes.thread,
   threadTranscript: nativeHttpRoutes.threadTranscript,
   projectRepositories: nativeHttpRoutes.projectRepositories,
+  projectArtifact: nativeHttpRoutes.projectArtifact,
   draftInitialization: nativeHttpRoutes.draftInitialization,
   operations: nativeHttpRoutes.operations,
 } as const;
