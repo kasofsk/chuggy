@@ -961,6 +961,22 @@ test("the published schema says of both images that any one works that holds the
     assert.ok(header.description.includes(said), said);
 });
 
+test("the published schema says a job's image needs no init of its own, and what chuggy's does", () => {
+  const header = publishedAt(
+    "properties",
+    "configuration",
+    "oneOf",
+    publishedVersion(1),
+    "properties",
+    "image",
+  ) as { readonly description: string };
+  assert.ok(
+    header.description.includes(
+      "chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits.",
+    ),
+  );
+});
+
 test("the published schema says where a job run in an image works and has its repository checked out, and that a host job works elsewhere", () => {
   const header = publishedAt(
     "properties",
