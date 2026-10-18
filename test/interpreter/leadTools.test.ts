@@ -63,11 +63,13 @@ test("origination and revoking are admitted for a thread's roster and refused fo
   );
 });
 
-test("a lead and a thread both list the project's repositories, and a lead's decision may report it", () => {
-  const named = `${chuggyToolPrefix}list_repositories`;
-  assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named));
-  assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named));
-  assert.ok(leadToolAllowlist.includes(named));
+test("a lead and a thread both list the project's repositories and read its images, and a lead's decision may report either", () => {
+  for (const tool of ["list_repositories", "fetch_image"]) {
+    const named = `${chuggyToolPrefix}${tool}`;
+    assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named), tool);
+    assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named), tool);
+    assert.ok(leadToolAllowlist.includes(named), tool);
+  }
 });
 
 test("the relations a lead is refused are the ones the contract does not admit", () => {

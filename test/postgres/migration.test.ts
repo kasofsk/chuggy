@@ -55,7 +55,11 @@ import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-
 import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
 import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
 import { migration060 } from "../../src/adapters/postgres/schema/migrations/060-merge-waits.ts";
-import { migration066 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
+import {
+  migration066,
+  toolAllowlistAt066,
+} from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
+import { migration068 } from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -10573,17 +10577,34 @@ async function ownerControls066(
   );
 }
 
-test("066 names list_repositories in the seeded allowlist at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+/**
+ * A migration naming one tool in the allowlist the migration before it left,
+ * the label its databases are named by, and the lead's roster it must leave
+ * that allowlist holding.
+ */
+interface ToolAllowlistWidening {
+  readonly label: string;
+  readonly version: number;
+  readonly from: readonly string[];
+  readonly tool: string;
+  readonly lead: readonly string[];
+  readonly seededText: string;
+}
+
+/** That `widening` names its tool at its roster place, in place and in its history, and leaves a list an owner wrote. */
+async function toolAllowlistWidened(
+  widening: ToolAllowlistWidening,
+): Promise<void> {
   const held = new Set([
     ...sessionCapabilities.flatMap(
       (capability) => builtInToolCapabilities[capability],
     ),
     ...chuggyToolNames(sessionCapabilities),
   ]);
-  await migrationDatabase("lead_lists_repositories", async (subject) => {
-    await installationBefore(subject, migration066.version);
-    await ownerControls066(subject, JSON.stringify(baselineToolAllowlist));
-    assert.ok((await postgresMigrate(subject)).includes(migration066.version));
+  await migrationDatabase(widening.label, async (subject) => {
+    await installationBefore(subject, widening.version);
+    await ownerControls066(subject, JSON.stringify(widening.from));
+    await installationAt(subject, widening.version);
     const rows = (await toolAllowlists066(subject)) as readonly {
       readonly row: string;
       readonly revision: string;
@@ -10596,28 +10617,26 @@ test("066 names list_repositories in the seeded allowlist at its roster place, i
     for (const { tools } of rows) {
       assert.deepEqual(
         tools.filter((tool) => held.has(tool)),
-        leadToolAllowlist,
+        widening.lead,
       );
       assert.deepEqual(
-        tools.filter((tool) => !baselineToolAllowlist.includes(tool)),
-        ["mcp__chuggy__list_repositories"],
+        tools.filter((tool) => !widening.from.includes(tool)),
+        [widening.tool],
       );
     }
     const seeded = await subject.query<{ controls: string }>(
       "SELECT controls FROM selector_runtime_settings_history WHERE revision = 1",
     );
     assert.ok(
-      seeded.rows[0]?.controls.includes(
-        '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
-      ),
+      seeded.rows[0]?.controls.includes(widening.seededText),
       "the seed's own row keeps its text",
     );
   });
-  await migrationDatabase("lead_lists_repositories_owned", async (subject) => {
+  await migrationDatabase(`${widening.label}_owned`, async (subject) => {
     const owned = ["Read", "mcp__chuggy__list_tickets"];
-    await installationBefore(subject, migration066.version);
+    await installationBefore(subject, widening.version);
     await ownerControls066(subject, JSON.stringify(owned));
-    assert.ok((await postgresMigrate(subject)).includes(migration066.version));
+    await installationAt(subject, widening.version);
     const rows = (await toolAllowlists066(subject)) as readonly {
       readonly row: string;
       readonly tools: readonly string[];
@@ -10625,15 +10644,41 @@ test("066 names list_repositories in the seeded allowlist at its roster place, i
     assert.deepEqual(
       rows.map(({ row, tools }) => [
         row,
-        tools.includes("mcp__chuggy__list_repositories"),
+        tools.includes(widening.tool),
         tools.length,
       ]),
       [
         ["current", false, owned.length],
-        ["history", true, baselineToolAllowlist.length + 1],
+        ["history", true, widening.from.length + 1],
         ["history", false, owned.length],
       ],
     );
+  });
+}
+
+test("066 names list_repositories in the seeded allowlist at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+  await toolAllowlistWidened({
+    label: "lead_lists_repositories",
+    version: migration066.version,
+    from: baselineToolAllowlist,
+    tool: "mcp__chuggy__list_repositories",
+    lead: leadToolAllowlist.filter(
+      (tool) => tool !== "mcp__chuggy__fetch_image",
+    ),
+    seededText:
+      '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
+  });
+});
+
+test("068 names fetch_image in the allowlist 066 left at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+  await toolAllowlistWidened({
+    label: "lead_fetches_images",
+    version: migration068.version,
+    from: toolAllowlistAt066(),
+    tool: "mcp__chuggy__fetch_image",
+    lead: leadToolAllowlist,
+    seededText:
+      '"mcp__chuggy__list_repositories","mcp__chuggy__fetch_image","mcp__chuggy__initialize_draft"',
   });
 });
 

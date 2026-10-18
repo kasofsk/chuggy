@@ -207,6 +207,9 @@ export const imageMediaTypes = [
 
 export type ImageMediaType = (typeof imageMediaTypes)[number];
 
+/** The encoding a project-owned artifact's bytes are read back in, which a reader decodes them by. */
+export const projectArtifactEncoding = "base64";
+
 /**
  * The largest body a project-owned artifact upload carries. The deployment
  * override to copy is the worker plane's own, `workerPlaneUploadBytesMax`: a

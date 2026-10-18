@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import {
   imageMediaTypes,
+  projectArtifactEncoding,
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
@@ -773,7 +774,7 @@ export type ProjectArtifactUploadedResponse = z.infer<
 export const projectArtifactResponseSchema = z.object({
   content: z.string(),
   mediaType: z.enum(imageMediaTypes),
-  encoding: z.literal("base64"),
+  encoding: z.literal(projectArtifactEncoding),
 });
 export type ProjectArtifactResponse = z.infer<
   typeof projectArtifactResponseSchema

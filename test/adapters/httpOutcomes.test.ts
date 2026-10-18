@@ -27,11 +27,22 @@ import {
   inventoryResponse,
   notificationsResponse,
   operationResponse,
+  projectArtifactReadResponse,
   projectResponse,
   repositoryConfigurationImportResponse,
   submissionResponse,
 } from "../../src/adapters/http/outcomes.ts";
-import { draftsResponseSchema } from "../../src/contract/responses.ts";
+import { projectArtifactUploadBytesMax } from "../../src/contract/http.ts";
+import {
+  draftsResponseSchema,
+  projectArtifactResponseSchema,
+} from "../../src/contract/responses.ts";
+import {
+  chuggyToolImageResponseBytesMax,
+  chuggyToolResponseBytesMax,
+  imageMediaTypes,
+  projectArtifactEncoding,
+} from "../../src/contract/sessionTools.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
@@ -621,4 +632,22 @@ test("a draft the project's bindings do not answer for is not found", () => {
     }).status,
     404,
   );
+});
+
+test("the largest image an upload admits is answered within what fetch_image reads and past what any other tool reads, in the encoding it decodes by", () => {
+  for (const mediaType of imageMediaTypes) {
+    const { body } = projectArtifactReadResponse({
+      fetched: "Content",
+      content: new Uint8Array(projectArtifactUploadBytesMax),
+      mediaType,
+    });
+    const weighed = Buffer.byteLength(JSON.stringify(body));
+    assert.ok(weighed <= chuggyToolImageResponseBytesMax, mediaType);
+    assert.ok(weighed > chuggyToolResponseBytesMax, mediaType);
+    assert.deepEqual(
+      projectArtifactResponseSchema.parse(body).encoding,
+      projectArtifactEncoding,
+      mediaType,
+    );
+  }
 });
