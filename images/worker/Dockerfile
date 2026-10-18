@@ -113,6 +113,8 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run
 #   bin/codex     the Codex the core runs
+#   bin/tini      the init `check.sh` starts the core under, which reaps what
+#                 a job orphans
 #   lib/chuggy/   the shipped core, its entry named `worker.mjs`, and the
 #                 packages it imports in a `node_modules` of its own
 #   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
@@ -136,7 +138,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #
 # CODEX IS ITS STATIC BUILD. npm's `codex` is a node script that finds its
 # platform package's binary and spawns it; the tree ships that binary alone,
-# which links against nothing.
+# which links against nothing. Tini is its release's static build too.
 #
 # NO LIBRARY IS SHIPPED; THE JOB'S IMAGE PROVIDES THEM. Chuggy's node names no
 # directory of its own to find a library in, so one shipped here would be found
@@ -147,6 +149,8 @@ FROM base AS runtime
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
+ARG TINI_VERSION=0.19.0
+ARG TINI_SHA256=c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee
 ARG ZOD_VERSION
 
 # The packages the core imports, installed as one tree, so that npm keeps a
@@ -172,6 +176,14 @@ RUN cd /tmp \
     package/vendor/x86_64-unknown-linux-musl/bin/codex \
   && install -m 0755 /tmp/package/vendor/x86_64-unknown-linux-musl/bin/codex /opt/chuggy/bin/codex \
   && rm -rf /tmp/package "/tmp/$packed" /tmp/codex.txt
+
+RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-amd64" \
+    --output /tmp/tini \
+  && echo "${TINI_SHA256}  /tmp/tini" | sha256sum --check --quiet - \
+  && install -m 0755 /tmp/tini /opt/chuggy/bin/tini \
+  && rm /tmp/tini \
+  && /opt/chuggy/bin/tini --version
 
 COPY --from=core /shipped/ /opt/chuggy/lib/chuggy/
 COPY --from=core /check.sh /opt/chuggy/check.sh
