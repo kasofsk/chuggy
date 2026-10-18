@@ -1297,7 +1297,7 @@ test("a created draft answers the landing its brief was stored with and who name
   }
 });
 
-test("a revised draft answers its landing the same way, a revision dropping the brief's own landing taking the repository's", async () => {
+test("a revised draft answers its landing the same way, the brief's own or the repository's", async () => {
   const web = landingBoundary(readyConfiguration);
   const revise = async (finalization?: { readonly mode: string }) => {
     const revised = await web.reviseDraft(principal, {
@@ -1338,24 +1338,60 @@ const checkedConfiguration = canonicalConfigurationOf({
   ],
 });
 
-test("draft initialization says in words which stage a brief's checks run in, and that a configuration commanding none refuses them", async () => {
-  for (const [canonical, stage, note] of [
-    [
-      checkedConfiguration,
-      1,
-      "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
-    ],
-    [
-      catalogConfiguration,
-      1,
-      'A brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands this configuration runs there.',
-    ],
-    [
-      readyConfiguration,
-      undefined,
-      "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
-    ],
-  ] as const) {
+/** A catalog with the same entries whose plans are `plans`, the default being `review`. */
+function catalogPlanned(plans: Readonly<Record<string, unknown>>) {
+  return canonicalConfigurationOf({
+    ...(JSON.parse(catalogConfiguration) as Record<string, unknown>),
+    plans,
+    defaults: { work: "build", evaluation: "review", finalization: "merged" },
+  });
+}
+
+const reviewPlan = [{ name: "review", evaluators: ["build"] }];
+
+/** A catalog whose default plan runs no commands and whose plan `gated` runs them in its second stage. */
+const gatedCatalog = catalogPlanned({
+  review: reviewPlan,
+  gated: [...reviewPlan, { name: "tests", evaluators: ["tests"] }],
+});
+
+/** Each configuration and selection an initialization reads, the stage it answers and the note beside it. */
+const checkStageNoteCases = [
+  {
+    canonical: checkedConfiguration,
+    stage: 1,
+    note: "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
+  },
+  {
+    canonical: catalogConfiguration,
+    stage: 1,
+    note: 'Under plan "standard", a brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedCatalog,
+    selection: { evaluation: "gated" },
+    stage: 1,
+    note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "tests", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedCatalog,
+    stage: undefined,
+    note: 'Plan "review" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: "gated".',
+  },
+  {
+    canonical: catalogPlanned({ review: reviewPlan }),
+    stage: undefined,
+    note: "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
+  },
+  {
+    canonical: readyConfiguration,
+    stage: undefined,
+    note: "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
+  },
+] as const;
+
+test("draft initialization says in words which stage a brief's checks run in, under which plan of a catalog, and that one commanding none refuses them unless another plan takes them", async () => {
+  for (const each of checkStageNoteCases) {
     const revision = asConfigurationRevisionId("revision");
     const { web } = boundary(
       true,
@@ -1365,7 +1401,7 @@ test("draft initialization says in words which stage a brief's checks run in, an
         configuration: {
           partition,
           revision,
-          canonical,
+          canonical: each.canonical,
           digest: "a".repeat(64),
         },
         projectSequence: 0,
@@ -1374,7 +1410,12 @@ test("draft initialization says in words which stage a brief's checks run in, an
         domain: refinementInstance,
       }),
     );
-    const result = await web.initializeDraft(principal, partition, revision);
+    const result = await web.initializeDraft(
+      principal,
+      partition,
+      revision,
+      "selection" in each ? each.selection : undefined,
+    );
     const initialized =
       result.result === "Authorized" &&
       result.value.initialized === "Initialized"
@@ -1385,7 +1426,7 @@ test("draft initialization says in words which stage a brief's checks run in, an
         stage: initialized?.commandedCheckStage,
         note: initialized?.commandedCheckStageNote,
       },
-      { stage, note },
+      { stage: each.stage, note: each.note },
     );
   }
 });

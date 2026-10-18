@@ -47,6 +47,7 @@ import {
   type TaskConfigurationFault,
 } from "./taskConfiguration.ts";
 import {
+  catalogPlansCommanded,
   declaredConfigurationVersion,
   selectedCatalogEntries,
   selectedFirstCommandsEvaluator,
@@ -832,23 +833,35 @@ export function ticketCommandedCheckStage(
   return first === undefined ? undefined : first.stage - 1;
 }
 
+const ticketCommandedCheckStageNoteNone =
+  "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.";
+
 /**
  * Where a ticket's own check lines join, said in words: the stage counted from
- * one, by its own name where a catalog's plan names it, and where no stage takes
- * them, that a brief carrying them is refused.
+ * one, and for a catalog the selected plan and that stage by name, or where no
+ * stage takes them, that a brief carrying them is refused and which plans would.
  */
 export function ticketCommandedCheckStageNote(
   ticket: TicketConfiguration,
 ): string {
   const stage = ticketCommandedCheckStage(ticket);
-  if (stage === undefined)
-    return "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.";
-  const name =
-    ticket.version === 2
-      ? ticket.selection.plan.stages[stage]?.name
-      : undefined;
-  const named = name === undefined ? "" : `, named "${name}"`;
-  return `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one${named}, after the commands this configuration runs there.`;
+  if (ticket.version === 1)
+    return stage === undefined
+      ? ticketCommandedCheckStageNoteNone
+      : `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, after the commands this configuration runs there.`;
+  const plan = ticket.selection.plan;
+  if (stage === undefined) {
+    const commanded = catalogPlansCommanded(ticket.configuration);
+    return commanded.length === 0
+      ? ticketCommandedCheckStageNoteNone
+      : `Plan "${plan.name}" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: ${commanded.map((name) => `"${name}"`).join(", ")}.`;
+  }
+  const named = plan.stages[stage]?.name;
+  if (named === undefined)
+    throw new RangeError(
+      `catalog: plan ${plan.name} has no stage ${String(stage)}`,
+    );
+  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, named "${named}", after the commands the plan runs there.`;
 }
 
 /**

@@ -1175,8 +1175,8 @@ export const draftInitializationResponseSchema = z.object({
   dependencyCandidatesTruncated: z.boolean(),
   commandedCheckStage: countSchema.optional(),
   /**
-   * Where a brief's checks run, in words, or that this configuration refuses
-   * them. It is absent from a server that predates it.
+   * Where a brief's checks run, in words, naming the plan for a catalog, or
+   * that they are refused. It is absent from a server that predates it.
    */
   commandedCheckStageNote: z.string().min(1).optional(),
 });
