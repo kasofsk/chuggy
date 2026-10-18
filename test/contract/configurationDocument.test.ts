@@ -31,7 +31,11 @@ import {
   configurationMemoryMibMin,
   configurationRequirementCapabilitiesMax,
 } from "../../src/contract/configurationDocument.ts";
-import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
+import {
+  workerRepositoryDirectory,
+  workerRuntimeDirectory,
+  workerWorkspaceDirectory,
+} from "../../src/contract/workerEnvironment.ts";
 import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { canonicalConfigurationOf } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfigurationFile } from "../../src/interpreter/bootstrapConfiguration.ts";
@@ -953,6 +957,23 @@ test("the published schema says of both images that any one works that holds the
     `glibc ${configurationImageGlibcVersionMin} or later`,
     "A digest is recommended and not required",
     "chuggy holds none of the project's registry logins",
+  ])
+    assert.ok(header.description.includes(said), said);
+});
+
+test("the published schema says where a job run in an image works and has its repository checked out, and that a host job works elsewhere", () => {
+  const header = publishedAt(
+    "properties",
+    "configuration",
+    "oneOf",
+    publishedVersion(1),
+    "properties",
+    "image",
+  ) as { readonly description: string };
+  for (const said of [
+    `A job run in the image works in ${workerWorkspaceDirectory}`,
+    `checked out at ${workerRepositoryDirectory};`,
+    "runs on its runner's own host works in a directory of that host's",
   ])
     assert.ok(header.description.includes(said), said);
 });

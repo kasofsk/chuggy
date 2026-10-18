@@ -28,6 +28,7 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../contract/http.ts";
+import { workerWorkspaceDirectory } from "../contract/workerEnvironment.ts";
 import { workerPoolCapabilitiesSchema } from "../contract/workerPool.ts";
 import type { SessionBounds } from "../contract/workerTask.ts";
 import {
@@ -673,7 +674,7 @@ function schedulerWorkers(
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
     workerPlaneUrl: schedulerRequired(environment, "WORKER_PLANE_URL"),
     capabilityFile: schedulerRequired(environment, "WORKER_CAPABILITY_FILE"),
-    workspacePath: schedulerRequired(environment, "WORKER_WORKSPACE_PATH"),
+    workspacePath: workerWorkspaceDirectory,
     credentialMounts: schedulerJson(
       environment,
       "WORKER_CREDENTIAL_MOUNTS",

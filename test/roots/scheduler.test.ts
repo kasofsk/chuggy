@@ -29,7 +29,10 @@ import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
 } from "../../src/adapters/kubernetes/sessionPod.ts";
-import { sessionTaskVariable } from "../../src/contract/workerEnvironment.ts";
+import {
+  sessionTaskVariable,
+  workerWorkspaceDirectory,
+} from "../../src/contract/workerEnvironment.ts";
 import type { SessionBounds } from "../../src/contract/workerTask.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import { projectAccessTimeoutMsDefault } from "../../src/interpreter/projectAccess.ts";
@@ -126,7 +129,6 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_CLUSTER_TOKEN_FILE: tokenFile,
   CHUG_SCHEDULER_WORKER_PLANE_URL: "https://worker-plane.invalid",
   CHUG_SCHEDULER_WORKER_CAPABILITY_FILE: "/run/chuggy/capability",
-  CHUG_SCHEDULER_WORKER_WORKSPACE_PATH: "/workspace",
   CHUG_SCHEDULER_WORKER_CREDENTIAL_MOUNTS: "{}",
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
   CHUG_SCHEDULER_WORKER_RUNTIME: runtimeImage,
@@ -212,7 +214,7 @@ const parsed = {
     tokenFile,
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
-    workspacePath: "/workspace",
+    workspacePath: workerWorkspaceDirectory,
     sidecars: [],
     credentialMounts: {},
     environment: {},
@@ -249,7 +251,7 @@ const parsed = {
     requestTimeoutSecsMax: 30,
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
-    workspacePath: "/workspace",
+    workspacePath: workerWorkspaceDirectory,
     credentialMounts: {},
     podNamePrefix: "chuggy-session",
     podLabels: {},
@@ -314,6 +316,21 @@ test("a session stands on the site the worker half of one deployment already nam
       shared,
     );
   }
+});
+
+test("a placed job and a session work in the contract's workspace, which no deployment names", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(parseProgram(environment)),
+  ) as {
+    readonly refused?: string;
+    readonly parsed?: {
+      readonly workers: { readonly workspacePath: string };
+      readonly sessions: { readonly workspacePath: string };
+    };
+  };
+  assert.equal(found.refused, undefined);
+  assert.equal(found.parsed?.workers.workspacePath, workerWorkspaceDirectory);
+  assert.equal(found.parsed?.sessions.workspacePath, workerWorkspaceDirectory);
 });
 
 test("a session pod wears the session's own labels and never the worker's", async () => {
