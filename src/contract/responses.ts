@@ -63,7 +63,11 @@ import {
 } from "./http.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
-import { briefResponseSchema, briefTitleCharsMax } from "./brief.ts";
+import {
+  briefFinalizationResponseSchema,
+  briefResponseSchema,
+  briefTitleCharsMax,
+} from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import {
   workerPoolCapabilitiesSchema,
@@ -87,6 +91,7 @@ import {
   changeProposalMergeWaits,
   changeProposalStatuses,
   changeProposalMerges,
+  draftLandingSources,
   draftStates,
   escalationKinds,
   executionOutcomes,
@@ -1123,6 +1128,25 @@ export const draftResponseSchema = z.object({
 export type DraftResponse = z.infer<typeof draftResponseSchema>;
 
 /**
+ * The landing a write stored a draft's brief with, and who named it: the brief,
+ * the finalizer its catalog selection lands with, the repository it names, or
+ * `Default` where none of them does, which is a brief naming no repository.
+ */
+export const draftLandingResponseSchema = briefFinalizationResponseSchema.and(
+  z.object({ source: z.enum(draftLandingSources) }),
+);
+
+/**
+ * What creating or revising a draft answers: the draft, and the landing that
+ * write stored its brief with. `landing` is absent from a server that predates
+ * it.
+ */
+export const draftWrittenResponseSchema = draftResponseSchema.extend({
+  landing: draftLandingResponseSchema.optional(),
+});
+export type DraftWrittenResponse = z.infer<typeof draftWrittenResponseSchema>;
+
+/**
  * One page of the drafts a project still holds open, ascending by ticket, and a
  * released or deleted draft is neither: the first is a ticket and is read as
  * one, and the second is gone.
@@ -1150,6 +1174,11 @@ export const draftInitializationResponseSchema = z.object({
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
   commandedCheckStage: countSchema.optional(),
+  /**
+   * Where a brief's checks run, in words, naming the plan for a catalog, or
+   * that they are refused. It is absent from a server that predates it.
+   */
+  commandedCheckStageNote: z.string().min(1).optional(),
 });
 export type DraftInitializationResponse = z.infer<
   typeof draftInitializationResponseSchema

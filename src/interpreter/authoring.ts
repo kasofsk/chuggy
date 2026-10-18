@@ -33,7 +33,11 @@ import type { Worker } from "./workerCatalog.ts";
 import { executionRequirementConfigurationIsValid } from "./executionRequirement.ts";
 import { handoffApprovalRequired } from "./finalizerPreparation.ts";
 import type { CanonicalConfiguration } from "./canonicalConfiguration.ts";
-import type { DraftBrief, ReleaseBrief } from "./ticketBrief.ts";
+import type {
+  BriefFinalization,
+  DraftBrief,
+  ReleaseBrief,
+} from "./ticketBrief.ts";
 import type { BoundaryRefusalCode } from "./refusal.ts";
 import {
   authoredTaskConfigurationReadiness,
@@ -43,6 +47,7 @@ import {
   type TaskConfigurationFault,
 } from "./taskConfiguration.ts";
 import {
+  catalogPlansCommanded,
   declaredConfigurationVersion,
   selectedCatalogEntries,
   selectedFirstCommandsEvaluator,
@@ -736,6 +741,8 @@ export interface DraftInitialization {
    * brief carrying them unreleasable against this configuration.
    */
   readonly commandedCheckStage?: number;
+  /** The same fact in words, stated whether or not a stage takes them. */
+  readonly commandedCheckStageNote: string;
 }
 
 export type DraftInitializationRead =
@@ -747,7 +754,7 @@ export type DraftInitializationRead =
 
 export interface DraftInitializationSnapshot extends Omit<
   DraftInitialization,
-  "defaults" | "choices" | "commandedCheckStage"
+  "defaults" | "choices" | "commandedCheckStage" | "commandedCheckStageNote"
 > {
   readonly domain: Config;
 }
@@ -826,6 +833,37 @@ export function ticketCommandedCheckStage(
   return first === undefined ? undefined : first.stage - 1;
 }
 
+const ticketCommandedCheckStageNoteNone =
+  "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.";
+
+/**
+ * Where a ticket's own check lines join, said in words: the stage counted from
+ * one, and for a catalog the selected plan and that stage by name, or where no
+ * stage takes them, that a brief carrying them is refused and which plans would.
+ */
+export function ticketCommandedCheckStageNote(
+  ticket: TicketConfiguration,
+): string {
+  const stage = ticketCommandedCheckStage(ticket);
+  if (ticket.version === 1)
+    return stage === undefined
+      ? ticketCommandedCheckStageNoteNone
+      : `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, after the commands this configuration runs there.`;
+  const plan = ticket.selection.plan;
+  if (stage === undefined) {
+    const commanded = catalogPlansCommanded(ticket.configuration);
+    return commanded.length === 0
+      ? ticketCommandedCheckStageNoteNone
+      : `Plan "${plan.name}" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: ${commanded.map((name) => `"${name}"`).join(", ")}.`;
+  }
+  const named = plan.stages[stage]?.name;
+  if (named === undefined)
+    throw new RangeError(
+      `catalog: plan ${plan.name} has no stage ${String(stage)}`,
+    );
+  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, named "${named}", after the commands the plan runs there.`;
+}
+
 /**
  * `RepositoryNotBound`, `ArtifactNotBound`, `Unavailable` and `LandingUnbranched`
  * are the refusals `DraftCreated` documents. A released draft is revisable
@@ -847,6 +885,20 @@ export type DraftRevised =
   | { readonly revised: "ArtifactNotBound" }
   | { readonly revised: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly revised: "LandingUnbranched" };
+
+/**
+ * Who named the landing a write stored a draft's brief with, in the order the
+ * write asks: the brief, the finalizer its catalog selection lands with, the
+ * repository it names, and `briefFinalizationDefault` where none of them does,
+ * which is a brief naming no repository.
+ */
+export type DraftLandingSource =
+  "Brief" | "Finalizer" | "Repository" | "Default";
+
+/** The landing one write stored a draft's brief with, and who named it. */
+export type DraftLanding = BriefFinalization & {
+  readonly source: DraftLandingSource;
+};
 
 export type DraftDeleted =
   | { readonly deleted: "Deleted"; readonly draft: DraftResource }

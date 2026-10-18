@@ -43,6 +43,8 @@ import {
   asConfigurationRevisionId,
   canonicalConfigurationOf,
   type AuthoringStore,
+  type CanonicalConfiguration,
+  type DraftResource,
 } from "../../src/interpreter/authoring.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
@@ -84,9 +86,11 @@ import {
   type ProjectArtifactMinting,
 } from "../../src/interpreter/projectArtifact.ts";
 import {
+  asBriefFinalization,
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
+import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -1098,21 +1102,22 @@ test("a draft naming an image its store holds, or naming none at all, reaches th
   }
 });
 
+/** The agent workload the catalogs below work and review with. */
+const catalogBuildWorkload = {
+  runner: "Agent",
+  prompt: { text: "Build it." },
+  worker: {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  },
+};
+
 test("a draft naming no landing takes the one its catalog's selected finalizer names, and one naming its own keeps it", async () => {
   const catalog = {
     version: 2,
     image: "worker:v2",
-    workloads: {
-      build: {
-        runner: "Agent",
-        prompt: { text: "Build it." },
-        worker: {
-          mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-          setup: [],
-          files: [],
-        },
-      },
-    },
+    workloads: { build: catalogBuildWorkload },
     plans: { standard: [{ name: "review", evaluators: ["build"] }] },
     finalizers: {
       proposed: { landing: { mode: "PullRequest", target: "refs/heads/main" } },
@@ -1162,6 +1167,268 @@ test("a draft naming no landing takes the one its catalog's selected finalizer n
     stored.map((brief) => brief.finalization),
     [{ mode: "PullRequest", target: "refs/heads/main" }, { mode: "Push" }],
   );
+});
+
+/**
+ * A catalog whose default plan runs its commands in a second stage it names,
+ * and whose default finalizer names a landing.
+ */
+const catalogConfiguration = canonicalConfigurationOf({
+  version: 2,
+  image: "worker:v2",
+  workloads: {
+    build: catalogBuildWorkload,
+    tests: { runner: "Commands", commands: ["npm test"] },
+  },
+  plans: {
+    standard: [
+      { name: "review", evaluators: ["build"] },
+      { name: "verify", evaluators: ["build", "tests"] },
+    ],
+  },
+  finalizers: {
+    merged: {
+      landing: { mode: "PullRequestMerge", target: "refs/heads/main" },
+    },
+  },
+  defaults: { work: "build", evaluation: "standard", finalization: "merged" },
+});
+
+/**
+ * A store holding a draft's brief with the landing the server's own door
+ * resolves for it: the brief's, else `repositoryMode` where the brief names a
+ * repository, else a push.
+ */
+function landingStore(
+  canonical: CanonicalConfiguration,
+  repositoryMode: BriefFinalizationMode,
+) {
+  const stored = (brief: DraftBrief): DraftResource => ({
+    partition,
+    ticket: asTicketId(1),
+    authoringVersion: 1,
+    state: "Draft",
+    configurationRevision: asConfigurationRevisionId("revision"),
+    authoring: noAuthoring,
+    brief: {
+      ...brief,
+      finalization:
+        brief.finalization ??
+        asBriefFinalization({
+          mode: brief.repository === undefined ? "Push" : repositoryMode,
+        }),
+    },
+  });
+  return (calls: string[]): AuthoringStore => ({
+    ...authoringStore(calls),
+    configuration: () =>
+      Promise.resolve({
+        partition,
+        revision: asConfigurationRevisionId("revision"),
+        canonical,
+        digest: "a".repeat(64),
+      }),
+    createDraft: (input) =>
+      Promise.resolve({ created: "Created", draft: stored(input.brief) }),
+    reviseDraft: (input) =>
+      Promise.resolve({ revised: "Revised", draft: stored(input.brief) }),
+  });
+}
+
+/** A boundary over `landingStore`, which is all a landing case varies. */
+function landingBoundary(canonical: CanonicalConfiguration): NativeWeb {
+  return boundary(
+    true,
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    unreachableProjectArtifacts(),
+    undefined,
+    landingStore(canonical, "PullRequest"),
+  ).web;
+}
+
+const landingBranch = "refs/heads/work";
+const landingRepository = "origin/landing";
+
+/** Each brief a landing case writes, the configuration it is written against, and the landing it answers. */
+const landingCases = [
+  {
+    canonical: readyConfiguration,
+    brief: { repository: landingRepository, finalization: { mode: "None" } },
+    landing: { mode: "None", source: "Brief" },
+  },
+  {
+    canonical: catalogConfiguration,
+    brief: { repository: landingRepository, branch: landingBranch },
+    landing: {
+      mode: "PullRequestMerge",
+      target: "refs/heads/main",
+      source: "Finalizer",
+    },
+  },
+  {
+    canonical: readyConfiguration,
+    brief: { repository: landingRepository, branch: landingBranch },
+    landing: { mode: "PullRequest", source: "Repository" },
+  },
+  {
+    canonical: readyConfiguration,
+    brief: {},
+    landing: { mode: "Push", source: "Default" },
+  },
+] as const;
+
+test("a created draft answers the landing its brief was stored with and who named it, the brief, its finalizer, its repository or none of them", async () => {
+  for (const each of landingCases) {
+    const created = await createDraftNaming(
+      landingBoundary(each.canonical),
+      asDraftBrief({ intent: "Land it.", links: [], ...each.brief }),
+    );
+    assert.deepEqual(
+      created.result === "Authorized" && created.value.created === "Created"
+        ? created.value.landing
+        : created,
+      each.landing,
+      JSON.stringify(each.brief),
+    );
+  }
+});
+
+test("a revised draft answers its landing the same way, the brief's own or the repository's", async () => {
+  const web = landingBoundary(readyConfiguration);
+  const revise = async (finalization?: { readonly mode: string }) => {
+    const revised = await web.reviseDraft(principal, {
+      partition,
+      ticket: asTicketId(1),
+      expectedVersion: 1,
+      configurationRevision: asConfigurationRevisionId("revision"),
+      authoring: noAuthoring,
+      brief: asDraftBrief({
+        intent: "Land it.",
+        links: [],
+        repository: landingRepository,
+        branch: landingBranch,
+        ...(finalization === undefined ? {} : { finalization }),
+      }),
+    });
+    return revised.result === "Authorized" &&
+      revised.value.revised === "Revised"
+      ? revised.value.landing
+      : revised;
+  };
+  assert.deepEqual(await revise({ mode: "Push" }), {
+    mode: "Push",
+    source: "Brief",
+  });
+  assert.deepEqual(await revise(), {
+    mode: "PullRequest",
+    source: "Repository",
+  });
+});
+
+/** A ready version 1 document whose second evaluation stage runs check commands. */
+const checkedConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(readyConfiguration) as Record<string, unknown>),
+  evaluations: [
+    { instructions: ["Review it."], practices: [] },
+    { purpose: "Check", checks: ["npm test"] },
+  ],
+});
+
+/** A catalog with the same entries whose plans are `plans`, the default being `review`. */
+function catalogPlanned(plans: Readonly<Record<string, unknown>>) {
+  return canonicalConfigurationOf({
+    ...(JSON.parse(catalogConfiguration) as Record<string, unknown>),
+    plans,
+    defaults: { work: "build", evaluation: "review", finalization: "merged" },
+  });
+}
+
+const reviewPlan = [{ name: "review", evaluators: ["build"] }];
+
+/** A catalog whose default plan runs no commands and whose plan `gated` runs them in its second stage. */
+const gatedCatalog = catalogPlanned({
+  review: reviewPlan,
+  gated: [...reviewPlan, { name: "tests", evaluators: ["tests"] }],
+});
+
+/** Each configuration and selection an initialization reads, the stage it answers and the note beside it. */
+const checkStageNoteCases = [
+  {
+    canonical: checkedConfiguration,
+    stage: 1,
+    note: "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
+  },
+  {
+    canonical: catalogConfiguration,
+    stage: 1,
+    note: 'Under plan "standard", a brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedCatalog,
+    selection: { evaluation: "gated" },
+    stage: 1,
+    note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "tests", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedCatalog,
+    stage: undefined,
+    note: 'Plan "review" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: "gated".',
+  },
+  {
+    canonical: catalogPlanned({ review: reviewPlan }),
+    stage: undefined,
+    note: "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
+  },
+  {
+    canonical: readyConfiguration,
+    stage: undefined,
+    note: "This configuration commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded.",
+  },
+] as const;
+
+test("draft initialization says in words which stage a brief's checks run in, under which plan of a catalog, and that one commanding none refuses them unless another plan takes them", async () => {
+  for (const each of checkStageNoteCases) {
+    const revision = asConfigurationRevisionId("revision");
+    const { web } = boundary(
+      true,
+      openExecutionBacklogGuard,
+      undefined,
+      Promise.resolve({
+        configuration: {
+          partition,
+          revision,
+          canonical: each.canonical,
+          digest: "a".repeat(64),
+        },
+        projectSequence: 0,
+        dependencyCandidates: [],
+        dependencyCandidatesTruncated: false,
+        domain: refinementInstance,
+      }),
+    );
+    const result = await web.initializeDraft(
+      principal,
+      partition,
+      revision,
+      "selection" in each ? each.selection : undefined,
+    );
+    const initialized =
+      result.result === "Authorized" &&
+      result.value.initialized === "Initialized"
+        ? result.value.value
+        : undefined;
+    assert.deepEqual(
+      {
+        stage: initialized?.commandedCheckStage,
+        note: initialized?.commandedCheckStageNote,
+      },
+      { stage: each.stage, note: each.note },
+    );
+  }
 });
 
 test("every run evidence read authorizes before it reaches a store", async () => {

@@ -26,6 +26,7 @@ import {
   changeProposalMerges,
   configurationProvenanceSources,
   configurationReadinesses,
+  draftLandingSources,
   draftStates,
   dispatchViewResults,
   escalationKinds,
@@ -236,6 +237,7 @@ import {
 import type {
   ConfigurationRevisionProvenance,
   ConfigurationRevisionSummary,
+  DraftLandingSource,
   DraftState,
 } from "../../src/interpreter/authoring.ts";
 import type { RepositoryConfigurationFault } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -689,6 +691,12 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     Authored: true,
     Repository: true,
   };
+  const landingSources: Record<DraftLandingSource, true> = {
+    Brief: true,
+    Finalizer: true,
+    Repository: true,
+    Default: true,
+  };
   const readiness: Record<ConfigurationRevisionSummary["readiness"], true> = {
     Ready: true,
     Incomplete: true,
@@ -709,6 +717,7 @@ test("the authoring rosters are exhaustive over the model unions", () => {
   };
   assert.deepEqual(sorted(draftStates), keysOf(states));
   assert.deepEqual(sorted(configurationProvenanceSources), keysOf(provenance));
+  assert.deepEqual(sorted(draftLandingSources), keysOf(landingSources));
   assert.deepEqual(sorted(configurationReadinesses), keysOf(readiness));
   assert.deepEqual(sorted(repositoryConfigurationFaults), keysOf(faults));
 });

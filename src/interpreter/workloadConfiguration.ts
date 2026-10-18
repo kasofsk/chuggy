@@ -269,6 +269,20 @@ export function selectedFirstCommandsEvaluator(
   return undefined;
 }
 
+/** The plans of a ready catalog a ticket's own check lines can join, by name: each runs commands in some stage. */
+export function catalogPlansCommanded(
+  configuration: WorkloadConfiguration,
+): readonly string[] {
+  return Object.keys(configuration.plans).filter((name) => {
+    const selected = selectedCatalogEntries(configuration, {
+      evaluation: name,
+    });
+    if (selected.selected !== "Selected")
+      throw new RangeError(`catalog: plan ${name} does not resolve`);
+    return selectedFirstCommandsEvaluator(selected.value) !== undefined;
+  });
+}
+
 /**
  * The finalizer a ticket's selection lands it with, read out of the stored
  * catalog: none where the selection and the defaults name none, and undefined

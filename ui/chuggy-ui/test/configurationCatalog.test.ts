@@ -96,6 +96,16 @@ test("a selected plan draws the program, its length and the stage its commands r
   expect("commandedCheckStage" in plain).toBe(false);
 });
 
+test("a selected plan drops the note the server wrote of the plan it read", () => {
+  const read = creationCatalogOffer().initialization;
+  const drawn = configurationCatalogInitialization(
+    { ...read, commandedCheckStageNote: "No stage takes checks." },
+    { evaluation: "gated" },
+  );
+  expect(drawn.commandedCheckStage).toBe(1);
+  expect("commandedCheckStageNote" in drawn).toBe(false);
+});
+
 test("an initialization whose configuration is no catalog is left as read", () => {
   expect(
     configurationCatalogInitialization(creationInitialization, {

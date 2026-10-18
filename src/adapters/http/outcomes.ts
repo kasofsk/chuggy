@@ -5,18 +5,19 @@ import type {
   ConfigurationCreated,
   ConfigurationPage,
   ConfigurationRevisionResource,
-  DraftCreated,
   DraftInitializationRead,
   DraftDeleted,
+  DraftLanding,
   DraftPage,
   DraftResource,
-  DraftRevised,
 } from "../../interpreter/authoring.ts";
 import type { DispatchViewPage } from "../../interpreter/dispatchView.ts";
 import type {
   AuthorizedResult,
   NativeActionPage,
   NativeCancellation,
+  NativeDraftCreated,
+  NativeDraftRevised,
   NativeSubmissionResult,
   OperationResource,
   ProjectInventoryPage,
@@ -887,7 +888,7 @@ function briefBody(brief: DraftBrief): unknown {
   };
 }
 
-function draftBody(draft: DraftResource): unknown {
+function draftBody(draft: DraftResource): Readonly<Record<string, unknown>> {
   return {
     partition: draft.partition,
     ticket: draft.ticket,
@@ -2026,6 +2027,7 @@ export function draftInitializationResponse(
     ...(value.commandedCheckStage === undefined
       ? {}
       : { commandedCheckStage: value.commandedCheckStage }),
+    commandedCheckStageNote: value.commandedCheckStageNote,
   });
 }
 
@@ -2039,10 +2041,18 @@ const draftLandingUnbranched = nativeHttpError(
   "The brief names no branch to open a pull request from.",
 );
 
-function draftCreated(value: DraftCreated): NativeHttpResponse {
+/** A draft a write answers, beside the landing that write stored its brief with. */
+function draftWrittenBody(
+  draft: DraftResource,
+  landing: DraftLanding,
+): unknown {
+  return { ...draftBody(draft), landing };
+}
+
+function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
   switch (value.created) {
     case "Created":
-      return response(201, draftBody(value.draft), {
+      return response(201, draftWrittenBody(value.draft, value.landing), {
         location: resourcePath(
           value.draft.partition,
           "drafts",
@@ -2069,17 +2079,17 @@ function draftCreated(value: DraftCreated): NativeHttpResponse {
 }
 
 export function draftCreationResponse(
-  result: AuthorizedResult<DraftCreated>,
+  result: AuthorizedResult<NativeDraftCreated>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : draftCreated(result.value);
 }
 
-function draftRevised(value: DraftRevised): NativeHttpResponse {
+function draftRevised(value: NativeDraftRevised): NativeHttpResponse {
   switch (value.revised) {
     case "Revised":
-      return response(200, draftBody(value.draft));
+      return response(200, draftWrittenBody(value.draft, value.landing));
     case "NotFound":
     case "ConfigurationNotFound":
     case "RepositoryNotBound":
@@ -2111,7 +2121,7 @@ function draftRevised(value: DraftRevised): NativeHttpResponse {
 }
 
 export function draftRevisionResponse(
-  result: AuthorizedResult<DraftRevised>,
+  result: AuthorizedResult<NativeDraftRevised>,
 ): NativeHttpResponse {
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
