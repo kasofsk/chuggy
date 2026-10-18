@@ -338,8 +338,9 @@ export type RepositoryConfigurationImportAttemptOutcome =
     };
 
 /**
- * The last import attempted of one binding. `commit` is the one it was read
- * at, and is absent where the default branch named none or could not be read.
+ * The import of one binding that finished last, `attemptedAt` the instant it
+ * was kept. `commit` is the one it was read at, and is absent where the default
+ * branch named none or could not be read.
  */
 export interface RepositoryConfigurationImportAttempt {
   readonly attemptedAt: string;

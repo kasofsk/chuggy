@@ -10763,6 +10763,7 @@ const importAttemptsAdmitted067: readonly ImportAttempt067[] = [
   ["repository-5", null, "SnapshotAbsent", "Commit"],
   ["repository-5", null, "Unavailable", null],
   ["repository-5", importAttemptCommit067, "DeclarationsRefused", null],
+  ["repository-5", "b".repeat(64), "Imported", null],
 ];
 
 /** Each attempt 067 refuses, and the constraint it is refused by. */
@@ -10792,6 +10793,14 @@ const importAttemptsRefused067: readonly (readonly [
     /_commit_was_read/u,
   ],
   [["repository-5", "main", "Imported", null], /_commit_is_git_object/u],
+  [
+    ["repository-5", "a".repeat(41), "Imported", null],
+    /_commit_is_git_object/u,
+  ],
+  [
+    ["repository-5", `x${importAttemptCommit067}`, "Imported", null],
+    /_commit_is_git_object/u,
+  ],
   [
     ["unbound-5", importAttemptCommit067, "Imported", null],
     /_repository_is_bound/u,
@@ -10838,10 +10847,10 @@ test("067 keeps one attempt a binding, each replacing the one before, and admits
 });
 
 /**
- * The door's clock is its transaction's, so an attempt that began first and
- * finished last is the earlier one, and finds a later one kept.
+ * The door's clock is its transaction's, so of two recordings racing, the one
+ * whose transaction began first is the earlier, and finds the later one kept.
  */
-test("067 never replaces an attempt with one that began before it", async () => {
+test("067 never replaces an attempt with one recorded before it", async () => {
   await migrationDatabase(
     "configuration_import_attempt_order",
     async (subject) => {

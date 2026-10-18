@@ -53,7 +53,7 @@ export function postgresProjectRepositoryBinding(
   };
 }
 
-/** Keeps one attempt through the door, which replaces the binding's row unless the one kept began later. */
+/** Keeps one attempt through the door once it has come out, which replaces the binding's row unless the one kept was recorded later. */
 export function postgresRepositoryConfigurationImportAttempts(
   pool: pg.Pool,
 ): RepositoryConfigurationImportAttempts {

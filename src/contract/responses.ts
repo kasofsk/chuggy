@@ -1860,8 +1860,8 @@ export type ProjectRepositoryResponse = z.infer<
 >;
 
 /**
- * The last configuration import attempted of one binding: when, the commit it
- * was read at where one was, and how it came out. `absent` is what a
+ * The configuration import of one binding that finished last: when it was
+ * recorded, the commit it was read at where one was, and how it came out. `absent` is what a
  * `SnapshotAbsent` lacked, and no other outcome carries it.
  */
 export const repositoryConfigurationImportAttemptSchema = z.object({

@@ -1,13 +1,14 @@
 /**
- * The last configuration import attempted of each binding, and the one door
- * that writes it.
+ * The configuration import of each binding that finished last, and the one
+ * door that writes it.
  *
  * ONE ROW A BINDING, REPLACED BY EACH ATTEMPT. An import at an unchanged head
  * writes no revision, so this row is the only record that it was made. A
  * commit is kept where one was read, and an attempt whose default branch named
- * none, or could not be read, keeps none. `attempted_at` is the database's
- * clock as the door ran, and an attempt that began before the one kept never
- * replaces it.
+ * none, or could not be read, keeps none. Every caller runs the door once its
+ * import has come out, so `attempted_at` is the database's clock as it was
+ * recorded and the row is the attempt that finished last; of two recordings
+ * racing, the one whose transaction began first never replaces the other.
  *
  * THE WORDS ARE THE CONTRACT'S `repositoryConfigurationImportResults` AND
  * `repositoryConfigurationImportAbsences` AS THEY STAND HERE, written out
