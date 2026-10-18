@@ -152,7 +152,6 @@ const config: KubernetesWorkerLaunchConfig = {
   tokenFile,
   workerPlaneUrl: "http://chuggy-worker-plane:8080",
   capabilityFile: "/run/chuggy/capability",
-  workspacePath: "/workspace",
   credentialMounts: {
     workspace: workspaceCredentialMount,
   },
@@ -1144,7 +1143,6 @@ test("a deployment that cannot address a cluster is refused where it is composed
     { sidecars: [{ ...workerSidecar, name: kubernetesWorkerContainerName }] },
     { sidecars: [{ ...workerSidecar, name: "chuggy-runtime" }] },
     { runtimeImage: "" },
-    { workspacePath: workerRuntimeDirectory },
     { capabilityFile: `${workerRuntimeDirectory}/capability` },
     { activeDeadlineSecs: 0 },
     { requestTimeoutSecsMax: 0 },

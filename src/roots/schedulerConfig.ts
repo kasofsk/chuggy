@@ -673,7 +673,6 @@ function schedulerWorkers(
     tokenFile: schedulerRequired(environment, "CLUSTER_TOKEN_FILE"),
     workerPlaneUrl: schedulerRequired(environment, "WORKER_PLANE_URL"),
     capabilityFile: schedulerRequired(environment, "WORKER_CAPABILITY_FILE"),
-    workspacePath: schedulerRequired(environment, "WORKER_WORKSPACE_PATH"),
     credentialMounts: schedulerJson(
       environment,
       "WORKER_CREDENTIAL_MOUNTS",
@@ -828,7 +827,6 @@ function schedulerPodSite(
     requestTimeoutSecsMax: workers.requestTimeoutSecsMax,
     workerPlaneUrl: workers.workerPlaneUrl,
     capabilityFile: workers.capabilityFile,
-    workspacePath: workers.workspacePath,
     credentialMounts: workers.credentialMounts,
   };
 }

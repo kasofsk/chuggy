@@ -69,6 +69,16 @@ export const mintedCredentialDirectory = "/var/run/chuggy/minted";
 export const workerRuntimeDirectory = "/opt/chuggy";
 
 /**
+ * Where a job's or a session's container works, whatever image it names, and
+ * where the repository it works on is checked out there. Each is fixed rather
+ * than configured, since an image may build against the checkout and nothing
+ * it reads would tell it a launcher had moved one.
+ */
+export const workerWorkspaceDirectory = "/workspace";
+export const workerRepositoryDirectory =
+  `${workerWorkspaceDirectory}/repository` as const;
+
+/**
  * What a job's container runs in place of its image's own entrypoint: the
  * runtime's check of the image, which starts the worker once the image passes
  * it and otherwise exits with the status of the fault it found.

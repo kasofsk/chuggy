@@ -126,7 +126,6 @@ const environment: Readonly<Record<string, string>> = {
   CHUG_SCHEDULER_CLUSTER_TOKEN_FILE: tokenFile,
   CHUG_SCHEDULER_WORKER_PLANE_URL: "https://worker-plane.invalid",
   CHUG_SCHEDULER_WORKER_CAPABILITY_FILE: "/run/chuggy/capability",
-  CHUG_SCHEDULER_WORKER_WORKSPACE_PATH: "/workspace",
   CHUG_SCHEDULER_WORKER_CREDENTIAL_MOUNTS: "{}",
   CHUG_SCHEDULER_WORKER_SERVICE_ACCOUNT: "chuggy-worker",
   CHUG_SCHEDULER_WORKER_RUNTIME: runtimeImage,
@@ -212,7 +211,6 @@ const parsed = {
     tokenFile,
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
-    workspacePath: "/workspace",
     sidecars: [],
     credentialMounts: {},
     environment: {},
@@ -249,7 +247,6 @@ const parsed = {
     requestTimeoutSecsMax: 30,
     workerPlaneUrl: "https://worker-plane.invalid",
     capabilityFile: "/run/chuggy/capability",
-    workspacePath: "/workspace",
     credentialMounts: {},
     podNamePrefix: "chuggy-session",
     podLabels: {},
@@ -305,7 +302,6 @@ test("a session stands on the site the worker half of one deployment already nam
     "requestTimeoutSecsMax",
     "workerPlaneUrl",
     "capabilityFile",
-    "workspacePath",
     "credentialMounts",
   ]) {
     assert.deepEqual(
@@ -314,6 +310,21 @@ test("a session stands on the site the worker half of one deployment already nam
       shared,
     );
   }
+});
+
+test("a complete environment names no workspace, and the site it parses into carries none", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(parseProgram(environment)),
+  ) as {
+    readonly refused?: string;
+    readonly parsed?: {
+      readonly workers: Readonly<Record<string, unknown>>;
+      readonly sessions: Readonly<Record<string, unknown>>;
+    };
+  };
+  assert.equal(found.refused, undefined);
+  assert.equal("workspacePath" in (found.parsed?.workers ?? {}), false);
+  assert.equal("workspacePath" in (found.parsed?.sessions ?? {}), false);
 });
 
 test("a session pod wears the session's own labels and never the worker's", async () => {

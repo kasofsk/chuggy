@@ -108,7 +108,6 @@ const poolClientKubernetesSiteSchema = z.strictObject({
   namespace: poolClientTextSchema,
   tokenFile: poolClientTextSchema,
   serviceAccountName: poolClientTextSchema,
-  workspacePath: poolClientTextSchema,
   capabilityFile: poolClientTextSchema,
   workerPlaneUrl: poolClientTextSchema,
   podNamePrefix: poolClientTextSchema,

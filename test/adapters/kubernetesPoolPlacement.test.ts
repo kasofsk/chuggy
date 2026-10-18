@@ -10,6 +10,7 @@ import {
   workerJobCommand,
   workerRuntimeDirectory,
   workerTaskVariable,
+  workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../src/contract/workerEnvironment.ts";
 import { workerErrorPath } from "../../src/contract/http.ts";
@@ -58,7 +59,6 @@ const config: KubernetesPoolPlacementConfig = {
   requestTimeoutSecsMax: 2,
   workerPlaneUrl: "https://worker-plane.invalid",
   capabilityFile: "/run/chuggy/capability",
-  workspacePath: "/workspace",
   credentialMounts: {
     "codex-auth": {
       secretName: "codex-auth",
@@ -867,7 +867,7 @@ test("an assignment naming a runtime starts its workload from it, and one naming
   );
   assert.deepEqual(
     container.env.filter(({ name }) => name === workerWorkspaceVariable),
-    [{ name: workerWorkspaceVariable, value: config.workspacePath }],
+    [{ name: workerWorkspaceVariable, value: workerWorkspaceDirectory }],
   );
   const unstarted = (await placedPod({
     ...config,
@@ -895,8 +895,8 @@ test("a site is refused where its own mounts would land inside the runtime", () 
     () =>
       checkedKubernetesPoolPlacementConfig({
         ...config,
-        workspacePath: workerRuntimeDirectory,
+        capabilityFile: `${workerRuntimeDirectory}/capability`,
       }),
-    /pool placement mount \/opt\/chuggy overlaps \/opt\/chuggy/u,
+    /pool placement mount \/opt\/chuggy\/capability overlaps \/opt\/chuggy/u,
   );
 });

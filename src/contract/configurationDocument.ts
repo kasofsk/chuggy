@@ -37,7 +37,11 @@ import {
 } from "./http.ts";
 import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
-import { workerRuntimeDirectory } from "./workerEnvironment.ts";
+import {
+  workerRepositoryDirectory,
+  workerRuntimeDirectory,
+  workerWorkspaceDirectory,
+} from "./workerEnvironment.ts";
 import {
   workerPoolCapabilitiesMax,
   workerPoolCapabilitySchema,
@@ -421,7 +425,7 @@ export const configurationImageSchema = z
     ),
   )
   .describe(
-    `A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's other repositories), glibc ${configurationImageGlibcVersionMin} or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. A digest is recommended and not required. chuggy holds none of the project's registry logins.`,
+    `A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's other repositories), glibc ${configurationImageGlibcVersionMin} or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. A job run in the image works in ${workerWorkspaceDirectory}, with the repository its ticket names checked out at ${workerRepositoryDirectory}; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins.`,
   );
 
 const configurationPlatformShape = {

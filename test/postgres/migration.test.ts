@@ -55,6 +55,7 @@ import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-
 import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
 import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
 import { migration060 } from "../../src/adapters/postgres/schema/migrations/060-merge-waits.ts";
+import { migration066 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -68,7 +69,10 @@ import {
   asForgeInstallationId,
 } from "../../src/interpreter/forgeInstallation.ts";
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
-import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
+import {
+  baselineToolAllowlist,
+  leadDispatchesPerDecision,
+} from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -10535,5 +10539,97 @@ test("060 ages every merge an installation had asked about from its proposal's o
       "the forge's own rules may lift, so no row settles on them",
     );
     assert.equal(await answered("Conflict"), undefined);
+  });
+});
+
+/** Every revision's tool allowlist, current first and then the history in order. */
+async function toolAllowlists066(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT 'current' AS row, revision::text, controls::jsonb->'toolAllowlist' AS tools
+         FROM selector_runtime_settings
+       UNION ALL
+       SELECT 'history', revision::text, controls::jsonb->'toolAllowlist'
+         FROM selector_runtime_settings_history
+       ORDER BY 1, 2`,
+    )
+  ).rows;
+}
+
+/** An owner's write of the installation's tool allowlist through the settings door, its controls rendered as `jsonb` renders them. */
+async function ownerControls066(
+  subject: pg.Pool,
+  toolAllowlist: string,
+): Promise<void> {
+  await subject.query(
+    `SELECT * FROM update_selector_runtime_settings(1, NULL, NULL, NULL,
+       (SELECT jsonb_set(controls::jsonb, '{toolAllowlist}', $1::jsonb)::text
+          FROM selector_runtime_settings),
+       'User', 'owner')`,
+    [toolAllowlist],
+  );
+}
+
+test("066 names list_repositories in the seeded allowlist at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+  const held = new Set([
+    ...sessionCapabilities.flatMap(
+      (capability) => builtInToolCapabilities[capability],
+    ),
+    ...chuggyToolNames(sessionCapabilities),
+  ]);
+  await migrationDatabase("lead_lists_repositories", async (subject) => {
+    await installationBefore(subject, migration066.version);
+    await ownerControls066(subject, JSON.stringify(baselineToolAllowlist));
+    assert.ok((await postgresMigrate(subject)).includes(migration066.version));
+    const rows = (await toolAllowlists066(subject)) as readonly {
+      readonly row: string;
+      readonly revision: string;
+      readonly tools: readonly string[];
+    }[];
+    assert.deepEqual(
+      rows.map(({ row, revision }) => `${row} ${revision}`),
+      ["current 2", "history 1", "history 2"],
+    );
+    for (const { tools } of rows) {
+      assert.deepEqual(
+        tools.filter((tool) => held.has(tool)),
+        leadToolAllowlist,
+      );
+      assert.deepEqual(
+        tools.filter((tool) => !baselineToolAllowlist.includes(tool)),
+        ["mcp__chuggy__list_repositories"],
+      );
+    }
+    const seeded = await subject.query<{ controls: string }>(
+      "SELECT controls FROM selector_runtime_settings_history WHERE revision = 1",
+    );
+    assert.ok(
+      seeded.rows[0]?.controls.includes(
+        '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
+      ),
+      "the seed's own row keeps its text",
+    );
+  });
+  await migrationDatabase("lead_lists_repositories_owned", async (subject) => {
+    const owned = ["Read", "mcp__chuggy__list_tickets"];
+    await installationBefore(subject, migration066.version);
+    await ownerControls066(subject, JSON.stringify(owned));
+    assert.ok((await postgresMigrate(subject)).includes(migration066.version));
+    const rows = (await toolAllowlists066(subject)) as readonly {
+      readonly row: string;
+      readonly tools: readonly string[];
+    }[];
+    assert.deepEqual(
+      rows.map(({ row, tools }) => [
+        row,
+        tools.includes("mcp__chuggy__list_repositories"),
+        tools.length,
+      ]),
+      [
+        ["current", false, owned.length],
+        ["history", true, baselineToolAllowlist.length + 1],
+        ["history", false, owned.length],
+      ],
+    );
   });
 });

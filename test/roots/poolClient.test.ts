@@ -13,6 +13,8 @@ import { execFile } from "node:child_process";
 import test from "node:test";
 import { promisify } from "node:util";
 
+import { workerWorkspaceDirectory } from "../../src/contract/workerEnvironment.ts";
+
 const execute = promisify(execFile);
 
 const site = {
@@ -21,7 +23,6 @@ const site = {
   namespace: "pool",
   tokenFile: "/var/run/secrets/token",
   serviceAccountName: "pool-worker",
-  workspacePath: "/workspace",
   capabilityFile: "/run/chuggy/capability",
   workerPlaneUrl: "https://worker-plane.invalid",
   podNamePrefix: "pool",
@@ -94,6 +95,23 @@ test("a client is composed from its variables, the absent bounds defaulting", as
   assert.deepEqual(found.site.capabilities, {});
   assert.equal(found.client.concurrencyMax, 4);
   assert.equal(found.client.passesMax, 1_000);
+});
+
+test("a site naming a workspace, even the contract's, is refused", async () => {
+  assert.match(
+    String(
+      (
+        await parsed({
+          ...environment,
+          CHUG_POOL_CLIENT_SITE: JSON.stringify({
+            ...site,
+            workspacePath: workerWorkspaceDirectory,
+          }),
+        })
+      ).refused,
+    ),
+    /CHUG_POOL_CLIENT_SITE:.*workspacePath/u,
+  );
 });
 
 test("a stated bound is the one used", async () => {

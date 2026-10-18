@@ -1039,7 +1039,6 @@ const site: KubernetesPoolPlacementConfig = {
   requestTimeoutSecsMax: 2,
   workerPlaneUrl: "https://worker-plane.invalid",
   capabilityFile: "/run/chuggy/capability",
-  workspacePath: "/workspace",
   credentialMounts: {},
   podNamePrefix: "pool",
   image: "registry.invalid/site-worker:1",

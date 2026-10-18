@@ -48,6 +48,7 @@ import {
   sessionTaskVariable,
   workerCredentialFilesVariable,
   workerTaskVariable,
+  workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
 import type { WorkTaskDocument } from "../../contract/workerTask.ts";
@@ -321,7 +322,7 @@ function kubernetesWorkerContainer(
       },
       {
         name: "worker-workspace",
-        mountPath: config.workspacePath,
+        mountPath: workerWorkspaceDirectory,
         readOnly: false,
       },
       kubernetesMintedCredentialVolumes().mount,

@@ -11,7 +11,9 @@ import {
   workerImageFaults,
   workerImageFaultStatuses,
   workerJobCommand,
+  workerRepositoryDirectory,
   workerRuntimeDirectory,
+  workerWorkspaceDirectory,
 } from "../../src/contract/workerEnvironment.ts";
 
 /** The highest status a shell ends a script with that failed or that it could not read. */
@@ -50,5 +52,14 @@ test("the check names by status every fault met once the image's shell has start
   assert.deepEqual(
     Object.keys(workerImageFaultStatuses),
     workerImageFaults.slice(started),
+  );
+});
+
+test("a job's container works in the contract's workspace and has its repository checked out inside it, apart from the runtime", () => {
+  assert.equal(workerWorkspaceDirectory, "/workspace");
+  assert.equal(workerRepositoryDirectory, "/workspace/repository");
+  assert.ok(
+    !workerWorkspaceDirectory.startsWith(`${workerRuntimeDirectory}/`) &&
+      !workerRuntimeDirectory.startsWith(`${workerWorkspaceDirectory}/`),
   );
 });

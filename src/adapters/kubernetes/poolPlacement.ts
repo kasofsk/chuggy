@@ -48,6 +48,7 @@
 
 import {
   workerTaskVariable,
+  workerWorkspaceDirectory,
   workerWorkspaceVariable,
 } from "../../contract/workerEnvironment.ts";
 import type { WorkerPoolAssignment } from "../../contract/workerPool.ts";
@@ -214,7 +215,7 @@ function poolPlacementEnvelope(
   const envelope: PoolEnvelope = {
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
-    workspace: config.workspacePath,
+    workspace: workerWorkspaceDirectory,
     timeoutSecsMax: config.timeoutSecsMax,
     outputBytesMax: config.outputBytesMax,
     ...(providerCredentialFile === undefined ? {} : { providerCredentialFile }),
@@ -272,7 +273,7 @@ function poolPlacementJob(
       volumeMounts: [
         {
           name: "workspace",
-          mountPath: config.workspacePath,
+          mountPath: workerWorkspaceDirectory,
           readOnly: false,
         },
         { name: "control", mountPath: "/tmp", readOnly: false },

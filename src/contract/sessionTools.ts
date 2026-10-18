@@ -96,6 +96,7 @@ const chuggyToolRoster = {
     "list_threads",
     "read_thread",
     "read_thread_transcript",
+    "list_repositories",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -205,6 +206,7 @@ export const chuggyToolRoutes = {
   threads: nativeHttpRoutes.threads,
   thread: nativeHttpRoutes.thread,
   threadTranscript: nativeHttpRoutes.threadTranscript,
+  projectRepositories: nativeHttpRoutes.projectRepositories,
   draftInitialization: nativeHttpRoutes.draftInitialization,
   operations: nativeHttpRoutes.operations,
 } as const;

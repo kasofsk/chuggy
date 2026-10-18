@@ -30,7 +30,10 @@ import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 import { textCodePointsCount } from "../../contract/http.ts";
-import { mintedCredentialDirectory } from "../../contract/workerEnvironment.ts";
+import {
+  mintedCredentialDirectory,
+  workerWorkspaceDirectory,
+} from "../../contract/workerEnvironment.ts";
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
@@ -67,7 +70,6 @@ export interface KubernetesPodSite {
   readonly requestTimeoutSecsMax: number;
   readonly workerPlaneUrl: string;
   readonly capabilityFile: string;
-  readonly workspacePath: string;
   readonly credentialMounts: Readonly<
     Record<string, KubernetesWorkerCredentialMount>
   >;
@@ -337,9 +339,7 @@ export function checkedKubernetesPodSite<Site extends KubernetesPodSite>(
     throw new RangeError("worker plane URL must carry no credentials");
   if (!site.capabilityFile.startsWith("/"))
     throw new RangeError(`${what} capability file must be absolute`);
-  if (!site.workspacePath.startsWith("/"))
-    throw new RangeError(`${what} workspace path must be absolute`);
-  const mountPaths = new Set([site.capabilityFile, site.workspacePath]);
+  const mountPaths = new Set([site.capabilityFile, workerWorkspaceDirectory]);
   const credentialPaths = new Set<string>();
   for (const [credential, mount] of Object.entries(site.credentialMounts)) {
     if (credential.length === 0)

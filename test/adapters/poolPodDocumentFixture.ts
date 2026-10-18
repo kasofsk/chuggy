@@ -7,9 +7,8 @@
  *
  * It is deliberately unlike the placement suite's fixture: one capability the
  * site maps and one it does not, a provider credential, both security contexts
- * populated, a site environment, and a workspace that is not `/workspace`, so
- * the document exercises every part of the renderer a sidecar or a runtime
- * could disturb.
+ * populated and a site environment, so the document exercises every part of
+ * the renderer a sidecar or a runtime could disturb.
  */
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
@@ -35,7 +34,6 @@ const goldenConfig: Omit<KubernetesPoolPlacementConfig, "tokenFile"> = {
   requestTimeoutSecsMax: 30,
   workerPlaneUrl: "http://golden-plane.invalid:3001",
   capabilityFile: "/var/run/golden/capability/bearer",
-  workspacePath: "/srv/golden/workspace",
   credentialMounts: {
     "claude-code": {
       secretName: "golden-claude-code",

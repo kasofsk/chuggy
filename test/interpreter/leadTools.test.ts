@@ -21,6 +21,7 @@ import {
   leadObjectivesFixedChars,
   leadSessionCapabilities,
   leadSystemPrompt,
+  leadToolAllowlist,
   sessionSystemPromptCharsMax,
 } from "../../src/interpreter/leadTools.ts";
 import type { SelectorResolvedSettings } from "../../src/interpreter/selector.ts";
@@ -60,6 +61,13 @@ test("origination and revoking are admitted for a thread's roster and refused fo
       .filter((tool) => !(memberOnly as readonly string[]).includes(tool))
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
+});
+
+test("a lead and a thread both list the project's repositories, and a lead's decision may report it", () => {
+  const named = `${chuggyToolPrefix}list_repositories`;
+  assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named));
+  assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named));
+  assert.ok(leadToolAllowlist.includes(named));
 });
 
 test("the relations a lead is refused are the ones the contract does not admit", () => {
