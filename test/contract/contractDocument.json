@@ -538,7 +538,7 @@
           "minLength": 1
         }
       },
-      "required": ["repository", "commit"],
+      "required": ["repository"],
       "additionalProperties": false
     },
     "draftCreation": {

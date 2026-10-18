@@ -303,6 +303,7 @@ function imported(
       bindings: { binding: () => Promise.resolve(binding) },
       snapshots,
       store,
+      attempts: { record: () => Promise.resolve() },
     },
   });
 }

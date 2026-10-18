@@ -64,6 +64,7 @@ import { migration063 } from "./063-catalog-selection-refusals.ts";
 import { migration064 } from "./064-draft-selection.ts";
 import { migration065 } from "./065-capability-mode.ts";
 import { migration066 } from "./066-lead-lists-repositories.ts";
+import { migration067 } from "./067-configuration-import-attempts.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -133,4 +134,5 @@ export const migrations: readonly Migration[] = [
   migration064,
   migration065,
   migration066,
+  migration067,
 ];

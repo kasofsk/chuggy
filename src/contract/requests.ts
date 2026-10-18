@@ -125,9 +125,10 @@ export const configurationCreationSchema = z.strictObject({
   canonical: bodyIdentitySchema,
 });
 
+/** An import at `commit`, or at where the repository's default branch points now where it names none. */
 export const repositoryConfigurationImportSchema = z.strictObject({
   repository: bodyIdentitySchema,
-  commit: bodyIdentitySchema,
+  commit: bodyIdentitySchema.optional(),
 });
 
 export const forgeCredentialRequestSchema = z.strictObject({

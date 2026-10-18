@@ -50,7 +50,11 @@ import {
   postgresAuthoring,
   postgresRepositoryConfigurationsHeld,
 } from "./adapters/postgres/authoring.ts";
-import { postgresProjectRepositoryBinding } from "./adapters/postgres/repositoryConfiguration.ts";
+import {
+  postgresProjectRepositoryBinding,
+  postgresRepositoryConfigurationImportAttempts,
+  postgresRepositoryConfigurationImportAttemptsRead,
+} from "./adapters/postgres/repositoryConfiguration.ts";
 import {
   forgeCredentialMinting,
   type ForgeCredentialMinting,
@@ -547,6 +551,9 @@ function composeRepositoryConfigurations(
       bindings: postgresProjectRepositoryBinding(composition.apiPool),
       snapshots: repositories,
       store: authoring,
+      attempts: postgresRepositoryConfigurationImportAttempts(
+        composition.apiPool,
+      ),
     },
     authoring,
     ...(composition.bootstrapImage === undefined
@@ -572,6 +579,9 @@ export function composeRepositoryOnboarding(
     landing: postgresProjectRepositoryLanding(composition.apiPool),
     retirement: postgresProjectRepositoryRetirement(composition.apiPool),
     configurationsHeld: postgresRepositoryConfigurationsHeld(
+      composition.apiPool,
+    ),
+    importAttempts: postgresRepositoryConfigurationImportAttemptsRead(
       composition.apiPool,
     ),
     ...(composition.repositories === undefined
@@ -834,7 +844,8 @@ export function composeNativeWeb(
     RunEvidenceContentPort &
     ProjectArtifactPort,
   selectorContexts?: SelectorOperationalContextRead,
-  repositoryConfigurationSnapshots?: RepositoryConfigurationSnapshotPort,
+  repositories?: RepositoryConfigurationSnapshotPort &
+    RepositoryDefaultBranchPort,
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
 ): NativeWeb {
@@ -853,13 +864,15 @@ export function composeNativeWeb(
     postgresOperationalReads(apiPool),
     outputContents,
     selectorContexts,
-    repositoryConfigurationSnapshots === undefined
+    repositories === undefined
       ? undefined
       : {
           bindings: postgresProjectRepositoryBinding(apiPool),
           landing: postgresProjectRepositoryLanding(apiPool),
-          snapshots: repositoryConfigurationSnapshots,
+          snapshots: repositories,
+          heads: repositories,
           store: authoring,
+          attempts: postgresRepositoryConfigurationImportAttempts(apiPool),
         },
     postgresRunEvidenceReads(apiPool),
     outputContents,

@@ -56,6 +56,7 @@ import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-
 import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
 import { migration060 } from "../../src/adapters/postgres/schema/migrations/060-merge-waits.ts";
 import { migration066 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
+import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
 import {
@@ -104,6 +105,7 @@ import {
   projectChangeSweepFunction,
   repositoryBindingListFunction,
   repositoryBindingReadFunction,
+  repositoryConfigurationImportRecordFunction,
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
@@ -6304,7 +6306,7 @@ function wipeTruncated(script: string): readonly string[] {
   );
 }
 
-/** What the wipe keeps: what a project is, rather than what it has done, and what was reported of its repositories' commits. */
+/** What the wipe keeps: what a project is, rather than what it has done, and what was reported or read of its repositories. */
 const wipeKept = [
   "action_observation",
   "admitted_worker",
@@ -6329,6 +6331,7 @@ const wipeKept = [
   "project_session_placement",
   "recovery_epoch",
   "repository_action",
+  "repository_configuration_import",
   "repository_configuration_provenance",
   "repository_configuration_version",
   "schema_migration",
@@ -10632,4 +10635,250 @@ test("066 names list_repositories in the seeded allowlist at its roster place, i
       ],
     );
   });
+});
+
+/** What each role holds on the attempts 067 keeps, column by column where a grant is. */
+async function importAttemptGrants067(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT grantee,privilege_type,
+              string_agg(column_name,',' ORDER BY column_name COLLATE "C") AS columns
+         FROM information_schema.column_privileges
+        WHERE table_name='repository_configuration_import' AND grantee <> current_user
+        GROUP BY grantee,privilege_type
+        ORDER BY grantee,privilege_type`,
+    )
+  ).rows;
+}
+
+/** How 067 declares its door, and who may execute it. */
+async function importAttemptDoorDeclared067(
+  subject: pg.Pool,
+  door: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+              array_to_string(p.proconfig,',') AS settings,
+              has_function_privilege($2,p.oid,'EXECUTE') AS api,
+              has_function_privilege($3,p.oid,'EXECUTE') AS importer,
+              has_function_privilege($4,p.oid,'EXECUTE') AS selector,
+              has_function_privilege('public',p.oid,'EXECUTE') AS public
+         FROM pg_proc p WHERE p.oid = to_regprocedure($1)`,
+      [door, apiRole, configurationImporterRole, selectorServiceRole],
+    )
+  ).rows;
+}
+
+/** One attempt written through 067's door, answering the refusal where it was refused. */
+function importAttemptRecorded067(
+  subject: pg.Pool | pg.PoolClient,
+  attempt: readonly [string, string | null, string, string | null],
+): Promise<string | undefined> {
+  const [repository, commit, result, absent] = attempt;
+  return subject
+    .query(
+      `SELECT ${repositoryConfigurationImportRecordFunction}
+         ('tenant-5','project-5',$1,$2,$3,$4)`,
+      [repository, commit, result, absent],
+    )
+    .then(
+      () => undefined,
+      (failure: unknown) => String(failure),
+    );
+}
+
+/** The attempt 067 keeps of the bound repository, its time left out. */
+async function importAttemptKept067(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT repository_commit,result,absent FROM repository_configuration_import
+        WHERE tenant='tenant-5' AND project='project-5'`,
+    )
+  ).rows;
+}
+
+test("067 keeps no attempt for any binding that stood, and lets the API and the importer write one through its door alone", async () => {
+  await migrationDatabase("configuration_import_attempt", async (subject) => {
+    const door = `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text)`;
+    await installationBefore(subject, migration067.version);
+    await subject.query(
+      `${deletionPartition}
+       INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+       VALUES('tenant-5','project-5','repository-5','epoch-5')`,
+    );
+    assert.equal(await migrationHasFunction(subject, door), false);
+    assert.ok((await postgresMigrate(subject)).includes(migration067.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT version,name FROM schema_migration WHERE version=$1",
+          [migration067.version],
+        )
+      ).rows,
+      [{ version: migration067.version, name: migration067.name }],
+    );
+    assert.deepEqual(await importAttemptKept067(subject), []);
+    const every =
+      "absent,attempted_at,project,repository,repository_commit,result,tenant";
+    assert.deepEqual(await importAttemptGrants067(subject), [
+      { grantee: apiRole, privilege_type: "SELECT", columns: every },
+      { grantee: boundaryOwnerRole, privilege_type: "INSERT", columns: every },
+      { grantee: boundaryOwnerRole, privilege_type: "SELECT", columns: every },
+      {
+        grantee: boundaryOwnerRole,
+        privilege_type: "UPDATE",
+        columns: "absent,attempted_at,repository_commit,result",
+      },
+    ]);
+    assert.deepEqual(await importAttemptDoorDeclared067(subject, door), [
+      {
+        owner: boundaryOwnerRole,
+        definer: true,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        api: true,
+        importer: true,
+        selector: false,
+        public: false,
+      },
+    ]);
+  });
+});
+
+/** One attempt 067's door is asked to keep, as repository, commit, result and absence. */
+type ImportAttempt067 = readonly [string, string | null, string, string | null];
+
+/** A commit an attempt read. */
+const importAttemptCommit067 = "a".repeat(40);
+
+/** Every kind of attempt 067 admits, each replacing the one before it. */
+const importAttemptsAdmitted067: readonly ImportAttempt067[] = [
+  ["repository-5", importAttemptCommit067, "Imported", null],
+  [
+    "repository-5",
+    importAttemptCommit067,
+    "SnapshotAbsent",
+    "ConfigurationDirectory",
+  ],
+  ["repository-5", null, "SnapshotAbsent", "Commit"],
+  ["repository-5", null, "Unavailable", null],
+  ["repository-5", importAttemptCommit067, "DeclarationsRefused", null],
+];
+
+/** Each attempt 067 refuses, and the constraint it is refused by. */
+const importAttemptsRefused067: readonly (readonly [
+  ImportAttempt067,
+  RegExp,
+])[] = [
+  [
+    ["repository-5", importAttemptCommit067, "Refused", null],
+    /_result_is_known/u,
+  ],
+  [
+    ["repository-5", importAttemptCommit067, "SnapshotAbsent", "Branch"],
+    /_absent_is_known/u,
+  ],
+  [
+    ["repository-5", importAttemptCommit067, "SnapshotAbsent", null],
+    /_absent_is_a_snapshots/u,
+  ],
+  [
+    ["repository-5", importAttemptCommit067, "Imported", "Commit"],
+    /_absent_is_a_snapshots/u,
+  ],
+  [["repository-5", null, "Imported", null], /_commit_was_read/u],
+  [
+    ["repository-5", null, "SnapshotAbsent", "ConfigurationDirectory"],
+    /_commit_was_read/u,
+  ],
+  [["repository-5", "main", "Imported", null], /_commit_is_git_object/u],
+  [
+    ["unbound-5", importAttemptCommit067, "Imported", null],
+    /_repository_is_bound/u,
+  ],
+];
+
+/** A database at 067 holding one bound repository and no attempt of it. */
+async function importAttemptBound067(subject: pg.Pool): Promise<void> {
+  await installationBefore(subject, migration067.version);
+  await subject.query(
+    `${deletionPartition}
+     INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
+     VALUES('tenant-5','project-5','repository-5','epoch-5')`,
+  );
+  await postgresMigrate(subject);
+}
+
+test("067 keeps one attempt a binding, each replacing the one before, and admits only what an attempt can be", async () => {
+  await migrationDatabase(
+    "configuration_import_attempt_rows",
+    async (subject) => {
+      await importAttemptBound067(subject);
+      for (const attempt of importAttemptsAdmitted067) {
+        assert.equal(
+          await importAttemptRecorded067(subject, attempt),
+          undefined,
+        );
+        assert.deepEqual(await importAttemptKept067(subject), [
+          {
+            repository_commit: attempt[1],
+            result: attempt[2],
+            absent: attempt[3],
+          },
+        ]);
+      }
+      for (const [attempt, refusal] of importAttemptsRefused067)
+        assert.match(
+          String(await importAttemptRecorded067(subject, attempt)),
+          refusal,
+          attempt.join(" "),
+        );
+    },
+  );
+});
+
+/**
+ * The door's clock is its transaction's, so an attempt that began first and
+ * finished last is the earlier one, and finds a later one kept.
+ */
+test("067 never replaces an attempt with one that began before it", async () => {
+  await migrationDatabase(
+    "configuration_import_attempt_order",
+    async (subject) => {
+      await importAttemptBound067(subject);
+      const earlier = await subject.connect();
+      try {
+        await earlier.query("BEGIN");
+        await earlier.query("SELECT now()");
+        assert.equal(
+          await importAttemptRecorded067(subject, [
+            "repository-5",
+            importAttemptCommit067,
+            "Imported",
+            null,
+          ]),
+          undefined,
+        );
+        assert.equal(
+          await importAttemptRecorded067(earlier, [
+            "repository-5",
+            "b".repeat(40),
+            "StaleBinding",
+            null,
+          ]),
+          undefined,
+        );
+        await earlier.query("COMMIT");
+      } finally {
+        earlier.release();
+      }
+      assert.deepEqual(await importAttemptKept067(subject), [
+        {
+          repository_commit: importAttemptCommit067,
+          result: "Imported",
+          absent: null,
+        },
+      ]);
+    },
+  );
 });

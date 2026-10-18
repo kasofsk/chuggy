@@ -35,6 +35,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import {
   asGitObjectId,
+  asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
@@ -439,6 +440,37 @@ function repositoryImportLanding(
   };
 }
 
+/** The commit the fixture's default branch points at. */
+const repositoryImportHead = asGitObjectId("d".repeat(40));
+
+/**
+ * The import's reads of the repository's head, at `repositoryImportHead`, and
+ * its writes of each attempt kept, written to `calls` as its outcome's word and
+ * its commit or `-`.
+ */
+function repositoryImportHeadPorts(
+  calls: string[],
+): Pick<NativeRepositoryConfigurationImportPorts, "heads" | "attempts"> {
+  return {
+    heads: {
+      defaultBranch: (binding) => {
+        calls.push(`head:${binding.repository}`);
+        return Promise.resolve({
+          read: "Branch",
+          branch: asGitRefName("refs/heads/main"),
+          commit: repositoryImportHead,
+        });
+      },
+    },
+    attempts: {
+      record: ({ commit, outcome }) => {
+        calls.push(`kept:${outcome.result}@${commit ?? "-"}`);
+        return Promise.resolve();
+      },
+    },
+  };
+}
+
 /** The import's ports over one binding, live unless it is given the instant it retired at. */
 function repositoryImportPorts(
   calls: string[],
@@ -446,6 +478,7 @@ function repositoryImportPorts(
 ): NativeRepositoryConfigurationImportPorts {
   return {
     landing: repositoryImportLanding(calls, retiredAt),
+    ...repositoryImportHeadPorts(calls),
     bindings: {
       binding: (foundPartition, forRepository) => {
         calls.push(`binding:${String(forRepository)}`);
@@ -662,7 +695,92 @@ test("repository imports authorize, pin one snapshot, then persist ready declara
     `binding:${repository}`,
     `snapshot:${commit}`,
     "import:1",
+    `kept:Imported@${commit}`,
   ]);
+});
+
+test("a repository import naming no commit imports at the default branch's head, and keeps it", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  const repository = asRepositoryId("repository-headed");
+  assert.deepEqual(
+    await subject.web.importRepositoryConfigurations(principal, partition, {
+      repository,
+    }),
+    { result: "Imported", declarations: 1 },
+  );
+  assert.deepEqual(subject.calls, ["authorize:Mutate"]);
+  assert.deepEqual(calls, [
+    `landing:${repository}`,
+    `binding:${repository}`,
+    `head:${repository}`,
+    `snapshot:${repositoryImportHead}`,
+    "import:1",
+    `kept:Imported@${repositoryImportHead}`,
+  ]);
+});
+
+/**
+ * A head naming no commit is nothing to snapshot, so the import reads no more
+ * and keeps the attempt with no commit: an empty repository as its commit
+ * absent, an unreadable one as unavailable, the credential named where only
+ * the credential answered.
+ */
+test("a repository import naming no commit at a head naming none keeps the attempt with no commit", async () => {
+  for (const [read, answered] of [
+    [{ read: "Absent" }, { result: "SnapshotAbsent", absent: "Commit" }],
+    [
+      { read: "Unavailable" },
+      { result: "Unavailable", unavailable: "Repository" },
+    ],
+    [
+      { read: "Unavailable", evidence: { credential: "Denied" } },
+      {
+        result: "Unavailable",
+        unavailable: "Credential",
+        evidence: { credential: "Denied" },
+      },
+    ],
+    [
+      {
+        read: "Unavailable",
+        evidence: { credential: "Denied", git: "ls-remote", exited: 128 },
+      },
+      {
+        result: "Unavailable",
+        unavailable: "Repository",
+        evidence: { credential: "Denied", git: "ls-remote", exited: 128 },
+      },
+    ],
+  ] as const) {
+    const calls: string[] = [];
+    const subject = boundary(true, openExecutionBacklogGuard, {
+      ...repositoryImportPorts(calls),
+      heads: {
+        defaultBranch: () => {
+          calls.push("head");
+          return Promise.resolve(read);
+        },
+      },
+    });
+    const repository = asRepositoryId("repository-headless");
+    assert.deepEqual(
+      await subject.web.importRepositoryConfigurations(principal, partition, {
+        repository,
+      }),
+      answered,
+    );
+    assert.deepEqual(calls, [
+      `landing:${repository}`,
+      `binding:${repository}`,
+      "head",
+      `kept:${answered.result}@-`,
+    ]);
+  }
 });
 
 test("a repository import naming a repository this project retired is answered as one it never bound", async () => {
@@ -761,6 +879,7 @@ test("repository imports refuse invalid declarations without writing", async () 
     `landing:${repository}`,
     `binding:${repository}`,
     "snapshot:invalid",
+    `kept:DeclarationsRefused@${"c".repeat(40)}`,
   ]);
 });
 

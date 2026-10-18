@@ -95,6 +95,8 @@ interface Fixture {
   readonly asked: string[];
   readonly actionsAsked: string[];
   readonly maxima: number[];
+  /** Each attempt kept, as its project, its commit or `-`, and its outcome's words. */
+  readonly kept: string[];
 }
 
 interface FixtureActions {
@@ -149,15 +151,38 @@ interface FixtureInput extends FixtureActions {
   readonly unbound?: readonly RepositoryId[];
 }
 
+/** The attempts port of a fixture, keeping each attempt as one line. */
+function fixtureAttempts(
+  kept: string[],
+): Pick<BoundRepositoryImportPorts, "attempts"> {
+  return {
+    attempts: {
+      record: (attempt) => {
+        const absent =
+          attempt.outcome.result === "SnapshotAbsent"
+            ? ` ${attempt.outcome.absent}`
+            : "";
+        kept.push(
+          `${attempt.partition.project} ${attempt.commit ?? "-"} ${attempt.outcome.result}${absent}`,
+        );
+        return Promise.resolve();
+      },
+    },
+  };
+}
+
 function fixture(input: FixtureInput): Fixture {
   const asked: string[] = [];
   const actionsAsked: string[] = [];
   const maxima: number[] = [];
+  const kept: string[] = [];
   return {
     asked,
     actionsAsked,
     maxima,
+    kept,
     ports: {
+      ...fixtureAttempts(kept),
       listing: {
         bindings: (max) => {
           maxima.push(max);
@@ -378,6 +403,67 @@ test("a port that raised is that binding's failure and not the run's", async () 
     failure: { failure: "Raised" },
   });
   assert.equal(imports[1]?.result.result, "Imported");
+});
+
+/**
+ * Every binding whose head was asked keeps its configuration import's attempt,
+ * whatever that came to; a head naming no commit, or one that could not be
+ * read, keeps none. A binding gone before it was read, and a port that raised,
+ * keep nothing.
+ */
+test("the run keeps each binding's import attempt, a head naming no commit kept with none", async () => {
+  const named = (project: string) =>
+    asRepositoryId(`https://github.com/acme/${project}.git`);
+  const heads: Readonly<
+    Record<string, () => RepositoryDefaultBranchRead | Promise<never>>
+  > = {
+    [named("empty")]: () => ({ read: "Absent" }),
+    [named("unreachable")]: () => ({ read: "Unavailable" }),
+    [named("raised")]: () => Promise.reject(new Error("the forge is down")),
+  };
+  const snapshots: Readonly<
+    Record<string, RepositoryConfigurationSnapshotRead>
+  > = {
+    [named("undeclared")]: {
+      read: "Absent",
+      absent: "ConfigurationDirectory",
+    },
+    [named("refused")]: { read: "Refused", refused: "Snapshot" },
+    [named("unread")]: { read: "Unavailable", unavailable: "Credential" },
+  };
+  const projects = [
+    "imported",
+    "undeclared",
+    "refused",
+    "unread",
+    "empty",
+    "unreachable",
+    "unbound",
+    "raised",
+  ];
+  const { ports, kept } = fixture({
+    bindings: projects.map((project) => listed(project, project)),
+    unbound: [named("unbound")],
+    heads: (repository) =>
+      heads[repository]?.() ?? {
+        read: "Branch",
+        branch: asGitRefName("refs/heads/main"),
+        commit: head,
+      },
+    snapshots: (repository) =>
+      snapshots[repository] ?? { read: "Snapshot", files: [] },
+  });
+
+  await importBoundRepositories({ authority, ports });
+
+  assert.deepEqual(kept, [
+    `imported ${head} Imported`,
+    `undeclared ${head} SnapshotAbsent ConfigurationDirectory`,
+    `refused ${head} SnapshotRefused`,
+    `unread ${head} Unavailable`,
+    "empty - SnapshotAbsent Commit",
+    "unreachable - Unavailable",
+  ]);
 });
 
 test("a listing that came back at the bound is a run that did not read the estate", async () => {

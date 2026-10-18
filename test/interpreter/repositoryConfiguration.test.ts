@@ -258,6 +258,12 @@ test("partition imports continue after one partition is refused", async () => {
           return Promise.resolve({ imported: "Imported" });
         },
       },
+      attempts: {
+        record: ({ partition, outcome }) => {
+          calls.push(`kept:${partition.project}:${outcome.result}`);
+          return Promise.resolve();
+        },
+      },
     },
   });
   assert.deepEqual(
@@ -269,6 +275,7 @@ test("partition imports continue after one partition is refused", async () => {
     "binding:second",
     "snapshot",
     "store",
+    "kept:second:Imported",
   ]);
 });
 
@@ -326,6 +333,7 @@ test("each of one project's repositories imports against its own binding", async
         return Promise.resolve({ imported: "Imported" });
       },
     },
+    attempts: { record: () => Promise.resolve() },
   };
   const outcomes: RepositoryConfigurationImportOutcome[] = [];
   for (const named of [repository, other, unbound])
@@ -499,6 +507,7 @@ function importAgainst(
         importRepositoryConfigurations: () =>
           Promise.resolve({ imported: "Imported" }),
       },
+      attempts: { record: () => Promise.resolve() },
     },
   });
 }

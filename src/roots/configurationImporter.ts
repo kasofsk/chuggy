@@ -32,7 +32,10 @@ import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresRepositoryActions } from "../adapters/postgres/repositoryAction.ts";
 import { postgresRepositoryBindingListing } from "../adapters/postgres/repositoryBinding.ts";
-import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
+import {
+  postgresProjectRepositoryBinding,
+  postgresRepositoryConfigurationImportAttempts,
+} from "../adapters/postgres/repositoryConfiguration.ts";
 import { configurationImporterRole } from "../adapters/postgres/schema.ts";
 import {
   currentRuntimeSchemaContract,
@@ -118,6 +121,7 @@ function configurationImporterPorts(
     heads: snapshots,
     snapshots,
     store: postgresAuthoring(pool),
+    attempts: postgresRepositoryConfigurationImportAttempts(pool),
     actionSnapshots: snapshots,
     actionStore: postgresRepositoryActions(pool),
   };

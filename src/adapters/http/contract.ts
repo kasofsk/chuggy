@@ -173,7 +173,7 @@ export interface ParsedConfigurationCreation {
 
 export interface ParsedRepositoryConfigurationImport {
   readonly repository: RepositoryId;
-  readonly commit: GitObjectId;
+  readonly commit?: GitObjectId;
 }
 
 /**
@@ -205,7 +205,9 @@ export function parseRepositoryConfigurationImport(
   const parsed = repositoryConfigurationImportSchema.parse(body);
   return {
     repository: asRepositoryId(parsed.repository),
-    commit: asGitObjectId(parsed.commit),
+    ...(parsed.commit === undefined
+      ? {}
+      : { commit: asGitObjectId(parsed.commit) }),
   };
 }
 
