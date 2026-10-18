@@ -82,8 +82,10 @@ import type {
 } from "./finalizer.ts";
 import {
   importRepositoryConfigurations,
+  importRepositoryConfigurationsHeadUnread,
   repositoryConfigurationIgnoredField,
   type RepositoryConfigurationIgnored,
+  type RepositoryConfigurationImportAttempt,
   type RepositoryConfigurationImportPorts,
   type RepositoryDefaultBranchPort,
 } from "./repositoryConfiguration.ts";
@@ -346,8 +348,10 @@ export type ProjectRepositoryCreateResult =
  * releases for it, and `configured` is its presence; where the project holds
  * neither, the configuration route runs the step again.
  */
-export type ProjectRepositoryListed = ProjectRepositoryBound &
-  (
+export type ProjectRepositoryListed = ProjectRepositoryBound & {
+  /** The last configuration import attempted of it, absent where none was. */
+  readonly lastImport?: RepositoryConfigurationImportAttempt;
+} & (
     | { readonly configured: false }
     | {
         readonly configured: true;
@@ -465,6 +469,14 @@ export interface RepositoryConfigurationsHeldRead {
   }): Promise<RepositoryConfigurationsHeld>;
 }
 
+/** Reads the last configuration import attempted of each repository named, a repository never attempted absent. */
+export interface RepositoryConfigurationImportAttemptsRead {
+  attempted(query: {
+    readonly partition: Partition;
+    readonly repositories: readonly RepositoryId[];
+  }): Promise<ReadonlyMap<RepositoryId, RepositoryConfigurationImportAttempt>>;
+}
+
 /**
  * The half a bind's configuration step is composed with. `bootstrapImage` is
  * the worker image a bootstrap configuration commands, and a deployment naming
@@ -508,6 +520,7 @@ export interface RepositoryOnboardingPorts {
   readonly landing: ProjectRepositoryLandingStore;
   readonly retirement: ProjectRepositoryRetirementStore;
   readonly configurationsHeld: RepositoryConfigurationsHeldRead;
+  readonly importAttempts: RepositoryConfigurationImportAttemptsRead;
   readonly configurations?: RepositoryConfigurationsPorts;
   readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
@@ -827,10 +840,20 @@ async function bindRepositoryConfigurations(
   if (configurations === undefined)
     return { result: "Deferred", reason: "NotConfigured" };
   const head = await configurations.heads.defaultBranch(binding);
-  if (head.read === "Absent")
-    return { result: "Deferred", reason: "DefaultBranchAbsent" };
-  if (head.read === "Unavailable")
-    return { result: "Deferred", reason: "DefaultBranchUnavailable" };
+  if (head.read !== "Branch") {
+    await importRepositoryConfigurationsHeadUnread(
+      configurations.imports.attempts,
+      binding,
+      head,
+    );
+    return {
+      result: "Deferred",
+      reason:
+        head.read === "Absent"
+          ? "DefaultBranchAbsent"
+          : "DefaultBranchUnavailable",
+    };
+  }
   const imported = await importRepositoryConfigurations({
     partition: binding.partition,
     repository: binding.repository,
@@ -1328,15 +1351,18 @@ function heldRepositoryConfigurations(
   return undefined;
 }
 
-/** One binding beside what the step has left the project for it. */
+/** One binding beside what the step has left the project for it, and the last import attempted of it. */
 function listedRepository(
   row: ProjectRepositoryBound,
   held: RepositoryConfigurationsHeld,
+  attempted: ReadonlyMap<RepositoryId, RepositoryConfigurationImportAttempt>,
 ): ProjectRepositoryListed {
   const configurationsHeld = heldRepositoryConfigurations(held, row.repository);
+  const lastImport = attempted.get(row.repository);
+  const listed = lastImport === undefined ? row : { ...row, lastImport };
   return configurationsHeld === undefined
-    ? { ...row, configured: false }
-    : { ...row, configured: true, configurationsHeld };
+    ? { ...listed, configured: false }
+    : { ...listed, configured: true, configurationsHeld };
 }
 
 /** Every binding a reader may see, each with what the step has left the project for it. */
@@ -1350,14 +1376,15 @@ async function projectRepositories(
   )
     return { result: "NotFound" };
   const bound = await ports.bindings.bindings(partition);
-  const held = await heldConfigurations(
-    ports,
+  const repositories = bound.map((row) => row.repository);
+  const held = await heldConfigurations(ports, partition, repositories);
+  const attempted = await ports.importAttempts.attempted({
     partition,
-    bound.map((row) => row.repository),
-  );
+    repositories,
+  });
   return {
     result: "Repositories",
-    repositories: bound.map((row) => listedRepository(row, held)),
+    repositories: bound.map((row) => listedRepository(row, held, attempted)),
   };
 }
 

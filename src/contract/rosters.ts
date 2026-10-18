@@ -383,6 +383,27 @@ export const projectRepositoryConfigurationDeferrals = [
 export type ProjectRepositoryConfigurationDeferralName =
   (typeof projectRepositoryConfigurationDeferrals)[number];
 
+/** How the last configuration import attempted of a binding came out, in the import outcome's own words. */
+export const repositoryConfigurationImportResults = [
+  "Imported",
+  "SnapshotAbsent",
+  "Unavailable",
+  "SnapshotRefused",
+  "DeclarationsRefused",
+  "IdentityConflict",
+  "StaleBinding",
+] as const;
+export type RepositoryConfigurationImportResultName =
+  (typeof repositoryConfigurationImportResults)[number];
+
+/** What an absent snapshot lacked: the commit, or the configuration directory at it. */
+export const repositoryConfigurationImportAbsences = [
+  "Commit",
+  "ConfigurationDirectory",
+] as const;
+export type RepositoryConfigurationImportAbsenceName =
+  (typeof repositoryConfigurationImportAbsences)[number];
+
 /** Whether a selector proposal is dispatched or held for a reviewer. */
 export const selectorDispatchModes = ["Automatic", "ApprovalRequired"] as const;
 export type SelectorDispatchMode = (typeof selectorDispatchModes)[number];

@@ -144,6 +144,8 @@ import {
   leadAbsencesUntimed,
   leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
+  repositoryConfigurationImportAbsences,
+  repositoryConfigurationImportResults,
 } from "./rosters.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -1858,6 +1860,30 @@ export type ProjectRepositoryResponse = z.infer<
 >;
 
 /**
+ * The configuration import of one binding that finished last: when it was
+ * recorded, the commit it was read at where one was, and how it came out. `absent` is what a
+ * `SnapshotAbsent` lacked, and no other outcome carries it.
+ */
+export const repositoryConfigurationImportAttemptSchema = z.object({
+  attemptedAt: instantSchema,
+  commit: actionReportDocumentSchema.shape.commit.optional(),
+  outcome: z.discriminatedUnion("result", [
+    z.object({
+      result: z.literal("SnapshotAbsent"),
+      absent: z.enum(repositoryConfigurationImportAbsences),
+    }),
+    z.object({
+      result: z
+        .enum(repositoryConfigurationImportResults)
+        .exclude(["SnapshotAbsent"]),
+    }),
+  ]),
+});
+export type RepositoryConfigurationImportAttemptResponse = z.infer<
+  typeof repositoryConfigurationImportAttemptSchema
+>;
+
+/**
  * One binding as the listing answers it. `configurationsHeld` is what the
  * project holds for the repository, and `configured` is its presence; one
  * holding nothing is what the configuration route runs the step again for.
@@ -1866,6 +1892,8 @@ export const projectRepositoryListedSchema =
   projectRepositoryResponseSchema.extend({
     configured: z.boolean(),
     configurationsHeld: projectRepositoryConfigurationsHeldSchema.optional(),
+    /** Absent on a binding no import was attempted of. */
+    lastImport: repositoryConfigurationImportAttemptSchema.optional(),
   });
 export type ProjectRepositoryListedResponse = z.infer<
   typeof projectRepositoryListedSchema

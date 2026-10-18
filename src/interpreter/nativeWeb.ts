@@ -187,8 +187,9 @@ import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
   importRepositoryConfigurations,
+  importRepositoryConfigurationsAtHead,
+  type RepositoryConfigurationHeadImportPorts,
   type RepositoryConfigurationImportOutcome,
-  type RepositoryConfigurationImportPorts,
 } from "./repositoryConfiguration.ts";
 import {
   threadSystemPrompt,
@@ -754,12 +755,13 @@ export interface NativeWeb {
     partition: Partition,
     query: ConfigurationPageQuery,
   ): Promise<AuthorizedResult<ConfigurationPage>>;
+  /** Imports at `commit`, or where the repository's default branch points now where it names none. */
   importRepositoryConfigurations(
     principal: Principal,
     partition: Partition,
     source: {
       readonly repository: RepositoryId;
-      readonly commit: GitObjectId;
+      readonly commit?: GitObjectId;
     },
   ): Promise<RepositoryConfigurationImportOutcome>;
   createDraft(
@@ -1001,11 +1003,12 @@ function nativeConfigurationMethods(
 }
 
 /**
- * What a member's import is composed from: the import's own ports, and the
- * binding door that answers a binding's retirement, which the import's binding
- * read does not.
+ * What a member's import is composed from: the import's own ports with the
+ * default branch it reads where a member names no commit, and the binding door
+ * that answers a binding's retirement, which the import's binding read does
+ * not.
  */
-export interface NativeRepositoryConfigurationImportPorts extends RepositoryConfigurationImportPorts {
+export interface NativeRepositoryConfigurationImportPorts extends RepositoryConfigurationHeadImportPorts {
   readonly landing: Pick<ProjectRepositoryLandingStore, "landing">;
 }
 
@@ -1025,13 +1028,20 @@ function nativeRepositoryConfigurationImportMethod(
     const bound = await ports.landing.landing(partition, source.repository);
     if (bound === undefined || bound.retiredAt !== undefined)
       return { result: "RepositoryAbsent" };
-    return importRepositoryConfigurations({
-      partition,
-      repository: source.repository,
-      commit: source.commit,
-      authority,
-      ports,
-    });
+    return source.commit === undefined
+      ? importRepositoryConfigurationsAtHead({
+          partition,
+          repository: source.repository,
+          authority,
+          ports,
+        })
+      : importRepositoryConfigurations({
+          partition,
+          repository: source.repository,
+          commit: source.commit,
+          authority,
+          ports,
+        });
   };
 }
 

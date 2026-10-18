@@ -34,6 +34,7 @@ import {
   type GitRefName,
   type RepositoryBinding,
   type RepositoryCredentialPort,
+  type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import type {
   ForgeAccountInstallationRead,
@@ -90,6 +91,7 @@ import type {
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
+  type RepositoryConfigurationImportAttemptsRead,
   type RepositoryConfigurationsHeld,
   type RepositoryConfigurationsHeldRead,
   type RepositoryConfigurationsPorts,
@@ -110,6 +112,8 @@ import {
 import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import type {
   RepositoryConfigurationIgnored,
+  RepositoryConfigurationImportAttempt,
+  RepositoryConfigurationImportAttempts,
   RepositoryConfigurationsImported,
   RepositoryConfigurationSnapshotRead,
   RepositoryDefaultBranchRead,
@@ -267,6 +271,11 @@ interface FixturePorts {
   readonly creation?: FixtureCreation;
   /** What the project already holds from the configuration step, nothing where absent. */
   readonly stepHeld?: RepositoryConfigurationsHeld;
+  /** The last import attempted of each repository, none where absent. */
+  readonly attempted?: ReadonlyMap<
+    RepositoryId,
+    RepositoryConfigurationImportAttempt
+  >;
   /** The one binding retired, or not there at all. */
   readonly retiredAt?: string;
   readonly unbound?: boolean;
@@ -296,6 +305,11 @@ interface FixtureWrites {
   readonly retirements: ProjectRepositoryRetirementCommand[];
   readonly heldQueries: Parameters<
     RepositoryConfigurationsHeldRead["held"]
+  >[0][];
+  /** Each import attempt kept, as its outcome's words and its commit or `-`. */
+  readonly attempts: string[];
+  readonly attemptQueries: Parameters<
+    RepositoryConfigurationImportAttemptsRead["attempted"]
   >[0][];
 }
 
@@ -335,6 +349,20 @@ function fixtureClaims(
             )
           : undefined,
       ),
+  };
+}
+
+/** Each import attempt kept, as its outcome's words and its commit or `-`. */
+function fixtureAttemptsKept(
+  wrote: FixtureWrites,
+): RepositoryConfigurationImportAttempts {
+  return {
+    record: ({ commit, outcome }) => {
+      const absent =
+        outcome.result === "SnapshotAbsent" ? ` ${outcome.absent}` : "";
+      wrote.attempts.push(`${outcome.result}${absent}@${commit ?? "-"}`);
+      return Promise.resolve();
+    },
   };
 }
 
@@ -385,6 +413,7 @@ function fixtureConfigurations(
         importRepositoryConfigurations: () =>
           Promise.resolve(given.stored ?? { imported: "Imported" as const }),
       },
+      attempts: fixtureAttemptsKept(wrote),
     },
     authoring: {
       createConfiguration: (input) => {
@@ -519,6 +548,19 @@ function fixturePortsHeld(
   };
 }
 
+/** The last import attempted of each repository, as the case gave it, recording what it was asked for. */
+function fixtureAttemptsRead(
+  given: FixturePorts,
+  wrote: FixtureWrites,
+): RepositoryConfigurationImportAttemptsRead {
+  return {
+    attempted: (query) => {
+      wrote.attemptQueries.push(query);
+      return Promise.resolve(given.attempted ?? new Map());
+    },
+  };
+}
+
 /** The landing half, answering the one binding and recording what it was asked to write. */
 function fixturePortsLanding(
   given: FixturePorts,
@@ -604,6 +646,8 @@ function fixturePorts(
     landings: [],
     retirements: [],
     heldQueries: [],
+    attempts: [],
+    attemptQueries: [],
   };
   const credentials: RepositoryCredentialPort = {
     credential: () =>
@@ -635,6 +679,7 @@ function fixturePorts(
       landing: fixturePortsLanding(given, wrote),
       retirement: fixturePortsRetirement(given, wrote),
       configurationsHeld: fixturePortsHeld(given, wrote),
+      importAttempts: fixtureAttemptsRead(given, wrote),
       ...(given.configurations === undefined
         ? {}
         : {
@@ -1574,56 +1619,58 @@ test("the same bootstrap authored twice is the revision it already is", async ()
   });
 });
 
+/** Every way the step can stop, and the deferral each one is. */
+const stepDeferrals: readonly (readonly [FixtureConfigurations, string])[] = [
+  [{ head: { read: "Absent" } }, "DefaultBranchAbsent"],
+  [{ head: { read: "Unavailable" } }, "DefaultBranchUnavailable"],
+  [
+    { head: branchHead, snapshot: { read: "Absent", absent: "Commit" } },
+    "SnapshotAbsent",
+  ],
+  [
+    {
+      head: branchHead,
+      snapshot: { read: "Unavailable", unavailable: "Repository" },
+    },
+    "SnapshotUnavailable",
+  ],
+  [
+    {
+      head: branchHead,
+      snapshot: { read: "Refused", refused: "Snapshot" },
+    },
+    "SnapshotRefused",
+  ],
+  [
+    {
+      head: branchHead,
+      snapshot: {
+        read: "Snapshot",
+        files: [{ path: "nonsense", kind: "File", content: "{}" }],
+      },
+    },
+    "DeclarationsRefused",
+  ],
+  [
+    {
+      head: branchHead,
+      snapshot: { read: "Snapshot", files: [] },
+      stored: { imported: "StaleBinding" },
+    },
+    "StaleBinding",
+  ],
+  [
+    {
+      head: branchHead,
+      snapshot: { read: "Snapshot", files: [] },
+      stored: { imported: "IdentityConflict" },
+    },
+    "IdentityConflict",
+  ],
+];
+
 test("every way the step can stop is its own deferral and never a refused bind", async () => {
-  const cases: readonly (readonly [FixtureConfigurations, string])[] = [
-    [{ head: { read: "Absent" } }, "DefaultBranchAbsent"],
-    [{ head: { read: "Unavailable" } }, "DefaultBranchUnavailable"],
-    [
-      { head: branchHead, snapshot: { read: "Absent", absent: "Commit" } },
-      "SnapshotAbsent",
-    ],
-    [
-      {
-        head: branchHead,
-        snapshot: { read: "Unavailable", unavailable: "Repository" },
-      },
-      "SnapshotUnavailable",
-    ],
-    [
-      {
-        head: branchHead,
-        snapshot: { read: "Refused", refused: "Snapshot" },
-      },
-      "SnapshotRefused",
-    ],
-    [
-      {
-        head: branchHead,
-        snapshot: {
-          read: "Snapshot",
-          files: [{ path: "nonsense", kind: "File", content: "{}" }],
-        },
-      },
-      "DeclarationsRefused",
-    ],
-    [
-      {
-        head: branchHead,
-        snapshot: { read: "Snapshot", files: [] },
-        stored: { imported: "StaleBinding" },
-      },
-      "StaleBinding",
-    ],
-    [
-      {
-        head: branchHead,
-        snapshot: { read: "Snapshot", files: [] },
-        stored: { imported: "IdentityConflict" },
-      },
-      "IdentityConflict",
-    ],
-  ];
-  for (const [configurations, reason] of cases) {
+  for (const [configurations, reason] of stepDeferrals) {
     const { bound } = await fixtureBound({ configurations });
     assert.deepEqual(
       bound,
@@ -1635,6 +1682,27 @@ test("every way the step can stop is its own deferral and never a refused bind",
       },
       reason,
     );
+  }
+});
+
+/**
+ * The step is an import attempt like any other, so each one it makes is kept:
+ * at the head it read, or with no commit where the head named none.
+ */
+test("every attempt the step makes is kept, a head naming no commit kept with none", async () => {
+  const kept: Readonly<Record<string, string>> = {
+    DefaultBranchAbsent: "SnapshotAbsent Commit@-",
+    DefaultBranchUnavailable: "Unavailable@-",
+    SnapshotAbsent: `SnapshotAbsent Commit@${head}`,
+    SnapshotUnavailable: `Unavailable@${head}`,
+    SnapshotRefused: `SnapshotRefused@${head}`,
+    DeclarationsRefused: `DeclarationsRefused@${head}`,
+    StaleBinding: `StaleBinding@${head}`,
+    IdentityConflict: `IdentityConflict@${head}`,
+  };
+  for (const [configurations, reason] of stepDeferrals) {
+    const { wrote } = await fixtureBound({ configurations });
+    assert.deepEqual(wrote.attempts, [kept[reason]], reason);
   }
 });
 
@@ -2276,6 +2344,35 @@ test("the listing answers what the project holds for each binding, and marks it 
     ]);
     assert.deepEqual(wrote.heldQueries, [
       { partition, repositories: [repository], bootstrap: "bootstrap" },
+    ]);
+  }
+});
+
+/**
+ * The attempt is answered as it was kept, read for the repositories the
+ * listing names, and a binding no import was attempted of carries no field.
+ */
+test("the listing answers the last import attempted of each binding, and none of one never attempted", async () => {
+  const lastImport: RepositoryConfigurationImportAttempt = {
+    attemptedAt: "2026-10-17T09:30:00.000000Z",
+    commit: head,
+    outcome: { result: "DeclarationsRefused" },
+  };
+  for (const [attempted, expected] of [
+    [new Map(), "none"],
+    [new Map([[repository, lastImport]]), lastImport],
+  ] as const) {
+    const { service, wrote } = fixtureService(["Read"], { attempted });
+    const listed = await service.projectRepositories(principal, partition);
+    assert.deepEqual(
+      listed.result === "Repositories" &&
+        listed.repositories.map((row) =>
+          Object.hasOwn(row, "lastImport") ? row.lastImport : "none",
+        ),
+      [expected],
+    );
+    assert.deepEqual(wrote.attemptQueries, [
+      { partition, repositories: [repository] },
     ]);
   }
 });

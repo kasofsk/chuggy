@@ -267,6 +267,16 @@ test("the evaluation list draws one row per stage, its checks or its instruction
   expect(within(stage2).getByText("Acceptance criteria")).toBeDefined();
 });
 
+/** The stages' order and their stop are the configuration's semantics, so a version 1 configuration and a catalog plan say them alike. */
+const evaluationOrder = "Stages run in order · a failed stage ends evaluation";
+
+test("a version 1 configuration's evaluation says its stages run in order and a failed one ends it", async () => {
+  await drawTicket();
+  await sectionOpened("Provenance");
+  expect(screen.getAllByText(evaluationOrder).length).toBe(1);
+  expect(screen.queryByText("Evaluators run side by side")).toBeNull();
+});
+
 test("the panel keeps the digest and the full revision on a caption line", async () => {
   await drawTicket();
   await sectionOpened("Provenance");
@@ -379,4 +389,27 @@ test("a catalog draws what the ticket selected of it: its work's prompt, its pla
   expect(screen.getByText("approved")).toBeDefined();
   expect(screen.getByText("Approved first")).toBeDefined();
   expect(screen.queryByText("Do it fast.")).toBeNull();
+});
+
+/** A catalog stage of several evaluators is drawn as a list of them, so the row says they do not run one after another. */
+test("a catalog plan says its stages run in order, and that a stage's several evaluators run side by side", async () => {
+  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+    evaluation: "gated",
+    finalization: "approved",
+  });
+  await sectionOpened("Provenance");
+  expect(screen.getAllByText(evaluationOrder).length).toBe(1);
+  const rowOf = (label: string) => {
+    const row = screen
+      .getByText(label)
+      .closest(".ticket-config-evaluation-row");
+    if (!(row instanceof HTMLElement)) throw new Error(`no ${label} row`);
+    return row;
+  };
+  expect(
+    within(rowOf("Stage 1 · review")).getByText("Evaluators run side by side"),
+  ).toBeDefined();
+  expect(
+    within(rowOf("Stage 2 · gates")).queryByText("Evaluators run side by side"),
+  ).toBeNull();
 });

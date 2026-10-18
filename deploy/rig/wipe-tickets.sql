@@ -22,8 +22,9 @@
 -- entitlements drawn on it, the worker catalog and the recovery epochs, and
 -- each tenant's invite links.
 -- Re-onboarding a project is not part of the release, so none of that is in
--- the list below. Nor is what each declared action was reported to have done:
--- it is a record of a repository's commits and names no ticket.
+-- the list below. Nor is what each declared action was reported to have done,
+-- or the last configuration import attempted of each repository: each is a
+-- record of a repository and names no ticket.
 --
 -- WHY THE SEEDED SINGLETONS ARE NOT IN IT. `thread_wake_cursor`,
 -- `selector_inventory_state` and `selector_runtime_readiness` hold one row

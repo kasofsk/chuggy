@@ -144,6 +144,6 @@ export function projectRepositoriesWith(
 export function projectRepositoryBound(
   held: ProjectRepositoriesResponse,
   repository: string,
-): ProjectRepositoryResponse | undefined {
+): ProjectRepositoryListedResponse | undefined {
   return held.repositories.find((row) => row.repository === repository);
 }

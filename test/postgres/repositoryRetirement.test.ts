@@ -482,6 +482,7 @@ test("the member import refuses a repository its project retired, and after anot
       undefined,
       undefined,
       {
+        defaultBranch: () => Promise.resolve({ read: "Absent" }),
         referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
 
         snapshot: () =>

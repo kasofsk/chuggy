@@ -502,6 +502,18 @@ of the action's newest row; a row once written is neither changed nor removed,
 which `action_observation_is_written_once` refuses. It has no unfinished work:
 a report is a row or it is nothing, and no later step completes one.
 
+`repository_configuration_import` — the configuration import of each binding
+that finished last: when it was recorded, the commit it was read at where one
+was, and how it came out. Owned by the boundary owner, which is what
+`record_repository_configuration_import` runs as; the API role and the
+configuration importer write it through that door alone, and the API role
+reads it. Its key and identity are `(tenant, project, repository)`, one row a
+binding, and it points at `project_repository`. It is changed by that door
+alone, which every writer calls once an import has come out, so each attempt
+replaces the row unless the one kept was recorded later. It has no unfinished
+work: an attempt is kept once it has come out, and one that raised first keeps
+nothing.
+
 `invite_link` — a tenant's invite links and the site's workspace links, a row
 to a link, each keeping the digest of its token and never the token. The
 access plane's role holds what its routes need on it and nothing else in the

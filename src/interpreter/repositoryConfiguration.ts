@@ -267,6 +267,12 @@ export interface RepositoryConfigurationImportPorts {
   readonly bindings: ProjectRepositoryBindingRead;
   readonly snapshots: RepositoryConfigurationSnapshotPort;
   readonly store: RepositoryConfigurationStore;
+  readonly attempts: RepositoryConfigurationImportAttempts;
+}
+
+/** An import's ports and where a repository's default branch points, which an import naming no commit is made at. */
+export interface RepositoryConfigurationHeadImportPorts extends RepositoryConfigurationImportPorts {
+  readonly heads: RepositoryDefaultBranchPort;
 }
 
 export type RepositoryConfigurationImportOutcome =
@@ -291,7 +297,103 @@ export type RepositoryConfigurationImportOutcome =
   | { readonly result: "StaleBinding" }
   | { readonly result: "Imported"; readonly declarations: number };
 
-/** Imports the declarations at one exact repository commit under an already-resolved authority. */
+/** An outcome an import reached once it had read a binding, which is every outcome an attempt is kept for. */
+export type RepositoryConfigurationImportAttempted = Exclude<
+  RepositoryConfigurationImportOutcome,
+  { readonly result: "NotFound" } | { readonly result: "RepositoryAbsent" }
+>;
+
+/** Every word an attempt is kept under, which are its outcome's own. */
+export const allRepositoryConfigurationImportAttemptResults = [
+  "Imported",
+  "SnapshotAbsent",
+  "Unavailable",
+  "SnapshotRefused",
+  "DeclarationsRefused",
+  "IdentityConflict",
+  "StaleBinding",
+] as const satisfies readonly RepositoryConfigurationImportAttempted["result"][];
+
+/** What an absent snapshot lacked: the commit, or the configuration directory at it. */
+export const allRepositoryConfigurationImportAbsences = [
+  "Commit",
+  "ConfigurationDirectory",
+] as const;
+
+/**
+ * How one import came out, as its attempt is kept: the outcome's word, and
+ * what was absent where that word is `SnapshotAbsent`. What an outcome carries
+ * only for its own answer is not kept.
+ */
+export type RepositoryConfigurationImportAttemptOutcome =
+  | {
+      readonly result: Exclude<
+        (typeof allRepositoryConfigurationImportAttemptResults)[number],
+        "SnapshotAbsent"
+      >;
+    }
+  | {
+      readonly result: "SnapshotAbsent";
+      readonly absent: (typeof allRepositoryConfigurationImportAbsences)[number];
+    };
+
+/**
+ * The import of one binding that finished last, `attemptedAt` the instant it
+ * was kept. `commit` is the one it was read at, and is absent where the default
+ * branch named none or could not be read.
+ */
+export interface RepositoryConfigurationImportAttempt {
+  readonly attemptedAt: string;
+  readonly commit?: GitObjectId;
+  readonly outcome: RepositoryConfigurationImportAttemptOutcome;
+}
+
+/** Keeps how one binding's import came out, in place of the attempt kept before it. */
+export interface RepositoryConfigurationImportAttempts {
+  record(attempt: {
+    readonly partition: Partition;
+    readonly repository: RepositoryId;
+    readonly commit?: GitObjectId;
+    readonly outcome: RepositoryConfigurationImportAttemptOutcome;
+  }): Promise<void>;
+}
+
+/** One outcome as its attempt is kept. */
+function importRepositoryConfigurationsAttemptOutcome(
+  outcome: RepositoryConfigurationImportAttempted,
+): RepositoryConfigurationImportAttemptOutcome {
+  switch (outcome.result) {
+    case "SnapshotAbsent":
+      return { result: outcome.result, absent: outcome.absent };
+    case "Unavailable":
+    case "SnapshotRefused":
+    case "DeclarationsRefused":
+    case "IdentityConflict":
+    case "StaleBinding":
+    case "Imported":
+      return { result: outcome.result };
+    default:
+      return assertNever(outcome);
+  }
+}
+
+/** Keeps how one binding's import came out, and answers that outcome. */
+async function importRepositoryConfigurationsKept(
+  attempts: RepositoryConfigurationImportAttempts,
+  binding: RepositoryBinding,
+  commit: GitObjectId | undefined,
+  outcome: RepositoryConfigurationImportAttempted,
+): Promise<RepositoryConfigurationImportAttempted> {
+  await attempts.record({
+    partition: binding.partition,
+    repository: binding.repository,
+    ...(commit === undefined ? {} : { commit }),
+    outcome: importRepositoryConfigurationsAttemptOutcome(outcome),
+  });
+  return outcome;
+}
+
+/** Imports the declarations at one exact repository commit under an already-resolved authority, and keeps how it came out. */
 export async function importRepositoryConfigurations(input: {
   readonly partition: Partition;
   readonly repository: RepositoryId;
@@ -304,6 +406,91 @@ export async function importRepositoryConfigurations(input: {
     input.repository,
   );
   if (binding === undefined) return { result: "RepositoryAbsent" };
+  return importRepositoryConfigurationsKept(
+    input.ports.attempts,
+    binding,
+    input.commit,
+    await importRepositoryConfigurationsBound({ ...input, binding }),
+  );
+}
+
+/**
+ * Imports at whatever the repository's own default branch points at now, which
+ * is what a caller holding no commit asks for, and keeps how it came out.
+ */
+export async function importRepositoryConfigurationsAtHead(input: {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly authority: Authority;
+  readonly ports: RepositoryConfigurationHeadImportPorts;
+}): Promise<RepositoryConfigurationImportOutcome> {
+  const binding = await input.ports.bindings.binding(
+    input.partition,
+    input.repository,
+  );
+  if (binding === undefined) return { result: "RepositoryAbsent" };
+  const head = await input.ports.heads.defaultBranch(binding);
+  if (head.read !== "Branch")
+    return importRepositoryConfigurationsHeadUnread(
+      input.ports.attempts,
+      binding,
+      head,
+    );
+  return importRepositoryConfigurationsKept(
+    input.ports.attempts,
+    binding,
+    head.commit,
+    await importRepositoryConfigurationsBound({
+      ...input,
+      binding,
+      commit: head.commit,
+    }),
+  );
+}
+
+/**
+ * A default branch that named no commit, as the outcome an import at it comes
+ * to, kept as the binding's attempt: a repository holding no commit is its
+ * commit absent, and a read that failed is the repository unavailable, or its
+ * credential where only the credential answered.
+ */
+export function importRepositoryConfigurationsHeadUnread(
+  attempts: RepositoryConfigurationImportAttempts,
+  binding: RepositoryBinding,
+  head: Exclude<RepositoryDefaultBranchRead, { readonly read: "Branch" }>,
+): Promise<RepositoryConfigurationImportAttempted> {
+  switch (head.read) {
+    case "Absent":
+      return importRepositoryConfigurationsKept(attempts, binding, undefined, {
+        result: "SnapshotAbsent",
+        absent: "Commit",
+      });
+    case "Unavailable":
+      return importRepositoryConfigurationsKept(
+        attempts,
+        binding,
+        undefined,
+        repositoryDeclarationUnavailableOutcome({
+          unavailable:
+            head.evidence !== undefined && !("git" in head.evidence)
+              ? "Credential"
+              : "Repository",
+          ...(head.evidence === undefined ? {} : { evidence: head.evidence }),
+        }),
+      );
+    default:
+      return assertNever(head);
+  }
+}
+
+/** The declarations at one commit of a binding already read, imported. */
+async function importRepositoryConfigurationsBound(input: {
+  readonly binding: RepositoryBinding;
+  readonly commit: GitObjectId;
+  readonly authority: Authority;
+  readonly ports: RepositoryConfigurationImportPorts;
+}): Promise<RepositoryConfigurationImportAttempted> {
+  const binding = input.binding;
   const request = { repository: binding, commit: input.commit };
   const snapshot = await input.ports.snapshots.snapshot(request);
   switch (snapshot.read) {
@@ -336,7 +523,7 @@ export async function importRepositoryConfigurations(input: {
       if (readiness.readiness === "Refused")
         return { result: "DeclarationsRefused", faults: readiness.faults };
       const imported = await input.ports.store.importRepositoryConfigurations({
-        partition: input.partition,
+        partition: binding.partition,
         binding,
         authority: input.authority,
         declarations: readiness.declarations,
@@ -403,7 +590,7 @@ function importRepositoryConfigurationsUnread(
     RepositoryConfigurationReferencedRead,
     { readonly read: "Referenced" }
   >,
-): RepositoryConfigurationImportOutcome {
+): RepositoryConfigurationImportAttempted {
   switch (read.read) {
     case "Absent":
       return { result: "SnapshotAbsent", absent: "Commit" };
@@ -537,9 +724,8 @@ export interface BoundRepositoryImport {
 }
 
 export interface BoundRepositoryImportPorts
-  extends RepositoryConfigurationImportPorts, RepositoryActionImportPorts {
+  extends RepositoryConfigurationHeadImportPorts, RepositoryActionImportPorts {
   readonly listing: RepositoryBindingListing;
-  readonly heads: RepositoryDefaultBranchPort;
 }
 
 /** The head one binding is imported at, or what the run reports of everything it would have imported there. */
@@ -562,7 +748,11 @@ const importBoundRepositoryRaised = {
   failure: { failure: "Raised" },
 } as const;
 
-/** Where one binding's own default branch points now, read through ports each of which may raise. */
+/**
+ * Where one binding's own default branch points now, read through ports each
+ * of which may raise. A branch naming no commit is kept as the binding's
+ * configuration import attempt, which is all an import at it would have been.
+ */
 async function importBoundRepositoryHead(
   bound: RepositoryBindingListed,
   ports: BoundRepositoryImportPorts,
@@ -575,6 +765,12 @@ async function importBoundRepositoryHead(
     if (binding === undefined)
       return { head: "None", result: { result: "Skipped", why: "Unbound" } };
     const head = await ports.heads.defaultBranch(binding);
+    if (head.read !== "Branch")
+      await importRepositoryConfigurationsHeadUnread(
+        ports.attempts,
+        binding,
+        head,
+      );
     switch (head.read) {
       case "Absent":
         return {

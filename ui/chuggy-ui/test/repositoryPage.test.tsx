@@ -1,6 +1,6 @@
 /**
- * One repository's page: the landing it defaults to, and what it declares
- * under `.chug/configurations`.
+ * One repository's page: the landing it defaults to, what it declares under
+ * `.chug/configurations`, and when that was last imported.
  *
  * THE CONFLICT IS THE CASE WITH TEETH. Two administrators editing one binding
  * must not clobber each other, so what is asserted about a `409` is the second
@@ -40,6 +40,7 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => Date.parse("2026-10-17T12:00:00Z"),
 }));
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
@@ -164,12 +165,20 @@ interface Drawing {
   readonly declares?: readonly unknown[];
   /** A `fetch` laid over the page's own, where a case answers one more read. */
   readonly over?: (served: typeof fetch) => typeof fetch;
+  /** What each import answers with, in turn, the default being an import. */
+  readonly imported?: readonly Promise<Response>[];
+  /** The bindings the project answers with once an import was sent. */
+  readonly boundAfter?: readonly unknown[];
+  /** What the first listing read after an import was sent answers with, where a case holds it back. */
+  readonly relisted?: Promise<Response>;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   routed.repository = drawing.repository ?? chuggy;
   const bound = drawing.bound ?? [binding("Push")];
   const written = [...(drawing.written ?? [])];
+  const imported = [...(drawing.imported ?? [])];
+  let relisted = drawing.relisted;
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -177,6 +186,8 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       url,
       body: init?.body === undefined ? undefined : JSON.parse(init.body),
     });
+    if (init?.method === "POST")
+      return imported.shift() ?? Promise.resolve(answer({ imported: true }));
     if (init?.method === "PUT")
       return Promise.resolve(
         written.shift() ?? answer({ repository: binding("Push") }),
@@ -192,7 +203,17 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
           ...(drawing.truncated === true ? { nextCursor: "more" } : {}),
         }),
       );
-    return Promise.resolve(answer({ repositories: bound }));
+    const posted = sent.some((one) => one.method === "POST");
+    const held = posted ? relisted : undefined;
+    if (held !== undefined) {
+      relisted = undefined;
+      return held;
+    }
+    return Promise.resolve(
+      answer({
+        repositories: posted ? (drawing.boundAfter ?? bound) : bound,
+      }),
+    );
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   render(
@@ -435,5 +456,275 @@ test.each(abilitiesUnrefusing)(
   async (_said, abilities) => {
     await drawPage({ over: abilitiesOver(abilities) });
     expect(landingEditOffered()).toBe(true);
+  },
+);
+
+/** The bound repository as the listing answers it, carrying the last import where one is given. */
+function attempted(lastImport?: unknown): unknown {
+  return {
+    ...(binding("Push") as object),
+    ...(lastImport === undefined ? {} : { lastImport }),
+  };
+}
+
+const attemptCommit = "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23";
+
+/** The line the Configurations card opens with, as a reader reads it. */
+function importLine(): string | null {
+  return (
+    within(sectionOf("Configurations")).getByText("Last import").parentElement
+      ?.textContent ?? null
+  );
+}
+
+function importOffered(): HTMLElement | null {
+  return within(sectionOf("Configurations")).queryByRole("button", {
+    name: /^Import/u,
+  });
+}
+
+/** A repository no import was attempted of says so, and is offered one. */
+test.each([
+  ["never attempted", undefined, "Last importNever"],
+  [
+    "imported",
+    {
+      attemptedAt: "2026-10-17T09:30:00.000000Z",
+      commit: attemptCommit,
+      outcome: { result: "Imported" },
+    },
+    "Last importImported2h agocfaca0a",
+  ],
+  [
+    "refused",
+    {
+      attemptedAt: "2026-10-17T11:59:30.000000Z",
+      commit: attemptCommit,
+      outcome: { result: "DeclarationsRefused" },
+    },
+    "Last importInvalid30s agocfaca0a",
+  ],
+  [
+    "empty",
+    {
+      attemptedAt: "2026-10-16T12:00:00.000000Z",
+      outcome: { result: "SnapshotAbsent", absent: "Commit" },
+    },
+    "Last importEmpty1d ago",
+  ],
+])(
+  "a repository %s says so on the last import line",
+  async (_which, lastImport, line) => {
+    await drawPage({ bound: [attempted(lastImport)] });
+    expect(importLine()).toBe(line);
+    expect(importOffered()?.textContent).toBe("Import now");
+  },
+);
+
+/**
+ * The import names the repository and no commit, so the server imports the
+ * head it reads; the button is working until the listing it redraws from has
+ * been read again.
+ */
+test("Import now asks for the repository's head, works until the line is redrawn, and draws what it kept", async () => {
+  let answerImport: (answered: Response) => void = () => undefined;
+  const sent = await drawPage({
+    bound: [attempted()],
+    imported: [
+      new Promise<Response>((resolve) => {
+        answerImport = resolve;
+      }),
+    ],
+    boundAfter: [
+      attempted({
+        attemptedAt: "2026-10-17T11:59:58.000000Z",
+        commit: attemptCommit,
+        outcome: { result: "Imported" },
+      }),
+    ],
+  });
+  await press("Import now");
+  const working = importOffered();
+  expect(working?.textContent).toBe("Importing…");
+  expect(working?.getAttribute("aria-busy")).toBe("true");
+  expect(working?.hasAttribute("disabled")).toBe(true);
+  expect(importLine()).toBe("Last importNever");
+  await turned(() => {
+    answerImport(answer({ imported: true }));
+  });
+  await settled();
+  const wrote = sent.filter((one) => one.method === "POST");
+  expect(
+    wrote.map((one) => [one.url.endsWith("/configurations/imports"), one.body]),
+  ).toStrictEqual([[true, { repository: chuggy }]]);
+  expect(importLine()).toBe("Last importImported2s agocfaca0a");
+  expect(importOffered()?.textContent).toBe("Import now");
+  expect(within(sectionOf("Configurations")).queryByRole("status")).toBeNull();
+});
+
+/** A refused import is kept like any other, so the line says what it came to and the refusal is said under it. */
+test("a refused Import now says why under the line, which draws the attempt it kept", async () => {
+  await drawPage({
+    bound: [attempted()],
+    imported: [
+      Promise.resolve(
+        answer(
+          {
+            error: {
+              code: "RepositoryConfigurationsRefused",
+              message: "The repository configurations were refused.",
+            },
+            faults: [],
+          },
+          422,
+        ),
+      ),
+    ],
+    boundAfter: [
+      attempted({
+        attemptedAt: "2026-10-17T11:59:58.000000Z",
+        commit: attemptCommit,
+        outcome: { result: "DeclarationsRefused" },
+      }),
+    ],
+  });
+  await press("Import now");
+  expect(importLine()).toBe("Last importInvalid2s agocfaca0a");
+  expect(
+    within(sectionOf("Configurations")).getByRole("status").textContent,
+  ).toBe("Not imported · Invalid");
+  expect(importOffered()?.textContent).toBe("Import now");
+});
+
+test("a reader who may not mutate the project reads the line and is offered no Import now", async () => {
+  await drawPage({
+    bound: [attempted()],
+    over: abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  });
+  expect(importLine()).toBe("Last importNever");
+  expect(importOffered()).toBeNull();
+});
+
+test("a retired binding reads its line and is offered no Import now", async () => {
+  await drawPage({
+    bound: [{ ...(attempted() as object), retiredAt: "2026-09-14T00:00:00Z" }],
+  });
+  expect(importLine()).toBe("Last importNever");
+  expect(importOffered()).toBeNull();
+});
+
+/** An attempt kept by the import a case presses for, two seconds before the page's clock. */
+function keptNow(outcome: unknown, commit?: string): unknown {
+  return attempted({
+    attemptedAt: "2026-10-17T11:59:58.000000Z",
+    ...(commit === undefined ? {} : { commit }),
+    outcome,
+  });
+}
+
+test("Import now stays working until the listing it redraws from has been read again", async () => {
+  let answerListing: (answered: Response) => void = () => undefined;
+  await drawPage({
+    bound: [attempted()],
+    relisted: new Promise<Response>((resolve) => {
+      answerListing = resolve;
+    }),
+  });
+  await press("Import now");
+  expect(importOffered()?.textContent).toBe("Importing…");
+  expect(importLine()).toBe("Last importNever");
+  await turned(() => {
+    answerListing(
+      answer({
+        repositories: [keptNow({ result: "Imported" }, attemptCommit)],
+      }),
+    );
+  });
+  await settled();
+  expect(importOffered()?.textContent).toBe("Import now");
+  expect(importLine()).toBe("Last importImported2s agocfaca0a");
+});
+
+test("a second Import now takes back what the first one said while it works", async () => {
+  let answerSecond: (answered: Response) => void = () => undefined;
+  await drawPage({
+    bound: [attempted()],
+    imported: [
+      Promise.resolve(
+        answer(
+          {
+            error: {
+              code: "RepositoryConfigurationsRefused",
+              message: "The repository configurations were refused.",
+            },
+            faults: [],
+          },
+          422,
+        ),
+      ),
+      new Promise<Response>((resolve) => {
+        answerSecond = resolve;
+      }),
+    ],
+    boundAfter: [keptNow({ result: "DeclarationsRefused" }, attemptCommit)],
+  });
+  await press("Import now");
+  const configurationsCard = sectionOf("Configurations");
+  expect(within(configurationsCard).getByRole("status").textContent).toBe(
+    "Not imported · Invalid",
+  );
+  await press("Import now");
+  expect(importOffered()?.textContent).toBe("Importing…");
+  expect(within(configurationsCard).queryByRole("status")).toBeNull();
+  await turned(() => {
+    answerSecond(answer({ imported: true }));
+  });
+  await settled();
+});
+
+/**
+ * An empty repository is a miss and a repository declaring nothing a refusal,
+ * yet each is kept and drawn as no fault, so the redrawn line says it alone.
+ */
+test.each([
+  [
+    "holds no commit",
+    answer(
+      { error: { code: "NotFound", message: "Resource not found." } },
+      404,
+    ),
+    keptNow({ result: "SnapshotAbsent", absent: "Commit" }),
+    "Last importEmpty2s ago",
+  ],
+  [
+    "declares nothing",
+    answer(
+      {
+        error: {
+          code: "RepositoryConfigurationsAbsent",
+          message: "The commit declares no configurations.",
+        },
+      },
+      422,
+    ),
+    keptNow(
+      { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+      attemptCommit,
+    ),
+    "Last importUndeclared2s agocfaca0a",
+  ],
+])(
+  "Import now of a repository that %s says nothing under the line it redraws",
+  async (_which, answered, kept, line) => {
+    await drawPage({
+      bound: [attempted()],
+      imported: [Promise.resolve(answered)],
+      boundAfter: [kept],
+    });
+    await press("Import now");
+    expect(importLine()).toBe(line);
+    expect(
+      within(sectionOf("Configurations")).queryByRole("status"),
+    ).toBeNull();
   },
 );

@@ -72,6 +72,8 @@ import {
   sessionTurnFailures,
   sessionTurnInputKinds,
   projectRepositoryConfigurationDeferrals,
+  repositoryConfigurationImportAbsences,
+  repositoryConfigurationImportResults,
   sessionTurnStates,
   sessionKinds,
   sessionCapabilities,
@@ -90,6 +92,10 @@ import {
   allForgeAppClaims,
 } from "../../src/interpreter/forgeAuthorization.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
+import {
+  allRepositoryConfigurationImportAbsences,
+  allRepositoryConfigurationImportAttemptResults,
+} from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -768,6 +774,15 @@ test("every session and refusal roster restates the interpreter's own", () => {
     projectRepositoryConfigurationDeferrals,
     allProjectRepositoryConfigurationsDeferrals,
     "a deferral the wire schema does not name is a bind answer nothing can parse",
+  );
+  assert.deepEqual(
+    repositoryConfigurationImportResults,
+    allRepositoryConfigurationImportAttemptResults,
+    "an attempt kept under a word the wire does not name is a listing nothing can parse",
+  );
+  assert.deepEqual(
+    repositoryConfigurationImportAbsences,
+    allRepositoryConfigurationImportAbsences,
   );
   assert.deepEqual(
     operationRefusalCodes,

@@ -291,7 +291,7 @@ function fakeConfigurations(
     },
     importRepositoryConfigurations: (_principal, _partition, source) => {
       calls.push(
-        `importRepositoryConfigurations:${source.repository}:${source.commit}`,
+        `importRepositoryConfigurations:${source.repository}:${"commit" in source ? String(source.commit) : "head"}`,
       );
       return Promise.resolve({ result: "Imported", declarations: 1 });
     },
@@ -1522,6 +1522,29 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "reviseDraft:2",
     "deleteDraft:3",
     "dispatchView:4",
+  ]);
+});
+
+/**
+ * An import naming no commit reaches the web naming none, rather than one the
+ * route made up, and is answered as an import naming its commit is.
+ */
+test("an import naming no commit asks the web for the head and answers as one that named it", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const imported = await app.inject({
+    method: "POST",
+    url: "/api/v1/tenants/tenant/projects/project/configurations/imports",
+    headers: {
+      authorization: "Bearer valid",
+      "content-type": "application/vnd.chuggy.v1+json",
+    },
+    body: { repository: "repository-named" },
+  });
+  assert.equal(imported.statusCode, 200);
+  assert.deepEqual(imported.json(), { imported: true });
+  assert.deepEqual(calls, [
+    "importRepositoryConfigurations:repository-named:head",
   ]);
 });
 

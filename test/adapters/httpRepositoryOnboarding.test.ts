@@ -49,12 +49,15 @@ import {
   type HttpErrorEnvelope,
 } from "../../src/contract/http.ts";
 import {
+  asGitObjectId,
   asGitRefName,
   asRepositoryCredential,
   asRepositoryId,
   type CredentialResolved,
   type RepositoryCredentialPort,
+  type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
+import type { RepositoryConfigurationImportAttempt } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asForgeAccount,
   asForgeApp,
@@ -208,6 +211,7 @@ interface OnboardingStore {
   retirementUnavailable: boolean;
   stepHeld: RepositoryConfigurationsHeld;
   heldReads: number;
+  attempted: Map<RepositoryId, RepositoryConfigurationImportAttempt>;
 }
 
 /** The instant the fixture retires at, so a case can assert the row it reads back. */
@@ -225,6 +229,7 @@ function fixtureStore(): OnboardingStore {
     retirementUnavailable: false,
     stepHeld: { declared: new Map(), bootstrap: undefined },
     heldReads: 0,
+    attempted: new Map(),
     resolved: {
       resolved: "Credential",
       credential: asRepositoryCredential("ghs-proof"),
@@ -330,6 +335,7 @@ function fixtureServiceConfigurations(
         importRepositoryConfigurations: () =>
           Promise.resolve({ imported: "StaleBinding" }),
       },
+      attempts: { record: () => Promise.resolve() },
     },
     authoring: {
       createConfiguration: () =>
@@ -430,6 +436,7 @@ function fixtureService(
         return Promise.resolve(store.stepHeld);
       },
     },
+    importAttempts: { attempted: () => Promise.resolve(store.attempted) },
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
@@ -1241,6 +1248,43 @@ test("a bind is created at its own address and read back by the listing", async 
       },
     ],
   });
+});
+
+/**
+ * The attempt is the one kept for the binding, carried as it was kept, and a
+ * binding no import was attempted of carries none rather than an empty one.
+ */
+test("the listing answers a binding's last import attempted, and nothing of one never attempted", async (t) => {
+  const listing = fixtureCase(t, { granted: ["Read"] });
+  const other = asRepositoryId("https://github.com/acme/other.git");
+  listing.store.bound.push(
+    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
+    {
+      repository: other,
+      boundAt: "2026-09-12T01:00:00Z",
+      landing: { mode: "Push" },
+    },
+  );
+  const lastImport = {
+    attemptedAt: "2026-10-17T09:30:00.000000Z",
+    commit: asGitObjectId("a".repeat(40)),
+    outcome: { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+  } as const;
+  listing.store.attempted.set(repository, lastImport);
+  const listed = await listing.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.equal(listed.statusCode, 200);
+  assert.deepEqual(
+    listed
+      .json<{ repositories: { repository: string; lastImport?: unknown }[] }>()
+      .repositories.map((row) => [row.repository, row.lastImport]),
+    [
+      [repository, lastImport],
+      [other, undefined],
+    ],
+  );
 });
 
 test("a repository no source can reach is the request's own fault", async (t) => {
