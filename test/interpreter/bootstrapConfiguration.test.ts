@@ -819,8 +819,10 @@ test("the worker and the published schema say which job a shell line runs in, an
     ...jobVariables,
     "CHUG_REPOSITORY, the clone URL of the repository it runs in",
     "CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one",
+    "A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them",
   ])
     assert.ok(published.includes(said), said);
+  assert.ok(!published.includes("always set"));
 });
 
 /** A published schema's object, as far as these fields are read from it. */
