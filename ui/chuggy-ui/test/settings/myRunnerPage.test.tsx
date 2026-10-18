@@ -6,14 +6,27 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { nativeHttpBasePath } from "../../../../src/contract/http.ts";
 import { MyRunnerPage } from "../../app/browser/settings/MyRunnerPage.tsx";
 import { myRunnerWithheld } from "../../app/core/myRunner.ts";
-import { answer, drawnStrict, press, settled } from "../screenHarness.tsx";
+import { sessionPlacementPolledMs } from "../../app/core/sessionRunners.ts";
+import {
+  answer,
+  drawnStrict,
+  heldAnswer,
+  press,
+  settled,
+} from "../screenHarness.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import { resizeObserverStubbed } from "../resizeObserver.ts";
@@ -59,6 +72,8 @@ interface Drawing {
   /** The runner every read answers, which a case may move; absent where the
    * reader has none. */
   runner: unknown;
+  /** Where set, a read of the runner waits on it, as one over a network does. */
+  held?: Promise<Response> | undefined;
 }
 
 let drawing: Drawing = { granted: true, runner: undefined };
@@ -71,6 +86,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 async function drawMyRunner(): Promise<readonly SentRequest[]> {
@@ -80,6 +96,7 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
       return answer({ granted: drawing.granted });
     if (path === `${tenantPath}/personal-runner`) {
       if (request.method !== "GET") return answer(undefined, 204);
+      if (drawing.held !== undefined) return drawing.held;
       return drawing.runner === undefined
         ? answer({ error: { code: "NotFound" } }, 404)
         : answer(drawing.runner);
@@ -132,6 +149,51 @@ test("a member the workspace lets register one asks what it is for, and is hande
   ).toContain(
     "chuggy-linux register --personal --api https://chuggy.test --token=tok_en-1",
   );
+});
+
+/** The runner read again on its clock, as a page left open is, and drawn
+ * while that read is still out. */
+async function polled(): Promise<() => Promise<void>> {
+  const held = heldAnswer();
+  drawing.held = held.answered;
+  await act(() => vi.advanceTimersByTimeAsync(sessionPlacementPolledMs));
+  await settled();
+  return async () => {
+    drawing.held = undefined;
+    held.release(answer({ error: { code: "NotFound" } }, 404));
+    await settled();
+  };
+}
+
+/**
+ * A READER WITH NO RUNNER IS READ AGAIN ON THE CLOCK, and an answer of none
+ * that stands is no reason to take away what they are filling in, or the
+ * command they were handed.
+ */
+test("the ask and the steps a member was handed stand through a read of their runner that answers none again", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const sent = await drawMyRunner();
+  await press("Register runner");
+  await press("Advanced");
+  fireEvent.change(screen.getByRole("textbox", { name: "Capabilities" }), {
+    target: { value: "Tool:Bazel" },
+  });
+  const reads = (): number =>
+    sent.filter((one) => one.url.endsWith("/personal-runner")).length;
+  const before = reads();
+  const asking = await polled();
+  expect(reads(), "the runner was not read again").toBeGreaterThan(before);
+  const typed = (): string =>
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Capabilities" })
+      .value;
+  expect(typed()).toBe("Tool:Bazel");
+  await asking();
+  expect(typed()).toBe("Tool:Bazel");
+  await press("Create token");
+  const stepping = await polled();
+  expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
+  await stepping();
+  expect(screen.getByRole("list", { name: "Register runner" })).toBeTruthy();
 });
 
 test("a runner is drawn with what it declared and whether it is polling, though its owner may no longer register one", async () => {
