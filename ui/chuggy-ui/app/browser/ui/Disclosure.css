@@ -4,4 +4,13 @@
   .disclosure {
     display: contents;
   }
+
+  .disclosure-chevron {
+    color: var(--ink-3);
+    transition: rotate var(--duration-2) var(--ease-out);
+  }
+
+  [data-state="open"] > .disclosure-chevron {
+    rotate: 90deg;
+  }
 }

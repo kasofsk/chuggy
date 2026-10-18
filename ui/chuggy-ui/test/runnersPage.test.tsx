@@ -172,12 +172,11 @@ async function addRunner(
     await turned(() => {
       fireEvent.click(screen.getByRole("radio", { name: machine }));
     });
+  if (asked.host === true || asked.typed !== undefined) await press("Advanced");
   if (asked.host === true)
     await turned(() => {
       fireEvent.click(
-        screen.getByRole("checkbox", {
-          name: "Run work that pins no image on the machine itself",
-        }),
+        screen.getByRole("checkbox", { name: "Run jobs without a container" }),
       );
     });
   if (asked.typed !== undefined)
@@ -370,9 +369,7 @@ test("capabilities typed that are not ones are refused before anything is minted
   await addRunner({ typed: "Platform:Linux:Amd64" });
   expect(sent.filter((one) => one.method === "POST")).toHaveLength(0);
   expect(
-    screen.getByText(
-      "Platform:Linux:Amd64 is a platform, which the runner finds of its machine",
-    ),
+    screen.getByText("Platform:Linux:Amd64 is detected, not typed"),
   ).toBeTruthy();
   expect(
     screen

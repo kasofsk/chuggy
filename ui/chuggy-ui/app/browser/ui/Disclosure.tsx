@@ -1,6 +1,7 @@
 /**
  * A trigger and the body it shows, wired to each other and drawing no box of
- * their own, so the layout that held them as siblings still does.
+ * their own, so the layout that held them as siblings still does. A trigger
+ * whose label does not say it opens anything carries a chevron that does.
  */
 
 import { Collapsible } from "radix-ui";
@@ -8,6 +9,7 @@ import type { ReactElement, ReactNode } from "react";
 
 import { buttonLookClassName } from "./Button.tsx";
 import type { ButtonSize, ButtonVariant } from "./Button.tsx";
+import { Chevron } from "./Chevron.tsx";
 
 import "./Disclosure.css";
 
@@ -19,6 +21,7 @@ export function Disclosure(props: {
     readonly variant?: ButtonVariant;
     readonly size?: ButtonSize;
   };
+  readonly chevron?: boolean;
   readonly children: ReactElement;
 }): ReactNode {
   const look = props.look;
@@ -31,6 +34,9 @@ export function Disclosure(props: {
       <Collapsible.Trigger
         className={look === undefined ? undefined : buttonLookClassName(look)}
       >
+        {props.chevron === true ? (
+          <Chevron className="disclosure-chevron" />
+        ) : null}
         {props.label}
       </Collapsible.Trigger>
       <Collapsible.Content asChild>{props.children}</Collapsible.Content>

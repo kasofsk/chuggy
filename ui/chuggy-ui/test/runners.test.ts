@@ -207,20 +207,17 @@ test("capabilities typed are refused where one is not a capability, is a platfor
     capabilities: ["has-dash", "Tool:Bazel", "x_1"],
   });
   expect(runnerCapabilitiesTyped("Tool:Ba.zel")).toStrictEqual({
-    refused:
-      "Tool:Ba.zel is not a capability: letters, digits, _, : and -, beginning with a letter or digit",
+    refused: "Tool:Ba.zel · use letters, digits, _, : and -",
   });
   expect(runnerCapabilitiesTyped("Platform:MacOS:Arm64")).toStrictEqual({
-    refused:
-      "Platform:MacOS:Arm64 is a platform, which the runner finds of its machine",
+    refused: "Platform:MacOS:Arm64 is detected, not typed",
   });
   expect(runnerCapabilitiesTyped("a a")).toStrictEqual({
-    refused: "A capability is named twice",
+    refused: "A capability is listed twice",
   });
   const many = Array.from({ length: 63 }, (_, at) => `Tool:${String(at)}`);
   expect(runnerAskRead("linux", false, many.join(" "))).toStrictEqual({
-    refused:
-      "A runner declares at most 64 capabilities, its platforms among them",
+    refused: "At most 64 capabilities, platforms included",
   });
 });
 
