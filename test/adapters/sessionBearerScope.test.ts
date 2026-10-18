@@ -29,6 +29,7 @@ import {
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
+import { chuggyToolRoutes } from "../../src/contract/sessionTools.ts";
 import {
   asSessionId,
   type SessionKind,
@@ -232,6 +233,35 @@ test("in its own partition a session bearer passes every partition route and no 
           !(answered.statusCode === 404 && reached.length === 0),
         `${route} was refused in its own partition: ${String(answered.statusCode)}`,
       );
+  }
+});
+
+test("every route a project tool calls admits a session bearer in its own partition, and list_repositories's reaches the project's repositories", async () => {
+  assert.equal(
+    chuggyToolRoutes.projectRepositories,
+    nativeHttpRoutes.projectRepositories,
+    "list_repositories calls no route",
+  );
+  const params = { tenant: own.tenant, project: own.project };
+  for (const [tool, route] of Object.entries(chuggyToolRoutes))
+    assert.ok(
+      (["GET", "POST", "PUT", "DELETE"] as const).some(
+        (method) =>
+          sessionBearerAdmission(own, method, route, params) === "Admitted",
+      ),
+      `${tool} admits no session bearer`,
+    );
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    await app.inject(
+      routeRequest(
+        `GET ${chuggyToolRoutes.projectRepositories}`,
+        own,
+        sessionToken,
+      ),
+    );
+    assert.deepEqual(reached, ["onboarding.projectRepositories"], kind);
   }
 });
 
