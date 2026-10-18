@@ -29,6 +29,7 @@ import type {
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
+import type { RepositoryImportLine } from "./repositoryImport.ts";
 import type { RunCommandEnd } from "./runResult.ts";
 import type { SetVerdict, StageRow } from "./ticketLedger.ts";
 
@@ -200,6 +201,30 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
       return "pass";
     case "Missing":
       return "parked";
+  }
+}
+
+/**
+ * How a repository's last import came out. What the repository holds has to
+ * change for a failed one to come out otherwise; an outage or a moved binding
+ * is worth asking again, and a repository declaring nothing is not a fault.
+ */
+export function repositoryImportTone(word: RepositoryImportLine["word"]): Tone {
+  switch (word) {
+    case "Imported":
+      return "pass";
+    case "Missing":
+    case "Unreadable":
+    case "Invalid":
+    case "Conflict":
+      return "fail";
+    case "Unavailable":
+    case "Stale":
+      return "parked";
+    case "Undeclared":
+    case "Empty":
+    case "Never":
+      return "neutral";
   }
 }
 
