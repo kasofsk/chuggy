@@ -65,7 +65,11 @@ function RepositoryDeclared(props: {
     repositoryConfigurationsResource,
     (ports) => readProjectConfigurations(ports, partition),
   );
-  const importing = useRepositoryImportNow(partition, repository);
+  const importing = useRepositoryImportNow(
+    partition,
+    repository,
+    props.binding.lastImport?.attemptedAt,
+  );
   const abilities = useProjectAbilities(partition);
   const importable =
     props.binding.retiredAt === undefined &&
@@ -84,7 +88,7 @@ function RepositoryDeclared(props: {
       >
         <RepositoryImportLine
           lastImport={props.binding.lastImport}
-          note={importing.note}
+          pressed={importing.pressed}
         />
         <PanelUnready state={state} />
         {read === undefined ? null : (

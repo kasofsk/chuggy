@@ -29,7 +29,10 @@ import type {
 import type { ForgeAppStanding } from "./forgeInstallation.ts";
 import { leadDispatchLanded } from "./leadTranscript.ts";
 import type { AgenticRefusalStanding, LeadDispatch } from "./leadTranscript.ts";
-import type { RepositoryImportLine } from "./repositoryImport.ts";
+import {
+  repositoryImportFaultless,
+  type RepositoryImportLine,
+} from "./repositoryImport.ts";
 import type { RunCommandEnd } from "./runResult.ts";
 import type { SetVerdict, StageRow } from "./ticketLedger.ts";
 
@@ -210,6 +213,7 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
  * is worth asking again, and a repository declaring nothing is not a fault.
  */
 export function repositoryImportTone(word: RepositoryImportLine["word"]): Tone {
+  if (repositoryImportFaultless(word)) return "neutral";
   switch (word) {
     case "Imported":
       return "pass";
@@ -221,10 +225,6 @@ export function repositoryImportTone(word: RepositoryImportLine["word"]): Tone {
     case "Unavailable":
     case "Stale":
       return "parked";
-    case "Undeclared":
-    case "Empty":
-    case "Never":
-      return "neutral";
   }
 }
 

@@ -82,18 +82,12 @@ test("a line names when and at which commit, and a repository never attempted sa
   expect(repositoryImportTone("Never")).toBe("neutral");
 });
 
+/** A line holding no attempt, as one a press was made over and nothing was kept since. */
+const unchanged = repositoryImportLine(undefined);
+
 /** Each refusal the route answers with a code of its own is the word the line draws the attempt it kept in. */
 test.each([
   [{ outcome: "Ok", value: { imported: true } }, undefined],
-  [
-    {
-      outcome: "Rejected",
-      code: "RepositoryConfigurationsAbsent",
-      status: 422,
-      body: {},
-    },
-    "Undeclared",
-  ],
   [
     {
       outcome: "Rejected",
@@ -133,5 +127,58 @@ test.each([
   [{ outcome: "Unauthenticated" }, "Not signed in"],
   [{ outcome: "Unreachable", reason: "offline" }, "Unreachable"],
 ] as const)("an import answered %j leaves %s to be said", (answered, note) => {
-  expect(repositoryImportNote(answered)).toBe(note);
+  expect(repositoryImportNote({ answered, over: undefined }, unchanged)).toBe(
+    note,
+  );
+});
+
+/** Declaring nothing is no fault, so a refusal naming it says nothing whatever the line holds. */
+test("an import refused for declaring nothing leaves nothing to be said", () => {
+  const answered = {
+    outcome: "Rejected",
+    code: "RepositoryConfigurationsAbsent",
+    status: 422,
+    body: {},
+  } as const;
+  expect(repositoryImportNote({ answered, over: undefined }, unchanged)).toBe(
+    undefined,
+  );
+});
+
+/**
+ * A miss is an empty repository only where the line holds an attempt the
+ * press was not made over; one the line has held all along is some other miss.
+ */
+test("a miss beside a new attempt the line draws as no fault leaves nothing to be said, and beside the old one says Not found", () => {
+  const answered = { outcome: "Absent" } as const;
+  const empty = repositoryImportLine({
+    attemptedAt,
+    outcome: { result: "SnapshotAbsent", absent: "Commit" },
+  });
+  expect(repositoryImportNote({ answered, over: undefined }, empty)).toBe(
+    undefined,
+  );
+  expect(repositoryImportNote({ answered, over: attemptedAt }, empty)).toBe(
+    "Not found",
+  );
+  const refused = repositoryImportLine({
+    attemptedAt,
+    commit,
+    outcome: { result: "DeclarationsRefused" },
+  });
+  expect(
+    repositoryImportNote(
+      {
+        answered: {
+          outcome: "Rejected",
+          code: "RepositoryConfigurationsRefused",
+          status: 422,
+          body: {},
+        },
+        over: undefined,
+      },
+      refused,
+    ),
+  ).toBe("Invalid");
+  expect(repositoryImportNote(undefined, refused)).toBe(undefined);
 });

@@ -3,7 +3,8 @@
  *
  * The route keeps every attempt it makes, a refused one included, so whatever
  * it answers the listing is read again and the line is drawn from that; the
- * button stays working until it has been. A refusal is said under the line.
+ * button stays working until it has been. A refusal the line does not already
+ * draw as no fault is said under it.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -20,6 +21,7 @@ import {
   repositoryImportLine,
   repositoryImportNote,
   repositoryImportPress,
+  type RepositoryImportPressed,
 } from "../../core/repositoryImport.ts";
 import { repositoryImportTone } from "../../core/tones.ts";
 import { useApiPorts } from "../api.ts";
@@ -31,27 +33,31 @@ import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { projectRepositoriesResource } from "./AddRepository.tsx";
 
-/** One Import now: whether its request is out, and what its last answer left to say. */
+/** One Import now: whether its request is out, and how the last one was answered. */
 export interface RepositoryImporting {
   readonly busy: boolean;
-  readonly note: string | undefined;
+  readonly pressed: RepositoryImportPressed | undefined;
   readonly importNow: () => void;
 }
 
+/** `over` is the instant of the attempt the line draws, which a press is made over. */
 export function useRepositoryImportNow(
   partition: PartitionIdentity,
   repository: string,
+  over: string | undefined,
 ): RepositoryImporting {
   const ports = useApiPorts();
   const client = useQueryClient();
   const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | undefined>(undefined);
+  const [pressed, setPressed] = useState<RepositoryImportPressed | undefined>(
+    undefined,
+  );
   return {
     busy,
-    note,
+    pressed,
     importNow: () => {
       setBusy(true);
-      setNote(undefined);
+      setPressed(undefined);
       void (async () => {
         const answered = await apiImportRepositoryConfigurations(
           ports,
@@ -66,7 +72,7 @@ export function useRepositoryImportNow(
           ),
         });
         setBusy(false);
-        setNote(repositoryImportNote(answered));
+        setPressed({ answered, over });
       })();
     },
   };
@@ -91,10 +97,11 @@ export function RepositoryImportButton(props: {
 
 export function RepositoryImportLine(props: {
   readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
-  readonly note: string | undefined;
+  readonly pressed: RepositoryImportPressed | undefined;
 }): ReactNode {
   const nowMs = useNowMs();
   const line = repositoryImportLine(props.lastImport);
+  const note = repositoryImportNote(props.pressed, line);
   return (
     <div className="grid gap-1">
       <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -107,12 +114,12 @@ export function RepositoryImportLine(props: {
           <Identity label={line.commit} />
         ) : null}
       </p>
-      {props.note === undefined ? null : (
+      {note === undefined ? null : (
         <Notice
           tone="danger"
           inline
           role="status"
-          detail={`Not imported · ${props.note}`}
+          detail={`Not imported · ${note}`}
         />
       )}
     </div>

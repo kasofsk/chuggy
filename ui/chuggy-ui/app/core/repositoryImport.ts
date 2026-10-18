@@ -3,7 +3,8 @@
  * Import now came to.
  *
  * Every attempt is kept, a refused one included, so the line is the listing's
- * and an Import now only says what its own request was answered with.
+ * and an Import now only says what its own request was answered with, and
+ * nothing where the line already draws what it came to as no fault.
  */
 
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
@@ -26,6 +27,19 @@ export type RepositoryImportWord =
 
 /** What the line says of a repository no import was attempted of. */
 export const repositoryImportNever = "Never";
+
+/** The words that are no fault of the repository's: it declares nothing, holds no commit, or was never asked. */
+const repositoryImportFaultlessWords = [
+  "Undeclared",
+  "Empty",
+  repositoryImportNever,
+] as const;
+
+export function repositoryImportFaultless(
+  word: string,
+): word is (typeof repositoryImportFaultlessWords)[number] {
+  return (repositoryImportFaultlessWords as readonly string[]).includes(word);
+}
 
 /** What the line's label is. */
 export const repositoryImportLabel = "Last import";
@@ -97,15 +111,39 @@ const repositoryImportRefusals: Readonly<
   RepositoryBindingChanged: "Stale",
 };
 
-/** What an Import now leaves to be said: nothing where the route imported, and its refusal's word otherwise. */
-export function repositoryImportNote(
-  result: ApiResult<{ readonly imported: true }>,
-): string | undefined {
-  if (result.outcome === "Ok") return undefined;
+/** A refused import's answer as one word, the line's own where the route names the outcome it kept. */
+function repositoryImportRefusal(
+  result: Exclude<ApiResult<{ readonly imported: true }>, { outcome: "Ok" }>,
+): string {
   if (result.outcome === "Rejected")
     return repositoryImportRefusals[result.code] ?? "Refused";
   if (result.outcome === "Conflict")
     return repositoryImportRefusals[result.code] ?? "Conflict";
   if (result.outcome === "Retryable") return "Unavailable";
   return repositoryRefusalStatus(result);
+}
+
+/** One Import now's answer, and the instant of the attempt the line held when it was pressed. */
+export interface RepositoryImportPressed {
+  readonly answered: ApiResult<{ readonly imported: true }>;
+  readonly over: string | undefined;
+}
+
+/**
+ * What an Import now leaves to be said under the line: nothing where it
+ * imported or came to no fault, and its refusal's word otherwise. An Import now
+ * names no commit, so the only miss it keeps is a repository holding none, and
+ * a miss beside an attempt newer than the one pressed over is that, which the
+ * line says.
+ */
+export function repositoryImportNote(
+  pressed: RepositoryImportPressed | undefined,
+  line: RepositoryImportLine,
+): string | undefined {
+  if (pressed === undefined || pressed.answered.outcome === "Ok")
+    return undefined;
+  const kept = "attemptedAt" in line && line.attemptedAt !== pressed.over;
+  if (kept && repositoryImportFaultless(line.word)) return undefined;
+  const word = repositoryImportRefusal(pressed.answered);
+  return repositoryImportFaultless(word) ? undefined : word;
 }

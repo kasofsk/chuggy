@@ -169,6 +169,8 @@ interface Drawing {
   readonly imported?: readonly Promise<Response>[];
   /** The bindings the project answers with once an import was sent. */
   readonly boundAfter?: readonly unknown[];
+  /** What the first listing read after an import was sent answers with, where a case holds it back. */
+  readonly relisted?: Promise<Response>;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -176,6 +178,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const bound = drawing.bound ?? [binding("Push")];
   const written = [...(drawing.written ?? [])];
   const imported = [...(drawing.imported ?? [])];
+  let relisted = drawing.relisted;
   const sent: Sent[] = [];
   const fetching = ((url: string, init?: Init) => {
     sent.push({
@@ -201,6 +204,11 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
         }),
       );
     const posted = sent.some((one) => one.method === "POST");
+    const held = posted ? relisted : undefined;
+    if (held !== undefined) {
+      relisted = undefined;
+      return held;
+    }
     return Promise.resolve(
       answer({
         repositories: posted ? (drawing.boundAfter ?? bound) : bound,
@@ -604,3 +612,119 @@ test("a retired binding reads its line and is offered no Import now", async () =
   expect(importLine()).toBe("Last importNever");
   expect(importOffered()).toBeNull();
 });
+
+/** An attempt kept by the import a case presses for, two seconds before the page's clock. */
+function keptNow(outcome: unknown, commit?: string): unknown {
+  return attempted({
+    attemptedAt: "2026-10-17T11:59:58.000000Z",
+    ...(commit === undefined ? {} : { commit }),
+    outcome,
+  });
+}
+
+test("Import now stays working until the listing it redraws from has been read again", async () => {
+  let answerListing: (answered: Response) => void = () => undefined;
+  await drawPage({
+    bound: [attempted()],
+    relisted: new Promise<Response>((resolve) => {
+      answerListing = resolve;
+    }),
+  });
+  await press("Import now");
+  expect(importOffered()?.textContent).toBe("Importing…");
+  expect(importLine()).toBe("Last importNever");
+  await turned(() => {
+    answerListing(
+      answer({
+        repositories: [keptNow({ result: "Imported" }, attemptCommit)],
+      }),
+    );
+  });
+  await settled();
+  expect(importOffered()?.textContent).toBe("Import now");
+  expect(importLine()).toBe("Last importImported2s agocfaca0a");
+});
+
+test("a second Import now takes back what the first one said while it works", async () => {
+  let answerSecond: (answered: Response) => void = () => undefined;
+  await drawPage({
+    bound: [attempted()],
+    imported: [
+      Promise.resolve(
+        answer(
+          {
+            error: {
+              code: "RepositoryConfigurationsRefused",
+              message: "The repository configurations were refused.",
+            },
+            faults: [],
+          },
+          422,
+        ),
+      ),
+      new Promise<Response>((resolve) => {
+        answerSecond = resolve;
+      }),
+    ],
+    boundAfter: [keptNow({ result: "DeclarationsRefused" }, attemptCommit)],
+  });
+  await press("Import now");
+  const configurationsCard = sectionOf("Configurations");
+  expect(within(configurationsCard).getByRole("status").textContent).toBe(
+    "Not imported · Invalid",
+  );
+  await press("Import now");
+  expect(importOffered()?.textContent).toBe("Importing…");
+  expect(within(configurationsCard).queryByRole("status")).toBeNull();
+  await turned(() => {
+    answerSecond(answer({ imported: true }));
+  });
+  await settled();
+});
+
+/**
+ * An empty repository is a miss and a repository declaring nothing a refusal,
+ * yet each is kept and drawn as no fault, so the redrawn line says it alone.
+ */
+test.each([
+  [
+    "holds no commit",
+    answer(
+      { error: { code: "NotFound", message: "Resource not found." } },
+      404,
+    ),
+    keptNow({ result: "SnapshotAbsent", absent: "Commit" }),
+    "Last importEmpty2s ago",
+  ],
+  [
+    "declares nothing",
+    answer(
+      {
+        error: {
+          code: "RepositoryConfigurationsAbsent",
+          message: "The commit declares no configurations.",
+        },
+      },
+      422,
+    ),
+    keptNow(
+      { result: "SnapshotAbsent", absent: "ConfigurationDirectory" },
+      attemptCommit,
+    ),
+    "Last importUndeclared2s agocfaca0a",
+  ],
+])(
+  "Import now of a repository that %s says nothing under the line it redraws",
+  async (_which, answered, kept, line) => {
+    await drawPage({
+      bound: [attempted()],
+      imported: [Promise.resolve(answered)],
+      boundAfter: [kept],
+    });
+    await press("Import now");
+    expect(importLine()).toBe(line);
+    expect(
+      within(sectionOf("Configurations")).queryByRole("status"),
+    ).toBeNull();
+  },
+);
