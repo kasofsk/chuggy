@@ -177,6 +177,10 @@ const bootstrapWorkerMode = {
   arguments: [],
 } as const;
 
+/** Where chuggy's public docs list each page's Markdown, for an agent to fetch. */
+export const bootstrapDocsIndex =
+  "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt";
+
 /** One agent workload's skeleton, its prompt the file the letter `prompt` stands for. */
 function bootstrapAgentSkeleton(purpose: string, prompt: string): string {
   return `{"runner":"Agent",${purpose}"prompt":{"path":${prompt}},"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]}}`;
@@ -201,6 +205,7 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
     `I may instead be any image the repository builds or chooses, best one it already builds for its CI with what its checks need added. chuggy mounts its runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD, so the image needs /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++ (a current Debian or Ubuntu, not Alpine or musl), and a $HOME, workspace and temporary directory uid 1000 can write; a ticket on an image lacking one stops with a reason naming it.`,
     "chuggy's node runs under an init the runtime ships, so I needs none, and a process a job orphans is reaped when it exits.",
     "Do not assume I has a docker client: a check or setup that runs docker needs an image whose build installs the client, and it reaches an engine only where the runner's owner has handed jobs one.",
+    `chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage start at ${bootstrapDocsIndex}, which links each page's Markdown; read the ones a choice here turns on.`,
     "Command the checks the repository already runs, and put in each workload's setup the lines L, if any, that install what it needs, such as npm ci or uv sync; setup runs at the repository root before its workload does, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
   ];
 }
