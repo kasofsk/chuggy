@@ -291,7 +291,6 @@ const artifact = "image/png:token-1";
 const namingInput = `${threadImagesHeading}\n\n${threadImageLine({
   artifact,
   mediaType: "image/png",
-  path: `/api/v1/tenants/acme/projects/atlas/artifacts/${encodeURIComponent(artifact)}`,
 })}\n\n${threadTurnBoundaryHeading}\n\nwhat is wrong here`;
 
 interface ImagesAsked {
