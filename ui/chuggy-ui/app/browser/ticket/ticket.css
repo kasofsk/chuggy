@@ -427,6 +427,7 @@
 
   .ticket-config {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-5);
   }
 
@@ -482,14 +483,14 @@
     gap: var(--space-4);
   }
 
-  .ticket-config-instructions-bar {
+  .ticket-config-heading-bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
   }
 
-  .ticket-config-instructions-caption {
+  .ticket-config-heading-caption {
     margin-left: auto;
     font-size: var(--text-xs);
     color: var(--ink-3);
@@ -601,5 +602,9 @@
     border-top: var(--hairline) solid var(--edge);
     font-size: var(--text-xs);
     color: var(--ink-3);
+  }
+
+  .ticket-config-foot code {
+    overflow-wrap: anywhere;
   }
 }

@@ -413,10 +413,10 @@ function ConfigurationInstructionsBar(props: {
     (field) => !props.overridden.has(field),
   );
   return (
-    <div className="ticket-config-instructions-bar">
+    <div className="ticket-config-heading-bar">
       <span className="panel-title">Instructions</span>
       {props.tabs}
-      <span className="ticket-config-instructions-caption">
+      <span className="ticket-config-heading-caption">
         {configured
           ? "As configured · a run's exact prompt is in its conversation"
           : "As configured with this ticket's overrides · a run's exact prompt is in its conversation"}
@@ -514,13 +514,25 @@ function ConfigurationEvaluationRow(props: {
   );
 }
 
+/** The evaluation's heading, and how its stages run, which a version 1 configuration and a catalog plan share. */
+function EvaluationHead(): ReactNode {
+  return (
+    <div className="ticket-config-heading-bar">
+      <span className="panel-title">Evaluation</span>
+      <span className="ticket-config-heading-caption">
+        Stages run in order · a failed stage ends evaluation
+      </span>
+    </div>
+  );
+}
+
 function ConfigurationEvaluations(props: {
   readonly evaluations: readonly ConfigurationEvaluation[];
 }): ReactNode {
   if (props.evaluations.length === 0) return null;
   return (
     <div className="ticket-config-evaluations">
-      <span className="panel-title">Evaluation</span>
+      <EvaluationHead />
       <div className="ticket-config-evaluation-grid">
         {props.evaluations.map((evaluation, index) => (
           <ConfigurationEvaluationRow
@@ -766,6 +778,11 @@ function CatalogStageRow(props: {
         {`Stage ${String(props.index + 1)} · ${stage.name}`}
       </span>
       <div className="ticket-config-evaluation-body">
+        {stage.evaluators.length > 1 ? (
+          <span className="text-ink-3 text-sm">
+            Evaluators run side by side
+          </span>
+        ) : null}
         {stage.evaluators.map((name, position) => {
           const workload = configurationCatalogWorkload(catalog, name);
           return (
@@ -832,7 +849,7 @@ function CatalogBody(props: {
         <CatalogWorkloadBody name={selected.work} workload={work} />
       </div>
       <div className="ticket-config-evaluations">
-        <span className="panel-title">Evaluation</span>
+        <EvaluationHead />
         <div className="ticket-config-evaluation-grid">
           {(catalog.plans.get(selected.evaluation) ?? []).map(
             (stage, index) => (
