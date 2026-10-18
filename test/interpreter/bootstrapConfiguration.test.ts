@@ -757,6 +757,18 @@ test("the worker is told any image may stand for the one named, what chuggy's ru
   );
 });
 
+test("the worker is told an image has docker only where its build installs it, and an engine only where the runner's owner provides one", () => {
+  const told = briefed("Work", "Prompt");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("Do not assume I has a docker client") &&
+        line.includes("needs an image whose build installs the client") &&
+        line.includes("only where the runner's owner has handed jobs one"),
+    ),
+  );
+});
+
 /** The one expansion of the change base that a line under `sh -eu` survives when it is unset. */
 const guardedChangeBase = "$" + "{CHUG_CHANGE_BASE-}";
 
