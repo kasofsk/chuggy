@@ -9,11 +9,15 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
-import { postgresRepositoryBindingListing } from "../../src/adapters/postgres/repositoryBinding.ts";
+import {
+  postgresProjectRepositoryRetirement,
+  postgresRepositoryBindingListing,
+} from "../../src/adapters/postgres/repositoryBinding.ts";
 import {
   postgresProjectRepositoryBinding,
   postgresRepositoryConfigurationImportAttempts,
@@ -50,7 +54,9 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
 import {
+  asProjectId,
   asRecoveryEpoch,
+  asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
@@ -69,7 +75,10 @@ import {
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
-import { fixtureBoundRepository } from "./repositoryBindingFixture.ts";
+import {
+  fixtureBindRepository,
+  fixtureBoundRepository,
+} from "./repositoryBindingFixture.ts";
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -444,6 +453,21 @@ test("the route asked for no commit imports at the head it read, and keeps an at
   );
 });
 
+/** One project's listing as the API composes it, by repository. */
+async function listedOf(
+  partition: Partition,
+): Promise<ReadonlyMap<string, { readonly lastImport?: unknown }>> {
+  const listed = await composeRepositoryOnboarding({
+    apiPool,
+    access: fixtureMember,
+    credentials: { credential: () => Promise.reject(new Error("unasked")) },
+    forgeApps: [],
+  }).projectRepositories(principal, partition);
+  assert.equal(listed.result, "Repositories");
+  if (listed.result !== "Repositories") return new Map();
+  return new Map(listed.repositories.map((row) => [row.repository, row]));
+}
+
 /** The listing as the API composes it, a binding never attempted carrying no attempt at all. */
 test("the listing answers each binding's last attempt, and nothing of one never attempted", async () => {
   const [imported] = atCommit;
@@ -458,17 +482,7 @@ test("the listing answers each binding's last attempt, and nothing of one never 
     bound.partition,
     { repository: attempted },
   );
-  const listed = await composeRepositoryOnboarding({
-    apiPool,
-    access: fixtureMember,
-    credentials: { credential: () => Promise.reject(new Error("unasked")) },
-    forgeApps: [],
-  }).projectRepositories(principal, bound.partition);
-  assert.equal(listed.result, "Repositories");
-  if (listed.result !== "Repositories") return;
-  const byRepository = new Map(
-    listed.repositories.map((row) => [row.repository, row]),
-  );
+  const byRepository = await listedOf(bound.partition);
   const lastImport = byRepository.get(attempted)?.lastImport;
   assert.deepEqual(lastImport && { ...lastImport, attemptedAt: "at" }, {
     attemptedAt: "at",
@@ -480,4 +494,51 @@ test("the listing answers each binding's last attempt, and nothing of one never 
     Object.hasOwn(byRepository.get(untouched) ?? {}, "lastImport"),
     false,
   );
+});
+
+/**
+ * A retired repository is released to any project, and an attempt is its
+ * binding's: a project that binds it after another retired it has attempted
+ * nothing of it, whether it is a sibling in the tenant or a project of the same
+ * name in another.
+ */
+test("a repository bound again after another project retired it carries none of that project's attempts", async () => {
+  const first = postgresHarnessPartition("import-attempt-released");
+  const sibling = { ...first, project: asProjectId(`project-${randomUUID()}`) };
+  const namesake = { ...first, tenant: asTenantId(`tenant-${randomUUID()}`) };
+  for (const partition of [first, sibling, namesake])
+    await harness.store.createProject(partition);
+  const repository = asRepositoryId(
+    await fixtureBoundRepository(harness, pool, first, "released"),
+  );
+  await postgresRepositoryConfigurationImportAttempts(apiPool).record({
+    partition: first,
+    repository,
+    commit: commitOf("1"),
+    outcome: { result: "Imported" },
+  });
+  const retirement = postgresProjectRepositoryRetirement(pool);
+  const hasAttempt = async (partition: Partition) => [
+    (await listedOf(partition)).has(repository),
+    Object.hasOwn(
+      (await listedOf(partition)).get(repository) ?? {},
+      "lastImport",
+    ),
+  ];
+  assert.deepEqual(await hasAttempt(first), [true, true]);
+
+  for (const [held, next] of [
+    [first, sibling],
+    [sibling, namesake],
+  ] as const) {
+    assert.equal(
+      (await retirement.retire({ partition: held, repository })).outcome,
+      "Retired",
+    );
+    assert.equal(
+      await fixtureBindRepository(harness, pool, next, repository),
+      "Bound",
+    );
+    assert.deepEqual(await hasAttempt(next), [true, false]);
+  }
 });
