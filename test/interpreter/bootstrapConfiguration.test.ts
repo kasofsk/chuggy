@@ -748,6 +748,11 @@ test("the worker is told any image may stand for the one named, what chuggy's ru
     ),
   );
   assert.ok(
+    told.includes(
+      "chuggy's node runs under an init the runtime ships, so I needs none, and a process a job orphans is reaped when it exits.",
+    ),
+  );
+  assert.ok(
     told.some(
       (line) =>
         line.includes("such as a database, is the image's own") &&
@@ -786,6 +791,36 @@ test("the worker is told its shell lines carry the commit the change started fro
   const published = JSON.stringify(configurationDocumentJsonSchema());
   assert.ok(published.includes("/bin/sh -eu"));
   assert.ok(published.includes(`reads it as ${guardedChangeBase}`));
+});
+
+/** The variables a job's shell lines find which job they run in by. */
+const jobVariables = [
+  "CHUG_TENANT",
+  "CHUG_PROJECT",
+  "CHUG_REPOSITORY",
+  "CHUG_TICKET",
+  "CHUG_ATTEMPT",
+  "CHUG_STAGE",
+];
+
+test("the worker and the published schema say which job a shell line runs in, and how its stage is spelled", () => {
+  const told = briefed("Work", "Prompt");
+  assert.ok(
+    told.some(
+      (line) =>
+        line.includes("Each L runs under sh -eu") &&
+        jobVariables.every((name) => line.includes(name)) &&
+        line.includes("Work, or Evaluation:N counted from one") &&
+        line.includes("always set"),
+    ),
+  );
+  const published = JSON.stringify(configurationDocumentJsonSchema());
+  for (const said of [
+    ...jobVariables,
+    "CHUG_REPOSITORY, the clone URL of the repository it runs in",
+    "CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one",
+  ])
+    assert.ok(published.includes(said), said);
 });
 
 /** A published schema's object, as far as these fields are read from it. */
