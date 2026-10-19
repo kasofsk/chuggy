@@ -27,6 +27,7 @@ import type {
   SetupRunnerHere,
   SetupRunnerRoom,
 } from "../app/core/setupRunnerMachine.ts";
+import type { SetupClaudeKind } from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupFate,
   SetupLack,
@@ -480,7 +481,7 @@ function here(
   held = false,
   own = false,
 ): SetupThing {
-  const looked: SetupRunnerHere = { room, held, own };
+  const looked: SetupRunnerHere = { room, held, own, claude: "Subscription" };
   return setupNext(lacking(lack), setupAnswersNone, looked).thing;
 }
 
@@ -541,7 +542,7 @@ test("with the project's work provided for and no runner of the person's own ser
 test("the person's own runner registered and not running is offered to be started here only where this machine holds a registration of it, and is otherwise theirs to start where it is", () => {
   expect(here({ lacks: "OwnLive", pooled: false }, roomy, false, true)).toEqual(
     offered(
-      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in. If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first. Tell me yes to go ahead.",
+      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
     ),
   );
   expect(here({ lacks: "OwnLive", pooled: true }, roomy)).toEqual(
@@ -586,7 +587,7 @@ test("where this machine could not take a runner the person is told why instead,
 
 test("a user the runner package bars from docker is told the package's reason and its way out before any runner is offered here, and the page for another machine", () => {
   const why =
-    "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+    "Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are user 1001.";
   const podman =
     "The package's own answer for any other user is rootless podman";
   const instead = `For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`;
@@ -625,7 +626,7 @@ test("a user the runner package bars from docker is told the package's reason an
 test("a runner registered and not running is offered to be started here only where this machine holds a registration for the project, said as held and as registered again where the site no longer knows it, and is otherwise the person's to start where it is", () => {
   expect(here({ lacks: "RunnerLive", own: false }, roomy, true)).toEqual(
     offered(
-      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first. Tell me yes to go ahead.",
+      "A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
     ),
   );
   for (const room of [roomy, { room: "Mac" }, { room: "Serviceless" }] as const)
@@ -634,9 +635,45 @@ test("a runner registered and not running is offered to be started here only whe
     );
   expect(here({ lacks: "RunnerLive", own: true }, roomy, true)).toMatchObject({
     tell: expect.stringMatching(
-      / If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first\. Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too\. Tell me yes to go ahead\.$/u,
+      / If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first\. Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too\. Tell me yes to go ahead\.$/u,
     ) as unknown,
   });
+});
+
+test("an offer names a Claude plan only where the runner's credential is a subscription's: another kind is named as its own, and one whose settings could not be read is not named at all", () => {
+  const said = (claude: SetupClaudeKind | undefined) =>
+    (
+      [
+        [{ lacks: "Runner", own: false }, false],
+        [{ lacks: "Runner", own: true }, false],
+        [{ lacks: "RunnerLive", own: false }, true],
+        [{ lacks: "Own", pooled: false }, false],
+      ] as const
+    ).map(([lack, held]) => {
+      const { thing } = setupNext(lacking(lack), setupAnswersNone, {
+        room: roomy,
+        held,
+        own: false,
+        claude,
+      });
+      return thing.thing === "Offer" ? thing.tell : "";
+    });
+  for (const tell of said("Subscription"))
+    expect(tell).toContain("in containers, on your Claude plan.");
+  for (const [claude, on] of [
+    ["ApiKey", "your Anthropic API key"],
+    ["Bedrock", "your Amazon Bedrock account"],
+    ["Vertex", "your Google Cloud project"],
+    ["Foundry", "your Microsoft Foundry resource"],
+  ] as const)
+    for (const tell of said(claude)) {
+      expect(tell, claude).toContain(`in containers, on ${on}.`);
+      expect(tell, claude).not.toContain("Claude plan");
+    }
+  for (const tell of said(undefined)) {
+    expect(tell).toContain("in containers.");
+    expect(tell).not.toContain("Claude plan");
+  }
 });
 
 test("what the machine showed moves no step but the runner's", () => {

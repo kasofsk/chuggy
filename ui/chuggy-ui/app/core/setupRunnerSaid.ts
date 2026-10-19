@@ -20,6 +20,79 @@ export const setupEngines = ["docker", "podman"] as const;
 
 export type SetupEngine = (typeof setupEngines)[number];
 
+/** The kinds of Claude credential the runner package runs its work on, by its own names; a machine with no settings is given the first. */
+export const setupClaudeKinds = [
+  "Subscription",
+  "ApiKey",
+  "Bedrock",
+  "Vertex",
+  "Foundry",
+] as const;
+
+export type SetupClaudeKind = (typeof setupClaudeKinds)[number];
+
+/**
+ * The runner's Claude credential: its kind and the one file that is its
+ * secret, and of a Bedrock credential the profile it reads of an AWS
+ * credentials file, none where the file is a Bedrock API key.
+ */
+export type SetupClaudeCredential =
+  | {
+      readonly kind: Exclude<SetupClaudeKind, "Bedrock">;
+      readonly path: string;
+    }
+  | {
+      readonly kind: "Bedrock";
+      readonly path: string;
+      readonly profile: string | undefined;
+    };
+
+/** Each kind as the person is told it: the credential, what makes one where its file holds it alone, and what the work then runs on. */
+const setupClaudeWords: Record<
+  SetupClaudeKind,
+  { readonly credential: string; readonly made: string; readonly on: string }
+> = {
+  Subscription: {
+    credential: "Claude login",
+    made: "the login the command claude setup-token makes, which needs a Claude plan that allows it",
+    on: "your Claude plan",
+  },
+  ApiKey: {
+    credential: "Anthropic API key",
+    made: "a key from the Claude Console, made in a workspace",
+    on: "your Anthropic API key",
+  },
+  Bedrock: {
+    credential: "Bedrock credential",
+    made: "a Bedrock API key",
+    on: "your Amazon Bedrock account",
+  },
+  Vertex: {
+    credential: "Google Cloud service account key",
+    made: "the JSON key Google Cloud made for a service account",
+    on: "your Google Cloud project",
+  },
+  Foundry: {
+    credential: "Foundry API key",
+    made: "a key of the Microsoft Foundry resource",
+    on: "your Microsoft Foundry resource",
+  },
+};
+
+/** What the credential is and where it is kept, as the person is told it: its secret alone in its file, or an AWS credentials file whose profile holds an access key. */
+function setupClaudeSaved(credential: SetupClaudeCredential): string {
+  const { path } = credential;
+  const kept = "readable only by you (mode 600)";
+  return credential.kind === "Bedrock" && credential.profile !== undefined
+    ? `It is an AWS credentials file, saved in ${path} and ${kept}, whose [${credential.profile}] profile holds aws_access_key_id and aws_secret_access_key.`
+    : `It is ${setupClaudeWords[credential.kind].made}, saved alone in ${path} and ${kept}.`;
+}
+
+/** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
+export function setupClaudeOn(kind: SetupClaudeKind): string {
+  return setupClaudeWords[kind].on;
+}
+
 /** How an engine answered this user: it did, it did not, or there is no such command. */
 export interface SetupEngineAsked {
   readonly engine: SetupEngine;
@@ -100,9 +173,18 @@ export type SetupChildFailed =
 export type SetupRunnerNote =
   | { readonly note: "Engine"; readonly engine: SetupEngine }
   | {
-      readonly note: "Package" | "Installed" | "Replaced";
+      readonly note: "Package";
       readonly command: string;
       readonly version: string | undefined;
+    }
+  | {
+      readonly note: "Installed";
+      readonly command: string;
+      readonly version: string | undefined;
+      /** The package found before the install, where it is elsewhere and still there. */
+      readonly kept:
+        | { readonly command: string; readonly version: string | undefined }
+        | undefined;
     }
   | {
       readonly note: "Outdated";
@@ -116,7 +198,10 @@ export type SetupRunnerNote =
       readonly path: string;
       readonly engine: SetupEngine;
     }
-  | { readonly note: "Login"; readonly path: string }
+  | {
+      readonly note: "Login";
+      readonly credential: SetupClaudeCredential;
+    }
   | { readonly note: "Pool"; readonly path: string }
   | { readonly note: "PoolGone"; readonly path: string; readonly pool: string }
   | { readonly note: "Registered"; readonly path: string }
@@ -144,13 +229,16 @@ export type SetupRunnerNote =
 
 /**
  * What the runner package's own check looks at, by the names it prints them
- * under, each with what a failure of it means in this program's words.
+ * under, each with what a failure of it means in this program's words. The
+ * credential's check is "Claude token file" before the release that takes
+ * `claudeCredential` (0.13.0), and "Claude credential" from that release on.
  */
 export const setupRunnerChecks = {
   "pool file": "this machine's registration could not be read",
   "runner configuration": "the runner's settings are not as it needs them",
   "runtime directory": "the runner has nowhere to keep what it runs with",
   "Claude token file": "the runner's Claude login is not as it needs it",
+  "Claude credential": "the runner's Claude credential is not as it needs it",
   "podman credential helpers": "podman would present logins of its own",
   "container engine": "the runner could not use the container engine",
   "job network": "the runner could not read its containers' network",
@@ -209,7 +297,11 @@ export type SetupRunnerStop =
       readonly path: string;
       readonly guide: string;
     }
-  | { readonly stop: "LoginMissing"; readonly path: string }
+  | {
+      readonly stop: "LoginMissing";
+      readonly credential: SetupClaudeCredential;
+      readonly guide: string;
+    }
   | { readonly stop: "Npmless" }
   | { readonly stop: "Unwritten"; readonly path: string }
   | {
@@ -221,6 +313,13 @@ export type SetupRunnerStop =
       readonly stop: "Unseen";
       readonly act: SetupRunnerAct;
       readonly path: string;
+    }
+  | {
+      /** The install ended well and left a package older than the run can use. */
+      readonly stop: "Behind";
+      readonly command: string;
+      readonly version: string | undefined;
+      readonly least: string;
     }
   | {
       /** The package would not write its service over the unit already at `path`. */
@@ -472,12 +571,7 @@ export function setupRunnerNoteSaid(
     case "Installed":
       return [
         "did",
-        `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
-      ];
-    case "Replaced":
-      return [
-        "did",
-        `replaced the runner package with ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
+        `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}${note.kept === undefined ? "" : `, and ${setupVersioned(setupProgramOf(note.kept.command), note.kept.version)} is still at ${note.kept.command}`}`,
       ];
     case "Settings":
       return ["found", `the runner's settings are in ${note.path}`];
@@ -487,7 +581,10 @@ export function setupRunnerNoteSaid(
         `wrote the runner's settings to ${note.path}: its guide's own, with ${note.engine} as the engine`,
       ];
     case "Login":
-      return ["found", `the runner's Claude login is in ${note.path}`];
+      return [
+        "found",
+        `the runner's ${setupClaudeWords[note.credential.kind].credential} is in ${note.credential.path}`,
+      ];
     case "Pool":
     case "PoolGone":
     case "Registered":
@@ -571,12 +668,12 @@ export interface SetupDockerBarredTold {
 const setupPodmanInstead =
   "The package's own answer for any other user is rootless podman";
 
-/** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude login. */
+/** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude credential. */
 export function setupDockerBarredTold(
   user: string | undefined,
   how: SetupDockerBarred,
 ): SetupDockerBarredTold {
-  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
+  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
   if (how.barred === "Named")
     return {
       why,
@@ -686,6 +783,22 @@ function setupActSaid(act: SetupRunnerAct, found: string): SetupRunnerStopSaid {
   };
 }
 
+/** An install that left a package older than the run can use, which running again would install again until the package has a newer release. */
+function setupBehindSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Behind" }>,
+): SetupRunnerStopSaid {
+  const program = setupProgramOf(stop.command);
+  const left = setupVersioned(program, stop.version);
+  const unread =
+    stop.version === undefined ? " and could not read its version" : "";
+  return {
+    found: `installing the runner package left ${left} at ${stop.command}, and chuggy setup needs ${stop.least} or later${unread}`,
+    tell: `Installing the runner package left ${left}, and chuggy setup needs ${stop.least} or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer ${program} is out.`,
+    when: `once the person says a newer ${program} is out`,
+    again: "Runner",
+  };
+}
+
 /**
  * The package's refusals that running again does not mend, each with what
  * would have to change first. Every try has the site make another token, so
@@ -778,6 +891,24 @@ function setupMintSaid(
   };
 }
 
+/** No credential where the runner's settings say it is, or at the login's own place where there are no settings; a subscription's is what a newcomer is told to make. */
+function setupLoginMissingSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "LoginMissing" }>,
+): SetupRunnerStopSaid {
+  const { kind, path } = stop.credential;
+  const { credential } = setupClaudeWords[kind];
+  const saved = setupClaudeSaved(stop.credential);
+  return {
+    found: `the runner has no ${credential} on this machine: nothing is at ${path}`,
+    tell:
+      kind === "Subscription"
+        ? `The runner needs a Claude login of its own on this machine, and there is none at ${path}, ${setupUnchanged}. ${saved} An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${stop.guide}. Tell me once one is there.`
+        : `The runner's settings name its ${credential} as ${path}, and nothing is there, ${setupUnchanged}. ${saved} Tell me once it is there.`,
+    when: `once the person says the runner's ${credential} is on this machine`,
+    again: "Runner",
+  };
+}
+
 function setupMachineSaid(
   stop: Extract<
     SetupRunnerStop,
@@ -811,17 +942,12 @@ function setupMachineSaid(
     case "SettingsUnread":
       return {
         found: `${stop.path} is there and does not read as the runner's settings`,
-        tell: `The runner's settings file, ${stop.path}, is there, and chuggy setup could not read from it which engine and which Claude login the runner uses, ${setupUnchanged}. The runner's guide says what the file holds: ${stop.guide}. Tell me once it is mended.`,
+        tell: `The runner's settings file, ${stop.path}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, ${setupUnchanged}. The runner's guide says what the file holds: ${stop.guide}. Tell me once it is mended.`,
         when: `once the person says ${stop.path} is mended`,
         again: "Runner",
       };
     case "LoginMissing":
-      return {
-        found: `the runner has no Claude login on this machine: nothing is at ${stop.path}`,
-        tell: `The runner needs a Claude login of its own on this machine, and there is none at ${stop.path}, ${setupUnchanged}. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${stop.path} and readable only by you (mode 600). Tell me once it is there.`,
-        when: "once the person says the runner's Claude login is on this machine",
-        again: "Runner",
-      };
+      return setupLoginMissingSaid(stop);
     case "Npmless":
       return {
         found:
@@ -1009,6 +1135,8 @@ export function setupRunnerStopSaid(
         stop.act,
         `ended well, and what it makes is not at ${stop.path}`,
       );
+    case "Behind":
+      return setupBehindSaid(stop);
     case "ServiceRefused":
       return setupServiceRefusedSaid(stop);
     case "MintRefused":
@@ -1048,6 +1176,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Unwritten":
     case "Act":
     case "Unseen":
+    case "Behind":
     case "ServiceRefused":
     case "MintRefused":
     case "CheckFailed":

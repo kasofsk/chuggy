@@ -6,6 +6,7 @@
 
 import { expect, test } from "vitest";
 
+import { runnerPackageOffered } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
   setupRegisterRefusal,
@@ -24,7 +25,13 @@ import {
   setupExcerptCharsMax,
   setupRedacted,
 } from "../app/core/setupText.ts";
-import { boxLogin, boxPools, boxSettings, boxUnits } from "./setupRunnerBox.ts";
+import {
+  boxLogin,
+  boxOwn,
+  boxPools,
+  boxSettings,
+  boxUnits,
+} from "./setupRunnerBox.ts";
 import {
   rosterCommand,
   rosterLingerRefusal,
@@ -141,12 +148,17 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
   ],
   LoginMissing: [
-    [
-      `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-      0,
-      "Runner",
-    ],
-  ],
+    "Claude login",
+    "Anthropic API key",
+    "Bedrock credential",
+    "Bedrock credential",
+    "Google Cloud service account key",
+    "Foundry API key",
+  ].map((credential) => [
+    `the runner has no ${credential} on this machine: nothing is at ${boxLogin}`,
+    0,
+    "Runner",
+  ]),
   Npmless: [
     [
       "the runner package is not installed at a version chuggy setup can use, and npm did not answer",
@@ -242,6 +254,18 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
           "Runner",
         ] as const,
     ),
+  ],
+  Behind: [
+    [
+      `installing the runner package left chuggy-linux 0.12.0 at ${rosterCommand}, and chuggy setup needs 0.13.0 or later`,
+      1,
+      "Runner",
+    ],
+    [
+      `installing the runner package left chuggy-linux at ${rosterCommand}, and chuggy setup needs 0.13.0 or later and could not read its version`,
+      1,
+      "Runner",
+    ],
   ],
   Unseen: [
     [
@@ -524,7 +548,7 @@ test("a user the package bars from docker is told the package's reason and who t
     setupRunnerStopSaid(stop, "acme/widgets"),
   );
   const why = (who: string) =>
-    `Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${who}.`;
+    `Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${who}.`;
   const podman =
     "The package's own answer for any other user is rootless podman";
   expect(named).toMatchObject({
@@ -540,16 +564,34 @@ test("a user the package bars from docker is told the package's reason and who t
   );
 });
 
-test("a package older than the least, or of a version that cannot be read, is said as found beside the version chuggy setup needs, and the one put in its place as replacing it", () => {
+test("a package older than the least, or of a version that cannot be read, is said as found beside the version chuggy setup needs, and the one installed by its version and where it is, beside the one found where that is elsewhere and still there", () => {
   expect(
-    [...runnerNotes.Outdated, ...runnerNotes.Replaced].map((note) =>
+    [...runnerNotes.Outdated, ...runnerNotes.Installed].map((note) =>
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     ),
   ).toEqual([
     `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later`,
     `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later and could not read its version`,
-    `did: replaced the runner package with chuggy-linux 0.4.0, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux 0.4.0, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
   ]);
+});
+
+test("an install that leaves a package older than the run can use says the version it left and the version needed, and never that what it makes is missing or that running again now would end otherwise", () => {
+  const said = setupRunnerStopSaid(
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: "0.12.0",
+      least: "0.13.0",
+    },
+    "acme/widgets",
+  );
+  expect(said.tell).toBe(
+    "Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
+  );
+  expect(said.when).toBe("once the person says a newer chuggy-linux is out");
+  expect(said.found).not.toContain("is not at");
 });
 
 test("each thing a run found is said as found and each thing it did as did, in words that name the path, the program or the service", () => {
@@ -589,7 +631,6 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Package: ["found"],
     Outdated: ["found"],
     Installed: ["did"],
-    Replaced: ["did"],
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],
@@ -617,6 +658,21 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Started: ["did"],
     Restarted: ["did"],
   });
+});
+
+test("a Claude credential found is said by its kind's own name, beside the file it is in", () => {
+  expect(
+    runnerNotes.Login.map((note) =>
+      setupRunnerNoteSaid(note, "acme/widgets").join(": "),
+    ),
+  ).toEqual([
+    `found: the runner's Claude login is in ${boxLogin}`,
+    `found: the runner's Anthropic API key is in ${boxLogin}`,
+    `found: the runner's Bedrock credential is in ${boxLogin}`,
+    `found: the runner's Bedrock credential is in ${boxLogin}`,
+    `found: the runner's Google Cloud service account key is in ${boxLogin}`,
+    `found: the runner's Foundry API key is in ${boxLogin}`,
+  ]);
 });
 
 test("the person's own runner is said as theirs, apart from the project's: found on this machine, on another, or registered here, and the project found among what it serves or added", () => {
@@ -655,15 +711,49 @@ test("a workspace that does not let the person register a runner of their own is
   );
 });
 
-test("with no Claude login the person is told what login the runner needs, where, and that only they may read it, and nothing forbids the agent from walking them through it", () => {
+test("with no Claude login the person is told what login the runner needs, where, and that only they may read it, that a key or a cloud provider's credential can be used instead, and nothing forbids the agent from walking them through it", () => {
   const [missing] = runnerStops.LoginMissing;
   if (missing === undefined) throw new Error("no LoginMissing in the roster");
   expect(setupRunnerStopSaid(missing, "acme/widgets")).toEqual({
     found: `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
     when: "once the person says the runner's Claude login is on this machine",
     again: "Runner",
   });
+});
+
+test("with no credential where the settings name one of another kind, the person is told that kind's credential, what makes one and where, of Bedrock only the one of its two its settings name, and a Claude plan is never named", () => {
+  const told = runnerStops.LoginMissing.slice(1).map(
+    (stop) => setupRunnerStopSaid(stop, "acme/widgets").tell,
+  );
+  const named = (credential: string) =>
+    `The runner's settings name its ${credential} as ${boxLogin}, and nothing is there, so nothing was changed on this machine.`;
+  const kept = "readable only by you (mode 600)";
+  const tell = "Tell me once it is there.";
+  expect(told).toEqual([
+    ...[
+      [
+        "Anthropic API key",
+        "a key from the Claude Console, made in a workspace",
+      ],
+      ["Bedrock credential", "a Bedrock API key"],
+    ].map(
+      ([credential = "", made]) =>
+        `${named(credential)} It is ${made}, saved alone in ${boxLogin} and ${kept}. ${tell}`,
+    ),
+    `${named("Bedrock credential")} It is an AWS credentials file, saved in ${boxLogin} and ${kept}, whose [chuggy] profile holds aws_access_key_id and aws_secret_access_key. ${tell}`,
+    ...[
+      [
+        "Google Cloud service account key",
+        "the JSON key Google Cloud made for a service account",
+      ],
+      ["Foundry API key", "a key of the Microsoft Foundry resource"],
+    ].map(
+      ([credential = "", made]) =>
+        `${named(credential)} It is ${made}, saved alone in ${boxLogin} and ${kept}. ${tell}`,
+    ),
+  ]);
+  for (const tell of told) expect(tell).not.toContain("Claude plan");
 });
 
 test("the first line of the check under a mark is found among the lines that are ok or not a check's at all, with the check it is of where this program knows it", () => {
@@ -694,12 +784,13 @@ test("the first line of the check under a mark is found among the lines that are
   expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
 });
 
-test("the checks this program has words for are the ones the package's doctor prints, in its order", () => {
+test("the checks this program has words for are the ones the package's doctor prints, in its order, the credential's under the name before the release that takes claudeCredential (0.13.0) and under the one from it on", () => {
   expect(Object.keys(setupRunnerChecks)).toEqual([
     "pool file",
     "runner configuration",
     "runtime directory",
     "Claude token file",
+    "Claude credential",
     "podman credential helpers",
     "container engine",
     "job network",

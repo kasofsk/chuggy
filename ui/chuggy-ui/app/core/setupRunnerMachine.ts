@@ -11,10 +11,10 @@
  * its Claude login, its registrations and its units, how it names a pool file
  * for a project and the file of the person's own runner for a workspace, and
  * the unit for either. A settings file is read for the engine and the Claude
- * login it names and for nothing else, and a registration and a Claude login
- * are never read at all, only looked for. The package is installed by the
- * console's own install command, under the person's own prefix where the
- * machine's is not theirs to write.
+ * credential it names and for nothing else, and a registration and a Claude
+ * credential's file are never read at all, only looked for. The package is
+ * installed by the console's own install command, under the person's own
+ * prefix where the machine's is not theirs to write.
  */
 
 import { z } from "zod";
@@ -36,6 +36,8 @@ import {
 } from "./setupRunnerSaid.ts";
 import type {
   SetupChildFailed,
+  SetupClaudeCredential,
+  SetupClaudeKind,
   SetupDockerBarred,
   SetupEngine,
   SetupEngineAsked,
@@ -237,13 +239,78 @@ export async function setupRunnerRoom(
   return setupEngineRoom(ports, named);
 }
 
+const setupWholePath = z.string().startsWith("/");
+
+/** A Claude credential as the package's settings name one: its kind, and its one file under the key that kind names it by. */
+const setupCredentialSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("Subscription"), tokenFile: setupWholePath }),
+  z.object({ kind: z.literal("ApiKey"), apiKeyFile: setupWholePath }),
+  z.object({
+    kind: z.literal("Bedrock"),
+    apiKeyFile: setupWholePath.optional(),
+    credentialsFile: setupWholePath.optional(),
+    profile: z.string().optional(),
+  }),
+  z.object({ kind: z.literal("Vertex"), credentialsFile: setupWholePath }),
+  z.object({ kind: z.literal("Foundry"), apiKeyFile: setupWholePath }),
+]);
+
 /** What a settings file names that this program goes by, the rest of it never held: `environment` there may carry a person's secrets. */
 const setupSettingsSchema = z.object({
-  claudeTokenFile: z.string().startsWith("/"),
+  claudeTokenFile: setupWholePath.optional(),
+  claudeCredential: setupCredentialSchema.optional(),
   engine: z.enum(setupEngines).optional(),
 });
 
-/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude login they name. */
+/**
+ * A credential the package's settings name, where they name it as the package
+ * takes it: one file, and of a Bedrock credential either a Bedrock API key's
+ * file or an AWS credentials file and the profile of it to read, `default`
+ * where none is named.
+ */
+function setupCredentialHeld(
+  credential: z.infer<typeof setupCredentialSchema>,
+): SetupClaudeCredential | undefined {
+  switch (credential.kind) {
+    case "Subscription":
+      return { kind: "Subscription", path: credential.tokenFile };
+    case "Bedrock": {
+      const { apiKeyFile, credentialsFile, profile } = credential;
+      if (credentialsFile !== undefined)
+        return apiKeyFile === undefined
+          ? {
+              kind: "Bedrock",
+              path: credentialsFile,
+              profile: profile ?? "default",
+            }
+          : undefined;
+      return apiKeyFile !== undefined && profile === undefined
+        ? { kind: "Bedrock", path: apiKeyFile, profile: undefined }
+        : undefined;
+    }
+    case "Vertex":
+      return { kind: "Vertex", path: credential.credentialsFile };
+    case "ApiKey":
+    case "Foundry":
+      return { kind: credential.kind, path: credential.apiKeyFile };
+  }
+}
+
+/** The Claude credential settings name, where they name one as the package takes it: `claudeTokenFile`, a subscription's, or `claudeCredential`, of any kind, and never both. */
+function setupCredentialNamed(
+  named: z.infer<typeof setupSettingsSchema>,
+): SetupClaudeCredential | undefined {
+  const { claudeTokenFile, claudeCredential } = named;
+  if (claudeCredential === undefined)
+    return claudeTokenFile === undefined
+      ? undefined
+      : { kind: "Subscription", path: claudeTokenFile };
+  return claudeTokenFile === undefined
+    ? setupCredentialHeld(claudeCredential)
+    : undefined;
+}
+
+/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude credential they name and the oldest package that reads them. */
 export type SetupSettingsRead =
   | { readonly settings: "Absent" }
   | { readonly settings: "Unread" }
@@ -251,7 +318,8 @@ export type SetupSettingsRead =
       readonly settings: "Read";
       readonly path: string;
       readonly engine: SetupEngine;
-      readonly login: string;
+      readonly credential: SetupClaudeCredential;
+      readonly least: string;
     };
 
 function setupJson(text: string | undefined): unknown {
@@ -273,12 +341,19 @@ export function setupSettingsRead(
   const parsed = setupSettingsSchema.safeParse(
     setupJson(ports.disk.text(places.settings, setupTextBytesMax)),
   );
-  return parsed.success
+  const credential = parsed.success
+    ? setupCredentialNamed(parsed.data)
+    : undefined;
+  return parsed.success && credential !== undefined
     ? {
         settings: "Read",
         path: places.settings,
         engine: parsed.data.engine ?? setupEngines[0],
-        login: parsed.data.claudeTokenFile,
+        credential,
+        least:
+          parsed.data.claudeCredential === undefined
+            ? setupPackageLeast
+            : setupPackageCredentialLeast,
       }
     : { settings: "Unread" };
 }
@@ -321,17 +396,23 @@ const setupVersionSchema = z.object({
 /** The first version of the runner package whose `register` takes `--personal`, which is the oldest a run can use. */
 export const setupPackageLeast = "0.4.0";
 
+/** The first version of the runner package whose settings may name `claudeCredential`, which is the oldest a run can use where they do. */
+export const setupPackageCredentialLeast = "0.13.0";
+
 function setupVersionParts(version: string): readonly number[] {
   return version.split(/[.+-]/u, 3).map(Number);
 }
 
-/** Whether a package found is one a run can use: its version read, and none older than the least. */
-export function setupPackageCurrent(found: SetupPackageFound): boolean {
+/** Whether a package found is one a run can use: its version read, and none older than `least`. */
+export function setupPackageCurrent(
+  found: SetupPackageFound,
+  least: string,
+): boolean {
   if (found.version === undefined) return false;
   const had = setupVersionParts(found.version);
-  const least = setupVersionParts(setupPackageLeast);
-  const at = had.findIndex((part, index) => part !== least[index]);
-  return at < 0 || (had[at] ?? 0) > (least[at] ?? 0);
+  const needed = setupVersionParts(least);
+  const at = had.findIndex((part, index) => part !== needed[index]);
+  return at < 0 || (had[at] ?? 0) > (needed[at] ?? 0);
 }
 
 function setupCommandIn(prefix: string): string {
@@ -365,10 +446,11 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use. */
+/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
+  least: string,
 ): Promise<SetupPackageProbe> {
   const prefix = setupPrefixRead(
     await ports.process.read(
@@ -385,8 +467,17 @@ export async function setupPackageProbed(
     prefix === undefined ? undefined : setupPackageIn(ports, prefix),
     setupPackageIn(ports, places.own),
   ].filter((there) => there !== undefined);
-  const found = held.find(setupPackageCurrent) ?? held[0];
+  const found =
+    held.find((there) => setupPackageCurrent(there, least)) ?? held[0];
   return { found, prefix, mine };
+}
+
+/** The prefix an install puts the package under: npm's machine-wide one where it is this person's to write, and otherwise their own. */
+function setupInstallPrefix(
+  places: SetupRunnerPlaces,
+  probe: SetupPackageProbe,
+): string {
+  return probe.mine && probe.prefix !== undefined ? probe.prefix : places.own;
 }
 
 /** Where an install would put the command, which is where it is looked for afterwards. */
@@ -394,9 +485,16 @@ export function setupInstallCommandPath(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
 ): string {
-  return setupCommandIn(
-    probe.mine && probe.prefix !== undefined ? probe.prefix : places.own,
-  );
+  return setupCommandIn(setupInstallPrefix(places, probe));
+}
+
+/** The package where an install puts one, whatever its version, or nothing where there is none. */
+export function setupPackageInstalled(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  probe: SetupPackageProbe,
+): SetupPackageFound | undefined {
+  return setupPackageIn(ports, setupInstallPrefix(places, probe));
 }
 
 /** The console's own install command, word for word, with the person's own prefix named where the machine's is not theirs to write. */
@@ -431,6 +529,8 @@ export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
   readonly held: boolean;
   readonly own: boolean;
+  /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
+  readonly claude: SetupClaudeKind | undefined;
 }
 
 /** One part of a registration's file name as the package writes it: letters, digits and `-` as themselves, and every other octet by its number. */
@@ -516,13 +616,32 @@ export function setupOwnFiles(
     });
 }
 
+/** The kind of credential settings would run work on, a run writing a subscription's where there are none. */
+function setupClaudeHere(
+  settings: SetupSettingsRead,
+): SetupClaudeKind | undefined {
+  switch (settings.settings) {
+    case "Absent":
+      return "Subscription";
+    case "Unread":
+      return undefined;
+    case "Read":
+      return settings.credential.kind;
+  }
+}
+
 /** Looks at the machine as `runner` would before it did anything, and changes nothing; a Mac is asked nothing at all. */
 export async function setupRunnerHere(
   ports: SetupPorts,
   partition: PartitionIdentity,
 ): Promise<SetupRunnerHere> {
   if (ports.surroundings.platform !== setupRunnerPlatform)
-    return { room: { room: "Mac" }, held: false, own: false };
+    return {
+      room: { room: "Mac" },
+      held: false,
+      own: false,
+      claude: undefined,
+    };
   const places = setupRunnerPlaces(ports.surroundings);
   const settings = setupSettingsRead(ports, places);
   const room = await setupRunnerRoom(
@@ -534,6 +653,7 @@ export async function setupRunnerHere(
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
     own: open && setupOwnFiles(ports, places, partition.tenant).length > 0,
+    claude: setupClaudeHere(settings),
   };
 }
 

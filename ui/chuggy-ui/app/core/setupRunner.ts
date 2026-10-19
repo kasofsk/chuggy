@@ -4,7 +4,7 @@
  * sees it live; then, where the person's chats in the project run on runners,
  * the same machine made their own runner, serving the project, and said to be
  * done only once the site sees that live too. One package, one settings file
- * and one Claude login serve both.
+ * and one Claude credential serve both.
  *
  * The machine is the record of the machine's things and the site of the
  * site's, and this program keeps neither. Every act is preceded by the probe
@@ -15,7 +15,7 @@
  * having been changed is looked at before the first act: where the project's
  * work runs and whether this person may register for it, the machine's user
  * services, a container engine the package takes from this user, the
- * runner's settings and its Claude login, and whether the package could be
+ * runner's settings and its Claude credential, and whether the package could be
  * installed at all.
  *
  * A registration is good where the machine holds a pool file for the project
@@ -81,6 +81,7 @@ import {
   setupLingerRead,
   setupOwnFiles,
   setupPackageCurrent,
+  setupPackageInstalled,
   setupPackageLeast,
   setupPackageProbed,
   setupPoolFiles,
@@ -107,6 +108,7 @@ import type {
 } from "./setupRunnerMachine.ts";
 import { setupCheckFirst } from "./setupRunnerSaid.ts";
 import type {
+  SetupClaudeCredential,
   SetupEngine,
   SetupRunnerAct,
   SetupRunnerEnded,
@@ -299,7 +301,9 @@ interface Machine {
     SetupSettingsRead,
     { readonly settings: "Unread" }
   >;
-  readonly login: string;
+  readonly credential: SetupClaudeCredential;
+  /** The oldest package that reads the settings: those found, or those a machine with none is given. */
+  readonly least: string;
   readonly probe: SetupPackageProbe;
 }
 
@@ -316,14 +320,20 @@ async function setupMachineProbed(run: Run): Promise<Machine | Halt> {
   notes.push({ note: "Engine", engine: room.engine });
   if (settings.settings === "Read")
     notes.push({ note: "Settings", path: places.settings });
-  const login = settings.settings === "Read" ? settings.login : places.login;
-  if (ports.disk.kind(login) !== "File")
-    return halt({ stop: "LoginMissing", path: login });
-  notes.push({ note: "Login", path: login });
-  const probe = await setupPackageProbed(ports, places);
-  const usable = probe.found !== undefined && setupPackageCurrent(probe.found);
+  const credential: SetupClaudeCredential =
+    settings.settings === "Read"
+      ? settings.credential
+      : { kind: "Subscription", path: places.login };
+  if (ports.disk.kind(credential.path) !== "File")
+    return halt({ stop: "LoginMissing", credential, guide });
+  notes.push({ note: "Login", credential });
+  const least =
+    settings.settings === "Read" ? settings.least : setupPackageLeast;
+  const probe = await setupPackageProbed(ports, places, least);
+  const usable =
+    probe.found !== undefined && setupPackageCurrent(probe.found, least);
   if (!usable && probe.prefix === undefined) return halt({ stop: "Npmless" });
-  return { engine: room.engine, settings, login, probe };
+  return { engine: room.engine, settings, credential, least, probe };
 }
 
 interface Exited {
@@ -362,30 +372,40 @@ async function setupPackageHad(
   run: Run,
   machine: Machine,
 ): Promise<Packaged | Halt> {
+  const { least } = machine;
   const found = machine.probe.found;
-  if (found !== undefined && setupPackageCurrent(found)) {
+  if (found !== undefined && setupPackageCurrent(found, least)) {
     run.notes.push({ note: "Package", ...found });
     return { command: found.command, installed: false };
   }
   if (found !== undefined)
-    run.notes.push({ note: "Outdated", ...found, least: setupPackageLeast });
+    run.notes.push({ note: "Outdated", ...found, least });
   const acted = await setupActed(
     run,
     "Install",
     setupInstallCommand(run.places, machine.probe),
   );
   if (halted(acted)) return acted;
-  const after = (await setupPackageProbed(run.ports, run.places)).found;
-  if (after === undefined || !setupPackageCurrent(after))
-    return halt({
-      stop: "Unseen",
-      act: "Install",
-      path: setupInstallCommandPath(run.places, machine.probe),
-    });
-  run.notes.push({
-    note: found === undefined ? "Installed" : "Replaced",
-    ...after,
-  });
+  const after = (await setupPackageProbed(run.ports, run.places, least)).found;
+  if (after === undefined || !setupPackageCurrent(after, least)) {
+    const made = setupPackageInstalled(run.ports, run.places, machine.probe);
+    return halt(
+      made === undefined
+        ? {
+            stop: "Unseen",
+            act: "Install",
+            path: setupInstallCommandPath(run.places, machine.probe),
+          }
+        : { stop: "Behind", ...made, least },
+    );
+  }
+  const kept =
+    found !== undefined &&
+    found.command !== after.command &&
+    run.ports.disk.kind(found.command) === "File"
+      ? found
+      : undefined;
+  run.notes.push({ note: "Installed", ...after, kept });
   return { command: after.command, installed: true };
 }
 
@@ -394,7 +414,10 @@ function setupSettingsHad(run: Run, machine: Machine): Halt | undefined {
   if (machine.settings.settings !== "Absent") return undefined;
   const path = run.places.settings;
   try {
-    run.ports.disk.make(path, setupSettingsText(machine.engine, machine.login));
+    run.ports.disk.make(
+      path,
+      setupSettingsText(machine.engine, machine.credential.path),
+    );
   } catch (failure: unknown) {
     if (!(failure instanceof SetupMachineError)) throw failure;
     return halt({ stop: "Unwritten", path });

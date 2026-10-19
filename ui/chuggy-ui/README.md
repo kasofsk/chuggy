@@ -209,14 +209,16 @@ Linux machine it is run on, and is done once the site sees the runner live;
 then, where her chats in the project run on runners, it makes the same machine
 her own runner, as the console's My runner page does, adds the project to what
 it serves, and is done once the site sees that live too. `--wait-secs` bounds
-each wait. One package, one settings file and one Claude login serve both
+each wait. One package, one settings file and one Claude credential serve both
 services. Her own runner the site already has is kept: where this machine holds
 no registration of it, it is on another machine and is only given the project. The machine is the record of the machine's
 things and the site of the site's, and the program keeps neither: every act is
 preceded by the probe that would show it done, so the command is run again
 after any failure and picks up where things stand. In order it has the runner
 package installed, by the console's own install command and under a prefix in
-her home directory where npm's own is not hers to write; the package's
+her home directory where npm's own is not hers to write, where there is none
+or the one there is too old for the settings, which need a newer one where they
+name `claudeCredential` than where they name `claudeTokenFile`; the package's
 settings written, with its guide's values, where there are none; the machine
 registered; the package's own check passed; its service installed; her
 services set to outlive a logout; and the service enabled and started. For a
@@ -227,16 +229,18 @@ lets her, and adding the project to what it serves is the other write. Every try
 for the machine's processor or its name is not offered again as the machine
 stands.
 It takes no password: a child has no terminal to ask on, and what wants one is
-told to her to do herself. It does not make the runner's Claude login, and
-stops where there is none, saying it is the login `claude setup-token` makes,
-saved alone in the file it names and readable only by her. The runner package takes docker from one user of a
-machine only, so docker is asked of that user alone and podman of any other,
-and a user left with no engine is stopped before anything is changed. Nothing
-a child prints is printed as it came: a failure, or a check that passed with a
-warning, keeps one short excerpt with the run's secrets struck out; a
-service's state is said only where it is one word; and of the registration,
-which is handed the token, nothing it printed is kept but which of the
-package's own refusals it was.
+told to her to do herself. It does not make the runner's Claude credential, and
+stops where there is none, saying what makes one and the file it is to be in,
+readable only by her. A machine with no settings is given a
+subscription's, the login `claude setup-token` makes, and that stop also names
+an Anthropic API key or a cloud provider's credential as what can serve instead.
+The runner package takes docker from one user of a machine only, so docker is
+asked of that user alone and podman of any other, and a user left with no engine
+is stopped before anything is changed. Nothing a child prints is printed as it
+came: a failure, or a check that passed with a warning, keeps one short excerpt
+with the run's secrets struck out; a service's state is said only where it is
+one word; and of the registration, which is handed the token, nothing it printed
+is kept but which of the package's own refusals it was.
 
 ## The session
 

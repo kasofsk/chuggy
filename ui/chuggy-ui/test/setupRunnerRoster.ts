@@ -7,6 +7,7 @@
 import { runnerPackageOffered } from "../app/core/runners.ts";
 import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
 import type {
+  SetupClaudeCredential,
   SetupEngine,
   SetupRegisterRefusal,
   SetupRunnerAct,
@@ -15,6 +16,7 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxLogin,
+  boxOwn,
   boxOwnFile,
   boxOwnUnitName,
   boxPoolFile,
@@ -34,6 +36,16 @@ export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
 export const rosterOwn = boxOwnFile("acme", setupSiteMember);
 export const rosterOwnUnit = boxOwnUnitName("acme", setupSiteMember);
+
+/** A Claude credential of each kind, and of Bedrock its API key and an AWS credentials file's profile, each where a stand-in machine keeps its login. */
+export const rosterCredentials: readonly SetupClaudeCredential[] = [
+  { kind: "Subscription", path: boxLogin },
+  { kind: "ApiKey", path: boxLogin },
+  { kind: "Bedrock", path: boxLogin, profile: undefined },
+  { kind: "Bedrock", path: boxLogin, profile: "chuggy" },
+  { kind: "Vertex", path: boxLogin },
+  { kind: "Foundry", path: boxLogin },
+];
 
 /** The workspace's People page, where an admin lets a person register a runner of their own. */
 export const rosterPeople =
@@ -105,7 +117,11 @@ export const runnerStops: {
     },
   ],
   SettingsUnread: [{ stop: "SettingsUnread", path: boxSettings, guide }],
-  LoginMissing: [{ stop: "LoginMissing", path: boxLogin }],
+  LoginMissing: rosterCredentials.map((credential) => ({
+    stop: "LoginMissing" as const,
+    credential,
+    guide,
+  })),
   Npmless: [{ stop: "Npmless" }],
   Unwritten: [{ stop: "Unwritten", path: boxSettings }],
   Act: [
@@ -131,6 +147,20 @@ export const runnerStops: {
       act: "Register" as const,
       failed: { how: "ExitUnquoted" as const, exit: 2, refusal },
     })),
+  ],
+  Behind: [
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: "0.12.0",
+      least: "0.13.0",
+    },
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: undefined,
+      least: "0.13.0",
+    },
   ],
   Unseen: [
     { stop: "Unseen", act: "Install", path: rosterCommand },
@@ -250,14 +280,27 @@ export const runnerNotes: {
     },
   ],
   Installed: [
-    { note: "Installed", command: rosterCommand, version: boxVersion },
+    {
+      note: "Installed",
+      command: rosterCommand,
+      version: boxVersion,
+      kept: undefined,
+    },
+    {
+      note: "Installed",
+      command: `${boxOwn}/bin/chuggy-linux`,
+      version: boxVersion,
+      kept: { command: rosterCommand, version: "0.3.0" },
+    },
   ],
-  Replaced: [{ note: "Replaced", command: rosterCommand, version: boxVersion }],
   Settings: [{ note: "Settings", path: boxSettings }],
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
   ],
-  Login: [{ note: "Login", path: boxLogin }],
+  Login: rosterCredentials.map((credential) => ({
+    note: "Login" as const,
+    credential,
+  })),
   Pool: [{ note: "Pool", path: rosterPool }],
   PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],
   Registered: [{ note: "Registered", path: rosterPool }],
@@ -328,7 +371,6 @@ export function rosterLines(places: RosterPlaces) {
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
-      replaced: `did: replaced the runner package with chuggy-linux ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,

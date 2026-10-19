@@ -37,7 +37,9 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
+import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
 import {
+  setupClaudeOn,
   setupDockerBarredTold,
   setupEngineNeedsPassword,
   setupEnginesNone,
@@ -202,7 +204,14 @@ const setupOwnToo =
   " Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too.";
 
 /** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
-const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I put the newer one in its place first.`;
+const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I install its latest release first.`;
+
+/** Where an offer says work here runs: in containers, and on the Claude credential the runner would use, where its settings could be read. */
+function setupRunsOn(claude: SetupClaudeKind | undefined): string {
+  return claude === undefined
+    ? "in containers"
+    : `in containers, on ${setupClaudeOn(claude)}`;
+}
 
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
@@ -212,7 +221,7 @@ function setupRunnerLiveMend(
 ): SetupThing {
   return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan.${setupPackageNewer}${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine ${setupRunsOn(here.claude)}.${setupPackageNewer}${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
         at,
       )
     : setupHand(
@@ -222,11 +231,14 @@ function setupRunnerLiveMend(
 }
 
 /** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's own where that is lacking too. */
-function setupRunnerPut(own: boolean): string {
+function setupRunnerPut(
+  own: boolean,
+  claude: SetupClaudeKind | undefined,
+): string {
   const put = `That puts here the runner package, ${runnerPackageOffered.program}, and`;
   return own
-    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, which run only on a runner of your own. Both run on this machine in containers, on your Claude plan.`
-    : `${put} a background service of yours that starts when you log in; work on your tickets then runs on this machine in containers, on your Claude plan.`;
+    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, which run only on a runner of your own. Both run on this machine ${setupRunsOn(claude)}.`
+    : `${put} a background service of yours that starts when you log in; work on your tickets then runs on this machine ${setupRunsOn(claude)}.`;
 }
 
 /**
@@ -259,7 +271,7 @@ function setupOwnMend(
         );
   if (here?.room.room === "Open")
     return setupOffer(
-      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
+      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
       at,
     );
   return setupHand(
@@ -295,7 +307,7 @@ function setupRunnerMend(
       return setupHand(elsewhere, setupRunnerRunning);
     case "Open":
       return setupOffer(
-        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.own)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
+        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.own, here?.claude)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
         at,
       );
     case "Mac":

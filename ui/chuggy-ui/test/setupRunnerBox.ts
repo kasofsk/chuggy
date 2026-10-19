@@ -33,7 +33,7 @@ export const boxOwn = `${boxHome}/.local`;
 export const boxPoolName = "shame";
 /** What the Claude login file holds, which nothing may read or print. */
 export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
-/** The version an install puts here. */
+/** The version an install puts here unless a case has the release be another. */
 export const boxVersion = "0.4.0";
 
 /** Everything the command runs on the machine, by what it is for. */
@@ -88,6 +88,8 @@ export interface RunnerBox {
   after: (act: BoxAct) => void;
   /** What `npm prefix -g` prints, or nothing where npm does not answer. */
   prefix: string | undefined;
+  /** The version of the package's current release, which an install puts here. */
+  release: string;
   engines: Record<SetupEngine, "Yes" | "No" | "Absent">;
   /** Whether the user's service manager answers. */
   services: boolean;
@@ -120,6 +122,7 @@ export function runnerBox(): RunnerBox {
     answers: new Map(),
     after: () => undefined,
     prefix: boxPrefix,
+    release: boxVersion,
     engines: { docker: "Yes", podman: "Absent" },
     services: true,
     linger: "no",
@@ -232,7 +235,7 @@ function installed(box: RunnerBox, command: readonly string[]): void {
   box.paths.set(`${prefix}/bin/chuggy-linux`, "#!/usr/bin/env node");
   box.paths.set(
     `${prefix}/lib/node_modules/chuggy-linux/package.json`,
-    JSON.stringify({ name: "chuggy-linux", version: boxVersion }),
+    JSON.stringify({ name: "chuggy-linux", version: box.release }),
   );
 }
 

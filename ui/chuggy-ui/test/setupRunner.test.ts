@@ -33,6 +33,7 @@ import {
   setupMintLifetimeSecs,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
+import { setupPackageCredentialLeast } from "../app/core/setupRunnerMachine.ts";
 import {
   setupLockWord,
   setupSignInNoteWritten,
@@ -332,7 +333,7 @@ test("a package older than the first whose register takes --personal, or of a ve
       found.settings,
       found.login,
       `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs 0.4.0 or later${held === "{" ? " and could not read its version" : ""}`,
-      did.replaced,
+      did.package,
       found.pool,
       found.check,
       found.unit,
@@ -351,6 +352,140 @@ test("a package older than the first whose register takes --personal, or of a ve
     ).toEqual([words, words]);
     expect(times(machine, "restart"), said).toBe(1);
   }
+});
+
+test("settings naming claudeCredential have a package older than the first release that takes it replaced before anything is registered, settings naming claudeTokenFile alone keep it, and an install that leaves one older stops the run with nothing registered", async () => {
+  const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
+  const key = "/srv/secrets/anthropic-api-key";
+  const held = async (settings: object, release: string) => {
+    const machine = await fresh();
+    machine.box.release = release;
+    machine.box.paths.set(key, boxLoginSecret);
+    machine.box.paths.set(command, "#!/usr/bin/env node");
+    machine.box.paths.set(manifest, JSON.stringify({ version: "0.12.0" }));
+    machine.box.paths.set(boxSettings, JSON.stringify(settings));
+    return machine;
+  };
+  const keyed = { claudeCredential: { kind: "ApiKey", apiKeyFile: key } };
+  const head = [
+    signedIn,
+    found.engine,
+    found.settings,
+    `found: the runner's Anthropic API key is in ${key}`,
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+  ];
+
+  const replaced = await held(keyed, setupPackageCredentialLeast);
+  expect((await ran(replaced)).lines).toEqual([
+    ...head,
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${command}`,
+    did.pool,
+    found.check,
+    did.unit,
+    did.linger,
+    did.started,
+    live,
+    next,
+  ]);
+  expect(replaced.box.acts.slice(2, 4)).toEqual(["install", "register"]);
+
+  const tokened = await held({ claudeTokenFile: boxLogin }, "0.13.0");
+  expect((await ran(tokened)).lines.slice(2, 6)).toEqual([
+    found.settings,
+    found.login,
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}`,
+    did.pool,
+  ]);
+  expect(times(tokened, "install")).toBe(0);
+
+  const behind = await held(keyed, "0.12.0");
+  const stopped = await ran(behind);
+  expect(stopped.exit).toBe(1);
+  expect(stopped.lines.slice(0, 7)).toEqual([
+    ...head,
+    `found: installing the runner package left chuggy-linux 0.12.0 at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+    "tell: Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
+  ]);
+  expect(behind.box.acts.at(-1)).toBe("install");
+  expect(writes(behind)).toEqual([]);
+  expect(
+    [...behind.box.paths.keys()].filter((path) => path.startsWith(boxPools)),
+  ).toEqual([]);
+});
+
+test("settings naming claudeCredential, beside a machine-wide package too old for them under a prefix not the person's to write, take a current one under the person's own prefix where there is one, have one installed there where there is none, and with no npm stop before anything is changed", async () => {
+  const machineWide = `${boxPrefix}/bin/chuggy-linux`;
+  const mine = `${boxOwn}/bin/chuggy-linux`;
+  const key = "/srv/secrets/anthropic-api-key";
+  const manifest = (prefix: string) =>
+    `${prefix}/lib/node_modules/chuggy-linux/package.json`;
+  const held = async (ownVersion: string | undefined) => {
+    const machine = await fresh();
+    machine.box.release = setupPackageCredentialLeast;
+    machine.box.sealed.add(`${boxPrefix}/bin`);
+    machine.box.paths.set(key, boxLoginSecret);
+    machine.box.paths.set(
+      boxSettings,
+      JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+    );
+    machine.box.paths.set(machineWide, "#!/usr/bin/env node");
+    machine.box.paths.set(
+      manifest(boxPrefix),
+      JSON.stringify({ version: "0.12.0" }),
+    );
+    if (ownVersion !== undefined) {
+      machine.box.paths.set(mine, "#!/usr/bin/env node");
+      machine.box.paths.set(
+        manifest(boxOwn),
+        JSON.stringify({ version: ownVersion }),
+      );
+    }
+    return machine;
+  };
+  const registeredBy = (machine: SetupMachine) =>
+    machine.box.ran.find((run) => boxActOf(run) === "register")?.[0];
+
+  const current = await held(setupPackageCredentialLeast);
+  const kept = await ran(current);
+  expect(kept.lines[4]).toBe(
+    `found: the runner package is installed: chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+  );
+  expect(kept.lines.slice(-2)).toEqual([live, next]);
+  expect(times(current, "install")).toBe(0);
+  expect(registeredBy(current)).toBe(mine);
+
+  const none = await held(undefined);
+  const installed = await ran(none);
+  expect(installed.lines.slice(4, 6)).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${machineWide}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}, and chuggy-linux 0.12.0 is still at ${machineWide}`,
+  ]);
+  expect(installed.lines.slice(-2)).toEqual([live, next]);
+  expect(registeredBy(none)).toBe(mine);
+
+  const gone = await held(undefined);
+  gone.box.answers.set("install", () => {
+    gone.box.paths.delete(machineWide);
+    gone.box.paths.set(mine, "#!/usr/bin/env node");
+    gone.box.paths.set(
+      manifest(boxOwn),
+      JSON.stringify({ version: setupPackageCredentialLeast }),
+    );
+    return exited(0, "done\n");
+  });
+  expect((await ran(gone)).lines[5]).toBe(
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+  );
+
+  const npmless = await held("0.12.0");
+  npmless.box.prefix = undefined;
+  const stopped = await ran(npmless);
+  expect(stopped.exit).toBe(0);
+  expect(stopped.lines.slice(4, 6)).toEqual([
+    "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
+    "tell: The runner package is installed with npm, and npm did not answer on this machine, so nothing was changed on this machine. npm comes with Node. Tell me once npm runs here.",
+  ]);
+  expect(times(npmless, "install")).toBe(0);
 });
 
 test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
@@ -554,7 +689,7 @@ test("nothing is done to the machine while the lock is held, and the lock is hel
   expect(machine.lock).toBeUndefined();
 });
 
-test("the Claude login is looked for and never read, where it is and where the settings say it is", async () => {
+test("the Claude credential is looked for and never read, where it is and where the settings say it is, a subscription's or another kind's", async () => {
   const machine = await fresh();
   await ran(machine);
   await ran(machine);
@@ -577,6 +712,48 @@ test("the Claude login is looked for and never read, where it is and where the s
   ]);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(elsewhere.box.read).not.toContain(kept);
+
+  const keyed = await fresh();
+  const key = "/srv/secrets/anthropic-api-key";
+  keyed.box.release = setupPackageCredentialLeast;
+  keyed.box.paths.delete(boxLogin);
+  keyed.box.paths.set(key, boxLoginSecret);
+  keyed.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+  );
+  const keyedDone = await ran(keyed);
+  expect(keyedDone.lines.slice(1, 4)).toEqual([
+    found.engine,
+    found.settings,
+    `found: the runner's Anthropic API key is in ${key}`,
+  ]);
+  expect(keyedDone.lines.slice(-2)).toEqual([live, next]);
+  expect(keyed.box.read).not.toContain(key);
+});
+
+test("with no credential where the settings name one of another kind, the run stops before anything is changed and says that kind's credential, and never a Claude plan", async () => {
+  const machine = await both();
+  const key = "/srv/secrets/anthropic-api-key";
+  machine.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+  );
+  expect(await ran(machine)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      found.engine,
+      found.settings,
+      `found: the runner has no Anthropic API key on this machine: nothing is at ${key}`,
+      `tell: The runner's settings name its Anthropic API key as ${key}, and nothing is there, so nothing was changed on this machine. It is a key from the Claude Console, made in a workspace, saved alone in ${key} and readable only by you (mode 600). Tell me once it is there.`,
+      again(
+        "once the person says the runner's Anthropic API key is on this machine",
+      ),
+      stop,
+    ],
+  });
+  expect(writes(machine)).toEqual([]);
 });
 
 test("with no Claude login the run stops before anything is changed, says what login the runner needs and where, and names runner again once it is there", async () => {
@@ -588,7 +765,7 @@ test("with no Claude login the run stops before anything is changed, says what l
       signedIn,
       found.engine,
       `found: the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
       again(
         "once the person says the runner's Claude login is on this machine",
       ),
@@ -667,7 +844,7 @@ test("the engine is the one that answers, docker first, and where the settings n
 });
 
 const barredWhy =
-  "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+  "Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are user 1001.";
 const podmanInstead =
   "The package's own answer for any other user is rootless podman";
 
@@ -758,7 +935,7 @@ test("a settings file that does not read as the runner's stops the run before an
       lines: [
         signedIn,
         `found: ${boxSettings} is there and does not read as the runner's settings`,
-        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude login the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackageOffered.guideAddress}. Tell me once it is mended.`,
+        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackageOffered.guideAddress}. Tell me once it is mended.`,
         again(`once the person says ${boxSettings} is mended`),
         stop,
       ],
@@ -910,7 +1087,9 @@ test("an act that ended well and left nothing where it makes its thing, or an in
   });
   const done = await ran(old);
   expect(done.exit).toBe(1);
-  expect(done.lines.at(-4)).toBe(`found: ${unseen[0]?.[1] ?? ""}`);
+  expect(done.lines.at(-4)).toBe(
+    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs 0.4.0 or later`,
+  );
   expect(old.box.acts.at(-1)).toBe("install");
 });
 
@@ -1917,7 +2096,7 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-2)).toEqual([offer, stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first. Tell me yes to go ahead.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.";
   expect(offered.lines.at(-3)).toBe(holds);
   const started = await ran(here);
   expect(started.lines.slice(-3)).toEqual([did.started, live, next]);
