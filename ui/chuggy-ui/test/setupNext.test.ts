@@ -587,7 +587,7 @@ test("where this machine could not take a runner the person is told why instead,
 
 test("a user the runner package bars from docker is told the package's reason and its way out before any runner is offered here, and the page for another machine", () => {
   const why =
-    "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+    "Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are user 1001.";
   const podman =
     "The package's own answer for any other user is rootless podman";
   const instead = `For a runner on another machine instead, open ${pages}/runners there and press Add runner, and tell me once it is running.`;

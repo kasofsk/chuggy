@@ -145,7 +145,8 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     "Claude login",
     "Anthropic API key",
     "Bedrock credential",
-    "Vertex AI key",
+    "Bedrock credential",
+    "Google Cloud service account key",
     "Foundry API key",
   ].map((credential) => [
     `the runner has no ${credential} on this machine: nothing is at ${boxLogin}`,
@@ -529,7 +530,7 @@ test("a user the package bars from docker is told the package's reason and who t
     setupRunnerStopSaid(stop, "acme/widgets"),
   );
   const why = (who: string) =>
-    `Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${who}.`;
+    `Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${who}.`;
   const podman =
     "The package's own answer for any other user is rootless podman";
   expect(named).toMatchObject({
@@ -633,7 +634,8 @@ test("a Claude credential found is said by its kind's own name, beside the file 
     `found: the runner's Claude login is in ${boxLogin}`,
     `found: the runner's Anthropic API key is in ${boxLogin}`,
     `found: the runner's Bedrock credential is in ${boxLogin}`,
-    `found: the runner's Vertex AI key is in ${boxLogin}`,
+    `found: the runner's Bedrock credential is in ${boxLogin}`,
+    `found: the runner's Google Cloud service account key is in ${boxLogin}`,
     `found: the runner's Foundry API key is in ${boxLogin}`,
   ]);
 });
@@ -685,27 +687,37 @@ test("with no Claude login the person is told what login the runner needs, where
   });
 });
 
-test("with no credential where the settings name one of another kind, the person is told that kind's credential, what makes one and where, and a Claude plan is never named", () => {
+test("with no credential where the settings name one of another kind, the person is told that kind's credential, what makes one and where, of Bedrock only the one of its two its settings name, and a Claude plan is never named", () => {
   const told = runnerStops.LoginMissing.slice(1).map(
     (stop) => setupRunnerStopSaid(stop, "acme/widgets").tell,
   );
-  expect(told).toEqual(
-    [
+  const named = (credential: string) =>
+    `The runner's settings name its ${credential} as ${boxLogin}, and nothing is there, so nothing was changed on this machine.`;
+  const kept = "readable only by you (mode 600)";
+  const tell = "Tell me once it is there.";
+  expect(told).toEqual([
+    ...[
       [
         "Anthropic API key",
         "a key from the Claude Console, made in a workspace",
       ],
+      ["Bedrock credential", "a Bedrock API key"],
+    ].map(
+      ([credential = "", made]) =>
+        `${named(credential)} It is ${made}, saved alone in ${boxLogin} and ${kept}. ${tell}`,
+    ),
+    `${named("Bedrock credential")} It is an AWS credentials file, saved in ${boxLogin} and ${kept}, whose [chuggy] profile holds aws_access_key_id and aws_secret_access_key. ${tell}`,
+    ...[
       [
-        "Bedrock credential",
-        "a Bedrock API key, or an AWS credentials file whose profile holds an access key",
+        "Google Cloud service account key",
+        "the JSON key Google Cloud made for a service account",
       ],
-      ["Vertex AI key", "the JSON key Google Cloud made for a service account"],
       ["Foundry API key", "a key of the Microsoft Foundry resource"],
     ].map(
-      ([credential, made]) =>
-        `The runner's settings name its ${credential} as ${boxLogin}, and nothing is there, so nothing was changed on this machine. It is ${made}, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+      ([credential = "", made]) =>
+        `${named(credential)} It is ${made}, saved alone in ${boxLogin} and ${kept}. ${tell}`,
     ),
-  );
+  ]);
   for (const tell of told) expect(tell).not.toContain("Claude plan");
 });
 
@@ -737,7 +749,7 @@ test("the first line of the check under a mark is found among the lines that are
   expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
 });
 
-test("the checks this program has words for are the ones the package's doctor prints, in its order, under each name a release prints one by", () => {
+test("the checks this program has words for are the ones the package's doctor prints, in its order, the credential's under the name before the release that takes claudeCredential (0.13.0) and under the one from it on", () => {
   expect(Object.keys(setupRunnerChecks)).toEqual([
     "pool file",
     "runner configuration",

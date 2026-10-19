@@ -31,13 +31,23 @@ export const setupClaudeKinds = [
 
 export type SetupClaudeKind = (typeof setupClaudeKinds)[number];
 
-/** The runner's Claude credential: its kind, and the one file that is its secret. */
-export interface SetupClaudeCredential {
-  readonly kind: SetupClaudeKind;
-  readonly path: string;
-}
+/**
+ * The runner's Claude credential: its kind and the one file that is its
+ * secret, and of a Bedrock credential the profile it reads of an AWS
+ * credentials file, none where the file is a Bedrock API key.
+ */
+export type SetupClaudeCredential =
+  | {
+      readonly kind: Exclude<SetupClaudeKind, "Bedrock">;
+      readonly path: string;
+    }
+  | {
+      readonly kind: "Bedrock";
+      readonly path: string;
+      readonly profile: string | undefined;
+    };
 
-/** Each kind as the person is told it: the credential, what makes one, and what the work then runs on. */
+/** Each kind as the person is told it: the credential, what makes one where its file holds it alone, and what the work then runs on. */
 const setupClaudeWords: Record<
   SetupClaudeKind,
   { readonly credential: string; readonly made: string; readonly on: string }
@@ -54,11 +64,11 @@ const setupClaudeWords: Record<
   },
   Bedrock: {
     credential: "Bedrock credential",
-    made: "a Bedrock API key, or an AWS credentials file whose profile holds an access key",
+    made: "a Bedrock API key",
     on: "your Amazon Bedrock account",
   },
   Vertex: {
-    credential: "Vertex AI key",
+    credential: "Google Cloud service account key",
     made: "the JSON key Google Cloud made for a service account",
     on: "your Google Cloud project",
   },
@@ -68,6 +78,15 @@ const setupClaudeWords: Record<
     on: "your Microsoft Foundry resource",
   },
 };
+
+/** What the credential is and where it is kept, as the person is told it: its secret alone in its file, or an AWS credentials file whose profile holds an access key. */
+function setupClaudeSaved(credential: SetupClaudeCredential): string {
+  const { path } = credential;
+  const kept = "readable only by you (mode 600)";
+  return credential.kind === "Bedrock" && credential.profile !== undefined
+    ? `It is an AWS credentials file, saved in ${path} and ${kept}, whose [${credential.profile}] profile holds aws_access_key_id and aws_secret_access_key.`
+    : `It is ${setupClaudeWords[credential.kind].made}, saved alone in ${path} and ${kept}.`;
+}
 
 /** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
 export function setupClaudeOn(kind: SetupClaudeKind): string {
@@ -200,9 +219,10 @@ export type SetupRunnerNote =
     };
 
 /**
- * What the runner package's own check looks at, by the names its releases
- * print them under, each with what a failure of it means in this program's
- * words.
+ * What the runner package's own check looks at, by the names it prints them
+ * under, each with what a failure of it means in this program's words. The
+ * credential's check is "Claude token file" before the release that takes
+ * `claudeCredential` (0.13.0), and "Claude credential" from that release on.
  */
 export const setupRunnerChecks = {
   "pool file": "this machine's registration could not be read",
@@ -637,12 +657,12 @@ export interface SetupDockerBarredTold {
 const setupPodmanInstead =
   "The package's own answer for any other user is rootless podman";
 
-/** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude login. */
+/** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude credential. */
 export function setupDockerBarredTold(
   user: string | undefined,
   how: SetupDockerBarred,
 ): SetupDockerBarredTold {
-  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read your Claude login, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
+  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
   if (how.barred === "Named")
     return {
       why,
@@ -849,8 +869,8 @@ function setupLoginMissingSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "LoginMissing" }>,
 ): SetupRunnerStopSaid {
   const { kind, path } = stop.credential;
-  const { credential, made } = setupClaudeWords[kind];
-  const saved = `It is ${made}, saved alone in ${path} and readable only by you (mode 600).`;
+  const { credential } = setupClaudeWords[kind];
+  const saved = setupClaudeSaved(stop.credential);
   return {
     found: `the runner has no ${credential} on this machine: nothing is at ${path}`,
     tell:

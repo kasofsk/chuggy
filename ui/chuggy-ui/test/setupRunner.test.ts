@@ -33,6 +33,7 @@ import {
   setupMintLifetimeSecs,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
+import { setupPackageCredentialLeast } from "../app/core/setupRunnerMachine.ts";
 import {
   setupLockWord,
   setupSignInNoteWritten,
@@ -353,6 +354,64 @@ test("a package older than the first whose register takes --personal, or of a ve
   }
 });
 
+test("settings naming claudeCredential have a package older than the first release that takes it replaced before anything is registered, settings naming claudeTokenFile alone keep it, and an install that leaves one older stops the run with nothing registered", async () => {
+  const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
+  const key = "/srv/secrets/anthropic-api-key";
+  const held = async (settings: object, release: string) => {
+    const machine = await fresh();
+    machine.box.release = release;
+    machine.box.paths.set(key, boxLoginSecret);
+    machine.box.paths.set(command, "#!/usr/bin/env node");
+    machine.box.paths.set(manifest, JSON.stringify({ version: "0.12.0" }));
+    machine.box.paths.set(boxSettings, JSON.stringify(settings));
+    return machine;
+  };
+  const keyed = { claudeCredential: { kind: "ApiKey", apiKeyFile: key } };
+  const head = [
+    signedIn,
+    found.engine,
+    found.settings,
+    `found: the runner's Anthropic API key is in ${key}`,
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+  ];
+
+  const replaced = await held(keyed, setupPackageCredentialLeast);
+  expect((await ran(replaced)).lines).toEqual([
+    ...head,
+    `did: replaced the runner package with chuggy-linux ${setupPackageCredentialLeast}, at ${command}`,
+    did.pool,
+    found.check,
+    did.unit,
+    did.linger,
+    did.started,
+    live,
+    next,
+  ]);
+  expect(replaced.box.acts.slice(2, 4)).toEqual(["install", "register"]);
+
+  const tokened = await held({ claudeTokenFile: boxLogin }, "0.13.0");
+  expect((await ran(tokened)).lines.slice(2, 6)).toEqual([
+    found.settings,
+    found.login,
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}`,
+    did.pool,
+  ]);
+  expect(times(tokened, "install")).toBe(0);
+
+  const behind = await held(keyed, "0.12.0");
+  const stopped = await ran(behind);
+  expect(stopped.exit).toBe(1);
+  expect(stopped.lines.slice(0, 6)).toEqual([
+    ...head,
+    `found: installing the runner package ended well, and what it makes is not at ${command}`,
+  ]);
+  expect(behind.box.acts.at(-1)).toBe("install");
+  expect(writes(behind)).toEqual([]);
+  expect(
+    [...behind.box.paths.keys()].filter((path) => path.startsWith(boxPools)),
+  ).toEqual([]);
+});
+
 test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
   const machine = await both();
   machine.world.withheld.add("acme");
@@ -580,6 +639,7 @@ test("the Claude credential is looked for and never read, where it is and where 
 
   const keyed = await fresh();
   const key = "/srv/secrets/anthropic-api-key";
+  keyed.box.release = setupPackageCredentialLeast;
   keyed.box.paths.delete(boxLogin);
   keyed.box.paths.set(key, boxLoginSecret);
   keyed.box.paths.set(
@@ -708,7 +768,7 @@ test("the engine is the one that answers, docker first, and where the settings n
 });
 
 const barredWhy =
-  "Under docker a runner's work runs as this machine's user 1000, which could not read your Claude login, so the runner package takes docker only from that user, and you are user 1001.";
+  "Under docker a runner's work runs as this machine's user 1000, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are user 1001.";
 const podmanInstead =
   "The package's own answer for any other user is rootless podman";
 

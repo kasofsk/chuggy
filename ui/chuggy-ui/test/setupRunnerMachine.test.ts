@@ -19,6 +19,8 @@ import {
   setupLingerCommand,
   setupLingerRead,
   setupOwnFiles,
+  setupPackageCredentialLeast,
+  setupPackageLeast,
   setupPackageProbed,
   setupPoolFilePrefix,
   setupPoolFiles,
@@ -225,6 +227,7 @@ test("the settings are read for the engine and the Claude login they name and fo
     path: boxSettings,
     engine: "docker",
     credential: { kind: "Subscription", path: "/k/t" },
+    least: setupPackageLeast,
   });
   expect(
     settled(
@@ -240,6 +243,7 @@ test("the settings are read for the engine and the Claude login they name and fo
     path: boxSettings,
     engine: "podman",
     credential: { kind: "Subscription", path: "/k/t" },
+    least: setupPackageLeast,
   });
   for (const held of [
     "",
@@ -258,7 +262,7 @@ test("the settings are read for the engine and the Claude login they name and fo
   });
 });
 
-test("a credential the settings name is read as its kind and its one file, of any kind, and settings naming a credential beside a login, or one missing or doubling its file, are not read as settings", () => {
+test("a credential the settings name is read as its kind and its one file, of any kind, and of Bedrock as an API key or a credentials file's profile, with the first release that takes it the oldest package that reads them", () => {
   for (const [claudeCredential, credential] of [
     [
       { kind: "Subscription", tokenFile: "/k/t" },
@@ -270,7 +274,7 @@ test("a credential the settings name is read as its kind and its one file, of an
     ],
     [
       { kind: "Bedrock", region: "us-west-2", apiKeyFile: "/k/b" },
-      { kind: "Bedrock", path: "/k/b" },
+      { kind: "Bedrock", path: "/k/b", profile: undefined },
     ],
     [
       {
@@ -279,7 +283,11 @@ test("a credential the settings name is read as its kind and its one file, of an
         credentialsFile: "/k/aws",
         profile: "chuggy",
       },
-      { kind: "Bedrock", path: "/k/aws" },
+      { kind: "Bedrock", path: "/k/aws", profile: "chuggy" },
+    ],
+    [
+      { kind: "Bedrock", region: "us-west-2", credentialsFile: "/k/aws" },
+      { kind: "Bedrock", path: "/k/aws", profile: "default" },
     ],
     [
       {
@@ -303,7 +311,11 @@ test("a credential the settings name is read as its kind and its one file, of an
       path: boxSettings,
       engine: "docker",
       credential,
+      least: setupPackageCredentialLeast,
     });
+});
+
+test("settings naming a credential beside a login, or one missing or doubling its file, or naming a profile beside a Bedrock API key, are not read as settings", () => {
   for (const held of [
     JSON.stringify({
       claudeTokenFile: "/k/t",
@@ -321,6 +333,14 @@ test("a credential the settings name is read as its kind and its one file, of an
         region: "r",
         apiKeyFile: "/k/b",
         credentialsFile: "/k/aws",
+      },
+    }),
+    JSON.stringify({
+      claudeCredential: {
+        kind: "Bedrock",
+        region: "r",
+        apiKeyFile: "/k/b",
+        profile: "chuggy",
       },
     }),
   ])
@@ -345,6 +365,7 @@ test("the settings a machine with none is given are the package's guide's own, a
     path: boxSettings,
     engine: "podman",
     credential: { kind: "Subscription", path: boxLogin },
+    least: setupPackageLeast,
   });
 });
 
@@ -360,7 +381,7 @@ function packaged(held: string | undefined): SetupMachine {
 
 test("the package is found under the prefix npm names or under the person's own, by its command's whole path, with the version its manifest names where that is one", async () => {
   const probed = (machine: SetupMachine) =>
-    setupPackageProbed(machine.ports(), places);
+    setupPackageProbed(machine.ports(), places, setupPackageLeast);
   const command = `${boxPrefix}/bin/chuggy-linux`;
   expect(await probed(setupMachine())).toEqual({
     found: undefined,
@@ -391,14 +412,18 @@ test("the package is found under the prefix npm names or under the person's own,
 });
 
 test("where the machine's prefix and the person's own both hold the package, the one a run can use is found, and the machine's where both or neither can be used", async () => {
-  const found = async (machineWide: string, theirs: string) => {
+  const found = async (
+    machineWide: string,
+    theirs: string,
+    least = setupPackageLeast,
+  ) => {
     const machine = packaged(JSON.stringify({ version: machineWide }));
     machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!");
     machine.box.paths.set(
       `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
       JSON.stringify({ version: theirs }),
     );
-    return (await setupPackageProbed(machine.ports(), places)).found;
+    return (await setupPackageProbed(machine.ports(), places, least)).found;
   };
   const own = `${boxOwn}/bin/chuggy-linux`;
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
@@ -418,6 +443,14 @@ test("where the machine's prefix and the person's own both hold the package, the
     command: own,
     version: "1.0.0-rc.1",
   });
+  expect(await found("0.12.0", "0.13.0", setupPackageCredentialLeast)).toEqual({
+    command: own,
+    version: "0.13.0",
+  });
+  expect(await found("0.12.0", "0.4.0", setupPackageCredentialLeast)).toEqual({
+    command: machineWide,
+    version: "0.12.0",
+  });
 });
 
 test("the prefix npm prints is taken only as one whole path, and is this person's to install under only where both of its directories are theirs to write", async () => {
@@ -428,6 +461,7 @@ test("the prefix npm prints is taken only as one whole path, and is this person'
     const { prefix: read, mine } = await setupPackageProbed(
       machine.ports(),
       places,
+      setupPackageLeast,
     );
     return [read, mine];
   };
@@ -458,6 +492,7 @@ function naming(engine: SetupEngine): SetupSettingsNamed {
     path: boxSettings,
     engine,
     credential: { kind: "Subscription", path: boxLogin },
+    least: setupPackageLeast,
   };
 }
 

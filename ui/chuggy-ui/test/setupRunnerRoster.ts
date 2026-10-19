@@ -5,11 +5,9 @@
  */
 
 import { runnerPackageOffered } from "../app/core/runners.ts";
-import {
-  setupClaudeKinds,
-  setupRegisterRefusals,
-} from "../app/core/setupRunnerSaid.ts";
+import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
 import type {
+  SetupClaudeCredential,
   SetupEngine,
   SetupRegisterRefusal,
   SetupRunnerAct,
@@ -37,6 +35,16 @@ export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
 export const rosterOwn = boxOwnFile("acme", setupSiteMember);
 export const rosterOwnUnit = boxOwnUnitName("acme", setupSiteMember);
+
+/** A Claude credential of each kind, and of Bedrock its API key and an AWS credentials file's profile, each where a stand-in machine keeps its login. */
+export const rosterCredentials: readonly SetupClaudeCredential[] = [
+  { kind: "Subscription", path: boxLogin },
+  { kind: "ApiKey", path: boxLogin },
+  { kind: "Bedrock", path: boxLogin, profile: undefined },
+  { kind: "Bedrock", path: boxLogin, profile: "chuggy" },
+  { kind: "Vertex", path: boxLogin },
+  { kind: "Foundry", path: boxLogin },
+];
 
 /** The workspace's People page, where an admin lets a person register a runner of their own. */
 export const rosterPeople =
@@ -108,9 +116,9 @@ export const runnerStops: {
     },
   ],
   SettingsUnread: [{ stop: "SettingsUnread", path: boxSettings, guide }],
-  LoginMissing: setupClaudeKinds.map((kind) => ({
+  LoginMissing: rosterCredentials.map((credential) => ({
     stop: "LoginMissing" as const,
-    credential: { kind, path: boxLogin },
+    credential,
     guide,
   })),
   Npmless: [{ stop: "Npmless" }],
@@ -264,9 +272,9 @@ export const runnerNotes: {
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
   ],
-  Login: setupClaudeKinds.map((kind) => ({
+  Login: rosterCredentials.map((credential) => ({
     note: "Login" as const,
-    credential: { kind, path: boxLogin },
+    credential,
   })),
   Pool: [{ note: "Pool", path: rosterPool }],
   PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],

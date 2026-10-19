@@ -301,6 +301,8 @@ interface Machine {
     { readonly settings: "Unread" }
   >;
   readonly credential: SetupClaudeCredential;
+  /** The oldest package that reads the settings: those found, or those a machine with none is given. */
+  readonly least: string;
   readonly probe: SetupPackageProbe;
 }
 
@@ -324,10 +326,13 @@ async function setupMachineProbed(run: Run): Promise<Machine | Halt> {
   if (ports.disk.kind(credential.path) !== "File")
     return halt({ stop: "LoginMissing", credential, guide });
   notes.push({ note: "Login", credential });
-  const probe = await setupPackageProbed(ports, places);
-  const usable = probe.found !== undefined && setupPackageCurrent(probe.found);
+  const least =
+    settings.settings === "Read" ? settings.least : setupPackageLeast;
+  const probe = await setupPackageProbed(ports, places, least);
+  const usable =
+    probe.found !== undefined && setupPackageCurrent(probe.found, least);
   if (!usable && probe.prefix === undefined) return halt({ stop: "Npmless" });
-  return { engine: room.engine, settings, credential, probe };
+  return { engine: room.engine, settings, credential, least, probe };
 }
 
 interface Exited {
@@ -366,21 +371,22 @@ async function setupPackageHad(
   run: Run,
   machine: Machine,
 ): Promise<Packaged | Halt> {
+  const { least } = machine;
   const found = machine.probe.found;
-  if (found !== undefined && setupPackageCurrent(found)) {
+  if (found !== undefined && setupPackageCurrent(found, least)) {
     run.notes.push({ note: "Package", ...found });
     return { command: found.command, installed: false };
   }
   if (found !== undefined)
-    run.notes.push({ note: "Outdated", ...found, least: setupPackageLeast });
+    run.notes.push({ note: "Outdated", ...found, least });
   const acted = await setupActed(
     run,
     "Install",
     setupInstallCommand(run.places, machine.probe),
   );
   if (halted(acted)) return acted;
-  const after = (await setupPackageProbed(run.ports, run.places)).found;
-  if (after === undefined || !setupPackageCurrent(after))
+  const after = (await setupPackageProbed(run.ports, run.places, least)).found;
+  if (after === undefined || !setupPackageCurrent(after, least))
     return halt({
       stop: "Unseen",
       act: "Install",
