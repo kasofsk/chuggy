@@ -25,7 +25,13 @@ import {
   setupExcerptCharsMax,
   setupRedacted,
 } from "../app/core/setupText.ts";
-import { boxLogin, boxPools, boxSettings, boxUnits } from "./setupRunnerBox.ts";
+import {
+  boxLogin,
+  boxOwn,
+  boxPools,
+  boxSettings,
+  boxUnits,
+} from "./setupRunnerBox.ts";
 import {
   rosterCommand,
   rosterLingerRefusal,
@@ -248,6 +254,18 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
           "Runner",
         ] as const,
     ),
+  ],
+  Behind: [
+    [
+      `installing the runner package left chuggy-linux 0.12.0 at ${rosterCommand}, and chuggy setup needs 0.13.0 or later`,
+      1,
+      "Runner",
+    ],
+    [
+      `installing the runner package left chuggy-linux at ${rosterCommand}, and chuggy setup needs 0.13.0 or later and could not read its version`,
+      1,
+      "Runner",
+    ],
   ],
   Unseen: [
     [
@@ -546,16 +564,34 @@ test("a user the package bars from docker is told the package's reason and who t
   );
 });
 
-test("a package older than the least, or of a version that cannot be read, is said as found beside the version chuggy setup needs, and the one put in its place as replacing it", () => {
+test("a package older than the least, or of a version that cannot be read, is said as found beside the version chuggy setup needs, and the one installed by its version and where it is, beside the one found where that is elsewhere and still there", () => {
   expect(
-    [...runnerNotes.Outdated, ...runnerNotes.Replaced].map((note) =>
+    [...runnerNotes.Outdated, ...runnerNotes.Installed].map((note) =>
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     ),
   ).toEqual([
     `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later`,
     `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later and could not read its version`,
-    `did: replaced the runner package with chuggy-linux 0.4.0, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux 0.4.0, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
   ]);
+});
+
+test("an install that leaves a package older than the run can use says the version it left and the version needed, and never that what it makes is missing or that running again now would end otherwise", () => {
+  const said = setupRunnerStopSaid(
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: "0.12.0",
+      least: "0.13.0",
+    },
+    "acme/widgets",
+  );
+  expect(said.tell).toBe(
+    "Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
+  );
+  expect(said.when).toBe("once the person says a newer chuggy-linux is out");
+  expect(said.found).not.toContain("is not at");
 });
 
 test("each thing a run found is said as found and each thing it did as did, in words that name the path, the program or the service", () => {
@@ -595,7 +631,6 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Package: ["found"],
     Outdated: ["found"],
     Installed: ["did"],
-    Replaced: ["did"],
     Settings: ["found"],
     SettingsWritten: ["did"],
     Login: ["found"],

@@ -81,6 +81,7 @@ import {
   setupLingerRead,
   setupOwnFiles,
   setupPackageCurrent,
+  setupPackageInstalled,
   setupPackageLeast,
   setupPackageProbed,
   setupPoolFiles,
@@ -386,16 +387,25 @@ async function setupPackageHad(
   );
   if (halted(acted)) return acted;
   const after = (await setupPackageProbed(run.ports, run.places, least)).found;
-  if (after === undefined || !setupPackageCurrent(after, least))
-    return halt({
-      stop: "Unseen",
-      act: "Install",
-      path: setupInstallCommandPath(run.places, machine.probe),
-    });
-  run.notes.push({
-    note: found === undefined ? "Installed" : "Replaced",
-    ...after,
-  });
+  if (after === undefined || !setupPackageCurrent(after, least)) {
+    const made = setupPackageInstalled(run.ports, run.places, machine.probe);
+    return halt(
+      made === undefined
+        ? {
+            stop: "Unseen",
+            act: "Install",
+            path: setupInstallCommandPath(run.places, machine.probe),
+          }
+        : { stop: "Behind", ...made, least },
+    );
+  }
+  const kept =
+    found !== undefined &&
+    found.command !== after.command &&
+    run.ports.disk.kind(found.command) === "File"
+      ? found
+      : undefined;
+  run.notes.push({ note: "Installed", ...after, kept });
   return { command: after.command, installed: true };
 }
 

@@ -498,7 +498,7 @@ test("a machine whose project's runner was set up on a package too old to regist
     found.settings,
     found.login,
     `found: the runner package is installed: chuggy-linux 0.3.0, at ${command}, and chuggy setup needs 0.4.0 or later`,
-    did.replaced,
+    did.package,
     found.pool,
     found.check,
     found.unit,

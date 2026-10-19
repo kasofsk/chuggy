@@ -216,9 +216,9 @@ things and the site of the site's, and the program keeps neither: every act is
 preceded by the probe that would show it done, so the command is run again
 after any failure and picks up where things stand. In order it has the runner
 package installed, by the console's own install command and under a prefix in
-her home directory where npm's own is not hers to write, in place of one too
-old for the settings, which need a newer one where they name
-`claudeCredential` than where they name `claudeTokenFile`; the package's
+her home directory where npm's own is not hers to write, where there is none
+or the one there is too old for the settings, which need a newer one where they
+name `claudeCredential` than where they name `claudeTokenFile`; the package's
 settings written, with its guide's values, where there are none; the machine
 registered; the package's own check passed; its service installed; her
 services set to outlive a logout; and the service enabled and started. For a

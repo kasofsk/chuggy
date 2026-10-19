@@ -204,7 +204,7 @@ const setupOwnToo =
   " Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too.";
 
 /** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
-const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I put the newer one in its place first.`;
+const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I install its latest release first.`;
 
 /** Where an offer says work here runs: in containers, and on the Claude credential the runner would use, where its settings could be read. */
 function setupRunsOn(claude: SetupClaudeKind | undefined): string {

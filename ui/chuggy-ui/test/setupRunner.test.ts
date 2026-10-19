@@ -333,7 +333,7 @@ test("a package older than the first whose register takes --personal, or of a ve
       found.settings,
       found.login,
       `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs 0.4.0 or later${held === "{" ? " and could not read its version" : ""}`,
-      did.replaced,
+      did.package,
       found.pool,
       found.check,
       found.unit,
@@ -378,7 +378,7 @@ test("settings naming claudeCredential have a package older than the first relea
   const replaced = await held(keyed, setupPackageCredentialLeast);
   expect((await ran(replaced)).lines).toEqual([
     ...head,
-    `did: replaced the runner package with chuggy-linux ${setupPackageCredentialLeast}, at ${command}`,
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${command}`,
     did.pool,
     found.check,
     did.unit,
@@ -401,15 +401,91 @@ test("settings naming claudeCredential have a package older than the first relea
   const behind = await held(keyed, "0.12.0");
   const stopped = await ran(behind);
   expect(stopped.exit).toBe(1);
-  expect(stopped.lines.slice(0, 6)).toEqual([
+  expect(stopped.lines.slice(0, 7)).toEqual([
     ...head,
-    `found: installing the runner package ended well, and what it makes is not at ${command}`,
+    `found: installing the runner package left chuggy-linux 0.12.0 at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+    "tell: Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
   ]);
   expect(behind.box.acts.at(-1)).toBe("install");
   expect(writes(behind)).toEqual([]);
   expect(
     [...behind.box.paths.keys()].filter((path) => path.startsWith(boxPools)),
   ).toEqual([]);
+});
+
+test("settings naming claudeCredential, beside a machine-wide package too old for them under a prefix not the person's to write, take a current one under the person's own prefix where there is one, have one installed there where there is none, and with no npm stop before anything is changed", async () => {
+  const machineWide = `${boxPrefix}/bin/chuggy-linux`;
+  const mine = `${boxOwn}/bin/chuggy-linux`;
+  const key = "/srv/secrets/anthropic-api-key";
+  const manifest = (prefix: string) =>
+    `${prefix}/lib/node_modules/chuggy-linux/package.json`;
+  const held = async (ownVersion: string | undefined) => {
+    const machine = await fresh();
+    machine.box.release = setupPackageCredentialLeast;
+    machine.box.sealed.add(`${boxPrefix}/bin`);
+    machine.box.paths.set(key, boxLoginSecret);
+    machine.box.paths.set(
+      boxSettings,
+      JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+    );
+    machine.box.paths.set(machineWide, "#!/usr/bin/env node");
+    machine.box.paths.set(
+      manifest(boxPrefix),
+      JSON.stringify({ version: "0.12.0" }),
+    );
+    if (ownVersion !== undefined) {
+      machine.box.paths.set(mine, "#!/usr/bin/env node");
+      machine.box.paths.set(
+        manifest(boxOwn),
+        JSON.stringify({ version: ownVersion }),
+      );
+    }
+    return machine;
+  };
+  const registeredBy = (machine: SetupMachine) =>
+    machine.box.ran.find((run) => boxActOf(run) === "register")?.[0];
+
+  const current = await held(setupPackageCredentialLeast);
+  const kept = await ran(current);
+  expect(kept.lines[4]).toBe(
+    `found: the runner package is installed: chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+  );
+  expect(kept.lines.slice(-2)).toEqual([live, next]);
+  expect(times(current, "install")).toBe(0);
+  expect(registeredBy(current)).toBe(mine);
+
+  const none = await held(undefined);
+  const installed = await ran(none);
+  expect(installed.lines.slice(4, 6)).toEqual([
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${machineWide}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}, and chuggy-linux 0.12.0 is still at ${machineWide}`,
+  ]);
+  expect(installed.lines.slice(-2)).toEqual([live, next]);
+  expect(registeredBy(none)).toBe(mine);
+
+  const gone = await held(undefined);
+  gone.box.answers.set("install", () => {
+    gone.box.paths.delete(machineWide);
+    gone.box.paths.set(mine, "#!/usr/bin/env node");
+    gone.box.paths.set(
+      manifest(boxOwn),
+      JSON.stringify({ version: setupPackageCredentialLeast }),
+    );
+    return exited(0, "done\n");
+  });
+  expect((await ran(gone)).lines[5]).toBe(
+    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+  );
+
+  const npmless = await held("0.12.0");
+  npmless.box.prefix = undefined;
+  const stopped = await ran(npmless);
+  expect(stopped.exit).toBe(0);
+  expect(stopped.lines.slice(4, 6)).toEqual([
+    "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
+    "tell: The runner package is installed with npm, and npm did not answer on this machine, so nothing was changed on this machine. npm comes with Node. Tell me once npm runs here.",
+  ]);
+  expect(times(npmless, "install")).toBe(0);
 });
 
 test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says where and with what press an admin, who may be the person, turns it on, and the run named again finishes the job", async () => {
@@ -1011,7 +1087,9 @@ test("an act that ended well and left nothing where it makes its thing, or an in
   });
   const done = await ran(old);
   expect(done.exit).toBe(1);
-  expect(done.lines.at(-4)).toBe(`found: ${unseen[0]?.[1] ?? ""}`);
+  expect(done.lines.at(-4)).toBe(
+    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs 0.4.0 or later`,
+  );
   expect(old.box.acts.at(-1)).toBe("install");
 });
 
@@ -2018,7 +2096,7 @@ test("a runner registered and not running is offered to be started here only whe
   const offered = await ran(here, []);
   expect(offered.lines.slice(-2)).toEqual([offer, stop]);
   const holds =
-    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first. Tell me yes to go ahead.";
+    "tell: A runner is registered for acme/widgets and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine in containers, on your Claude plan. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.";
   expect(offered.lines.at(-3)).toBe(holds);
   const started = await ran(here);
   expect(started.lines.slice(-3)).toEqual([did.started, live, next]);

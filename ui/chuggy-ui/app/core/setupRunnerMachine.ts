@@ -472,14 +472,29 @@ export async function setupPackageProbed(
   return { found, prefix, mine };
 }
 
+/** The prefix an install puts the package under: npm's machine-wide one where it is this person's to write, and otherwise their own. */
+function setupInstallPrefix(
+  places: SetupRunnerPlaces,
+  probe: SetupPackageProbe,
+): string {
+  return probe.mine && probe.prefix !== undefined ? probe.prefix : places.own;
+}
+
 /** Where an install would put the command, which is where it is looked for afterwards. */
 export function setupInstallCommandPath(
   places: SetupRunnerPlaces,
   probe: SetupPackageProbe,
 ): string {
-  return setupCommandIn(
-    probe.mine && probe.prefix !== undefined ? probe.prefix : places.own,
-  );
+  return setupCommandIn(setupInstallPrefix(places, probe));
+}
+
+/** The package where an install puts one, whatever its version, or nothing where there is none. */
+export function setupPackageInstalled(
+  ports: SetupPorts,
+  places: SetupRunnerPlaces,
+  probe: SetupPackageProbe,
+): SetupPackageFound | undefined {
+  return setupPackageIn(ports, setupInstallPrefix(places, probe));
 }
 
 /** The console's own install command, word for word, with the person's own prefix named where the machine's is not theirs to write. */

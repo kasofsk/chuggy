@@ -173,9 +173,18 @@ export type SetupChildFailed =
 export type SetupRunnerNote =
   | { readonly note: "Engine"; readonly engine: SetupEngine }
   | {
-      readonly note: "Package" | "Installed" | "Replaced";
+      readonly note: "Package";
       readonly command: string;
       readonly version: string | undefined;
+    }
+  | {
+      readonly note: "Installed";
+      readonly command: string;
+      readonly version: string | undefined;
+      /** The package found before the install, where it is elsewhere and still there. */
+      readonly kept:
+        | { readonly command: string; readonly version: string | undefined }
+        | undefined;
     }
   | {
       readonly note: "Outdated";
@@ -304,6 +313,13 @@ export type SetupRunnerStop =
       readonly stop: "Unseen";
       readonly act: SetupRunnerAct;
       readonly path: string;
+    }
+  | {
+      /** The install ended well and left a package older than the run can use. */
+      readonly stop: "Behind";
+      readonly command: string;
+      readonly version: string | undefined;
+      readonly least: string;
     }
   | {
       /** The package would not write its service over the unit already at `path`. */
@@ -555,12 +571,7 @@ export function setupRunnerNoteSaid(
     case "Installed":
       return [
         "did",
-        `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
-      ];
-    case "Replaced":
-      return [
-        "did",
-        `replaced the runner package with ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
+        `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}${note.kept === undefined ? "" : `, and ${setupVersioned(setupProgramOf(note.kept.command), note.kept.version)} is still at ${note.kept.command}`}`,
       ];
     case "Settings":
       return ["found", `the runner's settings are in ${note.path}`];
@@ -768,6 +779,22 @@ function setupActSaid(act: SetupRunnerAct, found: string): SetupRunnerStopSaid {
     found: `${said} ${found}`,
     tell: `${said.charAt(0).toUpperCase()}${said.slice(1)} did not work, so the runner is not set up yet. ${setupPickedUp}`,
     when: setupTryAgain,
+    again: "Runner",
+  };
+}
+
+/** An install that left a package older than the run can use, which running again would install again until the package has a newer release. */
+function setupBehindSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "Behind" }>,
+): SetupRunnerStopSaid {
+  const program = setupProgramOf(stop.command);
+  const left = setupVersioned(program, stop.version);
+  const unread =
+    stop.version === undefined ? " and could not read its version" : "";
+  return {
+    found: `installing the runner package left ${left} at ${stop.command}, and chuggy setup needs ${stop.least} or later${unread}`,
+    tell: `Installing the runner package left ${left}, and chuggy setup needs ${stop.least} or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer ${program} is out.`,
+    when: `once the person says a newer ${program} is out`,
     again: "Runner",
   };
 }
@@ -1108,6 +1135,8 @@ export function setupRunnerStopSaid(
         stop.act,
         `ended well, and what it makes is not at ${stop.path}`,
       );
+    case "Behind":
+      return setupBehindSaid(stop);
     case "ServiceRefused":
       return setupServiceRefusedSaid(stop);
     case "MintRefused":
@@ -1147,6 +1176,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Unwritten":
     case "Act":
     case "Unseen":
+    case "Behind":
     case "ServiceRefused":
     case "MintRefused":
     case "CheckFailed":

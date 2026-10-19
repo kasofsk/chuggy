@@ -16,6 +16,7 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxLogin,
+  boxOwn,
   boxOwnFile,
   boxOwnUnitName,
   boxPoolFile,
@@ -147,6 +148,20 @@ export const runnerStops: {
       failed: { how: "ExitUnquoted" as const, exit: 2, refusal },
     })),
   ],
+  Behind: [
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: "0.12.0",
+      least: "0.13.0",
+    },
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: undefined,
+      least: "0.13.0",
+    },
+  ],
   Unseen: [
     { stop: "Unseen", act: "Install", path: rosterCommand },
     { stop: "Unseen", act: "Register", path: boxPools },
@@ -265,9 +280,19 @@ export const runnerNotes: {
     },
   ],
   Installed: [
-    { note: "Installed", command: rosterCommand, version: boxVersion },
+    {
+      note: "Installed",
+      command: rosterCommand,
+      version: boxVersion,
+      kept: undefined,
+    },
+    {
+      note: "Installed",
+      command: `${boxOwn}/bin/chuggy-linux`,
+      version: boxVersion,
+      kept: { command: rosterCommand, version: "0.3.0" },
+    },
   ],
-  Replaced: [{ note: "Replaced", command: rosterCommand, version: boxVersion }],
   Settings: [{ note: "Settings", path: boxSettings }],
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
@@ -346,7 +371,6 @@ export function rosterLines(places: RosterPlaces) {
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
-      replaced: `did: replaced the runner package with chuggy-linux ${boxVersion}, at ${command}`,
       settings: `did: wrote the runner's settings to ${settings}: its guide's own, with ${engine} as the engine`,
       pool: `did: registered this machine as a runner of acme/widgets, in ${pool}`,
       unit: `did: installed the runner's service, ${unit}`,
