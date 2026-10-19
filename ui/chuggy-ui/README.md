@@ -227,16 +227,18 @@ lets her, and adding the project to what it serves is the other write. Every try
 for the machine's processor or its name is not offered again as the machine
 stands.
 It takes no password: a child has no terminal to ask on, and what wants one is
-told to her to do herself. It does not make the runner's Claude login, and
-stops where there is none, saying it is the login `claude setup-token` makes,
-saved alone in the file it names and readable only by her. The runner package takes docker from one user of a
-machine only, so docker is asked of that user alone and podman of any other,
-and a user left with no engine is stopped before anything is changed. Nothing
-a child prints is printed as it came: a failure, or a check that passed with a
-warning, keeps one short excerpt with the run's secrets struck out; a
-service's state is said only where it is one word; and of the registration,
-which is handed the token, nothing it printed is kept but which of the
-package's own refusals it was.
+told to her to do herself. It does not make the runner's Claude credential, and
+stops where there is none, saying what makes one, saved alone in the file it
+names and readable only by her. A machine with no settings is given a
+subscription's, the login `claude setup-token` makes, and that stop also names
+an Anthropic API key or a cloud provider's credential as what can serve instead.
+The runner package takes docker from one user of a machine only, so docker is
+asked of that user alone and podman of any other, and a user left with no engine
+is stopped before anything is changed. Nothing a child prints is printed as it
+came: a failure, or a check that passed with a warning, keeps one short excerpt
+with the run's secrets struck out; a service's state is said only where it is
+one word; and of the registration, which is handed the token, nothing it printed
+is kept but which of the package's own refusals it was.
 
 ## The session
 

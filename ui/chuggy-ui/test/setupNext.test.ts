@@ -27,6 +27,7 @@ import type {
   SetupRunnerHere,
   SetupRunnerRoom,
 } from "../app/core/setupRunnerMachine.ts";
+import type { SetupClaudeKind } from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupFate,
   SetupLack,
@@ -480,7 +481,7 @@ function here(
   held = false,
   own = false,
 ): SetupThing {
-  const looked: SetupRunnerHere = { room, held, own };
+  const looked: SetupRunnerHere = { room, held, own, claude: "Subscription" };
   return setupNext(lacking(lack), setupAnswersNone, looked).thing;
 }
 
@@ -637,6 +638,42 @@ test("a runner registered and not running is offered to be started here only whe
       / If the runner package here, chuggy-linux, is older than chuggy setup needs, I put the newer one in its place first\. Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too\. Tell me yes to go ahead\.$/u,
     ) as unknown,
   });
+});
+
+test("an offer names a Claude plan only where the runner's credential is a subscription's: another kind is named as its own, and one whose settings could not be read is not named at all", () => {
+  const said = (claude: SetupClaudeKind | undefined) =>
+    (
+      [
+        [{ lacks: "Runner", own: false }, false],
+        [{ lacks: "Runner", own: true }, false],
+        [{ lacks: "RunnerLive", own: false }, true],
+        [{ lacks: "Own", pooled: false }, false],
+      ] as const
+    ).map(([lack, held]) => {
+      const { thing } = setupNext(lacking(lack), setupAnswersNone, {
+        room: roomy,
+        held,
+        own: false,
+        claude,
+      });
+      return thing.thing === "Offer" ? thing.tell : "";
+    });
+  for (const tell of said("Subscription"))
+    expect(tell).toContain("in containers, on your Claude plan.");
+  for (const [claude, on] of [
+    ["ApiKey", "your Anthropic API key"],
+    ["Bedrock", "your Amazon Bedrock account"],
+    ["Vertex", "your Google Cloud project"],
+    ["Foundry", "your Microsoft Foundry resource"],
+  ] as const)
+    for (const tell of said(claude)) {
+      expect(tell, claude).toContain(`in containers, on ${on}.`);
+      expect(tell, claude).not.toContain("Claude plan");
+    }
+  for (const tell of said(undefined)) {
+    expect(tell).toContain("in containers.");
+    expect(tell).not.toContain("Claude plan");
+  }
 });
 
 test("what the machine showed moves no step but the runner's", () => {
