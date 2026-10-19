@@ -20,6 +20,60 @@ export const setupEngines = ["docker", "podman"] as const;
 
 export type SetupEngine = (typeof setupEngines)[number];
 
+/** The kinds of Claude credential the runner package runs its work on, by its own names; a machine with no settings is given the first. */
+export const setupClaudeKinds = [
+  "Subscription",
+  "ApiKey",
+  "Bedrock",
+  "Vertex",
+  "Foundry",
+] as const;
+
+export type SetupClaudeKind = (typeof setupClaudeKinds)[number];
+
+/** The runner's Claude credential: its kind, and the one file that is its secret. */
+export interface SetupClaudeCredential {
+  readonly kind: SetupClaudeKind;
+  readonly path: string;
+}
+
+/** Each kind as the person is told it: the credential, what makes one, and what the work then runs on. */
+const setupClaudeWords: Record<
+  SetupClaudeKind,
+  { readonly credential: string; readonly made: string; readonly on: string }
+> = {
+  Subscription: {
+    credential: "Claude login",
+    made: "the login the command claude setup-token makes, which needs a Claude plan that allows it",
+    on: "your Claude plan",
+  },
+  ApiKey: {
+    credential: "Anthropic API key",
+    made: "a key from the Claude Console, made in a workspace",
+    on: "your Anthropic API key",
+  },
+  Bedrock: {
+    credential: "Bedrock credential",
+    made: "a Bedrock API key, or an AWS credentials file whose profile holds an access key",
+    on: "your Amazon Bedrock account",
+  },
+  Vertex: {
+    credential: "Vertex AI key",
+    made: "the JSON key Google Cloud made for a service account",
+    on: "your Google Cloud project",
+  },
+  Foundry: {
+    credential: "Foundry API key",
+    made: "a key of the Microsoft Foundry resource",
+    on: "your Microsoft Foundry resource",
+  },
+};
+
+/** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
+export function setupClaudeOn(kind: SetupClaudeKind): string {
+  return setupClaudeWords[kind].on;
+}
+
 /** How an engine answered this user: it did, it did not, or there is no such command. */
 export interface SetupEngineAsked {
   readonly engine: SetupEngine;
@@ -116,7 +170,10 @@ export type SetupRunnerNote =
       readonly path: string;
       readonly engine: SetupEngine;
     }
-  | { readonly note: "Login"; readonly path: string }
+  | {
+      readonly note: "Login";
+      readonly credential: SetupClaudeCredential;
+    }
   | { readonly note: "Pool"; readonly path: string }
   | { readonly note: "PoolGone"; readonly path: string; readonly pool: string }
   | { readonly note: "Registered"; readonly path: string }
@@ -143,14 +200,16 @@ export type SetupRunnerNote =
     };
 
 /**
- * What the runner package's own check looks at, by the names it prints them
- * under, each with what a failure of it means in this program's words.
+ * What the runner package's own check looks at, by the names its releases
+ * print them under, each with what a failure of it means in this program's
+ * words.
  */
 export const setupRunnerChecks = {
   "pool file": "this machine's registration could not be read",
   "runner configuration": "the runner's settings are not as it needs them",
   "runtime directory": "the runner has nowhere to keep what it runs with",
   "Claude token file": "the runner's Claude login is not as it needs it",
+  "Claude credential": "the runner's Claude credential is not as it needs it",
   "podman credential helpers": "podman would present logins of its own",
   "container engine": "the runner could not use the container engine",
   "job network": "the runner could not read its containers' network",
@@ -209,7 +268,11 @@ export type SetupRunnerStop =
       readonly path: string;
       readonly guide: string;
     }
-  | { readonly stop: "LoginMissing"; readonly path: string }
+  | {
+      readonly stop: "LoginMissing";
+      readonly credential: SetupClaudeCredential;
+      readonly guide: string;
+    }
   | { readonly stop: "Npmless" }
   | { readonly stop: "Unwritten"; readonly path: string }
   | {
@@ -487,7 +550,10 @@ export function setupRunnerNoteSaid(
         `wrote the runner's settings to ${note.path}: its guide's own, with ${note.engine} as the engine`,
       ];
     case "Login":
-      return ["found", `the runner's Claude login is in ${note.path}`];
+      return [
+        "found",
+        `the runner's ${setupClaudeWords[note.credential.kind].credential} is in ${note.credential.path}`,
+      ];
     case "Pool":
     case "PoolGone":
     case "Registered":
@@ -778,6 +844,24 @@ function setupMintSaid(
   };
 }
 
+/** No credential where the runner's settings say it is, or at the login's own place where there are no settings; a subscription's is what a newcomer is told to make. */
+function setupLoginMissingSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "LoginMissing" }>,
+): SetupRunnerStopSaid {
+  const { kind, path } = stop.credential;
+  const { credential, made } = setupClaudeWords[kind];
+  const saved = `It is ${made}, saved alone in ${path} and readable only by you (mode 600).`;
+  return {
+    found: `the runner has no ${credential} on this machine: nothing is at ${path}`,
+    tell:
+      kind === "Subscription"
+        ? `The runner needs a Claude login of its own on this machine, and there is none at ${path}, ${setupUnchanged}. ${saved} An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${stop.guide}. Tell me once one is there.`
+        : `The runner's settings name its ${credential} as ${path}, and nothing is there, ${setupUnchanged}. ${saved} Tell me once it is there.`,
+    when: `once the person says the runner's ${credential} is on this machine`,
+    again: "Runner",
+  };
+}
+
 function setupMachineSaid(
   stop: Extract<
     SetupRunnerStop,
@@ -811,17 +895,12 @@ function setupMachineSaid(
     case "SettingsUnread":
       return {
         found: `${stop.path} is there and does not read as the runner's settings`,
-        tell: `The runner's settings file, ${stop.path}, is there, and chuggy setup could not read from it which engine and which Claude login the runner uses, ${setupUnchanged}. The runner's guide says what the file holds: ${stop.guide}. Tell me once it is mended.`,
+        tell: `The runner's settings file, ${stop.path}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, ${setupUnchanged}. The runner's guide says what the file holds: ${stop.guide}. Tell me once it is mended.`,
         when: `once the person says ${stop.path} is mended`,
         again: "Runner",
       };
     case "LoginMissing":
-      return {
-        found: `the runner has no Claude login on this machine: nothing is at ${stop.path}`,
-        tell: `The runner needs a Claude login of its own on this machine, and there is none at ${stop.path}, ${setupUnchanged}. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${stop.path} and readable only by you (mode 600). Tell me once it is there.`,
-        when: "once the person says the runner's Claude login is on this machine",
-        again: "Runner",
-      };
+      return setupLoginMissingSaid(stop);
     case "Npmless":
       return {
         found:

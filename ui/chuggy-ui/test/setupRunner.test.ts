@@ -554,7 +554,7 @@ test("nothing is done to the machine while the lock is held, and the lock is hel
   expect(machine.lock).toBeUndefined();
 });
 
-test("the Claude login is looked for and never read, where it is and where the settings say it is", async () => {
+test("the Claude credential is looked for and never read, where it is and where the settings say it is, a subscription's or another kind's", async () => {
   const machine = await fresh();
   await ran(machine);
   await ran(machine);
@@ -577,6 +577,47 @@ test("the Claude login is looked for and never read, where it is and where the s
   ]);
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(elsewhere.box.read).not.toContain(kept);
+
+  const keyed = await fresh();
+  const key = "/srv/secrets/anthropic-api-key";
+  keyed.box.paths.delete(boxLogin);
+  keyed.box.paths.set(key, boxLoginSecret);
+  keyed.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+  );
+  const keyedDone = await ran(keyed);
+  expect(keyedDone.lines.slice(1, 4)).toEqual([
+    found.engine,
+    found.settings,
+    `found: the runner's Anthropic API key is in ${key}`,
+  ]);
+  expect(keyedDone.lines.slice(-2)).toEqual([live, next]);
+  expect(keyed.box.read).not.toContain(key);
+});
+
+test("with no credential where the settings name one of another kind, the run stops before anything is changed and says that kind's credential, and never a Claude plan", async () => {
+  const machine = await both();
+  const key = "/srv/secrets/anthropic-api-key";
+  machine.box.paths.set(
+    boxSettings,
+    JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+  );
+  expect(await ran(machine)).toEqual({
+    exit: 0,
+    lines: [
+      signedIn,
+      found.engine,
+      found.settings,
+      `found: the runner has no Anthropic API key on this machine: nothing is at ${key}`,
+      `tell: The runner's settings name its Anthropic API key as ${key}, and nothing is there, so nothing was changed on this machine. It is a key from the Claude Console, made in a workspace, saved alone in ${key} and readable only by you (mode 600). Tell me once it is there.`,
+      again(
+        "once the person says the runner's Anthropic API key is on this machine",
+      ),
+      stop,
+    ],
+  });
+  expect(writes(machine)).toEqual([]);
 });
 
 test("with no Claude login the run stops before anything is changed, says what login the runner needs and where, and names runner again once it is there", async () => {
@@ -588,7 +629,7 @@ test("with no Claude login the run stops before anything is changed, says what l
       signedIn,
       found.engine,
       `found: the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+      `tell: The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
       again(
         "once the person says the runner's Claude login is on this machine",
       ),
@@ -758,7 +799,7 @@ test("a settings file that does not read as the runner's stops the run before an
       lines: [
         signedIn,
         `found: ${boxSettings} is there and does not read as the runner's settings`,
-        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude login the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackageOffered.guideAddress}. Tell me once it is mended.`,
+        `tell: The runner's settings file, ${boxSettings}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, so nothing was changed on this machine. The runner's guide says what the file holds: ${runnerPackageOffered.guideAddress}. Tell me once it is mended.`,
         again(`once the person says ${boxSettings} is mended`),
         stop,
       ],

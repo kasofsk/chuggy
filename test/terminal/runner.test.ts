@@ -518,13 +518,13 @@ test("a machine whose project's runner was set up on a package too old to regist
   unasked(on);
 });
 
-test("with no Claude login the run changes nothing and says what the runner needs: the login claude setup-token makes, saved alone and readable only by the person, and the run its rule names once it is there finishes the job", async () => {
+test("with no Claude login the run changes nothing and says what the runner needs: the login claude setup-token makes, saved alone and readable only by the person, or another kind its guide names, and the run its rule names once it is there finishes the job", async () => {
   const on = await stood("Pool");
   rmSync(on.machine.login);
   await unchanged(on, "found: the runner has no Claude login on this machine");
   const missing = await ran(on);
   assert.deepEqual(missing.lines.slice(-3), [
-    `tell: The runner needs a Claude login of its own on this machine, and there is none at ${on.machine.login}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${on.machine.login} and readable only by you (mode 600). Tell me once it is there.`,
+    `tell: The runner needs a Claude login of its own on this machine, and there is none at ${on.machine.login}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${on.machine.login} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
     `${again}once the person says the runner's Claude login is on this machine.`,
     "next: stop",
   ]);

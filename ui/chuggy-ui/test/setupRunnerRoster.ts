@@ -5,7 +5,10 @@
  */
 
 import { runnerPackageOffered } from "../app/core/runners.ts";
-import { setupRegisterRefusals } from "../app/core/setupRunnerSaid.ts";
+import {
+  setupClaudeKinds,
+  setupRegisterRefusals,
+} from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupEngine,
   SetupRegisterRefusal,
@@ -105,7 +108,11 @@ export const runnerStops: {
     },
   ],
   SettingsUnread: [{ stop: "SettingsUnread", path: boxSettings, guide }],
-  LoginMissing: [{ stop: "LoginMissing", path: boxLogin }],
+  LoginMissing: setupClaudeKinds.map((kind) => ({
+    stop: "LoginMissing" as const,
+    credential: { kind, path: boxLogin },
+    guide,
+  })),
   Npmless: [{ stop: "Npmless" }],
   Unwritten: [{ stop: "Unwritten", path: boxSettings }],
   Act: [
@@ -257,7 +264,10 @@ export const runnerNotes: {
   SettingsWritten: [
     { note: "SettingsWritten", path: boxSettings, engine: "podman" },
   ],
-  Login: [{ note: "Login", path: boxLogin }],
+  Login: setupClaudeKinds.map((kind) => ({
+    note: "Login" as const,
+    credential: { kind, path: boxLogin },
+  })),
   Pool: [{ note: "Pool", path: rosterPool }],
   PoolGone: [{ note: "PoolGone", path: rosterPool, pool: boxPoolName }],
   Registered: [{ note: "Registered", path: rosterPool }],

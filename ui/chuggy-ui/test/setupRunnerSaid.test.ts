@@ -6,6 +6,7 @@
 
 import { expect, test } from "vitest";
 
+import { runnerPackageOffered } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
   setupRegisterRefusal,
@@ -141,12 +142,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
   ],
   LoginMissing: [
-    [
-      `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-      0,
-      "Runner",
-    ],
-  ],
+    "Claude login",
+    "Anthropic API key",
+    "Bedrock credential",
+    "Vertex AI key",
+    "Foundry API key",
+  ].map((credential) => [
+    `the runner has no ${credential} on this machine: nothing is at ${boxLogin}`,
+    0,
+    "Runner",
+  ]),
   Npmless: [
     [
       "the runner package is not installed at a version chuggy setup can use, and npm did not answer",
@@ -619,6 +624,20 @@ test("each thing a run found is said as found and each thing it did as did, in w
   });
 });
 
+test("a Claude credential found is said by its kind's own name, beside the file it is in", () => {
+  expect(
+    runnerNotes.Login.map((note) =>
+      setupRunnerNoteSaid(note, "acme/widgets").join(": "),
+    ),
+  ).toEqual([
+    `found: the runner's Claude login is in ${boxLogin}`,
+    `found: the runner's Anthropic API key is in ${boxLogin}`,
+    `found: the runner's Bedrock credential is in ${boxLogin}`,
+    `found: the runner's Vertex AI key is in ${boxLogin}`,
+    `found: the runner's Foundry API key is in ${boxLogin}`,
+  ]);
+});
+
 test("the person's own runner is said as theirs, apart from the project's: found on this machine, on another, or registered here, and the project found among what it serves or added", () => {
   const lines = runnerNotesAll
     .filter((note) => /^(?:Own|Serves|ProjectLive|Hosted)/u.test(note.note))
@@ -655,15 +674,39 @@ test("a workspace that does not let the person register a runner of their own is
   );
 });
 
-test("with no Claude login the person is told what login the runner needs, where, and that only they may read it, and nothing forbids the agent from walking them through it", () => {
+test("with no Claude login the person is told what login the runner needs, where, and that only they may read it, that a key or a cloud provider's credential can be used instead, and nothing forbids the agent from walking them through it", () => {
   const [missing] = runnerStops.LoginMissing;
   if (missing === undefined) throw new Error("no LoginMissing in the roster");
   expect(setupRunnerStopSaid(missing, "acme/widgets")).toEqual({
     found: `the runner has no Claude login on this machine: nothing is at ${boxLogin}`,
-    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+    tell: `The runner needs a Claude login of its own on this machine, and there is none at ${boxLogin}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${boxLogin} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
     when: "once the person says the runner's Claude login is on this machine",
     again: "Runner",
   });
+});
+
+test("with no credential where the settings name one of another kind, the person is told that kind's credential, what makes one and where, and a Claude plan is never named", () => {
+  const told = runnerStops.LoginMissing.slice(1).map(
+    (stop) => setupRunnerStopSaid(stop, "acme/widgets").tell,
+  );
+  expect(told).toEqual(
+    [
+      [
+        "Anthropic API key",
+        "a key from the Claude Console, made in a workspace",
+      ],
+      [
+        "Bedrock credential",
+        "a Bedrock API key, or an AWS credentials file whose profile holds an access key",
+      ],
+      ["Vertex AI key", "the JSON key Google Cloud made for a service account"],
+      ["Foundry API key", "a key of the Microsoft Foundry resource"],
+    ].map(
+      ([credential, made]) =>
+        `The runner's settings name its ${credential} as ${boxLogin}, and nothing is there, so nothing was changed on this machine. It is ${made}, saved alone in ${boxLogin} and readable only by you (mode 600). Tell me once it is there.`,
+    ),
+  );
+  for (const tell of told) expect(tell).not.toContain("Claude plan");
 });
 
 test("the first line of the check under a mark is found among the lines that are ok or not a check's at all, with the check it is of where this program knows it", () => {
@@ -694,12 +737,13 @@ test("the first line of the check under a mark is found among the lines that are
   expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
 });
 
-test("the checks this program has words for are the ones the package's doctor prints, in its order", () => {
+test("the checks this program has words for are the ones the package's doctor prints, in its order, under each name a release prints one by", () => {
   expect(Object.keys(setupRunnerChecks)).toEqual([
     "pool file",
     "runner configuration",
     "runtime directory",
     "Claude token file",
+    "Claude credential",
     "podman credential helpers",
     "container engine",
     "job network",
