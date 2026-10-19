@@ -4,8 +4,9 @@
  *
  * A REPOSITORY IS READ ONLY WHERE THE PROJECT BINDS IT. The read is authorized
  * as the project's own is, and a repository the project does not name is
- * answered as one that does not exist, before anything is asked of git. A read
- * of an address the caller chose would have this server fetch it under the
+ * answered as one that does not exist, before anything is asked of git. So is
+ * one it retired, which another project may since have bound. A read of an
+ * address the caller chose would have this server fetch it under the
  * credentials it holds, from inside its own network.
  *
  * THE ANSWER NAMES THE COMMIT IT WAS READ AT, which is the default branch's
@@ -40,6 +41,7 @@ import type {
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
+import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import type {
   ProjectRepositoryBindingRead,
   RepositoryDefaultBranchPort,
@@ -147,7 +149,7 @@ export type RepositoryTreeListing =
     };
 
 export interface RepositoryTreeReads {
-  /** Answers `NotFound` for a project the caller may not read and for a repository the project does not bind. */
+  /** Answers `NotFound` for a project the caller may not read and for a repository the project does not bind live. */
   read(
     principal: Principal,
     partition: Partition,
@@ -157,17 +159,20 @@ export interface RepositoryTreeReads {
 
 export interface RepositoryTreePorts {
   readonly access: ProjectAccess;
+  readonly landing: Pick<ProjectRepositoryLandingStore, "landing">;
   readonly bindings: ProjectRepositoryBindingRead;
   readonly source: RepositoryTreeSource;
 }
 
-/** The project's own binding of exactly the repository named, and nothing for any other. */
+/** The project's own live binding of exactly the repository named, and nothing for any other. */
 async function repositoryTreeBinding(
-  bindings: ProjectRepositoryBindingRead,
+  ports: Pick<RepositoryTreePorts, "landing" | "bindings">,
   partition: Partition,
   repository: RepositoryId,
 ): Promise<RepositoryBinding | undefined> {
-  const binding = await bindings.binding(partition, repository);
+  const bound = await ports.landing.landing(partition, repository);
+  if (bound === undefined || bound.retiredAt !== undefined) return undefined;
+  const binding = await ports.bindings.binding(partition, repository);
   if (binding === undefined) return undefined;
   if (
     binding.repository !== repository ||
@@ -232,7 +237,7 @@ async function repositoryTreeRead(
   query: RepositoryTreeQuery,
 ): Promise<RepositoryTreeListing | undefined> {
   const binding = await repositoryTreeBinding(
-    ports.bindings,
+    ports,
     partition,
     query.repository,
   );

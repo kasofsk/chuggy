@@ -24,6 +24,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryTreeReads,
   type RepositoryTreeSource,
@@ -84,6 +85,18 @@ function appOver(
         };
   const repositoryTree = repositoryTreeReads({
     access: project,
+    landing: {
+      landing: (_partition, repository) =>
+        Promise.resolve(
+          repository === bound
+            ? {
+                repository: bound,
+                boundAt: "2026-10-01T00:00:00.000000Z",
+                landing: asRepositoryLanding("Push"),
+              }
+            : undefined,
+        ),
+    },
     bindings: {
       binding: (_partition, repository) =>
         Promise.resolve(

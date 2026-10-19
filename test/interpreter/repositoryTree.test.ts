@@ -22,6 +22,10 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  asRepositoryLanding,
+  type ProjectRepositoryBound,
+} from "../../src/interpreter/repositoryBinding.ts";
 import type { RepositoryDefaultBranchRead } from "../../src/interpreter/repositoryConfiguration.ts";
 import {
   asRepositoryTreeDirectory,
@@ -55,6 +59,18 @@ function binding(repository: RepositoryId): RepositoryBinding {
   return { partition, repository, recoveryEpoch: asRecoveryEpoch("epoch") };
 }
 
+function landed(
+  repository: RepositoryId,
+  retired: boolean,
+): ProjectRepositoryBound {
+  return {
+    repository,
+    boundAt: "2026-10-01T00:00:00.000000Z",
+    landing: asRepositoryLanding("Push"),
+    ...(retired ? { retiredAt: "2026-10-02T00:00:00.000000Z" } : {}),
+  };
+}
+
 interface Doubled {
   readonly asked: string[];
   readonly reads: ReturnType<typeof repositoryTreeReads>;
@@ -68,6 +84,7 @@ function doubled(
     readonly tree?: RepositoryTreeRead;
     readonly source?: "Unconfigured";
     readonly bindingFor?: (repository: RepositoryId) => RepositoryBinding;
+    readonly retired?: RepositoryId;
   } = {},
 ): Doubled {
   const asked: string[] = [];
@@ -101,6 +118,16 @@ function doubled(
         };
   const reads = repositoryTreeReads({
     access: project,
+    landing: {
+      landing: (_partition, repository) => {
+        asked.push(`landing ${repository}`);
+        if (repository !== bound && answers.bindingFor === undefined)
+          return Promise.resolve(undefined);
+        return Promise.resolve(
+          landed(repository, repository === answers.retired),
+        );
+      },
+    },
     bindings: {
       binding: (_partition, repository) => {
         asked.push(`binding ${String(repository)}`);
@@ -132,6 +159,7 @@ test("a reader lists the root at the default branch's head, and is told the comm
     value: { ...listed, commit: head, directory: "" },
   });
   assert.deepEqual(asked, [
+    `landing ${bound}`,
     `binding ${bound}`,
     `head ${bound}`,
     `tree ${bound} ${head} `,
@@ -149,6 +177,7 @@ test("a subdirectory at a commit the reader names is read there, and the head is
     },
   );
   assert.deepEqual(asked, [
+    `landing ${bound}`,
     `binding ${bound}`,
     `tree ${bound} ${named} shelf/lib`,
   ]);
@@ -165,7 +194,22 @@ test("a repository the project does not bind is not found, and nothing is asked 
       ),
       { result: "NotFound" },
     );
-    assert.deepEqual(asked, [`binding ${unbound}`]);
+    assert.deepEqual(asked, [`landing ${unbound}`]);
+  }
+});
+
+test("a repository the project retired is not found, though its binding row stands, and nothing is asked of git for it", async () => {
+  for (const commit of [undefined, named]) {
+    const { asked, reads } = doubled(["Read"], { retired: bound });
+    assert.deepEqual(
+      await reads.read(
+        caller,
+        partition,
+        query(bound, repositoryTreeRoot, commit),
+      ),
+      { result: "NotFound" },
+    );
+    assert.deepEqual(asked, [`landing ${bound}`]);
   }
 });
 
@@ -181,7 +225,7 @@ test("a binding answered for another repository or another project is not taken 
     assert.deepEqual(await reads.read(caller, partition, query(unbound)), {
       result: "NotFound",
     });
-    assert.deepEqual(asked, [`binding ${unbound}`]);
+    assert.deepEqual(asked, [`landing ${unbound}`, `binding ${unbound}`]);
   }
 });
 
@@ -219,7 +263,11 @@ test("a head that is absent or unavailable is answered as such, and no tree is a
       result: "Authorized",
       value,
     });
-    assert.deepEqual(asked, [`binding ${bound}`, `head ${bound}`]);
+    assert.deepEqual(asked, [
+      `landing ${bound}`,
+      `binding ${bound}`,
+      `head ${bound}`,
+    ]);
   }
 });
 

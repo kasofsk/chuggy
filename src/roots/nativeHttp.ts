@@ -213,6 +213,7 @@ import {
   repositoryTreeReads,
   type RepositoryTreeReads,
 } from "../interpreter/repositoryTree.ts";
+import { postgresProjectRepositoryLanding } from "../adapters/postgres/repositoryBinding.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { bearerSecretReporters } from "../adapters/reporters/bearerSecret.ts";
 import { fluxSignatureReporters } from "../adapters/reporters/fluxSignature.ts";
@@ -758,6 +759,7 @@ export function nativeRepositoryTree(
   const scratch = nativeGitScratch();
   return repositoryTreeReads({
     access,
+    landing: postgresProjectRepositoryLanding(pools.pool),
     bindings: postgresProjectRepositoryBinding(pools.pool),
     source:
       scratch === undefined
