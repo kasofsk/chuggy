@@ -1,21 +1,31 @@
 /**
- * The adapter behind `ForgeInstallationTokens` for GitHub: the one request that
+ * The adapter behind `ForgeInstallationTokens` for GitHub: the request that
  * exchanges the app's own JWT for a token scoped to named repositories.
  *
  * THE APP'S CREDENTIAL AND THE REQUEST IT MAKES ARE `githubAppRequest.ts`'s.
  * What is here is the mint alone: which collection it posts to, how a named
  * permission set is spelled, and what a token is held under.
  *
+ * PIPELINE DEFINITIONS ARE ASKED FOR ONLY AS FAR AS THE INSTALLATION GRANTS
+ * THEM. An installation holds a permission its app requests only once the
+ * installation's owner has accepted it, and the forge refuses a mint asking for
+ * one the installation does not hold, so a set naming `pipelines` reads the
+ * installation as the app first and spells `workflows` only where it is
+ * granted. The read answers as a mint does, and a set naming no pipelines makes
+ * none.
+ *
  * A TOKEN IS HELD UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS GOOD
- * FOR. Repeated mints for one key are one request for as long as the held token
+ * FOR. Repeated mints for one key are one mint for as long as the held token
  * lasts; anything else is a different key, because a cache keyed more loosely
  * would hand a reader a credential that can push, or hand a caller acting on
  * one repository a token good for every repository the installation holds.
+ * What an installation grants is not in the key, so a token held from before
+ * its owner accepted `workflows` is handed out without it until it expires.
  * Nothing tracks a request in flight, so mints racing on one key each send and
  * each get a valid token, the last of them being the one held.
  *
  * A MINT ASKED FOR `unheld` IS NEITHER ANSWERED FROM WHAT IS HELD NOR HELD. It
- * is one request every time, and it leaves every held token as it found it. A
+ * is minted every time, and it leaves every held token as it found it. A
  * listing of what an installation grants asks for it, because a held token was
  * minted before whatever has been granted since and a listing must not turn on
  * whether the forge shows such a token the grant.
@@ -51,6 +61,7 @@ import {
   githubAppRead,
   githubAppSend,
   githubAppState,
+  type GithubAppAnswered,
   type GithubAppOptions,
   type GithubAppState,
 } from "./githubAppRequest.ts";
@@ -106,10 +117,18 @@ export function githubInstallationTokensSettings(
 /** The status a mint is answered with, a forge that made no token answering something else. */
 const githubMintedStatus = 201;
 
+/** The status the read of an installation is answered with. */
+const githubInstallationReadStatus = 200;
+
 /** The fields of a minted token this tree reads, the rest of the answer being the forge's own account of it. */
 const githubAccessTokenSchema = z.object({
   token: z.string().min(1),
   expires_at: z.string().min(1),
+});
+
+/** The one grant of an installation this tree reads, the rest of the answer being the forge's own account of it. */
+const githubInstallationGrantSchema = z.object({
+  permissions: z.object({ workflows: z.string().optional() }),
 });
 
 /** What the adapter holds across mints: the app's own state, and its cache. */
@@ -125,20 +144,36 @@ interface GithubCachedToken {
   readonly expiresAtMs: number;
 }
 
-/** The forge's own spelling of one named permission set. */
-function githubInstallationTokensPermissions(
-  request: ForgeTokenRequest,
-): Readonly<Record<string, string>> {
-  const permissions = forgePermissionSets[request.permissions];
+/** A mint that made no token, which is also what a failed read of its installation answers. */
+type GithubInstallationTokensRefused = Exclude<
+  ForgeTokenMinted,
+  { readonly minted: "Token" }
+>;
+
+/** What a body asks the forge for, or the refusal that stopped it before it was asked. */
+type GithubInstallationTokensAsked =
+  | {
+      readonly asked: "Permissions";
+      readonly permissions: Readonly<Record<string, string>>;
+    }
+  | {
+      readonly asked: "Refused";
+      readonly refused: GithubInstallationTokensRefused;
+    };
+
+/** A request the forge did not answer, as the mint reports it. */
+function githubInstallationTokensRefusal(
+  answered: Exclude<GithubAppAnswered, { readonly answered: "Answer" }>,
+): GithubInstallationTokensRefused {
   return {
-    contents: permissions.contents,
-    ...(permissions.changeProposals === undefined
-      ? {}
-      : { pull_requests: permissions.changeProposals }),
-    ...(permissions.administration === undefined
-      ? {}
-      : { administration: permissions.administration }),
+    minted: answered.answered,
+    ...(answered.evidence === undefined ? {} : { evidence: answered.evidence }),
   };
+}
+
+/** Where the app addresses one installation, which its access-token collection sits under. */
+function githubInstallationTokensPath(request: ForgeTokenRequest): string {
+  return `/app/installations/${encodeURIComponent(request.installation.installationId)}`;
 }
 
 /** The access-token collection of one installation. */
@@ -147,9 +182,59 @@ function githubInstallationTokensUrl(
   request: ForgeTokenRequest,
 ): URL {
   return new URL(
-    `/app/installations/${encodeURIComponent(request.installation.installationId)}/access_tokens`,
+    `${githubInstallationTokensPath(request)}/access_tokens`,
     own.app.apiUrl,
   );
+}
+
+/** Whether the installation's owner has granted the app its pipeline definitions, read as the app. */
+async function githubInstallationTokensPipelinesGranted(
+  own: GithubInstallationTokensState,
+  request: ForgeTokenRequest,
+): Promise<boolean | GithubInstallationTokensRefused> {
+  const answered = await githubAppSend(own.app, {
+    url: new URL(githubInstallationTokensPath(request), own.app.apiUrl),
+    method: "GET",
+    okStatus: githubInstallationReadStatus,
+  });
+  if (answered.answered !== "Answer")
+    return githubInstallationTokensRefusal(answered);
+  const read = await githubAppRead(
+    own.app,
+    answered.response,
+    githubInstallationGrantSchema,
+  );
+  if (read === undefined)
+    return { minted: "Unavailable", evidence: { mint: "Body" } };
+  return read.permissions.workflows === "write";
+}
+
+/** The forge's own spelling of one named permission set, as far as the installation grants it. */
+async function githubInstallationTokensPermissions(
+  own: GithubInstallationTokensState,
+  request: ForgeTokenRequest,
+): Promise<GithubInstallationTokensAsked> {
+  const permissions = forgePermissionSets[request.permissions];
+  const spelled = {
+    contents: permissions.contents,
+    ...(permissions.changeProposals === undefined
+      ? {}
+      : { pull_requests: permissions.changeProposals }),
+    ...(permissions.administration === undefined
+      ? {}
+      : { administration: permissions.administration }),
+  };
+  if (permissions.pipelines === undefined)
+    return { asked: "Permissions", permissions: spelled };
+  const granted = await githubInstallationTokensPipelinesGranted(own, request);
+  if (typeof granted !== "boolean")
+    return { asked: "Refused", refused: granted };
+  return {
+    asked: "Permissions",
+    permissions: granted
+      ? { ...spelled, workflows: permissions.pipelines }
+      : spelled,
+  };
 }
 
 /** What a token is good for, which is what two mints have to agree on to be one. */
@@ -164,33 +249,33 @@ function githubInstallationTokensCacheKey(request: ForgeTokenRequest): string {
 }
 
 /** The body one mint sends, the whole installation being what an absent scope means. */
-function githubInstallationTokensBody(request: ForgeTokenRequest): unknown {
+function githubInstallationTokensBody(
+  request: ForgeTokenRequest,
+  permissions: Readonly<Record<string, string>>,
+): unknown {
   return {
     ...(request.repositories === undefined
       ? {}
       : { repositories: [...request.repositories] }),
-    permissions: githubInstallationTokensPermissions(request),
+    permissions,
   };
 }
 
-/** Makes the one bounded forge request this mint is. */
+/** Makes the bounded forge request this mint is, after the installation read its set may need. */
 async function githubInstallationTokensSend(
   own: GithubInstallationTokensState,
   request: ForgeTokenRequest,
 ): Promise<ForgeTokenMinted> {
+  const asked = await githubInstallationTokensPermissions(own, request);
+  if (asked.asked === "Refused") return asked.refused;
   const answered = await githubAppSend(own.app, {
     url: githubInstallationTokensUrl(own, request),
     method: "POST",
     okStatus: githubMintedStatus,
-    body: githubInstallationTokensBody(request),
+    body: githubInstallationTokensBody(request, asked.permissions),
   });
   if (answered.answered !== "Answer")
-    return {
-      minted: answered.answered,
-      ...(answered.evidence === undefined
-        ? {}
-        : { evidence: answered.evidence }),
-    };
+    return githubInstallationTokensRefusal(answered);
   const granted = await githubAppRead(
     own.app,
     answered.response,
