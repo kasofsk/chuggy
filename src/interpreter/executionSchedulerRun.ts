@@ -866,31 +866,39 @@ async function schedulerPlace(
   }
 }
 
-/** An execution's owner and the personal runner registered for them. */
-interface SchedulerOwnerRunner {
+/** An execution's owner and the personal runners registered for them. */
+interface SchedulerOwnerRunners {
   readonly owner: Principal;
-  readonly runner: PersonalRunnerRegistered;
+  readonly runners: readonly PersonalRunnerRegistered[];
 }
 
-/** The owner's runner where the execution's project allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
-async function schedulerOwnerRunner(
+/** The owner's runners where the execution's project allows one, and nothing where it allows none, it has no owner, or the owner has no runner. */
+async function schedulerOwnerRunners(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-): Promise<SchedulerOwnerRunner | undefined> {
+): Promise<SchedulerOwnerRunners | undefined> {
   const owner = execution.owner;
   if (execution.ownerFallback === undefined || owner === undefined)
     return undefined;
-  const runner = await service.workerPools.personal(execution.partition, owner);
-  return runner === undefined ? undefined : { owner, runner };
+  const runners = await service.workerPools.personal(
+    execution.partition,
+    owner,
+  );
+  return runners.length === 0 ? undefined : { owner, runners };
 }
 
-/** The owner's runner, revoked where the owner no longer holds what admits it or `Read` of the project. */
-async function schedulerOwnerRunnerAnswered(
+/** Each of the owner's runners, every one revoked where the owner no longer holds what admits them or `Read` of the project. */
+async function schedulerOwnerRunnersAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  { owner, runner }: SchedulerOwnerRunner,
-): Promise<WorkerPoolAnswered> {
-  return {
+  { owner, runners }: SchedulerOwnerRunners,
+): Promise<readonly WorkerPoolAnswered[]> {
+  const revoked = !(await workerPoolOwnerStands(
+    service.access,
+    owner,
+    execution.partition,
+  ));
+  return runners.map((runner) => ({
     partition: execution.partition,
     pool: owner,
     principal: runner.principal,
@@ -898,24 +906,20 @@ async function schedulerOwnerRunnerAnswered(
     class: "Personal",
     dedicatedOwner: owner,
     allowlist: runner.allowlist,
-    revoked: !(await workerPoolOwnerStands(
-      service.access,
-      owner,
-      execution.partition,
-    )),
-  };
+    revoked,
+  }));
 }
 
 /**
- * Each pool beside whether the authority withholds its `Execute`, and the
- * owner's personal runner beside whether it is revoked, or nothing where the
- * authority could not answer, which decides nothing this pass.
+ * Each pool beside whether the authority withholds its `Execute`, and each of
+ * the owner's personal runners beside whether it is revoked, or nothing where
+ * the authority could not answer, which decides nothing this pass.
  */
 async function schedulerPoolsAnswered(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
   pools: readonly WorkerPoolRegistered[],
-  owned: SchedulerOwnerRunner | undefined,
+  owned: SchedulerOwnerRunners | undefined,
 ): Promise<readonly WorkerPoolAnswered[] | undefined> {
   try {
     const answered = await Promise.all(
@@ -934,7 +938,7 @@ async function schedulerPoolsAnswered(
       ? answered
       : [
           ...answered,
-          await schedulerOwnerRunnerAnswered(service, execution, owned),
+          ...(await schedulerOwnerRunnersAnswered(service, execution, owned)),
         ];
   } catch {
     return undefined;
@@ -943,10 +947,10 @@ async function schedulerPoolsAnswered(
 
 /**
  * Asks what can be said of an execution routed to pools against the pools its
- * project registered and its owner's personal runner, blocks the one no runner
- * is configured to run, and answers whether its attempt may be offered. A page
- * the registry cut short never blocks, since a pool past it may be, and an
- * undecided authority holds.
+ * project registered and its owner's personal runners, blocks the one no
+ * runner is configured to run, and answers whether its attempt may be offered.
+ * A page the registry cut short never blocks, since a pool past it may be, and
+ * an undecided authority holds.
  */
 async function schedulerOfferable(
   service: ExecutionSchedulerService,
@@ -958,7 +962,7 @@ async function schedulerOfferable(
     service,
     execution,
     registered.pools,
-    await schedulerOwnerRunner(service, execution),
+    await schedulerOwnerRunners(service, execution),
   );
   if (answered === undefined) return false;
   const outcome = workerPoolOutcomeRegistered(execution, answered);

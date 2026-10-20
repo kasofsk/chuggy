@@ -99,6 +99,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/personal-runner-permit",
   "/api/v1/tenants/:tenant/personal-runner",
   "/api/v1/tenants/:tenant/personal-runner/projects/:project",
+  "/api/v1/tenants/:tenant/personal-runner/runners/:runner",
   "/api/v1/tenants/:tenant/personal-runners/:subject",
   "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
   "/api/v1/tenants/:tenant/projects/:project/drafts",

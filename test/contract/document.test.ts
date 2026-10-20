@@ -73,6 +73,7 @@ const documentRouteNames = [
   "personalRunnerProject",
   "personalRunnerRegistrationTokens",
   "personalRunnerRegistrations",
+  "personalRunnerRunner",
   "project",
   "projectArtifact",
   "projectArtifacts",

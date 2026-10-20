@@ -9,11 +9,12 @@
  * which is `owner_fallback` named; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
- * it is enabled and current; its capabilities run the requirement; and its
- * held count, across every project it serves, is the slot. The owner's
- * fallback refuses a personal runner nothing. Its permit was asked when its
- * poll was admitted, and its owner's `Read` of each project before the claim,
- * which names only the projects that answered.
+ * it is enabled and current; its capabilities run the requirement; and what
+ * that registration holds, across every project it serves, is the slot, apart
+ * from what any other runner of the owner's holds. The owner's fallback
+ * refuses a personal runner nothing. Its permit was asked when its poll was
+ * admitted, and its owner's `Read` of each project before the claim, which
+ * names only the projects that answered.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
@@ -40,7 +41,7 @@ export interface PersonalExecutionClaim {
   readonly projects: readonly ProjectId[];
 }
 
-/** One unplaced attempt of the owner's, taken for their runner where `workerPoolCanAssign` would take it, serialized with every other claim and fence of the runner. */
+/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
   identity: PersonalRunnerIdentity,
@@ -83,6 +84,7 @@ export async function personalExecutionClaimed(
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
+                  AND h.pool_principal=r.principal
                   AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')

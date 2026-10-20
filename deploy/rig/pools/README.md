@@ -119,19 +119,21 @@ host the rig does not run and those controls say nothing about.
 
 A personal runner is a member's own machine, and it takes nothing but that
 member's threads and, under the owner fallback, their executions, in the
-projects they allowlist and may still read. A member holds at most one in a
-tenant, and none until the tenant gives them personal runners, which a new
-tenant's administrators may (an older tenant: `deploy/rig/keto/README.md`,
-Default authority holders), save the person a tenant is made for, who holds
-them from its making. The member mints a single-use token for the
-tenant, under My runner in the console's workspace settings or with
+projects they allowlist and may still read. A member may hold several in a
+tenant, each with its own room, and none until the tenant gives them personal
+runners, which a new tenant's administrators may (an older tenant:
+`deploy/rig/keto/README.md`, Default authority holders), save the person a
+tenant is made for, who holds them from its making. The member mints a
+single-use token for the tenant, under My runner in the console's workspace
+settings or with
 `POST /api/v1/tenants/:tenant/personal-runner-registration-tokens`, and
-redeems it on the machine with the runner's `register --personal`. The runner
-serves no project until its owner adds one. Registering again replaces the
-runner and keeps the projects it serves; removing it, by its owner or a tenant
-administrator, takes them with it. A personal runner holds no relation and is
-admitted only while its owner keeps the permit, and the forge credentials it
-is given are for the project of work it holds.
+redeems it on the machine with the runner's `register --personal`; each
+redemption adds a runner. A member's runners share one list of projects and
+serve none until their owner adds one. The owner removes one runner by its id
+or all of theirs, a tenant administrator all of a member's, and the list goes
+with the last. A personal runner holds no relation and is admitted only while
+its owner keeps the permit, and the forge credentials it is given are for the
+project of work it holds.
 
 ## The order an operator writes in
 

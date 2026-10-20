@@ -153,7 +153,6 @@ function MyRunnerDetails(props: {
   readonly runner: PersonalRunnerResponse;
 }): ReactNode {
   const nowMs = useNowMs();
-  const runner = props.runner;
   return (
     <Table caption="Your runner">
       <thead>
@@ -166,23 +165,25 @@ function MyRunnerDetails(props: {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td>{runner.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
-          <td>
-            <RunnerVersion runner={runner.runner} />
-          </td>
-          <td>
-            <Figure figure={instantFigure(runner.registeredAt, nowMs)} />
-          </td>
-          <td>
-            {runner.polledAt === undefined ? (
-              "Never"
-            ) : (
-              <Figure figure={instantFigure(runner.polledAt, nowMs)} />
-            )}
-          </td>
-          <td>{runnerStandingLabel(runner.live ? "Live" : "Offline")}</td>
-        </tr>
+        {props.runner.runners.map((runner) => (
+          <tr key={runner.id}>
+            <td>{runner.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
+            <td>
+              <RunnerVersion runner={runner.runner} />
+            </td>
+            <td>
+              <Figure figure={instantFigure(runner.registeredAt, nowMs)} />
+            </td>
+            <td>
+              {runner.polledAt === undefined ? (
+                "Never"
+              ) : (
+                <Figure figure={instantFigure(runner.polledAt, nowMs)} />
+              )}
+            </td>
+            <td>{runnerStandingLabel(runner.live ? "Live" : "Offline")}</td>
+          </tr>
+        ))}
       </tbody>
     </Table>
   );

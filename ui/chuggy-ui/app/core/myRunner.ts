@@ -112,7 +112,7 @@ export function runnerWait(
     return undefined;
   if (runner === undefined || !runner.projects.includes(project))
     return undefined;
-  if (runner.executionsLive) return "Waiting";
+  if (runner.runners.some((each) => each.executionsLive)) return "Waiting";
   return execution.ownerFallback === "Strict" ? "Offline" : undefined;
 }
 

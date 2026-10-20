@@ -39,6 +39,7 @@ import {
   nativeHttpPageItemsMax,
   partitionSchema,
   personalRunnerProjectsMax,
+  personalRunnersMax,
   resultReportCharsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
@@ -2128,13 +2129,14 @@ export type PersonalRunnerCredentialsResponse = z.infer<
 >;
 
 /**
- * A member's own runner in one tenant, and the projects it may serve in project
- * order. `polledAt` is its newest poll, absent until it polls, and `live`
- * whether that poll is recent enough for the runner to be taking work;
- * `executionsLive` is the same of its newest poll for executions alone, which
- * is what a pool's claim defers to under Preferred.
+ * One of a member's runners, named by `id`, the client its registration made.
+ * `polledAt` is its newest poll, absent until it polls, and `live` whether that
+ * poll is recent enough for the runner to be taking work; `executionsLive` is
+ * the same of its newest poll for executions alone, which is what a pool's
+ * claim defers to under Preferred.
  */
-export const personalRunnerResponseSchema = z.strictObject({
+const personalRunnerListedSchema = z.strictObject({
+  id: identitySchema,
   capabilities: z.array(z.string().min(1)),
   registeredAt: instantSchema,
   polledAt: instantSchema.optional(),
@@ -2142,6 +2144,11 @@ export const personalRunnerResponseSchema = z.strictObject({
   executionsLive: z.boolean(),
   /** What its newest poll named, absent where it named none. */
   runner: runnerListedSchema.optional(),
+});
+
+/** A member's own runners in one tenant, oldest first, and the projects every one of them may serve, in project order. */
+export const personalRunnerResponseSchema = z.strictObject({
+  runners: z.array(personalRunnerListedSchema).min(1).max(personalRunnersMax),
   projects: z.array(identitySchema).max(personalRunnerProjectsMax),
 });
 export type PersonalRunnerResponse = z.infer<

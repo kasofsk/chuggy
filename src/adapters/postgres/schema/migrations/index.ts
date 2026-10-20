@@ -67,6 +67,7 @@ import { migration066 } from "./066-lead-lists-repositories.ts";
 import { migration067 } from "./067-configuration-import-attempts.ts";
 import { migration068 } from "./068-lead-fetches-images.ts";
 import { migration069 } from "./069-runner-versions.ts";
+import { migration070 } from "./070-many-personal-runners.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -139,4 +140,5 @@ export const migrations: readonly Migration[] = [
   migration067,
   migration068,
   migration069,
+  migration070,
 ];

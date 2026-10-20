@@ -4,7 +4,8 @@
  * session attempt through. The pool plane holds no privilege on a session
  * relation, so every move here is a definer function, scoped as an
  * execution's assignment is to the registration that claimed it: a pool's by
- * its project and name, and a personal runner's by its tenant and owner.
+ * its project and name, and a personal runner's by its tenant, its owner and
+ * its principal.
  */
 
 import { sql } from "@ts-safeql/sql-tag";

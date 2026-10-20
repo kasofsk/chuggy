@@ -202,15 +202,12 @@ export async function sessionRigRunner(
 ): Promise<void> {
   const registry = postgresPersonalRunnerRegistry(rig.harness.pool);
   const key = { tenant: partition.tenant, owner: member };
-  const registered = await registry.register(
-    {
-      ...key,
-      capabilities: [],
-      clientId: `chuggy-personal-${randomUUID()}`,
-      principal: asPrincipal(`https://issuer.invalid#personal-${randomUUID()}`),
-    },
-    await registry.clientOf(key),
-  );
+  const registered = await registry.register({
+    ...key,
+    capabilities: [],
+    clientId: `chuggy-personal-${randomUUID()}`,
+    principal: asPrincipal(`https://issuer.invalid#personal-${randomUUID()}`),
+  });
   if (registered !== "Registered")
     throw new Error(`session rig: the member's runner answered ${registered}`);
   const allowed = await registry.allow(key, partition.project);

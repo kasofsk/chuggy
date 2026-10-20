@@ -50,11 +50,16 @@ vi.mock("@tanstack/react-router", () => ({
 const tenantPath = `${nativeHttpBasePath}/tenants/${leadPartition.tenant}`;
 
 const runnerHeld = {
-  capabilities: ["Platform:Linux:Amd64"],
-  registeredAt: "2026-10-01T00:00:00Z",
-  polledAt: "2026-10-01T00:01:00Z",
-  live: true,
-  executionsLive: true,
+  runners: [
+    {
+      id: "chuggy-personal-1",
+      capabilities: ["Platform:Linux:Amd64"],
+      registeredAt: "2026-10-01T00:00:00Z",
+      polledAt: "2026-10-01T00:01:00Z",
+      live: true,
+      executionsLive: true,
+    },
+  ],
   projects: ["atlas"],
 };
 

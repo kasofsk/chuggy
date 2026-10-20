@@ -376,8 +376,8 @@ export const leadInquirySchema = z.strictObject({
 
 /**
  * What a member's machine redeems a personal token with: the token and the
- * capabilities it declares. It names no pool, since a member's runner is the
- * one their token's tenant keys by them.
+ * capabilities it declares. It names no pool, since a member's runner is kept
+ * under their token's tenant, by them and by the client it registers.
  */
 export const personalRunnerRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(workerPoolIdentityCharsMax),

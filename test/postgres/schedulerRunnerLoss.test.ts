@@ -518,15 +518,12 @@ test("a ticket read names the member whose own runner a job was lost on", async 
   const key = { tenant: partition.tenant, owner };
   const personal = postgresPersonalRunnerRegistry(apiPool);
   assert.equal(
-    await personal.register(
-      {
-        ...key,
-        capabilities: ["Platform:Linux:Amd64"],
-        clientId: `chuggy-personal-${randomUUID()}`,
-        principal,
-      },
-      undefined,
-    ),
+    await personal.register({
+      ...key,
+      capabilities: ["Platform:Linux:Amd64"],
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal,
+    }),
     "Registered",
   );
   assert.equal(await personal.allow(key, partition.project), "Allowed");

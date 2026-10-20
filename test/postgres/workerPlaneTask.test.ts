@@ -578,15 +578,12 @@ test("a personal runner's bearer fetches the task of the execution it claimed, a
   const key = { tenant: project.partition.tenant, owner };
   const personal = postgresPersonalRunnerRegistry(apiPool);
   assert.equal(
-    await personal.register(
-      {
-        ...key,
-        capabilities: ["Platform:Linux:Amd64", "Agent:Claude"],
-        clientId: `chuggy-personal-${randomUUID()}`,
-        principal,
-      },
-      undefined,
-    ),
+    await personal.register({
+      ...key,
+      capabilities: ["Platform:Linux:Amd64", "Agent:Claude"],
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal,
+    }),
     "Registered",
   );
   assert.equal(await personal.allow(key, project.partition.project), "Allowed");

@@ -43,12 +43,12 @@
  * authority is asked whether its owner may still read each project before
  * anything is claimed, so an outage fails the poll with nothing claimed.
  *
- * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNER as the owner's fallback
+ * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
  * model's `ownerRunners` reads it. The claim cannot ask the authority, so the
  * owners it would defer to are read first and asked, and the claim is told
  * which of them are revoked; an owner past the bound is not asked, and is
- * deferred to as though their runner stood.
+ * deferred to as though their runners stood.
  */
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -181,16 +181,16 @@ export interface WorkerPoolDirectory {
   listed(partition: Partition): Promise<WorkerPoolListing>;
 }
 
-/** The registry as the scheduler reads it, which is a project's pools, a member's personal runner, and nothing a registration or a poll writes. */
+/** The registry as the scheduler reads it, which is a project's pools, a member's personal runners, and nothing a registration or a poll writes. */
 export interface WorkerPoolRoster {
   registered(partition: Partition): Promise<WorkerPoolRosterPage>;
   personal(
     partition: Partition,
     owner: Principal,
-  ): Promise<PersonalRunnerRegistered | undefined>;
+  ): Promise<readonly PersonalRunnerRegistered[]>;
 }
 
-/** One member's personal runner as the scheduler reads it: who it is, what it declared, and the projects it allowlists. */
+/** One of a member's personal runners as the scheduler reads it: who it is, what it declared, and the projects its owner's allowlist names. */
 export interface PersonalRunnerRegistered {
   readonly owner: Principal;
   readonly principal: Principal;
@@ -494,7 +494,7 @@ type WorkerPoolClaimMade = (
 ) => Promise<WorkerPoolClaimed | undefined>;
 
 /**
- * How this caller claims: a pool deferring to no revoked owner's runner, and a
+ * How this caller claims: a pool deferring to no revoked owner's runners, and a
  * personal runner in the projects its owner may still read. Every answer is
  * the authority's before anything is claimed.
  */

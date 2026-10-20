@@ -665,11 +665,16 @@ function ownAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
     (own === undefined
       ? refused()
       : answered({
-          capabilities: ["Platform:Linux:Amd64"],
-          registeredAt: "2026-10-09T00:00:00Z",
-          ...(own.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
-          live: own.live,
-          executionsLive: own.live,
+          runners: [
+            {
+              id: "chuggy-personal-1",
+              capabilities: ["Platform:Linux:Amd64"],
+              registeredAt: "2026-10-09T00:00:00Z",
+              ...(own.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
+              live: own.live,
+              executionsLive: own.live,
+            },
+          ],
           projects: own.projects.toSorted(),
         }))
   );

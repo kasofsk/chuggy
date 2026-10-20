@@ -22,13 +22,30 @@ import {
 import { sessionRunnerAdded } from "../app/core/sessionRunners.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
-const runner: PersonalRunnerResponse = {
+const held = {
+  id: "chuggy-personal-1",
   capabilities: ["Platform:Linux:Amd64"],
   registeredAt: "2026-10-01T00:00:00Z",
   live: true,
   executionsLive: true,
-  projects: ["atlas"],
 };
+
+const runner: PersonalRunnerResponse = { runners: [held], projects: ["atlas"] };
+
+/** The reader's runners, each live for threads and for executions as named. */
+function runnersLive(
+  ...live: readonly (readonly [boolean, boolean])[]
+): PersonalRunnerResponse {
+  return {
+    ...runner,
+    runners: live.map(([threads, executions], index) => ({
+      ...held,
+      id: `chuggy-personal-${String(index + 1)}`,
+      live: threads,
+      executionsLive: executions,
+    })),
+  };
+}
 
 /** A run of the reader's, routed to runners under `Strict`, whose worker has not begun. */
 const waiting = {
@@ -87,7 +104,7 @@ test("a run of the reader's that has not begun waits on their runner while it is
 
 /** Under Preferred a pool takes it while the runner is down, so it waits on nothing of the reader's. */
 test("an offline runner holds a run under Strict alone", () => {
-  const offline = { ...runner, live: false, executionsLive: false };
+  const offline = runnersLive([false, false]);
   expect(runnerWait(waiting, offline, "atlas")).toBe("Offline");
   expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, offline, "atlas"),
@@ -98,7 +115,7 @@ test("an offline runner holds a run under Strict alone", () => {
 /** A pool's claim defers under Preferred only to a runner polling for
  * executions, so one polling for its threads alone holds nothing back. */
 test("a runner live for its threads alone holds a run under Strict, and under Preferred leaves it to a pool", () => {
-  const threadsOnly = { ...runner, live: true, executionsLive: false };
+  const threadsOnly = runnersLive([true, false]);
   expect(runnerWait(waiting, threadsOnly, "atlas")).toBe("Offline");
   expect(
     runnerWait(
@@ -107,6 +124,13 @@ test("a runner live for its threads alone holds a run under Strict, and under Pr
       "atlas",
     ),
   ).toBeUndefined();
+});
+
+test("a run waits on the reader's runners while any one of them polls for executions", () => {
+  const either = runnersLive([false, false], [true, true]);
+  expect(
+    runnerWait({ ...waiting, ownerFallback: "Preferred" }, either, "atlas"),
+  ).toBe("Waiting");
 });
 
 test.each([

@@ -1,34 +1,37 @@
 /**
- * The registry a member's own runner is known by, its allowlist, and the tokens
- * it is registered with, all over the API's pool.
+ * The registry a member's own runners are known by, their allowlist, and the
+ * tokens they are registered with, all over the API's pool.
  *
- * A ROW IS WRITTEN OVER THE CLIENT IT WAS READ WITH. Registering a member who
- * has no runner inserts only where they still have none, and replacing one
- * updates only the row naming the client that was removed, so of two
- * registrations racing for one member exactly one writes and the other is
- * answered `Moved`. Replacing keeps the allowlist; deleting the row takes it.
+ * A MEMBER'S RUNNERS ARE WRITTEN UNDER ONE LOCK. Registering one, removing one
+ * and adding to their allowlist each take an advisory lock per member and
+ * tenant, so a registration counts the member's runners against
+ * `personalRunnersMax` with no other registration between its count and its
+ * row, and an allowlist is added to only while the member has a runner and is
+ * deleted with the last of them.
  *
- * REPLACING OR REMOVING A RUNNER FENCES WHAT IT HELD. A session attempt it
- * claimed records its owner and the principal that claimed, so the write that
- * changes or deletes the row ends, in the same transaction, every live attempt
- * whose principal the row no longer names.
+ * REMOVING A RUNNER FENCES WHAT IT HELD. A session or execution attempt it
+ * claimed records its owner and the principal that claimed, so the delete
+ * ends, in the same transaction, every live attempt whose principal is none
+ * of the owner's runners now; what another of their runners holds stands.
  *
- * AN ALLOWLIST IS BOUNDED AND ADDED TO UNDER THE RUNNER'S ROW LOCK, so two
- * additions racing cannot both see room for one, and a project is added only
- * while it is active.
+ * AN ALLOWLIST IS BOUNDED, so two additions racing under the lock cannot both
+ * see room for one, and a project is added only while it is active.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { personalRunnerProjectsMax } from "../../contract/http.ts";
+import {
+  personalRunnerProjectsMax,
+  personalRunnersMax,
+} from "../../contract/http.ts";
 import {
   personalRunnerTokensLiveMax,
   type PersonalRunnerAllowed,
   type PersonalRunnerKey,
+  type PersonalRunnerOwnerView,
   type PersonalRunnerRegistration,
   type PersonalRunnerRegistrationTokens,
   type PersonalRunnerRegistry,
-  type PersonalRunnerView,
   type PersonalRunnerTokenTerms,
   type PersonalRunnerWritten,
 } from "../../interpreter/personalRunnerRegistration.ts";
@@ -59,18 +62,44 @@ function tenantAbsent(failure: unknown, constraint: string): boolean {
 
 const foreignKeyViolation = "23503";
 
-/** A member's first registration in the tenant, written only where they have no runner and refused where the tenant is no row. */
+/** The lock every write to one member's runners or their allowlist takes, held to the end of its transaction. */
+async function personalRunnerLocked(
+  client: pg.PoolClient,
+  key: PersonalRunnerKey,
+): Promise<void> {
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+          'personal-runner-registry:' || ${key.tenant} || '/' || ${key.owner}, 0))::text AS locked`,
+  );
+}
+
+/** One more runner of the member's, written only while they hold fewer than their bound. */
 async function personalRunnerInserted(
+  client: pg.PoolClient,
+  registration: PersonalRunnerRegistration,
+): Promise<PersonalRunnerWritten> {
+  await personalRunnerLocked(client, registration);
+  const counted = await client.query<{ held: number }>(
+    sql`SELECT count(*)::int AS held FROM personal_runner r
+        WHERE r.tenant=${registration.tenant} AND r.owner=${registration.owner}`,
+  );
+  if ((counted.rows[0]?.held ?? 0) >= personalRunnersMax) return "LimitReached";
+  await client.query(
+    sql`INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+        VALUES(${registration.tenant as string},${registration.owner as string},${[...registration.capabilities]}::text[],${registration.principal as string},${registration.clientId})`,
+  );
+  return "Registered";
+}
+
+/** A runner registered, or the tenant answered absent where it is no row. */
+async function personalRunnerRegistered(
   pool: pg.Pool,
   registration: PersonalRunnerRegistration,
 ): Promise<PersonalRunnerWritten> {
   try {
-    const written = await pool.query(
-      sql`INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
-          VALUES(${registration.tenant as string},${registration.owner as string},${[...registration.capabilities]}::text[],${registration.principal as string},${registration.clientId})
-          ON CONFLICT (tenant,owner) DO NOTHING`,
+    return await postgresTransaction(pool, (client) =>
+      personalRunnerInserted(client, registration),
     );
-    return (written.rowCount ?? 0) === 1 ? "Registered" : "Moved";
   } catch (failure) {
     if (tenantAbsent(failure, "personal_runner_names_a_tenant"))
       return "NotFound";
@@ -78,56 +107,46 @@ async function personalRunnerInserted(
   }
 }
 
-/** Ends every live attempt the runner of `key` holds under a principal its row no longer names. */
-async function personalRunnerFenced(
+/**
+ * The member's runner naming `clientId` deleted, what it held fenced, and their
+ * allowlist deleted where it was the last of their runners.
+ */
+async function personalRunnerDeleted(
   client: pg.PoolClient,
   key: PersonalRunnerKey,
-): Promise<void> {
+  clientId: string,
+): Promise<boolean> {
+  await personalRunnerLocked(client, key);
+  const deleted = await client.query(sql`DELETE FROM personal_runner r
+    WHERE r.tenant=${key.tenant as string} AND r.owner=${key.owner as string}
+      AND r.client_id=${clientId}`);
+  if ((deleted.rowCount ?? 0) !== 1) return false;
   await client.query<{ fenced: string | null }>(
     sql`SELECT fence_personal_runner_attempts(${key.tenant},${key.owner})::text AS fenced`,
   );
+  await client.query(sql`DELETE FROM personal_runner_project a
+    WHERE a.tenant=${key.tenant as string} AND a.owner=${key.owner as string}
+      AND NOT EXISTS(SELECT 1 FROM personal_runner r
+        WHERE r.tenant=a.tenant AND r.owner=a.owner)`);
+  return true;
 }
 
-/** A member's runner replaced, only where its row still names the client `replacing` is, and what the old one held fenced. */
-async function personalRunnerReplaced(
-  client: pg.PoolClient,
-  registration: PersonalRunnerRegistration,
-  replacing: string,
-): Promise<PersonalRunnerWritten> {
-  const updated = await client.query(sql`UPDATE personal_runner r
-    SET capabilities=${[...registration.capabilities]}::text[],
-        principal=${registration.principal as string},
-        client_id=${registration.clientId},
-        registered_at=now(),
-        last_polled_at=NULL,
-        executions_polled_at=NULL,
-        runner_package=NULL,
-        runner_version=NULL
-    WHERE r.tenant=${registration.tenant as string} AND r.owner=${registration.owner as string}
-      AND r.client_id=${replacing}`);
-  if ((updated.rowCount ?? 0) !== 1) return "Moved";
-  await personalRunnerFenced(client, registration);
-  return "Registered";
-}
-
-/** One addition to a member's allowlist, under their runner's row lock. */
+/** One addition to a member's allowlist, under the lock their runners are written under. */
 async function personalRunnerProjectInserted(
   client: pg.PoolClient,
   key: PersonalRunnerKey,
   project: ProjectId,
 ): Promise<PersonalRunnerAllowed> {
-  const locked = await client.query<{ owner: string }>(
-    sql`SELECT r.owner FROM personal_runner r
-      WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}
-      FOR UPDATE`,
-  );
-  if (locked.rows.length === 0) return "NotFound";
+  await personalRunnerLocked(client, key);
   const standing = await client.query<{
+    registered: boolean;
     active: boolean;
     held: boolean;
     allowed: number;
   }>(
-    sql`SELECT EXISTS(SELECT 1 FROM project p
+    sql`SELECT EXISTS(SELECT 1 FROM personal_runner r
+          WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}) AS registered,
+        EXISTS(SELECT 1 FROM project p
           WHERE p.tenant=${key.tenant} AND p.project=${project}
             AND p.lifecycle='Active') AS active,
         EXISTS(SELECT 1 FROM personal_runner_project a
@@ -137,7 +156,7 @@ async function personalRunnerProjectInserted(
           WHERE a.tenant=${key.tenant} AND a.owner=${key.owner}) AS allowed`,
   );
   const row = standing.rows[0];
-  if (row === undefined || !row.active) return "NotFound";
+  if (row === undefined || !row.registered || !row.active) return "NotFound";
   if (row.held) return "Allowed";
   if (row.allowed >= personalRunnerProjectsMax) return "LimitReached";
   await client.query(sql`INSERT INTO personal_runner_project(tenant,owner,project)
@@ -145,12 +164,13 @@ async function personalRunnerProjectInserted(
   return "Allowed";
 }
 
-/** A member's runner, its newest poll of either kind and the runner that poll named, and the projects it serves. */
-async function personalRunnerRead(
+/** A member's runners, oldest first, each with its newest poll of either kind and the runner that poll named. */
+async function personalRunnersListed(
   pool: pg.Pool,
   key: PersonalRunnerKey,
-): Promise<PersonalRunnerView | undefined> {
+): Promise<PersonalRunnerOwnerView["runners"]> {
   const found = await pool.query<{
+    client_id: string;
     capabilities: string[];
     registered_at: Date;
     polled_at: Date | null;
@@ -158,61 +178,64 @@ async function personalRunnerRead(
     executions_live: boolean | null;
     runner_package: string | null;
     runner_version: string | null;
-    projects: string[] | null;
-  }>(sql`SELECT r.capabilities,r.registered_at,r.runner_package,r.runner_version,
+  }>(sql`SELECT r.client_id,r.capabilities,r.registered_at,r.runner_package,r.runner_version,
       greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
       greatest(r.last_polled_at,r.executions_polled_at)
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
       r.executions_polled_at
-        > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS executions_live,
-      (SELECT array_agg(a.project ORDER BY a.project)
-         FROM personal_runner_project a
-        WHERE a.tenant=r.tenant AND a.owner=r.owner) AS projects
+        > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS executions_live
     FROM personal_runner r
-    WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}`);
-  const row = found.rows[0];
-  return row === undefined
-    ? undefined
-    : {
-        capabilities: row.capabilities,
-        registeredAt: row.registered_at.toISOString(),
-        ...(row.polled_at === null
-          ? {}
-          : { polledAt: row.polled_at.toISOString() }),
-        live: row.live === true,
-        executionsLive: row.executions_live === true,
-        ...workerPoolRunnerKept(row),
-        projects: (row.projects ?? []).map(asProjectId),
-      };
+    WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}
+    ORDER BY r.registered_at,r.client_id LIMIT ${personalRunnersMax}`);
+  return found.rows.map((row) => ({
+    id: row.client_id,
+    capabilities: row.capabilities,
+    registeredAt: row.registered_at.toISOString(),
+    ...(row.polled_at === null
+      ? {}
+      : { polledAt: row.polled_at.toISOString() }),
+    live: row.live === true,
+    executionsLive: row.executions_live === true,
+    ...workerPoolRunnerKept(row),
+  }));
+}
+
+/** A member's runners and the projects they serve, or nothing where they have none. */
+async function personalRunnersRead(
+  pool: pg.Pool,
+  key: PersonalRunnerKey,
+): Promise<PersonalRunnerOwnerView | undefined> {
+  const runners = await personalRunnersListed(pool, key);
+  if (runners.length === 0) return undefined;
+  const allowed = await pool.query<{ project: string }>(
+    sql`SELECT a.project FROM personal_runner_project a
+      WHERE a.tenant=${key.tenant} AND a.owner=${key.owner}
+      ORDER BY a.project LIMIT ${personalRunnerProjectsMax}`,
+  );
+  return {
+    runners,
+    projects: allowed.rows.map((row) => asProjectId(row.project)),
+  };
 }
 
 export function postgresPersonalRunnerRegistry(
   pool: pg.Pool,
 ): PersonalRunnerRegistry {
   return {
-    clientOf: async (key) => {
+    clientsOf: async (key) => {
       const found = await pool.query<{ client_id: string }>(
         sql`SELECT r.client_id FROM personal_runner r
-          WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}`,
+          WHERE r.tenant=${key.tenant} AND r.owner=${key.owner}
+          ORDER BY r.registered_at,r.client_id LIMIT ${personalRunnersMax}`,
       );
-      return found.rows[0]?.client_id;
+      return found.rows.map((row) => row.client_id);
     },
-    register: (registration, replacing) =>
-      replacing === undefined
-        ? personalRunnerInserted(pool, registration)
-        : postgresTransaction(pool, (client) =>
-            personalRunnerReplaced(client, registration, replacing),
-          ),
+    register: (registration) => personalRunnerRegistered(pool, registration),
     deregister: (key, clientId) =>
-      postgresTransaction(pool, async (client) => {
-        const deleted = await client.query(sql`DELETE FROM personal_runner r
-          WHERE r.tenant=${key.tenant as string} AND r.owner=${key.owner as string}
-            AND r.client_id=${clientId}`);
-        if ((deleted.rowCount ?? 0) !== 1) return false;
-        await personalRunnerFenced(client, key);
-        return true;
-      }),
-    runner: (key) => personalRunnerRead(pool, key),
+      postgresTransaction(pool, (client) =>
+        personalRunnerDeleted(client, key, clientId),
+      ),
+    runners: (key) => personalRunnersRead(pool, key),
     allow: (key, project) =>
       postgresTransaction(pool, (client) =>
         personalRunnerProjectInserted(client, key, project),
