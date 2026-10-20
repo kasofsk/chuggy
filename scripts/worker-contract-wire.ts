@@ -336,7 +336,7 @@ const workerContractWireSchemaKinds: ReadonlyMap<
       pattern: "value",
       precision: "value",
     },
-    "string/string_format:url": { abort: "value" },
+    "string/string_format:url": { abort: "value", checks: "value" },
     union: { discriminator: "value", inclusive: "value", options: "value" },
     unknown: {},
   } as const).map(([kind, keys]) => [

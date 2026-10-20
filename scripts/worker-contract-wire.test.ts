@@ -323,6 +323,7 @@ const keyRows: readonly (readonly [string, string, string])[] = [
     "z.iso.datetime({ pattern: /^b$/u })",
   ],
   ["url abort", "z.url()", "z.url({ abort: true })"],
+  ["url checks", "z.url()", "z.url().max(1)"],
   [
     "union options",
     "z.union([z.string(), z.number()])",
