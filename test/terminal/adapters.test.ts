@@ -80,6 +80,7 @@ test("only a file is read, and only one no longer than the bound", () => {
   assert.equal(disk.text(beside, bytesMax), undefined);
   assert.equal(disk.text(join(beside, "missing"), bytesMax), undefined);
   assert.equal(disk.text("/dev/zero", bytesMax), undefined);
+  assert.equal(disk.text("/dev/null", bytesMax), undefined);
 });
 
 /** Who may do what with what is at a path, as the three digits a listing shows. */
