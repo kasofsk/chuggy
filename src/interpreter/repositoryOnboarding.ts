@@ -29,13 +29,13 @@
  * person authorizes and what this deployment mints through, and the worker app
  * is the plane's, found on each proven account under the worker's own key.
  *
- * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the three questions that are
- * the forge's — what the app is, where it is installed, and what one grants —
- * need an app key, and each of them is `NotConfigured` without one. Binding
- * proves a repository through the composed credential source, so a deployment
- * whose credentials come from files binds exactly as it always did, and one
- * that mints is refused by the same `Denied` the minting source already
- * answers an unclaimed owner with.
+ * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the questions that are the
+ * forge's — what the app is, where it is installed, what one grants, and
+ * whether one has accepted what its app asks for — need an app key, and each
+ * of them is `NotConfigured` without one. Binding proves a repository through
+ * the composed credential source, so a deployment whose credentials come from
+ * files binds exactly as it always did, and one that mints is refused by the
+ * same `Denied` the minting source already answers an unclaimed owner with.
  *
  * A NEWLY BOUND REPOSITORY IS LEFT CONFIGURED EITHER WAY. A project that binds
  * a repository declaring configurations wanted them, and one that binds a
