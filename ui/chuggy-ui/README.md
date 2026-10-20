@@ -217,10 +217,9 @@ preceded by the probe that would show it done, so the command is run again
 after any failure and picks up where things stand. In order it has the runner
 package installed, by the console's own install command and under a prefix in
 her home directory where npm's own is not hers to write, where there is none
-or the one there is too old for the settings, which need a newer one where they
-name `claudeCredential` than where they name `claudeTokenFile`; the package's
-settings written, with its guide's values, where there are none; the machine
-registered; the package's own check passed; its service installed; her
+or the one there is older than the first release that updates itself; the
+package's settings written, with its guide's values, where there are none; the
+machine registered; the package's own check passed; its service installed; her
 services set to outlive a logout; and the service enabled and started. For a
 registration it mints a registration token, a write, and hands it to the
 package's `register` as one word of its arguments and nowhere else; her own

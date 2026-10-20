@@ -34,7 +34,7 @@ export const boxPoolName = "shame";
 /** What the Claude login file holds, which nothing may read or print. */
 export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
 /** The version an install puts here unless a case has the release be another. */
-export const boxVersion = "0.4.0";
+export const boxVersion = "0.14.0";
 
 /** Everything the command runs on the machine, by what it is for. */
 export type BoxAct =

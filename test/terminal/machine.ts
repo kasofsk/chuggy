@@ -70,7 +70,7 @@ export interface Machine {
 function knobsFirst(prefix: string): MachineKnobs {
   return {
     prefix,
-    version: "0.4.0",
+    version: "0.14.0",
     pool: "shame",
     engines: { docker: true, podman: true },
     services: true,

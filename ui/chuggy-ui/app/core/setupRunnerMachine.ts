@@ -310,7 +310,7 @@ function setupCredentialNamed(
     : undefined;
 }
 
-/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude credential they name and the oldest package that reads them. */
+/** The runner's settings: none yet, there and not read as the package's, or the engine and the Claude credential they name. */
 export type SetupSettingsRead =
   | { readonly settings: "Absent" }
   | { readonly settings: "Unread" }
@@ -319,7 +319,6 @@ export type SetupSettingsRead =
       readonly path: string;
       readonly engine: SetupEngine;
       readonly credential: SetupClaudeCredential;
-      readonly least: string;
     };
 
 function setupJson(text: string | undefined): unknown {
@@ -350,10 +349,6 @@ export function setupSettingsRead(
         path: places.settings,
         engine: parsed.data.engine ?? setupEngines[0],
         credential,
-        least:
-          parsed.data.claudeCredential === undefined
-            ? setupPackageLeast
-            : setupPackageCredentialLeast,
       }
     : { settings: "Unread" };
 }
@@ -393,26 +388,25 @@ const setupVersionSchema = z.object({
   version: z.string().regex(/^\d+\.\d+\.\d+[0-9A-Za-z.+-]*$/u),
 });
 
-/** The first version of the runner package whose `register` takes `--personal`, which is the oldest a run can use. */
-export const setupPackageLeast = "0.4.0";
-
-/** The first version of the runner package whose settings may name `claudeCredential`, which is the oldest a run can use where they do. */
-export const setupPackageCredentialLeast = "0.13.0";
+/**
+ * The first version of the runner package that updates itself to the release
+ * chuggy names for it, which is the oldest a run leaves a machine on: whatever
+ * a later chuggy needs of the package reaches a machine at or past it by that
+ * update, and never one below it.
+ */
+export const setupPackageLeast = "0.14.0";
 
 function setupVersionParts(version: string): readonly number[] {
   return version.split(/[.+-]/u, 3).map(Number);
 }
 
-/** Whether a package found is one a run can use: its version read, and none older than `least`. */
-export function setupPackageCurrent(
-  found: SetupPackageFound,
-  least: string,
-): boolean {
+/** Whether a package found is one a run can use: its version read, and none older than the least. */
+export function setupPackageCurrent(found: SetupPackageFound): boolean {
   if (found.version === undefined) return false;
   const had = setupVersionParts(found.version);
-  const needed = setupVersionParts(least);
-  const at = had.findIndex((part, index) => part !== needed[index]);
-  return at < 0 || (had[at] ?? 0) > (needed[at] ?? 0);
+  const least = setupVersionParts(setupPackageLeast);
+  const at = had.findIndex((part, index) => part !== least[index]);
+  return at < 0 || (had[at] ?? 0) > (least[at] ?? 0);
 }
 
 function setupCommandIn(prefix: string): string {
@@ -446,11 +440,10 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
+/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
-  least: string,
 ): Promise<SetupPackageProbe> {
   const prefix = setupPrefixRead(
     await ports.process.read(
@@ -467,8 +460,7 @@ export async function setupPackageProbed(
     prefix === undefined ? undefined : setupPackageIn(ports, prefix),
     setupPackageIn(ports, places.own),
   ].filter((there) => there !== undefined);
-  const found =
-    held.find((there) => setupPackageCurrent(there, least)) ?? held[0];
+  const found = held.find(setupPackageCurrent) ?? held[0];
   return { found, prefix, mine };
 }
 

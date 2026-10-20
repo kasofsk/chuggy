@@ -33,7 +33,7 @@ import {
   setupMintLifetimeSecs,
   setupWritePorts,
 } from "../app/core/setupRunner.ts";
-import { setupPackageCredentialLeast } from "../app/core/setupRunnerMachine.ts";
+import { setupPackageLeast } from "../app/core/setupRunnerMachine.ts";
 import {
   setupLockWord,
   setupSignInNoteWritten,
@@ -315,11 +315,11 @@ test("a second run where both runners are live and the person's own serves the p
   expect(times(machine, "restart")).toBe(0);
 });
 
-test("a package older than the first whose register takes --personal, or of a version that cannot be read, is installed again by the same command, the service written before it, whose unit the new one writes the same, is restarted onto the new one, and the run goes on to the person's own runner", async () => {
+test("a package older than the first that updates itself, or of a version that cannot be read, is installed again by the same command, the service written before it, whose unit the new one writes the same, is restarted onto the new one, and the run goes on to the person's own runner", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
   const words = runnerPackageOffered.installCommand.split(" ");
   for (const [held, said] of [
-    [JSON.stringify({ version: "0.3.0" }), "chuggy-linux 0.3.0"],
+    [JSON.stringify({ version: "0.13.0" }), "chuggy-linux 0.13.0"],
     ["{", "chuggy-linux"],
   ] as const) {
     const machine = await fresh();
@@ -332,7 +332,7 @@ test("a package older than the first whose register takes --personal, or of a ve
       found.engine,
       found.settings,
       found.login,
-      `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs 0.4.0 or later${held === "{" ? " and could not read its version" : ""}`,
+      `found: the runner package is installed: ${said}, at ${command}, and chuggy setup needs ${setupPackageLeast} or later${held === "{" ? " and could not read its version" : ""}`,
       did.package,
       found.pool,
       found.check,
@@ -354,31 +354,33 @@ test("a package older than the first whose register takes --personal, or of a ve
   }
 });
 
-test("settings naming claudeCredential have a package older than the first release that takes it replaced before anything is registered, settings naming claudeTokenFile alone keep it, and an install that leaves one older stops the run with nothing registered", async () => {
+test("settings naming claudeCredential have a package older than the first that updates itself replaced before anything is registered, and an install that leaves one older stops the run with nothing registered", async () => {
   const manifest = `${boxPrefix}/lib/node_modules/chuggy-linux/package.json`;
   const key = "/srv/secrets/anthropic-api-key";
-  const held = async (settings: object, release: string) => {
+  const held = async (release: string) => {
     const machine = await fresh();
     machine.box.release = release;
     machine.box.paths.set(key, boxLoginSecret);
     machine.box.paths.set(command, "#!/usr/bin/env node");
-    machine.box.paths.set(manifest, JSON.stringify({ version: "0.12.0" }));
-    machine.box.paths.set(boxSettings, JSON.stringify(settings));
+    machine.box.paths.set(manifest, JSON.stringify({ version: "0.13.0" }));
+    machine.box.paths.set(
+      boxSettings,
+      JSON.stringify({ claudeCredential: { kind: "ApiKey", apiKeyFile: key } }),
+    );
     return machine;
   };
-  const keyed = { claudeCredential: { kind: "ApiKey", apiKeyFile: key } };
   const head = [
     signedIn,
     found.engine,
     found.settings,
     `found: the runner's Anthropic API key is in ${key}`,
-    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
   ];
 
-  const replaced = await held(keyed, setupPackageCredentialLeast);
+  const replaced = await held(setupPackageLeast);
   expect((await ran(replaced)).lines).toEqual([
     ...head,
-    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${command}`,
+    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${command}`,
     did.pool,
     found.check,
     did.unit,
@@ -389,22 +391,13 @@ test("settings naming claudeCredential have a package older than the first relea
   ]);
   expect(replaced.box.acts.slice(2, 4)).toEqual(["install", "register"]);
 
-  const tokened = await held({ claudeTokenFile: boxLogin }, "0.13.0");
-  expect((await ran(tokened)).lines.slice(2, 6)).toEqual([
-    found.settings,
-    found.login,
-    `found: the runner package is installed: chuggy-linux 0.12.0, at ${command}`,
-    did.pool,
-  ]);
-  expect(times(tokened, "install")).toBe(0);
-
-  const behind = await held(keyed, "0.12.0");
+  const behind = await held("0.13.0");
   const stopped = await ran(behind);
   expect(stopped.exit).toBe(1);
   expect(stopped.lines.slice(0, 7)).toEqual([
     ...head,
-    `found: installing the runner package left chuggy-linux 0.12.0 at ${command}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
-    "tell: Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
+    `found: installing the runner package left chuggy-linux 0.13.0 at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
+    `tell: Installing the runner package left chuggy-linux 0.13.0, and chuggy setup needs ${setupPackageLeast} or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.`,
   ]);
   expect(behind.box.acts.at(-1)).toBe("install");
   expect(writes(behind)).toEqual([]);
@@ -413,7 +406,7 @@ test("settings naming claudeCredential have a package older than the first relea
   ).toEqual([]);
 });
 
-test("settings naming claudeCredential, beside a machine-wide package too old for them under a prefix not the person's to write, take a current one under the person's own prefix where there is one, have one installed there where there is none, and with no npm stop before anything is changed", async () => {
+test("settings naming claudeCredential, beside a machine-wide package too old under a prefix not the person's to write, take a current one under the person's own prefix where there is one, have one installed there where there is none, and with no npm stop before anything is changed", async () => {
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
   const mine = `${boxOwn}/bin/chuggy-linux`;
   const key = "/srv/secrets/anthropic-api-key";
@@ -421,7 +414,7 @@ test("settings naming claudeCredential, beside a machine-wide package too old fo
     `${prefix}/lib/node_modules/chuggy-linux/package.json`;
   const held = async (ownVersion: string | undefined) => {
     const machine = await fresh();
-    machine.box.release = setupPackageCredentialLeast;
+    machine.box.release = setupPackageLeast;
     machine.box.sealed.add(`${boxPrefix}/bin`);
     machine.box.paths.set(key, boxLoginSecret);
     machine.box.paths.set(
@@ -445,10 +438,10 @@ test("settings naming claudeCredential, beside a machine-wide package too old fo
   const registeredBy = (machine: SetupMachine) =>
     machine.box.ran.find((run) => boxActOf(run) === "register")?.[0];
 
-  const current = await held(setupPackageCredentialLeast);
+  const current = await held(setupPackageLeast);
   const kept = await ran(current);
   expect(kept.lines[4]).toBe(
-    `found: the runner package is installed: chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+    `found: the runner package is installed: chuggy-linux ${setupPackageLeast}, at ${mine}`,
   );
   expect(kept.lines.slice(-2)).toEqual([live, next]);
   expect(times(current, "install")).toBe(0);
@@ -457,8 +450,8 @@ test("settings naming claudeCredential, beside a machine-wide package too old fo
   const none = await held(undefined);
   const installed = await ran(none);
   expect(installed.lines.slice(4, 6)).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.12.0, at ${machineWide}, and chuggy setup needs ${setupPackageCredentialLeast} or later`,
-    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}, and chuggy-linux 0.12.0 is still at ${machineWide}`,
+    `found: the runner package is installed: chuggy-linux 0.12.0, at ${machineWide}, and chuggy setup needs ${setupPackageLeast} or later`,
+    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}, and chuggy-linux 0.12.0 is still at ${machineWide}`,
   ]);
   expect(installed.lines.slice(-2)).toEqual([live, next]);
   expect(registeredBy(none)).toBe(mine);
@@ -469,12 +462,12 @@ test("settings naming claudeCredential, beside a machine-wide package too old fo
     gone.box.paths.set(mine, "#!/usr/bin/env node");
     gone.box.paths.set(
       manifest(boxOwn),
-      JSON.stringify({ version: setupPackageCredentialLeast }),
+      JSON.stringify({ version: setupPackageLeast }),
     );
     return exited(0, "done\n");
   });
   expect((await ran(gone)).lines[5]).toBe(
-    `did: installed the runner package, chuggy-linux ${setupPackageCredentialLeast}, at ${mine}`,
+    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}`,
   );
 
   const npmless = await held("0.12.0");
@@ -654,11 +647,11 @@ test("the package is installed by the console's own command word for word where 
       [...words.slice(0, -1), "--prefix", boxOwn, ...words.slice(-1)],
     ]);
     expect(done.lines[3], sealed).toBe(
-      `did: installed the runner package, chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
+      `did: installed the runner package, chuggy-linux 0.14.0, at ${boxOwn}/bin/chuggy-linux`,
     );
     expect(done.lines.slice(-2), sealed).toEqual([live, next]);
     expect((await ran(machine)).lines[4], sealed).toBe(
-      `found: the runner package is installed: chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
+      `found: the runner package is installed: chuggy-linux 0.14.0, at ${boxOwn}/bin/chuggy-linux`,
     );
   }
 });
@@ -715,7 +708,6 @@ test("the Claude credential is looked for and never read, where it is and where 
 
   const keyed = await fresh();
   const key = "/srv/secrets/anthropic-api-key";
-  keyed.box.release = setupPackageCredentialLeast;
   keyed.box.paths.delete(boxLogin);
   keyed.box.paths.set(key, boxLoginSecret);
   keyed.box.paths.set(
@@ -987,10 +979,10 @@ test("with no package, or one older than chuggy setup needs, and an npm that doe
   const old = await ran(machine);
   expect(old.lines.slice(3, 5)).toEqual(stopped.lines.slice(3, 5));
   expect(times(machine, "install")).toBe(0);
-  machine.box.paths.set(manifest, JSON.stringify({ version: "0.4.0" }));
+  machine.box.paths.set(manifest, JSON.stringify({ version: "0.14.0" }));
   const done = await ran(machine);
   expect(done.lines[3]).toBe(
-    `found: the runner package is installed: chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux`,
+    `found: the runner package is installed: chuggy-linux 0.14.0, at ${boxOwn}/bin/chuggy-linux`,
   );
   expect(done.lines.slice(-2)).toEqual([live, next]);
   expect(times(machine, "install")).toBe(0);
@@ -1088,7 +1080,7 @@ test("an act that ended well and left nothing where it makes its thing, or an in
   const done = await ran(old);
   expect(done.exit).toBe(1);
   expect(done.lines.at(-4)).toBe(
-    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs 0.4.0 or later`,
+    `found: installing the runner package left chuggy-linux 0.3.0 at ${command}, and chuggy setup needs ${setupPackageLeast} or later`,
   );
   expect(old.box.acts.at(-1)).toBe("install");
 });

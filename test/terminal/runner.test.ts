@@ -471,7 +471,7 @@ test("the person's own runner registered on another machine is not replaced: thi
   assert.ok(!existsSync(join(on.machine.units, ownUnit)));
 });
 
-test("a machine whose project's runner was set up on a package too old to register the person's own has it installed again by the same command, its service restarted onto the new one, and the run finishes the job", async () => {
+test("a machine whose project's runner was set up on a package older than the first that updates itself has it installed again by the same command, its service restarted onto the new one, and the run finishes the job", async () => {
   const on = await setUp();
   const { found, did } = lines(on);
   const installs = () => words(on, "npm").filter((argv) => argv[0] === "i");
@@ -497,7 +497,7 @@ test("a machine whose project's runner was set up on a package too old to regist
     found.engine,
     found.settings,
     found.login,
-    `found: the runner package is installed: chuggy-linux 0.3.0, at ${command}, and chuggy setup needs 0.4.0 or later`,
+    `found: the runner package is installed: chuggy-linux 0.3.0, at ${command}, and chuggy setup needs 0.14.0 or later`,
     did.package,
     found.pool,
     found.check,
@@ -820,7 +820,7 @@ test("where the machine's own prefix is not this person's to write, the package 
     const own = join(on.machine.own, "bin", "chuggy-linux");
     assert.ok(
       done.lines.includes(
-        `did: installed the runner package, chuggy-linux 0.4.0, at ${own}`,
+        `did: installed the runner package, chuggy-linux 0.14.0, at ${own}`,
       ),
       done.stdout,
     );
