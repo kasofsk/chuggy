@@ -8,7 +8,9 @@
  * one that is missing, once for each. It is the panel's one action until an
  * account is connected or the person comes back from the forge owning none
  * that holds the portal app; then Add account installs the portal app, and an
- * account without the worker app offers its install on its own row. A return
+ * account without the worker app offers its install on its own row, as an app
+ * whose installation has not accepted what the app now asks for offers the
+ * installation's own page on the forge. A return
  * from the forge that did not simply connect says so in one line on the
  * panel, until the person leaves.
  * Where Connect or Add is withheld the line under them says why, and a reader
@@ -18,11 +20,25 @@
 
 import type { ReactNode } from "react";
 
-import { apiForgeInstallations } from "../../core/apiRoutes.ts";
-import { forgeAccountRows } from "../../core/forgeInstallation.ts";
-import type { ForgeAccountRow } from "../../core/forgeInstallation.ts";
+import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
+import type { ForgeInstallationResponse } from "../../../../../src/contract/responses.ts";
+import {
+  apiForgeInstallationPermissions,
+  apiForgeInstallations,
+} from "../../core/apiRoutes.ts";
+import {
+  forgeAccountInstallationId,
+  forgeAccountRows,
+} from "../../core/forgeInstallation.ts";
+import type {
+  ForgeAccountRow,
+  ForgeAppStanding,
+} from "../../core/forgeInstallation.ts";
 import { forgeAccountsWithheld } from "../../core/projectRepositories.ts";
-import { forgeAppStandingTone } from "../../core/tones.ts";
+import {
+  forgeAppStandingTone,
+  forgeInstallationPermissionsTone,
+} from "../../core/tones.ts";
 import { usePanelTenantResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { currentPath } from "../ports.ts";
@@ -37,13 +53,73 @@ import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Table } from "../ui/Table.tsx";
+import { buttonLookClassName } from "../ui/Button.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
 /** No frame names this read, so a fresh visit is what reaches it. */
 export const forgeInstallationsResource = "forge-installations";
 
+/** No frame names this read either; each installation's is its own. */
+export const forgeInstallationPermissionsResource =
+  "forge-installation-permissions";
+
+/** An installed app as its installation stands, which says more than
+ * Installed only once the forge has answered that it is behind. */
+function InstalledApp(props: {
+  readonly tenant: string;
+  readonly installationId: string;
+}): ReactNode {
+  const read = usePanelTenantResource(
+    props.tenant,
+    `${forgeInstallationPermissionsResource}/${props.installationId}`,
+    (ports) =>
+      apiForgeInstallationPermissions(
+        ports,
+        props.tenant,
+        props.installationId,
+      ),
+  );
+  if (read.state !== "Ready" || read.value.permissions !== "Behind")
+    return <Pill tone={forgeAppStandingTone("Installed")}>Installed</Pill>;
+  return (
+    <>
+      <Pill tone={forgeInstallationPermissionsTone(read.value.permissions)}>
+        Update pending
+      </Pill>
+      <a
+        href={read.value.settingsUrl}
+        className={buttonLookClassName({ size: "sm" })}
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        Review on GitHub
+      </a>
+    </>
+  );
+}
+
+function AppStanding(props: {
+  readonly tenant: string;
+  readonly installations: readonly ForgeInstallationResponse[];
+  readonly account: string;
+  readonly app: ForgeAppName;
+  readonly standing: ForgeAppStanding;
+}): ReactNode {
+  const installationId = forgeAccountInstallationId(
+    props.installations,
+    props.account,
+    props.app,
+  );
+  if (installationId === undefined)
+    return (
+      <Pill tone={forgeAppStandingTone(props.standing)}>{props.standing}</Pill>
+    );
+  return <InstalledApp tenant={props.tenant} installationId={installationId} />;
+}
+
 function AccountRow(props: {
   readonly tenant: string;
+  readonly installations: readonly ForgeInstallationResponse[];
   readonly row: ForgeAccountRow;
 }): ReactNode {
   const row = props.row;
@@ -52,11 +128,25 @@ function AccountRow(props: {
       <th scope="row">{row.account}</th>
       <td>{row.kind}</td>
       <td>
-        <Pill tone={forgeAppStandingTone(row.portal)}>{row.portal}</Pill>
+        <span className="flex items-center gap-2">
+          <AppStanding
+            tenant={props.tenant}
+            installations={props.installations}
+            account={row.account}
+            app="portal"
+            standing={row.portal}
+          />
+        </span>
       </td>
       <td>
         <span className="flex items-center gap-2">
-          <Pill tone={forgeAppStandingTone(row.worker)}>{row.worker}</Pill>
+          <AppStanding
+            tenant={props.tenant}
+            installations={props.installations}
+            account={row.account}
+            app="worker"
+            standing={row.worker}
+          />
           {row.worker === "Missing" ? (
             <InstallLink
               tenant={props.tenant}
@@ -72,10 +162,10 @@ function AccountRow(props: {
 
 function AccountTable(props: {
   readonly tenant: string;
-  readonly rows: readonly ForgeAccountRow[];
+  readonly installations: readonly ForgeInstallationResponse[];
 }): ReactNode {
-  if (props.rows.length === 0)
-    return <EmptyState label="No account connected" />;
+  const rows = forgeAccountRows(props.installations);
+  if (rows.length === 0) return <EmptyState label="No account connected" />;
   return (
     <Table caption="Connected accounts">
       <thead>
@@ -87,8 +177,13 @@ function AccountTable(props: {
         </tr>
       </thead>
       <tbody>
-        {props.rows.map((row) => (
-          <AccountRow key={row.account} tenant={props.tenant} row={row} />
+        {rows.map((row) => (
+          <AccountRow
+            key={row.account}
+            tenant={props.tenant}
+            installations={props.installations}
+            row={row}
+          />
         ))}
       </tbody>
     </Table>
@@ -140,10 +235,7 @@ export function TenantAccountsPage(): ReactNode {
           <PanelUnready state={accounts} />
         )}
         {installations === undefined ? null : (
-          <AccountTable
-            tenant={tenant}
-            rows={forgeAccountRows(installations)}
-          />
+          <AccountTable tenant={tenant} installations={installations} />
         )}
       </Panel>
     </SettingsPage>

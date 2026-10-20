@@ -55,6 +55,7 @@ export const sessionBearerRouteClasses = {
   forgeAuthorizations: { POST: "Refused" },
   forgeInstallations: { GET: "Refused" },
   forgeInstallationRepositories: { GET: "Refused" },
+  forgeInstallationPermissions: { GET: "Refused" },
   workerPoolRegistrationTokens: { POST: "Refused" },
   personalRunnerRegistrationTokens: { POST: "Refused" },
   personalRunnerPermit: { GET: "Refused" },

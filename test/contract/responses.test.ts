@@ -24,6 +24,7 @@ import {
   executionsResponse,
   forgeAppsResponse,
   forgeAuthorizationResponse,
+  forgeInstallationPermissionsResponse,
   forgeInstallationsResponse,
   forgeRepositoriesResponse,
   inventoryResponse,
@@ -66,6 +67,7 @@ import {
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
+  forgeInstallationPermissionsResponseSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
   notificationsResponseSchema,
@@ -1909,6 +1911,41 @@ test("a tenant's installations and what one grants say whether they are all of i
     defaultBranch: "main",
     private: true,
   });
+});
+
+test("an installation's permissions say whether it is behind and where it is accepted, and an outage says neither", () => {
+  const settingsUrl =
+    "https://github.com/organizations/kasofsk/settings/installations/1";
+  for (const permissions of ["Current", "Behind"] as const) {
+    const answered = forgeInstallationPermissionsResponse({
+      result: "Permissions",
+      permissions,
+      settingsUrl,
+    });
+    assert.equal(answered.status, 200);
+    assert.deepEqual(
+      forgeInstallationPermissionsResponseSchema.parse(answered.body),
+      { permissions, settingsUrl },
+    );
+  }
+  const down = forgeInstallationPermissionsResponse({ result: "Unavailable" });
+  assert.equal(down.status, 503);
+  assert.equal(typeof down.headers["retry-after"], "string");
+  assert.equal(
+    forgeInstallationPermissionsResponseSchema.safeParse(down.body).success,
+    false,
+  );
+  assert.equal(
+    forgeInstallationPermissionsResponse({ result: "NotFound" }).status,
+    404,
+  );
+  assert.equal(
+    forgeInstallationPermissionsResponseSchema.safeParse({
+      permissions: "Pending",
+      settingsUrl,
+    }).success,
+    false,
+  );
 });
 
 test("a binding and a project's bindings name the repository and its moment", () => {
