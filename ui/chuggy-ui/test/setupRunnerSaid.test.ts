@@ -257,12 +257,12 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   Behind: [
     [
-      `installing the runner package left chuggy-linux 0.12.0 at ${rosterCommand}, and chuggy setup needs 0.13.0 or later`,
+      `installing the runner package left chuggy-linux 0.13.0 at ${rosterCommand}, and chuggy setup needs 0.14.0 or later`,
       1,
       "Runner",
     ],
     [
-      `installing the runner package left chuggy-linux at ${rosterCommand}, and chuggy setup needs 0.13.0 or later and could not read its version`,
+      `installing the runner package left chuggy-linux at ${rosterCommand}, and chuggy setup needs 0.14.0 or later and could not read its version`,
       1,
       "Runner",
     ],
@@ -570,10 +570,10 @@ test("a package older than the least, or of a version that cannot be read, is sa
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     ),
   ).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later`,
-    `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.4.0 or later and could not read its version`,
-    `did: installed the runner package, chuggy-linux 0.4.0, at ${rosterCommand}`,
-    `did: installed the runner package, chuggy-linux 0.4.0, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
+    `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.14.0 or later`,
+    `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.14.0 or later and could not read its version`,
+    `did: installed the runner package, chuggy-linux 0.14.0, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux 0.14.0, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
   ]);
 });
 
@@ -582,13 +582,13 @@ test("an install that leaves a package older than the run can use says the versi
     {
       stop: "Behind",
       command: rosterCommand,
-      version: "0.12.0",
-      least: "0.13.0",
+      version: "0.13.0",
+      least: "0.14.0",
     },
     "acme/widgets",
   );
   expect(said.tell).toBe(
-    "Installing the runner package left chuggy-linux 0.12.0, and chuggy setup needs 0.13.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
+    "Installing the runner package left chuggy-linux 0.13.0, and chuggy setup needs 0.14.0 or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer chuggy-linux is out.",
   );
   expect(said.when).toBe("once the person says a newer chuggy-linux is out");
   expect(said.found).not.toContain("is not at");
@@ -600,7 +600,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     );
   expect(lines("Package")).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.4.0, at ${rosterCommand}`,
+    `found: the runner package is installed: chuggy-linux 0.14.0, at ${rosterCommand}`,
   ]);
   expect(lines("PoolGone")).toEqual([
     `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,

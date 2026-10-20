@@ -152,14 +152,14 @@ export const runnerStops: {
     {
       stop: "Behind",
       command: rosterCommand,
-      version: "0.12.0",
-      least: "0.13.0",
+      version: "0.13.0",
+      least: "0.14.0",
     },
     {
       stop: "Behind",
       command: rosterCommand,
       version: undefined,
-      least: "0.13.0",
+      least: "0.14.0",
     },
   ],
   Unseen: [
@@ -270,13 +270,13 @@ export const runnerNotes: {
       note: "Outdated",
       command: rosterCommand,
       version: "0.3.0",
-      least: "0.4.0",
+      least: "0.14.0",
     },
     {
       note: "Outdated",
       command: rosterCommand,
       version: undefined,
-      least: "0.4.0",
+      least: "0.14.0",
     },
   ],
   Installed: [
