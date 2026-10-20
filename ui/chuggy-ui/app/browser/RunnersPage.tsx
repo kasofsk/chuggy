@@ -33,6 +33,7 @@ import { useApiPorts, usePanelResource } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { RunnerAskForm } from "./RunnerAsk.tsx";
 import { RunnerSteps } from "./RunnerSteps.tsx";
+import { RunnerVersion } from "./RunnerVersion.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { TopBarSlot } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -68,6 +69,7 @@ function RunnerRoster(props: {
         <tr>
           <th scope="col">Runner</th>
           <th scope="col">Platforms</th>
+          <th scope="col">Version</th>
           <th scope="col">Registered</th>
         </tr>
       </thead>
@@ -76,6 +78,9 @@ function RunnerRoster(props: {
           <tr key={pool.pool}>
             <th scope="row">{pool.pool}</th>
             <td>{pool.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
+            <td>
+              <RunnerVersion runner={pool.runner} />
+            </td>
             <td>
               <Figure figure={instantFigure(pool.registeredAt, nowMs)} />
             </td>

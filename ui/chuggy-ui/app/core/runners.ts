@@ -47,6 +47,28 @@ export interface RunnerPackage {
   readonly guideAddress: string;
 }
 
+const releasePattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
+
+/**
+ * Whether a runner's version is below the one chuggy pins for its package:
+ * plain `major.minor.patch` releases compared part by part as numbers, and
+ * anything else never behind.
+ */
+export function runnerOutdated(
+  version: string,
+  pinned: string | undefined,
+): boolean {
+  if (pinned === undefined) return false;
+  const have = releasePattern.exec(version);
+  const want = releasePattern.exec(pinned);
+  if (have === null || want === null) return false;
+  for (let part = 1; part <= 3; part++) {
+    const behind = Number(have[part]) - Number(want[part]);
+    if (behind !== 0) return behind < 0;
+  }
+  return false;
+}
+
 /** The packages a machine is made a runner with, an entry a package. */
 export const runnerPackages = {
   linux: {

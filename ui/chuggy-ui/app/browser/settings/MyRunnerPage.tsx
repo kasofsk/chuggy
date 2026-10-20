@@ -52,6 +52,7 @@ import {
 } from "../personalRunner.ts";
 import { RunnerAskForm } from "../RunnerAsk.tsx";
 import { RunnerSteps } from "../RunnerSteps.tsx";
+import { RunnerVersion } from "../RunnerVersion.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -158,6 +159,7 @@ function MyRunnerDetails(props: {
       <thead>
         <tr>
           <th scope="col">Platforms</th>
+          <th scope="col">Version</th>
           <th scope="col">Registered</th>
           <th scope="col">Last polled</th>
           <th scope="col">Status</th>
@@ -166,6 +168,9 @@ function MyRunnerDetails(props: {
       <tbody>
         <tr>
           <td>{runner.capabilities.map(runnerCapabilityLabel).join(", ")}</td>
+          <td>
+            <RunnerVersion runner={runner.runner} />
+          </td>
           <td>
             <Figure figure={instantFigure(runner.registeredAt, nowMs)} />
           </td>
