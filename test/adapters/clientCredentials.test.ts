@@ -304,10 +304,16 @@ test("a response longer than the byte bound is refused before it is parsed", asy
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /byte bound/u);
 });
 
-test("an endless empty grant response is refused by the read bound", async () => {
+test("an empty grant response longer than the read bound is refused by it", async () => {
+  const readsMax = 3;
+  let sent = 0;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      controller.enqueue(new Uint8Array());
+      if (sent > readsMax) controller.close();
+      else {
+        controller.enqueue(new Uint8Array());
+        sent += 1;
+      }
     },
   });
   const source = clientCredentialsTokenSource({
@@ -317,7 +323,7 @@ test("an endless empty grant response is refused by the read bound", async () =>
     ...noAudienceOrScope,
     requestTimeoutMs: 1_000,
     responseBytesMax: 10_000,
-    responseReadsMax: 3,
+    responseReadsMax: readsMax,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
     fetch: () => Promise.resolve(new Response(stream)),

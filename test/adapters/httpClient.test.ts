@@ -194,21 +194,30 @@ test("response overflow cancels the stream before retaining more bytes", async (
   assert.equal(cancelled, true);
 });
 
-test("an endless zero-byte response is bounded and cancelled", async () => {
+test("a zero-byte response longer than the read limit is bounded and cancelled", async () => {
+  const bytesMax = 4;
   let cancelled = false;
-  const body = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      controller.enqueue(new Uint8Array());
+  let sent = 0;
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (sent > bytesMax) controller.close();
+        else {
+          controller.enqueue(new Uint8Array());
+          sent += 1;
+        }
+      },
+      cancel() {
+        cancelled = true;
+      },
     },
-    cancel() {
-      cancelled = true;
-    },
-  });
+    { highWaterMark: 0 },
+  );
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
     accessToken: constantAccessToken("token"),
     requestTimeoutMs: 1_000,
-    responseBytesMax: 4,
+    responseBytesMax: bytesMax,
     fetch: () => Promise.resolve(new Response(body)),
   });
   await assert.rejects(
