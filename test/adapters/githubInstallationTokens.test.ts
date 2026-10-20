@@ -234,7 +234,7 @@ test("a key in either PEM encoding signs an assertion the forge can verify", asy
 test("one mint is one bounded request naming the installation and what it is for", async (t) => {
   const recorder = fixtureForge([fixtureMinted()]);
   const minted = await fixtureAdapter(t, recorder).mint(
-    fixtureRequest({ permissions: "propose" }),
+    fixtureRequest({ permissions: "administer" }),
   );
   assert.deepEqual(minted, {
     minted: "Token",
@@ -255,7 +255,7 @@ test("one mint is one bounded request naming the installation and what it is for
   assert.equal(call.headers["user-agent"], "chuggy-api");
   assert.deepEqual(JSON.parse(call.body ?? ""), {
     repositories: ["chuggy"],
-    permissions: { contents: "write", pull_requests: "write" },
+    permissions: { contents: "write", administration: "write" },
   });
 });
 
@@ -274,17 +274,156 @@ test("a token of the forge's current shape is minted rather than refused for its
   });
 });
 
-test("a named permission set is the whole of what a body asks for", async (t) => {
+/** What one recorded mint asked the forge for. */
+function fixtureAskedOf(recorder: ForgeRecorder, index: number): unknown {
+  return (
+    JSON.parse(recorder.calls[index]?.body ?? "") as { permissions: unknown }
+  ).permissions;
+}
+
+/** The installation as the forge describes it to the app, granting `workflows` or not. */
+function fixtureInstallationRead(grantsWorkflows: boolean): Response {
+  return Response.json({
+    id: Number(fixtureInstallationId),
+    permissions: {
+      contents: "write",
+      pull_requests: "write",
+      ...(grantsWorkflows ? { workflows: "write" } : {}),
+    },
+  });
+}
+
+test("a set naming no pipelines is the whole of what a body asks for, and reads no installation", async (t) => {
   const asked: unknown[] = [];
-  for (const permissions of ["read", "write"] as const) {
+  for (const permissions of ["read", "administer"] as const) {
     const recorder = fixtureForge([fixtureMinted()]);
     await fixtureAdapter(t, recorder).mint(fixtureRequest({ permissions }));
-    asked.push(
-      (JSON.parse(recorder.calls[0]?.body ?? "") as { permissions: unknown })
-        .permissions,
-    );
+    assert.equal(recorder.calls.length, 1, permissions);
+    assert.equal(recorder.calls[0]?.method, "POST", permissions);
+    asked.push(fixtureAskedOf(recorder, 0));
   }
-  assert.deepEqual(asked, [{ contents: "read" }, { contents: "write" }]);
+  assert.deepEqual(asked, [
+    { contents: "read" },
+    { contents: "write", administration: "write" },
+  ]);
+});
+
+test("a set naming pipelines asks for workflows exactly where the installation, read as the app, grants them", async (t) => {
+  const asked: unknown[] = [];
+  for (const permissions of ["write", "propose"] as const)
+    for (const grantsWorkflows of [true, false]) {
+      const recorder = fixtureForge([
+        fixtureInstallationRead(grantsWorkflows),
+        fixtureMinted(),
+      ]);
+      const minted = await fixtureAdapter(t, recorder).mint(
+        fixtureRequest({ permissions }),
+      );
+      const which = `${permissions} ${String(grantsWorkflows)}`;
+      assert.equal(minted.minted, "Token", which);
+      assert.equal(recorder.calls.length, 2, which);
+      assert.equal(
+        recorder.calls[0]?.url,
+        `${fixtureApiUrl}/app/installations/${fixtureInstallationId}`,
+        which,
+      );
+      assert.equal(recorder.calls[0].method, "GET", which);
+      assert.equal(recorder.calls[0].body, undefined, which);
+      assert.equal(
+        (await fixtureClaims(fixtureBearer(recorder, 0))).iss,
+        fixtureAppId,
+        which,
+      );
+      asked.push(fixtureAskedOf(recorder, 1));
+    }
+  assert.deepEqual(asked, [
+    { contents: "write", workflows: "write" },
+    { contents: "write" },
+    { contents: "write", pull_requests: "write", workflows: "write" },
+    { contents: "write", pull_requests: "write" },
+  ]);
+});
+
+test("an installation read refused, failing or unreadable is the mint's own answer, and no mint is posted", async (t) => {
+  const marker = "forge-said-r5t6y7";
+  const answers: readonly (readonly [() => Response | Error, unknown])[] = [
+    [
+      () => Response.json({ message: marker }, { status: 403 }),
+      { minted: "Denied", evidence: { mint: "Status", status: 403 } },
+    ],
+    [
+      () => Response.json({ message: marker }, { status: 404 }),
+      { minted: "Denied", evidence: { mint: "Status", status: 404 } },
+    ],
+    [
+      () => new Response("{}", { status: 500 }),
+      { minted: "Unavailable", evidence: { mint: "Status", status: 500 } },
+    ],
+    [
+      () =>
+        new Response("{}", {
+          status: 403,
+          headers: { "x-ratelimit-remaining": "0" },
+        }),
+      { minted: "Unavailable", evidence: { mint: "Throttle", status: 403 } },
+    ],
+    [
+      () => new TypeError("the network went away"),
+      { minted: "Unavailable", evidence: { mint: "Request" } },
+    ],
+    [
+      () => Response.json({ id: Number(fixtureInstallationId) }),
+      { minted: "Unavailable", evidence: { mint: "Body" } },
+    ],
+    [
+      () => new Response("{", { status: 200 }),
+      { minted: "Unavailable", evidence: { mint: "Body" } },
+    ],
+  ];
+  for (const permissions of ["write", "propose"] as const)
+    for (const [answer, expected] of answers) {
+      const recorder = fixtureForge([answer(), fixtureMinted()]);
+      const minted = await fixtureAdapter(t, recorder).mint(
+        fixtureRequest({ permissions }),
+      );
+      const which = `${permissions} ${JSON.stringify(expected)}`;
+      assert.deepEqual(minted, expected, which);
+      assert.equal(JSON.stringify(minted).includes(marker), false, which);
+      assert.equal(recorder.calls.length, 1, which);
+      assert.equal(recorder.calls[0]?.method, "GET", which);
+    }
+});
+
+test("an unheld mint naming pipelines reads the installation every time, and a held one reads it never", async (t) => {
+  const recorder = fixtureForge([
+    fixtureInstallationRead(false),
+    fixtureMinted(),
+    fixtureInstallationRead(true),
+    fixtureMinted(),
+    fixtureInstallationRead(true),
+    fixtureMinted(),
+  ]);
+  const tokens = fixtureAdapter(t, recorder);
+  for (const unheld of [true, true, false, false])
+    await tokens.mint(
+      fixtureRequest({
+        permissions: "write",
+        ...(unheld ? { unheld: true } : {}),
+      }),
+    );
+  assert.deepEqual(
+    recorder.calls.map((call) => call.method),
+    ["GET", "POST", "GET", "POST", "GET", "POST"],
+    "a held token makes no request at all",
+  );
+  assert.deepEqual(
+    [1, 3, 5].map((index) => fixtureAskedOf(recorder, index)),
+    [
+      { contents: "write" },
+      { contents: "write", workflows: "write" },
+      { contents: "write", workflows: "write" },
+    ],
+  );
 });
 
 test("a forge that refuses this app is settled and everything else is a wait, each saying the status it answered", async (t) => {
@@ -521,7 +660,7 @@ test("a token held is keyed by everything it is good for", async (t) => {
   ]);
   const tokens = fixtureAdapter(t, recorder);
   await tokens.mint(fixtureRequest());
-  await tokens.mint(fixtureRequest({ permissions: "write" }));
+  await tokens.mint(fixtureRequest({ permissions: "administer" }));
   await tokens.mint(
     fixtureRequest({ repositories: [asForgeRepositoryName("other")] }),
   );

@@ -131,6 +131,13 @@ export interface ForgeRepositoryPermissions {
   readonly contents: "read" | "write";
   readonly changeProposals?: "write";
   readonly administration?: "write";
+  /**
+   * Writing the definitions a forge runs on its own, which is asked for only as
+   * far as the installation grants it: its owner's acceptance on the forge is
+   * what admits this tree to write them. An installation that has not granted
+   * it is answered with a token without it rather than a refused mint.
+   */
+  readonly pipelines?: "write";
 }
 
 /**
@@ -142,8 +149,8 @@ export const forgePermissionSets: Readonly<
   Record<ForgePermissionSet, ForgeRepositoryPermissions>
 > = {
   read: { contents: "read" },
-  write: { contents: "write" },
-  propose: { contents: "write", changeProposals: "write" },
+  write: { contents: "write", pipelines: "write" },
+  propose: { contents: "write", changeProposals: "write", pipelines: "write" },
   administer: { contents: "write", administration: "write" },
 };
 
