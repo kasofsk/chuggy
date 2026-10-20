@@ -93,12 +93,14 @@ test("selector context client asks for a token on every request", async () => {
 });
 
 test("selector context client refuses oversized responses", async () => {
+  const readsMax = 10;
   let reads = 0;
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
       reads += 1;
-      controller.enqueue(new Uint8Array([1]));
+      if (reads > readsMax + 1) controller.close();
+      else controller.enqueue(new Uint8Array([1]));
     },
     cancel() {
       cancelled = true;
@@ -110,7 +112,7 @@ test("selector context client refuses oversized responses", async () => {
       accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1,
-      responseReadsMax: 10,
+      responseReadsMax: readsMax,
     },
     () => Promise.resolve(new Response(stream)),
   );
@@ -127,23 +129,32 @@ test("selector context client refuses oversized responses", async () => {
   assert.equal(cancelled, true);
 });
 
-test("selector context client cancels an endless empty response", async () => {
+test("selector context client cancels a response of empty chunks, more of them than the read bound", async () => {
+  const readsMax = 3;
   let cancelled = false;
-  const stream = new ReadableStream<Uint8Array>({
-    pull(controller) {
-      controller.enqueue(new Uint8Array());
+  let sent = 0;
+  const stream = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (sent > readsMax) controller.close();
+        else {
+          controller.enqueue(new Uint8Array());
+          sent += 1;
+        }
+      },
+      cancel() {
+        cancelled = true;
+      },
     },
-    cancel() {
-      cancelled = true;
-    },
-  });
+    { highWaterMark: 0 },
+  );
   const source = selectorContextHttp(
     {
       baseUrl: "https://native.example/",
       accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 1_000,
-      responseReadsMax: 3,
+      responseReadsMax: readsMax,
     },
     () => Promise.resolve(new Response(stream)),
   );
@@ -269,10 +280,16 @@ test("a body arriving in exactly its read bound is read, not refused", async () 
 });
 
 test("a refused selector context read disposes of the body it will not parse", async () => {
+  const readsMax = 100;
   let cancelled = false;
+  let sent = 0;
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
-      controller.enqueue(new Uint8Array([1]));
+      if (sent > readsMax) controller.close();
+      else {
+        controller.enqueue(new Uint8Array([1]));
+        sent += 1;
+      }
     },
     cancel() {
       cancelled = true;
@@ -284,7 +301,7 @@ test("a refused selector context read disposes of the body it will not parse", a
       accessToken: constantAccessToken("token"),
       requestTimeoutMs: 1_000,
       responseBytesMax: 10_000,
-      responseReadsMax: 100,
+      responseReadsMax: readsMax,
     },
     () => Promise.resolve(new Response(stream, { status: 401 })),
   );

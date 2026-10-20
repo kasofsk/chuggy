@@ -20,7 +20,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readSync,
   readdirSync,
   rmSync,
   statSync,
@@ -50,12 +50,27 @@ function names(directory: string): readonly string[] {
   }
 }
 
-/** Only a file is read, and only one no longer than the bound, so nothing that would never end is opened. */
+/**
+ * Only a file is read, so nothing that would never end or never answer is
+ * opened, and no more of it than one byte past the bound, so one longer than
+ * the bound is refused however long it has grown since it was looked at.
+ */
 function text(path: string, bytesMax: number): string | undefined {
   try {
-    const found = statSync(path);
-    if (!found.isFile() || found.size > bytesMax) return undefined;
-    return readFileSync(path, "utf8");
+    if (!statSync(path).isFile()) return undefined;
+    const file = openSync(path, "r");
+    try {
+      const held = Buffer.alloc(bytesMax + 1);
+      let length = 0;
+      while (length < held.length) {
+        const read = readSync(file, held, length, held.length - length, length);
+        if (read === 0) return held.toString("utf8", 0, length);
+        length += read;
+      }
+      return undefined;
+    } finally {
+      closeSync(file);
+    }
   } catch {
     return undefined;
   }
