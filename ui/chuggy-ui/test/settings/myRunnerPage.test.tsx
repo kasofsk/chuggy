@@ -94,6 +94,8 @@ interface Drawing {
   runner: unknown;
   /** Where set, a read of the runner waits on it, as one over a network does. */
   held?: Promise<Response> | undefined;
+  /** Where set, the status a runner's removal is answered with. */
+  removal?: number;
 }
 
 let drawing: Drawing = { granted: true, runner: undefined };
@@ -122,7 +124,9 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         : answer(drawing.runner);
     }
     if (path.startsWith(`${tenantPath}/personal-runner/runners/`))
-      return answer(undefined, 204);
+      return drawing.removal === undefined
+        ? answer(undefined, 204)
+        : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
     if (path === `${tenantPath}/personal-runner-registration-tokens`)
       return answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 });
@@ -314,6 +318,26 @@ test("taking one of two runners off is asked first, then sent by its id, and lea
   expect(screen.getByText("1 runner")).toBeTruthy();
   expect(screen.queryByText(/a81c04d2/u)).toBeNull();
   expect(screen.getByText("3f2a9c1e")).toBeTruthy();
+});
+
+test("taking one runner off a list another removal emptied meanwhile leaves none listed", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  await press("Remove runner 3f2a9c1e");
+  drawing.runner = undefined;
+  await press("Remove");
+  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.queryByText(/a81c04d2/u)).toBeNull();
+});
+
+test("a runner already taken off elsewhere is answered as removed, and leaves none listed", async () => {
+  drawing = { granted: true, runner: runnerHeld, removal: 404 };
+  await drawMyRunner();
+  await press("Remove runner 3f2a9c1e");
+  drawing.runner = undefined;
+  await press("Remove");
+  expect(screen.queryByText(/^Refused/u)).toBeNull();
+  expect(screen.getByText("0 runners")).toBeTruthy();
 });
 
 test("taking the last runner off says the projects go with it, and leaves none listed", async () => {

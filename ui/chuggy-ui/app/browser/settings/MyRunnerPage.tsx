@@ -93,10 +93,10 @@ type MyRunnerWrite =
 
 interface MyRunnerWriting {
   readonly write: MyRunnerWrite;
-  /** `emptied` where the change takes the last runner off, so they are read with nothing held. */
+  /** `removal` where the change takes a runner off, which a 404 says was done already. */
   readonly send: (
     sent: Promise<ApiResult<undefined>>,
-    emptied?: boolean,
+    removal?: boolean,
   ) => Promise<void>;
 }
 
@@ -106,14 +106,15 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
   const [write, setWrite] = useState<MyRunnerWrite>({ write: "Idle" });
   return {
     write,
-    send: async (sent, emptied = false) => {
+    send: async (sent, removal = false) => {
       setWrite({ write: "Writing" });
       const answered = await sent;
-      if (emptied && answered.outcome === "Ok")
-        await personalRunnerForgotten(client, tenant);
+      const done =
+        answered.outcome === "Ok" || (removal && answered.outcome === "Absent");
+      if (removal && done) await personalRunnerForgotten(client, tenant);
       else await personalRunnerReread(client, tenant);
       setWrite(
-        answered.outcome === "Ok"
+        done
           ? { write: "Idle" }
           : { write: "Failed", reason: panelReason(answered) },
       );
@@ -202,7 +203,9 @@ function useMyRunnerRemoving(
   const ports = useApiPorts();
   const [asking, setAsking] = useState<string | undefined>(undefined);
   return {
-    asking,
+    asking: held.runners.some((runner) => runner.id === asking)
+      ? asking
+      : undefined,
     busy: writing.write.write === "Writing",
     press: setAsking,
     cancel: () => {
@@ -212,7 +215,7 @@ function useMyRunnerRemoving(
       void (async () => {
         await writing.send(
           apiDeregisterPersonalRunner(ports, tenant, runner),
-          held.runners.length === 1,
+          true,
         );
         setAsking(undefined);
       })();

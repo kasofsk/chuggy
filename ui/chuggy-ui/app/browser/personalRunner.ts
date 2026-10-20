@@ -36,8 +36,8 @@ export async function personalRunnerReread(
   });
 }
 
-/** The runners read afresh with nothing held, for the last of them taken off:
- * a polled read keeps its last answer through a failed one, and a member with
+/** The runners read afresh with nothing held, for one of them taken off: a
+ * polled read keeps its last answer through a failed one, and a member with
  * none is answered as absent. */
 export async function personalRunnerForgotten(
   client: QueryClient,

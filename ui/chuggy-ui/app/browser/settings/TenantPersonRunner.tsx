@@ -56,7 +56,7 @@ export function TenantPersonRunner(props: {
             setRemoval({ removal: "Idle" });
           }}
         >
-          Every runner of theirs stops taking their work in this workspace.
+          Every runner of theirs stops taking their work here.
         </Confirm>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
