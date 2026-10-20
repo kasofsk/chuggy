@@ -204,7 +204,7 @@ function doctor(file: string): number {
     `ok    pool file: ${file} names pool ${pool.replaceAll(".", "/")}`,
     `ok    runner configuration: ${settings}: concurrencyMax 1, sessionsMax 2`,
     "ok    runtime directory: /run/user/1000/chuggy-linux",
-    `ok    Claude token file: ${login}, this runner's own`,
+    `ok    Claude credential: Subscription, from the Claude token file ${login}, this runner's own`,
     "ok    container engine: docker at unix:///var/run/docker.sock lists 0 of this pool's containers",
     "ok    job network: chuggy-jobs is present",
     "ok    pool token: issued by https://auth.example/oauth2/token",

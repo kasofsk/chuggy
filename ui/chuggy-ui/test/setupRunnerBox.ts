@@ -303,7 +303,7 @@ function checked(box: RunnerBox, file: string): SetupChildEnded {
     `ok    pool file: ${file} names pool ${pool.replaceAll(".", "/")}`,
     `ok    runner configuration: ${boxSettings}: concurrencyMax 1, sessionsMax 2`,
     "ok    runtime directory: /run/user/1000/chuggy-linux",
-    `ok    Claude token file: ${boxLogin}, this runner's own`,
+    `ok    Claude credential: Subscription, from the Claude token file ${boxLogin}, this runner's own`,
     "ok    container engine: docker at unix:///var/run/docker.sock lists 0 of this pool's containers",
     "ok    job network: chuggy-jobs is missing, and a run makes it",
     "ok    pool token: issued by https://auth.example/oauth2/token",
