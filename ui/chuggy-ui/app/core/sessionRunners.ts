@@ -55,7 +55,7 @@ export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead";
 /** Where a reader adds the runner a session's turn waits on. */
 export type SessionRunnerAdded = "MyRunner" | "Runners";
 
-/** A thread runs only on its member's own runner, so it is added on their own
+/** A thread runs only on its member's own runners, so one is added on their own
  * page; an inquiry and the lead run on a project's pools. */
 export function sessionRunnerAdded(
   session: SessionRunnerSession,

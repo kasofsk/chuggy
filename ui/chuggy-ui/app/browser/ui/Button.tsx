@@ -63,6 +63,8 @@ export function Button(
       readonly disabled?: boolean;
       readonly describedBy?: string;
       readonly expanded?: boolean;
+      /** The button's name where its word is one several buttons on a page say. */
+      readonly named?: string;
     },
 ): ReactNode {
   return (
@@ -75,6 +77,7 @@ export function Button(
       aria-busy={props.busy}
       aria-describedby={props.describedBy}
       aria-expanded={props.expanded}
+      aria-label={props.named}
     >
       {props.children}
     </button>

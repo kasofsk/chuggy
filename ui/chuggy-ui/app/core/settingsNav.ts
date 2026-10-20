@@ -119,7 +119,7 @@ export function settingsNav(
       entry("people", "People", frame.people),
       entry("accounts", "Accounts", frame.accounts),
       entry("workspace-permissions", "Permissions", frame.workspacePermissions),
-      entry("my-runner", "My runner", frame.myRunner),
+      entry("my-runner", "My runners", frame.myRunner),
     ],
   };
   const siteGroup: SettingsNavGroup = {

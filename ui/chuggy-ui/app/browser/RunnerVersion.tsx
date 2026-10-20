@@ -1,6 +1,7 @@
 /**
- * A runner's version as a table cell: the release it runs, with Outdated where
- * chuggy pins a later one, and the dash where its poll named none.
+ * A runner's version as a table cell: the release it runs, after its package
+ * where `named`, with Outdated where chuggy pins a later one, and the dash
+ * where its poll named none.
  */
 
 import type { ReactNode } from "react";
@@ -13,13 +14,16 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 
 export function RunnerVersion(props: {
   readonly runner: RunnerListedResponse | undefined;
+  readonly named?: boolean;
 }): ReactNode {
   const runner = props.runner;
   if (runner === undefined) return cellAbsent;
   const pinned = runner.pinned;
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
-      {runner.version}
+      {props.named === true
+        ? `${runner.package} ${runner.version}`
+        : runner.version}
       {pinned !== undefined && runnerOutdated(runner.version, pinned) ? (
         <Tooltip text={`${pinned} available`}>
           <span>

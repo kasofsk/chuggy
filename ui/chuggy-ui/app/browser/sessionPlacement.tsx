@@ -112,7 +112,7 @@ function SessionRunnerAddLink(props: {
     case "MyRunner":
       return (
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          My runner
+          My runners
         </Link>
       );
     case "Runners":

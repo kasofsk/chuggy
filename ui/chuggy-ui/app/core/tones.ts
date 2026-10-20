@@ -18,6 +18,7 @@ import type {
   ForgeInstallationPermissionsName,
   SelectorAttention,
   SelectorMode,
+  SessionRunnerStanding,
   SessionState,
   SessionTurnState,
   TicketLandingState,
@@ -194,6 +195,18 @@ export function inviteLinkStateTone(state: AccessInviteLink["state"]): Tone {
       return "pass";
     case "Revoked":
     case "Expired":
+      return "retired";
+  }
+}
+
+/** Whether a runner is polling, which is whether it takes work. */
+export function runnerStandingTone(standing: SessionRunnerStanding): Tone {
+  switch (standing) {
+    case "Live":
+      return "live";
+    case "Offline":
+      return "parked";
+    case "Unregistered":
       return "retired";
   }
 }

@@ -225,8 +225,30 @@ const ownRunner = {
 test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {
   await runPageDrawn(atlas, ownRunStarting(ownRunner));
   const card = nowCard();
-  expect(card.textContent).toContain("Waiting on your runner · offline");
-  expect(within(card).getByRole("link", { name: "My runner" })).toBeTruthy();
+  expect(card.textContent).toContain("Waiting on your runners · offline");
+  expect(within(card).getByRole("link", { name: "My runners" })).toBeTruthy();
+});
+
+test("the reader's own run waits on their runners, not offline, while any one of them is live", async () => {
+  const [offline] = ownRunner.runners;
+  await runPageDrawn(
+    atlas,
+    ownRunStarting({
+      ...ownRunner,
+      runners: [
+        offline,
+        {
+          ...offline,
+          id: "chuggy-personal-2",
+          live: true,
+          executionsLive: true,
+        },
+      ],
+    }),
+  );
+  const card = nowCard();
+  expect(card.textContent).toContain("Waiting on your runners");
+  expect(card.textContent).not.toContain("offline");
 });
 
 test("the reader's own run says nothing of a runner they do not have", async () => {

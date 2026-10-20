@@ -1,16 +1,22 @@
 /**
- * A member's own runner, derived: the words for a project's fallback, the
- * projects a runner may be given, when a run waits on the reader's runner, what
- * taking a member's runner off came to, and where a session's missing runner is
- * added.
+ * A member's own runners, derived: the words for a project's fallback, how one
+ * runner is told from another, whether one more may be registered, the
+ * projects they may be given, when a run waits on the reader's runners, what
+ * taking a member's runners off came to, and where a session's missing runner
+ * is added.
  */
 
 import { expect, test } from "vitest";
 
+import { personalRunnersMax } from "../../../src/contract/http.ts";
 import type { PersonalRunnerResponse } from "../../../src/contract/responses.ts";
 import {
   memberRunnerRemoved,
   myRunnerAddable,
+  myRunnerRemovalLine,
+  myRunnerRoom,
+  myRunnersCountLine,
+  myRunnerShort,
   ownerFallbackAbout,
   ownerFallbackChoices,
   ownerFallbackChosen,
@@ -94,12 +100,40 @@ test("a runner is offered the workspace's projects the reader reads and it does 
   ).toStrictEqual(["borealis", "zephyr"]);
 });
 
+test("a runner minted with a UUID is told by the UUID's first part, and any other id by the whole of it", () => {
+  expect(
+    myRunnerShort("chuggy-personal-3f2a9c1e-0b7d-4e21-9a43-5c1d2e3f4a5b"),
+  ).toBe("3f2a9c1e");
+  expect(myRunnerShort("chuggy-personal-1")).toBe("chuggy-personal-1");
+  expect(myRunnerRemovalLine("3f2a9c1e", false)).toContain("3f2a9c1e");
+  expect(myRunnerRemovalLine("3f2a9c1e", true)).toContain("project list");
+});
+
+test("a member's runners are counted, and one more may be registered only below the bound", () => {
+  expect([0, 1, 2].map((count) => myRunnersCountLine(count))).toStrictEqual([
+    "0 runners",
+    "1 runner",
+    "2 runners",
+  ]);
+  const holding = (count: number): PersonalRunnerResponse => ({
+    ...runner,
+    runners: Array.from({ length: count }, (_, index) => ({
+      ...held,
+      id: `chuggy-personal-${String(index)}`,
+    })),
+  });
+  expect(myRunnerRoom(undefined)).toBe(true);
+  expect(myRunnerRoom(holding(1))).toBe(true);
+  expect(myRunnerRoom(holding(personalRunnersMax - 1))).toBe(true);
+  expect(myRunnerRoom(holding(personalRunnersMax))).toBe(false);
+});
+
 test("a run of the reader's that has not begun waits on their runner while it is live", () => {
   expect(runnerWait(waiting, runner, "atlas")).toBe("Waiting");
   expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, runner, "atlas"),
   ).toBe("Waiting");
-  expect(runnerWaitWord("Waiting")).toBe("Waiting on your runner");
+  expect(runnerWaitWord("Waiting")).toBe("Waiting on your runners");
 });
 
 /** Under Preferred a pool takes it while the runner is down, so it waits on nothing of the reader's. */
@@ -107,9 +141,12 @@ test("an offline runner holds a run under Strict alone", () => {
   const offline = runnersLive([false, false]);
   expect(runnerWait(waiting, offline, "atlas")).toBe("Offline");
   expect(
+    runnerWait(waiting, runnersLive([false, false], [false, false]), "atlas"),
+  ).toBe("Offline");
+  expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, offline, "atlas"),
   ).toBeUndefined();
-  expect(runnerWaitWord("Offline")).toBe("Waiting on your runner · offline");
+  expect(runnerWaitWord("Offline")).toBe("Waiting on your runners · offline");
 });
 
 /** A pool's claim defers under Preferred only to a runner polling for
@@ -168,9 +205,9 @@ test.each([
   },
 );
 
-test("taking a member's runner off says whether there was one it could take", () => {
+test("taking a member's runners off says whether there were any it could take", () => {
   expect(memberRunnerRemoved({ outcome: "Ok", value: undefined })).toBe(
-    "Runner removed",
+    "Runners removed",
   );
   expect(memberRunnerRemoved({ outcome: "Absent" })).toBe(
     "No runner you may remove",

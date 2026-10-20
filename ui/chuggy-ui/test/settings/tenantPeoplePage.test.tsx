@@ -604,25 +604,27 @@ function personalRunnersGivenOnly(): Response {
 test("a reader who gives personal runners and does not administer the workspace is offered no runner to remove", async () => {
   await drawPeople({ abilities: personalRunnersGivenOnly });
   const editor = await editorOf("s-bob");
-  expect(within(editor).queryByRole("group", { name: "Personal runner" })).toBe(
-    null,
-  );
-  expect(within(editor).queryByRole("button", { name: "Remove runner" })).toBe(
+  expect(within(editor).queryByRole("group", { name: "Runners" })).toBe(null);
+  expect(within(editor).queryByRole("button", { name: "Remove runners" })).toBe(
     null,
   );
 });
 
-test("a workspace administrator removes a member's runner once asked, and is told when there was none they may remove", async () => {
+test("a workspace administrator removes every runner of a member's once asked, and is told when there was none they may remove", async () => {
   const drawn = await drawPeople({
     abilities: () =>
       answer({ ...peopleAbilitiesAll(), grantPersonalRunners: false }),
   });
   const editor = await editorOf("s-bob");
-  await press("Remove runner");
+  await press("Remove runners");
   expect(
     drawn.sent.filter((request) => request.method === "DELETE"),
   ).toStrictEqual([]);
-  await press("Remove");
+  expect(
+    within(editor).getByRole("group", { name: /^Remove .*'s runners\?$/u })
+      .textContent,
+  ).toContain("Every runner of theirs");
+  await press("Remove all");
   expect(
     drawn.sent
       .filter((request) => request.method === "DELETE")

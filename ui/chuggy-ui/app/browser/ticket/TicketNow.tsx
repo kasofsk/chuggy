@@ -236,7 +236,7 @@ function TicketNowRun(props: {
   );
 }
 
-/** A run of the reader's held for their own runner, with where it is managed. */
+/** A run of the reader's held for their own runners, with where they are managed. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionSummary;
@@ -253,7 +253,7 @@ function TicketNowRunnerWait(props: {
       <span className="text-ink-3">
         {" · "}
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          My runner
+          My runners
         </Link>
       </span>
     </Notice>

@@ -1,13 +1,15 @@
 /**
- * What a member's own runner is drawn as, derived: the words for a project's
- * fallback, the projects a runner may be given, whether a run of the reader's
- * is waiting on their runner, and what taking a member's runner off came to.
+ * What a member's own runners are drawn as, derived: the words for a project's
+ * fallback, how a runner is told from another, whether one more may be
+ * registered, the projects they may be given, whether a run of the reader's is
+ * waiting on them, and what taking a member's runners off came to.
  *
  * WHETHER A RUN IS THE READER'S IS THE SERVER'S ANSWER. Nothing here decodes a
  * token, so a run says it is theirs by `mine`, and one whose read predates the
  * field is nobody's.
  */
 
+import { personalRunnersMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ExecutionSummary,
@@ -21,7 +23,7 @@ import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
 export const myRunnerWithheld =
-  "A workspace admin lets members register their own runner";
+  "A workspace admin lets members register their own runners";
 
 /** The radio value a project naming no fallback is chosen by. */
 export const ownerFallbackNone = "None";
@@ -72,13 +74,37 @@ export function ownerFallbackAbout(
     case undefined:
       return "Personal runners take no work started from now on.";
     case "Strict":
-      return "A member's own runner takes the work they start here, and while they have one serving this project no shared runner does.";
+      return "A member's own runners take the work they start here, and while they have one serving this project no shared runner does.";
     case "Preferred":
-      return "A member's own runner takes the work they start here while it is online, and a shared runner takes it while theirs is not.";
+      return "A member's own runners take the work they start here while one is online, and a shared runner takes it while none is.";
   }
 }
 
-/** The tenant's projects the reader reads and their runner does not yet serve, in name order. */
+/** The start of a runner's id where it ends in a UUID, which tells it from another of the reader's, and the whole id where it does not. */
+export function myRunnerShort(id: string): string {
+  return /([0-9a-f]{8})(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/u.exec(id)?.[1] ?? id;
+}
+
+/** The line a member's runners are listed under. */
+export function myRunnersCountLine(count: number): string {
+  return count === 1 ? "1 runner" : `${String(count)} runners`;
+}
+
+/** Whether the reader holds fewer runners than a member may, none where they hold none. */
+export function myRunnerRoom(
+  runner: PersonalRunnerResponse | undefined,
+): boolean {
+  return (runner?.runners.length ?? 0) < personalRunnersMax;
+}
+
+/** What taking one of the reader's runners off does, said in its question: the last takes the projects with it. */
+export function myRunnerRemovalLine(short: string, last: boolean): string {
+  return last
+    ? `Runner ${short} is your last; your project list goes too.`
+    : `Runner ${short} stops taking your work in this workspace.`;
+}
+
+/** The tenant's projects the reader reads and their runners do not yet serve, in name order. */
 export function myRunnerAddable(
   readable: readonly PartitionIdentity[],
   tenant: string,
@@ -91,14 +117,14 @@ export function myRunnerAddable(
     .sort();
 }
 
-/** A run of the reader's held for their runner: online and about to take it, or offline while no other may. */
+/** A run of the reader's held for their runners: one online and about to take it, or all offline while no other may. */
 export type RunnerWait = "Waiting" | "Offline";
 
 /**
  * Whether a run of the reader's, admitted but not begun, waits on their own
- * runner serving its project: under either fallback while that runner polls
+ * runners serving its project: under either fallback while any of them polls
  * for executions, which is the liveness a pool's claim defers to, and under
- * Strict while it does not, since then no pool takes it either. A queued run
+ * Strict while none does, since then no pool takes it either. A queued run
  * waits on capacity rather than on a runner.
  */
 export function runnerWait(
@@ -117,12 +143,12 @@ export function runnerWait(
 }
 
 /**
- * What taking a member's runner off came to, in one line: taken off, none the
+ * What taking a member's runners off came to, in one line: taken off, none the
  * caller may take, or why it was refused. The server answers a caller it will
- * not let take the runner as one with none, so the line names both.
+ * not let take them as one with none, so the line names both.
  */
 export function memberRunnerRemoved(result: ApiResult<undefined>): string {
-  if (result.outcome === "Ok") return "Runner removed";
+  if (result.outcome === "Ok") return "Runners removed";
   if (result.outcome === "Absent") return "No runner you may remove";
   return `Refused · ${panelReason(result)}`;
 }
@@ -130,8 +156,8 @@ export function memberRunnerRemoved(result: ApiResult<undefined>): string {
 export function runnerWaitWord(wait: RunnerWait): string {
   switch (wait) {
     case "Waiting":
-      return "Waiting on your runner";
+      return "Waiting on your runners";
     case "Offline":
-      return "Waiting on your runner · offline";
+      return "Waiting on your runners · offline";
   }
 }
