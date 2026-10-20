@@ -174,10 +174,12 @@ import type {
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
   ProjectOwnerFallbackResponse,
+  RunnerListedResponse,
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
   WorkerPoolsResponse,
 } from "../../contract/responses.ts";
+import type { WorkerRunnerListed } from "../../interpreter/workerRunnerRelease.ts";
 
 import type { ActionReportResponse } from "../../contract/actionReport.ts";
 import type { ActionReported } from "../../interpreter/actionReport.ts";
@@ -1046,6 +1048,21 @@ function workerPoolCredentialsBody(
   };
 }
 
+/** A runner as a read names it, where its newest poll named one. */
+function runnerListedBody(runner: WorkerRunnerListed | undefined): {
+  runner?: RunnerListedResponse;
+} {
+  return runner === undefined
+    ? {}
+    : {
+        runner: {
+          package: runner.package,
+          version: runner.version,
+          ...(runner.pinned === undefined ? {} : { pinned: runner.pinned }),
+        },
+      };
+}
+
 /** A project's registered pools, or the same miss as a project the caller may not see. */
 export function workerPoolsResponse(
   result: WorkerPoolsListed,
@@ -1059,6 +1076,7 @@ export function workerPoolsResponse(
           pool: listed.pool,
           capabilities: [...listed.capabilities],
           registeredAt: listed.registeredAt,
+          ...runnerListedBody(listed.runner),
         })),
         truncated: result.value.truncated,
       } satisfies WorkerPoolsResponse);
@@ -1262,6 +1280,7 @@ export function personalRunnerResponse(
           : { polledAt: result.value.polledAt }),
         live: result.value.live,
         executionsLive: result.value.executionsLive,
+        ...runnerListedBody(result.value.runner),
         projects: [...result.value.projects],
       } satisfies PersonalRunnerResponse);
     default:

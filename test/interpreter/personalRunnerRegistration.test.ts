@@ -25,6 +25,11 @@ import {
   type Partition,
   type TenantId,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  workerRunnerReleasesRead,
+  type WorkerRunnerReleases,
+} from "../../src/interpreter/workerRunnerRelease.ts";
+import type { WorkerRunner } from "../../src/contract/workerPool.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const issuer = "https://issuer.invalid";
@@ -88,6 +93,7 @@ interface Row {
   principal: Principal;
   capabilities: readonly string[];
   projects: Set<string>;
+  runner?: WorkerRunner;
 }
 
 /** A registry keeping one row per tenant and owner, written only over the client it was read with. */
@@ -136,6 +142,7 @@ function registry(): PersonalRunnerRegistry & {
               registeredAt: "2026-10-09T00:00:00.000Z",
               live: false,
               executionsLive: false,
+              ...(held.runner === undefined ? {} : { runner: held.runner }),
               projects: [...held.projects].sort().map(asProjectId),
             } satisfies PersonalRunnerView),
       );
@@ -230,6 +237,7 @@ function service(
     readonly ports?: ReturnType<typeof ports>;
     readonly minting?: ReturnType<typeof minting>;
     readonly asked?: unknown[];
+    readonly releases?: WorkerRunnerReleases;
   } = {},
 ) {
   const used = {
@@ -243,6 +251,7 @@ function service(
       minting: used.minting,
       ports: used.ports,
       site,
+      releases: input.releases ?? new Map(),
     }),
   };
 }
@@ -345,6 +354,37 @@ test("registering again replaces the member's one runner and removes its old cli
       projects: [project],
     },
   });
+});
+
+test("a member's runner is read with the runner its poll named and the version pinned for that package", async () => {
+  const composed = service(permitted, {
+    releases: workerRunnerReleasesRead({
+      "chuggy-linux": {
+        version: "0.14.1",
+        url: "https://github.com/kasofsk/chuggy-linux/releases/download/v0.14.1/chuggy-linux-0.14.1.tgz",
+        integrity: `sha512-${"A".repeat(85)}g==`,
+      },
+    }),
+  });
+  await registered(composed);
+  const [row] = composed.ports.store.rows.values();
+  for (const [named, shown] of [
+    [
+      { package: "chuggy-linux", version: "0.14.0" },
+      { package: "chuggy-linux", version: "0.14.0", pinned: "0.14.1" },
+    ],
+    [
+      { package: "chuggy-darwin", version: "0.2.0" },
+      { package: "chuggy-darwin", version: "0.2.0" },
+    ],
+  ] as const) {
+    if (row !== undefined) row.runner = named;
+    const read = await composed.runners.runner(member, tenant);
+    assert.deepEqual(
+      read.result === "Found" ? read.value.runner : undefined,
+      shown,
+    );
+  }
 });
 
 test("a redemption whose minter has lost the permit registers nothing and leaves the token unspent", async () => {

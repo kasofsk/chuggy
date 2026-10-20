@@ -55,6 +55,7 @@ import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/re
 import { apiRole, poolPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
+  postgresWorkerPoolRunners,
   postgresWorkerPoolRegistry,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
@@ -129,6 +130,7 @@ const assignments = postgresWorkerPoolAssignments(planePool);
 function polling(mint: () => string): WorkerPoolPorts {
   return {
     assignments,
+    runners: postgresWorkerPoolRunners(planePool),
     access: {
       authorize: () => Promise.resolve(undefined),
       authorizeTenant: () => Promise.resolve(undefined),

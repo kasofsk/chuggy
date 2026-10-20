@@ -38,6 +38,11 @@ import {
   type WorkerPoolTokenRequest,
   type WorkerPoolTokenWritten,
 } from "./workerPoolRegistrationToken.ts";
+import {
+  workerRunnerListed,
+  type WorkerRunnerListed,
+  type WorkerRunnerReleases,
+} from "./workerRunnerRelease.ts";
 
 /** Whose runner one row is: a member, in one tenant. */
 export interface PersonalRunnerKey {
@@ -55,9 +60,9 @@ export interface PersonalRunnerRegistration extends PersonalRunnerKey {
 /**
  * One runner as its owner reads it, its allowlist in project order: its newest
  * poll of either kind, absent until it polls, and whether that poll is within
- * the window a runner is held live for; and whether its newest poll for
- * executions is, which is the liveness a pool's claim defers to under
- * Preferred.
+ * the window a runner is held live for; whether its newest poll for executions
+ * is, which is the liveness a pool's claim defers to under Preferred; and the
+ * runner its newest poll named, absent where it named none.
  */
 export interface PersonalRunnerView {
   readonly capabilities: readonly string[];
@@ -65,6 +70,7 @@ export interface PersonalRunnerView {
   readonly polledAt?: string;
   readonly live: boolean;
   readonly executionsLive: boolean;
+  readonly runner?: WorkerRunnerListed;
   readonly projects: readonly ProjectId[];
 }
 
@@ -451,8 +457,9 @@ export function personalRunnerService(input: {
   readonly minting: PersonalRunnerTokenMinting;
   readonly ports: PersonalRunnerPorts;
   readonly site: WorkerPoolSite;
+  readonly releases: WorkerRunnerReleases;
 }): PersonalRunnerService {
-  const { access, minting, ports, site } = input;
+  const { access, minting, ports, site, releases } = input;
   return {
     mint: (principal, tenant, request) =>
       personalRunnerTokenMint(access, minting, principal, tenant, request),
@@ -460,9 +467,13 @@ export function personalRunnerService(input: {
       personalRunnerTokenRedeem(access, minting, ports, site, offered),
     runner: async (owner, tenant) => {
       const found = await ports.registry.runner({ tenant, owner });
-      return found === undefined
-        ? { result: "NotFound" }
-        : { result: "Found", value: found };
+      if (found === undefined) return { result: "NotFound" };
+      const { runner, ...view } = found;
+      const listed = workerRunnerListed(releases, runner);
+      return {
+        result: "Found",
+        value: listed === undefined ? view : { ...view, runner: listed },
+      };
     },
     permitted: async (principal, tenant) =>
       (await access.authorizeTenant(

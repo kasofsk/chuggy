@@ -57,6 +57,7 @@ import type {
   WorkerPoolAssignment,
   WorkerPoolReconciliation,
   WorkerPoolSessionAssignment,
+  WorkerRunner,
 } from "../contract/workerPool.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 export { workerPoolsAnsweredMax } from "../contract/http.ts";
@@ -94,6 +95,7 @@ import {
   workerPoolSessionClaims,
   type WorkerPoolSessionPorts,
 } from "./workerPoolSessions.ts";
+import type { WorkerRunnerListed } from "./workerRunnerRelease.ts";
 
 /**
  * The worker contract versions the pool plane serves, from the first in which
@@ -106,11 +108,12 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, and its room for executions and for sessions. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, and the runner it named, where it named one. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
+  readonly runner?: WorkerRunner;
 }
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
@@ -159,11 +162,12 @@ export interface WorkerPoolRosterPage {
   readonly truncated: boolean;
 }
 
-/** One registered pool as a project's members read it. */
+/** One registered pool as a project's members read it, with the runner its newest poll named where it named one. */
 export interface WorkerPoolListed {
   readonly pool: string;
   readonly capabilities: readonly string[];
   readonly registeredAt: string;
+  readonly runner?: WorkerRunnerListed;
 }
 
 /** One project's registered pools as its members read them, `truncated` as the roster's. */
@@ -361,10 +365,23 @@ export interface WorkerPoolPollSettings {
   readonly imageHosts: WorkerPoolImageHosts;
 }
 
-/** Everything a poll reaches: each kind's durable side, the authority an owner is asked of, and where an assignment's name is drawn. */
+/**
+ * Where the runner a caller's newest poll named is kept, under its current
+ * registration alone: a poll naming none keeps none, so a machine moved back
+ * to a runner too old to name itself is not shown as the version it left.
+ */
+export interface WorkerPoolRunners {
+  named(
+    identity: PoolPlaneIdentity,
+    runner: WorkerRunner | undefined,
+  ): Promise<void>;
+}
+
+/** Everything a poll reaches: each kind's durable side, where its runner is kept, the authority an owner is asked of, and where an assignment's name is drawn. */
 export interface WorkerPoolPorts {
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
+  readonly runners: WorkerPoolRunners;
   readonly access: ProjectAccess;
   readonly mint: WorkerPoolMint;
 }
@@ -671,10 +688,11 @@ async function workerPoolHoldingRead(
 }
 
 /**
- * Records this poll as the caller's last of each kind of work it could take: a
- * session, with room for one or holding one from a plane that names the API a
- * session reaches, and, for a personal runner, an execution, with room for one
- * or holding one, which is what a pool's claim reads it as live by.
+ * Records the runner this poll named, and the poll as the caller's last of each
+ * kind of work it could take: a session, with room for one or holding one from
+ * a plane that names the API a session reaches, and, for a personal runner, an
+ * execution, with room for one or holding one, which is what a pool's claim
+ * reads it as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -683,6 +701,7 @@ async function workerPoolPollRecorded(
   holding: WorkerPoolHolding,
   settings: WorkerPoolPollSettings,
 ): Promise<void> {
+  await ports.runners.named(identity, asked.runner);
   if (
     settings.sessionApiUrl !== undefined &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)

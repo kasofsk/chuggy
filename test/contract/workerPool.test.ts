@@ -22,7 +22,19 @@ import {
   workerPoolSettlementPath,
   workerPoolSettlementRoutes,
   workerImageCharsMax,
+  workerRunnerOf,
+  workerRunnerReleaseSchema,
+  workerRunnerReleaseUrlCharsMax,
 } from "../../src/contract/workerPool.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
+import {
+  contractVersionAccepted,
+  workerContractRunnerReleases,
+} from "../../src/interpreter/workerPlane.ts";
+import {
+  workerContractReleasePool,
+  workerContractReplayed,
+} from "./workerContractReleases.ts";
 
 const assignment = {
   assignment: "01HZ",
@@ -183,6 +195,90 @@ test("a reconciliation carries what to place of each kind and what to stop, each
       workerPoolReconciliationSchema.safeParse(invalid).success,
       false,
     );
+});
+
+const release = {
+  package: "chuggy-linux",
+  version: "0.14.0",
+  url: "https://github.com/kasofsk/chuggy-linux/releases/download/v0.14.0/chuggy-linux-0.14.0.tgz",
+  integrity: `sha512-${"A".repeat(85)}g==`,
+};
+
+test("a reconciliation may name a runner's release, which is its package, a plain version, an https address and a sha512 integrity", () => {
+  const answer = { assignments: [], sessions: [], stop: [], release };
+  assert.deepEqual(workerPoolReconciliationSchema.parse(answer), answer);
+  assert.deepEqual(workerRunnerReleaseSchema.parse(release), release);
+  for (const invalid of [
+    { ...release, package: "Chuggy-linux" },
+    { ...release, package: "@kasofsk/chuggy-linux" },
+    { ...release, package: "c".repeat(64) },
+    { ...release, version: "0.14" },
+    { ...release, version: "0.14.0-rc.1" },
+    { ...release, version: "0.14.0+build" },
+    { ...release, version: "0.014.0" },
+    { ...release, url: "http://github.com/a.tgz" },
+    { ...release, url: "file:///a.tgz" },
+    { ...release, url: "not-a-url" },
+    {
+      ...release,
+      url: `https://github.com/${"a".repeat(workerRunnerReleaseUrlCharsMax)}`,
+    },
+    { ...release, integrity: `sha256-${"A".repeat(43)}=` },
+    { ...release, integrity: `sha512-${"A".repeat(86)}=` },
+    { ...release, integrity: `sha512-${"-".repeat(86)}==` },
+    { ...release, latest: true },
+    { package: release.package, version: release.version },
+  ])
+    assert.equal(
+      workerRunnerReleaseSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid).slice(0, 120),
+    );
+});
+
+test("a runner is named as its package and its version, and anything else names none", () => {
+  assert.deepEqual(workerRunnerOf("chuggy-linux/0.14.0"), {
+    package: "chuggy-linux",
+    version: "0.14.0",
+  });
+  assert.deepEqual(workerRunnerOf(`a${"-".repeat(62)}/0.0.0`), {
+    package: `a${"-".repeat(62)}`,
+    version: "0.0.0",
+  });
+  for (const unread of [
+    undefined,
+    "",
+    "chuggy-linux",
+    "chuggy-linux/",
+    "/0.14.0",
+    "chuggy-linux/0.14",
+    "chuggy-linux/v0.14.0",
+    "chuggy-linux/0.14.0-rc.1",
+    "Chuggy-linux/0.14.0",
+    "@kasofsk/chuggy-linux/0.14.0",
+    "chuggy-linux/0.14.0, chuggy-linux/0.14.0",
+    `a${"-".repeat(63)}/0.0.0`,
+    "chuggy-linux/1234567890.0.0",
+  ])
+    assert.equal(workerRunnerOf(unread), undefined, String(unread));
+});
+
+test("a pool of a release the runner-release range accepts reads an answer naming a release, and one of any earlier refuses it", async () => {
+  const answer = { assignments: [], sessions: [], stop: [], release };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunnerReleases,
+      workerContractRelease,
+    ),
+  );
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(workerContractRunnerReleases, older),
+      older,
+    );
+  }
 });
 
 test("a poll's query is the held list as a query carries one, bounded by the plane, and each room", () => {

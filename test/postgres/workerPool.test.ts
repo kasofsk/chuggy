@@ -24,7 +24,9 @@ import {
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import {
   postgresWorkerPoolAssignments,
+  postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
   postgresWorkerAttemptHeartbeats,
@@ -639,7 +641,7 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
- * liveness is the one column of its row the plane writes.
+ * liveness and the runner its poll named are all of its row the plane writes.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -671,9 +673,13 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "personal_runner",
         "SELECT",
-        "capabilities,executions_polled_at,owner,principal,tenant",
+        "capabilities,executions_polled_at,owner,principal,runner_package,runner_version,tenant",
       ],
-      ["personal_runner", "UPDATE", "executions_polled_at,last_polled_at"],
+      [
+        "personal_runner",
+        "UPDATE",
+        "executions_polled_at,last_polled_at,runner_package,runner_version",
+      ],
       ["personal_runner_project", "SELECT", "owner,project,tenant"],
       ["project", "SELECT", "lifecycle,project,tenant"],
       ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
@@ -686,15 +692,119 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "worker_pool",
         "SELECT",
-        "capabilities,class,pool,principal,project,tenant",
+        "capabilities,class,pool,principal,project,runner_package,runner_version,tenant",
       ],
-      ["worker_pool", "UPDATE", "last_polled_at"],
+      ["worker_pool", "UPDATE", "last_polled_at,runner_package,runner_version"],
     ].map(([table_name, privilege_type, columns]) => ({
       table_name,
       privilege_type,
       columns,
     })),
   );
+});
+
+/** The runner a pool's row keeps, and the row version any write to it moves. */
+async function poolRunnerRow(
+  partition: Partition,
+  pool: string,
+): Promise<{ readonly kept: unknown; readonly written: string }> {
+  const [row] = (await rig.harness.query(
+    `SELECT runner_package,runner_version,xmin::text AS written FROM worker_pool
+      WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [partition.tenant, partition.project, pool],
+  )) as {
+    runner_package: string | null;
+    runner_version: string | null;
+    written: string;
+  }[];
+  if (row === undefined)
+    throw new Error(`worker pool suite: ${pool} is not registered`);
+  return {
+    kept: { package: row.runner_package, version: row.runner_version },
+    written: row.written,
+  };
+}
+
+test("a pool's poll keeps the runner it named under its current registration, writes nothing where it names what it kept, and keeps none where it names none", async () => {
+  const project = await poolProject("runner-named");
+  const { partition } = project;
+  const pool = "runner-named";
+  const identity = await registered(partition, pool, [platform]);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const directory = postgresWorkerPoolDirectory(apiPool);
+  const linux = { package: "chuggy-linux", version: "0.14.0" };
+  const unnamed = { package: null, version: null };
+  assert.deepEqual(
+    (await poolRunnerRow(partition, pool)).kept,
+    unnamed,
+    "a registration names no runner",
+  );
+  await runners.named(identity, linux);
+  const named = await poolRunnerRow(partition, pool);
+  assert.deepEqual(named.kept, linux);
+  await runners.named(identity, linux);
+  assert.equal(
+    (await poolRunnerRow(partition, pool)).written,
+    named.written,
+    "the same runner again writes nothing",
+  );
+  assert.deepEqual(
+    (await directory.listed(partition)).pools.map((listed) => listed.runner),
+    [linux],
+  );
+  const newer = await poolRegisteredAgain(project, pool);
+  assert.deepEqual(
+    (await poolRunnerRow(partition, pool)).kept,
+    unnamed,
+    "a registration made again names no runner",
+  );
+  await runners.named(identity, linux);
+  assert.deepEqual(
+    (await poolRunnerRow(partition, pool)).kept,
+    unnamed,
+    "an older registration's poll writes nothing",
+  );
+  await runners.named(newer, linux);
+  assert.deepEqual((await poolRunnerRow(partition, pool)).kept, linux);
+  await runners.named(newer, undefined);
+  assert.deepEqual(
+    (await poolRunnerRow(partition, pool)).kept,
+    unnamed,
+    "a poll naming none keeps none",
+  );
+  assert.deepEqual(
+    (await directory.listed(partition)).pools.map(
+      (listed) => "runner" in listed,
+    ),
+    [false],
+  );
+});
+
+test("a pool's row keeps a runner only whole, and only in the header's grammar", async () => {
+  const project = await poolProject("runner-grammar");
+  await registered(project.partition, "runner-grammar", [platform]);
+  for (const [runnerPackage, version, refusal] of [
+    ["Chuggy-linux", "0.14.0", /worker_pool_runner_package_is_a_package/u],
+    ["chuggy-linux", "0.14", /worker_pool_runner_version_is_a_release/u],
+    ["chuggy-linux", "01.14.0", /worker_pool_runner_version_is_a_release/u],
+    ["chuggy-linux", null, /worker_pool_runner_is_named_whole/u],
+    [null, "0.14.0", /worker_pool_runner_is_named_whole/u],
+  ] as const)
+    await assert.rejects(
+      planePool.query(
+        `UPDATE worker_pool SET runner_package=$4,runner_version=$5
+          WHERE tenant=$1 AND project=$2 AND pool=$3`,
+        [
+          project.partition.tenant,
+          project.partition.project,
+          "runner-grammar",
+          runnerPackage,
+          version,
+        ],
+      ),
+      refusal,
+      `${String(runnerPackage)}/${String(version)}`,
+    );
 });
 
 test("deregistration names the client the row holds, goes with that client alone, and leaves the work it held", async () => {

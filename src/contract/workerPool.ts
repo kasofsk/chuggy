@@ -188,6 +188,56 @@ export function workerPoolPollQuerySchema(heldMax: number) {
 }
 
 /**
+ * The header a runner names itself in on its poll, as `<package>/<version>`:
+ * the package it is installed as and the version it runs. A poll without it,
+ * or with one `workerRunnerOf` does not read, names no runner and is served
+ * as one that names none, never refused.
+ */
+export const workerRunnerHeader = "chuggy-runner";
+
+/** A runner's package, named as npm names a package without a scope. */
+export const workerRunnerPackageSchema = z
+  .string()
+  .regex(/^[a-z][a-z0-9-]{0,62}$/u);
+
+/** A runner's version: a plain release, its major, minor and patch each written without a leading zero, with no prerelease and no build. */
+export const workerRunnerVersionSchema = z
+  .string()
+  .regex(/^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/u);
+
+/** The runner a poll names. */
+export const workerRunnerSchema = z.strictObject({
+  package: workerRunnerPackageSchema,
+  version: workerRunnerVersionSchema,
+});
+
+/** The runner `header` names, or nothing where it is absent or is not `<package>/<version>`. */
+export function workerRunnerOf(
+  header: string | undefined,
+): WorkerRunner | undefined {
+  const at = header === undefined ? -1 : header.indexOf("/");
+  if (header === undefined || at < 0) return undefined;
+  const read = workerRunnerSchema.safeParse({
+    package: header.slice(0, at),
+    version: header.slice(at + 1),
+  });
+  return read.success ? read.data : undefined;
+}
+
+/** The longest address a runner's release is fetched from. */
+export const workerRunnerReleaseUrlCharsMax = 2_048;
+
+/**
+ * A release of a runner's package: its version, the address its tarball is
+ * fetched from, and the integrity of that tarball's bytes as npm writes a
+ * sha512 one.
+ */
+export const workerRunnerReleaseSchema = workerRunnerSchema.extend({
+  url: z.url().startsWith("https://").max(workerRunnerReleaseUrlCharsMax),
+  integrity: z.string().regex(/^sha512-[A-Za-z0-9+/]{86}==$/u),
+});
+
+/**
  * What a poll is answered with: the executions and the sessions the pool may
  * now place, and the assignments of either kind it must stop. Each list is as
  * long as the plane's own bounds allow and no longer, so a reader bounds the
@@ -197,6 +247,12 @@ export const workerPoolReconciliationSchema = z.strictObject({
   assignments: z.array(workerPoolAssignmentSchema),
   sessions: z.array(workerPoolSessionAssignmentSchema),
   stop: z.array(workerPoolAssignmentIdentitySchema),
+  /**
+   * The release chuggy pins for the package the poll's runner named, whatever
+   * version that runner runs, and the runner decides whether to install it.
+   * It is absent where the poll named no runner or none is pinned for its package.
+   */
+  release: workerRunnerReleaseSchema.optional(),
 });
 
 export const workerPoolRegistrationSchema = z.strictObject({
@@ -231,6 +287,8 @@ export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
 export type WorkerPoolReconciliation = z.infer<
   typeof workerPoolReconciliationSchema
 >;
+export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
+export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
 >;

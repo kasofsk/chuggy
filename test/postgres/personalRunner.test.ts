@@ -7,6 +7,7 @@ import {
   postgresPersonalRunnerRegistrationTokens,
   postgresPersonalRunnerRegistry,
 } from "../../src/adapters/postgres/personalRunner.ts";
+import { postgresWorkerPoolRunners } from "../../src/adapters/postgres/workerPool.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -40,12 +41,14 @@ const other = asPrincipal("https://issuer.invalid#another-member");
 
 let harness: PostgresHarness;
 let api: pg.Pool;
+let plane: pg.Pool;
 before(async () => {
   harness = await postgresHarnessOpen();
   api = postgresHarnessRolePool(apiRole);
+  plane = postgresHarnessRolePool(poolPlaneRole);
 });
 after(async () => {
-  await api.end();
+  await Promise.all([api.end(), plane.end()]);
   await harness.close();
 });
 
@@ -180,6 +183,63 @@ test("a runner is read with its newest poll of either kind, live only while that
   assert.equal(sessionPolled?.executionsLive, false);
   await stamp("executions_polled_at", 1);
   assert.equal((await runners.runner(key))?.executionsLive, true);
+});
+
+test("a runner is read with the runner its current registration's newest poll named, which a registration made again forgets", async () => {
+  const partition = await project("runner-named");
+  const runners = postgresPersonalRunnerRegistry(api);
+  const stamps = postgresWorkerPoolRunners(plane);
+  const key = { tenant: partition.tenant, owner: member };
+  const first = registration(key, `first-${partition.tenant}`);
+  await runners.register(first, undefined);
+  const linux = { package: "chuggy-linux", version: "0.14.0" };
+  const polled = (principal = first.principal) =>
+    ({ kind: "Personal", ...key, principal }) as const;
+  assert.equal((await runners.runner(key))?.runner, undefined);
+  await stamps.named(polled(), linux);
+  assert.deepEqual((await runners.runner(key))?.runner, linux);
+  const [written] = await harness.query(
+    `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
+    [partition.tenant],
+  );
+  await stamps.named(polled(), linux);
+  assert.deepEqual(
+    await harness.query(
+      `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
+      [partition.tenant],
+    ),
+    [written],
+    "the same runner again writes nothing",
+  );
+  await stamps.named(polled(), undefined);
+  assert.equal(
+    (await runners.runner(key))?.runner,
+    undefined,
+    "a poll naming none keeps none",
+  );
+  await stamps.named(polled(), linux);
+  const second = registration(key, `second-${partition.tenant}`);
+  await runners.register(second, first.clientId);
+  assert.equal(
+    (await runners.runner(key))?.runner,
+    undefined,
+    "a registration made again names no runner",
+  );
+  await stamps.named(polled(), linux);
+  assert.equal(
+    (await runners.runner(key))?.runner,
+    undefined,
+    "the replaced registration's poll writes nothing",
+  );
+  await stamps.named(polled(second.principal), linux);
+  assert.deepEqual((await runners.runner(key))?.runner, linux);
+  await assert.rejects(
+    harness.query(
+      `UPDATE personal_runner SET runner_version=NULL WHERE tenant=$1`,
+      [partition.tenant],
+    ),
+    /personal_runner_runner_is_named_whole/u,
+  );
 });
 
 test("deregistering deletes the row only where it names the client, and takes the allowlist with it", async () => {
@@ -387,6 +447,8 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
     ["personal_runner", "capabilities"],
     ["personal_runner", "principal"],
     ["personal_runner", "executions_polled_at"],
+    ["personal_runner", "runner_package"],
+    ["personal_runner", "runner_version"],
     ["personal_runner_project", "project"],
   ] as const)
     assert.equal(
@@ -400,7 +462,8 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
   assert.equal(
     await harness.attemptAs(
       poolPlaneRole,
-      `UPDATE personal_runner SET last_polled_at=now() WHERE principal='none'`,
+      `UPDATE personal_runner SET last_polled_at=now(),runner_package=NULL,runner_version=NULL
+        WHERE principal='none'`,
     ),
     undefined,
   );

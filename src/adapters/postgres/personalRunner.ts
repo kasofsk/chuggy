@@ -43,6 +43,7 @@ import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.t
 import type { PersonalRunnerPlaneRegistry } from "../../interpreter/workerPool.ts";
 import type { WorkerPoolTokenWritten } from "../../interpreter/workerPoolRegistrationToken.ts";
 import { postgresTransaction } from "./pool.ts";
+import { workerPoolRunnerKept } from "./workerPool.ts";
 
 /** Whether `failure` is `constraint` refusing a row whose tenant is not a row. */
 function tenantAbsent(failure: unknown, constraint: string): boolean {
@@ -99,7 +100,9 @@ async function personalRunnerReplaced(
         client_id=${registration.clientId},
         registered_at=now(),
         last_polled_at=NULL,
-        executions_polled_at=NULL
+        executions_polled_at=NULL,
+        runner_package=NULL,
+        runner_version=NULL
     WHERE r.tenant=${registration.tenant as string} AND r.owner=${registration.owner as string}
       AND r.client_id=${replacing}`);
   if ((updated.rowCount ?? 0) !== 1) return "Moved";
@@ -142,7 +145,7 @@ async function personalRunnerProjectInserted(
   return "Allowed";
 }
 
-/** A member's runner, its newest poll of either kind, and the projects it serves. */
+/** A member's runner, its newest poll of either kind and the runner that poll named, and the projects it serves. */
 async function personalRunnerRead(
   pool: pg.Pool,
   key: PersonalRunnerKey,
@@ -153,8 +156,10 @@ async function personalRunnerRead(
     polled_at: Date | null;
     live: boolean | null;
     executions_live: boolean | null;
+    runner_package: string | null;
+    runner_version: string | null;
     projects: string[] | null;
-  }>(sql`SELECT r.capabilities,r.registered_at,
+  }>(sql`SELECT r.capabilities,r.registered_at,r.runner_package,r.runner_version,
       greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
       greatest(r.last_polled_at,r.executions_polled_at)
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
@@ -176,6 +181,7 @@ async function personalRunnerRead(
           : { polledAt: row.polled_at.toISOString() }),
         live: row.live === true,
         executionsLive: row.executions_live === true,
+        ...workerPoolRunnerKept(row),
         projects: (row.projects ?? []).map(asProjectId),
       };
 }

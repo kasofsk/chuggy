@@ -38,6 +38,10 @@ import {
   workerPoolRegisteredAt,
   type RegisterPoolPorts,
 } from "./workerPoolRegistration.ts";
+import {
+  workerRunnerListed,
+  type WorkerRunnerReleases,
+} from "./workerRunnerRelease.ts";
 
 /** What a token permits, and who minted it where the token records that, as the durable side answers a caller holding one. */
 export interface WorkerPoolRegistrationTokenTerms {
@@ -253,15 +257,27 @@ export type WorkerPoolsListed =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly value: WorkerPoolListing };
 
+/** A project's registered pools, each runner shown beside the version pinned for its package. */
 async function workerPoolsListed(
   access: ProjectAccess,
   directory: WorkerPoolDirectory,
+  releases: WorkerRunnerReleases,
   principal: Principal,
   partition: Partition,
 ): Promise<WorkerPoolsListed> {
   if ((await access.authorize(principal, partition, "Read")) === undefined)
     return { result: "NotFound" };
-  return { result: "Found", value: await directory.listed(partition) };
+  const listing = await directory.listed(partition);
+  return {
+    result: "Found",
+    value: {
+      ...listing,
+      pools: listing.pools.map(({ runner, ...listed }) => {
+        const shown = workerRunnerListed(releases, runner);
+        return shown === undefined ? listed : { ...listed, runner: shown };
+      }),
+    },
+  };
 }
 
 /**
@@ -289,10 +305,17 @@ export function workerPoolRegistrationService(input: {
   readonly ports: RegisterPoolPorts;
   readonly site: WorkerPoolSite;
   readonly directory: WorkerPoolDirectory;
+  readonly releases: WorkerRunnerReleases;
 }): WorkerPoolRegistrationService {
   return {
     registered: (principal, partition) =>
-      workerPoolsListed(input.access, input.directory, principal, partition),
+      workerPoolsListed(
+        input.access,
+        input.directory,
+        input.releases,
+        principal,
+        partition,
+      ),
     mint: (principal, partition, request) =>
       workerPoolTokenMint(
         input.access,

@@ -522,6 +522,13 @@ function fakeForgeCredentials(calls: string[]): ForgeCredentialMinting {
   };
 }
 
+/** The runner the listed pool's newest poll named, beside the version pinned for its package. */
+const shameRunner = {
+  package: "chuggy-linux",
+  version: "0.14.0",
+  pinned: "0.14.1",
+};
+
 /**
  * Registration as the routes see it: one token stands for one project, and the
  * capability bound is the interpreter's rather than the route's.
@@ -539,6 +546,12 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
                   {
                     pool: "shame",
                     capabilities: ["Platform:Linux:Amd64"],
+                    registeredAt: "2026-09-30T12:00:00.000Z",
+                    runner: shameRunner,
+                  },
+                  {
+                    pool: "spare",
+                    capabilities: [],
                     registeredAt: "2026-09-30T12:00:00.000Z",
                   },
                 ],
@@ -2125,7 +2138,7 @@ test("a placement is written whole, and a hosted route the tenant has not grante
   );
 });
 
-test("a project's registered pools are listed to a reader, and another project's are not found", async () => {
+test("a project's registered pools are listed to a reader with the runner each named, and another project's are not found", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
   const listed = await app.inject({
@@ -2138,6 +2151,16 @@ test("a project's registered pools are listed to a reader, and another project's
       {
         pool: "shame",
         capabilities: ["Platform:Linux:Amd64"],
+        registeredAt: "2026-09-30T12:00:00.000Z",
+        runner: {
+          package: "chuggy-linux",
+          version: "0.14.0",
+          pinned: "0.14.1",
+        },
+      },
+      {
+        pool: "spare",
+        capabilities: [],
         registeredAt: "2026-09-30T12:00:00.000Z",
       },
     ],

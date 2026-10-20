@@ -441,10 +441,11 @@ admitted and stamped on it, so a newer publish moves what is admitted after
 it.
 
 `personal_runner` — one member's own runner in one tenant: its principal, the
-issuer client it is removed by, what it declares it can run, and when it
-registered and last polled for a session and for an execution. Written by the
-API role, which registers, replaces and removes it, and by the pool plane,
-which stamps its polls; the pool plane, the scheduler and the boundary owner
+issuer client it is removed by, what it declares it can run, when it
+registered and last polled for a session and for an execution, and the runner
+package and version its newest poll named. Written by the API role, which
+registers, replaces and removes it, and by the pool plane, which stamps its
+polls and what they name; the pool plane, the scheduler and the boundary owner
 read it. Its key and identity are `(tenant, owner)`, so a member holds at most
 one in a tenant, and it names no project; it points at `tenant`, and its
 principal and client id are each unique. It is changed by a registration, by a

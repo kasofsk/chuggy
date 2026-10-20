@@ -22,6 +22,11 @@
  * caller no registration names or the authority refuses is 404 on a contract
  * route, an issuer or authority that could not answer is 503 and asks for a
  * retry, and only the last of those is a pool that should come back unchanged.
+ *
+ * A POLL MAY NAME ITS RUNNER, and is answered with the release pinned for that
+ * runner's package where its release reads one. A header that does not name a
+ * runner is a poll naming none, never a refusal, since the cluster's own pool
+ * and every earlier runner send none.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -33,7 +38,10 @@ import {
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
   workerPoolSettlementRoutes,
+  workerRunnerHeader,
+  workerRunnerOf,
   type AssignmentOutcome,
+  type WorkerRunner,
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
@@ -55,8 +63,13 @@ import {
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
   type WorkerPoolRegistry,
+  type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
 import type { WorkerPoolSessionPorts } from "../../interpreter/workerPoolSessions.ts";
+import {
+  workerRunnerReleaseAnswered,
+  type WorkerRunnerReleases,
+} from "../../interpreter/workerRunnerRelease.ts";
 import {
   planeApp,
   planeHealthRoutes,
@@ -68,6 +81,7 @@ import type { PrincipalAuthentication } from "./server.ts";
 import {
   workerContractChecked,
   workerContractNamed,
+  workerContractOffered,
 } from "./workerContractVersion.ts";
 
 /** A contract route's refusal of a release outside the range the pool plane serves. */
@@ -87,6 +101,9 @@ export interface PoolPlaneService {
   readonly personal: PersonalRunnerPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
+  readonly runners: WorkerPoolRunners;
+  /** The release pinned for each runner package, which a poll naming that package's runner is answered with. */
+  readonly releases: WorkerRunnerReleases;
   readonly settings: WorkerPoolPollSettings;
   readonly mint: WorkerPoolMint;
   readonly ready: () => Promise<boolean>;
@@ -96,9 +113,16 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
   return {
     assignments: service.assignments,
     sessions: service.sessions,
+    runners: service.runners,
     access: service.access,
     mint: service.mint,
   };
+}
+
+/** The runner a request names, a header sent more than once joined into text no runner matches. */
+function poolRunnerNamed(request: FastifyRequest): WorkerRunner | undefined {
+  const named = request.headers[workerRunnerHeader];
+  return workerRunnerOf(Array.isArray(named) ? named.join(", ") : named);
 }
 
 /**
@@ -216,6 +240,7 @@ function poolAssignmentsRoute(
         workerPoolHeldNamedMax(service.settings),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
+      const runner = poolRunnerNamed(request);
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
         polled = await workerPoolPoll(
@@ -225,6 +250,7 @@ function poolAssignmentsRoute(
             held: query.data[workerPoolPollQuery.held],
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
+            ...(runner === undefined ? {} : { runner }),
           },
           service.settings,
         );
@@ -234,7 +260,16 @@ function poolAssignmentsRoute(
         throw failure;
       }
       if (polled.polled === "HeldOverBound") return reply.code(400).send();
-      return reply.code(200).send(polled.answer);
+      const release = workerRunnerReleaseAnswered(
+        service.releases,
+        runner,
+        workerContractOffered(request),
+      );
+      return reply
+        .code(200)
+        .send(
+          release === undefined ? polled.answer : { ...polled.answer, release },
+        );
     },
   );
 }

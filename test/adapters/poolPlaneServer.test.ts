@@ -20,6 +20,7 @@ import {
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
+  workerRunnerHeader,
 } from "../../src/contract/workerPool.ts";
 import {
   asSessionAttemptId,
@@ -30,9 +31,12 @@ import {
 import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
 import type {
   PersonalRunnerIdentity,
+  PoolPlaneIdentity,
   WorkerPoolAssignments,
   WorkerPoolIdentity,
+  WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
+import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
 import type {
   SessionLaunchFacts,
   WorkerPoolSessions,
@@ -93,6 +97,12 @@ const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
 /** A pool's token and the release it speaks, which is this plane's own. */
 const speaking = {
   authorization: `Bearer ${poolToken}`,
+  [workerContractHeader]: workerContractRelease,
+};
+
+/** A personal runner's token and the release it speaks. */
+const runnerSpeaking = {
+  authorization: `Bearer ${runnerToken}`,
   [workerContractHeader]: workerContractRelease,
 };
 
@@ -275,10 +285,33 @@ function authority(answer: "Allow" | "Refuse" | "Outage"): ProjectAccess {
   };
 }
 
+/** The one release this site pins, for the Linux runner. */
+const linuxPin = {
+  version: "0.14.1",
+  url: "https://github.com/kasofsk/chuggy-linux/releases/download/v0.14.1/chuggy-linux-0.14.1.tgz",
+  integrity: `sha512-${"A".repeat(85)}g==`,
+};
+
+/** Records the runner each poll named, by the kind of caller that named it. */
+function runnerCalls(): {
+  readonly named: unknown[];
+  readonly runners: WorkerPoolRunners;
+} {
+  const named: unknown[] = [];
+  return {
+    named,
+    runners: {
+      named: (caller: PoolPlaneIdentity, runner) =>
+        Promise.resolve(void named.push([caller.kind, runner])),
+    },
+  };
+}
+
 function plane(
   ports: WorkerPoolAssignments,
   access: ProjectAccess = authority("Allow"),
   sessions: WorkerPoolSessions = sessionCalls().store,
+  runners: WorkerPoolRunners = runnerCalls().runners,
 ): PoolPlaneService {
   let minted = 0;
   return {
@@ -310,6 +343,8 @@ function plane(
         }),
       },
     },
+    runners,
+    releases: workerRunnerReleasesRead({ "chuggy-linux": linuxPin }),
     mint: () => `minted-${String((minted += 1))}`,
     settings: {
       leaseSecs: 30,
@@ -359,6 +394,86 @@ test("one poll renews what is held, says what must stop and hands over what it c
     ["renew", "gone"],
     ["claim", "minted-2"],
   ]);
+});
+
+test("a poll naming its runner keeps it, and is answered with the release pinned for its package where its release reads one", async () => {
+  for (const [why, headers, kept, release] of [
+    [
+      "a pinned package",
+      { ...speaking, [workerRunnerHeader]: "chuggy-linux/0.14.0" },
+      ["Dedicated", { package: "chuggy-linux", version: "0.14.0" }],
+      { package: "chuggy-linux", ...linuxPin },
+    ],
+    [
+      "a package already past its pin",
+      { ...speaking, [workerRunnerHeader]: "chuggy-linux/0.15.0" },
+      ["Dedicated", { package: "chuggy-linux", version: "0.15.0" }],
+      { package: "chuggy-linux", ...linuxPin },
+    ],
+    [
+      "a package nothing pins",
+      { ...speaking, [workerRunnerHeader]: "chuggy-darwin/0.14.0" },
+      ["Dedicated", { package: "chuggy-darwin", version: "0.14.0" }],
+      undefined,
+    ],
+    [
+      "a release that reads no release",
+      {
+        ...speaking,
+        [workerContractHeader]: "1.10.0",
+        [workerRunnerHeader]: "chuggy-linux/0.14.0",
+      },
+      ["Dedicated", { package: "chuggy-linux", version: "0.14.0" }],
+      undefined,
+    ],
+    ["no runner named", speaking, ["Dedicated", undefined], undefined],
+    [
+      "a runner named in no grammar",
+      { ...speaking, [workerRunnerHeader]: "chuggy-linux@0.14.0" },
+      ["Dedicated", undefined],
+      undefined,
+    ],
+    [
+      "a personal runner",
+      { ...runnerSpeaking, [workerRunnerHeader]: "chuggy-linux/0.14.0" },
+      ["Personal", { package: "chuggy-linux", version: "0.14.0" }],
+      { package: "chuggy-linux", ...linuxPin },
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(
+      answered.json(),
+      {
+        assignments: [],
+        sessions: [],
+        stop: [],
+        ...(release === undefined ? {} : { release }),
+      },
+      why,
+    );
+    assert.deepEqual(recorded.named, [kept], why);
+  }
+});
+
+test("a runner named twice names none, and its poll is served", async () => {
+  const recorded = runnerCalls();
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+  ).inject({
+    method: "GET",
+    url: polling([], 0),
+    headers: {
+      ...speaking,
+      [workerRunnerHeader]: ["chuggy-linux/0.14.0", "chuggy-linux/0.14.0"],
+    },
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.equal("release" in answered.json<object>(), false);
+  assert.deepEqual(recorded.named, [["Dedicated", undefined]]);
 });
 
 test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {
@@ -1278,12 +1393,6 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
     assert.equal(answered.headers["www-authenticate"], undefined, why);
   }
 });
-
-/** A personal runner's token and the release it speaks. */
-const runnerSpeaking = {
-  authorization: `Bearer ${runnerToken}`,
-  [workerContractHeader]: workerContractRelease,
-};
 
 test("a personal runner is admitted by its owner's permit and renews the executions it names", async () => {
   const recorded = calls();
