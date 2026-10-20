@@ -166,6 +166,7 @@ import {
   type PersonalRunnerService,
 } from "../interpreter/personalRunnerRegistration.ts";
 import type { WorkerPoolClients } from "../interpreter/workerPool.ts";
+import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { ketoProjectGrants } from "../adapters/keto/projectGrants.ts";
 import {
   checkedProjectGrantSettings,
@@ -357,6 +358,7 @@ function nativeWorkerPools(
     access,
     site: workerPoolSite(),
     directory: postgresWorkerPoolDirectory(pool),
+    releases: runnerReleasesPinned(),
     minting: {
       tokens: postgresWorkerPoolRegistrationTokens(pool),
       ...nativeRegistrationTokenDrawing,
@@ -402,6 +404,7 @@ function nativePersonalRunners(
   return personalRunnerService({
     access,
     site: workerPoolSite(),
+    releases: runnerReleasesPinned(),
     minting: {
       tokens: postgresPersonalRunnerRegistrationTokens(pool),
       ...nativeRegistrationTokenDrawing,

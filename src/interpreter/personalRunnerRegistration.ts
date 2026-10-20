@@ -38,7 +38,11 @@ import {
   type WorkerPoolTokenRequest,
   type WorkerPoolTokenWritten,
 } from "./workerPoolRegistrationToken.ts";
-import type { WorkerRunnerListed } from "./workerRunnerRelease.ts";
+import {
+  workerRunnerListed,
+  type WorkerRunnerListed,
+  type WorkerRunnerReleases,
+} from "./workerRunnerRelease.ts";
 
 /** Whose runner one row is: a member, in one tenant. */
 export interface PersonalRunnerKey {
@@ -453,8 +457,9 @@ export function personalRunnerService(input: {
   readonly minting: PersonalRunnerTokenMinting;
   readonly ports: PersonalRunnerPorts;
   readonly site: WorkerPoolSite;
+  readonly releases: WorkerRunnerReleases;
 }): PersonalRunnerService {
-  const { access, minting, ports, site } = input;
+  const { access, minting, ports, site, releases } = input;
   return {
     mint: (principal, tenant, request) =>
       personalRunnerTokenMint(access, minting, principal, tenant, request),
@@ -462,9 +467,13 @@ export function personalRunnerService(input: {
       personalRunnerTokenRedeem(access, minting, ports, site, offered),
     runner: async (owner, tenant) => {
       const found = await ports.registry.runner({ tenant, owner });
-      return found === undefined
-        ? { result: "NotFound" }
-        : { result: "Found", value: found };
+      if (found === undefined) return { result: "NotFound" };
+      const { runner, ...view } = found;
+      const listed = workerRunnerListed(releases, runner);
+      return {
+        result: "Found",
+        value: listed === undefined ? view : { ...view, runner: listed },
+      };
     },
     permitted: async (principal, tenant) =>
       (await access.authorizeTenant(

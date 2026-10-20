@@ -74,6 +74,8 @@ import {
   workerPoolCapabilitiesSchema,
   workerPoolCapabilitySchema,
   workerPoolEvidenceCharsMax,
+  workerRunnerSchema,
+  workerRunnerVersionSchema,
 } from "./workerPool.ts";
 import {
   repositoryLandingSchema,
@@ -2082,7 +2084,13 @@ export type WorkerPoolCredentialsResponse = z.infer<
   typeof workerPoolCredentialsSchema
 >;
 
-/** A project's registered pools in name order, `truncated` where it holds more than one read answers. */
+/** The runner a pool's or a member's newest poll named, and the version chuggy pins for its package where it pins one. */
+export const runnerListedSchema = workerRunnerSchema.extend({
+  pinned: workerRunnerVersionSchema.optional(),
+});
+export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
+
+/** A project's registered pools in name order, `truncated` where it holds more than one read answers, each with its runner where its newest poll named one. */
 export const workerPoolsResponseSchema = z.object({
   pools: z
     .array(
@@ -2090,6 +2098,7 @@ export const workerPoolsResponseSchema = z.object({
         pool: identitySchema,
         capabilities: z.array(z.string().min(1)),
         registeredAt: instantSchema,
+        runner: runnerListedSchema.optional(),
       }),
     )
     .max(workerPoolsAnsweredMax),
@@ -2131,6 +2140,8 @@ export const personalRunnerResponseSchema = z.strictObject({
   polledAt: instantSchema.optional(),
   live: z.boolean(),
   executionsLive: z.boolean(),
+  /** What its newest poll named, absent where it named none. */
+  runner: runnerListedSchema.optional(),
   projects: z.array(identitySchema).max(personalRunnerProjectsMax),
 });
 export type PersonalRunnerResponse = z.infer<
