@@ -202,6 +202,41 @@ test("a registered pool is a row naming its platforms", async () => {
   expect(rows[1]?.textContent).toMatch(/^shameLinux Amd64/u);
 });
 
+test("a pool's version is drawn, Outdated where chuggy pins a later one, and a dash where none is known", async () => {
+  const pool = pools.pools[0];
+  await drawPage({
+    listed: {
+      truncated: false,
+      pools: [
+        {
+          ...pool,
+          pool: "behind",
+          runner: {
+            package: "chuggy-linux",
+            version: "0.9.0",
+            pinned: "0.10.0",
+          },
+        },
+        {
+          ...pool,
+          pool: "current",
+          runner: {
+            package: "chuggy-linux",
+            version: "0.10.0",
+            pinned: "0.10.0",
+          },
+        },
+        { ...pool, pool: "unnamed" },
+      ],
+    },
+  });
+  const rows = within(sectionOf("Runners")).getAllByRole("row");
+  expect(rows[1]?.textContent).toMatch(/0\.9\.0Outdated/u);
+  expect(rows[2]?.textContent).toMatch(/0\.10\.0/u);
+  expect(rows[2]?.textContent).not.toMatch(/Outdated/u);
+  expect(rows[3]?.textContent).toMatch(/Linux Amd64—/u);
+});
+
 test("a roster holding more than one read answers says so under its rows", async () => {
   await drawPage({ listed: { ...pools, truncated: true } });
   expect(within(sectionOf("Runners")).getByText("More not shown")).toBeTruthy();

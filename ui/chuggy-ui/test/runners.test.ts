@@ -19,6 +19,7 @@ import {
   runnerAskRead,
   runnerCapabilitiesTyped,
   runnerCapabilityLabel,
+  runnerOutdated,
   runnerPackageOffered,
   runnerPackages,
   runnerRegisterCommand,
@@ -344,4 +345,17 @@ test("an empty roster's control is not drawn again under the steps it opened", (
 test("a platform is drawn by its parts and any other capability as spelled", () => {
   expect(runnerCapabilityLabel("Platform:Linux:Amd64")).toBe("Linux Amd64");
   expect(runnerCapabilityLabel("Agent:Claude")).toBe("Agent:Claude");
+});
+
+test("a runner is outdated only below a pinned plain release, part by part", () => {
+  expect(runnerOutdated("0.13.0", "0.14.1")).toBe(true);
+  expect(runnerOutdated("0.9.0", "0.10.0")).toBe(true);
+  expect(runnerOutdated("0.14.0", "0.14.1")).toBe(true);
+  expect(runnerOutdated("0.14.1", "0.14.1")).toBe(false);
+  expect(runnerOutdated("0.10.0", "0.9.0")).toBe(false);
+  expect(runnerOutdated("1.0.0", "0.99.99")).toBe(false);
+  expect(runnerOutdated("0.14.0", undefined)).toBe(false);
+  expect(runnerOutdated("0.14.0-rc.1", "0.14.1")).toBe(false);
+  expect(runnerOutdated("0.13.0", "0.14.1+build")).toBe(false);
+  expect(runnerOutdated("0.13", "0.14.1")).toBe(false);
 });
