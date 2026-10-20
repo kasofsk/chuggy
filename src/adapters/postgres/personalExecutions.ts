@@ -126,7 +126,7 @@ export function workerPoolHeldPulls(
   ];
 }
 
-/** The projects the runner's current registration allowlists. */
+/** The projects its member allowlists, while this registration is one of their runners. */
 export async function personalExecutionsAllowlisted(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,
@@ -141,7 +141,7 @@ export async function personalExecutionsAllowlisted(
   return found.rows.map((row) => asProjectId(row.project));
 }
 
-/** Stamps the runner's poll as one that could take an execution, where its row still names this registration. */
+/** Stamps the runner's poll as one that could take an execution, while this registration is one of its member's runners. */
 export async function personalExecutionsPolled(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,

@@ -511,6 +511,15 @@ test("taking a project off a runner's allowlist stops what it holds there, and r
     ),
     [{ capability_secret_digest: null }],
   );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT capability_secret_digest IS NOT NULL AS bearer FROM execution_attempt
+        WHERE tenant=$1 AND assignment=$2`,
+      [project.partition.tenant, kept],
+    ),
+    [{ bearer: true }],
+    "removing one runner fenced what another of its owner's held",
+  );
   assert.equal(await assignments.held(again, kept), true);
   assert.equal(await assignments.renew(again, kept, leaseSecs), true);
 });
