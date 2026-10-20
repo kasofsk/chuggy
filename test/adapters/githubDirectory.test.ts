@@ -18,6 +18,10 @@
  * Which account it stands on is the interpreter's to compare, so the account's
  * number is read and answered rather than judged here.
  *
+ * THE APP'S PERMISSIONS ARE ASKED FOR AT EVERY COMPARISON, and the case that
+ * compares twice answers the second with a set the app added to, so a held set
+ * would answer the first comparison again.
+ *
  * THE PAGING IS DRIVEN BY WHAT THE FORGE SAYS AND BY THE BOUND, and the two are
  * asserted apart: a listing that ends because a short page arrived, one that
  * ends because the bound was reached, and one whose total exceeds what was
@@ -290,6 +294,182 @@ test("an account without the app is missing and an outage is not", async (t) => 
     ).accountInstallation(fixtureOrganization),
     { read: "Unavailable" },
   );
+});
+
+/** The forge's own page for the fixture installation. */
+const fixtureSettingsUrl =
+  "https://github.com/organizations/kasofsk/settings/installations/156333284";
+
+/** The app's own permissions, as the forge answers `GET /app`. */
+function fixtureAppPermissions(permissions: Record<string, string>): Response {
+  return fixtureAnswer(200, {
+    id: Number(fixtureAppId),
+    slug: "chuggy-portal",
+    permissions,
+  });
+}
+
+/** One installation by its number, with what it has accepted. */
+function fixtureInstallationPermissions(
+  permissions: Record<string, string>,
+  fields: Record<string, unknown> = {},
+): Response {
+  return fixtureAnswer(200, {
+    id: Number(fixtureInstallationId),
+    app_id: Number(fixtureAppId),
+    html_url: fixtureSettingsUrl,
+    permissions,
+    ...fields,
+  });
+}
+
+/** What comparing the fixture installation came to, against whatever the case scripted. */
+async function fixturePermissionsRead(
+  t: TestContext,
+  answers: readonly (Response | Error)[],
+) {
+  const recorder = fixtureForge(answers);
+  const read = await githubInstallationDirectory(
+    fixtureAppOptions(t, recorder),
+  ).installationPermissions(fixtureInstallationId);
+  return { read, calls: recorder.calls };
+}
+
+const fixtureRequested = {
+  contents: "write",
+  workflows: "write",
+  metadata: "read",
+};
+
+test("an installation granting less than its app asks is behind, beside its own page", async (t) => {
+  const { read, calls } = await fixturePermissionsRead(t, [
+    fixtureInstallationPermissions({ contents: "write", metadata: "read" }),
+    fixtureAppPermissions(fixtureRequested),
+  ]);
+  assert.deepEqual(read, {
+    read: "Permissions",
+    permissions: "Behind",
+    settingsUrl: fixtureSettingsUrl,
+  });
+  assert.deepEqual(
+    calls.map((call) => `${call.method} ${call.url}`),
+    [
+      `GET ${fixtureApiUrl}/app/installations/${fixtureInstallationId}`,
+      `GET ${fixtureApiUrl}/app`,
+    ],
+  );
+  assert.match(
+    calls[0]?.headers["authorization"] ?? "",
+    /^Bearer [^.]+\.[^.]+\.[^.]+$/u,
+  );
+});
+
+test("a permission held at a lower level than the app asks is behind", async (t) => {
+  const { read } = await fixturePermissionsRead(t, [
+    fixtureInstallationPermissions({
+      contents: "write",
+      workflows: "read",
+      metadata: "read",
+    }),
+    fixtureAppPermissions(fixtureRequested),
+  ]);
+  assert.equal(read.read === "Permissions" && read.permissions, "Behind");
+});
+
+test("an installation holding every permission at its level or above is current", async (t) => {
+  const { read } = await fixturePermissionsRead(t, [
+    fixtureInstallationPermissions({
+      contents: "admin",
+      workflows: "write",
+      metadata: "read",
+      issues: "read",
+    }),
+    fixtureAppPermissions(fixtureRequested),
+  ]);
+  assert.deepEqual(read, {
+    read: "Permissions",
+    permissions: "Current",
+    settingsUrl: fixtureSettingsUrl,
+  });
+});
+
+test("the app's permissions are asked for again at the next comparison", async (t) => {
+  const recorder = fixtureForge([
+    fixtureInstallationPermissions({ contents: "write" }),
+    fixtureAppPermissions({ contents: "write" }),
+    fixtureInstallationPermissions({ contents: "write" }),
+    fixtureAppPermissions({ contents: "write", workflows: "write" }),
+  ]);
+  const directory = githubInstallationDirectory(fixtureAppOptions(t, recorder));
+  const first = await directory.installationPermissions(fixtureInstallationId);
+  const second = await directory.installationPermissions(fixtureInstallationId);
+  assert.equal(first.read === "Permissions" && first.permissions, "Current");
+  assert.equal(second.read === "Permissions" && second.permissions, "Behind");
+  assert.equal(recorder.calls.length, 4);
+});
+
+test("an installation the forge refuses, or another app's, is denied and asks nothing more", async (t) => {
+  for (const refusal of [
+    fixtureAnswer(404, { message: "Not Found" }),
+    fixtureInstallationPermissions({}, { app_id: 999999 }),
+  ]) {
+    const { read, calls } = await fixturePermissionsRead(t, [
+      refusal,
+      fixtureAppPermissions(fixtureRequested),
+    ]);
+    assert.deepEqual(read, { read: "Denied" });
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("an installation the forge could not answer is an outage and never behind or current", async (t) => {
+  for (const outage of [
+    new Error("connection reset"),
+    fixtureAnswer(503, {}),
+    new Response(JSON.stringify({ message: "API rate limit exceeded" }), {
+      status: 403,
+      headers: { "x-ratelimit-remaining": "0" },
+    }),
+  ]) {
+    const { read } = await fixturePermissionsRead(t, [
+      outage,
+      fixtureAppPermissions(fixtureRequested),
+    ]);
+    assert.deepEqual(read, { read: "Unavailable" });
+  }
+});
+
+test("an installation answered in a shape this side cannot read is an outage", async (t) => {
+  for (const unreadable of [
+    fixtureAnswer(200, { app_id: Number(fixtureAppId) }),
+    fixtureInstallationPermissions({ contents: "owner" }),
+    fixtureInstallationPermissions({}, { html_url: "javascript:alert(1)" }),
+    fixtureInstallationPermissions(
+      {},
+      { html_url: "https://user:secret@github.com/settings/installations/1" },
+    ),
+  ]) {
+    const { read } = await fixturePermissionsRead(t, [
+      unreadable,
+      fixtureAppPermissions(fixtureRequested),
+    ]);
+    assert.deepEqual(read, { read: "Unavailable" });
+  }
+});
+
+test("an app whose own permissions could not be read is an outage, refused or not", async (t) => {
+  for (const failing of [
+    fixtureAnswer(500, {}),
+    fixtureAnswer(401, { message: "Bad credentials" }),
+    fixtureAnswer(200, { id: Number(fixtureAppId) }),
+    new Error("connection reset"),
+  ]) {
+    const { read } = await fixturePermissionsRead(t, [
+      fixtureInstallationPermissions(fixtureRequested),
+      failing,
+    ]);
+    assert.deepEqual(read, { read: "Unavailable" });
+  }
 });
 
 test("the listing mints for the whole installation, unheld, and names no repository", async () => {

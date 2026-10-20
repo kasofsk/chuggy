@@ -48,6 +48,7 @@ import {
   nativeHttpMediaType,
   type HttpErrorEnvelope,
 } from "../../src/contract/http.ts";
+import { forgeInstallationPermissionsResponseSchema } from "../../src/contract/responses.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -1203,6 +1204,98 @@ test("a claim this tenant holds is still not a reader's without the permit", asy
   );
 });
 
+const permissionsUrl = `${installationsRoot}/${installationId}/permissions`;
+const settingsUrl = `https://github.com/organizations/acme/settings/installations/${installationId}`;
+
+/** The claimed installation as the forge answers it by number, with what it has accepted. */
+function installationPermissionsAnswer(
+  permissions: Record<string, string>,
+): Response {
+  return answer(200, {
+    id: Number(installationId),
+    app_id: Number(fixtureAppIds[app]),
+    html_url: settingsUrl,
+    permissions,
+  });
+}
+
+/** The app's own permissions, which the installation is compared against. */
+function appPermissionsAnswer(): Response {
+  return answer(200, {
+    id: Number(fixtureAppIds[app]),
+    permissions: { contents: "write", workflows: "write" },
+  });
+}
+
+test("an installation behind its app is answered so, beside the forge's own page for it", async (t) => {
+  const store = fixtureStore();
+  store.held.push(claimed);
+  const reading = fixtureCase(t, {
+    answers: [
+      installationPermissionsAnswer({ contents: "write" }),
+      appPermissionsAnswer(),
+      installationPermissionsAnswer({ contents: "write", workflows: "write" }),
+      appPermissionsAnswer(),
+    ],
+    granted: ["AdministerTenant"],
+    store,
+  });
+  for (const permissions of ["Behind", "Current"]) {
+    const served = await reading.app.inject({
+      url: permissionsUrl,
+      headers: authorized,
+    });
+    assert.equal(served.statusCode, 200);
+    assert.deepEqual(
+      forgeInstallationPermissionsResponseSchema.parse(served.json()),
+      { permissions, settingsUrl },
+    );
+  }
+  assert.equal(
+    reading.recorder.calls[0]?.url,
+    `${fixtureApiUrl}/app/installations/${installationId}`,
+  );
+});
+
+test("an installation's permissions the forge could not answer are a wait and never either answer", async (t) => {
+  const store = fixtureStore();
+  store.held.push(claimed);
+  const down = fixtureCase(t, {
+    answers: [answer(502, {})],
+    granted: ["AdministerTenant"],
+    store,
+  });
+  const served = await down.app.inject({
+    url: permissionsUrl,
+    headers: authorized,
+  });
+  assert.equal(served.statusCode, 503);
+  assert.equal(typeof served.headers["retry-after"], "string");
+  assert.equal(
+    served.json<{ error: { code: string } }>().error.code,
+    "ForgeUnavailable",
+  );
+});
+
+test("an installation's permissions are not a reader's without the permit or the claim, and ask no forge", async (t) => {
+  const store = fixtureStore();
+  store.held.push(claimed);
+  for (const fixture of [
+    fixtureCase(t, { answers: [appPermissionsAnswer()], store }),
+    fixtureCase(t, {
+      answers: [appPermissionsAnswer()],
+      granted: ["AdministerTenant"],
+    }),
+  ]) {
+    const served = await fixture.app.inject({
+      url: permissionsUrl,
+      headers: authorized,
+    });
+    assert.equal(served.statusCode, 404);
+    assert.deepEqual(fixture.recorder.calls, []);
+  }
+});
+
 test("a bind without the project permit is not found and writes nothing", async (t) => {
   const refused = fixtureCase(t, { granted: ["Read"] });
   const served = await refused.app.inject({
@@ -1393,6 +1486,10 @@ const unauthenticatedRequests = [
   {
     method: "GET" as const,
     url: `${installationsRoot}/${installationId}/repositories`,
+  },
+  {
+    method: "GET" as const,
+    url: `${installationsRoot}/${installationId}/permissions`,
   },
   { method: "GET" as const, url: repositoriesRoot },
   {

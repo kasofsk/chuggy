@@ -175,6 +175,17 @@ export function forgeWorkerlessAccounts(
     .map((row) => row.account);
 }
 
+/** The installation one app's claim on an account names, or nothing where the account holds no such claim. */
+export function forgeAccountInstallationId(
+  installations: readonly ForgeInstallationResponse[],
+  account: string,
+  app: ForgeAppName,
+): string | undefined {
+  return installations.find(
+    (claim) => claim.account === account && claim.app === app,
+  )?.installationId;
+}
+
 /** The claims a repository listing is read under: the portal app's, which is
  * the one whose installation grants what a project may bind. */
 export function forgePortalInstallations(

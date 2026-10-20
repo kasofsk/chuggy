@@ -40,6 +40,7 @@ import type {
   ForgeAccountInstallationRead,
   ForgeAppDescribed,
   ForgeInstallationAccount,
+  ForgeInstallationPermissionsRead,
   ForgeRepositoriesRead,
   ForgeRepositorySummary,
 } from "../../src/interpreter/forgeDirectory.ts";
@@ -257,6 +258,7 @@ interface FixturePorts {
   readonly found?: ForgeAccountInstallationRead;
   readonly authorized?: ForgeUserAuthorized;
   readonly repositories?: ForgeRepositoriesRead;
+  readonly permissions?: ForgeInstallationPermissionsRead;
   readonly recorded?: ForgeInstallationRecorded;
   readonly held?: readonly ForgeInstallationClaimed[];
   readonly resolved?: CredentialResolved;
@@ -294,6 +296,8 @@ interface FixtureWrites {
   readonly accounts: ForgeInstallationAccount[];
   readonly grants: ForgeAuthorizationGrant[];
   readonly listed: ForgeApp[];
+  /** Each installation whose permissions were read, under the app whose half read them. */
+  readonly compared: string[];
   readonly heads: RepositoryBinding[];
   readonly snapshots: RepositoryDeclarationSnapshotRequest[];
   readonly authored: ConfigurationRevisionId[];
@@ -492,6 +496,12 @@ function fixturePortsForgeHalf(
         wrote.accounts.push(account);
         return Promise.resolve(given.found ?? { read: "Missing" as const });
       },
+      installationPermissions: (installation) => {
+        wrote.compared.push(`${held} ${installation}`);
+        return Promise.resolve(
+          given.permissions ?? { read: "Unavailable" as const },
+        );
+      },
     },
     installationRepositories: {
       repositories: () => {
@@ -622,20 +632,16 @@ function fixturePortsAuthorization(
   };
 }
 
-function fixturePorts(
-  access: ProjectAccess,
-  given: FixturePorts,
-): {
-  readonly ports: RepositoryOnboardingPorts;
-  readonly wrote: FixtureWrites;
-} {
-  const wrote: FixtureWrites = {
+/** Nothing written yet, which is where every case begins. */
+function fixtureWrites(): FixtureWrites {
+  return {
     claims: [],
     commands: [],
     asked: [],
     accounts: [],
     grants: [],
     listed: [],
+    compared: [],
     heads: [],
     snapshots: [],
     authored: [],
@@ -649,6 +655,16 @@ function fixturePorts(
     attempts: [],
     attemptQueries: [],
   };
+}
+
+function fixturePorts(
+  access: ProjectAccess,
+  given: FixturePorts,
+): {
+  readonly ports: RepositoryOnboardingPorts;
+  readonly wrote: FixtureWrites;
+} {
+  const wrote = fixtureWrites();
   const credentials: RepositoryCredentialPort = {
     credential: () =>
       Promise.resolve(given.resolved ?? { resolved: "Denied" as const }),
@@ -1306,6 +1322,85 @@ test("what an installation grants is answered with whether it is all of it", asy
   });
   assert.deepEqual(
     await down.service.installationRepositories(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "Unavailable" },
+  );
+});
+
+/** The forge's own page for the claimed installation, which the service passes on unread. */
+const settingsUrl =
+  "https://github.com/organizations/acme/settings/installations/156333284";
+
+test("an installation's permissions are compared under its own app's half", async () => {
+  const held = { ...claimed, app: worker };
+  const reading = fixtureService(["AdministerTenant"], {
+    held: [held],
+    apps: [app, worker],
+    permissions: { read: "Permissions", permissions: "Behind", settingsUrl },
+  });
+  assert.deepEqual(
+    await reading.service.installationPermissions(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "Permissions", permissions: "Behind", settingsUrl },
+  );
+  assert.deepEqual(reading.wrote.compared, [`${worker} ${installationId}`]);
+  const portalOnly = fixtureService(["AdministerTenant"], { held: [held] });
+  assert.deepEqual(
+    await portalOnly.service.installationPermissions(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "NotConfigured" },
+  );
+});
+
+test("an installation's permissions are the tenant administrator's, under its own claim", async () => {
+  const permissions = {
+    read: "Permissions",
+    permissions: "Current",
+    settingsUrl,
+  } as const;
+  const refused = fixtureService([], { held: [claimed], permissions });
+  const unclaimed = fixtureService(["AdministerTenant"], {
+    held: [{ ...claimed, installationId: asForgeInstallationId("9999") }],
+    permissions,
+  });
+  for (const fixture of [refused, unclaimed]) {
+    assert.deepEqual(
+      await fixture.service.installationPermissions(
+        principal,
+        tenant,
+        installationId,
+      ),
+      { result: "NotFound" },
+    );
+    assert.deepEqual(fixture.wrote.compared, []);
+  }
+});
+
+test("an installation the forge refuses is not found and an outage is a wait", async () => {
+  const denied = fixtureService(["AdministerTenant"], {
+    held: [claimed],
+    permissions: { read: "Denied" },
+  });
+  assert.deepEqual(
+    await denied.service.installationPermissions(
+      principal,
+      tenant,
+      installationId,
+    ),
+    { result: "NotFound" },
+  );
+  const down = fixtureService(["AdministerTenant"], { held: [claimed] });
+  assert.deepEqual(
+    await down.service.installationPermissions(
       principal,
       tenant,
       installationId,

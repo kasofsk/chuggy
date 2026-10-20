@@ -1,6 +1,7 @@
 /**
  * The tenant's accounts page, mounted: Connect GitHub until an account is
- * connected, Add account and a missing worker's install after, and the one
+ * connected, Add account and a missing worker's install after, an installation
+ * behind its app's permissions offered its own page on the forge, and the one
  * word a return from the forge leaves.
  */
 
@@ -96,14 +97,21 @@ interface Drawing {
   readonly listing?: () => Response;
   /** What this deployment answers about its apps. */
   readonly described?: unknown;
+  /** What each installation's permissions read answers, by installation. */
+  readonly permissions?: (installationId: string) => Response;
 }
 
 function drawAccounts(drawing: Drawing = {}): Promise<DrawnStrict> {
   const claimed = drawing.claimed ?? installations;
   const listing = drawing.listing ?? (() => answer(claimed));
   const described = drawing.described ?? { apps: [] };
+  const permissions = drawing.permissions ?? (() => answer({}, 404));
   return drawnStrict(<TenantAccountsPage />, (request: SentRequest) => {
     if (request.url.endsWith("/forge/github")) return answer(described);
+    const compared = /\/forge-installations\/([^/]+)\/permissions$/u.exec(
+      request.url,
+    );
+    if (compared?.[1] !== undefined) return permissions(compared[1]);
     if (request.url.includes("/forge-installations")) return listing();
     return answer({}, 404);
   });
@@ -315,4 +323,61 @@ test("a listing that failed keeps its own line", async () => {
       "Failed to load · the API failed with InternalError",
     ),
   ).toBeTruthy();
+});
+
+/** The forge's own page for one installation, as the permissions read answers it. */
+function settingsUrlOf(installationId: string): string {
+  return `https://forge.test/organizations/kasofsk/settings/installations/${installationId}`;
+}
+
+/** The kasofsk worker installation behind its app, every other one current. */
+function workerBehind(installationId: string): Response {
+  return answer({
+    permissions: installationId === "12" ? "Behind" : "Current",
+    settingsUrl: settingsUrlOf(installationId),
+  });
+}
+
+test("an installation behind its app says so and opens its own page on the forge", async () => {
+  await drawAccounts({ permissions: workerBehind });
+  const rows = within(sectionOf("Accounts")).getAllByRole("row");
+  expect(rows.map((row) => row.textContent)).toStrictEqual([
+    "AccountKindPortalWorker",
+    "kasofskOrganizationInstalledUpdate pendingReview on GitHub",
+    "gdoteofUserInstalledMissing",
+  ]);
+  const review = within(rows[1] ?? document.body).getByRole<HTMLAnchorElement>(
+    "link",
+    { name: "Review on GitHub" },
+  );
+  expect(review.href).toBe(settingsUrlOf("12"));
+  expect(review.target).toBe("_blank");
+  expect(review.rel).toBe("noopener noreferrer");
+});
+
+/** An outage is no answer at all, so it draws exactly what a current
+ * installation draws and never a status that would send someone to the forge. */
+test("an installation current or unknown says Installed and offers nothing", async () => {
+  for (const permissions of [
+    (installationId: string) =>
+      answer({
+        permissions: "Current",
+        settingsUrl: settingsUrlOf(installationId),
+      }),
+    () => answer({}, 503),
+    () => answer({ permissions: "Pending", settingsUrl: "x" }),
+  ]) {
+    await drawAccounts({ permissions });
+    const accounts = within(sectionOf("Accounts"));
+    expect(
+      accounts.getAllByRole("row").map((row) => row.textContent),
+    ).toStrictEqual([
+      "AccountKindPortalWorker",
+      "kasofskOrganizationInstalledInstalled",
+      "gdoteofUserInstalledMissing",
+    ]);
+    expect(accounts.queryByText("Update pending")).toBeNull();
+    expect(accounts.queryAllByRole("link")).toStrictEqual([]);
+    cleanup();
+  }
 });

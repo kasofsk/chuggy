@@ -29,13 +29,13 @@
  * person authorizes and what this deployment mints through, and the worker app
  * is the plane's, found on each proven account under the worker's own key.
  *
- * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the three questions that are
- * the forge's — what the app is, where it is installed, and what one grants —
- * need an app key, and each of them is `NotConfigured` without one. Binding
- * proves a repository through the composed credential source, so a deployment
- * whose credentials come from files binds exactly as it always did, and one
- * that mints is refused by the same `Denied` the minting source already
- * answers an unclaimed owner with.
+ * A DEPLOYMENT HOLDING NO APP STILL BINDS. Only the questions that are the
+ * forge's — what the app is, where it is installed, what one grants, and
+ * whether one has accepted what its app asks for — need an app key, and each
+ * of them is `NotConfigured` without one. Binding proves a repository through
+ * the composed credential source, so a deployment whose credentials come from
+ * files binds exactly as it always did, and one that mints is refused by the
+ * same `Denied` the minting source already answers an unclaimed owner with.
  *
  * A NEWLY BOUND REPOSITORY IS LEFT CONFIGURED EITHER WAY. A project that binds
  * a repository declaring configurations wanted them, and one that binds a
@@ -93,6 +93,7 @@ import type {
   ForgeAppDescription,
   ForgeApps,
   ForgeInstallationDirectory,
+  ForgeInstallationPermissions,
   ForgeInstallationRepositories,
   ForgeRepositorySummary,
 } from "./forgeDirectory.ts";
@@ -208,6 +209,17 @@ export type ForgeRepositoriesResult =
       readonly result: "Repositories";
       readonly repositories: readonly ForgeRepositorySummary[];
       readonly truncated: boolean;
+    }
+  | { readonly result: "NotConfigured" }
+  | { readonly result: "NotFound" }
+  | { readonly result: "Unavailable" };
+
+/** What comparing one claimed installation's permissions with its app's came to. */
+export type ForgeInstallationPermissionsResult =
+  | {
+      readonly result: "Permissions";
+      readonly permissions: ForgeInstallationPermissions;
+      readonly settingsUrl: string;
     }
   | { readonly result: "NotConfigured" }
   | { readonly result: "NotFound" }
@@ -526,7 +538,7 @@ export interface RepositoryOnboardingPorts {
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
-/** The ten questions the onboarding routes ask, each behind the permit it needs. */
+/** The questions the onboarding routes ask, each behind the permit it needs. */
 export interface RepositoryOnboarding {
   forgeApps(): Promise<ForgeAppsResult>;
 
@@ -546,6 +558,12 @@ export interface RepositoryOnboarding {
     tenant: TenantId,
     installationId: ForgeInstallationId,
   ): Promise<ForgeRepositoriesResult>;
+
+  installationPermissions(
+    principal: Principal,
+    tenant: TenantId,
+    installationId: ForgeInstallationId,
+  ): Promise<ForgeInstallationPermissionsResult>;
 
   bindRepository(
     principal: Principal,
@@ -732,6 +750,28 @@ async function authorizeForge(
   return { result: "Authorized", accounts, truncated: read.truncated };
 }
 
+/** The claim one installation is held under and the half of its app, or why a reader is answered without either. */
+async function claimedForgeApp(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  tenant: TenantId,
+  installationId: ForgeInstallationId,
+): Promise<
+  | {
+      readonly claim: ForgeInstallationClaimed;
+      readonly forge: RepositoryOnboardingForgeApp;
+    }
+  | { readonly result: "NotConfigured" | "NotFound" }
+> {
+  if ((await administersTenant(ports, principal, tenant)) === undefined)
+    return { result: "NotFound" };
+  const claim = await ports.claims.claim(tenant, installationId);
+  if (claim === undefined) return { result: "NotFound" };
+  const forge = heldForgeApp(ports, claim.forge, claim.app);
+  if (forge === undefined) return { result: "NotConfigured" };
+  return { claim, forge };
+}
+
 /**
  * What one claimed installation grants, the claim itself being the tenant's
  * proof. The claim is looked up rather than searched for in the listing, whose
@@ -743,12 +783,9 @@ async function installationRepositories(
   tenant: TenantId,
   installationId: ForgeInstallationId,
 ): Promise<ForgeRepositoriesResult> {
-  if ((await administersTenant(ports, principal, tenant)) === undefined)
-    return { result: "NotFound" };
-  const claim = await ports.claims.claim(tenant, installationId);
-  if (claim === undefined) return { result: "NotFound" };
-  const forge = heldForgeApp(ports, claim.forge, claim.app);
-  if (forge === undefined) return { result: "NotConfigured" };
+  const held = await claimedForgeApp(ports, principal, tenant, installationId);
+  if ("result" in held) return held;
+  const { claim, forge } = held;
   const read = await forge.installationRepositories.repositories({
     forge: claim.forge,
     app: claim.app,
@@ -761,6 +798,37 @@ async function installationRepositories(
         result: "Repositories",
         repositories: read.repositories,
         truncated: read.truncated,
+      };
+    case "Denied":
+      return { result: "NotFound" };
+    case "Unavailable":
+      return { result: "Unavailable" };
+    default:
+      return assertNever(read);
+  }
+}
+
+/**
+ * Whether one claimed installation has accepted what its app asks for, read
+ * under the claim's own app as `installationRepositories` reads what it grants.
+ */
+async function installationPermissions(
+  ports: RepositoryOnboardingPorts,
+  principal: Principal,
+  tenant: TenantId,
+  installationId: ForgeInstallationId,
+): Promise<ForgeInstallationPermissionsResult> {
+  const held = await claimedForgeApp(ports, principal, tenant, installationId);
+  if ("result" in held) return held;
+  const read = await held.forge.directory.installationPermissions(
+    held.claim.installationId,
+  );
+  switch (read.read) {
+    case "Permissions":
+      return {
+        result: "Permissions",
+        permissions: read.permissions,
+        settingsUrl: read.settingsUrl,
       };
     case "Denied":
       return { result: "NotFound" };
@@ -1454,6 +1522,9 @@ export function repositoryOnboarding(
 
     installationRepositories: (principal, tenant, installationId) =>
       installationRepositories(ports, principal, tenant, installationId),
+
+    installationPermissions: (principal, tenant, installationId) =>
+      installationPermissions(ports, principal, tenant, installationId),
 
     bindRepository: (principal, partition, request) =>
       bindRepository(ports, principal, partition, request),

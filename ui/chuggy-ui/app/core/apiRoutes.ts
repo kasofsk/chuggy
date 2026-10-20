@@ -24,6 +24,7 @@ import {
   executionsResponseSchema,
   forgeAppsResponseSchema,
   forgeAuthorizationResponseSchema,
+  forgeInstallationPermissionsResponseSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
   installationResponseSchema,
@@ -69,6 +70,7 @@ import type {
   ExecutionsResponse,
   ForgeAppsResponse,
   ForgeAuthorizationResponse,
+  ForgeInstallationPermissionsResponse,
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
   InstallationResponse,
@@ -299,6 +301,22 @@ export function apiForgeInstallationRepositories(
       installationId,
     }),
     (value) => forgeRepositoriesResponseSchema.parse(value),
+  );
+}
+
+/** Whether one claimed installation has accepted what its app asks for, and where it is accepted. */
+export function apiForgeInstallationPermissions(
+  ports: ApiPorts,
+  tenant: string,
+  installationId: string,
+): Promise<ApiResult<ForgeInstallationPermissionsResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.forgeInstallationPermissions, {
+      tenant,
+      installationId,
+    }),
+    (value) => forgeInstallationPermissionsResponseSchema.parse(value),
   );
 }
 

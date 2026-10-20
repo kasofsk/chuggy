@@ -464,6 +464,7 @@ export const nativeHttpRoutes = {
   forgeAuthorizations: `${nativeHttpBasePath}/tenants/:tenant/forge-authorizations`,
   forgeInstallations: `${nativeHttpBasePath}/tenants/:tenant/forge-installations`,
   forgeInstallationRepositories: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/repositories`,
+  forgeInstallationPermissions: `${nativeHttpBasePath}/tenants/:tenant/forge-installations/:installationId/permissions`,
   projects: `${nativeHttpBasePath}/projects`,
   project: `${nativeHttpBasePath}/tenants/:tenant/projects/:project`,
   tickets: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets`,

@@ -357,6 +357,11 @@ export const forgeAppClaims = [
 ] as const;
 export type ForgeAppClaimName = (typeof forgeAppClaims)[number];
 
+/** Whether an installation holds every permission its app asks for, `Behind` until an owner of the account accepts what the app added. */
+export const forgeInstallationPermissions = ["Current", "Behind"] as const;
+export type ForgeInstallationPermissionsName =
+  (typeof forgeInstallationPermissions)[number];
+
 /** Whether a repository this tree creates is its account's alone to read. */
 export const forgeRepositoryVisibilities = ["private", "public"] as const;
 export type ForgeRepositoryVisibilityName =

@@ -58,6 +58,7 @@
     "forgeAuthorizations": "/api/v1/tenants/:tenant/forge-authorizations",
     "forgeInstallations": "/api/v1/tenants/:tenant/forge-installations",
     "forgeInstallationRepositories": "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
+    "forgeInstallationPermissions": "/api/v1/tenants/:tenant/forge-installations/:installationId/permissions",
     "projects": "/api/v1/projects",
     "project": "/api/v1/tenants/:tenant/projects/:project",
     "tickets": "/api/v1/tenants/:tenant/projects/:project/tickets",

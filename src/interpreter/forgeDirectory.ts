@@ -1,6 +1,7 @@
 /**
  * What a forge tells the app about itself: the app's own identity, its
- * installation on one account, and the repositories an installation grants.
+ * installation on one account, whether an installation has accepted the
+ * permissions the app asks for, and the repositories an installation grants.
  *
  * IT IS READ AS THE APP AND NEVER AS A TENANT. Every question here is asked
  * under the app's own key, so nothing a caller sends selects whose credential
@@ -67,11 +68,30 @@ export type ForgeAccountInstallationRead =
   | { readonly read: "Missing" }
   | { readonly read: "Unavailable" };
 
-/** Reads this app's installation on one account. */
+/** Whether an installation holds every permission its app asks for, `Behind` until an owner of the account accepts what the app added. */
+export const allForgeInstallationPermissions = ["Current", "Behind"] as const;
+
+export type ForgeInstallationPermissions =
+  (typeof allForgeInstallationPermissions)[number];
+
+/** What comparing one installation's permissions with its app's came to, beside the forge's own page for that installation. */
+export type ForgeInstallationPermissionsRead =
+  | {
+      readonly read: "Permissions";
+      readonly permissions: ForgeInstallationPermissions;
+      readonly settingsUrl: string;
+    }
+  | { readonly read: "Denied" }
+  | { readonly read: "Unavailable" };
+
+/** Reads this app's installation on one account, and what one installation has accepted. */
 export interface ForgeInstallationDirectory {
   accountInstallation(
     account: ForgeInstallationAccount,
   ): Promise<ForgeAccountInstallationRead>;
+  installationPermissions(
+    installationId: ForgeInstallationId,
+  ): Promise<ForgeInstallationPermissionsRead>;
 }
 
 /** One repository an installation grants, in the terms a reader chooses between them by. */

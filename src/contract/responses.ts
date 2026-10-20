@@ -141,6 +141,7 @@ import {
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
+  forgeInstallationPermissions,
   forgeApps,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
@@ -1729,6 +1730,15 @@ export const forgeRepositoriesResponseSchema = z.object({
 });
 export type ForgeRepositoriesResponse = z.infer<
   typeof forgeRepositoriesResponseSchema
+>;
+
+/** Whether one installation has accepted what its app asks for, and the forge's own page where an owner of the account accepts it. */
+export const forgeInstallationPermissionsResponseSchema = z.object({
+  permissions: z.enum(forgeInstallationPermissions),
+  settingsUrl: z.string().min(1),
+});
+export type ForgeInstallationPermissionsResponse = z.infer<
+  typeof forgeInstallationPermissionsResponseSchema
 >;
 
 /**

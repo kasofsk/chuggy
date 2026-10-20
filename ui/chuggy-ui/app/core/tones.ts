@@ -15,6 +15,7 @@ import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
 import type {
   ExecutionOutcome,
   ExecutionStatus,
+  ForgeInstallationPermissionsName,
   SelectorAttention,
   SelectorMode,
   SessionState,
@@ -203,6 +204,18 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
     case "Installed":
       return "pass";
     case "Missing":
+      return "parked";
+  }
+}
+
+/** Whether an installed app's installation has accepted what the app asks for. */
+export function forgeInstallationPermissionsTone(
+  permissions: ForgeInstallationPermissionsName,
+): Tone {
+  switch (permissions) {
+    case "Current":
+      return "pass";
+    case "Behind":
       return "parked";
   }
 }

@@ -51,6 +51,7 @@ const documentRouteNames = [
   "forgeApps",
   "forgeAuthorizations",
   "forgeCredentials",
+  "forgeInstallationPermissions",
   "forgeInstallationRepositories",
   "forgeInstallations",
   "hostedRuns",

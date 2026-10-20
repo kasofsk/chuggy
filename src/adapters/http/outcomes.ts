@@ -103,6 +103,7 @@ import type {
   ForgeAppsResult,
   ForgeAuthorizationResult,
   ForgeInstallationsResult,
+  ForgeInstallationPermissionsResult,
   ForgeRepositoriesResult,
   ProjectRepositoriesResult,
   ProjectRepositoryBindResult,
@@ -1566,6 +1567,27 @@ export function forgeRepositoriesResponse(
       return response(200, {
         repositories: result.repositories,
         truncated: result.truncated,
+      });
+    case "NotConfigured":
+      return forgeNotConfigured();
+    case "NotFound":
+      return notFound();
+    case "Unavailable":
+      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
+    default:
+      return assertNever(result);
+  }
+}
+
+/** Whether one installation has accepted what its app asks for, an outage being a wait rather than either answer. */
+export function forgeInstallationPermissionsResponse(
+  result: ForgeInstallationPermissionsResult,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "Permissions":
+      return response(200, {
+        permissions: result.permissions,
+        settingsUrl: result.settingsUrl,
       });
     case "NotConfigured":
       return forgeNotConfigured();
