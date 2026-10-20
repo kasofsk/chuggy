@@ -229,15 +229,12 @@ export type SetupRunnerNote =
 
 /**
  * What the runner package's own check looks at, by the names it prints them
- * under, each with what a failure of it means in this program's words. The
- * credential's check is "Claude token file" before the release that takes
- * `claudeCredential` (0.13.0), and "Claude credential" from that release on.
+ * under, each with what a failure of it means in this program's words.
  */
 export const setupRunnerChecks = {
   "pool file": "this machine's registration could not be read",
   "runner configuration": "the runner's settings are not as it needs them",
   "runtime directory": "the runner has nowhere to keep what it runs with",
-  "Claude token file": "the runner's Claude login is not as it needs it",
   "Claude credential": "the runner's Claude credential is not as it needs it",
   "podman credential helpers": "podman would present logins of its own",
   "container engine": "the runner could not use the container engine",

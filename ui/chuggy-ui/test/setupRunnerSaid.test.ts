@@ -784,12 +784,11 @@ test("the first line of the check under a mark is found among the lines that are
   expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
 });
 
-test("the checks this program has words for are the ones the package's doctor prints, in its order, the credential's under the name before the release that takes claudeCredential (0.13.0) and under the one from it on", () => {
+test("the checks this program has words for are named as the package's doctor prints them, in its order", () => {
   expect(Object.keys(setupRunnerChecks)).toEqual([
     "pool file",
     "runner configuration",
     "runtime directory",
-    "Claude token file",
     "Claude credential",
     "podman credential helpers",
     "container engine",

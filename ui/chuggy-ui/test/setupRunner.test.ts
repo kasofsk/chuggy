@@ -406,7 +406,7 @@ test("settings naming claudeCredential have a package older than the first that 
   ).toEqual([]);
 });
 
-test("settings naming claudeCredential, beside a machine-wide package too old under a prefix not the person's to write, take a current one under the person's own prefix where there is one, have one installed there where there is none, and with no npm stop before anything is changed", async () => {
+test("beside a machine-wide package too old under a prefix not the person's to write, setup takes a current one under the person's own prefix where there is one, has one installed there where there is none, and with no npm stops before anything is changed", async () => {
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
   const mine = `${boxOwn}/bin/chuggy-linux`;
   const key = "/srv/secrets/anthropic-api-key";
@@ -424,7 +424,7 @@ test("settings naming claudeCredential, beside a machine-wide package too old un
     machine.box.paths.set(machineWide, "#!/usr/bin/env node");
     machine.box.paths.set(
       manifest(boxPrefix),
-      JSON.stringify({ version: "0.12.0" }),
+      JSON.stringify({ version: "0.13.0" }),
     );
     if (ownVersion !== undefined) {
       machine.box.paths.set(mine, "#!/usr/bin/env node");
@@ -450,8 +450,8 @@ test("settings naming claudeCredential, beside a machine-wide package too old un
   const none = await held(undefined);
   const installed = await ran(none);
   expect(installed.lines.slice(4, 6)).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.12.0, at ${machineWide}, and chuggy setup needs ${setupPackageLeast} or later`,
-    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}, and chuggy-linux 0.12.0 is still at ${machineWide}`,
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${machineWide}, and chuggy setup needs ${setupPackageLeast} or later`,
+    `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}, and chuggy-linux 0.13.0 is still at ${machineWide}`,
   ]);
   expect(installed.lines.slice(-2)).toEqual([live, next]);
   expect(registeredBy(none)).toBe(mine);
@@ -470,7 +470,7 @@ test("settings naming claudeCredential, beside a machine-wide package too old un
     `did: installed the runner package, chuggy-linux ${setupPackageLeast}, at ${mine}`,
   );
 
-  const npmless = await held("0.12.0");
+  const npmless = await held("0.13.0");
   npmless.box.prefix = undefined;
   const stopped = await ran(npmless);
   expect(stopped.exit).toBe(0);

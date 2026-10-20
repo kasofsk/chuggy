@@ -484,7 +484,7 @@ test("a machine whose project's runner was set up on a package older than the fi
       "chuggy-linux",
       "package.json",
     ),
-    JSON.stringify({ name: "chuggy-linux", version: "0.3.0" }),
+    JSON.stringify({ name: "chuggy-linux", version: "0.13.0" }),
   );
   for (const project of on.installation.world.projects)
     project.threads = "Pool";
@@ -497,7 +497,7 @@ test("a machine whose project's runner was set up on a package older than the fi
     found.engine,
     found.settings,
     found.login,
-    `found: the runner package is installed: chuggy-linux 0.3.0, at ${command}, and chuggy setup needs 0.14.0 or later`,
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.14.0 or later`,
     did.package,
     found.pool,
     found.check,
@@ -906,14 +906,14 @@ test("the runner's own check failing with a secret in what it says is told with 
   on.machine.tell({
     doctor: {
       exit: 1,
-      aside: `FAIL  Claude token file: ${machineLoginSecret} is no login\n`,
+      aside: `FAIL  Claude credential: ${machineLoginSecret} is no login\n`,
     },
   });
   const failed = await ran(on);
   assert.equal(failed.code, 1, failed.stdout);
   assert.ok(
     failed.lines.includes(
-      "found: the runner's Claude login is not as it needs it; the runner's own check said: FAIL Claude token file: [redacted] is no login",
+      "found: the runner's Claude credential is not as it needs it; the runner's own check said: FAIL Claude credential: [redacted] is no login",
     ),
     failed.stdout,
   );
