@@ -20,16 +20,19 @@
  * fewer unredeemed tokens than its bound. A token is redeemed once, by whoever
  * holds it, for a pool's credentials; every token and every credential handed
  * out is kept, so a suite can search what a run printed for any of them. The
- * caller's own runner in a workspace is answered likewise: whether the
- * workspace lets them register one, the mint of a token for it, which only a
- * caller it lets is answered, its redemption, which keeps the projects one
- * registered before served, and a project added to what it serves. Where
- * their chats in a project run on runners, the session placement says theirs
- * as it stands for that project.
+ * caller's own runners in a workspace are answered likewise: whether the
+ * workspace lets them register one, the mint of a token for one, which only a
+ * caller it lets is answered, its redemption, which adds a runner to theirs
+ * while they hold fewer than a member may, and a project added to what they
+ * serve. Where their chats in a project run on runners, the session placement
+ * says theirs as they stand for that project.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
-import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
+import {
+  personalRunnersMax,
+  projectRepositoriesAnsweredMax,
+} from "../../../src/contract/http.ts";
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
@@ -111,10 +114,16 @@ export const setupSiteMember =
 export type SetupSiteRunnerAsk =
   "abilities" | "pools" | "mint" | "permit" | "own" | "ownMint" | "serves";
 
-/** The caller's own runner in a workspace: the projects it serves, and whether it has polled lately, which is what the site sees as live. */
+/** One of the caller's own runners: the id it is listed by, and whether it has polled lately, which is what the site sees as live. */
+export interface SetupSiteOwnRunner {
+  readonly id: string;
+  live: boolean;
+}
+
+/** The caller's own runners in a workspace, oldest first, and the projects every one of them serves. */
 export interface SetupSiteOwn {
   projects: string[];
-  live: boolean;
+  runners: SetupSiteOwnRunner[];
 }
 
 /** How a read is answered where a case says other than what the site holds. */
@@ -137,9 +146,10 @@ export interface SetupSite {
   readonly member: string;
   /** Whether each workspace lets the caller register a runner of their own, where a case says one does not. */
   readonly withheld: Set<string>;
-  /** The caller's own runner, by workspace, and the tokens minted for one that nobody has redeemed, each with its workspace. */
+  /** The caller's own runners, by workspace, the tokens minted for one that nobody has redeemed, each with its workspace, and how many were ever registered. */
   readonly own: Map<string, SetupSiteOwn>;
   readonly ownTokens: Map<string, string>;
+  ownMade: number;
   /** What each mint that was answered asked for. */
   readonly mints: SetupSiteMint[];
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
@@ -200,6 +210,7 @@ export function setupSiteEmpty(): SetupSite {
     withheld: new Set(),
     own: new Map(),
     ownTokens: new Map(),
+    ownMade: 0,
     mints: [],
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
@@ -312,11 +323,10 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
       configured: reached("Configured"),
     });
   if (reached("Offline")) project.runner = reached("Live") ? "Live" : "Offline";
-  if (reached("Live"))
-    site.own.set(setupSiteWorkspace, {
-      projects: [setupSiteProjectName],
-      live: true,
-    });
+  if (reached("Live")) {
+    setupSiteOwnAdded(site, setupSiteWorkspace, true);
+    site.own.get(setupSiteWorkspace)?.projects.push(setupSiteProjectName);
+  }
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
   if (stage === "Landed") project.tickets.push({ ticket: 1, phase: "Done" });
@@ -470,14 +480,15 @@ function bindings(
   return [...held, ...padding];
 }
 
-/** The caller's own runner as a project's session placement says it: registered only where it serves the project. */
+/** The caller's own runners as a project's session placement says them: registered only where they serve the project, and live where any one is. */
 function mine(
   site: SetupSite,
   project: SetupSiteProject,
 ): SessionRunnerStanding {
   const own = site.own.get(project.tenant);
-  if (own?.projects.includes(project.project) !== true) return "Unregistered";
-  return own.live ? "Live" : "Offline";
+  if (own === undefined || !own.projects.includes(project.project))
+    return "Unregistered";
+  return own.runners.some((runner) => runner.live) ? "Live" : "Offline";
 }
 
 function placement(
@@ -592,18 +603,36 @@ export function setupSiteRedeemed(
   };
 }
 
-/** A redemption of a token minted for the caller's own runner: their one runner in its workspace, registered anew and keeping the projects one before it served, which has not polled. */
+/** One more of the caller's own runners in a workspace, a new id of its own, polling where `live`; the id is answered. */
+export function setupSiteOwnAdded(
+  site: SetupSite,
+  tenant: string,
+  live: boolean,
+): string {
+  site.ownMade += 1;
+  const id = `chuggy-personal-${String(site.ownMade)}`;
+  const own = site.own.get(tenant) ?? { projects: [], runners: [] };
+  own.runners.push({ id, live });
+  site.own.set(tenant, own);
+  return id;
+}
+
+/** A redemption of a token minted for the caller's own runner: one more runner of theirs in its workspace, which has not polled, while they hold fewer than a member may, and the token kept for another try where they hold that many. */
 export function setupSiteOwnRedeemed(
   site: SetupSite,
   token: string,
 ): SetupSiteAnswer {
   const tenant = site.ownTokens.get(token);
   if (tenant === undefined) return refused();
+  if ((site.own.get(tenant)?.runners.length ?? 0) >= personalRunnersMax)
+    return {
+      status: 409,
+      body: {
+        error: { code: "RunnerLimitReached", message: "At its bound." },
+      },
+    };
   site.ownTokens.delete(token);
-  site.own.set(tenant, {
-    projects: site.own.get(tenant)?.projects ?? [],
-    live: false,
-  });
+  const clientId = setupSiteOwnAdded(site, tenant, false);
   return {
     status: 201,
     body: {
@@ -614,7 +643,7 @@ export function setupSiteOwnRedeemed(
       tokenUrl: "https://auth.example/oauth2/token",
       audience: "https://chuggy.example/pool",
       planeUrl: "https://pool.chuggy.example/",
-      clientId: `personal-${site.member}`,
+      clientId,
       clientSecret: drawn(site, "credential"),
     },
   };
@@ -641,7 +670,7 @@ function ownMinted(
   return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
 }
 
-/** A project added to what the caller's own runner serves, where they have one and are shown the project. */
+/** A project added to what the caller's own runners serve, where they have one and are shown the project. */
 function served(
   site: SetupSite,
   tenant: string,
@@ -651,30 +680,29 @@ function served(
   if (fate !== undefined) return fate;
   const own = site.own.get(tenant);
   const project = projectOf(site, tenant, named);
-  if (own === undefined || project === undefined) return refused();
+  if (own === undefined || own.runners.length === 0 || project === undefined)
+    return refused();
   if (!own.projects.includes(project.project))
     own.projects.push(project.project);
   return { status: 204, body: undefined };
 }
 
-/** The caller's own runner in a workspace as its read answers it, or not found where they have none. */
+/** The caller's own runners in a workspace as their read answers them, or not found where they have none. */
 function ownAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
   const own = site.own.get(tenant);
   return (
     fated(site, "own") ??
-    (own === undefined
+    (own === undefined || own.runners.length === 0
       ? refused()
       : answered({
-          runners: [
-            {
-              id: "chuggy-personal-1",
-              capabilities: ["Platform:Linux:Amd64"],
-              registeredAt: "2026-10-09T00:00:00Z",
-              ...(own.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
-              live: own.live,
-              executionsLive: own.live,
-            },
-          ],
+          runners: own.runners.map((runner) => ({
+            id: runner.id,
+            capabilities: ["Platform:Linux:Amd64"],
+            registeredAt: "2026-10-09T00:00:00Z",
+            ...(runner.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
+            live: runner.live,
+            executionsLive: runner.live,
+          })),
           projects: own.projects.toSorted(),
         }))
   );

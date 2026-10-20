@@ -177,7 +177,7 @@ The runner's step is the one the program does. For any other step that is the
 first not done, a `tell:` line says what mends it, a console page and what to
 press there wherever a page is what does, and `next:` is `stop`. The runner's
 step is done once the project's work has a runner the site sees live, or runs
-on the cluster, and her chats in it have her own runner serving it live, or run
+on the cluster, and her chats in it have a runner of her own serving it live, or run
 on the cluster too. At that step it looks at the machine and changes nothing.
 Where a runner could be put there, one `tell:` says what `runner` would put on
 the machine, a service for the project's work and one for her own chats or
@@ -207,11 +207,13 @@ take it is said as that, with its path, and the sign-in is not spent.
 `runner --workspace <w> --project <p>` sets a runner up for that project on the
 Linux machine it is run on, and is done once the site sees the runner live;
 then, where her chats in the project run on runners, it makes the same machine
-her own runner, as the console's My runner page does, adds the project to what
-it serves, and is done once the site sees that live too. `--wait-secs` bounds
-each wait. One package, one settings file and one Claude credential serve both
-services. Her own runner the site already has is kept: where this machine holds
-no registration of it, it is on another machine and is only given the project. The machine is the record of the machine's
+one of her own runners, as the console's My runners page does, adds the project
+to what her runners serve, and is done once the site sees this machine live as
+that runner too. `--wait-secs` bounds each wait. One package, one settings file
+and one Claude credential serve both services. A registration of her own that
+this machine holds is kept where the site lists it among her runners, and
+otherwise this machine is registered as one more; her runners on other
+machines are left as they are. The machine is the record of the machine's
 things and the site of the site's, and the program keeps neither: every act is
 preceded by the probe that would show it done, so the command is run again
 after any failure and picks up where things stand. In order it has the runner
@@ -224,7 +226,8 @@ services set to outlive a logout; and the service enabled and started. For a
 registration it mints a registration token, a write, and hands it to the
 package's `register` as one word of its arguments and nowhere else; her own
 runner is registered the same way, with `--personal`, where the workspace
-lets her, and adding the project to what it serves is the other write. Every try mints one, so a registration the package refuses
+lets her and she holds fewer than a member may, and adding the project to what
+her runners serve is the other write. Every try mints one, so a registration the package refuses
 for the machine's processor or its name is not offered again as the machine
 stands.
 It takes no password: a child has no terminal to ask on, and what wants one is

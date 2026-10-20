@@ -185,14 +185,14 @@ const mends: {
   Own: [
     { lacks: "Own", pooled: true },
     hand(
-      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to its projects on that page. Tell me once it is running.`,
+      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to the projects on that page. Tell me once it is running.`,
       "once the person says their own runner is running and serves the project",
     ),
   ],
   OwnLive: [
     { lacks: "OwnLive", pooled: true },
     hand(
-      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running. Start it on its machine and tell me once it is running.",
+      "Your chats in acme/widgets run only on a runner of your own, and none of yours that serves it is running. Start one on its machine and tell me once it is running.",
       "once the person says their own runner is running",
     ),
   ],
@@ -516,10 +516,10 @@ test("with neither a runner of the project nor one of the person's own, the offe
   );
 });
 
-test("with the project's work provided for and no runner of the person's own serving it, a machine that could take one is offered as theirs, said as a second runner of the work too where the work's runner is elsewhere, and otherwise they are sent to the My runner page", () => {
+test("with the project's work provided for and no runner of the person's own serving it, a machine that could take one is offered as one of theirs, said as a second runner of the work too where the work's runner is elsewhere, and otherwise they are sent to the My runners page", () => {
   const chats =
     "Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet.";
-  const yours = `${chats} I can make this machine yours: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Where your own runner is on another machine already, it is kept and given acme/widgets to serve instead.`;
+  const yours = `${chats} I can make this machine one of yours: that puts here the runner package, chuggy-linux, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, in containers, on your Claude plan. Any runner of yours on another machine is kept, and serves acme/widgets too.`;
   expect(here({ lacks: "Own", pooled: false }, roomy)).toEqual(
     offered(`${yours} Tell me yes to go ahead.`),
   );
@@ -533,16 +533,16 @@ test("with the project's work provided for and no runner of the person's own ser
   );
   expect(here({ lacks: "Own", pooled: false }, { room: "Mac" })).toEqual(
     hand(
-      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet; chuggy setup cannot make this machine one. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to its projects on that page. Tell me once it is running.`,
+      `Your chats in acme/widgets run only on a runner of your own, and none of yours serves it yet; chuggy setup cannot make this machine one. On a machine that can be one, open ${pages}/settings/workspace/runner, press Register runner and do what it shows; where you already have one, add widgets to the projects on that page. Tell me once it is running.`,
       "once the person says their own runner is running and serves the project",
     ),
   );
 });
 
-test("the person's own runner registered and not running is offered to be started here only where this machine holds a registration of it, and is otherwise theirs to start where it is", () => {
+test("the person's own runners registered and none running are offered to be started here only where this machine holds a registration of one, registered again where the site no longer knows it, and are otherwise theirs to start where they are", () => {
   expect(here({ lacks: "OwnLive", pooled: false }, roomy, false, true)).toEqual(
     offered(
-      "Your chats in acme/widgets run only on a runner of your own, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
+      "Your chats in acme/widgets run only on a runner of your own, and none of yours that serves it is running, and this machine holds a registration of one. With your yes I will start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration. If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first. Tell me yes to go ahead.",
     ),
   );
   expect(here({ lacks: "OwnLive", pooled: true }, roomy)).toEqual(
@@ -635,7 +635,7 @@ test("a runner registered and not running is offered to be started here only whe
     );
   expect(here({ lacks: "RunnerLive", own: true }, roomy, true)).toMatchObject({
     tell: expect.stringMatching(
-      / If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first\. Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too\. Tell me yes to go ahead\.$/u,
+      / If the runner package here, chuggy-linux, is older than chuggy setup needs, I install its latest release first\. Your own chats run only on a runner of your own, so I will also make this machine one of yours, as a second service of yours, serving this project\. Tell me yes to go ahead\.$/u,
     ) as unknown,
   });
 });

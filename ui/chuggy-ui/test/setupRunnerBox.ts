@@ -354,11 +354,16 @@ function served(
   );
 }
 
-/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner, that runner. */
-function polled(world: BoxWorld, name: string): void {
+/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner, the one its file names. */
+function polled(box: RunnerBox, world: BoxWorld, name: string): void {
   const site = world.site();
-  for (const [tenant, own] of site.own)
-    if (name === boxOwnUnitName(tenant, site.member)) own.live = true;
+  for (const [tenant, own] of site.own) {
+    if (name !== boxOwnUnitName(tenant, site.member)) continue;
+    const file = box.paths.get(boxOwnFile(tenant, site.member)) ?? "{}";
+    const { clientId } = JSON.parse(file) as { readonly clientId?: string };
+    for (const runner of own.runners)
+      if (runner.id === clientId) runner.live = true;
+  }
   if (!name.endsWith(`.${boxPoolName}.service`)) return;
   for (const project of site.projects)
     if (project.pools.includes(boxPoolName)) project.runner = "Live";
@@ -375,7 +380,7 @@ function up(box: RunnerBox, world: BoxWorld, name: string, enable: boolean) {
   box.units.set(name, unit);
   unit.enabled ||= enable;
   unit.active = box.stays;
-  if (unit.active && box.polls) polled(world, name);
+  if (unit.active && box.polls) polled(box, world, name);
   return exited(0);
 }
 

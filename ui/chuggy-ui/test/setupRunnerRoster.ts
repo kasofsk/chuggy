@@ -51,6 +51,10 @@ export const rosterCredentials: readonly SetupClaudeCredential[] = [
 export const rosterPeople =
   "https://chuggy.example/tenants/acme/settings/people";
 
+/** The page a person's own runners are listed and removed on. */
+export const rosterMyRunners =
+  "https://chuggy.example/tenants/acme/settings/runner";
+
 /** What `loginctl` says where turning lingering on wants a password. */
 export const rosterLingerRefusal =
   "Could not enable linger: Interactive authentication required.";
@@ -252,10 +256,8 @@ export const runnerStops: {
     { stop: "ServesRefused", outcome: "Absent" },
     { stop: "ServesRefused", outcome: "Fault" },
   ],
-  OwnNotLive: [
-    { stop: "OwnNotLive", waitedSecs: 90, here: true },
-    { stop: "OwnNotLive", waitedSecs: 90, here: false },
-  ],
+  OwnLimit: [{ stop: "OwnLimit", runners: rosterMyRunners }],
+  OwnNotLive: [{ stop: "OwnNotLive", waitedSecs: 90 }],
 };
 
 export const runnerNotes: {
@@ -315,7 +317,6 @@ export const runnerNotes: {
   Own: [{ note: "Own", path: rosterOwn }],
   OwnGone: [{ note: "OwnGone", path: rosterOwn }],
   OwnRegistered: [{ note: "OwnRegistered", path: rosterOwn }],
-  OwnElsewhere: [{ note: "OwnElsewhere" }],
   OwnUnit: [{ note: "OwnUnit", unit: rosterOwnUnit }],
   OwnUnitWritten: [{ note: "OwnUnitWritten", unit: rosterOwnUnit }],
   Serves: [{ note: "Serves" }],
@@ -360,14 +361,13 @@ export function rosterLines(places: RosterPlaces) {
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
       live: "found: the site sees a runner of acme/widgets live",
-      own: `found: this machine is registered as your own runner, in ${own}`,
+      own: `found: this machine is registered as one of your own runners, in ${own}`,
+      ownGone: `found: ${own} registered this machine as your own runner, and the site no longer knows that registration`,
       ownUnit: `found: your own runner's service is installed: ${ownUnit}`,
       ownRunning: `found: ${ownUnit} is enabled and running`,
-      serves: "found: your own runner serves acme/widgets",
+      serves: "found: your own runners serve acme/widgets",
       ownLive:
-        "found: the site sees your own runner live, so your chats in acme/widgets run on it",
-      elsewhere:
-        "found: your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in acme/widgets run on that machine",
+        "found: the site sees this machine live as your own runner, so your chats in acme/widgets can run on it",
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
@@ -378,11 +378,11 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
-      own: `did: registered this machine as your own runner, in ${own}`,
+      own: `did: registered this machine as one of your own runners, in ${own}`,
       ownUnit: `did: installed your own runner's service, ${ownUnit}`,
       ownStarted: `did: started ${ownUnit}, which also starts when you log in`,
       ownRestarted: `did: restarted ${ownUnit}, so it runs as it is now registered and installed`,
-      serves: "did: added acme/widgets to the projects your own runner serves",
+      serves: "did: added acme/widgets to the projects your own runners serve",
     },
   } as const;
 }

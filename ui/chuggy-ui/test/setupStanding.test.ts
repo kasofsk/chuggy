@@ -848,7 +848,10 @@ test("where the person's chats run on runners the runner step is done only once 
       project.runner = runner;
       if (mine === "Unregistered") site.own.clear();
       else
-        site.own.set("acme", { projects: ["widgets"], live: mine === "Live" });
+        site.own.set("acme", {
+          projects: ["widgets"],
+          runners: [{ id: "chuggy-personal-1", live: mine === "Live" }],
+        });
       const step = (await stood(site)).steps[4];
       said[`${runner} ${mine}`] = [step?.state, step?.detail, step?.lacks];
     }
