@@ -60,6 +60,7 @@ import {
   toolAllowlistAt066,
 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
 import { migration068 } from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
+import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-runner-versions.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -10935,4 +10936,53 @@ test("067 never replaces an attempt with one recorded before it", async () => {
       ]);
     },
   );
+});
+
+test("069 leaves every pool and every member's runner naming no runner, and keeps one only whole and in the header's grammar", async () => {
+  await migrationDatabase("runner_versions", async (subject) => {
+    await installationBefore(subject, migration069.version);
+    await subject.query(
+      `${deletionPartition}
+       INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
+       VALUES('tenant-5','project-5','pool-69','Dedicated','pool-principal-69','pool-client-69');
+       INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+       VALUES('tenant-5','owner-69','{}','runner-principal-69','runner-client-69')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration069.version));
+    for (const table of ["worker_pool", "personal_runner"]) {
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT runner_package,runner_version FROM ${table}`,
+          )
+        ).rows,
+        [{ runner_package: null, runner_version: null }],
+        table,
+      );
+      for (const [runnerPackage, version, refusal] of [
+        ["chuggy_linux", "0.14.0", "runner_package_is_a_package"],
+        ["chuggy-linux", "0.14.0-rc.1", "runner_version_is_a_release"],
+        ["chuggy-linux", "0.014.0", "runner_version_is_a_release"],
+        ["chuggy-linux", null, "runner_is_named_whole"],
+        [null, "0.14.0", "runner_is_named_whole"],
+      ] as const)
+        await assert.rejects(
+          subject.query(
+            `UPDATE ${table} SET runner_package=$1,runner_version=$2`,
+            [runnerPackage, version],
+          ),
+          new RegExp(`${table}_${refusal}`, "u"),
+          `${table} ${String(runnerPackage)}/${String(version)}`,
+        );
+      assert.equal(
+        (
+          await subject.query(
+            `UPDATE ${table} SET runner_package='chuggy-linux',runner_version='0.14.0'`,
+          )
+        ).rowCount,
+        1,
+        table,
+      );
+    }
+  });
 });

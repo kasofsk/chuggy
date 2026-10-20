@@ -82,6 +82,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 
+import type { WorkerRunner } from "../../contract/workerPool.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
@@ -97,6 +98,7 @@ import {
   type WorkerPoolRegistration,
   type WorkerPoolRegistry,
   type WorkerPoolRoster,
+  type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
 import { asWorkerPoolClass } from "../../interpreter/workerPoolAssignment.ts";
 import {
@@ -294,6 +296,18 @@ export function postgresWorkerPoolRegistry(pool: pg.Pool): WorkerPoolRegistry {
   };
 }
 
+/** The runner a row keeps, which its constraints keep whole or absent. */
+export function workerPoolRunnerKept(row: {
+  readonly runner_package: string | null;
+  readonly runner_version: string | null;
+}): { readonly runner?: WorkerRunner } {
+  return row.runner_package === null || row.runner_version === null
+    ? {}
+    : {
+        runner: { package: row.runner_package, version: row.runner_version },
+      };
+}
+
 /** A project's registered pools over the API's pool, in name order and read one past the page as the roster's. */
 export function postgresWorkerPoolDirectory(
   pool: pg.Pool,
@@ -304,7 +318,10 @@ export function postgresWorkerPoolDirectory(
         pool: string;
         capabilities: string[];
         registered_at: Date;
-      }>(sql`SELECT w.pool,w.capabilities,w.registered_at FROM worker_pool w
+        runner_package: string | null;
+        runner_version: string | null;
+      }>(sql`SELECT w.pool,w.capabilities,w.registered_at,w.runner_package,w.runner_version
+        FROM worker_pool w
         WHERE w.tenant=${partition.tenant} AND w.project=${partition.project}
         ORDER BY w.pool LIMIT ${workerPoolsAnsweredMax + 1}`);
       return {
@@ -312,9 +329,43 @@ export function postgresWorkerPoolDirectory(
           pool: row.pool,
           capabilities: row.capabilities,
           registeredAt: row.registered_at.toISOString(),
+          ...workerPoolRunnerKept(row),
         })),
         truncated: found.rows.length > workerPoolsAnsweredMax,
       };
+    },
+  };
+}
+
+/**
+ * The runner each caller's newest poll named, on its own row and under its
+ * current registration, written only where it differs from what is kept, so a
+ * poll that names what it named before writes nothing.
+ */
+export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
+  return {
+    named: async (identity, runner) => {
+      const named = runner?.package ?? null;
+      const version = runner?.version ?? null;
+      switch (identity.kind) {
+        case "Dedicated":
+          await pool.query(sql`UPDATE worker_pool w
+            SET runner_package=${named},runner_version=${version}
+            WHERE w.tenant=${identity.partition.tenant}
+              AND w.project=${identity.partition.project}
+              AND w.pool=${identity.pool} AND w.principal=${identity.principal}
+              AND (w.runner_package,w.runner_version)
+                IS DISTINCT FROM (${named}::text,${version}::text)`);
+          return;
+        case "Personal":
+          await pool.query(sql`UPDATE personal_runner r
+            SET runner_package=${named},runner_version=${version}
+            WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
+              AND r.principal=${identity.principal}
+              AND (r.runner_package,r.runner_version)
+                IS DISTINCT FROM (${named}::text,${version}::text)`);
+          return;
+      }
     },
   };
 }

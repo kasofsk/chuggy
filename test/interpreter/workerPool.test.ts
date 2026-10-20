@@ -38,6 +38,7 @@ import {
   type PoolPlaneIdentity,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
+  type WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import type {
   SessionLaunchFacts,
@@ -154,16 +155,21 @@ const noSessions: WorkerPoolSessions = {
   polled: () => Promise.resolve(),
 };
 
+/** Where no runner a poll names is kept. */
+const unkept: WorkerPoolRunners = { named: () => Promise.resolve() };
+
 function ports(
   assignments: WorkerPoolAssignments = idle,
   store: WorkerPoolSessions = noSessions,
   mint: () => string = () => "minted",
   access: ProjectAccess = reading,
+  runners: WorkerPoolRunners = unkept,
 ): WorkerPoolPorts {
   let minted = 0;
   return {
     assignments,
     access,
+    runners,
     sessions: {
       store,
       bindings: {
@@ -763,6 +769,42 @@ test("only a poll from a pool able to take a session, to a plane able to hand on
     );
     assert.equal(recorded, recordedOnce ? 1 : 0, JSON.stringify(over));
   }
+});
+
+test("every poll the plane answers keeps the runner it named, or none where it named none, once however long it waits", async () => {
+  const named = { package: "chuggy-linux", version: "0.14.0" };
+  for (const [over, kept] of [
+    [{ runner: named }, named],
+    [{ wanted: 1, runner: named }, named],
+    [{}, undefined],
+  ] as const) {
+    const recorded: unknown[] = [];
+    await workerPoolPoll(
+      ports(idle, noSessions, undefined, undefined, {
+        named: (_identity, runner) => {
+          recorded.push(runner);
+          return Promise.resolve();
+        },
+      }),
+      identity,
+      asked(over),
+      settings,
+    );
+    assert.deepEqual(recorded, [kept], JSON.stringify(over));
+  }
+  const refused: unknown[] = [];
+  await workerPoolPoll(
+    ports(idle, noSessions, undefined, undefined, {
+      named: (_identity, runner) => {
+        refused.push(runner);
+        return Promise.resolve();
+      },
+    }),
+    identity,
+    asked({ held: ["j1", "j2", "j3"], runner: named }),
+    settings,
+  );
+  assert.deepEqual(refused, [], "a poll refused whole keeps nothing");
 });
 
 test("a settlement is made against the kind its assignment is", async () => {

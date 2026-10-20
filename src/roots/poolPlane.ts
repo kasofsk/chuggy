@@ -38,11 +38,13 @@ import {
   planeEnvironmentRequired,
 } from "./planeEnvironment.ts";
 import { planeStopping } from "./planeStopping.ts";
+import { runnerReleasesPinned } from "./runnerReleases.ts";
 import { postgresProjectRepositoryBinding } from "../adapters/postgres/repositoryConfiguration.ts";
 import { poolPlaneRole } from "../adapters/postgres/schema.ts";
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRunners,
 } from "../adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../adapters/postgres/workerPoolSessions.ts";
 
@@ -135,6 +137,7 @@ function poolPlaneSettings(
 
 async function main(): Promise<void> {
   const imageHosts = poolPlaneImageHosts();
+  const releases = runnerReleasesPinned();
   const pool = postgresPool(
     planeEnvironmentRequired("CHUG_POOL_PLANE_DATABASE_URL"),
   );
@@ -164,6 +167,8 @@ async function main(): Promise<void> {
       bindings: postgresProjectRepositoryBinding(pool),
       bearers: sessionAttemptMint(),
     },
+    runners: postgresWorkerPoolRunners(pool),
+    releases,
     mint: poolBearerMint,
     settings: poolPlaneSettings(imageHosts),
     ready: async () => {

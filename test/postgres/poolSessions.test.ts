@@ -32,6 +32,7 @@ import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts"
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
   postgresSessionLaunchPrecondition,
@@ -195,6 +196,7 @@ const readingEverything: ProjectAccess = {
 const store = postgresWorkerPoolSessions(poolPlanePool);
 const ports: WorkerPoolPorts = {
   assignments: postgresWorkerPoolAssignments(poolPlanePool),
+  runners: postgresWorkerPoolRunners(poolPlanePool),
   access: readingEverything,
   sessions: {
     store,
@@ -1288,6 +1290,8 @@ async function poolPlaneServing(
     personal: postgresPersonalRunnerPlaneRegistry(poolPlanePool),
     assignments: ports.assignments,
     sessions: ports.sessions,
+    runners: ports.runners,
+    releases: new Map(),
     settings,
     mint: ports.mint,
     ready: () => Promise.resolve(true),
