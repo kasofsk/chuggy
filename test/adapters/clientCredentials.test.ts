@@ -304,7 +304,7 @@ test("a response longer than the byte bound is refused before it is parsed", asy
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /byte bound/u);
 });
 
-test("an empty grant response longer than the read bound is refused by it", async () => {
+test("a grant response of empty chunks, more of them than the read bound, is refused by it", async () => {
   const readsMax = 3;
   let sent = 0;
   const stream = new ReadableStream<Uint8Array>({

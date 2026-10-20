@@ -129,7 +129,7 @@ test("selector context client refuses oversized responses", async () => {
   assert.equal(cancelled, true);
 });
 
-test("selector context client cancels an empty response longer than the read bound", async () => {
+test("selector context client cancels a response of empty chunks, more of them than the read bound", async () => {
   const readsMax = 3;
   let cancelled = false;
   let sent = 0;

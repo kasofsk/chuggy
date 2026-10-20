@@ -171,15 +171,23 @@ test("inventory continuation uses the server cursor query", async () => {
 
 test("response overflow cancels the stream before retaining more bytes", async () => {
   let cancelled = false;
-  const body = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(new TextEncoder().encode('{"projects":['));
-      controller.enqueue(new Uint8Array(32));
+  const chunks = [
+    new TextEncoder().encode('{"projects":['),
+    new Uint8Array(32),
+  ];
+  const body = new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        const chunk = chunks.shift();
+        if (chunk === undefined) controller.close();
+        else controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
     },
-    cancel() {
-      cancelled = true;
-    },
-  });
+    { highWaterMark: 0 },
+  );
   const client = nativeHttpClient({
     baseUrl: "https://ticket.example/",
     accessToken: constantAccessToken("token"),
@@ -194,7 +202,7 @@ test("response overflow cancels the stream before retaining more bytes", async (
   assert.equal(cancelled, true);
 });
 
-test("a zero-byte response longer than the read limit is bounded and cancelled", async () => {
+test("a response of empty chunks, more of them than the read limit, is bounded and cancelled", async () => {
   const bytesMax = 4;
   let cancelled = false;
   let sent = 0;
