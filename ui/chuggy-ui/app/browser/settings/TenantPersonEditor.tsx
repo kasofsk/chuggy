@@ -2,7 +2,7 @@
  * One person's roles, hosted runs and personal runners, changed in the dialog
  * their row's Edit opens: a box for each workspace role, for hosted runs and
  * for personal runners, and the workspace's projects as a grid; and, for a
- * reader who gives personal runners, taking the person's own runner off. A box is drawn where the reader may change
+ * reader who gives personal runners, taking the person's own runners off. A box is drawn where the reader may change
  * it or the person holds it, and is pressable only where the reader may. A
  * press sends one grant or one removal and reads the list and the abilities
  * again. A change the plane took draws its box as changed until they are

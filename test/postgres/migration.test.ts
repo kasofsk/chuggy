@@ -61,6 +61,7 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
 import { migration068 } from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
 import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-runner-versions.ts";
+import { migration070 } from "../../src/adapters/postgres/schema/migrations/070-many-personal-runners.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -102,6 +103,8 @@ import {
   forgeInstallationRecordFunction,
   migrations,
   migrationLedger,
+  personalRunnerFenceFunction,
+  personalSessionOpenFunction,
   poolPlaneRole,
   projectChangeAppendFunction,
   projectCreateFunction,
@@ -10984,5 +10987,70 @@ test("069 leaves every pool and every member's runner naming no runner, and keep
         table,
       );
     }
+  });
+});
+
+test("070 keeps every member's runner and allowlist, keys a runner by its client beside its member, and lets the API write no column of one in place", async () => {
+  await migrationDatabase("many_personal_runners", async (subject) => {
+    await installationBefore(subject, migration070.version);
+    await subject.query(
+      `${deletionPartition}
+       INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+       VALUES('tenant-5','owner-70','{}','runner-principal-70','runner-client-70');
+       INSERT INTO personal_runner_project(tenant,owner,project)
+       VALUES('tenant-5','owner-70','project-5')`,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration070.version));
+    await subject.query(
+      `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+       VALUES('tenant-5','owner-70','{}','runner-principal-71','runner-client-71')`,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT r.client_id,l.project FROM personal_runner r
+             JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
+            ORDER BY r.client_id`,
+        )
+      ).rows,
+      [
+        { client_id: "runner-client-70", project: "project-5" },
+        { client_id: "runner-client-71", project: "project-5" },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT pg_get_constraintdef(oid) AS keyed FROM pg_constraint
+            WHERE conrelid='public.personal_runner'::regclass AND contype='p'`,
+        )
+      ).rows,
+      [{ keyed: "PRIMARY KEY (tenant, owner, client_id)" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT a.attname AS writable FROM pg_attribute a
+            WHERE a.attrelid='public.personal_runner'::regclass AND a.attnum>0
+              AND NOT a.attisdropped
+              AND has_column_privilege($1,'public.personal_runner',a.attname,'UPDATE')`,
+          [apiRole],
+        )
+      ).rows,
+      [],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT p.proname AS installed,p.proowner::regrole::text AS owner
+             FROM pg_proc p
+            WHERE p.proname = ANY($1::text[]) ORDER BY p.proname`,
+          [[personalRunnerFenceFunction, personalSessionOpenFunction]],
+        )
+      ).rows,
+      [personalRunnerFenceFunction, personalSessionOpenFunction]
+        .toSorted()
+        .map((installed) => ({ installed, owner: boundaryOwnerRole })),
+    );
   });
 });

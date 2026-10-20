@@ -12,6 +12,8 @@
  * evaluated.
  */
 
+import { personalRunnersMax } from "../../../../src/contract/http.ts";
+
 import type { ApiFailure } from "./apiRequest.ts";
 import { runnerPackages } from "./runners.ts";
 
@@ -211,12 +213,11 @@ export type SetupRunnerNote =
   | { readonly note: "ProjectLive" }
   /** The project's work runs on the cluster, said where the person's own runner is set up all the same. */
   | { readonly note: "Hosted" }
+  /** `OwnGone` is a registration this machine holds that the site does not list among the person's runners. */
   | {
       readonly note: "Own" | "OwnGone" | "OwnRegistered";
       readonly path: string;
     }
-  /** The site has a runner of the person's own and this machine holds no registration of it. */
-  | { readonly note: "OwnElsewhere" }
   | { readonly note: "OwnUnit" | "OwnUnitWritten"; readonly unit: string }
   | { readonly note: "Serves" | "ServesAdded" | "OwnLive" }
   | { readonly note: "Linger" }
@@ -366,12 +367,9 @@ export type SetupRunnerStop =
       readonly lapseMins: number;
     }
   | { readonly stop: "ServesRefused"; readonly outcome: ApiFailure["outcome"] }
-  | {
-      /** `here` where the person's own runner is this machine, and not where it is another. */
-      readonly stop: "OwnNotLive";
-      readonly waitedSecs: number;
-      readonly here: boolean;
-    };
+  /** The person holds as many runners of their own as a member may, and none is this machine; `runners` is the page they are removed on. */
+  | { readonly stop: "OwnLimit"; readonly runners: string }
+  | { readonly stop: "OwnNotLive"; readonly waitedSecs: number };
 
 /** How a run of `runner` ended: the site sees live each runner the project's work and the person's chats in it run on, the cluster runs both, or it stopped. */
 export type SetupRunnerEnded =
@@ -455,7 +453,6 @@ type SetupOwnNote = Extract<
       | "Own"
       | "OwnGone"
       | "OwnRegistered"
-      | "OwnElsewhere"
       | "OwnUnit"
       | "OwnUnitWritten"
       | "Serves"
@@ -480,35 +477,30 @@ function setupOwnNoteSaid(
     case "Own":
       return [
         "found",
-        `this machine is registered as your own runner, in ${note.path}`,
+        `this machine is registered as one of your own runners, in ${note.path}`,
       ];
     case "OwnGone":
       return [
         "found",
-        `${note.path} registered this machine as your own runner, and the site has no runner of yours`,
+        `${note.path} registered this machine as your own runner, and the site no longer knows that registration`,
       ];
     case "OwnRegistered":
       return [
         "did",
-        `registered this machine as your own runner, in ${note.path}`,
-      ];
-    case "OwnElsewhere":
-      return [
-        "found",
-        `your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in ${project} run on that machine`,
+        `registered this machine as one of your own runners, in ${note.path}`,
       ];
     case "OwnUnit":
       return ["found", `your own runner's service is installed: ${note.unit}`];
     case "OwnUnitWritten":
       return ["did", `installed your own runner's service, ${note.unit}`];
     case "Serves":
-      return ["found", `your own runner serves ${project}`];
+      return ["found", `your own runners serve ${project}`];
     case "ServesAdded":
-      return ["did", `added ${project} to the projects your own runner serves`];
+      return ["did", `added ${project} to the projects your own runners serve`];
     case "OwnLive":
       return [
         "found",
-        `the site sees your own runner live, so your chats in ${project} run on it`,
+        `the site sees this machine live as your own runner, so your chats in ${project} can run on it`,
       ];
   }
 }
@@ -601,7 +593,6 @@ export function setupRunnerNoteSaid(
     case "Own":
     case "OwnGone":
     case "OwnRegistered":
-    case "OwnElsewhere":
     case "OwnUnit":
     case "OwnUnitWritten":
     case "Serves":
@@ -1054,13 +1045,17 @@ function setupOwnMintSaid(
   };
 }
 
-/** Where the person's own runner stopped short: the workspace has not let them have one, the site would not register or serve it, or it is not seen live. */
+/** Where the person's own runner stopped short: the workspace has not let them have one, they hold as many as a member may, the site would not register or serve it, or it is not seen live. */
 function setupOwnSaid(
   stop: Extract<
     SetupRunnerStop,
     {
       readonly stop:
-        "PermitWithheld" | "OwnMintRefused" | "ServesRefused" | "OwnNotLive";
+        | "PermitWithheld"
+        | "OwnMintRefused"
+        | "ServesRefused"
+        | "OwnLimit"
+        | "OwnNotLive";
     }
   >,
   project: string,
@@ -1077,25 +1072,25 @@ function setupOwnSaid(
       return setupOwnMintSaid(stop);
     case "ServesRefused":
       return {
-        found: `the site did not add ${project} to the projects your own runner serves (${stop.outcome})`,
-        tell: `The chuggy site did not add ${project} to the projects your own runner serves, so your chats there have no runner yet. ${setupPickedUp}`,
+        found: `the site did not add ${project} to the projects your own runners serve (${stop.outcome})`,
+        tell: `The chuggy site did not add ${project} to the projects your own runners serve, so your chats there have no runner yet. ${setupPickedUp}`,
         when: setupTryAgain,
         again: "Runner",
       };
+    case "OwnLimit":
+      return {
+        found: `you have ${String(personalRunnersMax)} runners of your own in the workspace, as many as a member may, and none is this machine`,
+        tell: `You already have ${String(personalRunnersMax)} runners of your own in this workspace, which is as many as a member may, so this machine cannot be one. Remove one you no longer use on your My runners page, ${stop.runners}. Tell me once you have.`,
+        when: "once the person says they removed a runner of their own",
+        again: "Runner",
+      };
     case "OwnNotLive":
-      return stop.here
-        ? {
-            found: `your own runner's service is running, and after ${String(stop.waitedSecs)} s the site still sees no runner of yours serving ${project} live`,
-            tell: "Your own runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
-            when: setupLookAgain,
-            again: "Runner",
-          }
-        : {
-            found: `after ${String(stop.waitedSecs)} s the site still sees no runner of yours serving ${project} live`,
-            tell: `Your own runner is registered on another machine, which your chats in ${project} run on, and the chuggy site does not see it running. Start it on that machine, and tell me once it is running.`,
-            when: "once the person says their own runner is running on its machine",
-            again: "Runner",
-          };
+      return {
+        found: `your own runner's service is running, and after ${String(stop.waitedSecs)} s the site still does not see this machine live as your own runner`,
+        tell: "Your own runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+        when: setupLookAgain,
+        again: "Runner",
+      };
   }
 }
 
@@ -1146,6 +1141,7 @@ export function setupRunnerStopSaid(
     case "PermitWithheld":
     case "OwnMintRefused":
     case "ServesRefused":
+    case "OwnLimit":
     case "OwnNotLive":
       return setupOwnSaid(stop, project);
   }
@@ -1164,9 +1160,8 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Npmless":
     case "LingerAsks":
     case "PermitWithheld":
+    case "OwnLimit":
       return 0;
-    case "OwnNotLive":
-      return stop.here ? 1 : 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;
     case "SettingsUnread":
@@ -1181,6 +1176,7 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "NotLive":
     case "OwnMintRefused":
     case "ServesRefused":
+    case "OwnNotLive":
       return 1;
   }
 }

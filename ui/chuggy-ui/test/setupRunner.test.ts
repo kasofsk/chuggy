@@ -14,6 +14,7 @@
 
 import { expect, test } from "vitest";
 
+import { personalRunnersMax } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   apiMintPersonalRunnerToken,
@@ -68,6 +69,7 @@ import { rosterLines, rosterLingerRefusal } from "./setupRunnerRoster.ts";
 import {
   setupSiteAt,
   setupSiteMember,
+  setupSiteOwnAdded,
   setupSiteStages,
   setupSiteTokensMax,
 } from "./setupSite.ts";
@@ -285,7 +287,7 @@ test("where the person's chats run on runners and they have none, runner makes t
   ]);
   expect(machine.world.own.get("acme")).toEqual({
     projects: ["widgets"],
-    live: true,
+    runners: [{ id: "chuggy-personal-1", live: true }],
   });
   expect([...machine.box.units.keys()].toSorted()).toEqual(
     [unit, ownUnit].toSorted(),
@@ -534,37 +536,99 @@ test("the person's own runner on this machine serving another project is given t
   expect(held.projects).toEqual(["gadgets", "widgets"]);
 });
 
-test("the person's own runner registered on another machine is not replaced: this project is added to it, and the lines say their chats run on that machine, or that it is to be started there where the site does not see it live", async () => {
+test("a runner of the person's own on another machine is kept, and this machine is registered as one more of theirs, which serves this project with the projects every runner of theirs serves", async () => {
   const machine = await both();
-  machine.world.own.set("acme", { projects: ["gadgets"], live: true });
-  expect(await ran(machine)).toMatchObject({
+  const elsewhere = setupSiteOwnAdded(machine.world, "acme", true);
+  machine.world.own.get("acme")?.projects.push("gadgets");
+  expect(await ran(machine)).toEqual({
     exit: 0,
     lines: [
       ...(await ran(await fresh())).lines.slice(0, -1),
-      found.elsewhere,
+      did.own,
+      did.ownUnit,
+      did.ownStarted,
       did.serves,
       found.ownLive,
       next,
     ],
   });
-  expect(writes(machine)).toEqual([mint, serves]);
-  expect(times(machine, "register")).toBe(1);
-  expect(machine.box.units.has(ownUnit)).toBe(false);
-  expect(machine.box.paths.has(own)).toBe(false);
+  expect(writes(machine)).toEqual([mint, ownMint, serves]);
+  expect(times(machine, "register")).toBe(2);
+  expect(machine.world.own.get("acme")).toEqual({
+    projects: ["gadgets", "widgets"],
+    runners: [
+      { id: elsewhere, live: true },
+      { id: "chuggy-personal-2", live: true },
+    ],
+  });
+  expect(JSON.parse(machine.box.paths.get(own) ?? "{}")).toMatchObject({
+    clientId: "chuggy-personal-2",
+  });
+});
 
-  const asleep = await both();
-  asleep.world.own.set("acme", { projects: [], live: false });
-  const unseen = await ran(asleep);
-  expect(unseen.exit).toBe(0);
-  expect(unseen.lines.slice(-7)).toEqual([
-    live,
-    found.elsewhere,
-    did.serves,
-    "found: after 90 s the site still sees no runner of yours serving acme/widgets live",
-    "tell: Your own runner is registered on another machine, which your chats in acme/widgets run on, and the chuggy site does not see it running. Start it on that machine, and tell me once it is running.",
-    again("once the person says their own runner is running on its machine"),
+test("this machine's own runner is waited on until the site sees it live, and another of the person's that is live already does not end the wait", async () => {
+  const machine = await both();
+  setupSiteOwnAdded(machine.world, "acme", true);
+  machine.world.own.get("acme")?.projects.push("widgets");
+  machine.box.after = (act) => {
+    if (act === "register" && times(machine, "register") === 2)
+      machine.box.polls = false;
+  };
+  const unseen = await ran(machine, [...runner, "--wait-secs", "3"]);
+  expect(unseen.exit).toBe(1);
+  expect(unseen.lines.slice(-8)).toEqual([
+    did.own,
+    did.ownUnit,
+    did.ownStarted,
+    found.serves,
+    "found: your own runner's service is running, and after 3 s the site still does not see this machine live as your own runner",
+    "tell: Your own runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+    again("if the person asks to look again"),
     stop,
   ]);
+  expect(writes(machine)).toEqual([mint, ownMint]);
+});
+
+test("a registration of the person's own this machine holds that the site does not list among theirs is said, and this machine is registered again, though the site lists others of theirs", async () => {
+  const machine = await both();
+  await ran(machine);
+  const held = machine.world.own.get("acme");
+  if (held === undefined) throw new Error("no runner of the person's own");
+  held.runners = [{ id: "chuggy-personal-elsewhere", live: true }];
+  machine.box.acts.length = 0;
+  machine.sent.length = 0;
+  const redone = await ran(machine);
+  expect(redone.lines.slice(-7)).toEqual([
+    found.ownGone,
+    did.own,
+    found.ownUnit,
+    did.ownRestarted,
+    found.serves,
+    found.ownLive,
+    next,
+  ]);
+  expect(writes(machine)).toEqual([ownMint]);
+  expect(held.runners.map((runner) => runner.id)).toEqual([
+    "chuggy-personal-elsewhere",
+    "chuggy-personal-2",
+  ]);
+  expect(held.runners.every((runner) => runner.live)).toBe(true);
+});
+
+test("a person holding as many runners of their own as a member may, none of them this machine, is sent to their My runners page to remove one, and nothing is minted for them", async () => {
+  const machine = await both();
+  for (let made = 0; made < personalRunnersMax; made += 1)
+    setupSiteOwnAdded(machine.world, "acme", true);
+  const full = await ran(machine);
+  expect(full.exit).toBe(0);
+  expect(full.lines.slice(-4)).toEqual([
+    `found: you have ${String(personalRunnersMax)} runners of your own in the workspace, as many as a member may, and none is this machine`,
+    `tell: You already have ${String(personalRunnersMax)} runners of your own in this workspace, which is as many as a member may, so this machine cannot be one. Remove one you no longer use on your My runners page, ${machineSite}/tenants/acme/settings/runner. Tell me once you have.`,
+    again("once the person says they removed a runner of their own"),
+    stop,
+  ]);
+  expect(writes(machine)).toEqual([mint]);
+  expect(times(machine, "register")).toBe(1);
 });
 
 test("a project whose work the cluster runs and whose chats run on runners gets the person's own runner alone, which needs no admin of the project", async () => {
@@ -2006,7 +2070,7 @@ test("where the person's chats run on runners, the bare command offers two servi
   expect(await step()).toBe("step: runner      done     live");
   const held = machine.world.own.get("acme");
   if (held === undefined) throw new Error("no runner of the person's own");
-  held.live = false;
+  for (const each of held.runners) each.live = false;
   expect(await step()).toBe(
     "step: runner      waiting  live; your own runner is set up for it, not running",
   );

@@ -29,10 +29,12 @@ export function SettingsListing(props: {
   return <div className="@container grid min-w-0 gap-5">{props.children}</div>;
 }
 
-/** A table under the line that heads it, and beside that line the action the
- * table has. */
+/** A table under the line that heads it, beside that line the action the
+ * table has, and under it the one line saying what the list is where it is
+ * not plain from the heading. */
 export function SettingsListingSection(props: {
   readonly heading: string;
+  readonly about?: string;
   readonly action?: ReactNode;
   readonly children: ReactNode;
 }): ReactNode {
@@ -40,9 +42,14 @@ export function SettingsListingSection(props: {
   return (
     <section aria-labelledby={labelled} className="grid min-w-0 gap-3">
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <h2 id={labelled} className="text-md font-medium">
-          {props.heading}
-        </h2>
+        <div className="grid min-w-0 gap-1">
+          <h2 id={labelled} className="text-md font-medium">
+            {props.heading}
+          </h2>
+          {props.about === undefined ? null : (
+            <p className="m-0 text-sm text-ink-3">{props.about}</p>
+          )}
+        </div>
         {props.action}
       </div>
       {props.children}

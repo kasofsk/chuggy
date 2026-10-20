@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { personalRunnersMax } from "../../src/contract/http.ts";
 import {
   personalRunnerService,
   type PersonalRunnerPorts,
   type PersonalRunnerRegistry,
   type PersonalRunnerTokenMinting,
   type PersonalRunnerTokenTerms,
+  type PersonalRunnerKey,
   type PersonalRunnerView,
 } from "../../src/interpreter/personalRunnerRegistration.ts";
 import {
@@ -23,7 +25,6 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
-  type TenantId,
 } from "../../src/interpreter/projectStore.ts";
 import {
   workerRunnerReleasesRead,
@@ -92,74 +93,110 @@ interface Row {
   clientId: string;
   principal: Principal;
   capabilities: readonly string[];
-  projects: Set<string>;
   runner?: WorkerRunner;
 }
 
-/** A registry keeping one row per tenant and owner, written only over the client it was read with. */
-function registry(): PersonalRunnerRegistry & {
-  readonly rows: Map<string, Row>;
+/** One row as its owner reads it, never polled. */
+function rowViewed(row: Row): PersonalRunnerView {
+  return {
+    id: row.clientId,
+    capabilities: row.capabilities,
+    registeredAt: "2026-10-09T00:00:00.000Z",
+    live: false,
+    executionsLive: false,
+    ...(row.runner === undefined ? {} : { runner: row.runner }),
+  };
+}
+
+/** Where a member's runners and allowlist are kept. */
+function memberAt(key: PersonalRunnerKey): string {
+  return `${key.tenant}\n${key.owner}`;
+}
+
+/** The registry a case drives, its rows and allowlists in sight, failing its next registration where `failNext` is set. */
+type FakeRegistry = PersonalRunnerRegistry & {
+  readonly rows: Map<string, Row[]>;
+  readonly allowed: Map<string, Set<string>>;
   failNext?: Error;
-} {
-  const rows = new Map<string, Row>();
-  const at = (named: TenantId, owner: Principal) => `${named}\n${owner}`;
-  const fake: PersonalRunnerRegistry & {
-    readonly rows: Map<string, Row>;
-    failNext?: Error;
-  } = {
+};
+
+/**
+ * A registry keeping each member's runners oldest first, as many as the
+ * contract bounds, and one allowlist per member that goes with their last
+ * runner.
+ */
+function registry(): FakeRegistry {
+  const rows = new Map<string, Row[]>();
+  const allowed = new Map<string, Set<string>>();
+  const fake: FakeRegistry = {
     rows,
-    clientOf: (key) =>
-      Promise.resolve(rows.get(at(key.tenant, key.owner))?.clientId),
-    register: (registration, replacing) => {
+    allowed,
+    clientsOf: (key) =>
+      Promise.resolve(
+        (rows.get(memberAt(key)) ?? []).map((row) => row.clientId),
+      ),
+    register: (registration) => {
       if (fake.failNext !== undefined) {
         const failure = fake.failNext;
         delete fake.failNext;
         return Promise.reject(failure);
       }
-      const held = rows.get(at(registration.tenant, registration.owner));
-      if (held?.clientId !== replacing) return Promise.resolve("Moved");
-      rows.set(at(registration.tenant, registration.owner), {
-        clientId: registration.clientId,
-        principal: registration.principal,
-        capabilities: registration.capabilities,
-        projects: held?.projects ?? new Set(),
-      });
+      const held = rows.get(memberAt(registration)) ?? [];
+      if (held.length >= personalRunnersMax)
+        return Promise.resolve("LimitReached");
+      rows.set(memberAt(registration), [
+        ...held,
+        {
+          clientId: registration.clientId,
+          principal: registration.principal,
+          capabilities: registration.capabilities,
+        },
+      ]);
       return Promise.resolve("Registered");
     },
     deregister: (key, clientId) => {
-      const held = rows.get(at(key.tenant, key.owner));
-      if (held?.clientId !== clientId) return Promise.resolve(false);
-      rows.delete(at(key.tenant, key.owner));
+      const held = rows.get(memberAt(key)) ?? [];
+      const kept = held.filter((row) => row.clientId !== clientId);
+      if (kept.length === held.length) return Promise.resolve(false);
+      if (kept.length > 0) rows.set(memberAt(key), kept);
+      else {
+        rows.delete(memberAt(key));
+        allowed.delete(memberAt(key));
+      }
       return Promise.resolve(true);
     },
-    runner: (key) => {
-      const held = rows.get(at(key.tenant, key.owner));
-      return Promise.resolve(
-        held === undefined
-          ? undefined
-          : ({
-              capabilities: held.capabilities,
-              registeredAt: "2026-10-09T00:00:00.000Z",
-              live: false,
-              executionsLive: false,
-              ...(held.runner === undefined ? {} : { runner: held.runner }),
-              projects: [...held.projects].sort().map(asProjectId),
-            } satisfies PersonalRunnerView),
-      );
-    },
+    runners: (key) =>
+      Promise.resolve(
+        rows.has(memberAt(key))
+          ? {
+              runners: (rows.get(memberAt(key)) ?? []).map(rowViewed),
+              projects: [...(allowed.get(memberAt(key)) ?? [])]
+                .sort()
+                .map(asProjectId),
+            }
+          : undefined,
+      ),
     allow: (key, named) => {
-      const held = rows.get(at(key.tenant, key.owner));
-      if (held === undefined) return Promise.resolve("NotFound");
-      held.projects.add(named);
+      if (!rows.has(memberAt(key))) return Promise.resolve("NotFound");
+      allowed.set(
+        memberAt(key),
+        (allowed.get(memberAt(key)) ?? new Set()).add(named),
+      );
       return Promise.resolve("Allowed");
     },
     disallow: (key, named) => {
-      const held = rows.get(at(key.tenant, key.owner));
-      held?.projects.delete(named);
-      return Promise.resolve(held !== undefined);
+      allowed.get(memberAt(key))?.delete(named);
+      return Promise.resolve(rows.has(memberAt(key)));
     },
   };
   return fake;
+}
+
+/** The member's runners as the registry holds them. */
+function held(composed: { readonly ports: ReturnType<typeof ports> }): Row[] {
+  return (
+    composed.ports.store.rows.get(memberAt({ tenant, owner: member })) ?? []
+  );
 }
 
 /** The issuer's clients, recording each made and each removed. */
@@ -323,37 +360,54 @@ test("a redemption registers the minter's runner in the tenant, naming no projec
       clientSecret: "secret-chuggy-personal-1",
     },
   });
-  const row = composed.ports.store.rows.get(`${tenant}\n${member}`);
-  assert.equal(row?.principal, oidcPrincipal(issuer, "chuggy-personal-1"));
+  assert.equal(
+    held(composed)[0]?.principal,
+    oidcPrincipal(issuer, "chuggy-personal-1"),
+  );
   assert.deepEqual(
-    [...(row?.projects ?? [])],
-    [],
+    await composed.runners.runners(member, tenant),
+    {
+      result: "Found",
+      value: {
+        runners: [
+          {
+            id: "chuggy-personal-1",
+            capabilities: ["linux"],
+            registeredAt: "2026-10-09T00:00:00.000Z",
+            live: false,
+            executionsLive: false,
+          },
+        ],
+        projects: [],
+      },
+    },
     "a new runner serves no project",
   );
 });
 
-test("registering again replaces the member's one runner and removes its old client", async () => {
+test("registering again adds a runner beside the member's first, which keeps its client, and both serve the one allowlist", async () => {
   const composed = service();
   await registered(composed);
   await composed.runners.allow(member, tenant, project);
   const again = await registered(composed, ["macos"]);
   assert.equal(again.result, "Registered");
-  assert.equal(
-    composed.ports.store.rows.size,
-    1,
-    "one runner per member per tenant",
+  assert.deepEqual(
+    [...composed.ports.live],
+    ["chuggy-personal-1", "chuggy-personal-2"],
   );
-  assert.deepEqual([...composed.ports.live], ["chuggy-personal-2"]);
-  assert.deepEqual(await composed.runners.runner(member, tenant), {
-    result: "Found",
-    value: {
-      capabilities: ["macos"],
-      registeredAt: "2026-10-09T00:00:00.000Z",
-      live: false,
-      executionsLive: false,
-      projects: [project],
-    },
-  });
+  const read = await composed.runners.runners(member, tenant);
+  assert.deepEqual(
+    read.result === "Found"
+      ? read.value.runners.map((runner) => [runner.id, runner.capabilities])
+      : undefined,
+    [
+      ["chuggy-personal-1", ["linux"]],
+      ["chuggy-personal-2", ["macos"]],
+    ],
+  );
+  assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
+    project,
+  ]);
 });
 
 test("a member's runner is read with the runner its poll named and the version pinned for that package", async () => {
@@ -367,7 +421,7 @@ test("a member's runner is read with the runner its poll named and the version p
     }),
   });
   await registered(composed);
-  const [row] = composed.ports.store.rows.values();
+  const [row] = held(composed);
   for (const [named, shown] of [
     [
       { package: "chuggy-linux", version: "0.14.0" },
@@ -379,9 +433,9 @@ test("a member's runner is read with the runner its poll named and the version p
     ],
   ] as const) {
     if (row !== undefined) row.runner = named;
-    const read = await composed.runners.runner(member, tenant);
+    const read = await composed.runners.runners(member, tenant);
     assert.deepEqual(
-      read.result === "Found" ? read.value.runner : undefined,
+      read.result === "Found" ? read.value.runners[0]?.runner : undefined,
       shown,
     );
   }
@@ -419,32 +473,45 @@ test("a capability the token does not permit is refused by name", async () => {
   assert.equal(composed.ports.live.size, 0);
 });
 
-test("a registration that lost the race for the member removes its client and gives its token back", async () => {
+test("a member holding their bound of runners registers none more, the client minted removed and the token given back to redeem once one is off", async () => {
   const composed = service();
+  for (let count = 0; count < personalRunnersMax; count += 1)
+    assert.equal((await registered(composed)).result, "Registered");
   const minted = await composed.runners.mint(member, tenant, {
     capabilities: [],
     lifetimeSecs: 60,
   });
   if (minted.result !== "Minted") throw new Error("the mint was refused");
-  const racing = composed.ports.store.register.bind(composed.ports.store);
-  composed.ports.store.register = async (registration, replacing) => {
-    await racing(
-      { ...registration, clientId: "a-racer", principal: other },
-      replacing,
-    );
-    return racing(registration, replacing);
-  };
+  const live = [...composed.ports.live];
   assert.deepEqual(
     await composed.runners.redeem({
       token: minted.value.token,
       capabilities: [],
     }),
-    { result: "Conflict" },
+    { result: "LimitReached" },
   );
-  assert.deepEqual([...composed.ports.live], []);
+  assert.deepEqual([...composed.ports.live], live);
+  assert.equal(held(composed).length, personalRunnersMax);
   assert.equal(
     composed.minting.held.get(`digest-of-${minted.value.token}`)?.spent,
     false,
+  );
+  assert.equal(
+    await composed.runners.deregisterRunner(
+      member,
+      tenant,
+      "chuggy-personal-1",
+    ),
+    "Deregistered",
+  );
+  assert.equal(
+    (
+      await composed.runners.redeem({
+        token: minted.value.token,
+        capabilities: [],
+      })
+    ).result,
+    "Registered",
   );
 });
 
@@ -483,16 +550,10 @@ test("a project joins the allowlist only where its owner may read it, asked in t
     "NotFound",
     "a project of another tenant is asked about there, where the member reads nothing",
   );
-  assert.deepEqual(await composed.runners.runner(member, tenant), {
-    result: "Found",
-    value: {
-      capabilities: ["linux"],
-      registeredAt: "2026-10-09T00:00:00.000Z",
-      live: false,
-      executionsLive: false,
-      projects: [project],
-    },
-  });
+  const read = await composed.runners.runners(member, tenant);
+  assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
+    project,
+  ]);
   assert.equal(
     await composed.runners.disallow(member, tenant, project),
     "Removed",
@@ -503,33 +564,114 @@ test("a project joins the allowlist only where its owner may read it, asked in t
   );
 });
 
-test("an owner takes their runner off, its client first", async () => {
+/** Each client removal and row deletion, in the order they were made. */
+function recorded(composed: ReturnType<typeof service>): string[] {
+  const made: string[] = [];
+  const { clients, store } = composed.ports;
+  const remove = clients.remove.bind(clients);
+  const deregister = store.deregister.bind(store);
+  clients.remove = (clientId) => {
+    made.push(`client ${clientId}`);
+    return remove(clientId);
+  };
+  store.deregister = (key, clientId) => {
+    made.push(`row ${clientId}`);
+    return deregister(key, clientId);
+  };
+  return made;
+}
+
+test("an owner takes one runner off by its client, the client first, and the others and their allowlist stay", async () => {
   const composed = service();
   await registered(composed);
+  await registered(composed);
+  await composed.runners.allow(member, tenant, project);
+  const made = recorded(composed);
+  assert.equal(
+    await composed.runners.deregisterRunner(
+      member,
+      tenant,
+      "chuggy-personal-1",
+    ),
+    "Deregistered",
+  );
+  assert.deepEqual(made, ["client chuggy-personal-1", "row chuggy-personal-1"]);
+  assert.deepEqual([...composed.ports.live], ["chuggy-personal-2"]);
+  const read = await composed.runners.runners(member, tenant);
+  assert.deepEqual(
+    read.result === "Found"
+      ? [read.value.runners.map((runner) => runner.id), read.value.projects]
+      : undefined,
+    [["chuggy-personal-2"], [project]],
+  );
+  assert.equal(
+    await composed.runners.deregisterRunner(
+      member,
+      tenant,
+      "chuggy-personal-1",
+    ),
+    "NotFound",
+  );
+});
+
+test("a client that is none of the caller's runners is taken off nowhere", async () => {
+  const composed = service();
+  await registered(composed);
+  const made = recorded(composed);
+  assert.equal(
+    await composed.runners.deregisterRunner(other, tenant, "chuggy-personal-1"),
+    "NotFound",
+  );
+  assert.equal(
+    await composed.runners.deregisterRunner(
+      member,
+      asTenantId("another-tenant"),
+      "chuggy-personal-1",
+    ),
+    "NotFound",
+  );
+  assert.deepEqual(made, []);
+  assert.deepEqual([...composed.ports.live], ["chuggy-personal-1"]);
+});
+
+test("an owner takes every runner off at once, each client before its row, and the allowlist goes with the last", async () => {
+  const composed = service();
+  await registered(composed);
+  await registered(composed);
+  await composed.runners.allow(member, tenant, project);
+  const made = recorded(composed);
   assert.equal(
     await composed.runners.deregister(member, tenant),
     "Deregistered",
   );
-  assert.equal(composed.ports.store.rows.size, 0);
+  assert.deepEqual(made, [
+    "client chuggy-personal-1",
+    "row chuggy-personal-1",
+    "client chuggy-personal-2",
+    "row chuggy-personal-2",
+  ]);
   assert.equal(composed.ports.live.size, 0);
+  assert.equal(composed.ports.store.allowed.size, 0);
   assert.equal(await composed.runners.deregister(member, tenant), "NotFound");
-  assert.deepEqual(await composed.runners.runner(member, tenant), {
+  assert.deepEqual(await composed.runners.runners(member, tenant), {
     result: "NotFound",
   });
 });
 
-test("a member's runner is taken off by its subject by the tenant's administrator or the member, and nobody else", async () => {
+test("a member's runners are taken off by their subject by the tenant's administrator or the member, and nobody else", async () => {
   const composed = service();
+  await registered(composed);
   await registered(composed);
   assert.equal(
     await composed.runners.deregisterMember(other, tenant, "a-member"),
     "NotFound",
   );
-  assert.equal(composed.ports.store.rows.size, 1);
+  assert.equal(held(composed).length, 2);
   assert.equal(
     await composed.runners.deregisterMember(admin, tenant, "a-member"),
     "Deregistered",
   );
+  assert.deepEqual([held(composed).length, composed.ports.live.size], [0, 0]);
   await registered(composed);
   assert.equal(
     await composed.runners.deregisterMember(member, tenant, "a-member"),

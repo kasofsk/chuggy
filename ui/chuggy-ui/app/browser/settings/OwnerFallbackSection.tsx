@@ -1,5 +1,5 @@
 /**
- * Whether a member's own runner takes the work they start in this project,
+ * Whether a member's own runners take the work they start in this project,
  * beside its placement: read by anyone who reads the project, and edited by
  * one the read says administers it.
  *
@@ -132,7 +132,7 @@ function OwnerFallbackEditing(props: {
   return (
     <SettingsSection
       title={ownerFallbackTitle}
-      about={`Whether a member's own runner takes the work they start here. ${ownerFallbackPinned}`}
+      about={`Whether a member's own runners take the work they start here. ${ownerFallbackPinned}`}
       editing={editing}
       editable={props.read.administers}
       savable={saved.saved !== "Writing"}

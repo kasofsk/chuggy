@@ -11,14 +11,17 @@
  * its Claude login, its registrations and its units, how it names a pool file
  * for a project and the file of the person's own runner for a workspace, and
  * the unit for either. A settings file is read for the engine and the Claude
- * credential it names and for nothing else, and a registration and a Claude
- * credential's file are never read at all, only looked for. The package is
+ * credential it names and for nothing else, the file of the person's own
+ * runner for the id the site lists that runner by and for nothing else, and a
+ * pool's registration and a Claude credential's file are never read at all,
+ * only looked for. The package is
  * installed by the console's own install command, under the person's own
  * prefix where the machine's is not theirs to write.
  */
 
 import { z } from "zod";
 
+import { identitySchema } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 
 import { runnerPackageOffered, runnerRegisterCommand } from "./runners.ts";
@@ -583,7 +586,7 @@ const setupNamePart = /^(?:[A-Za-z0-9-]|_[0-9a-f]{2})+$/u;
 
 /**
  * The files this machine has of the person's own runner in a workspace, found
- * by their names and never opened, in the order of those names. The package
+ * by their names, in the order of those names. The package
  * names one for the workspace and the member, beside the pool files, and the
  * member is not known here, so a file is one of these by its first part and
  * by its second being one whole part, which no pool file's rest is.
@@ -606,6 +609,20 @@ export function setupOwnFiles(
         ? [{ path }]
         : [];
     });
+}
+
+/** What of the person's own runner's file is read: the id the site lists that runner by, which is not its secret. */
+const setupOwnFileSchema = z.object({ clientId: identitySchema });
+
+/** The id the site lists the person's own runner of `file` by, or nothing where the file says none this program reads. */
+export function setupOwnClient(
+  ports: SetupPorts,
+  file: SetupFile,
+): string | undefined {
+  const parsed = setupOwnFileSchema.safeParse(
+    setupJson(ports.disk.text(file.path, setupTextBytesMax)),
+  );
+  return parsed.success ? parsed.data.clientId : undefined;
 }
 
 /** The kind of credential settings would run work on, a run writing a subscription's where there are none. */

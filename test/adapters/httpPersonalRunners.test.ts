@@ -1,8 +1,8 @@
 /**
- * A member's own runner as its routes answer it: what each outcome of the
- * service is sent as, which caller and which tenant, project and subject each
- * route hands the service, and that the redemption is public and answers a
- * file of its own kind.
+ * A member's own runners as their routes answer them: what each outcome of the
+ * service is sent as, which caller and which tenant, project, runner and
+ * subject each route hands the service, and that the redemption is public and
+ * answers a file of its own kind.
  */
 
 import assert from "node:assert/strict";
@@ -19,12 +19,17 @@ import {
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import type {
+  PersonalRunnerRead,
   PersonalRunnerRedemption,
   PersonalRunnerService,
   PersonalRunnerTokenRedeemed,
 } from "../../src/interpreter/personalRunnerRegistration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type TenantId,
+} from "../../src/interpreter/projectStore.ts";
 import { callerApp } from "./callerAppFixture.ts";
 
 const caller = asPrincipal("issuer-subject");
@@ -50,13 +55,43 @@ function fakeRunnersRedeemed(
           clientSecret: "a-secret",
         },
       };
-    case "racing":
-      return { result: "Conflict" };
+    case "bounded":
+      return { result: "LimitReached" };
     case "unpermitted":
       return { result: "CapabilityNotPermitted" };
     default:
       return { result: "NotFound" };
   }
+}
+
+/** The caller's runners as the tenant a case names answers them: two in one, none elsewhere. */
+function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
+  return tenant === "acme"
+    ? {
+        result: "Found",
+        value: {
+          runners: [
+            {
+              id: "chuggy-personal-one",
+              capabilities: ["linux"],
+              registeredAt: "2026-10-09T12:00:00.000Z",
+              polledAt: "2026-10-09T12:01:00.000Z",
+              live: true,
+              executionsLive: false,
+              runner: { package: "chuggy-linux", version: "0.14.0" },
+            },
+            {
+              id: "chuggy-personal-two",
+              capabilities: ["macos"],
+              registeredAt: "2026-10-09T12:02:00.000Z",
+              live: false,
+              executionsLive: false,
+            },
+          ],
+          projects: [asProjectId("atlas")],
+        },
+      }
+    : { result: "NotFound" };
 }
 
 /** A service answering by the tenant, project or token a case names, and recording what it was asked. */
@@ -80,24 +115,9 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
       calls.push(`redeem:${offered.token}`);
       return Promise.resolve(fakeRunnersRedeemed(offered));
     },
-    runner: (principal, tenant) => {
-      calls.push(`runner:${principal}:${tenant}`);
-      return Promise.resolve(
-        tenant === "acme"
-          ? {
-              result: "Found",
-              value: {
-                capabilities: ["linux"],
-                registeredAt: "2026-10-09T12:00:00.000Z",
-                polledAt: "2026-10-09T12:01:00.000Z",
-                live: true,
-                executionsLive: false,
-                runner: { package: "chuggy-linux", version: "0.14.0" },
-                projects: [asProjectId("atlas")],
-              },
-            }
-          : { result: "NotFound" },
-      );
+    runners: (principal, tenant) => {
+      calls.push(`runners:${principal}:${tenant}`);
+      return Promise.resolve(fakeRunnersRead(tenant));
     },
     permitted: (principal, tenant) => {
       calls.push(`permitted:${principal}:${tenant}`);
@@ -114,8 +134,13 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
     },
     deregister: (principal, tenant) => {
       calls.push(`deregister:${principal}:${tenant}`);
-      if (tenant === "racing") return Promise.resolve("Moved");
       return Promise.resolve(tenant === "acme" ? "Deregistered" : "NotFound");
+    },
+    deregisterRunner: (principal, tenant, runner) => {
+      calls.push(`deregister-runner:${principal}:${tenant}:${runner}`);
+      return Promise.resolve(
+        runner === "chuggy-personal-one" ? "Deregistered" : "NotFound",
+      );
     },
     deregisterMember: (principal, tenant, subject) => {
       calls.push(`deregister-member:${principal}:${tenant}:${subject}`);
@@ -134,6 +159,10 @@ const tokens = (tenant: string) =>
   nativeHttpRoutes.personalRunnerRegistrationTokens.replace(":tenant", tenant);
 const runner = (tenant: string) =>
   nativeHttpRoutes.personalRunner.replace(":tenant", tenant);
+const one = (tenant: string, id: string) =>
+  nativeHttpRoutes.personalRunnerRunner
+    .replace(":tenant", tenant)
+    .replace(":runner", id);
 const allowed = (tenant: string, project: string) =>
   nativeHttpRoutes.personalRunnerProject
     .replace(":tenant", tenant)
@@ -203,11 +232,11 @@ test("a redemption needs no bearer and answers a file of kind Personal naming th
   );
   assert.equal((await redeem("spent")).statusCode, 404);
   assert.equal((await redeem("unpermitted")).statusCode, 403);
-  const racing = await redeem("racing");
-  assert.equal(racing.statusCode, 409);
+  const bounded = await redeem("bounded");
+  assert.equal(bounded.statusCode, 409);
   assert.equal(
-    racing.json<{ error: { code: string } }>().error.code,
-    "RegistrationConflict",
+    bounded.json<{ error: { code: string } }>().error.code,
+    "RunnerLimitReached",
   );
   assert.equal(
     (await redeem("a-token", { pool: "a-pool" })).statusCode,
@@ -216,25 +245,40 @@ test("a redemption needs no bearer and answers a file of kind Personal naming th
   );
 });
 
-test("a member reads their own runner, and a tenant they have none in is not found", async () => {
+test("a member reads their own runners, each by its id, beside the projects they serve, and a tenant they have none in is not found", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
   const found = await app.inject({ url: runner("acme"), headers: bearer });
   assert.equal(found.statusCode, 200);
   assert.deepEqual(personalRunnerResponseSchema.parse(found.json()), {
-    capabilities: ["linux"],
-    registeredAt: "2026-10-09T12:00:00.000Z",
-    polledAt: "2026-10-09T12:01:00.000Z",
-    live: true,
-    executionsLive: false,
-    runner: { package: "chuggy-linux", version: "0.14.0" },
+    runners: [
+      {
+        id: "chuggy-personal-one",
+        capabilities: ["linux"],
+        registeredAt: "2026-10-09T12:00:00.000Z",
+        polledAt: "2026-10-09T12:01:00.000Z",
+        live: true,
+        executionsLive: false,
+        runner: { package: "chuggy-linux", version: "0.14.0" },
+      },
+      {
+        id: "chuggy-personal-two",
+        capabilities: ["macos"],
+        registeredAt: "2026-10-09T12:02:00.000Z",
+        live: false,
+        executionsLive: false,
+      },
+    ],
     projects: ["atlas"],
   });
   assert.equal(
     (await app.inject({ url: runner("other"), headers: bearer })).statusCode,
     404,
   );
-  assert.deepEqual(calls, [`runner:${caller}:acme`, `runner:${caller}:other`]);
+  assert.deepEqual(calls, [
+    `runners:${caller}:acme`,
+    `runners:${caller}:other`,
+  ]);
 });
 
 test("a member is told whether their tenant permits them a runner, as themselves", async () => {
@@ -327,24 +371,38 @@ test("an allowlist write reaches the service however a bodyless request is frame
   assert.equal(calls.length, 6);
 });
 
-test("a runner is taken off by its owner, or by its member's subject", async () => {
+test("runners are taken off by their owner, one by its id or all at once, or by their member's subject", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
   const remove = (url: string) =>
     app.inject({ method: "DELETE", url, headers: bearer });
+  assert.equal(
+    (await remove(one("acme", "chuggy-personal-one"))).statusCode,
+    204,
+  );
+  assert.equal((await remove(one("acme", "unknown"))).statusCode, 404);
   assert.equal((await remove(runner("acme"))).statusCode, 204);
   assert.equal((await remove(runner("other"))).statusCode, 404);
-  assert.equal((await remove(runner("racing"))).statusCode, 409);
   const member = (subject: string) =>
     nativeHttpRoutes.personalRunnerMember
       .replace(":tenant", "acme")
       .replace(":subject", subject);
   assert.equal((await remove(member("a-member"))).statusCode, 204);
   assert.equal((await remove(member("nobody"))).statusCode, 404);
+  assert.equal(
+    (
+      await app.inject({
+        method: "DELETE",
+        url: one("acme", "chuggy-personal-one"),
+      })
+    ).statusCode,
+    401,
+  );
   assert.deepEqual(calls, [
+    `deregister-runner:${caller}:acme:chuggy-personal-one`,
+    `deregister-runner:${caller}:acme:unknown`,
     `deregister:${caller}:acme`,
     `deregister:${caller}:other`,
-    `deregister:${caller}:racing`,
     `deregister-member:${caller}:acme:a-member`,
     `deregister-member:${caller}:acme:nobody`,
   ]);

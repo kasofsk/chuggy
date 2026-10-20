@@ -561,7 +561,7 @@ export function apiPersonalRunnerPermit(
   );
 }
 
-/** The reader's own runner in a tenant, answered as absent where they have none. */
+/** The reader's own runners in a tenant, answered as absent where they have none. */
 export function apiPersonalRunner(
   ports: ApiPorts,
   tenant: string,
@@ -592,7 +592,7 @@ export function apiMintPersonalRunnerToken(
   );
 }
 
-/** The reader's runner takes work in one more project, or in one fewer. */
+/** The reader's runners take work in one more project, or in one fewer. */
 export function apiPersonalRunnerServes(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -611,22 +611,26 @@ export function apiPersonalRunnerServes(
   );
 }
 
-/** The reader's own runner taken off in a tenant. */
+/** One of the reader's own runners in a tenant taken off, by its id. */
 export function apiDeregisterPersonalRunner(
   ports: ApiPorts,
   tenant: string,
+  runner: string,
 ): Promise<ApiResult<undefined>> {
   return apiRead(
     ports,
     {
       method: "DELETE",
-      path: apiFilled(nativeHttpRoutes.personalRunner, { tenant }),
+      path: apiFilled(nativeHttpRoutes.personalRunnerRunner, {
+        tenant,
+        runner,
+      }),
     },
     () => undefined,
   );
 }
 
-/** One member's runner taken off by their subject, which a tenant administrator may do for anyone. */
+/** Every runner of one member's taken off by their subject, which a tenant administrator may do for anyone. */
 export function apiDeregisterMemberRunner(
   ports: ApiPorts,
   tenant: string,

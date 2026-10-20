@@ -702,11 +702,12 @@ test("each forge route is one path, and each write spends an identity", async ()
 /** The tenant fills a template rather than being pasted into a path, so a
  * tenant that looks like a path is still one segment. */
 /**
- * A member's own runner hangs from the tenant, and one project it serves from
- * the runner, so a project named like a path is still one segment; the
- * project's fallback hangs from the partition beside its placement.
+ * A member's own runners hang from the tenant, and one project they serve and
+ * one runner of theirs from those, so a project or a runner named like a path
+ * is still one segment; the project's fallback hangs from the partition beside
+ * its placement.
  */
-test("a member's runner and a project's fallback are each asked at their own address", async () => {
+test("a member's runners and a project's fallback are each asked at their own address", async () => {
   const held = recordingRequests((url) =>
     url.endsWith("/owner-fallback")
       ? { fallback: "Strict", administers: true }
@@ -719,7 +720,7 @@ test("a member's runner and a project's fallback are each asked at their own add
   await apiPersonalRunnerPermit(held.ports, "acme");
   await apiPersonalRunnerServes(held.ports, partition, true);
   await apiPersonalRunnerServes(held.ports, partition, false);
-  await apiDeregisterPersonalRunner(held.ports, "acme");
+  await apiDeregisterPersonalRunner(held.ports, "acme", "chuggy/personal-1");
   await apiDeregisterMemberRunner(held.ports, "acme", "sub/ject");
   const tenantPath = `${nativeHttpBasePath}/tenants/acme`;
   expect(
@@ -730,7 +731,7 @@ test("a member's runner and a project's fallback are each asked at their own add
     `GET ${tenantPath}/personal-runner-permit`,
     `PUT ${tenantPath}/personal-runner/projects/at%20las`,
     `DELETE ${tenantPath}/personal-runner/projects/at%20las`,
-    `DELETE ${tenantPath}/personal-runner`,
+    `DELETE ${tenantPath}/personal-runner/runners/chuggy%2Fpersonal-1`,
     `DELETE ${tenantPath}/personal-runners/sub%2Fject`,
   ]);
 });

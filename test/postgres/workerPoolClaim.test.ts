@@ -43,7 +43,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import type pg from "pg";
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
@@ -98,7 +97,9 @@ import {
 } from "../interpreter/runnerCases.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
+  postgresHarnessAdvisoryWaiting,
   postgresHarnessConfiguration,
+  postgresHarnessHeldAtCommit,
   postgresHarnessRolePool,
 } from "./harness.ts";
 import {
@@ -901,49 +902,6 @@ test("a pool that reports holding nothing is held to what the database says it h
   );
 });
 
-/** A pool whose clients announce a commit and then hold it until `gate` opens. */
-function heldAtCommit(
-  pool: pg.Pool,
-  reached: () => void,
-  gate: Promise<void>,
-): pg.Pool {
-  const connect = async (): Promise<pg.PoolClient> => {
-    const client = await pool.connect();
-    return new Proxy(client, {
-      get(target, property) {
-        if (property === "query")
-          return async (text: unknown, ...rest: unknown[]) => {
-            if (text === "COMMIT") {
-              reached();
-              await gate;
-            }
-            return (target.query as (...args: unknown[]) => unknown)(
-              text,
-              ...rest,
-            );
-          };
-        const value: unknown = Reflect.get(target, property, target);
-        if (typeof value !== "function") return value;
-        const bound: unknown = (value as (...args: unknown[]) => unknown).bind(
-          target,
-        );
-        return bound;
-      },
-    });
-  };
-  return { connect } as unknown as pg.Pool;
-}
-
-/** Whether a session of this database is waiting on an advisory lock. */
-async function advisoryWaiting(): Promise<boolean> {
-  const [row] = (await rig.harness.query(
-    `SELECT count(*)::int AS waiting FROM pg_locks
-      WHERE locktype='advisory' AND NOT granted
-        AND database=(SELECT oid FROM pg_database WHERE datname=current_database())`,
-  )) as readonly { waiting: number }[];
-  return (row?.waiting ?? 0) > 0;
-}
-
 /**
  * The first claim is held open at its commit, so the second is made while the
  * first's attempt is claimed and not yet committed: it waits on the pool's
@@ -961,14 +919,15 @@ test("a claim made while the same pool's last is still open waits for it and cou
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => (open = resolve));
   const first = postgresWorkerPoolAssignments(
-    heldAtCommit(planePool, reach, gate),
+    postgresHarnessHeldAtCommit(planePool, reach, gate),
   ).claim(pool, terms, `first-${randomUUID()}`, `bearer-${randomUUID()}`, []);
   await reached;
   let settled = false;
   const second = assignments
     .claim(pool, terms, `second-${randomUUID()}`, `bearer-${randomUUID()}`, [])
     .finally(() => (settled = true));
-  while (!settled && !(await advisoryWaiting())) await delay(10);
+  while (!settled && !(await postgresHarnessAdvisoryWaiting(rig.harness)))
+    await delay(10);
   open();
   assert.deepEqual(
     (await Promise.all([first, second])).map((taken) => taken !== undefined),
@@ -992,7 +951,7 @@ test("a registration made while an older one's claim is still open waits for it 
   let open = (): void => undefined;
   const gate = new Promise<void>((resolve) => (open = resolve));
   const claim = postgresWorkerPoolAssignments(
-    heldAtCommit(planePool, reach, gate),
+    postgresHarnessHeldAtCommit(planePool, reach, gate),
   ).claim(
     older,
     { leaseSecs, heldMax: 1 },
@@ -1012,7 +971,8 @@ test("a registration made while an older one's claim is still open waits for it 
       principal: asPrincipal(`https://issuer.invalid#fenced-${randomUUID()}`),
     })
     .finally(() => (settled = true));
-  while (!settled && !(await advisoryWaiting())) await delay(10);
+  while (!settled && !(await postgresHarnessAdvisoryWaiting(rig.harness)))
+    await delay(10);
   open();
   const [claimed, registered] = await Promise.all([claim, newer]);
   assert.notEqual(claimed, undefined);

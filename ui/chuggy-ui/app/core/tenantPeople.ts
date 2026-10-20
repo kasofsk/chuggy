@@ -232,7 +232,7 @@ export function tenantPersonalRunnersOffered(
   return abilities?.grantPersonalRunners ?? false;
 }
 
-/** Whether the reader may take a member's own runner off, which only an
+/** Whether the reader may take a member's own runners off, which only an
  * administrator of the workspace may, and a reader whose abilities were not
  * read may not. */
 export function tenantRunnerRemovalOffered(

@@ -2,9 +2,10 @@
  * `runner`: a runner installed, registered and started on the machine the
  * program is run on, for one project, and said to be done only once the site
  * sees it live; then, where the person's chats in the project run on runners,
- * the same machine made their own runner, serving the project, and said to be
- * done only once the site sees that live too. One package, one settings file
- * and one Claude credential serve both.
+ * the same machine made one of their own runners, the project among those
+ * their runners serve, and said to be done only once the site sees this
+ * machine live as that runner too. One package, one settings file and one
+ * Claude credential serve both.
  *
  * The machine is the record of the machine's things and the site of the
  * site's, and this program keeps neither. Every act is preceded by the probe
@@ -23,11 +24,12 @@
  * minted, a write, and handed to the package's own `register` as one word of
  * its arguments and nowhere else. The package's own check then runs before its
  * service is started, so nothing is started that the package says cannot
- * work. The person's own runner is found where the site has one, and is
- * registered here the same way only where it has none and the workspace lets
- * them: one the site has that this machine holds no file of is on another
- * machine, and is left there. The project is added to what it serves where it
- * is not among them, which is the other write.
+ * work. This machine is one of the person's own runners where it holds a file
+ * of one that the site lists among theirs; otherwise it is registered as one
+ * more the same way, where the workspace lets them and they hold fewer than a
+ * member may, and their runners on other machines are left as they are. The
+ * project is added to what their runners serve where it is not among them,
+ * which is the other write.
  *
  * No password is taken: a child is run with no terminal to ask on, and what
  * would need one is told to the person to do themselves. Nothing a child
@@ -40,7 +42,10 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
+import {
+  nativeHttpRoutes,
+  personalRunnersMax,
+} from "../../../../src/contract/http.ts";
 import type {
   PersonalRunnerResponse,
   SessionPlacementResponse,
@@ -79,6 +84,7 @@ import {
   setupLingerByHand,
   setupLingerCommand,
   setupLingerRead,
+  setupOwnClient,
   setupOwnFiles,
   setupPackageCurrent,
   setupPackageInstalled,
@@ -691,37 +697,49 @@ async function setupInactive(
     : halt({ stop: "Inactive", unit: unit.name, state: now.said, waitedSecs });
 }
 
+/** One look at the site for a runner live: the read that saw it, or what the read said instead. */
+type SetupLook<Seen, Unseen> =
+  { readonly seen: Seen } | { readonly unseen: Unseen } | Halt;
+
 /**
- * Asks the site, for as long as the run was given, until it sees live the
- * runner `runners` names by the console's own decider on `route`, and answers
- * the read that did. Where the wait runs out a service of this machine's is
- * asked once more, so one that stopped meanwhile is what is said.
+ * Looks at the site, for as long as the run was given, until a look sees the
+ * runner live, and answers the read that did. Where the wait runs out this
+ * machine's service is asked once more, so one that stopped meanwhile is what
+ * is said.
  */
-async function setupWaited(
+async function setupWaited<Seen extends object, Unseen>(
   run: Run,
-  route: PlacementRoute,
-  runners: "project" | "mine",
-  unit: SetupUnit | undefined,
-  unseen: (short: SessionRunnerShort) => SetupRunnerStop,
-): Promise<SessionPlacementResponse | Halt> {
+  unit: SetupUnit,
+  look: () => Promise<SetupLook<Seen, Unseen>>,
+  unseen: (last: Unseen) => SetupRunnerStop,
+): Promise<Seen | Halt> {
   const endsAtMs = run.ports.nowMs() + run.waitSecs * 1_000;
   for (;;) {
-    const placement = await setupSiteAsked(run, setupRunnerReads, (ports) =>
-      apiSessionPlacement(ports, run.partition),
-    );
-    if ("reported" in placement) return placement;
-    const read = setupGot(placement, (answered) => answered, setupWhole);
-    if (read.read !== "Got") return setupUnread("placement", read);
-    const short = sessionRunnerShort(route, read.value.runners[runners]);
-    if (short === undefined) return read.value;
+    const looked = await look();
+    if (halted(looked)) return looked;
+    if ("seen" in looked) return looked.seen;
     if (run.ports.nowMs() >= endsAtMs)
       return (
-        (unit === undefined
-          ? undefined
-          : await setupInactive(run, unit, run.waitSecs)) ?? halt(unseen(short))
+        (await setupInactive(run, unit, run.waitSecs)) ??
+        halt(unseen(looked.unseen))
       );
     await run.ports.sleepMs(setupLivePollMs);
   }
+}
+
+/** The project's runner as the console's own decider says it stands on `route`: live, or why not. */
+async function setupProjectLooked(
+  run: Run,
+  route: PlacementRoute,
+): Promise<SetupLook<SessionPlacementResponse, SessionRunnerShort>> {
+  const placement = await setupSiteAsked(run, setupRunnerReads, (ports) =>
+    apiSessionPlacement(ports, run.partition),
+  );
+  if ("reported" in placement) return placement;
+  const read = setupGot(placement, (answered) => answered, setupWhole);
+  if (read.read !== "Got") return setupUnread("placement", read);
+  const short = sessionRunnerShort(route, read.value.runners.project);
+  return short === undefined ? { seen: read.value } : { unseen: short };
 }
 
 /** The package and the settings, each found or made now, which every service of the runner's runs with. */
@@ -787,16 +805,54 @@ async function setupPermitted(
   });
 }
 
-/** This machine registered as the person's own runner where the site has none, which the workspace has to let them; a file left from one the site no longer has is said first. */
+/** A registration of this machine as one of the person's own runners, with the id the site lists it by. */
+interface Owned extends Registered<SetupFile> {
+  readonly client: string;
+}
+
+/** The file among those held whose runner the site lists among the person's, which is what makes this machine one of theirs. */
+function setupOwnGood(
+  run: Run,
+  had: PersonalRunnerResponse | undefined,
+  held: readonly SetupFile[],
+): Owned | undefined {
+  if (had === undefined) return undefined;
+  const listed = new Set(had.runners.map((each) => each.id));
+  for (const file of held) {
+    const client = setupOwnClient(run.ports, file);
+    if (client !== undefined && listed.has(client))
+      return { file, client, fresh: false };
+  }
+  return undefined;
+}
+
+/** The page the person's own runners are listed and removed on. */
+function setupMyRunnersPage(run: Run): string {
+  const page = settingsRoutes.workspace.myRunner.replace(
+    "$tenant",
+    encodeURIComponent(run.partition.tenant),
+  );
+  return `${run.session.site}${page}`;
+}
+
+/**
+ * This machine registered as one more of the person's own runners, which the
+ * workspace has to let them and which they have to hold fewer than a member
+ * may of; `had` is those the site holds, none of which is this machine, and a
+ * file of one the site no longer lists is said first.
+ */
 async function setupOwnRegistered(
   run: Run,
   command: string,
   held: SetupFile | undefined,
   pooled: boolean,
-): Promise<Registered<SetupFile> | Halt> {
+  had: PersonalRunnerResponse | undefined,
+): Promise<Owned | Halt> {
   if (held !== undefined) run.notes.push({ note: "OwnGone", path: held.path });
   const permitted = await setupPermitted(run, pooled);
   if (halted(permitted)) return permitted;
+  if ((had?.runners.length ?? 0) >= personalRunnersMax)
+    return halt({ stop: "OwnLimit", runners: setupMyRunnersPage(run) });
   const acted = await setupTokenHanded(run, command, "Personal");
   if (halted(acted)) return acted;
   const file = setupFileSaid(
@@ -805,16 +861,32 @@ async function setupOwnRegistered(
   );
   if (file === undefined)
     return halt({ stop: "Unseen", act: "RegisterOwn", path: run.places.pools });
+  const client = setupOwnClient(run.ports, file);
+  if (client === undefined)
+    return halt({ stop: "Unseen", act: "RegisterOwn", path: file.path });
   run.notes.push({ note: "OwnRegistered", path: file.path });
-  return { file, fresh: true };
+  return { file, client, fresh: true };
 }
 
-/** The project among those the person's own runner serves, found there or added, and then that runner waited on until the site sees it live; `unit` is its service where it is this machine. */
+/** This machine's own runner as the site lists it among the person's: live, or not yet. */
+async function setupOwnLooked(
+  run: Run,
+  client: string,
+): Promise<SetupLook<PersonalRunnerResponse, undefined>> {
+  const own = await setupOwnHad(run);
+  if (halted(own)) return own;
+  const { had } = own;
+  return had?.runners.some((each) => each.id === client && each.live) === true
+    ? { seen: had }
+    : { unseen: undefined };
+}
+
+/** The project among those the person's own runners serve, found there or added, and then this machine's runner, `owned`, waited on until the site sees it live. */
 async function setupOwnServed(
   run: Run,
-  route: PlacementRoute,
   projects: readonly string[],
-  unit: SetupUnit | undefined,
+  owned: Owned,
+  unit: SetupUnit,
 ): Promise<SetupRunnerEnded | Halt> {
   if (projects.includes(run.partition.project))
     run.notes.push({ note: "Serves" });
@@ -827,42 +899,37 @@ async function setupOwnServed(
       return halt({ stop: "ServesRefused", outcome: added.outcome });
     run.notes.push({ note: "ServesAdded" });
   }
-  const seen = await setupWaited(run, route, "mine", unit, () => ({
-    stop: "OwnNotLive",
-    waitedSecs: run.waitSecs,
-    here: unit !== undefined,
-  }));
+  const seen = await setupWaited(
+    run,
+    unit,
+    () => setupOwnLooked(run, owned.client),
+    () => ({ stop: "OwnNotLive", waitedSecs: run.waitSecs }),
+  );
   if (halted(seen)) return seen;
   run.notes.push({ note: "OwnLive" });
   return { ended: "Live" };
 }
 
 /**
- * The person's own runner, which their chats in the project run on: the one
- * the site has, left where it is where this machine holds no file of it, or
- * this machine registered where the site has none. `pooled` is whether the
- * project's runner was set up first, which set their services to outlive a
- * logout.
+ * This machine as one of the person's own runners, which their chats in the
+ * project run on: kept where it holds a file of one the site lists among
+ * theirs, and registered as one more where it does not. `pooled` is whether
+ * the project's runner was set up first, which set their services to outlive
+ * a logout.
  */
 async function setupOwnWalked(
   run: Run,
   packaged: Packaged,
-  route: PlacementRoute,
   pooled: boolean,
 ): Promise<SetupRunnerEnded | Halt> {
   const own = await setupOwnHad(run);
   if (halted(own)) return own;
-  const [held] = setupOwnFiles(run.ports, run.places, run.partition.tenant);
-  let owned: Registered<SetupFile> | Halt;
-  if (own.had === undefined)
-    owned = await setupOwnRegistered(run, packaged.command, held, pooled);
-  else if (held === undefined) {
-    run.notes.push({ note: "OwnElsewhere" });
-    return setupOwnServed(run, route, own.had.projects, undefined);
-  } else {
-    run.notes.push({ note: "Own", path: held.path });
-    owned = { file: held, fresh: false };
-  }
+  const held = setupOwnFiles(run.ports, run.places, run.partition.tenant);
+  const good = setupOwnGood(run, own.had, held);
+  if (good !== undefined) run.notes.push({ note: "Own", path: good.file.path });
+  const owned =
+    good ??
+    (await setupOwnRegistered(run, packaged.command, held[0], pooled, own.had));
   if (halted(owned)) return owned;
   const served = await setupServiceHad(run, packaged, owned.file, "Personal");
   if (halted(served)) return served;
@@ -871,8 +938,9 @@ async function setupOwnWalked(
   const changed = owned.fresh || packaged.installed || served.written;
   const started = await setupStarted(run, served.unit, changed);
   if (halted(started)) return started;
-  const projects = owned.fresh ? [] : (own.had?.projects ?? []);
-  return setupOwnServed(run, route, projects, served.unit);
+  const now = owned.fresh ? await setupOwnHad(run) : own;
+  if (halted(now)) return now;
+  return setupOwnServed(run, now.had?.projects ?? [], owned, served.unit);
 }
 
 /** Where the project's work runs on the cluster: nothing is set up where the person's chats do too, and only their own runner where those run on runners. */
@@ -893,7 +961,7 @@ async function setupHostedWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
   if (halted(machine)) return machine;
   const packaged = await setupMachineShared(run, machine);
   if (halted(packaged)) return packaged;
-  return setupOwnWalked(run, packaged, read.value, false);
+  return setupOwnWalked(run, packaged, false);
 }
 
 async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
@@ -908,9 +976,8 @@ async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
   if (halted(unit)) return unit;
   const seen = await setupWaited(
     run,
-    project.route,
-    "project",
     unit,
+    () => setupProjectLooked(run, project.route),
     (short) => ({
       stop: "NotLive",
       waitedSecs: run.waitSecs,
@@ -919,10 +986,9 @@ async function setupWalked(run: Run): Promise<SetupRunnerEnded | Halt> {
   );
   if (halted(seen)) return seen;
   run.notes.push({ note: "ProjectLive" });
-  const threads = seen.thread.route;
-  return setupHosted(threads)
+  return setupHosted(seen.thread.route)
     ? { ended: "Live" }
-    : setupOwnWalked(run, packaged, threads, true);
+    : setupOwnWalked(run, packaged, true);
 }
 
 /**

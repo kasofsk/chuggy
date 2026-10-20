@@ -38,6 +38,7 @@ import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import {
   setupSiteAt,
   setupSiteMember,
+  setupSiteOwnAdded,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 import {
   machineAskers,
@@ -452,23 +453,39 @@ test("the person's own runner on this machine that serves another project is giv
   assert.deepEqual(held.projects, ["gadgets", "widgets"]);
 });
 
-test("the person's own runner registered on another machine is not replaced: this project is added to it, the lines say their chats run on that machine, and this machine is given no file or service of it", async () => {
+test("a runner of the person's own on another machine is kept, and this machine is registered as one more of theirs, with a file and a service of its own, and waited on until the site sees it live", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
-  on.installation.world.own.set("acme", { projects: ["gadgets"], live: true });
+  const elsewhere = setupSiteOwnAdded(on.installation.world, "acme", true);
+  on.installation.world.own.get("acme")?.projects.push("gadgets");
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-5), [
+  assert.deepEqual(done.lines.slice(-7), [
     found.live,
-    found.elsewhere,
+    did.own,
+    did.ownUnit,
+    did.ownStarted,
     did.serves,
     found.ownLive,
     next,
   ]);
-  assert.deepEqual(on.installation.writes, [mint, redemption, serves]);
-  assert.equal(registrations(on).length, 1);
-  assert.ok(!existsSync(join(on.machine.pools, ownFile)));
-  assert.ok(!existsSync(join(on.machine.units, ownUnit)));
+  assert.deepEqual(on.installation.writes, [
+    mint,
+    redemption,
+    ownMint,
+    ownRedemption,
+    serves,
+  ]);
+  assert.equal(registrations(on).length, 2);
+  assert.ok(existsSync(join(on.machine.pools, ownFile)));
+  assert.ok(existsSync(join(on.machine.units, ownUnit)));
+  assert.deepEqual(on.installation.world.own.get("acme"), {
+    projects: ["gadgets", "widgets"],
+    runners: [
+      { id: elsewhere, live: true },
+      { id: "chuggy-personal-2", live: true },
+    ],
+  });
 });
 
 test("a machine whose project's runner was set up on a package older than the first that updates itself has it installed again by the same command, its service restarted onto the new one, and the run finishes the job", async () => {

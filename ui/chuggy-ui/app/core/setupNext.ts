@@ -201,7 +201,7 @@ const setupRunnerRunning = "once the person says the runner is running";
 
 /** What `runner` also does where the person's own runner is lacking beside the project's. */
 const setupOwnToo =
-  " Your own chats run only on a runner of your own, so I will also make this machine yours, as a second service of yours, or have the one you have on another machine serve this project too.";
+  " Your own chats run only on a runner of your own, so I will also make this machine one of yours, as a second service of yours, serving this project.";
 
 /** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
 const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I install its latest release first.`;
@@ -243,10 +243,10 @@ function setupRunnerPut(
 
 /**
  * The person's own runner lacking where the project's work has what it needs.
- * `runner` makes this machine theirs, or has the one they have elsewhere serve
- * the project; it registers this machine for the project's work too where the
- * work goes to runners and this machine holds no registration of the project,
- * and the person is told so.
+ * `runner` makes this machine one of theirs, serving the project, which every
+ * runner of theirs then serves; it registers this machine for the project's
+ * work too where the work goes to runners and this machine holds no
+ * registration of the project, and the person is told so.
  */
 function setupOwnMend(
   lack: Extract<SetupLack, { readonly lacks: "Own" | "OwnLive" }>,
@@ -262,20 +262,20 @@ function setupOwnMend(
   if (lack.lacks === "OwnLive")
     return here?.own === true
       ? setupOffer(
-          `${chats}, and yours is registered and is not running, and this machine holds a registration of it. With your yes I will start it here as a background service of yours that starts when you log in.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
+          `${chats}, and none of yours that serves it is running, and this machine holds a registration of one. With your yes I will start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
           at,
         )
       : setupHand(
-          `${chats}, and yours is registered and is not running. Start it on its machine and tell me once it is running.`,
+          `${chats}, and none of yours that serves it is running. Start one on its machine and tell me once it is running.`,
           "once the person says their own runner is running",
         );
   if (here?.room.room === "Open")
     return setupOffer(
-      `${chats}, and none of yours serves it yet. I can make this machine yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}. Where your own runner is on another machine already, it is kept and given ${named} to serve instead.${besides} Tell me yes to go ahead.`,
+      `${chats}, and none of yours serves it yet. I can make this machine one of yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}. Any runner of yours on another machine is kept, and serves ${named} too.${besides} Tell me yes to go ahead.`,
       at,
     );
   return setupHand(
-    `${chats}, and none of yours serves it yet${here === undefined ? "" : "; chuggy setup cannot make this machine one"}. On a machine that can be one, open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.myRunner} and do what it shows; where you already have one, add ${at.project} to its projects on that page. Tell me once it is running.`,
+    `${chats}, and none of yours serves it yet${here === undefined ? "" : "; chuggy setup cannot make this machine one"}. On a machine that can be one, open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.myRunner} and do what it shows; where you already have one, add ${at.project} to the projects on that page. Tell me once it is running.`,
     "once the person says their own runner is running and serves the project",
   );
 }

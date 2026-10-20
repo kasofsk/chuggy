@@ -310,7 +310,7 @@ function serviceWith(
     store: recordingStore(calls),
     placement,
     workerPools: {
-      personal: () => Promise.resolve(undefined),
+      personal: () => Promise.resolve([]),
       registered: () => {
         calls.push("registered");
         return Promise.resolve({ pools: [], truncated: false });
@@ -1818,7 +1818,7 @@ function poolLaunch(
         },
       },
       workerPools: {
-        personal: () => Promise.resolve(undefined),
+        personal: () => Promise.resolve([]),
         registered: (asked) => {
           calls.push(`registered:${asked.project}`);
           return Promise.resolve(page);
@@ -1978,7 +1978,7 @@ function ownerAccess(permit: boolean, read: boolean): ProjectAccess {
 function ownedLaunch(
   calls: string[],
   fallback: "Strict" | "Preferred" | undefined,
-  runner: PersonalRunnerRegistered | undefined,
+  runners: readonly PersonalRunnerRegistered[],
   access: ProjectAccess,
   failing?: "personal" | "registered",
 ): Promise<number> {
@@ -1998,7 +1998,7 @@ function ownedLaunch(
           calls.push(`personal:${asked}`);
           return failing === "personal"
             ? Promise.reject(new Error("the roster could not be read"))
-            : Promise.resolve(runner);
+            : Promise.resolve(runners);
         },
         registered: () =>
           failing === "registered"
@@ -2020,8 +2020,25 @@ const blocked = [
 test("an owner's execution no pool runs is held while the owner's runner could run it, under either fallback, rather than blocked", async () => {
   for (const fallback of ["Strict", "Preferred"] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, fallback, memberRunner, ownerAccess(true, true));
+    await ownedLaunch(calls, fallback, [memberRunner], ownerAccess(true, true));
     assert.deepEqual(calls, ["personal:member-one"], fallback);
+  }
+});
+
+test("an owner's execution is held while any one of their runners could run it, and blocked where none of them could", async () => {
+  const arm: PersonalRunnerRegistered = {
+    ...memberRunner,
+    principal: asPrincipal("chuggy-personal-two"),
+    capabilities: ["Platform:Linux:Arm64"],
+  };
+  for (const [runners, called] of [
+    [[arm, memberRunner], ["personal:member-one"]],
+    [[memberRunner, arm], ["personal:member-one"]],
+    [[arm], ["personal:member-one", ...blocked]],
+  ] as const) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, "Strict", runners, ownerAccess(true, true));
+    assert.deepEqual(calls, called);
   }
 });
 
@@ -2044,7 +2061,7 @@ test("an owner's execution is blocked where the runner that alone could run it i
     ],
   ] as const) {
     const calls: string[] = [];
-    await ownedLaunch(calls, "Strict", runner, access);
+    await ownedLaunch(calls, "Strict", [runner], access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
   }
 });
@@ -2056,7 +2073,7 @@ test("a failed read of the owner's runner fails the pass as a failed read of the
       ownedLaunch(
         calls,
         "Strict",
-        memberRunner,
+        [memberRunner],
         ownerAccess(true, true),
         failing,
       ),
@@ -2069,7 +2086,7 @@ test("a failed read of the owner's runner fails the pass as a failed read of the
 
 test("an owner's execution whose project names no fallback never reads the owner's runner, and is blocked as before where no pool runs it", async () => {
   const calls: string[] = [];
-  await ownedLaunch(calls, undefined, memberRunner, ownerAccess(true, true));
+  await ownedLaunch(calls, undefined, [memberRunner], ownerAccess(true, true));
   assert.deepEqual(calls, blocked);
 });
 
@@ -2205,7 +2222,7 @@ function poolOffer(
         },
       },
       workerPools: {
-        personal: () => Promise.resolve(undefined),
+        personal: () => Promise.resolve([]),
         registered: () => Promise.resolve(page),
       },
       access,

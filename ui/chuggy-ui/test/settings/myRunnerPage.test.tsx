@@ -1,8 +1,9 @@
 /**
- * The My runner page, mounted: a member the workspace has not let register one
+ * The My runners page, mounted: a member the workspace has not let register one
  * is told why and offered nothing; one it has is handed the personal command;
- * and a member with a runner sees it, gives it projects they read, takes them
- * away, and takes it off.
+ * and a member with runners sees a row for each, registers another while under
+ * the bound, gives them projects they read, takes them away, and takes one
+ * runner off at a time.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -16,9 +17,15 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import { nativeHttpBasePath } from "../../../../src/contract/http.ts";
+import {
+  nativeHttpBasePath,
+  personalRunnersMax,
+} from "../../../../src/contract/http.ts";
 import { MyRunnerPage } from "../../app/browser/settings/MyRunnerPage.tsx";
-import { myRunnerWithheld } from "../../app/core/myRunner.ts";
+import {
+  myRunnerRemovalLine,
+  myRunnerWithheld,
+} from "../../app/core/myRunner.ts";
 import { sessionPlacementPolledMs } from "../../app/core/sessionRunners.ts";
 import {
   answer,
@@ -49,12 +56,25 @@ vi.mock("@tanstack/react-router", () => ({
 
 const tenantPath = `${nativeHttpBasePath}/tenants/${leadPartition.tenant}`;
 
+/** A runner of the reader's whose id ends in `tail`, polling where `live`. */
+function runnerListed(tail: string, live = true): unknown {
+  return {
+    id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
+    capabilities: ["Platform:Linux:Amd64"],
+    registeredAt: "2026-10-01T00:00:00Z",
+    polledAt: "2026-10-01T00:01:00Z",
+    live,
+    executionsLive: live,
+  };
+}
+
 const runnerHeld = {
-  capabilities: ["Platform:Linux:Amd64"],
-  registeredAt: "2026-10-01T00:00:00Z",
-  polledAt: "2026-10-01T00:01:00Z",
-  live: true,
-  executionsLive: true,
+  runners: [runnerListed("3f2a9c1e")],
+  projects: ["atlas"],
+};
+
+const runnersTwo = {
+  runners: [runnerListed("3f2a9c1e"), runnerListed("a81c04d2", false)],
   projects: ["atlas"],
 };
 
@@ -74,6 +94,8 @@ interface Drawing {
   runner: unknown;
   /** Where set, a read of the runner waits on it, as one over a network does. */
   held?: Promise<Response> | undefined;
+  /** Where set, the status a runner's removal is answered with. */
+  removal?: number;
 }
 
 let drawing: Drawing = { granted: true, runner: undefined };
@@ -101,6 +123,10 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         ? answer({ error: { code: "NotFound" } }, 404)
         : answer(drawing.runner);
     }
+    if (path.startsWith(`${tenantPath}/personal-runner/runners/`))
+      return drawing.removal === undefined
+        ? answer(undefined, 204)
+        : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
     if (path === `${tenantPath}/personal-runner-registration-tokens`)
       return answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 });
@@ -208,9 +234,49 @@ test("a runner is drawn with what it declared and whether it is polling, though 
   drawing = { granted: false, runner: runnerHeld };
   await drawMyRunner();
   const row = screen.getAllByRole("row")[1];
+  expect(row?.textContent).toContain("3f2a9c1e");
   expect(row?.textContent).toContain("Linux Amd64");
   expect(row?.textContent).toContain("Live");
   expect(screen.queryByText(myRunnerWithheld)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
+});
+
+test("each of a member's runners is a row of its own, saying whether it is polling", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  const rows = within(screen.getByRole("table", { name: "Runners" }))
+    .getAllByRole("row")
+    .slice(1)
+    .map((row) => [
+      row.querySelector("th")?.textContent?.includes("3f2a9c1e") === true
+        ? "3f2a9c1e"
+        : "a81c04d2",
+      row.textContent?.includes("Live") === true ? "Live" : "Offline",
+    ]);
+  expect(rows).toStrictEqual([
+    ["3f2a9c1e", "Live"],
+    ["a81c04d2", "Offline"],
+  ]);
+  expect(screen.getByText("2 runners")).toBeTruthy();
+});
+
+test("a member holding a runner may register another, and one holding as many as a member may is told so", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  await drawMyRunner();
+  expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
+  cleanup();
+  drawing = {
+    granted: true,
+    runner: {
+      runners: Array.from({ length: personalRunnersMax }, (_, index) =>
+        runnerListed(String(index).padStart(8, "0")),
+      ),
+      projects: [],
+    },
+  };
+  await drawMyRunner();
+  expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
+  expect(screen.getByText("Limit reached")).toBeTruthy();
 });
 
 test("a runner is given only a project of this workspace the reader reads, and takes one away", async () => {
@@ -236,13 +302,57 @@ test("a runner is given only a project of this workspace the reader reads, and t
   ]);
 });
 
-test("taking the runner off is asked first, and then sent", async () => {
-  drawing = { granted: true, runner: runnerHeld };
+test("taking one of two runners off is asked first, then sent by its id, and leaves the other listed", async () => {
+  drawing = { granted: true, runner: runnersTwo };
   const sent = await drawMyRunner();
-  await press("Remove runner");
+  await press("Remove runner a81c04d2");
   expect(written(sent)).toStrictEqual([]);
+  expect(
+    screen.getByRole("group", { name: "Remove runner a81c04d2?" }).textContent,
+  ).toContain(myRunnerRemovalLine("a81c04d2", false));
+  drawing.runner = runnerHeld;
+  await press("Remove");
+  expect(written(sent)).toStrictEqual([
+    "DELETE /personal-runner/runners/chuggy-personal-a81c04d2-0000-4000-8000-000000000000",
+  ]);
+  expect(screen.getByText("1 runner")).toBeTruthy();
+  expect(screen.queryByText(/a81c04d2/u)).toBeNull();
+  expect(screen.getByText("3f2a9c1e")).toBeTruthy();
+});
+
+test("taking one runner off a list another removal emptied meanwhile leaves none listed", async () => {
+  drawing = { granted: true, runner: runnersTwo };
+  await drawMyRunner();
+  await press("Remove runner 3f2a9c1e");
   drawing.runner = undefined;
   await press("Remove");
-  expect(written(sent)).toStrictEqual(["DELETE /personal-runner"]);
+  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.queryByText(/a81c04d2/u)).toBeNull();
+});
+
+test("a runner already taken off elsewhere is answered as removed, and leaves none listed", async () => {
+  drawing = { granted: true, runner: runnerHeld, removal: 404 };
+  await drawMyRunner();
+  await press("Remove runner 3f2a9c1e");
+  drawing.runner = undefined;
+  await press("Remove");
+  expect(screen.queryByText(/^Refused/u)).toBeNull();
+  expect(screen.getByText("0 runners")).toBeTruthy();
+});
+
+test("taking the last runner off says the projects go with it, and leaves none listed", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  const sent = await drawMyRunner();
+  await press("Remove runner 3f2a9c1e");
+  expect(
+    screen.getByRole("group", { name: "Remove runner 3f2a9c1e?" }).textContent,
+  ).toContain(myRunnerRemovalLine("3f2a9c1e", true));
+  drawing.runner = undefined;
+  await press("Remove");
+  expect(written(sent)).toStrictEqual([
+    "DELETE /personal-runner/runners/chuggy-personal-3f2a9c1e-0000-4000-8000-000000000000",
+  ]);
+  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.queryByRole("table", { name: "Runners" })).toBeNull();
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
 });

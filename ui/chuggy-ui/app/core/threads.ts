@@ -123,7 +123,7 @@ export function threadUnhosted(result: ApiResult<unknown>): boolean {
 /**
  * What the reader's own thread door asks of them, as far as the reads have
  * said: where its turns run, whether the tenant grants hosted runs, and the
- * reader's own runner. Each is absent until its read answers.
+ * reader's own runners. Each is absent until its read answers.
  */
 export interface ThreadDoor {
   readonly route: PlacementRoute | undefined;

@@ -389,8 +389,11 @@ export const projectRepositoriesAnsweredMax = 200;
 /** How many registered pools one project's listing answers with, in name order. */
 export const workerPoolsAnsweredMax = 64;
 
-/** How many projects one personal runner's allowlist may name, which its read answers whole. */
+/** How many projects one member's personal runners may serve in a tenant, which their read answers whole. */
 export const personalRunnerProjectsMax = 64;
+
+/** How many personal runners one member may hold in one tenant, which their read answers whole. */
+export const personalRunnersMax = 16;
 
 /** How many of a ticket's landings one read answers with, the newest of them, oldest first. */
 export const ticketLandingsAnsweredMax = 8;
@@ -521,6 +524,7 @@ export const nativeHttpRoutes = {
   personalRunnerPermit: `${nativeHttpBasePath}/tenants/:tenant/personal-runner-permit`,
   personalRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner`,
   personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
+  personalRunnerRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/runners/:runner`,
   personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
   actionReports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/actions/:action/reports`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,

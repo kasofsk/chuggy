@@ -440,29 +440,28 @@ published. It has no unfinished work: the resolution is read when a turn is
 admitted and stamped on it, so a newer publish moves what is admitted after
 it.
 
-`personal_runner` — one member's own runner in one tenant: its principal, the
-issuer client it is removed by, what it declares it can run, when it
+`personal_runner` — one of a member's own runners in one tenant: its principal,
+the issuer client it is removed by, what it declares it can run, when it
 registered and last polled for a session and for an execution, and the runner
 package and version its newest poll named. Written by the API role, which
-registers, replaces and removes it, and by the pool plane, which stamps its
-polls and what they name; the pool plane, the scheduler and the boundary owner
-read it. Its key and identity are `(tenant, owner)`, so a member holds at most
-one in a tenant, and it names no project; it points at `tenant`, and its
-principal and client id are each unique. It is changed by a registration, by a
-replacement that holds only where the row still names the client replaced, by
-a poll's stamps and by its removal; a replacement or a removal fences, in the
-same transaction, every live attempt an older registration claimed. It has no
-unfinished work: a registration is committed or it was rolled back, and a lost
-replacement writes nothing.
+registers and removes it whole, and by the pool plane, which stamps its polls
+and what they name; the pool plane, the scheduler and the boundary owner read
+it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
+many in a tenant as the API's bound admits, and it names no project; it points
+at `tenant`, and its principal and client id are each unique. It is changed by
+a registration, by a poll's stamps and by its removal, which fences, in the
+same transaction, every live attempt it claimed and nothing another runner of
+its owner's holds. It has no unfinished work: a registration is committed or
+it was rolled back.
 
-`personal_runner_project` — a project a member's personal runner may serve.
-Written by the API role alone, for the runner's owner; the pool plane, the
+`personal_runner_project` — a project a member's personal runners may serve.
+Written by the API role alone, for the runners' owner; the pool plane, the
 scheduler and the boundary owner read it. Its key and identity are `(tenant,
-owner, project)`, and it points at its runner and at `project` through the
-same `tenant`, so a runner serves only its own tenant's projects. It is changed
-by its owner adding and removing a project, a replacement of the runner keeps
-it, and it goes with the runner's removal. It has no unfinished work: a runner
-with no row serves nothing.
+owner, project)`, and it points at `project` through the same `tenant`, so a
+runner serves only its own tenant's projects. It is changed by its owner adding
+and removing a project, which the API does only while they hold a runner, and
+the API deletes it with their last runner. It has no unfinished work: an owner
+with no row has runners that serve nothing.
 
 `personal_runner_registration_token` — a single-use token a member mints to
 register their runner in a tenant: its digest, the minter, the capabilities it

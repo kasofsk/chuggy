@@ -27,10 +27,10 @@
  * `workerPoolInventoryMatches` does and with a platform spelled as
  * `workerPoolPlatformToken` spells it, and the held count is the slot. The
  * owner's fallback is the execution's own: where its project allows a
- * personal runner, the owner's runner allowlisting the project and able to run
- * it holds the claim back under `Strict`, and under `Preferred` while it polled
- * for an execution within `sessionRunnerPolledSecsMax`, unless the poll named
- * its owner revoked.
+ * personal runner, any of the owner's runners able to run it, while their
+ * allowlist names the project, holds the claim back under `Strict`, and under
+ * `Preferred` while it polled for an execution within
+ * `sessionRunnerPolledSecsMax`, unless the poll named its owner revoked.
  * The rest hold before a claim is made: the bearer's authentication refuses a
  * token that lapsed and `workerPoolAdmitted` a principal that lost `Execute`, a
  * claim is made only by a poll, and drain, trust, secrets, source and a
@@ -82,6 +82,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import { createHash } from "node:crypto";
 import type pg from "pg";
 
+import { personalRunnersMax } from "../../contract/http.ts";
 import type { WorkerRunner } from "../../contract/workerPool.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
@@ -374,7 +375,8 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
  * A project's registered pools over a scheduler-role pool, in name order and
  * read one past the page, so a project registering more than one read answers
  * is told the page is partial rather than handed a short one; and a member's
- * personal runner in the project's tenant, with every project it allowlists.
+ * personal runners in the project's tenant, each with every project its
+ * owner's allowlist names.
  */
 export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
   return {
@@ -388,19 +390,17 @@ export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
              FROM personal_runner_project l
             WHERE l.tenant=r.tenant AND l.owner=r.owner) AS projects
         FROM personal_runner r
-        WHERE r.tenant=${partition.tenant} AND r.owner=${owner}`);
-      const row = found.rows[0];
-      return row === undefined
-        ? undefined
-        : {
-            owner,
-            principal: asPrincipal(row.principal),
-            capabilities: row.capabilities,
-            allowlist: (row.projects ?? []).map((project) => ({
-              tenant: partition.tenant,
-              project: asProjectId(project),
-            })),
-          };
+        WHERE r.tenant=${partition.tenant} AND r.owner=${owner}
+        ORDER BY r.principal LIMIT ${personalRunnersMax}`);
+      return found.rows.map((row) => ({
+        owner,
+        principal: asPrincipal(row.principal),
+        capabilities: row.capabilities,
+        allowlist: (row.projects ?? []).map((project) => ({
+          tenant: partition.tenant,
+          project: asProjectId(project),
+        })),
+      }));
     },
     registered: async (partition) => {
       const found = await pool.query<{
@@ -554,7 +554,7 @@ async function workerPoolHeldImages(
 
 /**
  * The owners a claim by this pool would defer to: those of its project's
- * unclaimed executions that allow a personal runner and whose owner has one
+ * unclaimed executions that allow a personal runner and whose owner has runners
  * allowlisting the project, ordered by a digest of each owner keyed by
  * `rotation`, which is a fresh permutation of them for each fresh rotation.
  */

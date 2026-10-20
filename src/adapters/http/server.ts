@@ -1241,11 +1241,53 @@ function personalRunnerProjectOf(request: FastifyRequest): ProjectId {
 }
 
 /**
- * A member's own runner: the token they mint for it in a tenant, its public
- * redemption, which the token in its body authenticates as a pool's does, and
- * the caller's own runner read, narrowed or widened by a project, and taken
- * off. A member's runner is also taken off by its subject, which the tenant's
- * administrators may do for anyone and a member for themselves.
+ * A member's own runners taken off: the caller's own, one by its id or all at
+ * once, and a member's by their subject, which the tenant's administrators may
+ * do for anyone and a member for themselves.
+ */
+function registerPersonalRunnerRemovals(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  app.delete(nativeHttpRoutes.personalRunner, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDeregisteredResponse(
+        await runners.deregister(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.personalRunnerRunner, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDeregisteredResponse(
+        await runners.deregisterRunner(
+          principalOf(request),
+          tenantOf(request),
+          textField(record(request.params), "runner"),
+        ),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.personalRunnerMember, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      personalRunnerDeregisteredResponse(
+        await runners.deregisterMember(
+          principalOf(request),
+          tenantOf(request),
+          textField(record(request.params), "subject"),
+        ),
+      ),
+    );
+  });
+}
+
+/**
+ * A member's own runners: the token they mint for one in a tenant, its public
+ * redemption, which the token in its body authenticates as a pool's does, the
+ * caller's own runners read, their allowlist narrowed or widened by a project,
+ * and their removal.
  */
 function registerPersonalRunners(
   app: FastifyInstance,
@@ -1291,31 +1333,12 @@ function registerPersonalRunners(
     nativeHttpSend(
       reply,
       personalRunnerResponse(
-        await runners.runner(principalOf(request), tenantOf(request)),
-      ),
-    );
-  });
-  app.delete(nativeHttpRoutes.personalRunner, async (request, reply) => {
-    nativeHttpSend(
-      reply,
-      personalRunnerDeregisteredResponse(
-        await runners.deregister(principalOf(request), tenantOf(request)),
+        await runners.runners(principalOf(request), tenantOf(request)),
       ),
     );
   });
   registerPersonalRunnerProjects(app, runners);
-  app.delete(nativeHttpRoutes.personalRunnerMember, async (request, reply) => {
-    nativeHttpSend(
-      reply,
-      personalRunnerDeregisteredResponse(
-        await runners.deregisterMember(
-          principalOf(request),
-          tenantOf(request),
-          textField(record(request.params), "subject"),
-        ),
-      ),
-    );
-  });
+  registerPersonalRunnerRemovals(app, runners);
 }
 
 /**

@@ -507,6 +507,51 @@ export async function postgresHarnessStalled(
   );
 }
 
+/** A pool whose clients announce a commit and then hold it until `gate` opens. */
+export function postgresHarnessHeldAtCommit(
+  pool: pg.Pool,
+  reached: () => void,
+  gate: Promise<void>,
+): pg.Pool {
+  const connect = async (): Promise<pg.PoolClient> => {
+    const client = await pool.connect();
+    return new Proxy(client, {
+      get(target, property) {
+        if (property === "query")
+          return async (text: unknown, ...rest: unknown[]) => {
+            if (text === "COMMIT") {
+              reached();
+              await gate;
+            }
+            return (target.query as (...args: unknown[]) => unknown)(
+              text,
+              ...rest,
+            );
+          };
+        const value: unknown = Reflect.get(target, property, target);
+        if (typeof value !== "function") return value;
+        const bound: unknown = (value as (...args: unknown[]) => unknown).bind(
+          target,
+        );
+        return bound;
+      },
+    });
+  };
+  return { connect } as unknown as pg.Pool;
+}
+
+/** Whether a session of this database is waiting on an advisory lock. */
+export async function postgresHarnessAdvisoryWaiting(
+  harness: PostgresHarness,
+): Promise<boolean> {
+  const [row] = (await harness.query(
+    `SELECT count(*)::int AS waiting FROM pg_locks
+      WHERE locktype='advisory' AND NOT granted
+        AND database=(SELECT oid FROM pg_database WHERE datname=current_database())`,
+  )) as readonly { waiting: number }[];
+  return (row?.waiting ?? 0) > 0;
+}
+
 /**
  * An open transaction a case drives statement by statement. It is how a case
  * produces an interleaving the port has no seam for — a row lock held across

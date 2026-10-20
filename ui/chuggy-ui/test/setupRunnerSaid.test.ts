@@ -6,6 +6,7 @@
 
 import { expect, test } from "vitest";
 
+import { personalRunnersMax } from "../../../src/contract/http.ts";
 import { runnerPackageOffered } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
@@ -406,25 +407,27 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
   ],
   ServesRefused: [
     [
-      "the site did not add acme/widgets to the projects your own runner serves (Absent)",
+      "the site did not add acme/widgets to the projects your own runners serve (Absent)",
       1,
       "Runner",
     ],
     [
-      "the site did not add acme/widgets to the projects your own runner serves (Fault)",
+      "the site did not add acme/widgets to the projects your own runners serve (Fault)",
       1,
+      "Runner",
+    ],
+  ],
+  OwnLimit: [
+    [
+      `you have ${String(personalRunnersMax)} runners of your own in the workspace, as many as a member may, and none is this machine`,
+      0,
       "Runner",
     ],
   ],
   OwnNotLive: [
     [
-      "your own runner's service is running, and after 90 s the site still sees no runner of yours serving acme/widgets live",
+      "your own runner's service is running, and after 90 s the site still does not see this machine live as your own runner",
       1,
-      "Runner",
-    ],
-    [
-      "after 90 s the site still sees no runner of yours serving acme/widgets live",
-      0,
       "Runner",
     ],
   ],
@@ -645,7 +648,6 @@ test("each thing a run found is said as found and each thing it did as did, in w
     Own: ["found"],
     OwnGone: ["found"],
     OwnRegistered: ["did"],
-    OwnElsewhere: ["found"],
     OwnUnit: ["found"],
     OwnUnitWritten: ["did"],
     Serves: ["found"],
@@ -675,22 +677,21 @@ test("a Claude credential found is said by its kind's own name, beside the file 
   ]);
 });
 
-test("the person's own runner is said as theirs, apart from the project's: found on this machine, on another, or registered here, and the project found among what it serves or added", () => {
+test("the person's own runner is said as theirs, apart from the project's: found on this machine, no longer known, or registered here, and the project found among what their runners serve or added", () => {
   const lines = runnerNotesAll
     .filter((note) => /^(?:Own|Serves|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, "acme/widgets").join(": "));
   expect(lines).toEqual([
     "found: the site sees a runner of acme/widgets live",
     "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
-    `found: this machine is registered as your own runner, in ${rosterOwn}`,
-    `found: ${rosterOwn} registered this machine as your own runner, and the site has no runner of yours`,
-    `did: registered this machine as your own runner, in ${rosterOwn}`,
-    "found: your own runner is registered on another machine and this machine holds no registration of it, so it is left as it is: your chats in acme/widgets run on that machine",
+    `found: this machine is registered as one of your own runners, in ${rosterOwn}`,
+    `found: ${rosterOwn} registered this machine as your own runner, and the site no longer knows that registration`,
+    `did: registered this machine as one of your own runners, in ${rosterOwn}`,
     `found: your own runner's service is installed: ${rosterOwnUnit}`,
     `did: installed your own runner's service, ${rosterOwnUnit}`,
-    "found: your own runner serves acme/widgets",
-    "did: added acme/widgets to the projects your own runner serves",
-    "found: the site sees your own runner live, so your chats in acme/widgets run on it",
+    "found: your own runners serve acme/widgets",
+    "did: added acme/widgets to the projects your own runners serve",
+    "found: the site sees this machine live as your own runner, so your chats in acme/widgets can run on it",
   ]);
 });
 

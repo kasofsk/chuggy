@@ -91,12 +91,22 @@ function lines(path: string): readonly string[] {
     : [];
 }
 
+/** The id the file of the person's own runner names it by, where there is one. */
+function machineStoodInClient(file: string): string | undefined {
+  if (!existsSync(file)) return undefined;
+  const held = JSON.parse(readFileSync(file, "utf8")) as {
+    readonly clientId?: string;
+  };
+  return held.clientId;
+}
+
 /** Makes `home` a machine a runner could be put on, and has `installation` see a runner live once its service here is up and polls. */
 export function machineStoodIn(home: Home, installation: StandIn): Machine {
   const state = join(home.beside, "machine");
   const prefix = join(home.beside, "prefix");
   const config = join(home.home, ".config");
   const login = join(config, "chuggy-linux", "claude-token");
+  const pools = join(config, "chuggy", "pools");
   const file = (name: keyof typeof machineFiles) =>
     join(state, machineFiles[name]);
   let knobs = knobsFirst(prefix);
@@ -128,18 +138,19 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
       if (name.endsWith(`.${knobs.pool}.service`))
         for (const project of world.projects)
           if (project.pools.includes(knobs.pool)) project.runner = "Live";
-      for (const [tenant, own] of world.own)
-        if (
-          name ===
-          `chuggy-linux-${machineNamePart(tenant)}.${machineNamePart(world.member)}.service`
-        )
-          own.live = true;
+      for (const [tenant, own] of world.own) {
+        const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}`;
+        if (name !== `chuggy-linux-${named}.service`) continue;
+        const clientId = machineStoodInClient(join(pools, `${named}.json`));
+        for (const runner of own.runners)
+          if (runner.id === clientId) runner.live = true;
+      }
     }
   };
   return {
     settings: join(config, "chuggy-linux", "runner.json"),
     login,
-    pools: join(config, "chuggy", "pools"),
+    pools,
     units: join(config, "systemd", "user"),
     prefix,
     own: join(home.home, ".local"),

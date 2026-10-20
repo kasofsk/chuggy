@@ -261,15 +261,12 @@ test("a member's own runner is their personal runner, live only while its last p
   const registry = postgresPersonalRunnerRegistry(apiPool);
   const reads = postgresSessionPlacement(apiPool);
   assert.equal(
-    await registry.register(
-      {
-        ...key,
-        capabilities: [],
-        clientId: `chuggy-personal-${randomUUID()}`,
-        principal: asPrincipal("https://issuer.invalid#personal-laptop"),
-      },
-      undefined,
-    ),
+    await registry.register({
+      ...key,
+      capabilities: [],
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal: asPrincipal("https://issuer.invalid#personal-laptop"),
+    }),
     "Registered",
   );
   assert.equal((await reads.runners(partition, member)).mine, "Unregistered");

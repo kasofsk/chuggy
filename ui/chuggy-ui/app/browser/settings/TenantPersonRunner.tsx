@@ -1,7 +1,7 @@
 /**
- * Taking one person's own runner off, in their editor, for a reader who
- * administers the workspace. Nobody but its owner reads a runner, so
- * this is offered whether or not the person has one, and the line the press
+ * Taking every one of a person's own runners off, in their editor, for a
+ * reader who administers the workspace. Nobody but their owner reads them, so
+ * this is offered whether or not the person has any, and the line the press
  * leaves says which it was.
  */
 
@@ -44,20 +44,19 @@ export function TenantPersonRunner(props: {
   return (
     <div role="group" aria-labelledby={labelled} className="grid gap-2">
       <span id={labelled} className="text-sm text-ink-3">
-        Personal runner
+        Runners
       </span>
       {removal.removal === "Asking" || removal.removal === "Removing" ? (
         <Confirm
-          question={`Remove ${props.name}'s runner?`}
-          confirm="Remove"
+          question={`Remove ${props.name}'s runners?`}
+          confirm="Remove all"
           busy={removal.removal === "Removing"}
           onConfirm={remove}
           onCancel={() => {
             setRemoval({ removal: "Idle" });
           }}
         >
-          It stops taking their work in this workspace until they register it
-          again.
+          Every runner of theirs stops taking their work here.
         </Confirm>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
@@ -68,7 +67,7 @@ export function TenantPersonRunner(props: {
               setRemoval({ removal: "Asking" });
             }}
           >
-            Remove runner
+            Remove runners
           </Button>
           {removal.removal === "Answered" ? (
             <span className="text-sm text-ink-3">{removal.line}</span>

@@ -1,6 +1,6 @@
 /**
- * The reader's own runner in a tenant, as every screen that says so reads it:
- * the My runner page, and a run of theirs waiting on it.
+ * The reader's own runners in a tenant, as every screen that says so reads
+ * them: the My runners page, and a run of theirs waiting on them.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -15,7 +15,7 @@ import { usePanelTenantResource } from "./api.ts";
 /** No frame says a runner polled, so the read is polled at the pace a session's standing is. */
 export const personalRunnerResource = "personal-runner";
 
-/** Answered as absent where the reader has registered none. */
+/** Answered as absent where the reader holds none. */
 export function usePersonalRunner(
   tenant: string,
 ): PanelState<PersonalRunnerResponse> {
@@ -36,9 +36,9 @@ export async function personalRunnerReread(
   });
 }
 
-/** The runner read afresh with nothing held, for a runner taken off: a polled
- * read keeps its last answer through a failed one, and a runner that is gone
- * is answered as absent. */
+/** The runners read afresh with nothing held, for one of them taken off: a
+ * polled read keeps its last answer through a failed one, and a member with
+ * none is answered as absent. */
 export async function personalRunnerForgotten(
   client: QueryClient,
   tenant: string,

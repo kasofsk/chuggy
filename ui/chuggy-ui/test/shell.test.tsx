@@ -1014,7 +1014,7 @@ test("a reader with no runner is pointed at their own runner's page", async () =
     }),
   );
   expect(
-    within(conversationRegion()).getByRole("link", { name: "My runner" }),
+    within(conversationRegion()).getByRole("link", { name: "My runners" }),
   ).toBeTruthy();
   styleless();
 });
@@ -1042,7 +1042,7 @@ test("a held thread that takes no messages points a reader with no runner at the
   const conversation = within(conversationRegion());
   expect(conversation.getByText("Closed")).toBeTruthy();
   expect(conversation.queryByText("No runner")).toBeNull();
-  expect(screen.getByRole("link", { name: "My runner" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "My runners" })).toBeTruthy();
   styleless();
 });
 

@@ -1194,17 +1194,6 @@ export function workerPoolRedemptionResponse(
   }
 }
 
-/** What a registration that lost a race for the same member is answered, its token given back to retry with. */
-function personalRunnerConflict(): NativeHttpResponse {
-  return response(
-    409,
-    nativeHttpError(
-      "RegistrationConflict",
-      "The member's runner was registered again meanwhile; try again.",
-    ),
-  );
-}
-
 /** A write that answers nothing but that it was made. */
 function noContent(): NativeHttpResponse {
   return {
@@ -1247,7 +1236,7 @@ function personalRunnerCredentialsBody(
   };
 }
 
-/** A personal redemption, answered with the runner's file once and naming its capability refusal as a pool's does. */
+/** A personal redemption, answered with the runner's file once, naming its capability refusal as a pool's does, and its bound with the token given back. */
 export function personalRunnerRedemptionResponse(
   result: PersonalRunnerTokenRedeemed,
 ): NativeHttpResponse {
@@ -1255,8 +1244,14 @@ export function personalRunnerRedemptionResponse(
     case "NotFound":
     case "CapabilityNotPermitted":
       return workerPoolRedemptionResponse(result);
-    case "Conflict":
-      return personalRunnerConflict();
+    case "LimitReached":
+      return response(
+        409,
+        nativeHttpError(
+          "RunnerLimitReached",
+          "The member already holds their bound of runners in this tenant; remove one and redeem the token again.",
+        ),
+      );
     case "Registered":
       return response(201, personalRunnerCredentialsBody(result.value));
     default:
@@ -1264,7 +1259,7 @@ export function personalRunnerRedemptionResponse(
   }
 }
 
-/** The caller's own runner, or the miss a member with none is answered. */
+/** The caller's own runners, or the miss a member with none is answered. */
 export function personalRunnerResponse(
   result: PersonalRunnerRead,
 ): NativeHttpResponse {
@@ -1273,14 +1268,17 @@ export function personalRunnerResponse(
       return notFound();
     case "Found":
       return response(200, {
-        capabilities: [...result.value.capabilities],
-        registeredAt: result.value.registeredAt,
-        ...(result.value.polledAt === undefined
-          ? {}
-          : { polledAt: result.value.polledAt }),
-        live: result.value.live,
-        executionsLive: result.value.executionsLive,
-        ...runnerListedBody(result.value.runner),
+        runners: result.value.runners.map((runner) => ({
+          id: runner.id,
+          capabilities: [...runner.capabilities],
+          registeredAt: runner.registeredAt,
+          ...(runner.polledAt === undefined
+            ? {}
+            : { polledAt: runner.polledAt }),
+          live: runner.live,
+          executionsLive: runner.executionsLive,
+          ...runnerListedBody(runner.runner),
+        })),
         projects: [...result.value.projects],
       } satisfies PersonalRunnerResponse);
     default:
@@ -1317,7 +1315,7 @@ export function personalRunnerAllowedResponse(
         409,
         nativeHttpError(
           "AllowlistLimitReached",
-          "The runner already allows its bound of projects.",
+          "The member's runners already serve their bound of projects.",
         ),
       );
     default:
@@ -1338,7 +1336,7 @@ export function personalRunnerDisallowedResponse(
   }
 }
 
-/** A runner taken off, one there is not, or one registered again while it was being taken off. */
+/** Runners taken off, or none there the caller may take. */
 export function personalRunnerDeregisteredResponse(
   result: PersonalRunnerDeregistered,
 ): NativeHttpResponse {
@@ -1347,8 +1345,6 @@ export function personalRunnerDeregisteredResponse(
       return noContent();
     case "NotFound":
       return notFound();
-    case "Moved":
-      return personalRunnerConflict();
     default:
       return assertNever(result);
   }

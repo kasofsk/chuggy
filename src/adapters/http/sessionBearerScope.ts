@@ -61,6 +61,7 @@ export const sessionBearerRouteClasses = {
   personalRunnerPermit: { GET: "Refused" },
   personalRunner: { GET: "Refused", DELETE: "Refused" },
   personalRunnerProject: { PUT: "Refused", DELETE: "Refused" },
+  personalRunnerRunner: { DELETE: "Refused" },
   personalRunnerMember: { DELETE: "Refused" },
   project: partitionRead,
   tickets: partitionRead,
