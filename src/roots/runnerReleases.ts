@@ -4,7 +4,7 @@
  * pool plane answers a runner's poll with its package's pin.
  *
  * A PIN THAT DOES NOT PARSE REFUSES THE START, so a malformed one is never
- * served as a site that pins nothing.
+ * served as a site that pins nothing. `just pin-runner-release` writes it.
  */
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

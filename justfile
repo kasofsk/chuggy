@@ -25,6 +25,11 @@ bump-worker-core commit:
 publish-worker-contract *ARGS:
     node --experimental-strip-types scripts/publish-worker-contract.ts {{ ARGS }}
 
+# The release a runner package's polls are answered with, pinned from its own
+# repository's release downloads. The script's header names what it refuses.
+pin-runner-release package version:
+    node --experimental-strip-types scripts/pin-runner-release.ts {{ quote(package) }} {{ quote(version) }}
+
 # The gates' own tests, without the sequencer.
 suites:
     #!/bin/sh
