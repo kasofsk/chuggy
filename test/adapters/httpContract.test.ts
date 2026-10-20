@@ -42,6 +42,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/forge-authorizations",
   "/api/v1/tenants/:tenant/forge-installations",
   "/api/v1/tenants/:tenant/forge-installations/:installationId/repositories",
+  "/api/v1/tenants/:tenant/forge-installations/:installationId/permissions",
   "/api/v1/projects",
   "/api/v1/tenants/:tenant/projects/:project",
   "/api/v1/tenants/:tenant/projects/:project/tickets",

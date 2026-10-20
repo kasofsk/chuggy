@@ -27,6 +27,7 @@ import {
   allExecutionStatuses,
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
+import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
 import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
 import {
@@ -138,6 +139,7 @@ import {
   forgeAuthorizationResponse,
   forgeCredentialResponse,
   forgeInstallationsResponse,
+  forgeInstallationPermissionsResponse,
   forgeRepositoriesResponse,
   projectRepositoriesResponse,
   projectCreationResponse,
@@ -1467,13 +1469,19 @@ function tenantOf(request: FastifyRequest): TenantId {
   return asTenantId(textField(record(request.params), "tenant"));
 }
 
+function installationIdOf(request: FastifyRequest): ForgeInstallationId {
+  return parseForgeInstallationId(
+    textField(record(request.params), "installationId"),
+  );
+}
+
 /**
  * The apps a tenant installs, the accounts a person's authorization claims, the
- * installations claimed, and what each of them grants. THE APPS ROUTE IS
- * AUTHENTICATED AND NOTHING ELSE: it says nothing about any tenant, so every
- * bearer reads it, and it is not public because an unauthenticated route would
- * make this deployment's forge rate limit spendable by anyone who can reach the
- * port.
+ * installations claimed, what each of them grants, and whether each has
+ * accepted what its app asks for. THE APPS ROUTE IS AUTHENTICATED AND NOTHING
+ * ELSE: it says nothing about any tenant, so every bearer reads it, and it is
+ * not public because an unauthenticated route would make this deployment's
+ * forge rate limit spendable by anyone who can reach the port.
  */
 function registerForgeInstallations(
   app: FastifyInstance,
@@ -1521,9 +1529,22 @@ function registerForgeInstallations(
           await onboarding.installationRepositories(
             principalOf(request),
             tenantOf(request),
-            parseForgeInstallationId(
-              textField(record(request.params), "installationId"),
-            ),
+            installationIdOf(request),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(
+    "/api/v1/tenants/:tenant/forge-installations/:installationId/permissions",
+    async (request, reply) => {
+      nativeHttpSend(
+        reply,
+        forgeInstallationPermissionsResponse(
+          await onboarding.installationPermissions(
+            principalOf(request),
+            tenantOf(request),
+            installationIdOf(request),
           ),
         ),
       );

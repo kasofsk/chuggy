@@ -63,6 +63,7 @@ import {
   forgeAccountKinds,
   forgeAccountProofs,
   forgeAppClaims,
+  forgeInstallationPermissions,
   forgeApps,
   forgeCredentialPermissions,
   forgeIds,
@@ -91,6 +92,7 @@ import {
   allForgeAccountProofs,
   allForgeAppClaims,
 } from "../../src/interpreter/forgeAuthorization.ts";
+import { allForgeInstallationPermissions } from "../../src/interpreter/forgeDirectory.ts";
 import { allProjectRepositoryConfigurationsDeferrals } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   allRepositoryConfigurationImportAbsences,
@@ -770,6 +772,10 @@ test("every session and refusal roster restates the interpreter's own", () => {
     "a proof the wire schema does not name is an authorization answer nothing can parse",
   );
   assert.deepEqual(forgeAppClaims, allForgeAppClaims);
+  assert.deepEqual(
+    forgeInstallationPermissions,
+    allForgeInstallationPermissions,
+  );
   assert.deepEqual(
     projectRepositoryConfigurationDeferrals,
     allProjectRepositoryConfigurationsDeferrals,
