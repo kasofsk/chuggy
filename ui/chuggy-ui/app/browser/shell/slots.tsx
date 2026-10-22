@@ -170,8 +170,8 @@ export function TopBarSlot(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-/** The title of a screen the bar's current entry already names: a heading for
- * a reader who does not see the bar, and no row of its own. */
+/** The title of a screen that draws no heading of its own: one for a reader
+ * who does not see the page, and no row of its own. */
 export function ScreenTitle(props: {
   readonly children: ReactNode;
 }): ReactNode {

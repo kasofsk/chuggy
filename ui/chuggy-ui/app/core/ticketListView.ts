@@ -83,7 +83,7 @@ function ticketListFinished(phase: TicketPhase): boolean {
 function ticketListRecent(row: ProjectTableRow, nowMs: number): boolean {
   if (!ticketListFinished(row.phase)) return true;
   const at = Date.parse(row.activityAt);
-  return at >= nowMs - ticketListRecentMs && at <= nowMs;
+  return at >= nowMs - ticketListRecentMs;
 }
 
 function ticketListByActivity(a: ProjectTableRow, b: ProjectTableRow): number {

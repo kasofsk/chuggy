@@ -3,7 +3,7 @@
  * to the frame on one row, the screens the project holds on the next, and the
  * page's own title and chips beneath them.
  *
- * The second row is drawn only where a page filled a slot, so a screen that
+ * The page's row is drawn only where a page filled a slot, so a screen that
  * says nothing about itself gives the height back to the page rather than
  * spending it on a heading the project switcher already carries.
  *

@@ -13,13 +13,11 @@ import {
   executionOutcomes,
   executionStatuses,
 } from "../../../src/contract/rosters.ts";
-import { projectExecutionIndexOf } from "../app/core/projectExecutionIndex.ts";
 import type { ProjectExecutionKnown } from "../app/core/projectExecutionIndex.ts";
 import {
   projectTableExecutionPhrase,
   projectTableRow,
   projectTableRows,
-  projectTableRowsIn,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -84,7 +82,6 @@ test("a running ticket's row carries its status and what it runs on", () => {
     title: "registry/worker:1",
   });
   expect(row.activityAt).toBe(ticketInstants.changedAt);
-  expect(row.section).toBe("InProgress");
 });
 
 test("a row names the worker the wire named", () => {
@@ -260,20 +257,6 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
       },
     }),
   ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
-});
-
-test("the rows of one section are that section's and in the order read", () => {
-  const rows = projectTableRows(tickets, projectExecutionIndexOf([container]));
-  expect(
-    projectTableRowsIn(rows, "InProgress").map((row) => row.ticket),
-  ).toStrictEqual([1]);
-  expect(
-    projectTableRowsIn(rows, "NeedsYou").map((row) => row.badge),
-  ).toStrictEqual(["rework budget spent"]);
-  expect(
-    projectTableRowsIn(rows, "UpNext").map((row) => row.ticket),
-  ).toStrictEqual([3]);
-  expect(projectTableRowsIn(rows, "Done")).toStrictEqual([]);
 });
 
 test("the execution cell is the outcome where one exists, and the status where none does", () => {

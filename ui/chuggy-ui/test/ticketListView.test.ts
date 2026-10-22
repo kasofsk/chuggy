@@ -25,7 +25,6 @@ function row(
     title: `Ticket ${String(ticket)}`,
     creator: undefined,
     phase,
-    section: "UpNext",
     badge: undefined,
     executionRead: "NoneRegistered",
     executionStatus: undefined,
@@ -91,6 +90,13 @@ test("a finished row older than a day is held back and revealed newest first", (
   const one = ticketListShown(rows, view({ older: 1 }));
   expect(one.shown.map((shown) => shown.ticket)).toEqual([1, 4, 3]);
   expect(one.remaining).toBe(1);
+});
+
+test("a row finished after the list's own clock read is the most recent there is, not held back", () => {
+  const ahead = row(1, "Done", {
+    activityAt: new Date(nowMs + 60_000).toISOString(),
+  });
+  expect(ticketListShown([ahead], view()).shown).toHaveLength(1);
 });
 
 test("an unfinished row is never held back, however old its activity", () => {

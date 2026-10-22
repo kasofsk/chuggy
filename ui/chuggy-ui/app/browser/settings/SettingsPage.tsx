@@ -37,10 +37,12 @@ export function SettingsPage(props: {
   return (
     <div className="grid min-w-0 gap-4">
       {shelled ? (
-        <div className="flex min-w-0 items-center gap-2 empty:hidden">
+        <>
           <ScreenTitle>{props.title}</ScreenTitle>
-          {props.chips}
-        </div>
+          {props.chips === undefined ? null : (
+            <div className="flex min-w-0 items-center gap-2">{props.chips}</div>
+          )}
+        </>
       ) : (
         <div className="flex min-w-0 items-center gap-2">{titled}</div>
       )}

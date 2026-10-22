@@ -417,14 +417,14 @@ function TicketListControls(props: {
   );
 }
 
-/** One line under the controls where the list needs one: how many of the rows
- * a search left, or that everything live has finished. */
+/** One line under the controls where the list needs one: how many rows a
+ * search matched, or that everything live has finished. */
 function ticketListStatus(
   shown: TicketListShown,
   searching: boolean,
 ): string | undefined {
   if (searching)
-    return `${String(shown.shown.length)} of ${String(shown.active)} tickets`;
+    return `${String(shown.shown.length)} matching ${shown.shown.length === 1 ? "ticket" : "tickets"}`;
   return shown.active === 0 && shown.shown.length === 0
     ? "No active or recently finished tickets."
     : undefined;

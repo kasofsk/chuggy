@@ -296,7 +296,6 @@ test("a row whose index was truncated draws no chip for its execution", () => {
     title: undefined,
     creator: undefined,
     phase: "Work",
-    section: "InProgress",
     badge: undefined,
     executionRead: "IndexTruncated",
     executionStatus: undefined,
@@ -382,7 +381,7 @@ test("a search keeps the rows whose title or number it names, and says how many"
     target: { value: "escalated" },
   });
   expect(titlesDrawn()).toEqual(["Escalated ticket"]);
-  expect(screen.getByRole("status").textContent).toBe("1 of 2 tickets");
+  expect(screen.getByRole("status").textContent).toBe("1 matching ticket");
   fireEvent.change(screen.getByLabelText("Search tickets"), {
     target: { value: "#11" },
   });
