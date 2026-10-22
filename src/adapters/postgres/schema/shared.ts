@@ -248,6 +248,8 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
+/** The failed run step an escalated ticket's work or evaluation stopped at. */
+export const ticketRunStepFailureFunction = "ticket_run_step_failure";
 export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";

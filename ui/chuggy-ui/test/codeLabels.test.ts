@@ -29,6 +29,7 @@ import {
   operationStates,
   phaseRoster,
   resumePoints,
+  runStepEvidences,
   ticketLandingStates,
   type EscalationKind,
   type GitEvidenceLabel,
@@ -65,6 +66,8 @@ import {
   phaseLabel,
   runnerLossDetail,
   runnerLossLine,
+  runStepLabel,
+  runStepLine,
   ticketActionEffect,
   ticketLandingStateLabel,
 } from "../app/core/codeLabels.ts";
@@ -286,6 +289,48 @@ test("a job lost on its runner names the runner and how often it was resumed", (
     expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
     expect(said).not.toMatch(/[.:;]/u);
   }
+});
+
+/**
+ * A run stopped at a failed step is said as that step, whichever wall the
+ * machine parked it at, and leads to no page; setup alone is fixed through the
+ * ticket's own overrides, so its line says so to a reader offered them and to
+ * no other.
+ */
+test("a run stopped at a failed step names the step, and setup says where its fix goes to a reader who can make it", () => {
+  const labels = new Set<string>();
+  for (const evidence of runStepEvidences) {
+    const failed = { evidence, execution: "execution-1", attempt: "attempt-1" };
+    for (const kind of [
+      "WorkFailureEscalated",
+      "EvaluationBlockedEscalated",
+    ] as const) {
+      const escalation = { kind, resumeAt: "ResumeWork" as const, failed };
+      expect(escalationDetail(escalation)).toBe(runStepLabel(evidence));
+      expect(escalationStep(escalation)).toBeUndefined();
+    }
+    labels.add(runStepLabel(evidence));
+    expect(runStepLine(failed, true)).toBe(
+      evidence === "RunSetupFailed"
+        ? "Fix it under Overrides · Setup, then Resume"
+        : undefined,
+    );
+    expect(runStepLine(failed, false)).toBeUndefined();
+    for (const said of [
+      runStepLabel(evidence),
+      runStepLine(failed, true) ?? "",
+    ]) {
+      expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
+      expect(said).not.toMatch(/[.:;]/u);
+    }
+  }
+  expect([...labels]).toEqual([
+    "Clone failed",
+    "Setup failed",
+    "Commit failed",
+    "Push failed",
+    "Timed out",
+  ]);
 });
 
 /** The continuation path's evidence is drawn from the git roster, the third

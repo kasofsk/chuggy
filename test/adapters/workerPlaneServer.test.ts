@@ -1198,6 +1198,26 @@ test("a run's totals and its ending are taken as the contract names them", async
   await app.close();
 });
 
+test("a run's ending is taken under every label a run may end itself under", async () => {
+  const offered: unknown[] = [];
+  const app = runFigurePlane(offered);
+  for (const evidence of runEndedEvidences)
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url: "/v1/run/ended",
+          headers: held,
+          payload: { evidence },
+        })
+      ).statusCode,
+      204,
+      evidence,
+    );
+  assert.deepEqual(offered, [...runEndedEvidences]);
+  await app.close();
+});
+
 test("a totals or ending body the contract does not name reaches no boundary", async () => {
   const offered: unknown[] = [];
   const app = runFigurePlane(offered);

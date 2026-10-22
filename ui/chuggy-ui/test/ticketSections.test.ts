@@ -90,6 +90,20 @@ test("a row whose job was lost on its runner says so rather than what failed", (
     ).toBe("lost on runner");
 });
 
+test("a row whose run stopped at a failed step names the step", () => {
+  for (const [evidence, badge] of [
+    ["RunPushFailed", "push failed"],
+    ["RunTimedOut", "timed out"],
+  ] as const)
+    expect(
+      ticketBadgeLabel("Escalated", {
+        kind: "WorkFailureEscalated",
+        resumeAt: "ResumeWork",
+        failed: { evidence, execution: "execution-1", attempt: "attempt-1" },
+      }),
+    ).toBe(badge);
+});
+
 test("a row with nothing to answer for carries no badge", () => {
   expect(ticketBadgeLabel("Work", undefined)).toBeUndefined();
 });

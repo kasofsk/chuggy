@@ -80,6 +80,7 @@ import {
   sessionCapabilities,
   agentReportedTurnFailures,
   runEndedEvidences,
+  runStepEvidences,
   ownerFallbacks,
 } from "../../src/contract/rosters.ts";
 import {
@@ -127,6 +128,7 @@ import {
 } from "../../src/contract/workerPlane.ts";
 import {
   runEndedEvidences as interpretedRunEndedEvidences,
+  runStepEvidences as interpretedRunStepEvidences,
   runTurnsPageLimitMax,
 } from "../../src/interpreter/runEvidence.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
@@ -556,6 +558,7 @@ test("the wire has an arm, and its keys, for every requirement the interpreter m
 test("the wire's evidence labels are the interpreter's own list", () => {
   assert.deepEqual([...attemptEvidences], [...allAttemptEvidence]);
   assert.deepEqual(runEndedEvidences, interpretedRunEndedEvidences);
+  assert.deepEqual(runStepEvidences, interpretedRunStepEvidences);
 });
 
 test("the cost basis roster is exhaustive over the union it induces", () => {

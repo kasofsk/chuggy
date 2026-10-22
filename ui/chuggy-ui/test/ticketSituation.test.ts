@@ -50,6 +50,7 @@ function reads(over: Partial<SituationReads> = {}): SituationReads {
     stageCount: 1,
     open: [],
     executions: [],
+    setupOverridable: false,
     ...over,
   };
 }
@@ -179,6 +180,70 @@ test("a job lost on its runner says where, how often, and the attempt its worker
   });
   expect(parked(silent)).toMatchObject({
     detail: "Lost on runner-a",
+    reason: undefined,
+  });
+});
+
+/**
+ * A run stopped at its setup names the step, says where a wrong line is fixed
+ * to a reader offered the ticket's setup lines, and reads the worker's own line
+ * off the attempt that kept one; any other step, and a reader not offered
+ * them, keeps the wall's own line.
+ */
+test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
+  const parked = (
+    failed: {
+      readonly evidence: "RunSetupFailed" | "RunPushFailed";
+      readonly execution: string;
+      readonly attempt: string;
+      readonly error?: { readonly bytes: number };
+    },
+    setupOverridable = true,
+  ) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "WorkFailureEscalated",
+            resumeAt: "ResumeWork",
+            failed,
+          },
+        }),
+        setupOverridable,
+      }),
+    );
+  const setup = {
+    evidence: "RunSetupFailed",
+    execution: "execution-1",
+    attempt: "attempt-3",
+    error: { bytes: 61 },
+  } as const;
+  expect(parked(setup)).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Setup failed",
+    step: undefined,
+    more: "Fix it under Overrides · Setup, then Resume",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+  expect(parked(setup, false)).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Setup failed",
+    step: undefined,
+    more: "Failed work is not reworked",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+  expect(
+    parked({
+      evidence: "RunPushFailed",
+      execution: "execution-1",
+      attempt: "attempt-3",
+    }),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Push failed",
+    step: undefined,
+    more: "Failed work is not reworked",
     reason: undefined,
   });
 });

@@ -43,10 +43,11 @@
  * reported one goes through. Writing the row directly would be a result that
  * skipped validation, which is the one thing the sealed type exists to prevent.
  * An execution whose attempt a pool claimed and that ended unreported settles
- * the same way, under a report that says so and bound to that attempt. One
- * whose attempt a pool refused is blocked instead, under the reason the
- * refusal's own pass blocks it with, so a pass that runs between that pass's
- * two transactions concludes it the same way.
+ * the same way, under a report that says so and bound to that attempt, and so
+ * does one on any route whose last attempt's run ended on a failed step, under
+ * that step's own report. One whose attempt a pool refused is blocked instead,
+ * under the reason the refusal's own pass blocks it with, so a pass that runs
+ * between that pass's two transactions concludes it the same way.
  *
  * AND IT IS SUBMITTED UNDER ITS OWN OUTCOME, because that manifest is this
  * adapter's sentence and not a worker's. The failed verdict in it says the
@@ -75,6 +76,10 @@ import {
   type Terminalized,
 } from "../../interpreter/executionScheduler.ts";
 import { asOperationId } from "../../interpreter/operationInbox.ts";
+import {
+  runStepEvidences,
+  type RunStepEvidence,
+} from "../../interpreter/runEvidence.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   acceptResultManifest,
@@ -123,6 +128,8 @@ export const schedulerEvidence = {
   NoReporter: "an exhausted execution has no attempt that could have reported",
   NoAssignment:
     "an execution concluded as a pool's has no attempt a pool claimed",
+  NoStepFailure:
+    "an execution concluded on a failed step has no attempt that could have reported",
   RefusedBinding:
     "the completion boundary refused a binding built from its own rows",
   SourceUnrecorded:
@@ -628,21 +635,22 @@ export async function schedulerTerminalize(
   return schedulerSettle(client, standing.execution, report.manifest);
 }
 
-/** The attempt an unreported execution is settled on, whether a pool refused it, and the image fault the refusal named. */
+/** The attempt an unreported execution is settled on, whether a pool refused it, the image fault the refusal named, and the evidence it ended under. */
 interface SchedulerUnreportedAttempt {
   readonly attempt: string;
   readonly refused: boolean;
   readonly fault: string | null;
+  readonly evidence: string | null;
 }
 
-/** The highest-numbered attempt that was not fenced, which is what an exhausted budget leaves. */
+/** The highest-numbered attempt that was not fenced, which is what an exhausted budget and a failed step leave. */
 async function schedulerLastReporter(
   client: pg.PoolClient,
   execution: LogicalExecution,
 ): Promise<SchedulerUnreportedAttempt | undefined> {
   const found = await client.query<SchedulerUnreportedAttempt>(
     sql`SELECT attempt, pool_refusal IS NOT NULL AS refused,
-               pool_refusal_fault AS fault FROM execution_attempt
+               pool_refusal_fault AS fault, evidence FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
@@ -659,7 +667,7 @@ async function schedulerLastAssigned(
 ): Promise<SchedulerUnreportedAttempt | undefined> {
   const found = await client.query<SchedulerUnreportedAttempt>(
     sql`SELECT attempt, pool_refusal IS NOT NULL AS refused,
-               pool_refusal_fault AS fault FROM execution_attempt
+               pool_refusal_fault AS fault, evidence FROM execution_attempt
          WHERE tenant = ${execution.partition.tenant}
            AND project = ${execution.partition.project}
            AND execution = ${execution.execution}
@@ -693,7 +701,34 @@ function schedulerEmptyManifest(
   return accepted.manifest;
 }
 
-/** Why an execution is settled with no worker's report: the attempt its manifest names, and what it says. */
+/** What the manifest of an execution whose run ended on `step` says. */
+function schedulerStepReport(step: RunStepEvidence): string {
+  switch (step) {
+    case "RunCloneFailed":
+      return "The clone failed.";
+    case "RunSetupFailed":
+      return "A setup line failed. To fix this ticket, override its setup lines and resume it.";
+    case "RunCommitFailed":
+      return "The commit failed.";
+    case "RunPushFailed":
+      return "The push failed.";
+    case "RunTimedOut":
+      return "The run passed its deadline.";
+    default:
+      return assertNever(step);
+  }
+}
+
+/** The step `evidence` names, where it names one. */
+function schedulerStepOf(evidence: string | null): RunStepEvidence | undefined {
+  return runStepEvidences.find((step) => step === evidence);
+}
+
+/**
+ * Why an execution is settled with no worker's report: the attempt its
+ * manifest names, and what it says where that attempt's run did not end on a
+ * failed step, whose own report it says otherwise.
+ */
 interface SchedulerUnreported {
   readonly reporter: (
     client: pg.PoolClient,
@@ -755,13 +790,14 @@ async function schedulerSettleUnreported(
       ).reason,
     );
   }
+  const step = schedulerStepOf(reporter.evidence);
   return schedulerSettle(
     client,
     standing.execution,
     schedulerEmptyManifest(
       standing.execution,
       reporter.attempt,
-      unreported.report,
+      step === undefined ? unreported.report : schedulerStepReport(step),
     ),
     "ProcessFailed",
   );
@@ -791,6 +827,19 @@ export function schedulerAssignmentEnded(
     reporter: schedulerLastAssigned,
     missing: schedulerEvidence.NoAssignment,
     report: "The attempt a pool claimed ended before it reported a result.",
+  });
+}
+
+/** Settles one logical task whose last attempt's run ended on a failed step as a single failed completion. */
+export function schedulerStepFailed(
+  client: pg.PoolClient,
+  partition: Partition,
+  execution: ExecutionId,
+): Promise<Terminalized> {
+  return schedulerSettleUnreported(client, partition, execution, {
+    reporter: schedulerLastReporter,
+    missing: schedulerEvidence.NoStepFailure,
+    report: "The attempt's run ended on a failed step.",
   });
 }
 

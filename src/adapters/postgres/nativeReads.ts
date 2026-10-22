@@ -27,6 +27,7 @@ import {
   type ProjectResource,
   ticketEscalationResource,
   type RunnerLossResource,
+  type RunStepFailureResource,
   type TicketNativeAction,
   type TicketDependencyResource,
   type TicketPhaseFilter,
@@ -46,6 +47,7 @@ import {
 import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
 import { attemptEvidenceLabel } from "../../interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
+import { runStepEvidences } from "../../interpreter/runEvidence.ts";
 import {
   asAttemptId,
   asExecutionId,
@@ -106,6 +108,8 @@ interface TicketProjectionRow {
   readonly escalation_evidence: string | null;
   /** The row `ticket_runner_loss` reads for the escalation, as JSON, and null where it reads none. */
   readonly lost: string | null;
+  /** The row `ticket_run_step_failure` reads for the escalation, as JSON, and null where it reads none. */
+  readonly failed: string | null;
   readonly released_at: string | null;
   readonly changed_at: string | null;
   /**
@@ -361,8 +365,8 @@ interface StoredRunnerLoss {
   readonly resumed?: unknown;
 }
 
-/** A count in the loss's JSON, which carries a bigint as a number. */
-function lossCount(value: unknown, what: string): number {
+/** A count in the JSON of a row an escalation is read with, which carries a bigint as a number. */
+function escalationRowCount(value: unknown, what: string): number {
   if (typeof value !== "number" || value < 0)
     throw new Error(`native read: ${what} is not a count`);
   return asSafeInteger(value, what);
@@ -395,9 +399,51 @@ function projectionRunnerLoss(
     evidence,
     ...(lost.error_bytes === null
       ? {}
-      : { error: { bytes: lossCount(lost.error_bytes, "lost run error") } }),
-    losses: lossCount(lost.losses, "runner losses"),
-    resumed: lossCount(lost.resumed, "runner loss resumes"),
+      : {
+          error: {
+            bytes: escalationRowCount(lost.error_bytes, "lost run error"),
+          },
+        }),
+    losses: escalationRowCount(lost.losses, "runner losses"),
+    resumed: escalationRowCount(lost.resumed, "runner loss resumes"),
+  };
+}
+
+/** The failure as `to_jsonb` writes its row, every field unread until checked. */
+interface StoredRunStepFailure {
+  readonly execution?: unknown;
+  readonly attempt?: unknown;
+  readonly evidence?: unknown;
+  readonly error_bytes?: unknown;
+}
+
+/** The task a parked ticket waits on, where `ticket_run_step_failure` reads its run as stopped at a failed step. */
+function projectionRunStepFailure(
+  value: string | null,
+): RunStepFailureResource | undefined {
+  if (value === null) return undefined;
+  const failed = JSON.parse(value) as StoredRunStepFailure;
+  const evidence = runStepEvidences.find((step) => step === failed.evidence);
+  if (
+    typeof failed.execution !== "string" ||
+    typeof failed.attempt !== "string" ||
+    evidence === undefined
+  )
+    throw new Error("native read: a run step failure is not whole");
+  return {
+    evidence,
+    execution: asExecutionId(failed.execution),
+    attempt: asAttemptId(failed.attempt),
+    ...(failed.error_bytes === null
+      ? {}
+      : {
+          error: {
+            bytes: escalationRowCount(
+              failed.error_bytes,
+              "failed run step error",
+            ),
+          },
+        }),
   };
 }
 
@@ -420,7 +466,10 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
           escalation: ticketEscalationResource(
             kind,
             projectionEvidence(row.escalation_evidence),
-            projectionRunnerLoss(row.lost),
+            {
+              lost: projectionRunnerLoss(row.lost),
+              failed: projectionRunStepFailure(row.failed),
+            },
           ),
         }),
     revokedDependencies: (row.revoked_dependencies ?? []).map((dependency) =>
@@ -561,7 +610,7 @@ async function readTicketsByActivity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-                 to_jsonb(l)::text AS lost,
+                 to_jsonb(l)::text AS lost, to_jsonb(f)::text AS failed,
                  coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
@@ -602,6 +651,7 @@ async function readTicketsByActivity(
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
+          LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND (${query.recentActivityAfter?.sequence ?? null}::bigint IS NULL
             OR (t.seq,t.ticket) < (${query.recentActivityAfter?.sequence ?? null},${query.recentActivityAfter?.ticket ?? null}))
@@ -619,7 +669,7 @@ async function readTicketsByIdentity(
 ): Promise<readonly TicketProjectionRow[]> {
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               to_jsonb(l)::text AS lost,
+               to_jsonb(l)::text AS lost, to_jsonb(f)::text AS failed,
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
@@ -660,6 +710,7 @@ async function readTicketsByIdentity(
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
+          LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND t.ticket>${query.after ?? 0}
           AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
@@ -676,14 +727,13 @@ async function readTicketRow(
 ): Promise<(TicketProjectionRow & ReleasedBriefRow) | undefined> {
   const found = await pool.query<TicketProjectionRow & ReleasedBriefRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
-               to_jsonb(l)::text AS lost,
+               to_jsonb(l)::text AS lost, to_jsonb(f)::text AS failed,
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                m.authority_subject AS creator,
                b.brief::text AS brief,
-               b.overrides::text AS overrides,
-               b.selection::text AS selection,
+               b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
@@ -734,6 +784,7 @@ async function readTicketRow(
             ON a.tenant=e.tenant AND a.project=e.project AND a.ticket=e.ticket
            AND a.authoring_version=e.released_authoring_version
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
+          LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket=${ticket}`,
   );

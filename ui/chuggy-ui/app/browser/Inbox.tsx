@@ -33,6 +33,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   AgenticRefusalsResponse,
   RunnerLoss,
+  RunStepFailure,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import {
@@ -52,6 +53,7 @@ import {
   phaseLabel,
   runnerLossDetail,
   runnerLossLine,
+  runStepLabel,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { inboxProposalsHeld } from "../core/inboxProposals.ts";
@@ -434,6 +436,31 @@ function InboxLostWhy(props: {
   );
 }
 
+/** The hover over a stopped job's badge: the step it stopped at, and the first
+ * line its worker kept where it kept one. */
+function InboxFailedWhy(props: {
+  readonly partition: PartitionIdentity;
+  readonly failed: RunStepFailure;
+  readonly badge: string;
+}): ReactNode {
+  const failed = props.failed;
+  const reason = useRunReason(
+    props.partition,
+    failed.execution,
+    failed.attempt,
+  );
+  const said = [runStepLabel(failed.evidence)];
+  if (failed.error !== undefined && reason !== undefined)
+    said.push(reason.line);
+  return (
+    <Tooltip text={said.join(" · ")}>
+      <span>
+        <Pill tone="parked">{props.badge}</Pill>
+      </span>
+    </Tooltip>
+  );
+}
+
 /** Why this ticket is here: its phase where the phase page reached it, and what
  * its open questions ask where it did not. */
 function InboxWhy(props: {
@@ -459,6 +486,15 @@ function InboxWhy(props: {
       <InboxLostWhy
         partition={props.partition}
         lost={lost}
+        badge={row.badge ?? phaseLabel(row.phase)}
+      />
+    );
+  const failed = held.escalation?.failed;
+  if (failed !== undefined)
+    return (
+      <InboxFailedWhy
+        partition={props.partition}
+        failed={failed}
         badge={row.badge ?? phaseLabel(row.phase)}
       />
     );

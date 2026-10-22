@@ -180,12 +180,26 @@ export interface WorkerRunEndedPort {
   ): Promise<boolean>;
 }
 
-/** The labels a run may end itself under, which are the four the run itself sees. */
+/**
+ * The labels a run ends under when one of its own steps failed, or it was
+ * killed at its deadline: a failure another attempt would repeat.
+ */
+export const runStepEvidences = [
+  "RunCloneFailed",
+  "RunSetupFailed",
+  "RunCommitFailed",
+  "RunPushFailed",
+  "RunTimedOut",
+] as const;
+export type RunStepEvidence = (typeof runStepEvidences)[number];
+
+/** The labels a run may end itself under, which are the ones the run itself sees. */
 export const runEndedEvidences = [
   "RunFailed",
   "RunRateLimited",
   "RunTurnsExhausted",
   "RunUploadRefused",
+  ...runStepEvidences,
 ] as const;
 export type RunEndedEvidence = (typeof runEndedEvidences)[number];
 
@@ -203,6 +217,11 @@ export function runEndedLoss(evidence: RunEndedEvidence): AttemptLoss {
     case "RunFailed":
     case "RunTurnsExhausted":
     case "RunUploadRefused":
+    case "RunCloneFailed":
+    case "RunSetupFailed":
+    case "RunCommitFailed":
+    case "RunPushFailed":
+    case "RunTimedOut":
       return "Lost";
     default:
       return assertNever(evidence);

@@ -68,6 +68,7 @@ import { migration067 } from "./067-configuration-import-attempts.ts";
 import { migration068 } from "./068-lead-fetches-images.ts";
 import { migration069 } from "./069-runner-versions.ts";
 import { migration070 } from "./070-many-personal-runners.ts";
+import { migration071 } from "./071-run-step-failure.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -141,4 +142,5 @@ export const migrations: readonly Migration[] = [
   migration068,
   migration069,
   migration070,
+  migration071,
 ];

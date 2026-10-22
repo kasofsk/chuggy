@@ -124,6 +124,7 @@ import type {
   RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
+import { runStepEvidences } from "../../interpreter/runEvidence.ts";
 import { asProjectId, asTenantId } from "../../interpreter/projectStore.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import { postgresProjectPlacement } from "./executionPlacement.ts";
@@ -141,6 +142,7 @@ import {
   schedulerFulfilRequest,
   schedulerRecordIncident,
   schedulerRetriesExhausted,
+  schedulerStepFailed,
   schedulerTerminalize,
 } from "./schedulerCompletion.ts";
 import {
@@ -771,6 +773,7 @@ interface LaunchRow extends ExecutionRow {
   readonly backing_off: boolean | null;
   readonly attempt_live: boolean;
   readonly assignment_made: boolean;
+  readonly step_failed: boolean;
 }
 
 /** The insert-returning shape PostgreSQL reports before table constraints are applied. */
@@ -832,7 +835,14 @@ async function schedulerLockForLaunch(
             EXISTS (SELECT 1 FROM execution_attempt a
                      WHERE a.tenant = e.tenant AND a.project = e.project
                        AND a.execution = e.execution
-                       AND a.pool IS NOT NULL) AS assignment_made
+                       AND a.pool IS NOT NULL) AS assignment_made,
+            EXISTS (SELECT 1 FROM (SELECT a.state, a.evidence FROM execution_attempt a
+                                    WHERE a.tenant = e.tenant AND a.project = e.project
+                                      AND a.execution = e.execution
+                                      AND a.state <> 'Superseded'
+                                    ORDER BY a.attempt_number DESC LIMIT 1) n
+                     WHERE n.state = 'Lost'
+                       AND n.evidence = ANY(${[...runStepEvidences]}::text[])) AS step_failed
        FROM execution e
        JOIN execution_request q
          ON q.tenant = e.tenant AND q.project = e.project AND q.request = e.source_request
@@ -901,6 +911,7 @@ async function schedulerOpenAttempt(
     return { opened: "NotLaunchable", status: execution.status };
   }
   if (row.assignment_made) return { opened: "AssignmentEnded" };
+  if (row.step_failed) return { opened: "StepFailed" };
   if (execution.retriesSpent >= opening.retriesMax) {
     return { opened: "RetriesExhausted" };
   }
@@ -1383,6 +1394,10 @@ export function postgresExecutionScheduler(
     assignmentEnded: (partition, execution) =>
       postgresTransaction(pool, (client) =>
         schedulerAssignmentEnded(client, partition, execution),
+      ),
+    stepFailed: (partition, execution) =>
+      postgresTransaction(pool, (client) =>
+        schedulerStepFailed(client, partition, execution),
       ),
     terminalize: (report) =>
       postgresTransaction(pool, (client) =>

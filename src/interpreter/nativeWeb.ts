@@ -130,6 +130,7 @@ import {
 } from "./runEvidence.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type { AttemptEvidence } from "./executionScheduler.ts";
+import type { RunStepEvidence } from "./runEvidence.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -303,6 +304,15 @@ export interface RunnerLossResource {
   readonly resumed: number;
 }
 
+/** The task a parked ticket waits on where its run stopped at a failed step, and the attempt it stopped on. */
+export interface RunStepFailureResource {
+  readonly evidence: RunStepEvidence;
+  readonly execution: ExecutionId;
+  readonly attempt: AttemptId;
+  /** The text its worker kept, which is read on the attempt's own route. */
+  readonly error?: { readonly bytes: number };
+}
+
 /**
  * Where a parked ticket stands, as its own read and a project's page both carry
  * it: the wall, what the fabric said about that wall, and where a resume
@@ -315,6 +325,8 @@ export interface TicketEscalationResource {
   readonly resumeAt: ResumePoint;
   /** Present where the wall is a job lost on its runner. */
   readonly lost?: RunnerLossResource;
+  /** Present where the wall is a task whose run stopped at a failed step. */
+  readonly failed?: RunStepFailureResource;
 }
 
 /**
@@ -341,14 +353,18 @@ export function ticketEscalationResumeAt(kind: EscalationKind): ResumePoint {
 export function ticketEscalationResource(
   kind: EscalationKind,
   evidence?: string,
-  lost?: RunnerLossResource,
+  waiting: {
+    readonly lost?: RunnerLossResource | undefined;
+    readonly failed?: RunStepFailureResource | undefined;
+  } = {},
 ): TicketEscalationResource {
   const resumeAt = ticketEscalationResumeAt(kind);
   return {
     kind,
     ...(evidence === undefined ? {} : { evidence }),
     resumeAt,
-    ...(lost === undefined ? {} : { lost }),
+    ...(waiting.lost === undefined ? {} : { lost: waiting.lost }),
+    ...(waiting.failed === undefined ? {} : { failed: waiting.failed }),
   };
 }
 

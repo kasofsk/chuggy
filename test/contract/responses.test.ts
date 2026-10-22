@@ -382,6 +382,41 @@ test("a wall with nothing said about it still names where it re-enters", () => {
   );
 });
 
+test("a wall a failed run step parked names the step and the attempt it stopped on", () => {
+  const failed = {
+    evidence: "RunPushFailed" as const,
+    execution: asExecutionId("execution-1"),
+    attempt: asAttemptId("attempt-1"),
+    error: { bytes: 61 },
+  };
+  const parked = ticketResponseSchema.parse(
+    ticketResponse({
+      ticket: asTicketId(3),
+      phase: "Escalated",
+      sequence: 9,
+      escalation: ticketEscalationResource("WorkFailureEscalated", undefined, {
+        failed,
+      }),
+      ...ticketCarried,
+    }).body,
+  );
+  assert.deepEqual(parked.escalation, {
+    kind: "WorkFailureEscalated",
+    resumeAt: "ResumeWork",
+    failed,
+  });
+  for (const evidence of ["RunFailed", "LeaseExpired"])
+    assert.throws(() =>
+      ticketResponseSchema.parse({
+        ...parked,
+        escalation: {
+          ...parked.escalation,
+          failed: { ...failed, evidence },
+        },
+      }),
+    );
+});
+
 test("a wall a runner lost names the runner, the attempt and how often", () => {
   const lost = {
     runner: { kind: "Personal" as const, owner: asPrincipal("member-1") },
@@ -397,11 +432,9 @@ test("a wall a runner lost names the runner, the attempt and how often", () => {
       ticket: asTicketId(3),
       phase: "Escalated",
       sequence: 9,
-      escalation: ticketEscalationResource(
-        "WorkFailureEscalated",
-        undefined,
+      escalation: ticketEscalationResource("WorkFailureEscalated", undefined, {
         lost,
-      ),
+      }),
       ...ticketCarried,
     }).body,
   );

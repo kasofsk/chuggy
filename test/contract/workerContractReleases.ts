@@ -212,6 +212,9 @@ export interface WorkerContractReleasePool {
     readonly wanted: string;
     readonly wantedSessions: string;
   };
+
+  /** The header the release's poll names its runner in, where it names one. */
+  readonly runnerHeader: string | undefined;
   readonly settlementRoutes: Readonly<Record<string, string>>;
   readonly settlementPath: (outcome: string, assignment: string) => string;
   readonly reconciliation: z.ZodType;
@@ -235,6 +238,7 @@ export async function workerContractReleasePool(
         wantedSessions: z.string(),
       }),
     ),
+    runnerHeader: await read("workerRunnerHeader", z.string().optional()),
     settlementRoutes: await read(
       "workerPoolSettlementRoutes",
       z.record(z.string(), z.string()),

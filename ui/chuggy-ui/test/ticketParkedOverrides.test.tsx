@@ -107,6 +107,7 @@ interface Kept {
   readonly posted: Record<string, unknown>[];
   overrides: ConfigurationOverrides | undefined;
   readonly canonical: string;
+  readonly failed: unknown;
   phase: string;
   sequence: number;
 }
@@ -119,7 +120,13 @@ function keptTicket(kept: Kept): unknown {
     ...ticketInstants,
     configurationRevision: revision,
     ...(kept.phase === "Escalated"
-      ? { escalation: { kind: kept.kind, resumeAt: "ResumeWork" } }
+      ? {
+          escalation: {
+            kind: kept.kind,
+            resumeAt: "ResumeWork",
+            ...(kept.failed === undefined ? {} : { failed: kept.failed }),
+          },
+        }
       : {}),
     ...(kept.overrides === undefined ? {} : { overrides: kept.overrides }),
   };
@@ -189,12 +196,14 @@ function keptRoute(
   });
 }
 
-/** A server keeping one ticket parked at `kind` until a resume moves it. */
+/** A server keeping one ticket parked at `kind`, its run stopped at the step
+ * `failed` names where it names one, until a resume moves it. */
 function serving(
   kind: string,
   changed: ChangeAnswer = "Answered",
   held?: ConfigurationOverrides,
   served: string = canonical,
+  failed?: unknown,
 ): Served {
   const kept: Kept = {
     kind,
@@ -202,6 +211,7 @@ function serving(
     posted: [],
     overrides: held,
     canonical: served,
+    failed,
     phase: "Escalated",
     sequence: 7,
   };
@@ -365,6 +375,57 @@ test("a ticket whose configuration is a catalog is offered no overrides, a catal
     within(card).queryByRole("button", { name: /^Overrides/u }),
   ).toBeNull();
   expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+});
+
+const setupFailed = {
+  evidence: "RunSetupFailed",
+  execution: "execution-1",
+  attempt: "attempt-1",
+};
+const setupLine = "Fix it under Overrides · Setup, then Resume";
+
+test("a ticket whose setup failed tells a member to fix it under the card's Setup, and a reader who may not mutate nothing of it", async () => {
+  serving(
+    "WorkFailureEscalated",
+    "Answered",
+    undefined,
+    canonical,
+    setupFailed,
+  );
+  const card = await drawn();
+  expect(within(card).getByText("Setup failed")).toBeDefined();
+  expect(within(card).getByText(setupLine)).toBeDefined();
+  await overridesOpened(card);
+  expect(within(card).getByText("Setup")).toBeDefined();
+  cleanup();
+
+  serving(
+    "WorkFailureEscalated",
+    "Answered",
+    undefined,
+    canonical,
+    setupFailed,
+  );
+  vi.stubGlobal(
+    "fetch",
+    abilitiesFetch({ ...abilitiesEvery, mutate: false }, fetch),
+  );
+  const refused = await drawn();
+  expect(within(refused).getByText("Setup failed")).toBeDefined();
+  expect(within(refused).queryByText(setupLine)).toBeNull();
+});
+
+test("a ticket whose setup failed under a catalog is told nothing of overrides it is not offered", async () => {
+  serving(
+    "WorkFailureEscalated",
+    "Answered",
+    undefined,
+    creationCatalogCanonical,
+    setupFailed,
+  );
+  const card = await drawn();
+  expect(within(card).getByText("Setup failed")).toBeDefined();
+  expect(within(card).queryByText(setupLine)).toBeNull();
 });
 
 /** The card with its overrides open and a model typed over the one held, for

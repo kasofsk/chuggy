@@ -126,6 +126,7 @@ import {
   resultVerdicts,
   resumePoints,
   runCostBases,
+  runStepEvidences,
   schedulerFreshnesses,
   selectorAttentions,
   selectorDeliveryStates,
@@ -269,6 +270,19 @@ export const runnerLossSchema = z.strictObject({
 export type RunnerLoss = z.infer<typeof runnerLossSchema>;
 
 /**
+ * The task a parked ticket waits on where its run stopped at a failed step:
+ * the step, the attempt it stopped on, and the size of the text its worker
+ * kept, which is read on that attempt's own route.
+ */
+export const runStepFailureSchema = z.strictObject({
+  evidence: z.enum(runStepEvidences),
+  execution: identitySchema,
+  attempt: identitySchema,
+  error: z.object({ bytes: countSchema }).optional(),
+});
+export type RunStepFailure = z.infer<typeof runStepFailureSchema>;
+
+/**
  * Where a parked ticket stands: which wall parked it, what the fabric said
  * about that wall, and where a resume would re-enter it — present exactly when
  * the ticket is Escalated, which is why it is one object rather than three
@@ -289,6 +303,8 @@ export const ticketEscalationSchema = z.object({
   resumeAt: z.enum(resumePoints),
   /** Present where the wall is a job lost on its runner rather than one that failed. */
   lost: runnerLossSchema.optional(),
+  /** Present where the wall is a task whose run stopped at a failed step. */
+  failed: runStepFailureSchema.optional(),
 });
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 

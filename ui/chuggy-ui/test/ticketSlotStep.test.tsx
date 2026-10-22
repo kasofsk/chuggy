@@ -39,8 +39,12 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
 
 afterEach(cleanup);
 
-/** The card of a ticket parked at `escalation`, with one action under it. */
-function drawParked(escalation: TicketEscalation): HTMLElement {
+/** The card of a ticket parked at `escalation`, with one action under it, for
+ * a reader the card offers its setup lines where `setupOverridable` says so. */
+function drawParked(
+  escalation: TicketEscalation,
+  setupOverridable = false,
+): HTMLElement {
   const slot = ticketSlot({
     ticket: {
       ticket: 11,
@@ -53,6 +57,7 @@ function drawParked(escalation: TicketEscalation): HTMLElement {
     stageCount: 1,
     open: [],
     executions: [],
+    setupOverridable,
   });
   render(
     <TicketSlot
@@ -86,5 +91,25 @@ test("a ticket parked at any other wall draws its line and no link", () => {
     resumeAt: "ResumeWork",
   });
   expect(within(card).getByText("No matching execution profile")).toBeTruthy();
+  expect(within(card).queryByRole("link")).toBeNull();
+});
+
+test("a ticket whose setup failed names the step and where a wrong line is fixed, and no link", () => {
+  const card = drawParked(
+    {
+      kind: "WorkFailureEscalated",
+      resumeAt: "ResumeWork",
+      failed: {
+        evidence: "RunSetupFailed",
+        execution: "execution-1",
+        attempt: "attempt-1",
+      },
+    },
+    true,
+  );
+  expect(within(card).getByText("Setup failed")).toBeTruthy();
+  expect(
+    within(card).getByText("Fix it under Overrides · Setup, then Resume"),
+  ).toBeTruthy();
   expect(within(card).queryByRole("link")).toBeNull();
 });

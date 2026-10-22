@@ -783,14 +783,14 @@ test("a pool is handed the runtime its claim's attempt was opened under, on the 
   assert.equal(assignment?.image, published);
 });
 
-/** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, and what a claim returns it. */
+/** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner it names where its release names one. */
 const poolReplayPolls = [
-  ["a pinned image", ["live", "gone"], 1, 0, claims.pinned],
-  ["a capability requirement", [], 1, 0, claims.capable],
-  ["an attempt that kept no runtime", [], 1, 0, claims.unkept],
-  ["no room", ["live"], 0, 0, claims.pinned],
-  ["nothing to claim", [], 1, 0, undefined],
-  ["room for a session", [], 0, 1, undefined],
+  ["a pinned image", ["live", "gone"], 1, 0, claims.pinned, undefined],
+  ["a capability requirement", [], 1, 0, claims.capable, undefined],
+  ["an attempt that kept no runtime", [], 1, 0, claims.unkept, undefined],
+  ["no room", ["live"], 0, 0, claims.pinned, undefined],
+  ["nothing to claim", [], 1, 0, undefined, "chuggy-linux/0.14.0"],
+  ["room for a session", [], 0, 1, undefined, undefined],
 ] as const;
 
 /**
@@ -802,7 +802,14 @@ const poolReplayPolls = [
 function poolReplayPolled(older: WorkerContractReleasePool): void {
   test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
-    for (const [what, held, wanted, sessions, claimed] of poolReplayPolls) {
+    for (const [
+      what,
+      held,
+      wanted,
+      sessions,
+      claimed,
+      named,
+    ] of poolReplayPolls) {
       const recorded = calls();
       const ports = {
         ...recorded.ports,
@@ -822,6 +829,9 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         headers: {
           authorization: `Bearer ${poolToken}`,
           [workerContractHeader]: older.release,
+          ...(older.runnerHeader === undefined || named === undefined
+            ? {}
+            : { [older.runnerHeader]: named }),
         },
       });
       assert.equal(answered.statusCode, 200, what);

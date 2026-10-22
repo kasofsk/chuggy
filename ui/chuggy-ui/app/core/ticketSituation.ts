@@ -19,6 +19,7 @@ import {
   nativeActionKindLabel,
   revokedDependencyLine,
   runnerLossLine,
+  runStepLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
 import { settledFigure, sinceFigure } from "./figures.ts";
@@ -42,8 +43,8 @@ export interface RunningNow {
   readonly run: string;
 }
 
-/** The attempt whose worker's text says why a job was lost, read on its own route. */
-export interface LostAttempt {
+/** The attempt whose worker's text says why a job was lost or its run stopped, read on its own route. */
+export interface ReasonAttempt {
   readonly execution: string;
   readonly attempt: string;
 }
@@ -55,18 +56,21 @@ export type TicketSlot =
       /** The page the way past it is on, drawn beside the detail. */
       readonly step: EscalationStep | undefined;
       readonly more: string | undefined;
-      readonly reason: LostAttempt | undefined;
+      readonly reason: ReasonAttempt | undefined;
     }
   | { readonly slot: "Now"; readonly running: RunningNow }
   | { readonly slot: "Nothing" };
 
-/** Everything the slot is chosen from; `open` is absent while its read is. */
+/** Everything the slot is chosen from; `open` is absent while its read is,
+ * and `setupOverridable` is whether the card offers this reader the ticket's
+ * setup lines to change. */
 export interface SituationReads {
   readonly ticket: TicketResponse;
   readonly ledger: LedgerFacts | undefined;
   readonly stageCount: number;
   readonly open: readonly NativeActionResponse[] | undefined;
   readonly executions: readonly ExecutionSummary[];
+  readonly setupOverridable: boolean;
 }
 
 /** A blocked ticket is parked whatever its phase says, because it waits on a
@@ -140,27 +144,33 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
       reason: undefined,
     };
   const escalation = ticket.escalation;
-  const lost = escalation?.lost;
-  if (escalation !== undefined)
+  if (escalation !== undefined) {
+    const lost = escalation.lost;
+    const failed = escalation.failed;
+    const said = lost ?? failed;
     return {
       slot: "NeedsYou",
       detail: escalationDetail(escalation),
       step: escalationStep(escalation),
       more:
         lost === undefined
-          ? escalationDetailLine(escalation.kind, {
+          ? ((failed === undefined
+              ? undefined
+              : runStepLine(failed, reads.setupOverridable)) ??
+            escalationDetailLine(escalation.kind, {
               lastSet:
                 reads.ledger === undefined
                   ? undefined
                   : ledgerLastSet(reads.ledger),
               stageCount: reads.stageCount,
-            })
+            }))
           : runnerLossLine(lost),
       reason:
-        lost?.error === undefined
+        said?.error === undefined
           ? undefined
-          : { execution: lost.execution, attempt: lost.attempt },
+          : { execution: said.execution, attempt: said.attempt },
     };
+  }
   const question = reads.open?.[0];
   if (question === undefined) return undefined;
   return {
