@@ -63,5 +63,10 @@
     "release": "1.12.0",
     "wire": "14b79b1b9cda4c5b3857b8cc3410fd18828b2dee772610c20399761aa2206aa0",
     "files": "441a24b2f91d3a3e7f62c101f679a88491af598b6cd98df0f15aafb719cdd1d7"
+  },
+  {
+    "release": "1.13.0",
+    "wire": "a66d5b6ed2abe9fa23bd8f1c98cc3b0ec93b98203bfe60b220aa15c2992438b7",
+    "files": "19cd9487c97af984b64aa456bfe611cfd179e0deef18c3288756d62613f32128"
   }
 ]
