@@ -10,10 +10,15 @@
  * is why this is thin, and why it is here: a third party implements the wire,
  * so it is written where the wire is.
  *
- * NOTHING HERE IDENTIFIES THE WORK. `assignment` is opaque because a pool that
- * could read an execution identity would learn the tenant's ticket structure,
- * and capability tokens are opaque because a pool may translate one into a node
- * selector, a scheduler constraint, or nothing.
+ * NOTHING HERE IDENTIFIES THE WORK, BUT TO ITS OWNER'S MACHINE. `assignment` is
+ * opaque because a pool that could read an execution identity would learn the
+ * tenant's ticket structure, and capability tokens are opaque because a pool
+ * may translate one into a node selector, a scheduler constraint, or nothing.
+ * A member's personal runner is told one thing more, each job's project, in
+ * the tenant its registration names: it is its owner's machine, where that
+ * job's own shells are told the project already, by the core's
+ * `workerJobVariables`. A project's pool is told none, since its registration
+ * names its project.
  */
 
 import { z } from "zod";
@@ -53,6 +58,12 @@ export const workerPoolAssignmentIdentitySchema = z
 /** The image an assignment names, by the host a pool pulls it from. */
 const workerPoolImageSchema = z.string().min(1).max(workerImageCharsMax);
 
+/** The project an assignment names, held to the bound of every other name on the wire. */
+const workerPoolProjectSchema = z
+  .string()
+  .min(1)
+  .max(workerPoolIdentityCharsMax);
+
 export const workerPoolAssignmentSchema = z.strictObject({
   /** The idempotency key and the cancel handle in one. */
   assignment: workerPoolAssignmentIdentitySchema,
@@ -71,6 +82,13 @@ export const workerPoolAssignmentSchema = z.strictObject({
    * the workload runs its image's own entrypoint.
    */
   runtime: workerPoolImageSchema.optional(),
+  /**
+   * The project of a job a member's personal runner is assigned, in the
+   * tenant its registration names, by which the job mounts its owner's
+   * volumes scoped per project. It is absent for a project's pool, whose
+   * registration names its own.
+   */
+  project: workerPoolProjectSchema.optional(),
   /**
    * The size of the box, which no capability token expresses. Omit them and
    * large work lands on a small machine and dies as a process failure rather
@@ -93,11 +111,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
  * its image always named, because a session runs its site's session image and
- * never one a pool chooses, and no runtime, because that image carries its
- * own. Its bearer is the session's own, which the same bound admits.
+ * never one a pool chooses, no runtime, because that image carries its own,
+ * and no project, because a session mounts none of its owner's volumes. Its
+ * bearer is the session's own, which the same bound admits.
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
-  .omit({ runtime: true })
+  .omit({ runtime: true, project: true })
   .extend({ image: workerPoolImageSchema });
 
 /**

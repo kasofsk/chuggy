@@ -368,6 +368,42 @@ test("a runner's claim returns the runtime its attempt was opened under", async 
   assert.equal(taken?.runtime, schedulerRuntime);
 });
 
+test("a runner's claim returns the project of the attempt it took, across every project it serves", async () => {
+  const member = principal("member");
+  const first = await ownedProject("named-one", member, "Strict", 1);
+  const second = await ownedProject("named-two", member, "Strict", 1, {
+    tenant: first.partition.tenant,
+    project: asProjectId(`named-two-${randomUUID()}`),
+  });
+  await opened(first);
+  await opened(second);
+  const runner = await runnerOf(first.partition, member, [
+    first.partition,
+    second.partition,
+  ]);
+  const named: string[] = [];
+  for (let claim = 0; claim < 2; claim += 1) {
+    const assignment = `assignment-${randomUUID()}`;
+    const taken = await assignments.claimPersonal(
+      runner,
+      { leaseSecs, heldMax: 4 },
+      assignment,
+      `bearer-${randomUUID()}`,
+      [first.partition.project, second.partition.project],
+    );
+    const [row] = (await rig.harness.query(
+      `SELECT project FROM execution_attempt WHERE assignment=$1`,
+      [assignment],
+    )) as readonly { project: string }[];
+    assert.equal(taken?.project, row?.project);
+    named.push(String(taken?.project));
+  }
+  assert.deepEqual(
+    named.toSorted(),
+    [first.partition.project, second.partition.project].toSorted(),
+  );
+});
+
 test("a runner renews, settles and pulls the image of what it claimed, and another member's runner reaches none of it", async () => {
   const member = principal("member");
   const project = await ownedProject("holds", member, "Preferred", 2);

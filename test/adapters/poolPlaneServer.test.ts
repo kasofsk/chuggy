@@ -739,7 +739,8 @@ const runtimePublished = `registry.public.invalid/worker-runtime@sha256:${"e".re
  * What a claim returns: an image pinned on a published host, and a capability
  * requirement, which is handed out with no image; each beside the runtime its
  * attempt was opened under, which a release that reads none is never handed;
- * and a pinned image whose attempt kept no runtime, which is handed none.
+ * a pinned image whose attempt kept no runtime, which is handed none; and a
+ * personal runner's pinned image, beside the project its attempt is in.
  */
 const claims = {
   pinned: {
@@ -768,6 +769,16 @@ const claims = {
       image: pinned,
     },
   },
+  personal: {
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: pinned,
+    },
+    runtime,
+    project: asProjectId("project"),
+  },
 } as const;
 
 test("a pool is handed the runtime its claim's attempt was opened under, on the public host", async () => {
@@ -783,14 +794,73 @@ test("a pool is handed the runtime its claim's attempt was opened under, on the 
   assert.equal(assignment?.image, published);
 });
 
-/** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner it names where its release names one. */
+test("a personal runner's poll naming this release is handed its job's project, and an earlier release's or a pool's none", async () => {
+  for (const [what, headers, project] of [
+    ["a runner of this release", runnerSpeaking, "project"],
+    [
+      "a runner of 1.14.0",
+      { ...runnerSpeaking, [workerContractHeader]: "1.14.0" },
+      undefined,
+    ],
+    ["a pool of this release", speaking, undefined],
+  ] as const) {
+    const answered = await createPoolPlaneApp(
+      plane({
+        ...calls().ports,
+        claim: () => Promise.resolve(claims.pinned),
+        claimPersonal: () => Promise.resolve(claims.personal),
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
+      }),
+    ).inject({ method: "GET", url: polling([]), headers });
+    assert.equal(answered.statusCode, 200, what);
+    const [assignment] = workerPoolReconciliationSchema.parse(
+      answered.json(),
+    ).assignments;
+    assert.equal(assignment?.image, published, what);
+    assert.equal(
+      assignment !== undefined && "project" in assignment
+        ? assignment.project
+        : undefined,
+      project,
+      what,
+    );
+  }
+});
+
+/** Every poll a replayed pool makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner it names where its release names one. */
 const poolReplayPolls = [
-  ["a pinned image", ["live", "gone"], 1, 0, claims.pinned, undefined],
-  ["a capability requirement", [], 1, 0, claims.capable, undefined],
-  ["an attempt that kept no runtime", [], 1, 0, claims.unkept, undefined],
-  ["no room", ["live"], 0, 0, claims.pinned, undefined],
-  ["nothing to claim", [], 1, 0, undefined, "chuggy-linux/0.14.0"],
-  ["room for a session", [], 0, 1, undefined, undefined],
+  [
+    "a pinned image",
+    poolToken,
+    ["live", "gone"],
+    1,
+    0,
+    claims.pinned,
+    undefined,
+  ],
+  ["a capability requirement", poolToken, [], 1, 0, claims.capable, undefined],
+  [
+    "an attempt that kept no runtime",
+    poolToken,
+    [],
+    1,
+    0,
+    claims.unkept,
+    undefined,
+  ],
+  ["no room", poolToken, ["live"], 0, 0, claims.pinned, undefined],
+  ["nothing to claim", poolToken, [], 1, 0, undefined, "chuggy-linux/0.14.0"],
+  ["room for a session", poolToken, [], 0, 1, undefined, undefined],
+  [
+    "a personal runner's job",
+    runnerToken,
+    [],
+    1,
+    0,
+    claims.personal,
+    "chuggy-linux/0.18.0",
+  ],
+  ["a personal runner's session", runnerToken, [], 0, 1, undefined, undefined],
 ] as const;
 
 /**
@@ -804,6 +874,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
+      token,
       held,
       wanted,
       sessions,
@@ -814,6 +885,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       const ports = {
         ...recorded.ports,
         claim: () => Promise.resolve(claimed),
+        claimPersonal: () =>
+          Promise.resolve(
+            claimed !== undefined && "project" in claimed ? claimed : undefined,
+          ),
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
       };
       const offering = sessionCalls([], ["session-waiting"]);
       const query = new URLSearchParams([
@@ -827,7 +903,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         method: "GET",
         url: `${older.pollRoute}?${query.toString()}`,
         headers: {
-          authorization: `Bearer ${poolToken}`,
+          authorization: `Bearer ${token}`,
           [workerContractHeader]: older.release,
           ...(older.runnerHeader === undefined || named === undefined
             ? {}

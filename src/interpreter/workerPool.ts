@@ -41,7 +41,9 @@
  * relation names its principal, and it claims its owner's executions in the
  * projects it allowlists that allow one, as its sessions are claimed: the
  * authority is asked whether its owner may still read each project before
- * anything is claimed, so an outage fails the poll with nothing claimed.
+ * anything is claimed, so an outage fails the poll with nothing claimed. Each
+ * execution it is assigned names its project, to a poll whose release reads
+ * one, since an earlier runner refuses the whole answer over it.
  *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
@@ -75,7 +77,9 @@ import {
   type WorkerPoolClass,
 } from "./workerPoolAssignment.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerProjects,
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
@@ -108,12 +112,13 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, and the runner it named, where it named one. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly runner?: WorkerRunner;
+  readonly contract?: string;
 }
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
@@ -277,6 +282,11 @@ export interface WorkerPoolClaimed {
   readonly runtime?: string;
 }
 
+/** What a personal runner's claim produced: a claim's, and the project of the attempt it took. */
+export interface WorkerPoolPersonalClaimed extends WorkerPoolClaimed {
+  readonly project: ProjectId;
+}
+
 /** What a claim is held to: how long the lease it takes runs, and how many live attempts the pool may hold with it. */
 export interface WorkerPoolClaimTerms {
   readonly leaseSecs: number;
@@ -338,7 +348,7 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     assignment: string,
     bearer: string,
     projects: readonly ProjectId[],
-  ): Promise<WorkerPoolClaimed | undefined>;
+  ): Promise<WorkerPoolPersonalClaimed | undefined>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
   /** Records a personal runner's poll as one that could take an execution, under its current registration alone. */
@@ -491,7 +501,7 @@ export async function workerPoolOwnerStands(
 type WorkerPoolClaimMade = (
   assignment: string,
   bearer: string,
-) => Promise<WorkerPoolClaimed | undefined>;
+) => Promise<WorkerPoolClaimed | WorkerPoolPersonalClaimed | undefined>;
 
 /**
  * How this caller claims: a pool deferring to no revoked owner's runners, and a
@@ -543,6 +553,20 @@ async function workerPoolClaimMade(
   }
 }
 
+/**
+ * The project an assignment names: a personal runner's claimed attempt's own,
+ * where the release its poll offered reads one, and none for a pool's claim.
+ */
+function workerPoolClaimedProject(
+  row: WorkerPoolClaimed | WorkerPoolPersonalClaimed,
+  contract: string | undefined,
+): Pick<WorkerPoolAssignment, "project"> {
+  return "project" in row &&
+    contractVersionAccepted(workerContractRunnerProjects, contract)
+    ? { project: row.project }
+    : {};
+}
+
 /** The runtime an assignment names, by the host a pool pulls it from, where the attempt kept one. */
 function workerPoolClaimedRuntime(
   row: WorkerPoolClaimed,
@@ -563,8 +587,9 @@ async function workerPoolClaims(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  wanted: number,
+  asked: { readonly wanted: number; readonly contract?: string },
 ): Promise<WorkerPoolAssignment[]> {
+  const { wanted } = asked;
   const claimed: WorkerPoolAssignment[] = [];
   if (wanted <= 0) return claimed;
   const claim = await workerPoolClaimMade(ports, identity, settings);
@@ -577,6 +602,7 @@ async function workerPoolClaims(
       assignment,
       ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
       ...workerPoolClaimedRuntime(row, settings.imageHosts),
+      ...workerPoolClaimedProject(row, asked.contract),
       cpuMillis: row.resources?.cpuMillis ?? settings.cpuMillis,
       memoryMib: row.resources?.memoryMib ?? settings.memoryMib,
       deadlineSecs: settings.deadlineSecs,
@@ -624,7 +650,7 @@ export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
-  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions">,
+  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions" | "contract">,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const stop = [
@@ -642,16 +668,14 @@ export async function workerPoolReconcile(
     )),
   ];
   return {
-    assignments: await workerPoolClaims(
-      ports,
-      identity,
-      settings,
-      Math.min(
+    assignments: await workerPoolClaims(ports, identity, settings, {
+      wanted: Math.min(
         asked.wanted,
         settings.assignmentsPerPollMax,
         settings.heldMax - holding.jobs.length,
       ),
-    ),
+      ...(asked.contract === undefined ? {} : { contract: asked.contract }),
+    }),
     sessions: await workerPoolSessionsClaimed(
       ports,
       identity,
