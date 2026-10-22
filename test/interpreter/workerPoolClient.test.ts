@@ -655,6 +655,43 @@ test("a session offer is placed as a session against its own ceiling, and never 
   });
 });
 
+test("a pool whose job ceiling is 0 asks for no job and places none it is offered, while it takes sessions", async () => {
+  const asked: [number, number][] = [];
+  const placed: string[] = [];
+  const posted: string[] = [];
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 0, sessionsMax: 1 },
+      sessions: endings().sessions,
+      backend: {
+        ...idle,
+        place: (offer) => {
+          placed.push(`${offer.assignment.assignment}:${offer.kind}`);
+          return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
+        },
+      },
+      plane: {
+        poll: (_token, _held, wanted, wantedSessions) => {
+          asked.push([wanted, wantedSessions]);
+          return Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [assignment("job")],
+            sessions: [session("session")],
+            stop: [],
+          });
+        },
+        settle: (_token, named, outcome) => {
+          posted.push(`${named}:${outcome.outcome}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(asked, [[0, 1]]);
+  assert.deepEqual(placed, ["session:Session"]);
+  assert.deepEqual(posted, ["job:Unavailable", "session:Accepted"]);
+});
+
 test("a session whose container ended is reported on the session plane before the poll, and only a taken end counts", async () => {
   const order: string[] = [];
   const ended = (named: string): WorkerPoolSessionEnd => ({
