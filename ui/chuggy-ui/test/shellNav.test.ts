@@ -31,6 +31,7 @@ test("every entry names a route of the partition and carries its params", () => 
     "overview",
     "inbox",
     "lead",
+    "catalog",
     "ticket-new",
     "settings",
     "repositories",
@@ -63,6 +64,7 @@ test("New ticket is left out only for a reader the abilities read said may not m
     "overview",
     "inbox",
     "lead",
+    "catalog",
   ]);
   expect(entryIds(abilitiesEvery).at(-1)).toBe("ticket-new");
   expect(entryIds({ ...abilitiesNone, mutate: true }).at(-1)).toBe(
@@ -81,6 +83,7 @@ test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
   expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
+  expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
   expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
   expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);

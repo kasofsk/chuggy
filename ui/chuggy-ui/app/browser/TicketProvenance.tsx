@@ -878,7 +878,8 @@ function CatalogBody(props: {
   );
 }
 
-function ConfigurationBody(props: {
+/** A configuration as a ticket runs it, or as it stands where nothing overrides or selects from it. */
+export function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];

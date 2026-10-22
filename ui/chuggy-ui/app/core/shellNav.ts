@@ -18,6 +18,7 @@ export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
   lead: "/$tenant/$project/lead",
+  catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
   repositories: "/$tenant/$project/repositories",
   runners: "/$tenant/$project/runners",
@@ -44,6 +45,7 @@ export type NavEntryId =
   | "overview"
   | "inbox"
   | "lead"
+  | "catalog"
   | "ticket-new"
   | "settings"
   | "repositories"
@@ -93,6 +95,7 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       params,
       standing: input.leadStanding,
     },
+    { id: "catalog", label: "Catalog", to: navRoutes.catalog, params },
     ...(projectAbilityRefused(input.abilities, "mutate") ? [] : [ticketNew]),
   ];
 }
