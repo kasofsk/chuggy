@@ -251,9 +251,31 @@ test("under that width a pane the reader expanded starts expanded", async () => 
   styleless();
 });
 
+/** The glyph follows where the pane is drawn, which on a narrow viewport is
+ * under the pages whatever placement the reader stored. */
+test("under that width the controls draw vertical glyphs, and the strip is named Chat", async () => {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Collapsed" }),
+  );
+  await mounted(viewportTwoColumnEm - 1);
+  const glyph = (name: string): string =>
+    Array.from(
+      screen.getByRole("button", { name }).querySelectorAll("path"),
+      (path) => path.getAttribute("d"),
+    ).join(" ");
+  expect(glyph("Expand chat")).toContain("M3 15h18M9 10l3-3 3 3");
+  expect(
+    screen.getByRole("button", { name: "Expand chat" }).textContent,
+  ).toContain("Chat");
+  await pressed("Expand chat");
+  expect(glyph("Collapse")).toContain("M3 15h18M15 8l-3 3-3-3");
+  styleless();
+});
+
 /** Each icon control's hidden name is also what a pointer or a keyboard focus
  * reveals, so a reader who does not use a screen reader learns what New, Full
- * screen, Exit full screen, Collapse and Expand chat do before pressing them. */
+ * screen, Exit full screen and Collapse do before pressing them. */
 test("the pane's icon controls name themselves again on focus", async () => {
   await mounted(viewportDeskEm);
   await tooltipNamed("New");
@@ -261,9 +283,6 @@ test("the pane's icon controls name themselves again on focus", async () => {
   await tooltipNamed("Collapse");
   await pressed("Full screen");
   await tooltipNamed("Exit full screen");
-  await pressed("Exit full screen");
-  await pressed("Collapse");
-  await tooltipNamed("Expand chat");
   styleless();
 });
 

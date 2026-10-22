@@ -22,6 +22,39 @@
     --conversation-leading: var(--leading-reading);
   }
 
+  .chat-strip {
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    padding-block: var(--space-2);
+  }
+
+  .chat-strip > .btn {
+    flex-direction: column;
+    padding-inline: var(--space-1);
+  }
+
+  .chat-strip[data-placement="bottom"] {
+    align-content: center;
+    padding-block: 0;
+  }
+
+  .chat-strip[data-placement="bottom"] > .btn {
+    flex-direction: row;
+    padding-inline: var(--space-3);
+  }
+
+  .chat-strip-name {
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+    writing-mode: vertical-rl;
+  }
+
+  .chat-strip[data-placement="bottom"] .chat-strip-name {
+    writing-mode: horizontal-tb;
+  }
+
   .shell-banner > .notice {
     max-width: none;
     border-radius: 0;

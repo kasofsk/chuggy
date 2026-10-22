@@ -70,7 +70,7 @@ const chatPaneGlyphPaths = {
   expandRight: (
     <ChatPaneLucide>
       {chatPanePanel}
-      <path d="M15 3v18m-5-3-3-3 3-3" />
+      <path d="M15 3v18m-5-6-3-3 3-3" />
     </ChatPaneLucide>
   ),
   collapseLeft: (
