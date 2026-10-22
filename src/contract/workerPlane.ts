@@ -162,9 +162,9 @@ export const workerCredentialRepositorySchema = z
   .refine((value) => isBoundedText(value, repositoryIdentityCharsMax));
 
 /**
- * What an attempt may ask its credential for: nothing or its own repository,
- * minted what its task kind needs, or another repository its project binds,
- * minted a read.
+ * What an attempt may ask its credential for: nothing, which is its own
+ * repository minted what its task kind needs, or a repository it names, minted
+ * a read where it is its own or one its project binds.
  */
 export const workerCredentialSchema = z.strictObject({
   repository: workerCredentialRepositorySchema.exactOptional(),
