@@ -390,7 +390,7 @@ async function settledReport(
 const stepReports = {
   RunCloneFailed: "The clone failed.",
   RunSetupFailed:
-    "A setup line failed. Setup runs as the default branch's configuration says; if the line is wrong, push its fix there.",
+    "A setup line failed. To fix this ticket, override its setup lines and resume it.",
   RunCommitFailed: "The commit failed.",
   RunPushFailed: "The push failed.",
   RunTimedOut: "The run passed its deadline.",

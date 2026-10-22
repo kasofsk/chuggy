@@ -54,7 +54,6 @@ import {
   runnerLossDetail,
   runnerLossLine,
   runStepLabel,
-  runStepLine,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { inboxProposalsHeld } from "../core/inboxProposals.ts";
@@ -437,8 +436,8 @@ function InboxLostWhy(props: {
   );
 }
 
-/** The hover over a stopped job's badge: the step it stopped at, where that
- * step's fix goes, and the first line its worker kept where it kept one. */
+/** The hover over a stopped job's badge: the step it stopped at, and the first
+ * line its worker kept where it kept one. */
 function InboxFailedWhy(props: {
   readonly partition: PartitionIdentity;
   readonly failed: RunStepFailure;
@@ -451,8 +450,6 @@ function InboxFailedWhy(props: {
     failed.attempt,
   );
   const said = [runStepLabel(failed.evidence)];
-  const line = runStepLine(failed);
-  if (line !== undefined) said.push(line);
   if (failed.error !== undefined && reason !== undefined)
     said.push(reason.line);
   return (

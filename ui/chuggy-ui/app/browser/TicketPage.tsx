@@ -26,6 +26,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import {
+  apiConfiguration,
   apiDraft,
   apiTicket,
   apiTicketDispatchView,
@@ -43,8 +44,10 @@ import type { TicketLandingsState } from "../core/ticketLandings.ts";
 import {
   parkedOverridesFence,
   parkedOverridesUnsaved,
+  parkedSetupOverridable,
 } from "../core/parkedOverrides.ts";
 import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
+import type { ProjectAbilities } from "../core/projectAbilities.ts";
 import { projectLeadDispatches } from "../core/projectLead.ts";
 import {
   manualDispatchAction,
@@ -62,7 +65,11 @@ import { ticketPageFacts } from "../core/ticketPageFacts.ts";
 import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
 import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
-import { usePanelList, usePanelResource } from "./api.ts";
+import {
+  usePanelList,
+  usePanelResource,
+  usePanelResourceAsked,
+} from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
 import { currentAnchor } from "./ports.ts";
@@ -156,9 +163,42 @@ interface StandingProps {
   readonly nowMs: number;
 }
 
+/** Whether the card offers this reader the setup lines of a ticket whose run
+ * stopped at its setup, the configuration its overrides draw from read only
+ * for such a ticket. */
+function useSetupOverridable(
+  props: StandingProps,
+  abilities: ProjectAbilities,
+): boolean {
+  const ticket = readValue(props.reads.ticketState);
+  const fence =
+    ticket === undefined
+      ? undefined
+      : parkedOverridesFence(ticket, readValue(props.reads.openState)?.actions);
+  const revision = ticket?.configurationRevision ?? "";
+  const state = usePanelResourceAsked(
+    props.partition,
+    "Configuration",
+    revision,
+    (ports) => apiConfiguration(ports, props.partition, revision),
+    undefined,
+    fence !== undefined &&
+      revision !== "" &&
+      ticket?.escalation?.failed?.evidence === "RunSetupFailed",
+  );
+  return parkedSetupOverridable(
+    fence,
+    state.state === "Ready" ? state.value.canonical : undefined,
+    abilities,
+  );
+}
+
 /** The offers, the one card the slot holds and the escalation its overrides
  * are fenced to, from what the page has read. */
-function standingOf(props: StandingProps): {
+function standingOf(
+  props: StandingProps,
+  setupOverridable: boolean,
+): {
   readonly offers: TicketOffers;
   readonly slot: Slot;
   readonly fence: NativeActionResponse | undefined;
@@ -183,6 +223,7 @@ function standingOf(props: StandingProps): {
       stageCount: props.facts.stageCount,
       open: readValue(props.reads.openState)?.actions,
       executions: readValue(props.reads.pageState)?.executions ?? [],
+      setupOverridable,
     }),
     fence: parkedOverridesFence(
       ticket,
@@ -245,7 +286,8 @@ function TicketStanding(
 ): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
-  const { slot, fence, ...standing } = standingOf(props);
+  const setupOverridable = useSetupOverridable(props, abilities);
+  const { slot, fence, ...standing } = standingOf(props, setupOverridable);
   const { offers, noRunner } = ticketOffersStartable(
     ticketOffersAllowed(standing.offers, abilities),
     runner,

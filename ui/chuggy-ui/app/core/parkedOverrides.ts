@@ -24,6 +24,9 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 
+import { configurationCatalogOf } from "./configurationCatalog.ts";
+import { projectAbilityRefused } from "./projectAbilities.ts";
+import type { ProjectAbilities } from "./projectAbilities.ts";
 import { overridesHeldOf, overridesNestedOf } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 
@@ -52,6 +55,25 @@ export function parkedOverridesFence(
   return open?.find(
     (action) =>
       action.kind === "TicketEscalation" && action.admits.includes("Resume"),
+  );
+}
+
+/**
+ * Whether the card offers this reader the ticket's setup lines to change: its
+ * overrides are drawn, fenced to a resume over the configuration read as
+ * `canonical` where that is no catalog, and saved by a reader the mutate door
+ * does not refuse.
+ */
+export function parkedSetupOverridable(
+  fence: NativeActionResponse | undefined,
+  canonical: string | undefined,
+  abilities: ProjectAbilities,
+): boolean {
+  return (
+    fence !== undefined &&
+    canonical !== undefined &&
+    configurationCatalogOf(canonical) === undefined &&
+    !projectAbilityRefused(abilities, "mutate")
   );
 }
 

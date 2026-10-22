@@ -293,10 +293,11 @@ test("a job lost on its runner names the runner and how often it was resumed", (
 
 /**
  * A run stopped at a failed step is said as that step, whichever wall the
- * machine parked it at, and leads to no page; setup alone is fixed in the
- * ticket's own repository, so its line says where.
+ * machine parked it at, and leads to no page; setup alone is fixed through the
+ * ticket's own overrides, so its line says so to a reader offered them and to
+ * no other.
  */
-test("a run stopped at a failed step names the step, and setup says where its fix goes", () => {
+test("a run stopped at a failed step names the step, and setup says where its fix goes to a reader who can make it", () => {
   const labels = new Set<string>();
   for (const evidence of runStepEvidences) {
     const failed = { evidence, execution: "execution-1", attempt: "attempt-1" };
@@ -309,12 +310,16 @@ test("a run stopped at a failed step names the step, and setup says where its fi
       expect(escalationStep(escalation)).toBeUndefined();
     }
     labels.add(runStepLabel(evidence));
-    expect(runStepLine(failed)).toBe(
+    expect(runStepLine(failed, true)).toBe(
       evidence === "RunSetupFailed"
-        ? "Runs from the default branch · fix a wrong line there"
+        ? "Fix it under Overrides · Setup, then Resume"
         : undefined,
     );
-    for (const said of [runStepLabel(evidence), runStepLine(failed) ?? ""]) {
+    expect(runStepLine(failed, false)).toBeUndefined();
+    for (const said of [
+      runStepLabel(evidence),
+      runStepLine(failed, true) ?? "",
+    ]) {
       expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
       expect(said).not.toMatch(/[.:;]/u);
     }

@@ -61,13 +61,16 @@ export type TicketSlot =
   | { readonly slot: "Now"; readonly running: RunningNow }
   | { readonly slot: "Nothing" };
 
-/** Everything the slot is chosen from; `open` is absent while its read is. */
+/** Everything the slot is chosen from; `open` is absent while its read is,
+ * and `setupOverridable` is whether the card offers this reader the ticket's
+ * setup lines to change. */
 export interface SituationReads {
   readonly ticket: TicketResponse;
   readonly ledger: LedgerFacts | undefined;
   readonly stageCount: number;
   readonly open: readonly NativeActionResponse[] | undefined;
   readonly executions: readonly ExecutionSummary[];
+  readonly setupOverridable: boolean;
 }
 
 /** A blocked ticket is parked whatever its phase says, because it waits on a
@@ -151,7 +154,9 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
       step: escalationStep(escalation),
       more:
         lost === undefined
-          ? ((failed === undefined ? undefined : runStepLine(failed)) ??
+          ? ((failed === undefined
+              ? undefined
+              : runStepLine(failed, reads.setupOverridable)) ??
             escalationDetailLine(escalation.kind, {
               lastSet:
                 reads.ledger === undefined

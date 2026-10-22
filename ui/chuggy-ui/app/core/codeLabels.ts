@@ -357,10 +357,13 @@ export function runStepLabel(step: RunStepEvidence): string {
   }
 }
 
-/** Where a failed step's fix goes, for the one step a ticket's own repository writes. */
-export function runStepLine(failed: RunStepFailure): string | undefined {
-  return failed.evidence === "RunSetupFailed"
-    ? "Runs from the default branch · fix a wrong line there"
+/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change. */
+export function runStepLine(
+  failed: RunStepFailure,
+  setupOverridable: boolean,
+): string | undefined {
+  return failed.evidence === "RunSetupFailed" && setupOverridable
+    ? "Fix it under Overrides · Setup, then Resume"
     : undefined;
 }
 

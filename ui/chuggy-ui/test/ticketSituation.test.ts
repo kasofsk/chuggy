@@ -50,6 +50,7 @@ function reads(over: Partial<SituationReads> = {}): SituationReads {
     stageCount: 1,
     open: [],
     executions: [],
+    setupOverridable: false,
     ...over,
   };
 }
@@ -184,17 +185,21 @@ test("a job lost on its runner says where, how often, and the attempt its worker
 });
 
 /**
- * A run stopped at its setup names the step, says where a wrong line is fixed,
- * and reads the worker's own line off the attempt that kept one; any other
- * step keeps its wall's own line.
+ * A run stopped at its setup names the step, says where a wrong line is fixed
+ * to a reader offered the ticket's setup lines, and reads the worker's own line
+ * off the attempt that kept one; any other step, and a reader not offered
+ * them, keeps the wall's own line.
  */
 test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
-  const parked = (failed: {
-    readonly evidence: "RunSetupFailed" | "RunPushFailed";
-    readonly execution: string;
-    readonly attempt: string;
-    readonly error?: { readonly bytes: number };
-  }) =>
+  const parked = (
+    failed: {
+      readonly evidence: "RunSetupFailed" | "RunPushFailed";
+      readonly execution: string;
+      readonly attempt: string;
+      readonly error?: { readonly bytes: number };
+    },
+    setupOverridable = true,
+  ) =>
     ticketSlot(
       reads({
         ticket: ticket({
@@ -205,20 +210,27 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
             failed,
           },
         }),
+        setupOverridable,
       }),
     );
-  expect(
-    parked({
-      evidence: "RunSetupFailed",
-      execution: "execution-1",
-      attempt: "attempt-3",
-      error: { bytes: 61 },
-    }),
-  ).toStrictEqual({
+  const setup = {
+    evidence: "RunSetupFailed",
+    execution: "execution-1",
+    attempt: "attempt-3",
+    error: { bytes: 61 },
+  } as const;
+  expect(parked(setup)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
     step: undefined,
-    more: "Runs from the default branch · fix a wrong line there",
+    more: "Fix it under Overrides · Setup, then Resume",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+  expect(parked(setup, false)).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Setup failed",
+    step: undefined,
+    more: "Failed work is not reworked",
     reason: { execution: "execution-1", attempt: "attempt-3" },
   });
   expect(
