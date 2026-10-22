@@ -1,7 +1,7 @@
 {
   "chuggy-linux": {
-    "version": "0.17.0",
-    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.17.0/chuggy-linux-0.17.0.tgz",
-    "integrity": "sha512-FJTKNW0l1d5HGKQX4AhNdT1WTw6NayTSFQTS05bF4qNAQ6FZFL7bOAFttkupvfBwOb+DpK5tMfd53qqeRHdFBg=="
+    "version": "0.18.0",
+    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.18.0/chuggy-linux-0.18.0.tgz",
+    "integrity": "sha512-ogNvaOE8eSGCTVWpBTwiQXUdKOTsgbM9NAiIG7ARx0wJNEbhN+bWJwkxmDe5ApQYrE9X52qOiEDtFtIG+Cxhrw=="
   }
 }
