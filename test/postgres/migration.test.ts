@@ -59,9 +59,13 @@ import {
   migration066,
   toolAllowlistAt066,
 } from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
-import { migration068 } from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
+import {
+  migration068,
+  toolAllowlistAt068,
+} from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
 import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-runner-versions.ts";
 import { migration070 } from "../../src/adapters/postgres/schema/migrations/070-many-personal-runners.ts";
+import { migration072 } from "../../src/adapters/postgres/schema/migrations/072-lead-reads-run-errors.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -10667,7 +10671,9 @@ test("066 names list_repositories in the seeded allowlist at its roster place, i
     from: baselineToolAllowlist,
     tool: "mcp__chuggy__list_repositories",
     lead: leadToolAllowlist.filter(
-      (tool) => tool !== "mcp__chuggy__fetch_image",
+      (tool) =>
+        tool !== "mcp__chuggy__fetch_image" &&
+        tool !== "mcp__chuggy__read_run_error",
     ),
     seededText:
       '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
@@ -10680,9 +10686,23 @@ test("068 names fetch_image in the allowlist 066 left at its roster place, in pl
     version: migration068.version,
     from: toolAllowlistAt066(),
     tool: "mcp__chuggy__fetch_image",
-    lead: leadToolAllowlist,
+    lead: leadToolAllowlist.filter(
+      (tool) => tool !== "mcp__chuggy__read_run_error",
+    ),
     seededText:
       '"mcp__chuggy__list_repositories","mcp__chuggy__fetch_image","mcp__chuggy__initialize_draft"',
+  });
+});
+
+test("072 names read_run_error in the allowlist 068 left at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+  await toolAllowlistWidened({
+    label: "lead_reads_run_errors",
+    version: migration072.version,
+    from: toolAllowlistAt068(),
+    tool: "mcp__chuggy__read_run_error",
+    lead: leadToolAllowlist,
+    seededText:
+      '"mcp__chuggy__read_run_transcript","mcp__chuggy__read_run_error","mcp__chuggy__read_operation"',
   });
 });
 

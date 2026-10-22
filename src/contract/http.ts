@@ -73,7 +73,7 @@ export function jsonTextBytes(text: string): number {
 const jsonEscapedCharChars = 6;
 
 /** What a JSON string of this many characters weighs: its quotes, every character escaped. */
-function jsonStringChars(chars: number): number {
+export function jsonStringChars(chars: number): number {
   return chars * jsonEscapedCharChars + 2;
 }
 

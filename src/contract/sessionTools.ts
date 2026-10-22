@@ -40,9 +40,13 @@
  */
 
 import {
+  jsonStringChars,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptPageBatchesMax,
+  workerPlaneUploadBytesMax,
 } from "./http.ts";
 import type { SessionCapability } from "./rosters.ts";
 
@@ -61,6 +65,12 @@ export { briefLineCharsMax } from "./brief.ts";
 /** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
 export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
 
+/** What `read_run_transcript`'s route answers one page of: at most this many batches, each at most this many bytes. */
+export {
+  runTranscriptBatchBytesMax,
+  runTranscriptPageBatchesMax,
+} from "./http.ts";
+
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
@@ -75,6 +85,25 @@ export const chuggyToolResponseBytesMax = nativeHttpBodyBytesMax;
  */
 export const chuggyToolImageResponseBytesMax =
   Math.ceil(projectArtifactUploadBytesMax / 3) * 4 + nativeHttpBodyBytesMax;
+
+/**
+ * What `read_run_error`'s route may answer: the largest error text a worker
+ * uploads, as a JSON string that escapes every byte of it, and an ordinary
+ * answer's bound for the fields around it. JSON escapes only one-byte
+ * characters, each to no more than `jsonStringChars` allows a character, so
+ * that of a byte count bounds the string in bytes.
+ */
+export const chuggyToolRunErrorResponseBytesMax =
+  jsonStringChars(workerPlaneUploadBytesMax) + nativeHttpBodyBytesMax;
+
+/**
+ * What `read_run_transcript`'s route may answer: a page of the largest
+ * batches, each as a JSON string that escapes every byte of it, and an
+ * ordinary answer's bound for the fields around them.
+ */
+export const chuggyToolRunTranscriptResponseBytesMax =
+  runTranscriptPageBatchesMax * jsonStringChars(runTranscriptBatchBytesMax) +
+  nativeHttpBodyBytesMax;
 
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
@@ -107,6 +136,7 @@ const chuggyToolRoster = {
     "list_executions",
     "read_execution",
     "read_run_transcript",
+    "read_run_error",
     "read_operation",
     "list_threads",
     "read_thread",
@@ -218,6 +248,7 @@ export const chuggyToolRoutes = {
   executions: nativeHttpRoutes.executions,
   execution: nativeHttpRoutes.execution,
   runTranscript: nativeHttpRoutes.runTranscript,
+  runError: nativeHttpRoutes.runError,
   operation: nativeHttpRoutes.operation,
   threads: nativeHttpRoutes.threads,
   thread: nativeHttpRoutes.thread,

@@ -285,6 +285,22 @@ test("fetch_image's route reaches the project's image under a lead's and a threa
   }
 });
 
+test("read_run_error's route reaches an attempt's error text under a lead's and a thread's own bearer", async () => {
+  assert.equal(
+    chuggyToolRoutes.runError,
+    nativeHttpRoutes.runError,
+    "read_run_error calls no route",
+  );
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    await app.inject(
+      routeRequest(`GET ${chuggyToolRoutes.runError}`, own, sessionToken),
+    );
+    assert.deepEqual(reached, ["web.runError"], kind);
+  }
+});
+
 /** A project read that finds every project but one, recording each partition it was asked for. */
 function projectWeb(asked: string[]): ServedNativeWeb {
   return {
