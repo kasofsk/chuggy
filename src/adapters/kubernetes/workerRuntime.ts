@@ -19,10 +19,11 @@
  * THE JOB CANNOT WRITE WHAT RUNS IT. Its mount is read-only, so no file of the
  * runtime changes under it, whatever the job's image, checks or agent do.
  *
- * THE WORKSPACE IS NAMED IN THE JOB'S ENVIRONMENT. An image that never heard of
- * chuggy says nothing about where it works, so the contract's workspace is
- * written beside the command that reads it, for whichever launcher started
- * the job.
+ * THE WORKSPACE IS NAMED IN THE JOB'S ENVIRONMENT, AND THE JOB STARTS IN IT. An
+ * image that never heard of chuggy says nothing about where it works, so the
+ * contract's workspace is written beside the command that reads it, for
+ * whichever launcher started the job, and is where the job starts whatever
+ * directory its image names.
  *
  * NOTHING HERE CHOOSES A RUNTIME. Which image the tree is copied from is the
  * caller's: the site's own for a pushed worker, and the assignment's for a
@@ -139,9 +140,10 @@ function kubernetesJobRuntimeCopy(
 /**
  * `job` started from the runtime `image` carries: the copy ahead of its
  * sidecars, its container running the contract's command over the read-only
- * tree with the contract's workspace in its environment, and the volume between
- * them bounded by `storageLimit`. A container naming a command, arguments or
- * the workspace of its own is refused rather than overridden.
+ * tree in the contract's workspace, named in its environment, and the volume
+ * between them bounded by `storageLimit`. A container naming a command,
+ * arguments, a working directory or the workspace of its own is refused rather
+ * than overridden.
  */
 export function kubernetesJobRuntime(
   site: KubernetesPodSite,
@@ -153,6 +155,10 @@ export function kubernetesJobRuntime(
   if (started.command !== undefined || started.args !== undefined)
     throw new RangeError(
       `job container ${name} names its own command, which the runtime's would replace`,
+    );
+  if (started.workingDir !== undefined)
+    throw new RangeError(
+      `job container ${name} names its own working directory, which the contract's workspace would replace`,
     );
   if (started.env.some((variable) => variable.name === workerWorkspaceVariable))
     throw new RangeError(
@@ -167,6 +173,7 @@ export function kubernetesJobRuntime(
       name,
       image: jobImage,
       command: workerJobCommand,
+      workingDir: workerWorkspaceDirectory,
       ...started,
       env: [
         ...started.env,

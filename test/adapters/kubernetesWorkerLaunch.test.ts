@@ -348,6 +348,7 @@ function expectedContainer(): unknown {
     name: kubernetesWorkerContainerName,
     image: workerImage,
     command: ["/bin/sh", "/opt/chuggy/check.sh"],
+    workingDir: "/workspace",
     env: [
       { name: workerTaskVariable, value: expectedTask() },
       {

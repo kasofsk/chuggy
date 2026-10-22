@@ -112,6 +112,7 @@
           "name": "pool-worker",
           "image": "registry.invalid/golden-worker:1",
           "command": ["/bin/sh", "/opt/chuggy/check.sh"],
+          "workingDir": "/workspace",
           "env": [
             {
               "name": "CHUG_WORKER_TASK",
@@ -302,6 +303,7 @@
           "name": "pool-worker",
           "image": "registry.invalid/golden-worker:1",
           "command": ["/bin/sh", "/opt/chuggy/check.sh"],
+          "workingDir": "/workspace",
           "env": [
             {
               "name": "CHUG_WORKER_TASK",
