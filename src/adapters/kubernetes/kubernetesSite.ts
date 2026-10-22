@@ -116,6 +116,8 @@ export interface KubernetesContainer {
   /** What the container runs in place of its image's entrypoint, which a container naming none keeps. */
   readonly command?: readonly string[];
   readonly args?: readonly string[];
+  /** Where the container starts in place of its image's `WORKDIR`, which a container naming none keeps. */
+  readonly workingDir?: string;
   readonly restartPolicy?: "Always";
   readonly startupProbe?: KubernetesStartupProbe;
   readonly env: readonly KubernetesContainerVariable[];

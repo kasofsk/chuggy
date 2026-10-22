@@ -110,6 +110,7 @@ test("the job's container runs the contract's command and keeps its own image, e
   assert.equal("args" in started.container, false);
   const unchanged = {
     command: undefined,
+    workingDir: undefined,
     env: undefined,
     volumeMounts: undefined,
   };
@@ -153,6 +154,11 @@ test("the job is told the contract's workspace, which no image it names need kno
   ]);
 });
 
+test("the job starts in the contract's workspace, whatever directory its image names", () => {
+  assert.equal(job.container.workingDir, undefined);
+  assert.equal(started.container.workingDir, workerWorkspaceDirectory);
+});
+
 test("the volume between them is the pod's own, bounded by the storage it was given", () => {
   const added = started.volumes.slice(job.volumes.length);
   assert.deepEqual(started.volumes.slice(0, job.volumes.length), job.volumes);
@@ -161,10 +167,11 @@ test("the volume between them is the pod's own, bounded by the storage it was gi
   ]);
 });
 
-test("a job container naming a command, arguments or the workspace of its own is refused rather than overridden", () => {
+test("a job container naming a command, arguments, a working directory or the workspace of its own is refused rather than overridden", () => {
   for (const [named, refused] of [
     [{ command: ["node", "worker.mjs"] }, /names its own command/u],
     [{ args: ["--flag"] }, /names its own command/u],
+    [{ workingDir: "/elsewhere" }, /names its own working directory/u],
     [
       { env: [{ name: workerWorkspaceVariable, value: "/elsewhere" }] },
       /names its own CHUG_WORKER_WORKSPACE/u,

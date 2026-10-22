@@ -268,7 +268,7 @@ test("a binding store that could not be read is an outage, not an absent binding
   assert.deepEqual(asked, [], "an unread binding was minted for");
 });
 
-test("an attempt naming its own repository, or none, is minted as its task kind always was", async () => {
+test("an attempt naming no repository is minted its own for what its task kind does", async () => {
   for (const [taskKind, permissions] of [
     ["Work", "write"],
     ["Evaluation", "read"],
@@ -280,18 +280,40 @@ test("an attempt naming its own repository, or none, is minted as its task kind 
       bindings: bindingsOf(bindingOf(repository), read),
     });
 
-    for (const named of [undefined, repository])
-      assert.deepEqual(await minting.attempt(authorityOf(taskKind), named), {
-        minted: "Credential",
-        value: {
-          username: forgeCredentialUsername,
-          password: token,
-          expiresAtMs,
-        },
-      });
+    assert.deepEqual(await minting.attempt(authorityOf(taskKind)), {
+      minted: "Credential",
+      value: {
+        username: forgeCredentialUsername,
+        password: token,
+        expiresAtMs,
+      },
+    });
     assert.deepEqual(asked, [
       { repository, tenant: partition.tenant, permissions },
-      { repository, tenant: partition.tenant, permissions },
+    ]);
+    assert.deepEqual(read, [], "its own repository was held to the bindings");
+  }
+});
+
+test("an attempt naming its own repository is minted read, whatever its task kind", async () => {
+  for (const taskKind of ["Work", "Evaluation"] as const) {
+    const asked: Asked[] = [];
+    const read: Read[] = [];
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf(granted, asked),
+      bindings: bindingsOf(bindingOf(repository), read),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf(taskKind), repository), {
+      minted: "Credential",
+      value: {
+        username: forgeCredentialUsername,
+        password: token,
+        expiresAtMs,
+      },
+    });
+    assert.deepEqual(asked, [
+      { repository, tenant: partition.tenant, permissions: "read" },
     ]);
     assert.deepEqual(read, [], "its own repository was held to the bindings");
   }

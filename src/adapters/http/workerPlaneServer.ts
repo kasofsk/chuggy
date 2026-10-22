@@ -1059,10 +1059,10 @@ function workerCredentialNamed(
 /**
  * The credential one attempt works under. A pod may ask for a read of any
  * repository its project binds and never for more: its own repository is the
- * one its input bundle pinned, whose permission set follows from the kind of
- * task the scheduler recorded, and any other it names is held to the project's
- * live bindings and minted a read, so nothing a pod names widens what it may
- * push to.
+ * one its input bundle pinned, minted what the kind of task the scheduler
+ * recorded needs where the pod names none and a read where it names it, and
+ * any other it names is held to the project's live bindings and minted a read,
+ * so nothing a pod names widens what it may push to.
  */
 function workerCredentialRoute(
   register: WorkerJobRegistrar,
