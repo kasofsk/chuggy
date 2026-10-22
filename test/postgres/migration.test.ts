@@ -6346,6 +6346,7 @@ const wipeKept = [
   "repository_configuration_import",
   "repository_configuration_provenance",
   "repository_configuration_version",
+  "repository_configuration_workload_path",
   "schema_migration",
   "selector_inventory_state",
   "selector_project_settings",

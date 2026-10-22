@@ -390,7 +390,7 @@ function CatalogRevision(props: {
     <CatalogShown
       revision={props.revision}
       canonical={configuration.canonical}
-      entries={catalogEntriesOf(catalog)}
+      entries={catalogEntriesOf(catalog, configuration.workloadPaths)}
       selected={props.selected}
     />
   );

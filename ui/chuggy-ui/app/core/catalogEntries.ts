@@ -8,6 +8,10 @@
  * read, and two workloads naming one file name one entry. A prompt written
  * inline is the workload's own and no entry.
  *
+ * A WORKLOAD'S FILE IS SAID ONLY WHERE THE IMPORT KEPT IT. An import before
+ * imports kept the file a workload was read from says nothing of where it
+ * was written, so a workload with no file is not drawn as written inline.
+ *
  * A DEFAULT IS A BADGE, NOT A USE. A ticket may select any workload, plan or
  * finalizer, so the defaults say only what a ticket selecting none runs, and
  * an entry nothing names is still one a ticket can choose.
@@ -26,7 +30,12 @@ export type CatalogEntryKind = "Workload" | "Plan" | "Finalizer" | "Prompt";
 export type CatalogDefaultRole = "work" | "evaluation" | "finalization";
 
 export type CatalogEntryDetail =
-  | { readonly kind: "Workload"; readonly workload: CatalogWorkload }
+  | {
+      readonly kind: "Workload";
+      readonly workload: CatalogWorkload;
+      /** The repository file the import read the workload from, where it kept one. */
+      readonly path: string | undefined;
+    }
   | {
       readonly kind: "Plan";
       readonly stages: readonly CatalogPlanStage[];
@@ -154,16 +163,24 @@ function catalogReferencesDistinct(
   });
 }
 
-export function catalogEntriesOf(
+/** Every entry of the catalog, in its group, in the order the page lists them. */
+function catalogEntriesGroups(
   catalog: ConfigurationCatalog,
-): CatalogEntries {
-  const groups: CatalogGroup[] = [
+  workloadPaths: Readonly<Record<string, string>>,
+): readonly CatalogGroup[] {
+  return [
     {
       kind: "Workload",
       title: catalogGroupTitles.Workload,
       entries: catalog.workloads.map((workload) =>
         catalogEntryOf(
-          { kind: "Workload", workload },
+          {
+            kind: "Workload",
+            workload,
+            path: Object.hasOwn(workloadPaths, workload.name)
+              ? workloadPaths[workload.name]
+              : undefined,
+          },
           workload.name,
           catalogDefaultsOf(catalog, "work", workload.name),
         ),
@@ -199,6 +216,13 @@ export function catalogEntriesOf(
       ),
     },
   ];
+}
+
+export function catalogEntriesOf(
+  catalog: ConfigurationCatalog,
+  workloadPaths: Readonly<Record<string, string>> = {},
+): CatalogEntries {
+  const groups = catalogEntriesGroups(catalog, workloadPaths);
   const entries = groups.flatMap((group) => group.entries);
   const uses = new Map(
     entries.map((entry) => [
@@ -283,6 +307,7 @@ export function catalogEntryFields(
       const { workload } = detail;
       const commanded = workload.runner === "Commands";
       return [
+        ...(detail.path === undefined ? [] : [["File", detail.path] as const]),
         ["Runner", workload.runner ?? "Unread"],
         ["As an evaluator", workload.purpose],
         ...(commanded

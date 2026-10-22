@@ -485,6 +485,8 @@ export interface ConfigurationRevisionResource {
   readonly canonical: CanonicalConfiguration;
   readonly digest: string;
   readonly version?: ConfigurationVersion;
+  /** The file each catalog workload named by path was read from, where an import kept any. */
+  readonly workloadPaths?: Readonly<Record<string, string>>;
 }
 
 export interface ConfigurationPageCursor {

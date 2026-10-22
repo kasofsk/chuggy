@@ -1167,6 +1167,25 @@ test("a configuration read and its page parse with readiness and provenance", ()
   assert.equal(page.configurations[0]?.readiness, "Ready");
 });
 
+test("the file each workload was read from reaches a revision's response, and one outside .chug is refused", () => {
+  const workloadPaths = { review: ".chug/workloads/review.json" };
+  assert.deepEqual(
+    configurationResponseSchema.parse(
+      configurationResponse({ ...versionedConfiguration, workloadPaths }).body,
+    ).workloadPaths,
+    workloadPaths,
+  );
+  assert.equal(
+    configurationResponseSchema.safeParse({
+      ...configurationResponseSchema.parse(
+        configurationResponse(versionedConfiguration).body,
+      ),
+      workloadPaths: { review: "workloads/review.json" },
+    }).success,
+    false,
+  );
+});
+
 test("a configuration version reaches every response that names a revision", () => {
   const label = { name: "work", number: 3 };
   assert.deepEqual(

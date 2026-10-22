@@ -87,6 +87,7 @@ test("a repository declaration becomes a ready immutable revision", () => {
           canonical:
             '{"brief":{"acceptanceCriteria":["The declaration is imported."],"constraints":[],"motivation":["The repository declares its configuration."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
           configuration,
+          workloadPaths: {},
         },
       ],
     },

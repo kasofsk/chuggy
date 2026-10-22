@@ -9,7 +9,10 @@
  * rather than a browser's.
  */
 
-import { configurationRequirementCapabilitiesMax } from "./configurationDocument.ts";
+import {
+  configurationReferencePathSchema,
+  configurationRequirementCapabilitiesMax,
+} from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
@@ -1024,6 +1027,12 @@ export const configurationResponseSchema = z.object({
   canonical: z.string().min(1),
   digest: z.string().min(1),
   version: configurationVersionSchema.optional(),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional()
+    .describe(
+      "The repository file each catalog workload named by path was read from, by the name the catalog holds it under. Absent for an authored revision, and for one imported before imports kept it.",
+    ),
 });
 export type ConfigurationResponse = z.infer<typeof configurationResponseSchema>;
 

@@ -114,6 +114,22 @@ test("each entry says in a line what it is", () => {
   ).toBe("Build it.");
 });
 
+test("a workload read from a file names it first among its fields, and one with no file kept names none", () => {
+  const catalog = configurationCatalogOf(creationCatalogCanonical);
+  if (catalog === undefined) throw new Error("no catalog");
+  const kept = catalogEntriesOf(catalog, {
+    review: ".chug/workloads/review.json",
+  });
+  expect(
+    catalogEntryFields(entryOf(kept, "workloads/review"))[0],
+  ).toStrictEqual(["File", ".chug/workloads/review.json"]);
+  expect(
+    catalogEntryFields(entryOf(kept, "workloads/build")).map(
+      ([label]) => label,
+    ),
+  ).not.toContain("File");
+});
+
 test("a plan's fields are its stages, each with the evaluators it runs", () => {
   expect(catalogEntryFields(entryOf(entries, "plans/gated"))).toStrictEqual([
     ["Stage 1 · review", "review, review"],

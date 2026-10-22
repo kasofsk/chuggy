@@ -70,6 +70,7 @@ import { migration069 } from "./069-runner-versions.ts";
 import { migration070 } from "./070-many-personal-runners.ts";
 import { migration071 } from "./071-run-step-failure.ts";
 import { migration072 } from "./072-lead-reads-run-errors.ts";
+import { migration073 } from "./073-workload-paths.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -145,4 +146,5 @@ export const migrations: readonly Migration[] = [
   migration070,
   migration071,
   migration072,
+  migration073,
 ];

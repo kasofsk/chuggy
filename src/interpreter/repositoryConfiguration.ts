@@ -203,6 +203,8 @@ export interface RepositoryConfigurationDeclaration {
   readonly revision: ConfigurationRevisionId;
   readonly canonical: CanonicalConfiguration;
   readonly configuration: DeclaredConfiguration;
+  /** The file each catalog workload named by path was read from, by the name it is held under. */
+  readonly workloadPaths: Readonly<Record<string, string>>;
 }
 
 export type RepositoryConfigurationFault =
@@ -1133,6 +1135,7 @@ function repositoryConfigurationEnvelope(
     revision: repositoryConfigurationRevision(commit, name),
     canonical,
     configuration: readiness.configuration,
+    workloadPaths: resolved.workloadPaths,
   };
 }
 
