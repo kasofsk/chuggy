@@ -389,8 +389,7 @@ async function settledReport(
 /** The report each failed step settles its execution under. */
 const stepReports = {
   RunCloneFailed: "The clone failed.",
-  RunSetupFailed:
-    "A setup line failed. To fix this ticket, override its setup lines and resume it.",
+  RunSetupFailed: "A setup line failed.",
   RunCommitFailed: "The commit failed.",
   RunPushFailed: "The push failed.",
   RunTimedOut: "The run passed its deadline.",

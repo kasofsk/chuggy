@@ -428,6 +428,25 @@ test("a ticket whose setup failed under a catalog is told nothing of overrides i
   expect(within(card).queryByText(setupLine)).toBeNull();
 });
 
+test("a ticket whose setup failed with no resume open is told nothing of overrides", async () => {
+  serving(
+    "WorkFailureEscalated",
+    "Answered",
+    undefined,
+    canonical,
+    setupFailed,
+  );
+  const served = fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    url.includes("/native-actions")
+      ? Promise.resolve(answer({ actions: [] }))
+      : served(url, init),
+  );
+  const card = await drawn();
+  expect(within(card).getByText("Setup failed")).toBeDefined();
+  expect(within(card).queryByText(setupLine)).toBeNull();
+});
+
 /** The card with its overrides open and a model typed over the one held, for
  * a reader the abilities read answers as `abilities` says. */
 async function typedBy(abilities: AbilitiesAnswer): Promise<HTMLElement> {

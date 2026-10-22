@@ -707,7 +707,7 @@ function schedulerStepReport(step: RunStepEvidence): string {
     case "RunCloneFailed":
       return "The clone failed.";
     case "RunSetupFailed":
-      return "A setup line failed. To fix this ticket, override its setup lines and resume it.";
+      return "A setup line failed.";
     case "RunCommitFailed":
       return "The commit failed.";
     case "RunPushFailed":
