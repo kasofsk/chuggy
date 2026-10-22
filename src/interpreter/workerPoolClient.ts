@@ -27,10 +27,11 @@
  * lease is the retry.
  *
  * A JOB AND A SESSION ARE COUNTED APART. Each kind has its own ceiling, its own
- * room on the poll and its own offers, and a pool that names no session ceiling
- * asks for none. This is chuggy-common's `poolLoop.mjs` in TypeScript, and a
- * change to one is a change to both, except that of a job's ends only one its
- * backend refused is reported here, and every other is left to its lease.
+ * room on the poll and its own offers, a pool that names no session ceiling
+ * asks for none, and one whose job ceiling is 0 asks for no job. This is
+ * chuggy-common's `poolLoop.mjs` in TypeScript, and a change to one is a
+ * change to both, except that of a job's ends only one its backend refused is
+ * reported here, and every other is left to its lease.
  *
  * A JOB THE BACKEND REFUSED AFTER TAKING IT IS SETTLED REFUSED, naming the
  * fault of its image, so the attempt's execution is blocked rather than its
@@ -181,9 +182,9 @@ export interface WorkerPoolTokens {
 }
 
 export interface WorkerPoolClientSettings {
-  /** How many assignments this pool holds at once, which every poll's `wanted` is measured from. */
+  /** How many assignments this pool holds at once, which every poll's `wanted` is measured from; none where it is 0. */
   readonly concurrencyMax: number;
-  /** How many sessions it holds at once, which every poll's `wantedSessions` is measured from; none where absent. */
+  /** How many sessions it holds at once, which every poll's `wantedSessions` is measured from; none where absent, and above 0 where `concurrencyMax` is 0. */
   readonly sessionsMax?: number;
   /** How long a pass waits after an outage before the next one. */
   readonly outageBackoffMs: number;
@@ -217,7 +218,6 @@ export function checkedWorkerPoolClientSettings(
   settings: WorkerPoolClientSettings,
 ): WorkerPoolClientSettings {
   for (const [name, bound] of [
-    ["concurrencyMax", settings.concurrencyMax],
     ["outageBackoffMs", settings.outageBackoffMs],
     ["passesMax", settings.passesMax],
   ] as const)
@@ -225,13 +225,21 @@ export function checkedWorkerPoolClientSettings(
       throw new RangeError(
         `worker pool client ${name} must be a positive safe integer`,
       );
-  const { sessionsMax } = settings;
+  const { concurrencyMax, sessionsMax } = settings;
+  if (!Number.isSafeInteger(concurrencyMax) || concurrencyMax < 0)
+    throw new RangeError(
+      "worker pool client concurrencyMax must be a safe integer of zero or more",
+    );
   if (
     sessionsMax !== undefined &&
     (!Number.isSafeInteger(sessionsMax) || sessionsMax < 0)
   )
     throw new RangeError(
       "worker pool client sessionsMax must be a safe integer of zero or more, or absent",
+    );
+  if (concurrencyMax === 0 && (sessionsMax ?? 0) === 0)
+    throw new RangeError(
+      "worker pool client concurrencyMax is 0 and sessionsMax is 0 or absent, so the pool would take no work",
     );
   return settings;
 }

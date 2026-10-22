@@ -505,14 +505,48 @@ test("an issuer that refused the grant stops the run and one that faltered does 
 });
 
 test("a run refuses a bound that is not a positive whole number", async () => {
-  await assert.rejects(
-    () =>
-      workerPoolClientRun(
-        client({ settings: { ...settings, concurrencyMax: 0 } }),
-        () => Promise.resolve(),
-      ),
-    RangeError,
+  for (const name of ["outageBackoffMs", "passesMax"] as const)
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, [name]: 0 } }),
+          () => Promise.resolve(),
+        ),
+      new RegExp(`${name} must be a positive safe integer`, "u"),
+    );
+});
+
+test("a run refuses a job ceiling that is not a whole number of zero or more", async () => {
+  for (const concurrencyMax of [-1, 1.5, Number.NaN])
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, concurrencyMax, sessionsMax: 1 } }),
+          () => Promise.resolve(),
+        ),
+      /concurrencyMax must be a safe integer of zero or more$/u,
+      String(concurrencyMax),
+    );
+});
+
+test("a run takes a job ceiling of 0 beside a session ceiling, and refuses one beside none", async () => {
+  const passed = await workerPoolClientRun(
+    client({
+      settings: { ...settings, concurrencyMax: 0, sessionsMax: 1 },
+      sessions: endings().sessions,
+    }),
+    () => Promise.resolve(),
   );
+  assert.equal(passed.passed, "Reconciled");
+  for (const none of [{}, { sessionsMax: 0 }])
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, concurrencyMax: 0, ...none } }),
+          () => Promise.resolve(),
+        ),
+      /concurrencyMax is 0 and sessionsMax is 0 or absent, so the pool would take no work/u,
+    );
 });
 
 /** A session plane recording each end it is told of and answering each as `answer` says. */
@@ -619,6 +653,43 @@ test("a session offer is placed as a session against its own ceiling, and never 
     refused: 0,
     ended: 0,
   });
+});
+
+test("a pool whose job ceiling is 0 asks for no job and places none it is offered, while it takes sessions", async () => {
+  const asked: [number, number][] = [];
+  const placed: string[] = [];
+  const posted: string[] = [];
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 0, sessionsMax: 1 },
+      sessions: endings().sessions,
+      backend: {
+        ...idle,
+        place: (offer) => {
+          placed.push(`${offer.assignment.assignment}:${offer.kind}`);
+          return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
+        },
+      },
+      plane: {
+        poll: (_token, _held, wanted, wantedSessions) => {
+          asked.push([wanted, wantedSessions]);
+          return Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [assignment("job")],
+            sessions: [session("session")],
+            stop: [],
+          });
+        },
+        settle: (_token, named, outcome) => {
+          posted.push(`${named}:${outcome.outcome}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(asked, [[0, 1]]);
+  assert.deepEqual(placed, ["session:Session"]);
+  assert.deepEqual(posted, ["job:Unavailable", "session:Accepted"]);
 });
 
 test("a session whose container ended is reported on the session plane before the poll, and only a taken end counts", async () => {
