@@ -35,12 +35,14 @@ import {
   type OperationRefusalCode,
   type OperationState,
   type ResumePoint,
+  type RunStepEvidence,
   type TicketLandingState,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type {
   LeadAbsenceResponse,
   RunnerLoss,
+  RunStepFailure,
   TicketEscalation,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
@@ -339,14 +341,40 @@ export function runnerLossLine(lost: RunnerLoss): string {
   return `${countNoun(lost.losses, "loss", "losses")} · ${resumed} resumed automatically`;
 }
 
+/** The step a run stopped at. */
+export function runStepLabel(step: RunStepEvidence): string {
+  switch (step) {
+    case "RunCloneFailed":
+      return "Clone failed";
+    case "RunSetupFailed":
+      return "Setup failed";
+    case "RunCommitFailed":
+      return "Commit failed";
+    case "RunPushFailed":
+      return "Push failed";
+    case "RunTimedOut":
+      return "Timed out";
+  }
+}
+
+/** Where a failed step's fix goes, for the one step a ticket's own repository writes. */
+export function runStepLine(failed: RunStepFailure): string | undefined {
+  return failed.evidence === "RunSetupFailed"
+    ? "Runs from the default branch · fix a wrong line there"
+    : undefined;
+}
+
 /**
  * The one line beside the escalation: the runner a job was lost on where it
- * was, the wall's own label where the escalation carries evidence, the kind's
- * own generic word otherwise — a work failure and a rework wall explain
- * themselves, so neither ever carries one.
+ * was, the step a run stopped at where it stopped at one, the wall's own label
+ * where the escalation carries evidence, the kind's own generic word otherwise
+ * — a work failure and a rework wall explain themselves, so neither ever
+ * carries one.
  */
 export function escalationDetail(escalation: TicketEscalation): string {
   if (escalation.lost !== undefined) return runnerLossDetail(escalation.lost);
+  if (escalation.failed !== undefined)
+    return runStepLabel(escalation.failed.evidence);
   return escalation.evidence === undefined
     ? escalationKindLabel(escalation.kind)
     : escalationEvidenceLabel(escalation.evidence);

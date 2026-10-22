@@ -183,6 +183,59 @@ test("a job lost on its runner says where, how often, and the attempt its worker
   });
 });
 
+/**
+ * A run stopped at its setup names the step, says where a wrong line is fixed,
+ * and reads the worker's own line off the attempt that kept one; any other
+ * step keeps its wall's own line.
+ */
+test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
+  const parked = (failed: {
+    readonly evidence: "RunSetupFailed" | "RunPushFailed";
+    readonly execution: string;
+    readonly attempt: string;
+    readonly error?: { readonly bytes: number };
+  }) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "WorkFailureEscalated",
+            resumeAt: "ResumeWork",
+            failed,
+          },
+        }),
+      }),
+    );
+  expect(
+    parked({
+      evidence: "RunSetupFailed",
+      execution: "execution-1",
+      attempt: "attempt-3",
+      error: { bytes: 61 },
+    }),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Setup failed",
+    step: undefined,
+    more: "Runs from the default branch · fix a wrong line there",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+  expect(
+    parked({
+      evidence: "RunPushFailed",
+      execution: "execution-1",
+      attempt: "attempt-3",
+    }),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Push failed",
+    step: undefined,
+    more: "Failed work is not reworked",
+    reason: undefined,
+  });
+});
+
 test("a ticket that needs you for anything else leads to no page", () => {
   const parked = ticketSlot(
     reads({

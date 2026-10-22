@@ -10,7 +10,7 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { EscalationStep } from "../../core/codeLabels.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type {
-  LostAttempt,
+  ReasonAttempt,
   TicketSlot as Slot,
 } from "../../core/ticketSituation.ts";
 import { useRunReason } from "../RunEvidence.tsx";
@@ -34,10 +34,10 @@ function NeedsYouStep(props: {
   );
 }
 
-/** The first line of what the worker of a lost job kept, its whole on hover. */
+/** The first line of what the worker of a lost or stopped job kept, its whole on hover. */
 function NeedsYouReason(props: {
   readonly partition: PartitionIdentity;
-  readonly reason: LostAttempt;
+  readonly reason: ReasonAttempt;
 }): ReactNode {
   const reason = useRunReason(
     props.partition,
@@ -56,7 +56,7 @@ function NeedsYou(props: {
   readonly detail: string;
   readonly step: EscalationStep | undefined;
   readonly more: string | undefined;
-  readonly reason: LostAttempt | undefined;
+  readonly reason: ReasonAttempt | undefined;
   readonly overrides: ReactNode;
   readonly actions: ReactNode;
 }): ReactNode {
