@@ -13,34 +13,38 @@ import { Document } from "yaml";
 
 import type { CatalogEntry } from "../../core/catalogEntries.ts";
 
-type SourceRecord = Readonly<Record<string, unknown>>;
+type CatalogEntrySourceRecord = Readonly<Record<string, unknown>>;
 
-function sourceRecordOf(value: unknown): SourceRecord {
+function catalogEntrySourceRecordOf(value: unknown): CatalogEntrySourceRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as SourceRecord)
+    ? (value as CatalogEntrySourceRecord)
     : {};
 }
 
-function sourceHeld(document: SourceRecord, field: string, name: string) {
-  const entries = sourceRecordOf(document[field]);
+function catalogEntrySourceHeld(
+  document: CatalogEntrySourceRecord,
+  field: string,
+  name: string,
+) {
+  const entries = catalogEntrySourceRecordOf(document[field]);
   return Object.hasOwn(entries, name) ? entries[name] : undefined;
 }
 
 /** A workload as written beside the prompt file it names, the file's text left to the prompt's entry. */
-function sourceWorkload(value: unknown): unknown {
-  const workload = sourceRecordOf(value);
-  const prompt = sourceRecordOf(workload["prompt"]);
+function catalogEntrySourceWorkload(value: unknown): unknown {
+  const workload = catalogEntrySourceRecordOf(value);
+  const prompt = catalogEntrySourceRecordOf(workload["prompt"]);
   if (typeof prompt["path"] !== "string") return value;
   return { ...workload, prompt: { path: prompt["path"] } };
 }
 
 /** The value with every empty list and map left out, at any depth. */
-function sourcePruned(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sourcePruned);
+function catalogEntrySourcePruned(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(catalogEntrySourcePruned);
   if (typeof value !== "object" || value === null) return value;
   return Object.fromEntries(
     Object.entries(value).flatMap(([key, held]) => {
-      const pruned = sourcePruned(held);
+      const pruned = catalogEntrySourcePruned(held);
       const empty =
         typeof pruned === "object" &&
         pruned !== null &&
@@ -50,8 +54,8 @@ function sourcePruned(value: unknown): unknown {
   );
 }
 
-function sourceYaml(value: unknown): string {
-  return new Document(sourcePruned(value)).toString({
+function catalogEntrySourceYaml(value: unknown): string {
+  return new Document(catalogEntrySourcePruned(value)).toString({
     lineWidth: 0,
     nullStr: "",
   });
@@ -64,19 +68,21 @@ export function catalogEntrySource(
 ): string | undefined {
   const { detail } = entry;
   if (detail.kind === "Prompt") return detail.text;
-  const document = sourceRecordOf(JSON.parse(canonical));
+  const document = catalogEntrySourceRecordOf(JSON.parse(canonical));
   switch (detail.kind) {
     case "Workload": {
-      const held = sourceHeld(document, "workloads", entry.name);
-      return held === undefined ? undefined : sourceYaml(sourceWorkload(held));
+      const held = catalogEntrySourceHeld(document, "workloads", entry.name);
+      return held === undefined
+        ? undefined
+        : catalogEntrySourceYaml(catalogEntrySourceWorkload(held));
     }
     case "Plan": {
-      const held = sourceHeld(document, "plans", entry.name);
-      return held === undefined ? undefined : sourceYaml(held);
+      const held = catalogEntrySourceHeld(document, "plans", entry.name);
+      return held === undefined ? undefined : catalogEntrySourceYaml(held);
     }
     case "Finalizer": {
-      const held = sourceHeld(document, "finalizers", entry.name);
-      return held === undefined ? undefined : sourceYaml(held);
+      const held = catalogEntrySourceHeld(document, "finalizers", entry.name);
+      return held === undefined ? undefined : catalogEntrySourceYaml(held);
     }
   }
 }

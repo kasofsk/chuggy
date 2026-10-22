@@ -1,8 +1,9 @@
 /* The catalog: the chooser and where the version came from, then the entries
    grouped by what each is, one card per group with its rows ruled. With an
    entry chosen the list and the entry sit side by side, the entry held in
-   view while the list scrolls; where the page is narrow they stack with the
-   entry first, since it is what the reader just asked for. */
+   view and scrolling on its own while the list scrolls; where the page is
+   narrow they stack with the entry first, since it is what the reader just
+   asked for. */
 
 @layer page {
   .catalog-page {
@@ -217,7 +218,7 @@
     font: var(--text-xs) var(--font-mono);
   }
 
-  @container (min-width: 56em) {
+  @container (min-width: 60em) {
     .catalog-layout {
       grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
     }
@@ -226,6 +227,8 @@
       position: sticky;
       top: var(--space-3);
       order: 0;
+      max-height: calc(100dvh - 2 * var(--space-3));
+      overflow: auto;
     }
   }
 }

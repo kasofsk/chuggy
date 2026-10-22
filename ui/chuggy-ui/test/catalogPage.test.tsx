@@ -67,7 +67,7 @@ function listed(
 ): unknown {
   return {
     revision,
-    digest: "a".repeat(64),
+    digest: String(number % 10).repeat(64),
     createdAt: "2026-10-01T00:00:00Z",
     provenance: {
       source: "Repository",

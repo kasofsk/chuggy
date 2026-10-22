@@ -22,6 +22,7 @@ import {
   catalogConfigurationHolding,
   catalogConfigurationOpening,
   catalogConfigurationsOf,
+  catalogConfigurationVersionOf,
 } from "../../core/catalogConfigurations.ts";
 import type {
   CatalogConfiguration,
@@ -58,14 +59,12 @@ import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Picker } from "../ui/Picker.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
+import { navRoutes } from "../../core/shellNav.ts";
 
 import "./catalog.css";
 
-/** This page's own address, which its reads take their partition from. */
-export const catalogRoutePath = "/$tenant/$project/catalog";
-
 function useCatalogPartition(): PartitionIdentity {
-  const params = useParams({ from: catalogRoutePath });
+  const params = useParams({ from: navRoutes.catalog });
   return { tenant: params.tenant, project: params.project };
 }
 
@@ -79,7 +78,7 @@ function CatalogLink(props: {
   const partition = useCatalogPartition();
   return (
     <Link
-      to={catalogRoutePath}
+      to={navRoutes.catalog}
       params={partition}
       search={props.query}
       resetScroll={false}
@@ -130,10 +129,11 @@ function CatalogProvenance(props: {
   );
 }
 
-/** Which configuration, and which version of it, the page draws. */
+/** Which configuration, and which version of it, the page draws; another version keeps the entry shown. */
 function CatalogChooser(props: {
   readonly configurations: readonly CatalogConfiguration[];
   readonly revision: string;
+  readonly entry: string | undefined;
 }): ReactNode {
   const navigate = useNavigate();
   const partition = useCatalogPartition();
@@ -141,16 +141,21 @@ function CatalogChooser(props: {
     props.configurations,
     props.revision,
   );
-  const choose = (configuration: string): void => {
+  const choose = (configuration: string, entry?: string): void => {
     void navigate({
-      to: catalogRoutePath,
+      to: navRoutes.catalog,
       params: partition,
-      search: { configuration },
+      search:
+        entry === undefined ? { configuration } : { configuration, entry },
     });
   };
-  const summary = holding?.versions.find(
+  const summary = holding?.revisions.find(
     (version) => version.revision === props.revision,
   );
+  const version =
+    holding === undefined
+      ? undefined
+      : catalogConfigurationVersionOf(holding, props.revision);
   return (
     <div className="catalog-chooser">
       <div className="catalog-chooser-pickers">
@@ -170,12 +175,14 @@ function CatalogChooser(props: {
         {holding === undefined || holding.versions.length < 2 ? null : (
           <Picker
             label="Version"
-            value={props.revision}
-            options={holding.versions.map((version) => ({
-              value: version.revision,
-              text: catalogVersionText(version),
+            value={version?.revision ?? props.revision}
+            options={holding.versions.map((held) => ({
+              value: held.revision,
+              text: catalogVersionText(held),
             }))}
-            onChoose={choose}
+            onChoose={(chosen) => {
+              choose(chosen, props.entry);
+            }}
             align="start"
           />
         )}
@@ -423,7 +430,11 @@ export function CatalogPage(props: {
         />
       ) : (
         <>
-          <CatalogChooser configurations={configurations} revision={revision} />
+          <CatalogChooser
+            configurations={configurations}
+            revision={revision}
+            entry={props.query.entry}
+          />
           {read.partial ? (
             <p className="catalog-none">{configurationsPartialLabel}</p>
           ) : null}

@@ -11,6 +11,7 @@ import {
   catalogConfigurationHolding,
   catalogConfigurationOpening,
   catalogConfigurationsOf,
+  catalogConfigurationVersionOf,
   catalogQueryOf,
 } from "../app/core/catalogConfigurations.ts";
 
@@ -22,7 +23,7 @@ function summary(
 ): ConfigurationSummary {
   return {
     revision,
-    digest: "a".repeat(64),
+    digest: String(number % 10).repeat(64),
     createdAt: "2026-10-01T00:00:00Z",
     provenance: {
       source: "Repository",
@@ -88,6 +89,34 @@ test("an older version is found under the name it is a version of", () => {
   expect(
     catalogConfigurationHolding(catalogConfigurationsOf(listed), "r9"),
   ).toBeUndefined();
+});
+
+test("an import that changed nothing is no new version, and its revision still draws the version it holds", () => {
+  const [basic] = catalogConfigurationsOf([
+    summary("r7", "basic", 3, false),
+    summary("r6", "basic", 3, false),
+    summary("r5", "basic", 3, false),
+    summary("r3", "basic", 2, false),
+  ]);
+  if (basic === undefined) throw new Error("no configuration");
+  expect(basic.versions.map((version) => version.revision)).toStrictEqual([
+    "r7",
+    "r3",
+  ]);
+  expect(catalogConfigurationVersionOf(basic, "r5")?.revision).toBe("r7");
+  expect(catalogConfigurationHolding([basic], "r6")?.name).toBe("basic");
+});
+
+test("a revision authored through the API is no configuration a repository declares", () => {
+  const authored: ConfigurationSummary = {
+    ...summary("r8", "basic", 4, false),
+    provenance: { source: "Authored" },
+  };
+  expect(
+    catalogConfigurationsOf([authored]).map(
+      (configuration) => configuration.name,
+    ),
+  ).toStrictEqual([]);
 });
 
 test("the address keeps only the choices it names as text", () => {
