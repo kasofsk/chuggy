@@ -490,7 +490,9 @@ test("a workspace link made on the site's Workspaces page outside a project is d
   await linkCopied("New workspace");
 });
 
-test("a page's title is drawn in the top bar where the shell is around it, and over its sections where it is not", () => {
+/** Inside the shell the settings' own nav names the page, so its title is
+ * for a reader who does not see that and no row of the bar says it again. */
+test("a page's title is hidden where the shell is around it, and over its sections where it is not", () => {
   render(
     <ShellSlots>
       <ShellSlotLandmarks>
@@ -500,10 +502,12 @@ test("a page's title is drawn in the top bar where the shell is around it, and o
       </ShellSlotLandmarks>
     </ShellSlots>,
   );
-  const bar = within(screen.getByRole("banner"));
-  expect(bar.getByRole("heading", { level: 1, name: "People" })).toBeTruthy();
-  expect(bar.getByText("Five")).toBeTruthy();
-  expect(within(screen.getByRole("main")).queryByRole("heading")).toBeNull();
+  const shelled = within(screen.getByRole("main"));
+  expect(
+    shelled.getByRole("heading", { level: 1, name: "People" }).className,
+  ).toBe("visually-hidden");
+  expect(shelled.getByText("Five")).toBeTruthy();
+  expect(within(screen.getByRole("banner")).queryByRole("heading")).toBeNull();
   cleanup();
   render(
     <main>

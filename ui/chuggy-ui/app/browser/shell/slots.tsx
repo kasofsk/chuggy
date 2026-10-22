@@ -170,6 +170,14 @@ export function TopBarSlot(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
+/** The title of a screen the bar's current entry already names: a heading for
+ * a reader who does not see the bar, and no row of its own. */
+export function ScreenTitle(props: {
+  readonly children: ReactNode;
+}): ReactNode {
+  return <h1 className="visually-hidden">{props.children}</h1>;
+}
+
 /** What the page is about beside the page itself, behind the bar's toggle.
  * `openFirst` is honoured only where the details have room to sit beside the
  * page (`viewportDeskEm`); below that width it would otherwise replace the

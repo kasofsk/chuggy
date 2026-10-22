@@ -92,7 +92,6 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(screen.getByText("No projects")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
     key: "ArrowDown",
@@ -100,7 +99,9 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(
     await screen.findByRole("menuitemradio", { name: "Dark" }),
   ).toBeDefined();
+  expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByText("Chat position")).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Runners" })).toBeNull();
 });
 
 test("the rule both names are held to stands under each field before anything is typed", async () => {

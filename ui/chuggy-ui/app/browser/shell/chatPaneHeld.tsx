@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 import {
   chatPaneDefaultAt,
   chatPaneRead,
+  chatPaneRestored,
   chatPaneWrite,
 } from "../../core/chatPane.ts";
 import type { ChatPaneState } from "../../core/chatPane.ts";
@@ -62,4 +63,18 @@ export function useChatPane(): ChatPaneHeld {
   if (held === undefined)
     throw new Error("a chat pane control was drawn outside the shell");
   return held;
+}
+
+/**
+ * What pressing for a screen does to the pane: one that had filled the body
+ * goes back beside the pages, since the reader is asking to see the screen and
+ * a pane still over the whole body would answer by drawing the chat again. A
+ * pane the reader put away stays away — that press was theirs too.
+ */
+export function useChatPaneYields(): () => void {
+  const held = useChatPane();
+  return () => {
+    if (held.state.presentation === "Full")
+      held.moveTo(chatPaneRestored(held.state));
+  };
 }

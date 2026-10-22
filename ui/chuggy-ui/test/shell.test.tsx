@@ -19,7 +19,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Shell } from "../app/browser/Shell.tsx";
@@ -75,13 +75,24 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ...(await importOriginal<typeof RouterModule>()),
-  Link: (props: {
-    readonly children?: ReactNode;
-    readonly onClick?: () => void;
-  }) => (
-    <a href="/" onClick={props.onClick}>
-      {props.children}
-    </a>
+  /** A menu item draws its link through `asChild`, so the double keeps the
+   * role, focus and handlers the item hands it, and only the route is
+   * dropped. */
+  Link: (
+    props: ComponentProps<"a"> & {
+      readonly to?: unknown;
+      readonly params?: unknown;
+      readonly activeOptions?: unknown;
+    },
+  ) => (
+    <a
+      {...Object.fromEntries(
+        Object.entries(props).filter(
+          ([key]) => !["to", "params", "activeOptions"].includes(key),
+        ),
+      )}
+      href="/"
+    />
   ),
   Outlet: () => pageDrawn(),
   useNavigate: () => () => undefined,
@@ -349,12 +360,12 @@ test("on a narrow viewport a full screen takes the bar's rows, and leaving it dr
   await pressed("Full screen");
   expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).toBeNull();
-  expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   expect(document.querySelector(".shell-banner")).not.toBeNull();
   styleless();
   await pressed("Exit full screen");
   expect(navDrawn()).not.toBeNull();
-  expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeNull();
+  expect(screen.queryByRole("button", { name: "Settings" })).not.toBeNull();
   styleless();
 });
 
@@ -397,6 +408,33 @@ test("repositioning the pane divides the frame the other way and is remembered",
     "grid-cols-[var(--width-chat)_minmax(0,1fr)]",
   );
   expect(localStorage.getItem(chatPaneStoreKey)).toContain("Left");
+  styleless();
+});
+
+/** The bar carries the project's screens and one gear; the setup pages, the
+ * theme and signing out are rarer moves, so they sit behind it. */
+test("the bar draws the screens and a gear, and the gear holds setup, the theme and signing out", async () => {
+  await mounted(viewportDeskEm);
+  const nav = navDrawn();
+  expect(
+    [...(nav?.querySelectorAll("a") ?? [])].map((link) => link.textContent),
+  ).not.toContain("Runners");
+  expect(screen.queryByRole("button", { name: "Chat" })).toBeNull();
+  expect(screen.queryByRole("link", { name: "chuggy" })).toBeNull();
+  await turned(() => {
+    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+      key: "ArrowDown",
+    });
+  });
+  const menu = await screen.findByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitem")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["Project settings", "Repositories", "Runners", "Sign out"]);
+  expect(
+    within(menu).getByRole("menuitemradio", { name: "Dark" }),
+  ).toBeDefined();
   styleless();
 });
 
@@ -850,11 +888,14 @@ test("the bar's Lead entry stands only where the project has a lead", async () =
   await mounted(viewportDeskEm, leadServed({ lead: "None" }));
   const bar = (): HTMLElement => navDrawn() ?? document.body;
   const unled = within(bar()).getByRole("link", { name: "Lead" });
-  expect(unled.querySelector("[aria-hidden]"), "a dot with no lead").toBeNull();
+  expect(
+    unled.querySelector("i[aria-hidden]"),
+    "a dot with no lead",
+  ).toBeNull();
   cleanup();
   await mounted(viewportDeskEm, leadServed(leadBody(1, 1)));
   const led = within(bar()).getByRole("link", { name: "OpenLead" });
-  expect(led.querySelector("[aria-hidden]")).not.toBeNull();
+  expect(led.querySelector("i[aria-hidden]")).not.toBeNull();
   styleless();
 });
 

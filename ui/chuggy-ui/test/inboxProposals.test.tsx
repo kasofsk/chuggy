@@ -180,7 +180,7 @@ function said(): string | undefined {
   return screen.queryByRole("status")?.textContent ?? undefined;
 }
 
-test("each ticket a held decision names is a row with Approve and Reject, counted in the badge", async () => {
+test("each ticket a held decision names is a row with Approve and Reject", async () => {
   drawProject({ held: [both] });
   await settled();
   for (const ticket of [7, 8]) {
@@ -195,10 +195,6 @@ test("each ticket a held decision names is a row with Approve and Reject, counte
       within(row(ticket)).queryByText("no action can be sent from here yet"),
     ).toBeNull();
   }
-  expect(
-    screen.getByRole("heading", { name: "Inbox" }).nextElementSibling
-      ?.textContent,
-  ).toBe("2");
 });
 
 /** Either row's answer is the decision's, so both rows leave on the read that follows it. */

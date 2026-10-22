@@ -75,7 +75,7 @@ import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { ScreenTitle } from "./shell/slots.tsx";
 import { TicketRowDispatchScope } from "./TicketActions.tsx";
 import type { TicketRowDispatch } from "./TicketActions.tsx";
 import {
@@ -493,11 +493,7 @@ function TicketListRows(props: {
 }
 
 function ProjectTableTitle(): ReactNode {
-  return (
-    <TopBarSlot>
-      <h1 className="text-md font-strong text-ink-1 truncate">Tickets</h1>
-    </TopBarSlot>
-  );
+  return <ScreenTitle>Tickets</ScreenTitle>;
 }
 
 function ProjectTableNewTicket(props: {

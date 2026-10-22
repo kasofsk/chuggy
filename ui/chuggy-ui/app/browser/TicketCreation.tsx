@@ -1079,6 +1079,8 @@ function CreationScreenRead(props: {
  * open a ticket. */
 export function CreationScreen(props: {
   readonly heading: ReactNode;
+  /** Whether the bar's current entry already says the heading. */
+  readonly named?: boolean;
   readonly children: (ready: CreationScreenReady) => ReactNode;
 }): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
@@ -1087,7 +1089,11 @@ export function CreationScreen(props: {
     project: params.project,
   };
   return (
-    <DraftScreen partition={partition} heading={props.heading}>
+    <DraftScreen
+      partition={partition}
+      heading={props.heading}
+      named={props.named === true}
+    >
       <CreationScreenRead partition={partition}>
         {props.children}
       </CreationScreenRead>
@@ -1097,7 +1103,7 @@ export function CreationScreen(props: {
 
 export function TicketCreation(): ReactNode {
   return (
-    <CreationScreen heading="New ticket">
+    <CreationScreen heading="New ticket" named>
       {(ready) => <CreationForm {...ready} />}
     </CreationScreen>
   );

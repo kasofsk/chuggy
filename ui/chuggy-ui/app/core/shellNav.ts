@@ -1,6 +1,7 @@
 /**
  * The shell's navigation, derived: the project's screens, in the order the bar
- * above every page draws them.
+ * above every page draws them, and the pages that set the project up, which
+ * sit under the bar's gear because a reader visits them rarely.
  *
  * Every entry is a route and none is an action, so the renderer is a loop
  * rather than a switch over what each entry means. What a reader has said and
@@ -38,8 +39,18 @@ export interface NavStanding {
   readonly tone: Tone;
 }
 
+/** Every entry the bar and its gear draw, so each is drawn with its own glyph. */
+export type NavEntryId =
+  | "overview"
+  | "inbox"
+  | "lead"
+  | "ticket-new"
+  | "settings"
+  | "repositories"
+  | "runners";
+
 export interface NavEntry {
-  readonly id: string;
+  readonly id: NavEntryId;
   readonly label: string;
   readonly to: NavRoute;
   readonly params: NavParams;
@@ -82,7 +93,25 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       params,
       standing: input.leadStanding,
     },
-    { id: "settings", label: "Settings", to: navRoutes.settings, params },
+    ...(projectAbilityRefused(input.abilities, "mutate") ? [] : [ticketNew]),
+  ];
+}
+
+/** The pages that set the project up, in the order the gear's menu lists them. */
+export function shellSetupNav(
+  partition: PartitionIdentity,
+): readonly NavEntry[] {
+  const params: NavParams = {
+    tenant: partition.tenant,
+    project: partition.project,
+  };
+  return [
+    {
+      id: "settings",
+      label: "Project settings",
+      to: navRoutes.settings,
+      params,
+    },
     {
       id: "repositories",
       label: "Repositories",
@@ -90,7 +119,6 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       params,
     },
     { id: "runners", label: "Runners", to: navRoutes.runners, params },
-    ...(projectAbilityRefused(input.abilities, "mutate") ? [] : [ticketNew]),
   ];
 }
 

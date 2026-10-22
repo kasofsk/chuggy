@@ -1,15 +1,16 @@
 /**
- * The bar above every page: which project is open, the screens it holds, the
- * controls that belong to the frame, and the page's own title and chips
- * beneath them.
+ * The bar above every page: which project is open and the controls that belong
+ * to the frame on one row, the screens the project holds on the next, and the
+ * page's own title and chips beneath them.
  *
  * The second row is drawn only where a page filled a slot, so a screen that
  * says nothing about itself gives the height back to the page rather than
  * spending it on a heading the project switcher already carries.
  *
- * A screen outside every project draws the same bar without what only a
- * project has — its screens, its chat and its page row — so signing out and
- * the theme are reachable before there is a project to open.
+ * The frame's own controls and the project's setup pages sit behind the gear
+ * beside the project. A screen outside every project draws the same bar without what
+ * only a project has — its screens, its setup and its page row — so signing
+ * out and the theme are reachable before there is a project to open.
  */
 
 import { Link, useRouterState } from "@tanstack/react-router";
@@ -24,16 +25,13 @@ import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
-import { chatPaneRestored } from "../../core/chatPane.ts";
 import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
-import { useSessionHolder } from "../session.tsx";
-import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { ChatPaneToggle } from "./ChatPane.tsx";
-import { useChatPane } from "./chatPaneHeld.tsx";
+import { useChatPaneYields } from "./chatPaneHeld.tsx";
 import { DetailsToggle } from "./DetailsPane.tsx";
+import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";
 import { SettingsMenu } from "./SettingsMenu.tsx";
 import { useShellSlotHolder, useShellSlotsFilled } from "./slots.tsx";
@@ -50,15 +48,11 @@ const navDotFills: Readonly<Record<Tone, string>> = {
   neutral: "bg-ink-3",
 };
 
-/**
- * One screen's entry, which also puts the chat pane back beside the pages where
- * it had filled the body: a reader pressing for a screen is asking to see it,
- * and a pane still over the whole body would answer by drawing the chat again.
- * A pane the reader put away stays away — that press was theirs too.
- */
+/** One screen's entry, which also puts a pane that filled the body back
+ * beside the pages. */
 export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   const entry = props.entry;
-  const held = useChatPane();
+  const yields = useChatPaneYields();
   const current = useRouterState({
     select: (router) => navEntryCurrent(entry, router.location.pathname),
   });
@@ -67,14 +61,12 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
       <Link
         to={entry.to}
         params={entry.params}
-        onClick={() => {
-          if (held.state.presentation === "Full")
-            held.moveTo(chatPaneRestored(held.state));
-        }}
+        onClick={yields}
         activeOptions={{ exact: true }}
         aria-current={current ? "page" : undefined}
-        className={`flex items-center gap-2 rounded-2 px-3 py-1 text-md whitespace-nowrap no-underline ${current ? "bg-surface-2 text-ink-1" : "text-ink-2"}`}
+        className="topbar-entry"
       >
+        <NavIcon id={entry.id} />
         {entry.standing === undefined ? null : (
           <>
             <i
@@ -84,7 +76,7 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
             <span className="visually-hidden">{entry.standing.word}</span>
           </>
         )}
-        <span className="truncate">{entry.label}</span>
+        <span className="topbar-entry-label">{entry.label}</span>
         {entry.count === undefined ? null : (
           <span className="text-xs text-ink-3 tabular-nums">{entry.count}</span>
         )}
@@ -112,7 +104,7 @@ function TopBarNav(props: {
   });
   return (
     <nav aria-label="Console" className="min-w-0">
-      <ul className="flex min-w-0 flex-wrap items-center gap-1">
+      <ul className="topbar-nav">
         {entries.map((entry) => (
           <TopBarNavEntry key={entry.id} entry={entry} />
         ))}
@@ -123,21 +115,6 @@ function TopBarNav(props: {
         ) : null}
       </ul>
     </nav>
-  );
-}
-
-function TopBarSignOut(): ReactNode {
-  const holder = useSessionHolder();
-  return (
-    <Button
-      variant="quiet"
-      size="sm"
-      onClick={() => {
-        void holder.signOut();
-      }}
-    >
-      Sign out
-    </Button>
   );
 }
 
@@ -165,20 +142,16 @@ export function TopBar(props: {
   const partition = props.partition;
   return (
     <div className="grid">
-      <header className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-2">
-        <Link
-          to="/"
-          className="text-md font-strong tracking-label text-ink-1 no-underline"
-        >
-          chuggy
-        </Link>
-        <ProjectSwitcher partition={partition} />
-        {partition === undefined ? null : <TopBarNav partition={partition} />}
-        <div className="flex flex-1 items-center justify-end gap-3">
-          {partition === undefined ? null : <ChatPaneToggle />}
-          <SettingsMenu chat={partition !== undefined} />
-          <TopBarSignOut />
+      <header className="topbar">
+        <div className="topbar-main">
+          <div className="topbar-project">
+            <ProjectSwitcher partition={partition} />
+          </div>
+          <div className="flex shrink-0 items-center justify-end">
+            <SettingsMenu partition={partition} />
+          </div>
         </div>
+        {partition === undefined ? null : <TopBarNav partition={partition} />}
       </header>
       {partition === undefined ? null : <TopBarPage />}
     </div>

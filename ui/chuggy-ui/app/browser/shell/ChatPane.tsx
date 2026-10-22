@@ -81,7 +81,6 @@ import {
 } from "../thread/threadSend.tsx";
 import type { ThreadKeptAway } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
-import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useChatPane } from "./chatPaneHeld.tsx";
 import { ChatPaneHeaderRow, ChatPaneIconButton } from "./chatPaneIcons.tsx";
@@ -254,7 +253,7 @@ function ChatPaneControls(): ReactNode {
         />
       )}
       <ChatPaneIconButton
-        glyph="collapse"
+        glyph={`collapse${state.placement}`}
         label="Collapse"
         onClick={() => {
           held.moveTo(chatPaneToggled(state));
@@ -427,7 +426,7 @@ function ChatPaneStrip(): ReactNode {
   return (
     <div className="grid content-start justify-center bg-surface-1 py-2">
       <ChatPaneIconButton
-        glyph="chat"
+        glyph={`expand${held.state.placement}`}
         label="Expand chat"
         onClick={() => {
           held.moveTo(chatPaneToggled(held.state));
@@ -670,23 +669,5 @@ export function ChatPane(props: {
       partition={props.partition}
       reading={props.chat.presentation === "Full"}
     />
-  );
-}
-
-/** What puts the pane away and brings it back, drawn in the bar above every
- * page. */
-export function ChatPaneToggle(): ReactNode {
-  const held = useChatPane();
-  return (
-    <Button
-      variant="quiet"
-      size="sm"
-      pressed={held.state.presentation !== "Collapsed"}
-      onClick={() => {
-        held.moveTo(chatPaneToggled(held.state));
-      }}
-    >
-      Chat
-    </Button>
   );
 }

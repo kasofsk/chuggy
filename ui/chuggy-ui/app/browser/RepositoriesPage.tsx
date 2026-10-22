@@ -88,7 +88,7 @@ import {
 } from "./repositories/UnbindRepository.tsx";
 import type { RepositoryUnbinding } from "./repositories/UnbindRepository.tsx";
 import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -375,11 +375,7 @@ export function RepositoriesPage(): ReactNode {
   const runner = useWorkRunner(partition, "Reader");
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          Repositories
-        </h1>
-      </TopBarSlot>
+      <ScreenTitle>Repositories</ScreenTitle>
       <RepositoriesSection
         partition={partition}
         installations={
