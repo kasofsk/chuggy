@@ -1,13 +1,13 @@
 /**
  * The run the ticket is on now: what the agent last said, the call it is
  * waiting on and the notes before it, opening into the run's whole
- * conversation. A run with no transcript, such as a command or one whose
+ * transcript. A run with none, such as a command or one whose
  * worker has not started, is its stage, its status and how long it has gone.
  *
  * The execution is read under the key its ledger row reads it by, so a live
  * `Execution` frame lands in both and the card follows the same high-water
  * mark the row's transcript does. The run's prompt is read only once the
- * conversation is opened.
+ * transcript is opened.
  *
  * A run of the reader's own that their runner may take, and has not begun,
  * says where it waits: on their runner, or on it coming back online where no
@@ -159,7 +159,7 @@ function TicketNowToggle(props: {
 }): ReactNode {
   return (
     <Button size="sm" expanded={props.open} onClick={props.onToggle}>
-      {props.open ? "Hide conversation" : "Show conversation"}
+      {props.open ? "Hide transcript" : "Show transcript"}
     </Button>
   );
 }

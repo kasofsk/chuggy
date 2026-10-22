@@ -1,6 +1,8 @@
 /* Panel: the head with its meta slot, the body, and the trigger the
    collapsible form opens from. The frame is utilities on the root, so the
-   quiet variant drops it by not asking for it. */
+   quiet variant drops it by not asking for it. The head's names and the body
+   are one column no wider than the panel, so a long identifier or a line of
+   output wraps or scrolls inside it rather than widening the page. */
 
 @layer ui {
   .panel-head {
@@ -13,6 +15,7 @@
 
   .panel-named {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-1);
     min-width: 0;
   }
@@ -20,6 +23,7 @@
   .panel-title {
     font-size: var(--text-md);
     font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
   }
 
   .panel-about {
@@ -59,6 +63,7 @@
   .panel-body {
     padding: 0 var(--space-4) var(--space-4);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
   }
 
