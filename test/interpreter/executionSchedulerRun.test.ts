@@ -26,6 +26,7 @@ import {
   executionSchedulerDefaults,
   silentSchedulerTelemetry,
   type CancellationRegistered,
+  type ExecutionOutcome,
   type ExecutionPolicy,
   type ExecutionRouting,
   type ExecutionSchedulerStore,
@@ -40,6 +41,7 @@ import {
   type AttemptErrorWritten,
   type AttemptWorkloadObserved,
   type AttemptOpening,
+  type Terminalized,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -179,6 +181,20 @@ const attempt: PhysicalAttempt = {
   },
 };
 
+/** A conclusion recorded as `call`, answered as terminalized with `outcome`. */
+function recordedConclusion(
+  calls: string[],
+  call: string,
+  outcome: ExecutionOutcome,
+): Promise<Terminalized> {
+  calls.push(call);
+  return Promise.resolve({
+    terminalized: "Terminalized",
+    outcome,
+    operation: asOperationId("operation"),
+  });
+}
+
 /** A store that records every durable move asked of it and takes none. */
 function recordingStore(calls: string[]): ExecutionSchedulerStore {
   return {
@@ -199,22 +215,11 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
       calls.push(`ended:${loss}:${evidence}`);
       return Promise.resolve(true);
     },
-    retriesExhausted: () => {
-      calls.push("retriesExhausted");
-      return Promise.resolve({
-        terminalized: "Terminalized",
-        outcome: "Failed",
-        operation: asOperationId("operation"),
-      });
-    },
-    assignmentEnded: () => {
-      calls.push("assignmentEnded");
-      return Promise.resolve({
-        terminalized: "Terminalized",
-        outcome: "ProcessFailed",
-        operation: asOperationId("operation"),
-      });
-    },
+    retriesExhausted: () =>
+      recordedConclusion(calls, "retriesExhausted", "Failed"),
+    assignmentEnded: () =>
+      recordedConclusion(calls, "assignmentEnded", "ProcessFailed"),
+    stepFailed: () => recordedConclusion(calls, "stepFailed", "ProcessFailed"),
     terminalize: () =>
       Promise.resolve({
         terminalized: "Terminalized",
@@ -595,6 +600,17 @@ test("an execution whose attempt a pool claimed is concluded rather than opened 
   };
   assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
   assert.deepEqual(calls, ["assignmentEnded"]);
+});
+
+test("an execution whose last attempt's run ended on a failed step is concluded rather than opened again", async () => {
+  const calls: string[] = [];
+  const service = serviceWith(calls, runnable, placedOk);
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    openAttempt: () => Promise.resolve({ opened: "StepFailed" }),
+  };
+  assert.equal(await executionSchedulerLaunch({ ...service, store }, epoch), 0);
+  assert.deepEqual(calls, ["stepFailed"]);
 });
 
 test("an execution inside its placement backoff is left alone", async () => {

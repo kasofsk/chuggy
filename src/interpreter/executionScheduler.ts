@@ -592,6 +592,11 @@ export type AttemptEvidence =
   | "RunRateLimited"
   | "RunTurnsExhausted"
   | "RunUploadRefused"
+  | "RunCloneFailed"
+  | "RunSetupFailed"
+  | "RunCommitFailed"
+  | "RunPushFailed"
+  | "RunTimedOut"
   | WorkerImageFault;
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
@@ -611,6 +616,11 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "RunRateLimited",
   "RunTurnsExhausted",
   "RunUploadRefused",
+  "RunCloneFailed",
+  "RunSetupFailed",
+  "RunCommitFailed",
+  "RunPushFailed",
+  "RunTimedOut",
   ...workerImageFaults,
 ];
 
@@ -680,14 +690,16 @@ export interface AttemptOpening {
 /**
  * What a placement reservation produced: the fenced physical attempt, or why
  * none was opened. `AssignmentEnded` is an execution a pool has claimed an
- * attempt of, for which no other is opened.
+ * attempt of, and `StepFailed` one whose last attempt's run ended on a failed
+ * step, for each of which no other is opened.
  */
 export type AttemptOpened =
   | { readonly opened: "Opened"; readonly attempt: PhysicalAttempt }
   | { readonly opened: "NotLaunchable"; readonly status: ExecutionStatus }
   | { readonly opened: "BackingOff" }
   | { readonly opened: "RetriesExhausted" }
-  | { readonly opened: "AssignmentEnded" };
+  | { readonly opened: "AssignmentEnded" }
+  | { readonly opened: "StepFailed" };
 
 /** What the scheduler reports of one attempt, which the terminal transaction reduces. */
 export interface AttemptReport extends FencedAttempt {
@@ -847,7 +859,8 @@ export interface ExecutionSchedulerStore {
 
   /**
    * Opens the next sequential attempt for an execution that owns a slot, has no
-   * live attempt and is not inside its placement backoff.
+   * live attempt, no pool's claim and no last attempt whose run ended on a
+   * failed step, and is not inside its placement backoff.
    */
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
@@ -886,6 +899,15 @@ export interface ExecutionSchedulerStore {
    * that attempt.
    */
   assignmentEnded(
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<Terminalized>;
+
+  /**
+   * Terminalizes an execution whose last attempt's run ended on a failed step,
+   * as `retriesExhausted` settles a spent budget, under the step's own report.
+   */
+  stepFailed(
     partition: Partition,
     execution: ExecutionId,
   ): Promise<Terminalized>;

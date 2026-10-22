@@ -30,7 +30,10 @@ import {
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { workerErrorPath } from "../../src/contract/http.ts";
-import type { RunEndedEvidence } from "../../src/interpreter/runEvidence.ts";
+import {
+  runStepEvidences,
+  type RunEndedEvidence,
+} from "../../src/interpreter/runEvidence.ts";
 import {
   asAttemptCapabilitySecret,
   type ExecutionId,
@@ -40,7 +43,10 @@ import {
   executionSchedulerLaunch,
   executionSchedulerResume,
 } from "../../src/interpreter/executionSchedulerRun.ts";
-import type { RunnerLossResource } from "../../src/interpreter/nativeWeb.ts";
+import type {
+  RunnerLossResource,
+  RunStepFailureResource,
+} from "../../src/interpreter/nativeWeb.ts";
 import {
   asPrincipal,
   type Principal,
@@ -349,6 +355,47 @@ async function readLoss(
   return own?.escalation?.lost;
 }
 
+/** What the ticket's own read and its project's page each say its run stopped at. */
+async function readFailed(
+  routed: Routed,
+): Promise<RunStepFailureResource | undefined> {
+  const { partition, ticket } = routed.project;
+  const own = await reads.ticket(partition, asTicketId(ticket));
+  for (const order of ["Identity", "RecentActivity"] as const) {
+    const page = await reads.project(partition, { limit: 10, order });
+    assert.ok(page.result === "Found");
+    const listed = page.project.tickets.find((each) => each.ticket === ticket);
+    assert.deepEqual(listed?.escalation, own?.escalation);
+  }
+  return own?.escalation?.failed;
+}
+
+/** The report of the manifest the execution settled under. */
+async function settledReport(
+  routed: Routed,
+  execution: ExecutionId,
+): Promise<string | undefined> {
+  const { partition } = routed.project;
+  const [row] = (await rig.harness.query(
+    `SELECT r.report FROM execution e
+       JOIN execution_result_report r
+         ON r.tenant=e.tenant AND r.project=e.project AND r.manifest=e.result_manifest
+      WHERE e.tenant=$1 AND e.project=$2 AND e.execution=$3`,
+    [partition.tenant, partition.project, execution],
+  )) as readonly { report: string }[];
+  return row?.report;
+}
+
+/** The report each failed step settles its execution under. */
+const stepReports = {
+  RunCloneFailed: "The clone failed.",
+  RunSetupFailed:
+    "A setup line failed. Setup runs as the default branch's configuration says; if the line is wrong, push its fix there.",
+  RunCommitFailed: "The commit failed.",
+  RunPushFailed: "The push failed.",
+  RunTimedOut: "The run passed its deadline.",
+} as const;
+
 const workLost = { phase: "Escalated", escalation: "WorkFailureEscalated" };
 const evaluationLost = {
   phase: "Escalated",
@@ -613,4 +660,116 @@ test("work lost in the cluster until its budget ran out is left for a person", a
   assert.deepEqual(await standing(routed), workLost);
   assert.equal(await schedulerAnswers(routed), 0);
   assert.equal(await readLoss(routed), undefined);
+});
+
+test("work whose push failed on its runner waits for a person and is never resumed, as does every other failed step", async () => {
+  for (const step of runStepEvidences) {
+    const { routed, execution } = await routedTicket(`step-${step}`);
+    const pool = await poolOf(routed);
+    const { attempt, bearer } = await claimed(routed, execution, pool);
+    await lostOnRunner(routed, bearer, 61, step);
+    assert.deepEqual(await standing(routed), workLost, step);
+    assert.equal(await resumedByScheduler(routed), 0, step);
+    assert.deepEqual(await standing(routed), workLost, step);
+    assert.deepEqual(
+      await resumedAtDoor(routed),
+      { resumed: "NotResumable" },
+      step,
+    );
+    assert.equal(await schedulerAnswers(routed), 0, step);
+    assert.equal(await readLoss(routed), undefined, step);
+    assert.deepEqual(
+      await readFailed(routed),
+      {
+        evidence: step,
+        execution,
+        attempt: attempt.attempt,
+        error: { bytes: 61 },
+      },
+      step,
+    );
+    assert.equal(
+      await settledReport(routed, execution),
+      stepReports[step],
+      step,
+    );
+  }
+});
+
+test("work whose lease lapsed on its runner is still resumed, as is work whose run failed", async () => {
+  const { routed, execution } = await routedTicket("step-lease-lapsed");
+  const pool = await poolOf(routed);
+  await claimed(routed, execution, pool);
+  await leaseLapsedOnRunner(routed, execution);
+  assert.deepEqual(await standing(routed), workLost);
+  assert.equal((await readLoss(routed))?.evidence, "LeaseExpired");
+  assert.equal(await readFailed(routed), undefined);
+  assert.equal(
+    await settledReport(routed, execution),
+    "The attempt a pool claimed ended before it reported a result.",
+  );
+  assert.equal(await resumedByScheduler(routed), 1);
+  assert.equal((await standing(routed))?.["phase"], "Work");
+  const { bearer } = await claimed(routed, await newestAdmitted(routed), pool);
+  await lostOnRunner(routed, bearer);
+  assert.equal((await readLoss(routed))?.evidence, "RunFailed");
+  assert.equal(await readFailed(routed), undefined);
+  assert.equal(await resumedByScheduler(routed), 1);
+  assert.equal((await standing(routed))?.["phase"], "Work");
+});
+
+test("work whose push failed in the cluster concludes at once, and work whose run failed there is opened again", async () => {
+  for (const [evidence, opened] of [
+    ["RunPushFailed", "StepFailed"],
+    ["RunFailed", "Opened"],
+  ] as const) {
+    const label = `step-in-cluster-${evidence}`;
+    const project = await schedulerProject(rig, label, { tasks: 1 });
+    const routed: Routed = { project, memory: project.memory };
+    await rig.store.registerSpawn(
+      await schedulerClaimFor(
+        rig,
+        project.partition,
+        project.request,
+        schedulerOwner(label),
+      ),
+      1,
+      schedulerInCluster,
+    );
+    const { execution, attempt } = await schedulerPlacedAttempt(
+      rig,
+      project,
+      label,
+    );
+    assert.equal(await rig.store.attemptEnded(attempt, "Lost", evidence), true);
+    await rig.harness.query(
+      `UPDATE execution SET placement_backoff_from=NULL
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      [project.partition.tenant, project.partition.project, execution],
+    );
+    const next = await rig.store.openAttempt({
+      partition: project.partition,
+      execution,
+      epoch: project.epoch,
+      leaseSecs: service.config.attemptLeaseSecs,
+      retriesMax: service.config.attemptRetriesMax,
+      placementBackoffSecs: service.config.placementBackoffSecs,
+      runtime: schedulerRuntime,
+    });
+    assert.equal(next.opened, opened, evidence);
+    if (next.opened !== "StepFailed") continue;
+    const settled = await rig.store.stepFailed(project.partition, execution);
+    assert.ok(settled.terminalized === "Terminalized");
+    assert.equal(settled.outcome, "ProcessFailed");
+    await drained(routed);
+    assert.deepEqual(await standing(routed), workLost);
+    assert.equal(await settledReport(routed, execution), "The push failed.");
+    assert.deepEqual(await readFailed(routed), {
+      evidence,
+      execution,
+      attempt: attempt.attempt,
+    });
+    assert.equal(await resumedByScheduler(routed), 0);
+    assert.equal(await readLoss(routed), undefined);
+  }
 });

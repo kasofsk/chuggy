@@ -27,6 +27,7 @@ import {
   selectorReviewRole,
   selectorServiceRole,
   ticketRunnerLossFunction,
+  ticketRunStepFailureFunction,
   ticketServiceRole,
   workerPlaneRole,
   workerRunBindingFunction,
@@ -924,6 +925,15 @@ test("the scheduler reaches the decision mailbox only through the doors built fo
     const refusal = await harness.attemptAs(schedulerRole, statement);
     assert.match(refusal ?? "", postgresHarnessDenial(object));
   }
+});
+
+test("only the API reads the failed run step an escalated ticket stopped at", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${ticketRunStepFailureFunction}(text,text,bigint)`,
+    ),
+    [apiRole],
+  );
 });
 
 test("only the scheduler finds and resumes a job lost on its runner, and only the API reads the loss", async () => {

@@ -1073,6 +1073,16 @@ async function schedulerLaunchOne(
       });
       return false;
     }
+    case "StepFailed": {
+      const outcome = await service.store.stepFailed(
+        execution.partition,
+        execution.execution,
+      );
+      recordScheduler(service.metrics, (metrics) => {
+        metrics.terminalization(outcome.terminalized);
+      });
+      return false;
+    }
   }
 }
 
