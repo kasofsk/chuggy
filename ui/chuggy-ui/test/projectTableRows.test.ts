@@ -115,7 +115,7 @@ test("a row names the member who filed the ticket, and nobody where the wire nam
   const creator = "23:https://issuer.example/user-0123456789abcdef0123";
   expect(
     projectTableRow({ ...working, creator }, undefined, false).creator,
-  ).toEqual({ text: "user-0123456…ef0123", title: creator });
+  ).toBe(creator);
   expect(projectTableRow(working, undefined, false).creator).toBeUndefined();
 });
 

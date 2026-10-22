@@ -14,6 +14,7 @@ import type { ExecutionSummary } from "../../../src/contract/responses.ts";
 import {
   configurationCommitShort,
   configurationLabel,
+  creatorEmailsOf,
   creatorLabel,
   digestShortened,
   executionRequirementLabel,
@@ -195,4 +196,20 @@ test("a creator with no issuer prefix, or one naming nothing past it, is drawn w
     text: "9:issuer/",
     title: "9:issuer/",
   });
+});
+
+test("a creator the project's people name an email for is drawn as it, and by subject otherwise", () => {
+  const principal = "23:https://issuer.example/alice";
+  const emails = creatorEmailsOf([
+    { subject: "alice", email: "alice@example.com" },
+    { subject: "bob" },
+  ]);
+  expect([...emails.keys()]).toEqual(["alice"]);
+  expect(creatorLabel(principal, emails)).toEqual({
+    text: "alice@example.com",
+    title: principal,
+  });
+  expect(creatorLabel("23:https://issuer.example/bob", emails).text).toBe(
+    "bob",
+  );
 });

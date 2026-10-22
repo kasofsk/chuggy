@@ -20,21 +20,19 @@ import {
   projectTicketRowsFold,
   projectTicketRowsHaveMore,
 } from "./projectTicketPages.ts";
-import type { ProjectTableRow } from "./projectTableRows.ts";
 import type { ProjectTicketRows } from "./projectTicketPages.ts";
-import { ticketSectionPhases, ticketSectionRoster } from "./ticketSections.ts";
-import type { TicketSection } from "./ticketSections.ts";
 
 export const ticketFilterAll = "All";
 
-export type TicketFilter = TicketSection | typeof ticketFilterAll;
+/** Every ticket, or the tickets in one phase. */
+export type TicketFilter = TicketPhase | typeof ticketFilterAll;
 
 /** Undefined rather than every phase, because a read that names them all is a
  * read the route would answer the same way with a longer query. */
 export function ticketFilterPhases(
   filter: TicketFilter,
 ): readonly TicketPhase[] | undefined {
-  return filter === ticketFilterAll ? undefined : ticketSectionPhases(filter);
+  return filter === ticketFilterAll ? undefined : [filter];
 }
 
 /**
@@ -95,17 +93,5 @@ export function ticketFilterProjectEmpty(
     rows.tickets.length === 0 &&
     rows.nextCursor === undefined &&
     rows.failure === undefined
-  );
-}
-
-/** The sections a filter draws: the one it names, or on the unfiltered view
- * each section holding a row, since an empty one there would say only that. */
-export function ticketFilterSections(
-  filter: TicketFilter,
-  rows: readonly ProjectTableRow[],
-): readonly TicketSection[] {
-  if (filter !== ticketFilterAll) return [filter];
-  return ticketSectionRoster.filter((section) =>
-    rows.some((row) => row.section === section),
   );
 }

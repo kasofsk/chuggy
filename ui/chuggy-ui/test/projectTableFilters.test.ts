@@ -6,7 +6,6 @@
 import { expect, test } from "vitest";
 
 import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
-import { projectExecutionIndexUnread } from "../app/core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
@@ -14,24 +13,19 @@ import {
   ticketFilterPage,
   ticketFilterPhases,
   ticketFilterProjectEmpty,
-  ticketFilterSections,
 } from "../app/core/projectTableFilters.ts";
 import type { TicketFilter } from "../app/core/projectTableFilters.ts";
-import { projectTableRows } from "../app/core/projectTableRows.ts";
 import {
   projectTicketPagesMax,
   projectTicketRowsEmpty,
   projectTicketRowsMax,
 } from "../app/core/projectTicketPages.ts";
-import { ticketSectionRoster } from "../app/core/ticketSections.ts";
+import { phaseRoster } from "../../../src/contract/rosters.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
-const filters: readonly TicketFilter[] = [
-  ticketFilterAll,
-  ...ticketSectionRoster,
-];
+const filters: readonly TicketFilter[] = [ticketFilterAll, ...phaseRoster];
 
 test("every filter reads and writes under a key of its own", () => {
   const keys = filters.map((filter) =>
@@ -41,20 +35,15 @@ test("every filter reads and writes under a key of its own", () => {
 });
 
 test("a filter's key stays under its partition, so a reset still reaches it", () => {
-  const key = ticketFilterList(partition, "NeedsYou").key;
+  const key = ticketFilterList(partition, "Escalated").key;
   expect(key.slice(0, 3)).toStrictEqual(["project", "acme", "atlas"]);
 });
 
-test("a section filter asks the wire for that section's phases and no others", () => {
-  expect(ticketFilterPhases("NeedsYou")).toStrictEqual(["Escalated"]);
-  expect(ticketFilterPage("NeedsYou", undefined).phase).toStrictEqual([
-    "Escalated",
-  ]);
-});
-
-test("no section filter asks for an empty phase list", () => {
-  for (const section of ticketSectionRoster)
-    expect(ticketFilterPhases(section)?.length).toBeGreaterThan(0);
+test("a phase filter asks the wire for that phase and no other", () => {
+  for (const phase of phaseRoster) {
+    expect(ticketFilterPhases(phase)).toStrictEqual([phase]);
+    expect(ticketFilterPage(phase, undefined).phase).toStrictEqual([phase]);
+  }
 });
 
 test("the unfiltered read names no phase at all", () => {
@@ -70,7 +59,7 @@ test("every page asks for recent activity and states the size it wants", () => {
 });
 
 test("a page after the first carries the cursor it was given", () => {
-  expect(ticketFilterPage("UpNext", "opaque").cursor).toBe("opaque");
+  expect(ticketFilterPage("Pending", "opaque").cursor).toBe("opaque");
 });
 
 test("more is offered with the cursor the last page answered with", () => {
@@ -113,11 +102,10 @@ test("only the unfiltered read, holding nothing and with nothing left to read, s
   expect(
     ticketFilterProjectEmpty(ticketFilterAll, projectTicketRowsEmpty),
   ).toBe(true);
-  for (const section of ticketSectionRoster)
-    expect(
-      ticketFilterProjectEmpty(section, projectTicketRowsEmpty),
-      section,
-    ).toBe(false);
+  for (const phase of phaseRoster)
+    expect(ticketFilterProjectEmpty(phase, projectTicketRowsEmpty), phase).toBe(
+      false,
+    );
   expect(
     ticketFilterProjectEmpty(ticketFilterAll, {
       ...projectTicketRowsEmpty,
@@ -138,17 +126,4 @@ test("only the unfiltered read, holding nothing and with nothing left to read, s
       ],
     }),
   ).toBe(false);
-});
-
-test("the unfiltered view draws the sections holding a row, and a filter always its own", () => {
-  const rows = projectTableRows(
-    [{ ticket: 1, phase: "Work", sequence: 1, ...ticketInstants }],
-    projectExecutionIndexUnread,
-  );
-  expect(ticketFilterSections(ticketFilterAll, rows)).toStrictEqual([
-    "InProgress",
-  ]);
-  expect(ticketFilterSections(ticketFilterAll, [])).toStrictEqual([]);
-  for (const section of ticketSectionRoster)
-    expect(ticketFilterSections(section, [])).toStrictEqual([section]);
 });

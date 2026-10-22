@@ -28,8 +28,35 @@ export interface PickerAction {
   readonly onSelect: () => void;
 }
 
+/** The actions under the roster, set off from it where it holds any option. */
+function PickerActions(props: {
+  readonly actions: readonly PickerAction[];
+  readonly separated: boolean;
+}): ReactNode {
+  if (props.actions.length === 0) return null;
+  return (
+    <>
+      {props.separated ? (
+        <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+      ) : null}
+      {props.actions.map((action) => (
+        <DropdownMenu.Item
+          key={action.text}
+          className={menuItemClassName}
+          onSelect={action.onSelect}
+        >
+          <span className="picker-gutter" />
+          {action.text}
+        </DropdownMenu.Item>
+      ))}
+    </>
+  );
+}
+
 export function Picker(props: {
   readonly label: string;
+  /** A mark drawn before the trigger's text, saying what the choice is about. */
+  readonly glyph?: ReactNode;
   readonly value: string;
   readonly options: readonly PickerOption[];
   readonly onChoose: (value: string) => void;
@@ -53,7 +80,7 @@ export function Picker(props: {
         <DropdownMenu.Trigger
           className={`${buttonLookClassName({ size: "sm" })} min-w-0 max-w-full`}
         >
-          <span className="visually-hidden">{props.label}</span>{" "}
+          <span className="visually-hidden">{props.label}</span> {props.glyph}
           <span className="min-w-0 truncate">
             {chosen?.text ?? props.placeholder ?? props.value}
           </span>
@@ -81,23 +108,10 @@ export function Picker(props: {
               </DropdownMenu.RadioItem>
             ))}
           </DropdownMenu.RadioGroup>
-          {props.actions === undefined || props.actions.length === 0 ? null : (
-            <>
-              {props.options.length === 0 ? null : (
-                <DropdownMenu.Separator className="bg-edge my-1 h-px" />
-              )}
-              {props.actions.map((action) => (
-                <DropdownMenu.Item
-                  key={action.text}
-                  className={menuItemClassName}
-                  onSelect={action.onSelect}
-                >
-                  <span className="picker-gutter" />
-                  {action.text}
-                </DropdownMenu.Item>
-              ))}
-            </>
-          )}
+          <PickerActions
+            actions={props.actions ?? []}
+            separated={props.options.length > 0}
+          />
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

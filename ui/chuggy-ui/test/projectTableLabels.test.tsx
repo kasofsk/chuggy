@@ -1,23 +1,16 @@
 /**
- * The one annotation that still clips — runs on, whose digest reference is not
- * the ticket's own words — on the two things `projectTableRows.ts` cannot say
- * about it: that the whole value is on the chip, and that the chip still clips.
+ * The ticket list as drawn: the properties of the markup that
+ * `ticketListView.ts` and `projectTableRows.ts` cannot say.
  *
- * Both are properties of the markup and of nothing else. `title` dropped there
- * loses the image with no way back to it, and `max-w-aside` dropped lets a
- * value the length of a full digest reference take the card apart. Neither
- * shows up in the row's own value, so neither is provable above this tier.
+ * The one annotation that clips is runs on, whose digest reference is not the
+ * ticket's own words: the whole value is on hover and the sheet clips it, and
+ * neither shows up in the row's own value. The title is clamped by the sheet
+ * and drawn whole in the markup. The last activity reading carries the
+ * absolute instant on hover, which is a fact about `Figure`'s tooltip.
  *
- * The title is the opposite property, now that it fills the card: that it
- * wraps whole rather than clipping is markup too, and is asserted the same
- * way, on the same tier.
- *
- * The last activity annotation is the same tier for a different reason: that
- * it draws the relative reading and carries the absolute one on hover is a
- * fact about `Figure`'s tooltip, not about `activityAt` itself.
- *
- * The order each section draws its cards in is here too: the selection is
- * proved in the core, and only a drawn table proves the section draws it.
+ * The order the list draws, the filter a kept word reads as, and what is held
+ * back are here too: the selection is proved in the core, and only a drawn
+ * list proves the screen draws it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -48,6 +41,10 @@ import {
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import {
+  ticketDispatchViewOf,
+  ticketPageCandidate,
+} from "./ticketPageFixture.ts";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -81,6 +78,7 @@ beforeEach(resizeObserverStubbed);
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 const revision = "repository:cfaca0a0f14ec03845a4e01458ac6c3a56d52a23:chuggy";
@@ -149,6 +147,23 @@ async function drawTableWith(
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/executions")) return answer({ executions });
+      if (url.includes("/dispatch-view"))
+        return answer(
+          ticketDispatchViewOf(
+            atlas,
+            tickets.flatMap((one) => {
+              const held = one as {
+                readonly ticket: number;
+                readonly phase: string;
+                readonly openDependencies?: readonly unknown[];
+              };
+              return held.phase === "Pending" &&
+                (held.openDependencies ?? []).length === 0
+                ? [{ ...ticketPageCandidate, ticket: held.ticket }]
+                : [];
+            }),
+          ),
+        );
       const phases = new URL(url, "http://stub").searchParams.getAll("phase");
       return answer({
         partition: atlas,
@@ -197,13 +212,14 @@ test("the title is on the card whole and unclipped, links, and leads the ticket 
   expect(screen.queryByRole("tooltip")).toBeNull();
 });
 
-test("the card's title is broken where it has no break of its own, the title being drawn whole", async () => {
+test("the title heads its row in the list's title, which the sheet clamps", async () => {
   await drawTable();
-  const drawn = screen.getByText(title).closest(".overview-card-title");
-  expect(drawn?.className.split(" ")).toContain("wrap-anywhere");
+  const drawn = screen.getByText(title).closest(".ticket-list-title");
+  expect(drawn?.tagName).toBe("H3");
+  expect(drawn?.textContent).toBe(title);
 });
 
-test("a row's phase, execution, runs-on and activity annotations are all on the one card its title heads", async () => {
+test("a row's state, execution, runs-on and activity annotations are all on the one row its title heads", async () => {
   await drawTable();
   expect(document.querySelectorAll("table").length).toBe(0);
   expect(document.querySelectorAll("th").length).toBe(0);
@@ -218,7 +234,7 @@ test("a row's phase, execution, runs-on and activity annotations are all on the 
   expect(card.contains(screen.getByText("3h ago"))).toBe(true);
 });
 
-test("a card names the member who filed it, the whole subject on hover, and a card with none names nobody", async () => {
+test("a row names the member who filed it by subject where no email is read, the whole principal on hover, and a row with none names nobody", async () => {
   await drawTableWith([ticket, escalated], [execution]);
   const filed = screen.getByText("alice");
   expect(screen.getByText(title).closest("li")?.contains(filed)).toBe(true);
@@ -228,10 +244,42 @@ test("a card names the member who filed it, the whole subject on hover, and a ca
   expect(unfiled?.querySelector(".identity")).toBeNull();
 });
 
-test("a row draws its phase as a chip", async () => {
+/** The people read answering, which the case above leaves unanswered. */
+test("a row names its creator by the email the project's people hold for them", async () => {
+  await drawTableWith(
+    [ticket],
+    [execution],
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.endsWith("/people")
+          ? Promise.resolve(
+              answer({
+                tenant: atlas.tenant,
+                project: atlas.project,
+                people: [
+                  {
+                    subject: "alice",
+                    mine: false,
+                    tenantAdmin: false,
+                    roles: [],
+                    email: "alice@example.com",
+                  },
+                ],
+                otherIssuers: 0,
+                truncated: false,
+              }),
+            )
+          : served(url, init)) as typeof fetch,
+  );
+  const filed = await screen.findByText("alice@example.com");
+  expect(screen.getByText(title).closest("li")?.contains(filed)).toBe(true);
+});
+
+test("a row draws its state as a chip in its phase's tone", async () => {
   await drawTable();
   const chip = screen.getByText("Working");
-  expect(chip.className).toContain("pill-live");
+  expect(chip.className).toBe("ticket-list-state");
+  expect(chip.dataset["tone"]).toBe("live");
 });
 
 test("an escalated row answers its kind on the phase chip's hover", async () => {
@@ -275,7 +323,7 @@ test("the last activity column draws the relative reading and answers the absolu
 test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
   await drawTable();
   const cell = screen.getByText("chuggy-worker v3");
-  expect(cell.className).toContain("max-w-aside");
+  expect(cell.className).toBe("ticket-list-runs-on");
   fireEvent.focus(cell);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });
@@ -298,50 +346,47 @@ test("a project with no ticket draws one empty state that offers a new one", asy
   const offer = screen.getByText("New ticket");
   expect(offer.tagName).toBe("A");
   expect(offer.closest(".empty")).not.toBeNull();
-  expect(screen.queryAllByRole("heading", { level: 2 })).toEqual([]);
-  expect(screen.queryByRole("group", { name: "phase" })).toBeNull();
+  expect(screen.queryByRole("list", { name: "Tickets" })).toBeNull();
+  expect(screen.queryByLabelText("Search tickets")).toBeNull();
 });
 
-function sectionHeadings(): readonly (string | null)[] {
-  return screen
-    .getAllByRole("heading", { level: 2 })
-    .map((heading) => heading.textContent);
+/** The titles the list draws, in the order it draws them. */
+function titlesDrawn(): readonly (string | null)[] {
+  return within(screen.getByRole("list", { name: "Tickets" }))
+    .getAllByRole("listitem")
+    .map((row) => row.querySelector("h3")?.textContent ?? null);
 }
 
-test("the unfiltered view draws only the sections holding a ticket", async () => {
+test("the rows are one list under one set of controls, with no section", async () => {
   await drawTableWith([ticket, escalated], [execution]);
-  expect(sectionHeadings()).toEqual(["Needs you", "In progress"]);
-  expect(screen.queryByText("None")).toBeNull();
-  expect(screen.queryByRole("heading", { name: "No tickets" })).toBeNull();
+  expect(screen.queryAllByRole("heading", { level: 2 })).toEqual([]);
+  expect(screen.getByLabelText("Search tickets")).toBeDefined();
+  expect(titlesDrawn()).toEqual(["Escalated ticket", title]);
 });
 
-test("every filter is named with its section's capitalised heading", async () => {
-  await drawTable();
-  expect(
-    within(screen.getByRole("group", { name: "phase" }))
-      .getAllByRole("button")
-      .map((button) => button.textContent),
-  ).toEqual([
-    "All",
-    "Needs you",
-    "In progress",
-    "Up next",
-    "Done",
-    "Failed or revoked",
-  ]);
+test("a filter the browser kept is the phase the read asks for", async () => {
+  localStorage.setItem("chug.ticket-list.filter", "Escalated");
+  await drawTableWith([ticket, escalated], [execution]);
+  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
 });
 
-/** A caption dates the rows under it, so a section with none carries none. */
-test("a filtered view whose section holds no ticket says None, under no caption", async () => {
-  await drawTable();
-  const working = screen.getByRole("region", { name: "In progress" });
-  expect(working.querySelector(".freshness")).not.toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Done" }));
-  await settled();
-  expect(sectionHeadings()).toEqual(["Done"]);
-  const done = screen.getByRole("region", { name: "Done" });
-  expect(within(done).getByText("None")).toBeDefined();
-  expect(done.querySelector(".freshness")).toBeNull();
+test("a kept word that names no phase is the unfiltered read", async () => {
+  localStorage.setItem("chug.ticket-list.filter", "NeedsYou");
+  await drawTableWith([ticket, escalated], [execution]);
+  expect(titlesDrawn()).toEqual(["Escalated ticket", title]);
+});
+
+test("a search keeps the rows whose title or number it names, and says how many", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  fireEvent.change(screen.getByLabelText("Search tickets"), {
+    target: { value: "escalated" },
+  });
+  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
+  expect(screen.getByRole("status").textContent).toBe("1 of 2 tickets");
+  fireEvent.change(screen.getByLabelText("Search tickets"), {
+    target: { value: "#11" },
+  });
+  expect(titlesDrawn()).toEqual([title]);
 });
 
 const finished = {
@@ -364,8 +409,7 @@ const passed = {
 
 test("a finished row says how its run ended, and never Terminal", async () => {
   await drawTableWith([finished], [passed]);
-  const done = screen.getByRole("region", { name: "Done" });
-  expect(within(done).getByText("Passed").className).toContain("pill-pass");
+  expect(screen.getByText("Passed").className).toContain("pill-pass");
   expect(document.body.textContent).not.toContain("Terminal");
 });
 
@@ -373,34 +417,27 @@ function newTicketOffers(): number {
   return screen.queryAllByText("New ticket").length;
 }
 
-test("a reader who may not mutate is offered no new ticket, in the empty state or beside the filters", async () => {
-  const unmutating = abilitiesOver({ ...abilitiesEvery, mutate: false });
-  await drawTableWith([], [], unmutating);
+test("a reader who may not mutate is offered no new ticket in the empty state", async () => {
+  await drawTableWith(
+    [],
+    [],
+    abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  );
   expect(screen.getByRole("heading", { name: "No tickets" })).toBeDefined();
-  expect(newTicketOffers()).toBe(0);
-  cleanup();
-  await drawTableWith([ticket], [execution], unmutating);
-  expect(screen.getByRole("group", { name: "phase" })).toBeDefined();
   expect(newTicketOffers()).toBe(0);
 });
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered a new ticket in the empty state and beside the filters",
+  "a reader the abilities read %s is offered a new ticket in the empty state, and never above the list",
   async (_said, abilities) => {
     const over = abilitiesOver(abilities);
     await drawTableWith([], [], over);
     expect(newTicketOffers()).toBe(1);
     cleanup();
     await drawTableWith([ticket], [execution], over);
-    expect(newTicketOffers()).toBe(1);
+    expect(newTicketOffers()).toBe(0);
   },
 );
-
-function titlesIn(section: string): readonly (string | null)[] {
-  return within(screen.getByRole("region", { name: section }))
-    .getAllByRole("listitem")
-    .map((card) => card.querySelector("a")?.textContent ?? null);
-}
 
 function pending(
   number: number,
@@ -419,7 +456,7 @@ function pending(
 }
 
 /** Served in the reverse of the order they are drawn in. */
-test("up next is drawn nearest to dispatchable first", async () => {
+test("pending rows are drawn nearest to dispatchable first, ready ones as Ready", async () => {
   await drawTableWith(
     [
       pending(21, [], [12]),
@@ -430,37 +467,71 @@ test("up next is drawn nearest to dispatchable first", async () => {
     ],
     [execution],
   );
-  expect(titlesIn("Up next")).toEqual([
+  expect(titlesDrawn()).toEqual([
+    title,
     "Pending 24",
     "Pending 23",
     "Pending 22",
     "Pending 21",
   ]);
+  expect(
+    screen.getAllByText(/^(Ready|Blocked)$/u).map((chip) => chip.textContent),
+  ).toEqual(["Ready", "Blocked", "Blocked", "Blocked"]);
 });
 
-/** Each pair leads with the row the up-next order would sink, so a section
- * drawn in that order rather than the read's would be drawn reversed. */
-test("every other section is drawn in the read's order", async () => {
-  const blocking = { openDependencies: [{ ticket: 99, phase: "Pending" }] };
-  const sunk = { revokedDependencies: [98] };
+/** The state sort leads with what needs a person and ends with what stopped,
+ * whatever order the read serves them in. */
+test("the state sort draws what needs you, then what moves, then what waits, then what finished", async () => {
   await drawTableWith(
     [
-      { ...escalated, ...blocking },
-      { ...escalated, ticket: 14, title: "Escalated second" },
-      { ...ticket, ...sunk },
-      { ...ticket, ticket: 15, title: "Working second" },
-      { ...finished, ...blocking },
-      { ...finished, ticket: 16, title: "Finished second" },
-      { ...finished, ...sunk, ticket: 17, title: "Revoked", phase: "Revoked" },
-      { ...finished, ticket: 18, title: "Revoked second", phase: "Revoked" },
+      { ...finished, ticket: 17, title: "Revoked", phase: "Revoked" },
+      finished,
+      pending(24, []),
+      ticket,
+      escalated,
     ],
     [execution],
   );
-  expect(titlesIn("Needs you")).toEqual([
+  expect(titlesDrawn()).toEqual([
     "Escalated ticket",
-    "Escalated second",
+    title,
+    "Pending 24",
+    "Finished ticket",
+    "Revoked",
   ]);
-  expect(titlesIn("In progress")).toEqual([title, "Working second"]);
-  expect(titlesIn("Done")).toEqual(["Finished ticket", "Finished second"]);
-  expect(titlesIn("Failed or revoked")).toEqual(["Revoked", "Revoked second"]);
+});
+
+/** Finished more than a day before the clock, so held back until asked for. */
+test("a row that finished long ago is held back behind Show more", async () => {
+  const long = {
+    ...finished,
+    ticket: 19,
+    title: "Finished long ago",
+    changedAt: "2026-08-01T00:00:00Z",
+  };
+  await drawTableWith([ticket, long], [execution]);
+  expect(titlesDrawn()).toEqual([title]);
+  fireEvent.click(screen.getByRole("button", { name: "Show more (1 older)" }));
+  expect(titlesDrawn()).toEqual([title, "Finished long ago"]);
+});
+
+test("a ready row's chip is the dispatch, and no row offers resume or revoke", async () => {
+  await drawTableWith([escalated, pending(24, [])], []);
+  const parked = screen.getByText("Escalated ticket").closest("li");
+  expect(parked?.querySelector("button")).toBeNull();
+  const ready = await screen.findByRole("button", {
+    name: "Dispatch ticket #24",
+  });
+  expect(ready.textContent).toBe("Ready");
+  expect(ready.className).toBe("ticket-list-state");
+});
+
+test("a reader who may not dispatch sees a ready row's chip, not a button", async () => {
+  await drawTableWith(
+    [pending(24, [])],
+    [],
+    abilitiesOver({ ...abilitiesEvery, dispatch: false }),
+  );
+  expect(screen.getByText("Ready").tagName).toBe("SPAN");
+  expect(screen.queryByRole("button", { name: /^Dispatch/u })).toBeNull();
 });

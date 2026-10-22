@@ -58,6 +58,7 @@ import {
 } from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
 import { usePanelResource } from "./api.ts";
+import { useCreatorEmails } from "./creatorEmails.ts";
 import { DataSection, PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -166,12 +167,16 @@ function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
 }
 
 /** The member who filed the ticket, drawn only where the wire names one. */
-function FiledBy(props: { readonly ticket: TicketResponse }): ReactNode {
+function FiledBy(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: TicketResponse;
+}): ReactNode {
+  const emails = useCreatorEmails(props.partition);
   const creator = props.ticket.creator;
   if (creator === undefined) return null;
   return (
     <Field name="filed by">
-      <Identity label={creatorLabel(creator)} />
+      <Identity label={creatorLabel(creator, emails)} />
     </Field>
   );
 }
@@ -193,7 +198,7 @@ export function TicketBrief(props: {
           ) : (
             <Brief partition={props.partition} brief={ticket.brief} />
           )}
-          <FiledBy ticket={ticket} />
+          <FiledBy partition={props.partition} ticket={ticket} />
           <ReleasedUnder ticket={ticket} />
         </dl>
       )}
