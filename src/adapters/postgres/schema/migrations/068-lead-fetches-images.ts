@@ -22,7 +22,7 @@ const fetchedTool = "mcp__chuggy__fetch_image";
 const fetchedAfter = "mcp__chuggy__list_repositories";
 
 /** 066's allowlist with `fetch_image` in its roster place. */
-function toolAllowlistAt068(): readonly string[] {
+export function toolAllowlistAt068(): readonly string[] {
   return toolAllowlistNamed(toolAllowlistAt066(), fetchedTool, fetchedAfter);
 }
 
