@@ -241,6 +241,7 @@ function poolAssignmentsRoute(
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
       const runner = poolRunnerNamed(request);
+      const contract = workerContractOffered(request);
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
         polled = await workerPoolPoll(
@@ -251,6 +252,7 @@ function poolAssignmentsRoute(
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
             ...(runner === undefined ? {} : { runner }),
+            ...(contract === undefined ? {} : { contract }),
           },
           service.settings,
         );
@@ -263,7 +265,7 @@ function poolAssignmentsRoute(
       const release = workerRunnerReleaseAnswered(
         service.releases,
         runner,
-        workerContractOffered(request),
+        contract,
       );
       return reply
         .code(200)

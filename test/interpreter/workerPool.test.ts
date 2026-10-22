@@ -24,6 +24,7 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   workerPoolHeldImages,
   workerPoolHeldNamedMax,
@@ -926,7 +927,10 @@ test("a personal runner claims only in the projects it allowlists that its owner
           Promise.resolve([asProjectId("project"), asProjectId("elsewhere")]),
         claimPersonal: (_identity, _terms, _assignment, _bearer, projects) => {
           reached.push(`claim:${projects.join(",")}`);
-          return Promise.resolve({ requirement: container });
+          return Promise.resolve({
+            requirement: container,
+            project: asProjectId("project"),
+          });
         },
       },
       noSessions,
@@ -956,6 +960,58 @@ test("a personal runner claims only in the projects it allowlists that its owner
   ]);
 });
 
+test("a personal runner's job names its own attempt's project to a poll whose release reads one, and a session or an earlier release's poll none", async () => {
+  /** What each poll's claims and sessions name of a project, by the release it offered. */
+  const named = async (
+    caller: PoolPlaneIdentity,
+    contract: string | undefined,
+  ) => {
+    let claimed = 0;
+    const { store } = offering([candidate]);
+    const answered = await workerPoolReconcile(
+      ports(
+        {
+          ...idle,
+          claim: () => Promise.resolve({ requirement: container }),
+          allowlisted: () =>
+            Promise.resolve([asProjectId("project"), asProjectId("elsewhere")]),
+          claimPersonal: () => {
+            claimed += 1;
+            return Promise.resolve({
+              requirement: container,
+              project: asProjectId(claimed === 1 ? "project" : "elsewhere"),
+            });
+          },
+        },
+        store,
+      ),
+      caller,
+      nothingHeld,
+      {
+        wanted: 2,
+        wantedSessions: 1,
+        ...(contract === undefined ? {} : { contract }),
+      },
+      settings,
+    );
+    return [...answered.assignments, ...answered.sessions].map((assignment) =>
+      "project" in assignment ? assignment.project : "none",
+    );
+  };
+  assert.deepEqual(await named(runner, workerContractRelease), [
+    "project",
+    "elsewhere",
+    "none",
+  ]);
+  for (const contract of ["1.14.0", undefined])
+    assert.deepEqual(await named(runner, contract), ["none", "none", "none"]);
+  assert.deepEqual(await named(identity, workerContractRelease), [
+    "none",
+    "none",
+    "none",
+  ]);
+});
+
 test("a personal runner whose owner may read nothing it allowlists claims nothing", async () => {
   let claimed = 0;
   const answered = await workerPoolReconcile(
@@ -965,7 +1021,10 @@ test("a personal runner whose owner may read nothing it allowlists claims nothin
         allowlisted: () => Promise.resolve([asProjectId("project")]),
         claimPersonal: () => {
           claimed += 1;
-          return Promise.resolve({ requirement: container });
+          return Promise.resolve({
+            requirement: container,
+            project: asProjectId("project"),
+          });
         },
       },
       noSessions,

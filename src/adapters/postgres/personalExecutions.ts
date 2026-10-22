@@ -31,6 +31,7 @@ import type {
   WorkerPoolClaimed,
   WorkerPoolClaimTerms,
   WorkerPoolExecutionHolds,
+  WorkerPoolPersonalClaimed,
 } from "../../interpreter/workerPool.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 
@@ -41,13 +42,13 @@ export interface PersonalExecutionClaim {
   readonly projects: readonly ProjectId[];
 }
 
-/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners. */
+/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners, and the project it is in. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
   identity: PersonalRunnerIdentity,
   terms: WorkerPoolClaimTerms,
   claim: PersonalExecutionClaim,
-): Promise<WorkerPoolClaimed | undefined> {
+): Promise<WorkerPoolPersonalClaimed | undefined> {
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
@@ -57,6 +58,7 @@ export async function personalExecutionClaimed(
     runtime: string | null;
     cpu_millis: number | null;
     memory_mib: number | null;
+    project: string;
   }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.owner},pool_principal=${identity.principal},
@@ -90,10 +92,12 @@ export async function personalExecutionClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib`,
+      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib, a.project`,
   );
   const row = found.rows[0];
-  return row === undefined ? undefined : workerPoolClaimedRow(row);
+  return row === undefined
+    ? undefined
+    : { ...workerPoolClaimedRow(row), project: asProjectId(row.project) };
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */

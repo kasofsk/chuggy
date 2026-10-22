@@ -29,6 +29,7 @@ import {
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
+  workerContractRunnerProjects,
   workerContractRunnerReleases,
 } from "../../src/interpreter/workerPlane.ts";
 import {
@@ -110,6 +111,45 @@ test("an assignment's runtime is a reference bounded as its image is, and an ass
   );
 });
 
+test("a job assignment may name its project, held to the bound of every other name on the wire", () => {
+  const named = { ...assignment, project: "chuggy" };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(named), named);
+  const longest = {
+    ...assignment,
+    project: "p".repeat(workerPoolIdentityCharsMax),
+  };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(longest), longest);
+  for (const project of ["", "p".repeat(workerPoolIdentityCharsMax + 1), 7])
+    assert.equal(
+      workerPoolAssignmentSchema.safeParse({ ...assignment, project }).success,
+      false,
+      String(project).slice(0, 20),
+    );
+});
+
+test("a pool of a release the runner-projects range accepts reads a job assignment naming its project, and one of any earlier refuses the whole answer", async () => {
+  const answer = {
+    assignments: [{ ...assignment, project: "chuggy" }],
+    sessions: [],
+    stop: [],
+  };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunnerProjects,
+      workerContractRelease,
+    ),
+  );
+  assert.ok(workerPoolReconciliationSchema.safeParse(answer).success);
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(workerContractRunnerProjects, older),
+      older,
+    );
+  }
+});
+
 test("a session assignment is an assignment that always names its image, under a session's own bearer", () => {
   const session = {
     ...assignment,
@@ -124,6 +164,7 @@ test("a session assignment is an assignment that always names its image, under a
     { ...session, image: "" },
     { ...session, lease: 30 },
     { ...session, runtime: "registry.invalid/chuggy/runtime:1" },
+    { ...session, project: "chuggy" },
   ])
     assert.equal(
       workerPoolSessionAssignmentSchema.safeParse(invalid).success,
