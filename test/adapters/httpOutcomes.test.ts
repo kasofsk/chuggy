@@ -644,7 +644,7 @@ test("a draft the project's bindings do not answer for is not found", () => {
   );
 });
 
-test("the largest image an upload admits is answered within what fetch_image reads and past what any other tool reads, in the encoding it decodes by", () => {
+test("the largest image an upload admits is answered within what fetch_image reads and past what an ordinary tool reads, in the encoding it decodes by", () => {
   for (const mediaType of imageMediaTypes) {
     const { body } = projectArtifactReadResponse({
       fetched: "Content",
@@ -672,7 +672,7 @@ const runTextExtremes = [
   ["four-byte characters", "\u{1F600}", 4],
 ] as const;
 
-test("the largest error text a worker uploads is answered within what read_run_error reads and past what any other tool reads", () => {
+test("the largest error text a worker uploads is answered within what read_run_error reads and past what an ordinary tool reads", () => {
   for (const [what, character, bytes] of runTextExtremes) {
     const { body } = runErrorResponse({
       read: "Content",
