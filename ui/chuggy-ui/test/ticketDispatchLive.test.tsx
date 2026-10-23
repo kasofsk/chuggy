@@ -20,7 +20,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   apiDouble,
   openedStream,
@@ -37,7 +36,7 @@ import {
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 

@@ -24,7 +24,7 @@ import {
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
-import { useViewportAtLeastEm, viewportDeskEm } from "./viewport.ts";
+import { useViewportColumnAside } from "./viewport.ts";
 
 export const shellSlotNames = ["topBar", "details"] as const;
 
@@ -179,20 +179,21 @@ export function ScreenTitle(props: {
 }
 
 /** What the page is about beside the page itself, behind the bar's toggle.
- * `openFirst` is honoured only where the details have room to sit beside the
- * page (`viewportDeskEm`); below that width it would otherwise replace the
- * page a reader came here to see. */
+ * `openFirst` is decided once, when the pages' column is first measured: it
+ * opens the details only where they fit beside the page, which under that
+ * width they would replace, and a later crossing leaves them as the reader has
+ * them. */
 export function DetailsSlot(props: {
   readonly children: ReactNode;
   readonly openFirst?: boolean | undefined;
 }): ReactNode {
-  const desk = useViewportAtLeastEm(viewportDeskEm);
+  const beside = useViewportColumnAside();
+  const [openFirst, decided] = useState<boolean>();
+  if (openFirst === undefined && beside !== undefined)
+    decided(props.openFirst === true && beside);
   return (
     <>
-      <ShellSlotFill
-        name="details"
-        openFirst={props.openFirst === true && desk}
-      />
+      <ShellSlotFill name="details" openFirst={openFirst === true} />
       <ShellSlotPortal name="details">{props.children}</ShellSlotPortal>
     </>
   );

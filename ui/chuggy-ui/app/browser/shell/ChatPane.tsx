@@ -628,7 +628,7 @@ function ChatPaneOpen(props: {
   return (
     <section
       aria-label="Chat"
-      className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
+      className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
     >
       <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
         <ChatPaneHeld

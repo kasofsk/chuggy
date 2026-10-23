@@ -23,9 +23,16 @@
   }
 
   /* The composer under a pane's column keeps the column's inset from the
-   * pane's edges, and less of it on a narrow screen. */
+   * pane's edges, and less of it in a narrow pane: a pane is as narrow as the
+   * reader leaves it, on any screen. */
   .conversation-foot {
     padding: 0 var(--space-4) var(--space-4);
+  }
+
+  @container (max-width: 40em) {
+    .conversation-foot {
+      padding: 0 var(--space-2) var(--space-2);
+    }
   }
 
   /* A phone zooms into any field typed smaller than this, and what is read on
@@ -33,10 +40,6 @@
   @media (max-width: 40em) {
     .conversation {
       --conversation-text: var(--text-unzoomed);
-    }
-
-    .conversation-foot {
-      padding: 0 var(--space-2) var(--space-2);
     }
   }
 

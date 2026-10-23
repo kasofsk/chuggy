@@ -12,9 +12,8 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Landing } from "../app/browser/routes.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   answer,
   apiDouble,

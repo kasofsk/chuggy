@@ -26,7 +26,6 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Shell } from "../app/browser/Shell.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
 import { chatPaneStoreKey } from "../app/core/chatPane.ts";
 import { abilitiesEvery, abilitiesOver } from "./projectAbilitiesFixture.ts";
@@ -49,7 +48,8 @@ import {
   threadPartition,
   threadTranscriptPage,
 } from "./threadFixture.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import type { ViewportFrame } from "./viewport.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -58,8 +58,10 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  localStorage.removeItem(chatPaneStoreKey);
+  localStorage.clear();
+  document.documentElement.style.fontSize = "";
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const missingSession = "thread-missing";
@@ -136,8 +138,9 @@ function routerAt(path: string) {
 async function mountedAt(
   path: string,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
+  frame?: ViewportFrame,
 ): Promise<ReturnType<typeof routerAt>> {
-  viewportAtEm(viewportDeskEm);
+  viewportAtEm(viewportDeskEm, frame);
   vi.stubGlobal(
     "fetch",
     over(((url: string) =>
@@ -226,6 +229,28 @@ test("a reader who may not mutate is offered only the link on a thread's page", 
   );
   expect(screen.getByRole("heading", { level: 1, name: "mine" })).toBeDefined();
   expect(await threadMenuOffers()).toStrictEqual(["Copy link"]);
+  styleless();
+});
+
+/** A thread's own page draws the pages alone, so the pane leaving it is drawn
+ * into a frame already laid out, and is drawn as it was stored. */
+test("a pane left collapsed is still the strip on the way back from a thread's own page", async () => {
+  localStorage.setItem(
+    chatPaneStoreKey,
+    JSON.stringify({ placement: "Right", presentation: "Collapsed" }),
+  );
+  const router = await mountedAt(threadPath(threadOtherSession), undefined, {});
+  expect(screen.queryByRole("separator")).toBeNull();
+  await turned(() => {
+    router.history.push(
+      `/${threadPartition.tenant}/${threadPartition.project}`,
+    );
+  });
+  await settled();
+  expect(screen.getByText("the tickets")).toBeDefined();
+  expect(chatDrawn()).toBeNull();
+  expect(screen.getByRole("button", { name: "Expand chat" })).toBeDefined();
+  expect(localStorage.getItem(chatPaneStoreKey)).toContain("Collapsed");
   styleless();
 });
 

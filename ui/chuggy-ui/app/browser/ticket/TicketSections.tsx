@@ -27,7 +27,7 @@ import {
 import type { TicketDeliveryState } from "../../core/ticketDelivery.ts";
 import type { TicketPageFacts } from "../../core/ticketPageFacts.ts";
 import { useShellDetailsShow } from "../shell/slots.tsx";
-import { useViewportAtLeastEm, viewportDeskEm } from "../shell/viewport.ts";
+import { useViewportColumnAside } from "../shell/viewport.ts";
 import { TicketBrief, TicketProvenance } from "../TicketProvenance.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Panel } from "../ui/Panel.tsx";
@@ -221,17 +221,17 @@ export function TicketSections(props: {
 /**
  * The page's table of contents, drawn in the shell's details pane. A click
  * opens the row it points at, and closes the pane first where the pane and the
- * page share the middle row so the target is not left behind it; at the desk
- * width the page stays beside the pane and nothing closes.
+ * page share the middle row so the target is not left behind it; where the
+ * pages' column holds both, the page stays beside the pane and nothing closes.
  */
 export function TicketPageDetails(props: {
   readonly sections: readonly SectionEntry[];
   readonly onChoose: (id: string) => void;
 }): ReactNode {
   const detailsShow = useShellDetailsShow();
-  const desk = useViewportAtLeastEm(viewportDeskEm);
+  const beside = useViewportColumnAside();
   const onNavigate = (event: MouseEvent<HTMLDivElement>): void => {
-    if (!desk && (event.target as HTMLElement).closest("a") !== null)
+    if (!beside && (event.target as HTMLElement).closest("a") !== null)
       detailsShow(false);
   };
   return (

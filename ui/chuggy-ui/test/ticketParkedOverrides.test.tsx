@@ -26,7 +26,6 @@ import type { ConfigurationOverrides } from "../../../src/contract/configuration
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   openedStream,
@@ -43,7 +42,7 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 

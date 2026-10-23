@@ -17,7 +17,7 @@ import {
   DetailsToggle,
 } from "../app/browser/shell/DetailsPane.tsx";
 import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { ViewportColumnAsideProvider } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -40,7 +40,7 @@ import { instantExactText } from "../app/core/figures.ts";
 import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -170,7 +170,11 @@ let routed: string[] = [];
 
 async function drawTicket(
   served: Served,
-  options: { readonly shell?: boolean } = {},
+  options: {
+    readonly shell?: boolean;
+    /** Whether the pages' column holds the details beside the page. */
+    readonly beside?: boolean;
+  } = {},
 ): Promise<Drawn> {
   routed = [];
   const api = apiDouble({
@@ -218,7 +222,13 @@ async function drawTicket(
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
-      {options.shell === true ? <ShellAroundPage /> : <TicketPage />}
+      {options.shell === true ? (
+        <ViewportColumnAsideProvider value={options.beside ?? false}>
+          <ShellAroundPage />
+        </ViewportColumnAsideProvider>
+      ) : (
+        <TicketPage />
+      )}
     </ScreenHarness>,
   );
   await settled();
@@ -494,6 +504,51 @@ test("the rows under the ledger are closed, and following an anchor opens its ro
       .getByRole("button", { name: /^Brief/u })
       .getAttribute("aria-expanded"),
   ).toBe("false");
+});
+
+/** Follows the Provenance anchor in the details pane, opened first. */
+async function provenanceFollowed(container: HTMLElement): Promise<void> {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Details", pressed: false }),
+  );
+  const anchor = container.querySelector('nav.sections a[href="#provenance"]');
+  if (!(anchor instanceof HTMLElement)) throw new Error("no provenance anchor");
+  await turned(() => {
+    anchor.click();
+  });
+  await settled();
+}
+
+test("an anchor followed where the details share the page's place closes them first", async () => {
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  await provenanceFollowed(container);
+  expect(
+    screen.queryByRole("button", { name: "Details", pressed: true }),
+  ).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: /^Provenance/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+test("an anchor followed where the column holds the details beside the page leaves them open", async () => {
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true, beside: true },
+  );
+  await provenanceFollowed(container);
+  expect(
+    screen.queryByRole("button", { name: "Details", pressed: true }),
+  ).not.toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: /^Provenance/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
 });
 
 test("each closed row says what it holds on the right", async () => {

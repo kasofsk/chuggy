@@ -31,6 +31,7 @@ import type {
   LeadTranscriptHeld,
   LeadTranscriptPane,
 } from "../app/core/leadTranscript.ts";
+import { seededRandom } from "./seededRandom.ts";
 
 /** How many event sequences one run drives, and how long each is. */
 const modelSequences = 200;
@@ -43,23 +44,6 @@ const modelEntriesPerBatch = 3;
 const modelCappedSequences = 6;
 const modelCappedEventsMax = 60;
 const modelCappedEntriesPerBatch = 512;
-
-/**
- * A seeded generator, so a sequence that finds something can be run again. It
- * is mulberry32 rather than a bare linear congruential step, whose first draw
- * from a small seed spans a fraction of the unit interval — every sequence then
- * opens on the same shape, and a generator that starts every run in one place
- * explores far less than its seed count suggests.
- */
-function modelRandom(seed: number): () => number {
-  let held = (seed + 0x6d_2b_79_f5) >>> 0;
-  return () => {
-    held = (held + 0x6d_2b_79_f5) >>> 0;
-    let mixed = Math.imul(held ^ (held >>> 15), held | 1);
-    mixed ^= mixed + Math.imul(mixed ^ (mixed >>> 7), mixed | 61);
-    return ((mixed ^ (mixed >>> 14)) >>> 0) / 0x1_0000_0000;
-  };
-}
 
 /** The store the model reads: batches of entries, and the batch its last
  * compaction fell in. */
@@ -345,7 +329,7 @@ const modelShapeCapped: ModelShape = {
 
 /** One sequence: a store that grows and compacts under a pane being walked. */
 function modelRun(seed: number, shape: ModelShape): ModelRun {
-  const random = modelRandom(seed);
+  const random = seededRandom(seed);
   let store = modelStore(
     1 + Math.floor(random() * shape.batches),
     shape.entries,
@@ -539,7 +523,7 @@ test("a walk over a store that stands still stops at the mark it read against", 
   const shapes = new Set<string>();
   let stalled = 0;
   for (let seed = 1; seed <= modelSequences; seed += 1) {
-    const random = modelRandom(seed);
+    const random = seededRandom(seed);
     const store = modelStore(
       1 + Math.floor(random() * modelBatchesMax),
       modelEntriesPerBatch,
