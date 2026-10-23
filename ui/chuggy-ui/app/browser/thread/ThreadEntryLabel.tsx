@@ -1,8 +1,8 @@
 /**
- * The rename and close actions for the thread the pane holds, and the editor
- * the rename opens into.
+ * The rename and close actions for the thread the pane or its own page holds,
+ * and the editor the rename opens into.
  *
- * The state is separate from what draws it because the chat pane's header
+ * The state is separate from what draws it because the header drawing them
  * swaps the title for this editor while a rename is open, and the buttons
  * beside it come and go with the same state, over one call to
  * `useThreadEntryActions`.
@@ -35,11 +35,11 @@ export interface ThreadEntryActions {
   readonly close: () => void;
 }
 
-/** The rename and close state for the thread the pane holds, called once and
- * shared by the title it swaps and the buttons beside it. */
+/** The rename and close state for one thread, called once and shared by the
+ * title it swaps and the buttons beside it. */
 export function useThreadEntryActions(
   partition: PartitionIdentity,
-  thread: ThreadEntryResponse,
+  thread: Pick<ThreadEntryResponse, "session" | "mine" | "state">,
 ): ThreadEntryActions {
   const ports = useApiPorts();
   const [renaming, setRenaming] = useState(false);

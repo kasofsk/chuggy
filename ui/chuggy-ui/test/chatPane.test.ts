@@ -10,6 +10,7 @@
 import { expect, test } from "vitest";
 
 import {
+  chatPaneChosenIn,
   chatPaneContentDrawn,
   chatPaneCoversBar,
   chatPaneDefault,
@@ -18,6 +19,7 @@ import {
   chatPaneHeaderDoor,
   chatPaneHolding,
   chatPaneNarrowed,
+  chatPaneOnPage,
   chatPaneRead,
   chatPaneRepositioned,
   chatPaneRestored,
@@ -171,6 +173,47 @@ test("only a full pane takes the frame from the pages, and only a collapsed one 
   expect(chatPaneContentDrawn(chatPaneFilled(chatPaneDefault))).toBe(false);
   expect(chatPaneStripped(chatPaneToggled(chatPaneDefault))).toBe(true);
   expect(chatPaneStripped(chatPaneDefault)).toBe(false);
+});
+
+/** The thread is the page at its own address, so no presentation of the pane
+ * is drawn beside it, and every other address draws the pane as stored. */
+test("a thread's own page draws no pane however it was left, and every other page draws it as it was", () => {
+  const partition: {
+    readonly tenant: string;
+    readonly project: string;
+    readonly session?: string;
+  } = { tenant: "acme", project: "atlas" };
+  const states: readonly ChatPaneState[] = [
+    chatPaneDefault,
+    chatPaneFilled(chatPaneDefault),
+    chatPaneToggled(chatPaneDefault),
+    bottomFull,
+  ];
+  for (const state of states) {
+    expect(chatPaneOnPage(state, { ...partition, session: "s" })).toBe(
+      undefined,
+    );
+    expect(chatPaneOnPage(state, partition)).toBe(state);
+    expect(chatPaneOnPage(state, { ...partition, session: undefined })).toBe(
+      state,
+    );
+  }
+});
+
+/** The pick outlives the pane, and the frame outlives a change of project, so
+ * a pick made in one project is not read as a thread of another. */
+test("a pick is held in the project it was made in and in no other", () => {
+  const atlas = { tenant: "acme", project: "atlas" };
+  const chosen = { partition: atlas, session: "picked" };
+  expect(chatPaneChosenIn(chosen, atlas)).toBe("picked");
+  expect(chatPaneChosenIn(chosen, { ...atlas })).toBe("picked");
+  expect(chatPaneChosenIn(chosen, { ...atlas, project: "beta" })).toBe(
+    undefined,
+  );
+  expect(chatPaneChosenIn(chosen, { ...atlas, tenant: "other" })).toBe(
+    undefined,
+  );
+  expect(chatPaneChosenIn(undefined, atlas)).toBe(undefined);
 });
 
 test("a listing that has not answered holds nothing and offers nothing", () => {

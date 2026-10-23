@@ -15,6 +15,7 @@ import {
   executionOutcomes,
   executionStatuses,
   phaseRoster,
+  threadStandings,
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
 import {
@@ -25,6 +26,7 @@ import {
   pillTones,
   phaseTone,
   stageArm,
+  threadStandingTone,
   ticketLandingTone,
   verdictTone,
 } from "../app/core/tones.ts";
@@ -52,6 +54,14 @@ test("every landing state draws a tone the pill knows, a failure in the failure'
   expect(ticketLandingTone("Failed")).toBe("fail");
   expect(ticketLandingTone("Landed")).toBe("pass");
   expect(ticketLandingTone("Running")).toBe("live");
+});
+
+test("every standing of a thread draws a tone the pill knows, and one held by a member who is gone is not retired", () => {
+  for (const standing of threadStandings)
+    expect(pillTones).toContain(threadStandingTone(standing));
+  expect(threadStandingTone("Open")).toBe("live");
+  expect(threadStandingTone("Closed")).toBe("retired");
+  expect(threadStandingTone("Orphaned")).toBe("parked");
 });
 
 test("every state of an invite link draws a tone the pill knows, an open one live and a used one passed", () => {

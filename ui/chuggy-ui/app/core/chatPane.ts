@@ -21,6 +21,7 @@
 
 import { z } from "zod";
 
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 import type { SessionRunnerShort } from "./sessionRunners.ts";
@@ -96,6 +97,19 @@ export function chatPaneContentDrawn(state: ChatPaneState): boolean {
   return state.presentation !== "Full";
 }
 
+/**
+ * The pane the frame draws at a route, which is none on a thread's own page,
+ * the one route that names a session: the thread is the page there, and a pane
+ * beside it would draw the reader's own open thread twice, each with a
+ * composer. What the reader stored is untouched.
+ */
+export function chatPaneOnPage(
+  state: ChatPaneState,
+  route: { readonly session?: string | undefined },
+): ChatPaneState | undefined {
+  return route.session === undefined ? state : undefined;
+}
+
 /** Whether the pane is drawn as the strip it is expanded back from, which is
  * what a collapse leaves rather than nothing at all. */
 export function chatPaneStripped(state: ChatPaneState): boolean {
@@ -157,6 +171,27 @@ export function chatPaneFilled(state: ChatPaneState): ChatPaneState {
  * and collapsing does not. */
 export function chatPaneRestored(state: ChatPaneState): ChatPaneState {
   return { placement: state.placement, presentation: "Docked" };
+}
+
+/** The thread the reader picked for the pane to hold, and the project they
+ * picked it in. */
+export interface ChatPaneChosen {
+  readonly partition: PartitionIdentity;
+  readonly session: string;
+}
+
+/** The pick the pane holds in a project, which is none where it was made in
+ * another: the pick outlives the pane, and the frame outlives a change of
+ * project. */
+export function chatPaneChosenIn(
+  chosen: ChatPaneChosen | undefined,
+  partition: PartitionIdentity,
+): string | undefined {
+  if (chosen === undefined) return undefined;
+  const same =
+    chosen.partition.tenant === partition.tenant &&
+    chosen.partition.project === partition.project;
+  return same ? chosen.session : undefined;
 }
 
 export type ChatPaneStart =

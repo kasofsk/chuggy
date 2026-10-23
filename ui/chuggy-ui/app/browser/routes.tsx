@@ -61,6 +61,7 @@ import {
 } from "./settings/settingsRoutes.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketDuplicate.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
@@ -179,6 +180,24 @@ const runnersRoute = createRoute({
   component: RunnersPage,
 });
 
+function ThreadRoute(): ReactNode {
+  const params = threadRoute.useParams();
+  return (
+    <ThreadPage
+      key={params.session}
+      partition={{ tenant: params.tenant, project: params.project }}
+      session={params.session}
+    />
+  );
+}
+
+/** One thread's own page, which the shell draws with no chat pane. */
+const threadRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/threads/$session",
+  component: ThreadRoute,
+});
+
 /** One binding's own page. The repository is an address, which the router
  * encodes into the segment and decodes back out of it. */
 const repositoryRoute = createRoute({
@@ -274,6 +293,7 @@ const routeTree = rootRoute.addChildren([
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,
+    threadRoute,
     ticketCreationRoute,
     ticketRoute,
     ticketEditRoute,

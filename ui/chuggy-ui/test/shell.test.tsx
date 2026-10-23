@@ -68,6 +68,9 @@ const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
 let pageDrawn: () => ReactNode = () => null;
 
+/** The route's parameters, which name a session only on a thread's own page. */
+let routeParams: PartitionIdentity & { readonly session?: string } = atlas;
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
@@ -96,7 +99,9 @@ vi.mock("@tanstack/react-router", async (importOriginal) => ({
   ),
   Outlet: () => pageDrawn(),
   useNavigate: () => () => undefined,
-  useParams: () => atlas,
+  useParams: () => routeParams,
+  /** Copy link asks the router for the address, which these cases do not read. */
+  useRouter: () => ({ buildLocation: () => ({ href: "/" }) }),
   useRouterState: (options: {
     readonly select: (state: {
       readonly location: { readonly pathname: string };
@@ -120,6 +125,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   pageDrawn = () => null;
+  routeParams = atlas;
   localStorage.removeItem(chatPaneStoreKey);
   vi.unstubAllGlobals();
   vi.useRealTimers();
@@ -137,11 +143,12 @@ function shellRoute(url: string): Response {
   return answer({ projects: [atlas] });
 }
 
+/** The frame mounted, and drawn again where a case has moved the route. */
 async function mounted(
   em: number,
   served?: typeof fetch,
   client: QueryClient = new QueryClient(),
-): Promise<void> {
+): Promise<{ readonly redrawn: () => Promise<void> }> {
   const api = apiDouble({
     operation: operationAt("Pending"),
     route: shellRoute,
@@ -149,16 +156,23 @@ async function mounted(
   viewportAtEm(em);
   vi.stubGlobal("fetch", served ?? api.fetch);
   const server = openedStream();
-  render(
+  const drawn = (): ReactNode => (
     <ScreenHarness
       partition={atlas}
       client={client}
       transport={server.ports.fetch}
     >
       <Shell partition={atlas} />
-    </ScreenHarness>,
+    </ScreenHarness>
   );
+  const view = render(drawn());
   await settled();
+  return {
+    redrawn: async () => {
+      view.rerender(drawn());
+      await settled();
+    },
+  };
 }
 
 function chatDrawn(): HTMLElement | null {
@@ -457,6 +471,126 @@ test("the bar draws the screens and a gear, and the gear holds setup, the theme 
   styleless();
 });
 
+/** The gear's menu, opened. */
+async function settingsOpened(): Promise<HTMLElement> {
+  await turned(() => {
+    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
+      key: "ArrowDown",
+    });
+  });
+  return screen.findByRole("menu");
+}
+
+/** The thread is the page at its own address, so however the reader left the
+ * pane it is not drawn there, nor its strip, and on a narrow viewport a pane
+ * left over the whole frame does not take the bar from the page. */
+test.each(["Docked", "Collapsed", "Full"] as const)(
+  "on a thread's own page the pages are drawn alone under the bar, with the pane left %s",
+  async (presentation) => {
+    localStorage.setItem(
+      chatPaneStoreKey,
+      JSON.stringify({ placement: "Right", presentation }),
+    );
+    routeParams = { ...atlas, session: threadMineSession };
+    pageDrawn = () => <p>the thread's page</p>;
+    await mounted(viewportNarrowEm - 1);
+    expect(chatDrawn()).toBeNull();
+    expect(screen.queryByRole("button", { name: "Expand chat" })).toBeNull();
+    expect(navDrawn()).not.toBeNull();
+    expect(screen.getByText("the thread's page")).toBeDefined();
+    expect(frameTracks()).toContain("grid-cols-1");
+    expect(localStorage.getItem(chatPaneStoreKey)).toContain(presentation);
+    styleless();
+  },
+);
+
+/** Where the pane sits is a choice about a pane, and the page has none. */
+test("the gear offers where the pane sits on every page but a thread's own", async () => {
+  await mounted(viewportDeskEm);
+  expect(
+    within(await settingsOpened()).getByText("Chat position"),
+  ).toBeDefined();
+  cleanup();
+  routeParams = { ...atlas, session: threadMineSession };
+  await mounted(viewportDeskEm);
+  const menu = await settingsOpened();
+  expect(within(menu).getByText("Theme")).toBeDefined();
+  expect(within(menu).queryByText("Chat position")).toBeNull();
+  expect(
+    within(menu).queryByRole("menuitemradio", { name: "Left" }),
+  ).toBeNull();
+  styleless();
+});
+
+/** The reader's own thread and another member's, each read as itself. */
+function twoThreadsServed(): typeof fetch {
+  return ((url: string) => {
+    for (const session of [threadMineSession, threadOtherSession]) {
+      if (url.includes(`/threads/${session}/transcript`))
+        return Promise.resolve(answer(threadTranscriptPage(0)));
+      if (url.includes(`/threads/${session}`))
+        return Promise.resolve(
+          answer(
+            threadBody({
+              session,
+              mine: session === threadMineSession,
+              owner: session === threadMineSession ? "geoff" : "ada",
+            }),
+          ),
+        );
+    }
+    if (url.includes("/threads"))
+      return Promise.resolve(
+        answer({
+          threads: [
+            threadEntry({
+              session: threadMineSession,
+              owner: "geoff",
+              mine: true,
+              title: "mine",
+            }),
+            threadEntry({ session: threadOtherSession, title: "theirs" }),
+          ],
+        }),
+      );
+    return Promise.resolve(shellRoute(url));
+  }) as unknown as typeof fetch;
+}
+
+/** No pane is drawn on a thread's own page, so the pick is the frame's to
+ * hold: coming back draws the pane holding what the reader left it holding,
+ * rather than their own thread again. */
+test("a thread picked in History is held again after a trip to a thread's own page", async () => {
+  const frame = await mounted(viewportDeskEm, twoThreadsServed());
+  const held = (): string | undefined =>
+    chatDrawn()?.querySelector("header h2")?.textContent ?? undefined;
+  expect(held()).toBe("mine");
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "ArrowDown",
+  });
+  const theirs = await screen.findByRole("menuitemradio", { name: /^theirs,/ });
+  await turned(() => {
+    fireEvent.click(theirs);
+  });
+  await settled();
+  expect(held()).toBe("theirs");
+  routeParams = { ...atlas, session: threadOtherSession };
+  await frame.redrawn();
+  expect(chatDrawn()).toBeNull();
+  routeParams = atlas;
+  await frame.redrawn();
+  expect(held()).toBe("theirs");
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "ArrowDown",
+  });
+  expect(
+    (
+      await screen.findByRole("menuitemradio", { name: /^theirs,/ })
+    ).getAttribute("aria-checked"),
+  ).toBe("true");
+  styleless();
+});
+
 const openedSession = "thread-new";
 
 /** A server that opens one thread of the reader's own and answers reads of it,
@@ -582,6 +716,8 @@ test("the pane's title and every control of it stand in the header's one row", a
     headerItem(screen.getByRole("button", { name }));
   expect(named("Rename")).toBe(title);
   expect(named("Close")).toBe(title);
+  expect(named("Copy link")).toBe(title);
+  expect(headerItem(screen.getByRole("link", { name: "Open" }))).toBe(title);
   const controls = ["New", "History", "Full screen", "Collapse"].map(named);
   for (const control of controls) {
     expect(control).not.toBeNull();

@@ -8,6 +8,10 @@
  * every part between them. A store a browser refuses is read as empty and
  * written to in vain, so what a reader is looking at is the state held here and
  * never a re-read.
+ *
+ * The thread the reader picked is held here too, and in no store: the pane is
+ * not drawn on a thread's own page, and returning from one draws it holding
+ * that pick again.
  */
 
 import {
@@ -25,12 +29,14 @@ import {
   chatPaneRestored,
   chatPaneWrite,
 } from "../../core/chatPane.ts";
-import type { ChatPaneState } from "../../core/chatPane.ts";
+import type { ChatPaneChosen, ChatPaneState } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
 
 interface ChatPaneHeld {
   readonly state: ChatPaneState;
   readonly moveTo: (next: ChatPaneState) => void;
+  readonly chosen: ChatPaneChosen | undefined;
+  readonly choose: (next: ChatPaneChosen) => void;
 }
 
 const chatPaneContext = createContext<ChatPaneHeld | undefined>(undefined);
@@ -47,9 +53,10 @@ export function ChatPaneProvider(props: {
     chatPaneWrite(persistentStore, next);
     setStored(next);
   }, []);
+  const [chosen, choose] = useState<ChatPaneChosen | undefined>(undefined);
   const held = useMemo<ChatPaneHeld>(
-    () => ({ state, moveTo }),
-    [state, moveTo],
+    () => ({ state, moveTo, chosen, choose }),
+    [state, moveTo, chosen],
   );
   return (
     <chatPaneContext.Provider value={held}>

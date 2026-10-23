@@ -7,7 +7,7 @@
  * to say in words goes on a row of its own under that one.
  */
 
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
@@ -105,6 +105,21 @@ const chatPaneGlyphPaths = {
     </>
   ),
   orphaned: <circle cx="8" cy="8" r="5.5" strokeDasharray="2 2" />,
+  page: (
+    <ChatPaneLucide>
+      <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6M21 3l-9 9M15 3h6v6" />
+    </ChatPaneLucide>
+  ),
+  link: (
+    <ChatPaneLucide>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </ChatPaneLucide>
+  ),
+  copied: (
+    <ChatPaneLucide>
+      <path d="M20 6 9 17l-5-5" />
+    </ChatPaneLucide>
+  ),
 } as const;
 
 export type ChatPaneGlyphName = keyof typeof chatPaneGlyphPaths;
@@ -122,13 +137,24 @@ export function ChatPaneIcon(props: {
 }
 
 /**
- * An icon button of the pane's own quiet look, its name spoken once and
- * read twice: as the hidden label that stays its accessible name, and as the
- * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
- * rather than sitting on it, so it still opens on focus even where the button
- * itself is disabled and so cannot take focus directly — New, while the
- * reader's own thread is answering.
+ * A control's name read a second time, as the tooltip a pointer or a keyboard
+ * focus reveals. The tooltip wraps the control rather than sitting on it, so it
+ * still opens on focus even where a button is disabled and so cannot take
+ * focus directly — New, while the reader's own thread is answering.
  */
+export function ChatPaneIconTip(props: {
+  readonly label: string;
+  readonly children: ReactElement;
+}): ReactNode {
+  return (
+    <Tooltip text={props.label}>
+      <span className="flex">{props.children}</span>
+    </Tooltip>
+  );
+}
+
+/** An icon button of the pane's own quiet look, its name spoken once and read
+ * twice: as the hidden label that stays its accessible name, and as its tip. */
 export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;
   readonly label: string;
@@ -138,22 +164,18 @@ export function ChatPaneIconButton(props: {
   readonly disabled?: boolean;
 }): ReactNode {
   return (
-    <Tooltip text={props.label}>
-      <span className="flex">
-        <Button
-          variant="quiet"
-          size="icon"
-          {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
-          {...(props.busy === undefined ? {} : { busy: props.busy })}
-          {...(props.disabled === undefined
-            ? {}
-            : { disabled: props.disabled })}
-          onClick={props.onClick}
-        >
-          <ChatPaneIcon glyph={props.glyph} label={props.label} />
-        </Button>
-      </span>
-    </Tooltip>
+    <ChatPaneIconTip label={props.label}>
+      <Button
+        variant="quiet"
+        size="icon"
+        {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
+        {...(props.busy === undefined ? {} : { busy: props.busy })}
+        {...(props.disabled === undefined ? {} : { disabled: props.disabled })}
+        onClick={props.onClick}
+      >
+        <ChatPaneIcon glyph={props.glyph} label={props.label} />
+      </Button>
+    </ChatPaneIconTip>
   );
 }
 

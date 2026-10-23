@@ -9,7 +9,14 @@
  * what a stop leaves in a store is told apart by exactly that.
  */
 
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { QueryClient } from "@tanstack/react-query";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type {
@@ -17,18 +24,21 @@ import type {
   ThreadTranscriptResponse,
   ThreadTurnResponse,
 } from "../../../src/contract/responses.ts";
+import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
+import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { moving } from "./conversationMoving.ts";
 import {
   interruptionNote,
   interruptionSentence,
 } from "./interruptionFixture.ts";
-import { answer, settled } from "./screenHarness.tsx";
+import { Routed } from "./routed.tsx";
+import { answer, ScreenHarness, settled } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamOpening, StreamServer } from "./streamDouble.ts";
 import { threadConversationMounted } from "./threadConversationMount.tsx";
 import type { ThreadConversationMounted } from "./threadConversationMount.tsx";
-import { threadStorePage } from "./threadFixture.ts";
+import { threadPartition, threadStorePage } from "./threadFixture.ts";
 
 export type StageEntry = ThreadTranscriptResponse["entries"][number];
 
@@ -220,6 +230,35 @@ export function stageMounted(
   vi.stubGlobal("fetch", stageDoor(doors));
   const server = streamServer([stageProjectOpening], "token", liveOpenings);
   return { ...doors, server, ...threadConversationMounted(thread, server) };
+}
+
+/** The chat pane docked over the `fetch` a case has stubbed, its project
+ * stream open and its thread's live stream answered once. */
+export async function stagePaneMounted(): Promise<{
+  readonly server: StreamServer;
+  readonly container: HTMLElement;
+}> {
+  const server = streamServer([stageProjectOpening], "token", [
+    stageLiveOpening(),
+  ]);
+  const view = render(
+    <ScreenHarness
+      partition={threadPartition}
+      client={new QueryClient()}
+      transport={server.ports.fetch}
+    >
+      <Routed>
+        <ChatPaneProvider twoColumn>
+          <ChatPane
+            partition={threadPartition}
+            chat={{ placement: "Right", presentation: "Docked" }}
+          />
+        </ChatPaneProvider>
+      </Routed>
+    </ScreenHarness>,
+  );
+  await settled();
+  return { server, container: view.container };
 }
 
 /** One event of `turn` down the live stream that is open. */

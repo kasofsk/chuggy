@@ -36,13 +36,15 @@ function CopyMark(props: { readonly copied: boolean }): ReactNode {
   );
 }
 
-export function CopyButton(props: {
-  /** What is copied, read when the control is pressed. */
-  readonly text: string;
-  /** What the control is called before it is pressed. */
-  readonly label: string;
-  readonly worded?: boolean;
-}): ReactNode {
+/** The press of a copy control drawn in a look of its own, and whether the
+ * clipboard took the last one recently enough to say so. Nothing where no
+ * write is held, so nothing is drawn. */
+export interface CopyPress {
+  readonly copied: boolean;
+  readonly press: (text: string) => void;
+}
+
+export function useCopyPress(): CopyPress | undefined {
   const write = useCopyHeld();
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -52,30 +54,58 @@ export function CopyButton(props: {
     },
     [],
   );
-  if (write === undefined) return null;
-  const copy = async (): Promise<void> => {
-    if (!(await write(props.text))) return;
-    setCopied(true);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      setCopied(false);
-    }, copySaidMilliseconds);
+  if (write === undefined) return undefined;
+  return {
+    copied,
+    press: (text) => {
+      void write(text).then((written) => {
+        if (!written) return;
+        setCopied(true);
+        clearTimeout(timer.current);
+        timer.current = setTimeout(() => {
+          setCopied(false);
+        }, copySaidMilliseconds);
+      });
+    },
   };
+}
+
+/** What the control says once the clipboard has the text, heard either way. */
+export function CopySaid(props: {
+  readonly copied: boolean;
+  readonly worded?: boolean;
+}): ReactNode {
+  return (
+    <span
+      role="status"
+      className={props.worded === true ? "copy-said" : "visually-hidden"}
+    >
+      {props.copied ? "Copied" : ""}
+    </span>
+  );
+}
+
+export function CopyButton(props: {
+  /** What is copied, read when the control is pressed. */
+  readonly text: string;
+  /** What the control is called before it is pressed. */
+  readonly label: string;
+  readonly worded?: boolean;
+}): ReactNode {
+  const copy = useCopyPress();
+  if (copy === undefined) return null;
   return (
     <span className="copy">
-      <span
-        role="status"
-        className={props.worded === true ? "copy-said" : "visually-hidden"}
-      >
-        {copied ? "Copied" : ""}
-      </span>
+      <CopySaid copied={copy.copied} worded={props.worded === true} />
       <button
         type="button"
         className="copy-button"
         aria-label={props.label}
-        onClick={() => void copy()}
+        onClick={() => {
+          copy.press(props.text);
+        }}
       >
-        <CopyMark copied={copied} />
+        <CopyMark copied={copy.copied} />
       </button>
     </span>
   );
