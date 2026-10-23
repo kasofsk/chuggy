@@ -322,7 +322,7 @@ const overridableFields = Object.entries(
 
 test("what the contract offers a parked ticket leaves every repository configuration's definition where it was", () => {
   assert.deepEqual(
-    [...parkedTicketOverrideFields, "work.instructions"].sort(),
+    [...parkedTicketOverrideFields, "work.instructions", "workloads"].sort(),
     [...overridableFields].sort(),
   );
   const directory = new URL("../fixtures/configurations/", import.meta.url);
@@ -362,6 +362,70 @@ test("what the contract offers a parked ticket leaves every repository configura
       }),
       { verdict: "Refused", code: "OverridesMoveDefinition" },
       name,
+    );
+    assert.deepEqual(
+      parkedOverridesVerdict(ticket, undefined, {
+        workloads: { build: { prompt: { text: "Do the other work." } } },
+      }),
+      { verdict: "Refused", code: "OverridesUnsupported" },
+      name,
+    );
+  }
+});
+
+/** A catalog ticket whose work is one agent and whose one stage runs one command. */
+const parkedCatalogTicket = {
+  configuration: canonicalConfigurationOf({
+    version: 2,
+    image: "worker:v2",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Do the work." },
+        worker: { mode: document.worker.mode, setup: [], files: [] },
+      },
+      tests: { runner: "Commands", commands: ["npm test"] },
+    },
+    plans: { standard: [{ name: "checks", evaluators: ["tests"] }] },
+    defaults: { work: "build", evaluation: "standard" },
+  }),
+  configurationRepository: undefined,
+  authoring: {
+    deps: new Set<number>(),
+    prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+  },
+  brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+};
+
+test("an override of a workload a parked catalog ticket runs moves its definition, which is why the contract offers a parked ticket no workloads", () => {
+  assert.deepEqual(parkedOverridesVerdict(parkedCatalogTicket, undefined, {}), {
+    verdict: "Admitted",
+  });
+  const offers: readonly ConfigurationOverrides[] = [
+    { workloads: { build: { prompt: { text: "Do the other work." } } } },
+    {
+      workloads: {
+        build: {
+          worker: {
+            mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+            setup: ["make prepare"],
+            files: [],
+          },
+        },
+      },
+    },
+    { workloads: { tests: { commands: ["npm test", "npm run lint"] } } },
+  ];
+  for (const offered of offers) {
+    assert.deepEqual(
+      parkedOverridesVerdict(parkedCatalogTicket, undefined, offered),
+      { verdict: "Refused", code: "OverridesMoveDefinition" },
+      JSON.stringify(offered),
+    );
+    assert.deepEqual(
+      parkedOverridesVerdict(parkedCatalogTicket, offered, offered),
+      { verdict: "Admitted" },
+      JSON.stringify(offered),
     );
   }
 });
