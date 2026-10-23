@@ -82,6 +82,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     landingMode: "PullRequest",
     overrides: {},
     selection: {},
+    workloads: {},
   });
   const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];
   const again = creationBodyFrom(commanding, form, [

@@ -50,6 +50,8 @@ import type { TicketYamlContext, TicketYamlProblem } from "./ticketYaml.ts";
 
 import "./TicketEditor.css";
 
+import { ticketYamlCatalogOf } from "./ticketYamlFragments.ts";
+
 const TicketEditor = lazy(() => import("./TicketEditor.tsx"));
 
 export interface TicketYamlAuthoringProps {
@@ -176,6 +178,13 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     () => ticketYamlVocabulary(read ?? context.base, context),
     [read, context],
   );
+  const configuration = (read ?? context.base).configuration;
+  const catalog = useMemo(() => {
+    const canonical = context.offers.find(
+      (offer) => offer.name === configuration,
+    )?.initialization.configuration.canonical;
+    return canonical === undefined ? undefined : ticketYamlCatalogOf(canonical);
+  }, [configuration, context]);
   useEffect(() => {
     if (authored && read !== undefined) handed.current.onForm(read);
     handed.current.onReadable(read !== undefined);
@@ -185,6 +194,7 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     read,
     problems,
     vocabulary,
+    catalog,
     restored,
     typed: (next: string): void => {
       setText(next);
@@ -239,6 +249,7 @@ export default function TicketYamlAuthoring(
             onChange={yaml.typed}
             problems={yaml.problems}
             vocabulary={yaml.vocabulary}
+            catalog={yaml.catalog}
           />
         </Suspense>
       </EditorBoundary>

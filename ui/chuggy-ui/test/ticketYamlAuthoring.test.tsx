@@ -255,11 +255,11 @@ test("a kept YAML is the form's as the screen reopens on it, and a discarded one
   expect(intentBox().value).toBe("");
 });
 
-test("the YAML of a push is written with the empty branch its box holds", async () => {
+test("the YAML of a push writes the empty branch its box holds as nothing", async () => {
   draw(api().ports);
   typeTitle("Fix the login page");
   const editor = await toYaml();
-  expect(editor.value).toContain('branch: ""\n');
+  expect(editor.value).toContain("branch:\n");
 });
 
 /** Nothing is written into a text once it is the reader's, so a branch they
@@ -312,7 +312,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));
 
-  type(editor, editor.value.replace('intent: ""', "intent: ship it"));
+  type(editor, editor.value.replace("intent:\n", "intent: ship it\n"));
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   const again = await screen.findByRole("dialog");
   expect(again.textContent).toContain("intent: ship it");
@@ -348,7 +348,7 @@ test("what was typed is kept, and the screen reopens on it", async () => {
   expect(
     screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Ticket YAML" })
       .value,
-  ).toContain('intent: ""');
+  ).toContain("intent:\n");
 });
 
 test("switching back to the form forgets the kept copy", async () => {
@@ -378,7 +378,7 @@ test("a configuration named in the YAML is the one chosen, sent and remembered",
   const created: number[] = [];
   draw(held.ports, created, several);
   const editor = await toYaml();
-  expect(editor.value.startsWith('configuration: ""\n')).toBe(true);
+  expect(editor.value.startsWith("configuration:\n")).toBe(true);
   type(editor, "configuration: development-opus\nintent: ship it\n");
   expect(screen.getByRole("list", { name: "Problems" }).textContent).toContain(
     "name one of development, development-sonnet",

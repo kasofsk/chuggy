@@ -42,45 +42,78 @@ import {
 } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 
+/** A request body as the JSON Schema of what its parser takes, which is the body a client sends. */
+function nativeHttpContractDocumentInput(schema: z.ZodType): unknown {
+  return z.toJSONSchema(schema, { io: "input" });
+}
+
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
 function nativeHttpContractDocumentSchemas(): unknown {
   return {
-    publicMutation: z.toJSONSchema(publicMutationSchema),
-    configurationCreation: z.toJSONSchema(configurationCreationSchema),
-    repositoryConfigurationImport: z.toJSONSchema(
+    publicMutation: nativeHttpContractDocumentInput(publicMutationSchema),
+    configurationCreation: nativeHttpContractDocumentInput(
+      configurationCreationSchema,
+    ),
+    repositoryConfigurationImport: nativeHttpContractDocumentInput(
       repositoryConfigurationImportSchema,
     ),
-    draftCreation: z.toJSONSchema(draftCreationSchema),
-    draftRevision: z.toJSONSchema(draftRevisionSchema),
-    executionPlacement: z.toJSONSchema(executionPlacementSchema),
-    sessionPlacement: z.toJSONSchema(sessionPlacementSchema),
-    ownerFallback: z.toJSONSchema(projectOwnerFallbackSchema),
-    forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
-    forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
-    projectCreation: z.toJSONSchema(projectCreationSchema),
-    projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
-    projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
-    projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
-    projectRepositoryRetirement: z.toJSONSchema(
+    draftCreation: nativeHttpContractDocumentInput(draftCreationSchema),
+    draftRevision: nativeHttpContractDocumentInput(draftRevisionSchema),
+    executionPlacement: nativeHttpContractDocumentInput(
+      executionPlacementSchema,
+    ),
+    sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
+    ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
+    forgeCredential: nativeHttpContractDocumentInput(
+      forgeCredentialRequestSchema,
+    ),
+    forgeAuthorization: nativeHttpContractDocumentInput(
+      forgeAuthorizationSchema,
+    ),
+    projectCreation: nativeHttpContractDocumentInput(projectCreationSchema),
+    projectRepositoryBind: nativeHttpContractDocumentInput(
+      projectRepositoryBindSchema,
+    ),
+    projectRepositoryCreate: nativeHttpContractDocumentInput(
+      projectRepositoryCreateSchema,
+    ),
+    projectRepositoryLanding: nativeHttpContractDocumentInput(
+      projectRepositoryLandingSchema,
+    ),
+    projectRepositoryRetirement: nativeHttpContractDocumentInput(
       projectRepositoryRetirementSchema,
     ),
-    projectRepositoryConfigure: z.toJSONSchema(
+    projectRepositoryConfigure: nativeHttpContractDocumentInput(
       projectRepositoryConfigureSchema,
     ),
-    leadInquiry: z.toJSONSchema(nativeHttpEndpoints.askLead.body),
-    selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
-    selectorProposalReview: z.toJSONSchema(
+    leadInquiry: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.askLead.body,
+    ),
+    selectorProjectSettings: nativeHttpContractDocumentInput(
+      selectorProjectSettingsSchema,
+    ),
+    selectorProposalReview: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.reviewSelectorProposal.body,
     ),
-    threadMessage: z.toJSONSchema(nativeHttpEndpoints.sendThreadMessage.body),
-    threadRename: z.toJSONSchema(nativeHttpEndpoints.renameThread.body),
-    threadHide: z.toJSONSchema(nativeHttpEndpoints.hideThread.body),
-    workerPoolRegistrationToken: z.toJSONSchema(
+    threadMessage: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.sendThreadMessage.body,
+    ),
+    threadRename: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.renameThread.body,
+    ),
+    threadHide: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.hideThread.body,
+    ),
+    workerPoolRegistrationToken: nativeHttpContractDocumentInput(
       workerPoolRegistrationTokenRequestSchema,
     ),
-    workerPoolRedemption: z.toJSONSchema(workerPoolRedemptionSchema),
-    personalRunnerRedemption: z.toJSONSchema(personalRunnerRedemptionSchema),
-    actionReport: z.toJSONSchema(actionReportDocumentSchema),
+    workerPoolRedemption: nativeHttpContractDocumentInput(
+      workerPoolRedemptionSchema,
+    ),
+    personalRunnerRedemption: nativeHttpContractDocumentInput(
+      personalRunnerRedemptionSchema,
+    ),
+    actionReport: nativeHttpContractDocumentInput(actionReportDocumentSchema),
   };
 }
 

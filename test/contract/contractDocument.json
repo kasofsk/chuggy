@@ -374,6 +374,389 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "workloads": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "runner": {
+                        "type": "string",
+                        "enum": ["Agent", "Commands"]
+                      },
+                      "purpose": {
+                        "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                        "type": "string",
+                        "enum": ["Review", "Check"]
+                      },
+                      "prompt": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 65536,
+                                "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                              }
+                            },
+                            "required": ["text"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "maxLength": 256,
+                                "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                                "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                              }
+                            },
+                            "required": ["path"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                      },
+                      "worker": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "SingleAgent"
+                                      },
+                                      "agent": {
+                                        "type": "string",
+                                        "const": "Claude"
+                                      },
+                                      "arguments": {
+                                        "maxItems": 64,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "model": {
+                                        "not": {}
+                                      }
+                                    },
+                                    "required": ["type", "agent", "arguments"]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "SingleAgent"
+                                      },
+                                      "agent": {
+                                        "type": "string",
+                                        "const": "Codex"
+                                      },
+                                      "arguments": {
+                                        "maxItems": 64,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "model": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128,
+                                        "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "agent",
+                                      "arguments",
+                                      "model"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "arguments": {
+                                "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                              },
+                              "setup": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "files": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "content": {
+                                      "type": "string",
+                                      "maxLength": 65536
+                                    }
+                                  },
+                                  "required": ["path", "content"]
+                                }
+                              }
+                            },
+                            "required": ["mode", "setup", "files"]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "setup": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "files": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "content": {
+                                      "type": "string",
+                                      "maxLength": 65536
+                                    }
+                                  },
+                                  "required": ["path", "content"]
+                                }
+                              }
+                            },
+                            "required": ["setup", "files"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "authority": {
+                        "type": "object",
+                        "properties": {
+                          "tools": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "credentials": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "network": {
+                            "type": "boolean"
+                          },
+                          "filesystem": {
+                            "type": "string",
+                            "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                          },
+                          "mayCompleteTask": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "framing": {
+                        "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                        "type": "string",
+                        "enum": ["Chuggy"]
+                      },
+                      "practices": {
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "RegressionCoverage",
+                            "ChangedCallPaths",
+                            "AcceptanceCriteria"
+                          ]
+                        },
+                        "description": "The importer also holds that each is named at most once."
+                      },
+                      "brief": {
+                        "type": "object",
+                        "properties": {
+                          "motivation": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "acceptanceCriteria": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "constraints": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          }
+                        },
+                        "required": [
+                          "motivation",
+                          "acceptanceCriteria",
+                          "constraints"
+                        ],
+                        "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                      },
+                      "commands": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        },
+                        "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                      },
+                      "image": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                        "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                      },
+                      "executionRequirement": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "Container"
+                              },
+                              "operatingSystem": {
+                                "type": "string",
+                                "enum": ["Linux", "MacOS"]
+                              },
+                              "architecture": {
+                                "type": "string",
+                                "enum": ["Amd64", "Arm64"]
+                              },
+                              "image": {
+                                "type": "string",
+                                "maxLength": 512,
+                                "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                                "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "operatingSystem",
+                              "architecture",
+                              "image"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "description": "ContainerCapability is this mode's former name, read as Capability.",
+                                "type": "string",
+                                "enum": ["Capability", "ContainerCapability"]
+                              },
+                              "operatingSystem": {
+                                "type": "string",
+                                "enum": ["Linux", "MacOS"]
+                              },
+                              "architecture": {
+                                "type": "string",
+                                "enum": ["Amd64", "Arm64"]
+                              },
+                              "capabilities": {
+                                "minItems": 1,
+                                "maxItems": 63,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 63,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                                },
+                                "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "operatingSystem",
+                              "architecture",
+                              "capabilities"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "resources": {
+                        "type": "object",
+                        "properties": {
+                          "cpus": {
+                            "description": "Whole CPUs.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 64
+                          },
+                          "memoryMib": {
+                            "description": "Memory in MiB.",
+                            "type": "integer",
+                            "minimum": 512,
+                            "maximum": 262144
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+                  }
                 }
               },
               "additionalProperties": false
@@ -847,6 +1230,389 @@
                 }
               },
               "additionalProperties": false
+            },
+            "workloads": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "runner": {
+                    "type": "string",
+                    "enum": ["Agent", "Commands"]
+                  },
+                  "purpose": {
+                    "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                    "type": "string",
+                    "enum": ["Review", "Check"]
+                  },
+                  "prompt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536,
+                            "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                          }
+                        },
+                        "required": ["text"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                            "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                          }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                  },
+                  "worker": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Claude"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "not": {}
+                                  }
+                                },
+                                "required": ["type", "agent", "arguments"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Codex"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "agent",
+                                  "arguments",
+                                  "model"
+                                ]
+                              }
+                            ]
+                          },
+                          "arguments": {
+                            "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                          },
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["mode", "setup", "files"]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["setup", "files"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "authority": {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "credentials": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "network": {
+                        "type": "boolean"
+                      },
+                      "filesystem": {
+                        "type": "string",
+                        "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                      },
+                      "mayCompleteTask": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "framing": {
+                    "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                    "type": "string",
+                    "enum": ["Chuggy"]
+                  },
+                  "practices": {
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "RegressionCoverage",
+                        "ChangedCallPaths",
+                        "AcceptanceCriteria"
+                      ]
+                    },
+                    "description": "The importer also holds that each is named at most once."
+                  },
+                  "brief": {
+                    "type": "object",
+                    "properties": {
+                      "motivation": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "acceptanceCriteria": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "constraints": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "motivation",
+                      "acceptanceCriteria",
+                      "constraints"
+                    ],
+                    "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                  },
+                  "commands": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                    },
+                    "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                  },
+                  "image": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                    "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                  },
+                  "executionRequirement": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "Container"
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "image": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                            "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "image"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "description": "ContainerCapability is this mode's former name, read as Capability.",
+                            "type": "string",
+                            "enum": ["Capability", "ContainerCapability"]
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "capabilities": {
+                            "minItems": 1,
+                            "maxItems": 63,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 63,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                            },
+                            "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "capabilities"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "resources": {
+                    "type": "object",
+                    "properties": {
+                      "cpus": {
+                        "description": "Whole CPUs.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 64
+                      },
+                      "memoryMib": {
+                        "description": "Memory in MiB.",
+                        "type": "integer",
+                        "minimum": 512,
+                        "maximum": 262144
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false,
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+              }
             }
           },
           "additionalProperties": false
@@ -1181,6 +1947,389 @@
                 }
               },
               "additionalProperties": false
+            },
+            "workloads": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "runner": {
+                    "type": "string",
+                    "enum": ["Agent", "Commands"]
+                  },
+                  "purpose": {
+                    "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                    "type": "string",
+                    "enum": ["Review", "Check"]
+                  },
+                  "prompt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536,
+                            "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                          }
+                        },
+                        "required": ["text"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                            "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                          }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                  },
+                  "worker": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Claude"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "not": {}
+                                  }
+                                },
+                                "required": ["type", "agent", "arguments"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Codex"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "agent",
+                                  "arguments",
+                                  "model"
+                                ]
+                              }
+                            ]
+                          },
+                          "arguments": {
+                            "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                          },
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["mode", "setup", "files"]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["setup", "files"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "authority": {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "credentials": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "network": {
+                        "type": "boolean"
+                      },
+                      "filesystem": {
+                        "type": "string",
+                        "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                      },
+                      "mayCompleteTask": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "framing": {
+                    "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                    "type": "string",
+                    "enum": ["Chuggy"]
+                  },
+                  "practices": {
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "RegressionCoverage",
+                        "ChangedCallPaths",
+                        "AcceptanceCriteria"
+                      ]
+                    },
+                    "description": "The importer also holds that each is named at most once."
+                  },
+                  "brief": {
+                    "type": "object",
+                    "properties": {
+                      "motivation": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "acceptanceCriteria": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "constraints": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "motivation",
+                      "acceptanceCriteria",
+                      "constraints"
+                    ],
+                    "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                  },
+                  "commands": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                    },
+                    "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                  },
+                  "image": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                    "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                  },
+                  "executionRequirement": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "Container"
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "image": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                            "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "image"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "description": "ContainerCapability is this mode's former name, read as Capability.",
+                            "type": "string",
+                            "enum": ["Capability", "ContainerCapability"]
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "capabilities": {
+                            "minItems": 1,
+                            "maxItems": 63,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 63,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                            },
+                            "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "capabilities"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "resources": {
+                    "type": "object",
+                    "properties": {
+                      "cpus": {
+                        "description": "Whole CPUs.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 64
+                      },
+                      "memoryMib": {
+                        "description": "Memory in MiB.",
+                        "type": "integer",
+                        "minimum": 512,
+                        "maximum": 262144
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false,
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+              }
             }
           },
           "additionalProperties": false

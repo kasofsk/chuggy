@@ -136,7 +136,8 @@ test("a released ticket's dependencies may be written but not changed", () => {
   expect(text).toContain("# fixed once the ticket was released");
   expect(readForm(text, locked).form?.dependencies).toStrictEqual([7]);
   expect(
-    readForm(text.replace("[ 7 ]", "[ 7, 8 ]"), locked).problems[0]?.message,
+    readForm(text.replace("  - 7\n", "  - 7\n  - 8\n"), locked).problems[0]
+      ?.message,
   ).toMatch(/cannot change/u);
 });
 
@@ -183,7 +184,7 @@ test("the vocabulary offers what this project's form draws", () => {
     keys.find((key) => key.key === "dependencies")?.values.map((v) => v.label),
   ).toStrictEqual(["7", "8"]);
   const evaluators = keys.find((key) => key.key === "evaluators");
-  expect(evaluators?.nested).toBe(true);
+  expect(evaluators?.place).toBe("Stage");
   expect(evaluators?.values.map((value) => value.label)).toStrictEqual([
     "1",
     "2",
@@ -269,7 +270,7 @@ test("a project offering several writes the choice first, by name, and reads it 
  * text names none, and what is wrong with that is the form's fault to state. */
 test("a form naming no configuration reads as YAML and back, without the keys one decides", () => {
   const text = ticketYamlOf(several.base, several);
-  expect(text.startsWith('configuration: ""\n')).toBe(true);
+  expect(text.startsWith("configuration:\n")).toBe(true);
   expect(text).not.toContain("program");
   expect(text).not.toContain("dependencies");
   const read = ticketYamlRead(text, several);
@@ -349,9 +350,9 @@ test("a project offering one configuration the form does not name still asks in 
     base: creationFormFrom(creationOffers, [], undefined, true),
   };
   expect(asked.base.configuration).toBe("");
-  expect(
-    ticketYamlOf(asked.base, asked).startsWith('configuration: ""\n'),
-  ).toBe(true);
+  expect(ticketYamlOf(asked.base, asked).startsWith("configuration:\n")).toBe(
+    true,
+  );
   const read = ticketYamlRead("configuration: r3\nintent: y\n", asked);
   expect(read.problems).toStrictEqual([]);
   expect(read.form?.configuration).toBe("r3");

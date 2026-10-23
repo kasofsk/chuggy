@@ -29,6 +29,7 @@ import {
 } from "../../../../src/contract/brief.ts";
 import { imageMediaTypes } from "../../../../src/contract/http.ts";
 import type { ImageMediaType } from "../../../../src/contract/http.ts";
+import type { WorkloadOverride } from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
@@ -106,6 +107,10 @@ export interface TicketCreationForm extends CreationAuthoring {
    * catalog's default; sent only under a catalog, and cleared when another
    * configuration is chosen, whose names are its own. */
   readonly selection: ConfigurationSelection;
+  /** What this ticket replaces of each catalog workload, by the name the
+   * catalog holds it under; sent only under a catalog, and cleared with the
+   * selection. */
+  readonly workloads: Readonly<Record<string, WorkloadOverride>>;
 }
 
 export type CreationField =
@@ -488,6 +493,7 @@ export function creationFormFrom(
     }),
     overrides: {},
     selection: {},
+    workloads: {},
   };
 }
 
@@ -607,12 +613,15 @@ export function creationConfigurationChosen(
   name: string,
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return creationDrawnChosen(
-    form,
-    offers,
-    { configuration: name, selection: {} },
-    repositories,
-  );
+  return {
+    ...creationDrawnChosen(
+      form,
+      offers,
+      { configuration: name, selection: {} },
+      repositories,
+    ),
+    workloads: {},
+  };
 }
 
 /** The form with another selection from the catalog it is drawn under. */
@@ -1060,18 +1069,23 @@ function creationUndrawnFaults(
 }
 
 /**
- * What a form sends of its configuration's own choices: the selection under a
- * catalog and the overrides under any other configuration, each with no key at
- * all where it holds none.
+ * What a form sends of its configuration's own choices: the selection and the
+ * workloads it overrides under a catalog, and the overrides under any other
+ * configuration, each with no key at all where it holds none.
  */
 function creationChoicesOf(
   form: TicketCreationForm,
   offer: CreationOffer | undefined,
 ): { readonly overrides?: unknown; readonly selection?: unknown } {
   if (creationCatalogOf(offer) !== undefined)
-    return Object.keys(form.selection).length === 0
-      ? {}
-      : { selection: form.selection };
+    return {
+      ...(Object.keys(form.selection).length === 0
+        ? {}
+        : { selection: form.selection }),
+      ...(Object.keys(form.workloads).length === 0
+        ? {}
+        : { overrides: { workloads: form.workloads } }),
+    };
   const overrides = overridesNestedOf(form.overrides);
   return overrides === undefined ? {} : { overrides };
 }

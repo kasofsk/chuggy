@@ -142,6 +142,7 @@ export function editFormFrom(
       finalization?.mode ?? creationLandingDefault(repositories, repository),
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
+    workloads: draft.overrides?.workloads ?? {},
   };
 }
 

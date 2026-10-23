@@ -19,6 +19,10 @@
  * where the form holds one: a field left out is the configuration's, and a
  * field no ticket may override is refused at its own key.
  *
+ * A CATALOG'S TICKET WRITES NO PROGRAM. The plan it selects is its program,
+ * and the form sends that plan's stages; the text writes the selection, and
+ * under `workloads` each workload it takes in to override.
+ *
  * AN IMAGE IS WRITTEN AS THE IDENTITY ITS UPLOAD ANSWERED, never as bytes: the
  * form attaches, and the text may only keep or drop what the screen knows the
  * project holds, so an identity it does not know is refused at its key. The
@@ -33,6 +37,7 @@
  * package the decision layer may not reach; everything here is still pure.
  */
 
+import type { TicketYamlKey } from "./ticketYamlKey.ts";
 import {
   Document,
   isMap,
@@ -87,6 +92,15 @@ import type {
   CreationOverrides,
   OverrideField,
 } from "../../core/ticketOverrides.ts";
+import {
+  workloadOverrideRead,
+  workloadsOverriddenOf,
+} from "../../core/workloadOverrides.ts";
+import type { WorkloadOverride } from "../../../../../src/contract/configurationOverrides.ts";
+import {
+  ticketYamlWorkloadKeys,
+  ticketYamlWorkloadUnset,
+} from "./ticketYamlWorkloads.ts";
 
 /** What a document is read and written against: the project's offer, and the
  * form a key left out keeps its value from. */
@@ -159,6 +173,7 @@ const ticketYamlConfigured: ReadonlySet<string> = new Set([
   "program",
   "overrides",
   "selection",
+  "workloads",
 ]);
 
 /** The keys this project's form draws under one configuration, in the order
@@ -184,8 +199,50 @@ function ticketYamlKeys(
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
     "landing",
     ...(landing === "None" ? [] : ["target"]),
-    ...(drawn === undefined ? [] : ["dependencies", "program", chosen]),
+    ...(drawn === undefined
+      ? []
+      : [
+          "dependencies",
+          ...(chosen === "selection"
+            ? ["selection", "workloads"]
+            : ["program", chosen]),
+        ]),
   ];
+}
+
+/** The canonical text of the configuration a form names, none where nothing offers it. */
+function ticketYamlCanonical(
+  context: TicketYamlContext,
+  configuration: string,
+): string | undefined {
+  return creationOfferOf(context.offers, configuration)?.initialization
+    .configuration.canonical;
+}
+
+/** The selection a form runs, every field written out, its catalog's defaults among them. */
+function ticketYamlSelectionShown(
+  context: TicketYamlContext,
+  form: TicketCreationForm,
+): Readonly<Record<string, string>> | undefined {
+  const catalog = ticketYamlCatalog(context, form.configuration);
+  if (catalog === undefined) return undefined;
+  const selected = configurationCatalogSelected(catalog, form.selection);
+  return {
+    work: selected.work,
+    evaluation: selected.evaluation,
+    ...(selected.finalization === undefined
+      ? {}
+      : { finalization: selected.finalization }),
+  };
+}
+
+/** Whether a value has no block spelling: an empty list or map, which is left out rather than written; empty text is written as nothing. */
+function ticketYamlUnwritten(value: unknown): boolean {
+  return Array.isArray(value)
+    ? value.length === 0
+    : typeof value === "object" &&
+        value !== null &&
+        Object.keys(value).length === 0;
 }
 
 /** The text a form reads as. */
@@ -193,6 +250,7 @@ export function ticketYamlOf(
   form: TicketCreationForm,
   context: TicketYamlContext,
 ): string {
+  const canonical = ticketYamlCanonical(context, form.configuration);
   const values: Record<string, unknown> = {
     configuration: form.configuration,
     title: form.title,
@@ -209,22 +267,29 @@ export function ticketYamlOf(
       evaluators: stage.evaluators.length,
     })),
     overrides: overridesNestedOf(form.overrides),
-    selection:
-      Object.keys(form.selection).length === 0
+    selection: ticketYamlSelectionShown(context, form),
+    workloads:
+      canonical === undefined
         ? undefined
-        : { ...form.selection },
+        : workloadsOverriddenOf(canonical, form.workloads),
   };
   const shown = Object.fromEntries(
     ticketYamlKeys(context, form, form.landingMode)
-      .filter((key) => values[key] !== undefined)
-      .map((key) => [key, values[key]]),
+      .filter(
+        (key) => values[key] !== undefined && !ticketYamlUnwritten(values[key]),
+      )
+      .map((key) => [key, values[key] === "" ? null : values[key]]),
   );
   const document = new Document(shown);
   const intent = document.get("intent", true);
   if (isScalar(intent) && form.intent !== "")
     intent.type = Scalar.BLOCK_LITERAL;
-  const dependencies = document.get("dependencies", true);
-  if (isSeq(dependencies)) dependencies.flow = true;
+  const workloads = document.get("workloads", true);
+  if (isMap(workloads))
+    for (const pair of workloads.items)
+      if (isMap(pair.value))
+        pair.value.comment =
+          ticketYamlWorkloadUnset(pair.value.toJSON()) ?? null;
   if (context.dependenciesLocked && isMap(document.contents)) {
     const pair = document.contents.items.find(
       (item) => isScalar(item.key) && item.key.value === "dependencies",
@@ -232,7 +297,7 @@ export function ticketYamlOf(
     if (pair !== undefined && isScalar(pair.key))
       pair.key.commentBefore = ticketYamlLockedNote;
   }
-  return document.toString({ lineWidth: 0 });
+  return document.toString({ lineWidth: 0, nullStr: "" });
 }
 
 function ticketYamlSpanOf(node: Node | null | undefined): TicketYamlSpan {
@@ -516,6 +581,46 @@ function ticketYamlOverridesOf(
   return ticketYamlTook(held);
 }
 
+/** The workloads a text writes, each read against the catalog's as what it overrides, refused at the field it is about. */
+function ticketYamlWorkloadsOf(
+  node: unknown,
+  canonical: string,
+): TicketYamlTook<Readonly<Record<string, WorkloadOverride>>> {
+  if (node === undefined || (isScalar(node) && node.value === null))
+    return ticketYamlTook({});
+  if (!isMap(node))
+    return ticketYamlRefused(
+      "write the workloads as a map, each under the name its catalog holds it under",
+    );
+  const held: Record<string, WorkloadOverride> = {};
+  for (const pair of node.items as readonly TicketYamlPair[]) {
+    const name = ticketYamlKeyNameOf(pair);
+    if (name === undefined)
+      return ticketYamlRefused(
+        "a workload is named by a plain word",
+        ticketYamlSpanOf(pair.key),
+      );
+    const value = pair.value;
+    const read = workloadOverrideRead(
+      canonical,
+      name,
+      isNode(value) ? value.toJSON() : value,
+    );
+    if (read.read === "Refused") {
+      const at =
+        isMap(value) && read.path.length > 0
+          ? value.getIn(read.path, true)
+          : undefined;
+      return ticketYamlRefused(
+        read.message,
+        ticketYamlSpanOf(isNode(at) ? at : pair.key),
+      );
+    }
+    if (Object.keys(read.override).length > 0) held[name] = read.override;
+  }
+  return ticketYamlTook(held);
+}
+
 function ticketYamlSameNumbers(
   a: readonly number[],
   b: readonly number[],
@@ -548,6 +653,14 @@ function ticketYamlConfiguredApplied(
   const drawn = ticketYamlDrawn(context, form);
   if (drawn === undefined) return ticketYamlNoKey(key);
   if (key === "selection") return ticketYamlTook(form);
+  if (key === "workloads") {
+    const canonical = ticketYamlCanonical(context, form.configuration);
+    if (canonical === undefined) return ticketYamlNoKey(key);
+    return ticketYamlInto(
+      ticketYamlWorkloadsOf(value, canonical),
+      (workloads) => ({ ...form, workloads }),
+    );
+  }
   if (key === "checks")
     return ticketYamlInto(ticketYamlTextsOf(value), (checks) => ({
       ...form,
@@ -623,6 +736,7 @@ function ticketYamlKeyApplied(
     case "program":
     case "overrides":
     case "selection":
+    case "workloads":
       return ticketYamlConfiguredApplied(key, value, form, context);
     default:
       return ticketYamlNoKey(key);
@@ -643,6 +757,7 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     repository: "",
     overrides: {},
     selection: {},
+    workloads: {},
   };
 }
 
@@ -842,25 +957,13 @@ export function ticketYamlFaultProblems(
 ): readonly TicketYamlProblem[] {
   return faults.map((fault) => {
     const key = ticketYamlKeyOf(fault.field);
-    const at = key === undefined ? undefined : keys.get(key);
+    const at =
+      key === undefined
+        ? undefined
+        : (keys.get(key) ??
+          (key === "overrides" ? keys.get("workloads") : undefined));
     return { ...(at ?? { from: 0, to: 0 }), message: fault.reason };
   });
-}
-
-/** One value a key offers, with what choosing it does. */
-export interface TicketYamlValue {
-  readonly label: string;
-  readonly detail?: string;
-}
-
-/** What the editor completes and explains: every key this project's form
- * draws, what it means, and the values it takes where they are a closed set. */
-export interface TicketYamlKey {
-  readonly key: string;
-  readonly hint: string;
-  readonly values: readonly TicketYamlValue[];
-  /** Written inside a program's stage rather than at the top. */
-  readonly nested?: true;
 }
 
 type TicketYamlDescribed = Omit<TicketYamlKey, "key">;
@@ -896,7 +999,31 @@ function ticketYamlConfiguredDescribed(
       hint: `what this ticket runs from its catalog, each of ${ticketYamlSelectionFields.join(", ")} a name the catalog holds and its default where left out`,
       values: [],
     },
+    workloads: {
+      hint: "each workload this ticket runs, as its catalog holds it; a field changed here is this ticket's own, and a commented skeleton is a field to fill in",
+      values: [],
+    },
   };
+}
+
+/** What each field of a selection means and the names it may take, under the catalog a form names. */
+function ticketYamlSelectionKeys(
+  catalog: ConfigurationCatalog | undefined,
+): readonly TicketYamlKey[] {
+  if (catalog === undefined) return [];
+  const hints = {
+    work: "the workload that does the work",
+    evaluation: "the plan whose stages judge the work",
+    finalization: "the finalizer that lands the work",
+  } as const;
+  return ticketYamlSelectionFields.map((field) => ({
+    key: field,
+    hint: hints[field],
+    values: ticketYamlSelectionNames(catalog, field).map((label) => ({
+      label,
+    })),
+    place: "Workload",
+  }));
 }
 
 function ticketYamlDescribed(
@@ -952,7 +1079,7 @@ function ticketYamlNestedKeys(
       values: Array.from({ length: evaluatorsMax }, (_, index) => ({
         label: String(index + 1),
       })),
-      nested: true,
+      place: "Stage",
     },
   ];
 }
@@ -963,11 +1090,20 @@ export function ticketYamlVocabulary(
 ): readonly TicketYamlKey[] {
   const drawn = ticketYamlDrawn(context, form);
   const described = ticketYamlDescribed(form, context, drawn);
+  const catalog = ticketYamlCatalog(context, form.configuration);
   return [
     ...ticketYamlKeys(context, form, form.landingMode).map((key) => ({
       key,
       ...(described[key] ?? { hint: "", values: [] }),
     })),
     ...ticketYamlNestedKeys(drawn),
+    ...ticketYamlSelectionKeys(catalog),
+    ...(catalog === undefined
+      ? []
+      : ticketYamlWorkloadKeys(
+          catalog.workloads.flatMap((workload) =>
+            workload.promptPath === undefined ? [] : [workload.promptPath],
+          ),
+        )),
   ];
 }
