@@ -249,14 +249,14 @@ test("a catalog form whose workload overrides a reader may not set is refused wh
   };
   draw(
     held.ports,
-    { mayAdminister: false, duplicate: { from: 1, seed: { form, dropped } } },
+    { mayOverride: false, duplicate: { from: 1, seed: { form, dropped } } },
     offers,
   );
   fireEvent.change(screen.getByPlaceholderText("what this ticket is for"), {
     target: { value: "ship it" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
-  expect(await screen.findByText(/administrator/u)).toBeDefined();
+  expect(await screen.findByText(/may not override/u)).toBeDefined();
   expect(screen.queryByRole("button", { name: "Overrides" })).toBeNull();
   expect(held.sent.some((one) => one.method === "POST")).toBe(false);
 });

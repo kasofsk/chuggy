@@ -415,8 +415,8 @@ test("the short label counts what the sentence spells out", () => {
   expect(draftUnreleasedLabel(draftReleaseOf(unbriefed))).toBe("Not recorded");
 });
 
-/** A reader who may not administer revises the draft's overrides only as they stand. */
-test("a reader who may not administer keeps the draft's overrides in any key order, and is refused a change", () => {
+/** A reader who may not override revises the draft's overrides only as they stand. */
+test("a reader who may not override keeps the draft's overrides in any key order, and is refused a change", () => {
   const draft: DraftResponse = {
     ...released,
     overrides: { worker: { setup: ["npm ci"] }, practices: ["Kept"] },
@@ -446,7 +446,7 @@ test("a reader who may not administer keeps the draft's overrides in any key ord
   );
   const faults = changed.assembled === "Faults" ? changed.faults : [];
   expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
-  expect(faults[0]?.reason).toMatch(/administrator/u);
+  expect(faults[0]?.reason).toMatch(/may not override/u);
   const admin = editRevisionFrom(
     draft,
     creationOffers,

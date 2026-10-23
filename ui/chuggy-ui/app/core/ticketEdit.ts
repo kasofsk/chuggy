@@ -157,7 +157,7 @@ export type EditAssembly =
  * The revision one form becomes, written against the draft version it was read
  * at and pinned to the revision of the offer the form names, which is how an
  * update re-pins a ticket and how it is moved to another configuration. A
- * reader who may not administer revises with the draft's overrides as they
+ * reader who may not override revises with the draft's overrides as they
  * are, or with none.
  */
 export function editRevisionFrom(
@@ -165,13 +165,13 @@ export function editRevisionFrom(
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
-  mayAdminister = true,
+  mayOverride = true,
 ): EditAssembly {
   const assembled = creationBodyFrom(
     offers,
     { ...form, dependencies: draft.authoring.dependencies },
     repositories,
-    { mayAdminister, held: draft.overrides },
+    { mayOverride, held: draft.overrides },
   );
   if (assembled.assembled === "Faults") return assembled;
   return {

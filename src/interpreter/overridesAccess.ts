@@ -1,12 +1,11 @@
 /**
  * What a principal must hold to make a ticket run something other than the
- * configuration a repository checked in: the project's `Administer`, which a
- * workspace administrator holds through the project, where the ticket names
- * overrides; `Mutate` where it names none.
+ * configuration a repository checked in: the project's `OverrideTicketConfig`
+ * where the ticket names overrides, and `Mutate` where it names none.
  *
  * A REVISION ASKS ONLY FOR WHAT IT CHANGES. One carrying exactly the overrides
  * the draft it is fenced on already holds sets nothing, so whoever may revise
- * a draft may revise one an administrator overrode, and one carrying none
+ * a draft may revise one someone else overrode, and one carrying none
  * moves the draft back onto what was checked in.
  */
 
@@ -30,7 +29,7 @@ export function overridesNamed(
 export function overridesAccess(
   overrides: ConfigurationOverrides | undefined,
 ): ProjectAccessKind {
-  return overridesNamed(overrides) ? "Administer" : "Mutate";
+  return overridesNamed(overrides) ? "OverrideTicketConfig" : "Mutate";
 }
 
 /** What a revision asks of its writer, against the draft as it stood when it was read. */
@@ -45,5 +44,5 @@ export function overridesRevisionAccess(
   return stored?.authoringVersion === input.expectedVersion &&
     isDeepStrictEqual(stored.overrides, input.overrides)
     ? "Mutate"
-    : "Administer";
+    : "OverrideTicketConfig";
 }

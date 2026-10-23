@@ -646,7 +646,7 @@ export function CreationFields(
     readonly api: CreationImagesApi;
     /** Whether the reader may set overrides; the panel is drawn for one who may
      * not only while the form holds some, which they can remove. Absent, they may. */
-    readonly mayAdminister?: boolean;
+    readonly mayOverride?: boolean;
   },
 ): ReactNode {
   const { faults, form, onChange, offers, repositories } = props;
@@ -699,7 +699,7 @@ export function CreationFields(
       )}
       <Fault field="authoring" faults={faults} />
       {creationCatalogOf(drawn) === undefined &&
-      (props.mayAdminister !== false ||
+      (props.mayOverride !== false ||
         overridesNestedOf(form.overrides) !== undefined) ? (
         <Overrides {...props} offer={drawn} />
       ) : null}
@@ -782,7 +782,7 @@ function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
-  readonly mayAdminister: boolean;
+  readonly mayOverride: boolean;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dispatches: boolean;
@@ -794,7 +794,7 @@ function useCreationSubmit(props: {
   const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
     dispatches,
-    mayAdminister,
+    mayOverride,
     offers,
     onCreated,
     onFaults,
@@ -806,7 +806,7 @@ function useCreationSubmit(props: {
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
     const assembled = creationBodyFrom(offers, form, repositories, {
-      mayAdminister,
+      mayOverride,
     });
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
@@ -907,10 +907,10 @@ function CreationDuplicateDropped(props: {
 function creationAssembler(
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
-  mayAdminister: boolean,
+  mayOverride: boolean,
 ): (form: TicketCreationForm) => CreationAssembly {
   return (form) =>
-    creationBodyFrom(offers, form, repositories, { mayAdminister });
+    creationBodyFrom(offers, form, repositories, { mayOverride });
 }
 
 interface CreationFormProps {
@@ -921,7 +921,7 @@ interface CreationFormProps {
   /** What a submit goes on to once the ticket it makes is released. */
   readonly start: CreationStart;
   /** Whether the reader may set overrides; absent, they may. */
-  readonly mayAdminister?: boolean;
+  readonly mayOverride?: boolean;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
@@ -941,9 +941,9 @@ export function CreationForm(props: CreationFormProps): ReactNode {
   const duplicate = props.duplicate;
   const storeKey = creationStoreKey(props.partition, duplicate);
   const onCreated = props.onCreated;
-  const mayAdminister = props.mayAdminister !== false;
+  const mayOverride = props.mayOverride !== false;
   const running = useCreationSubmit({
-    mayAdminister,
+    mayOverride,
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
@@ -967,7 +967,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
         offers={offers}
         repositories={repositories}
         dependenciesLocked={false}
-        assemble={creationAssembler(offers, repositories, mayAdminister)}
+        assemble={creationAssembler(offers, repositories, mayOverride)}
         proposed={creationFormProposed}
         storeKey={storeKey}
         submitLabel="Create ticket"
@@ -990,7 +990,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             offers={offers}
             partial={partial}
             repositories={repositories}
-            mayAdminister={mayAdminister}
+            mayOverride={mayOverride}
             branchProposed={creationBranchProposed(held.form)}
             api={props}
           />
@@ -1059,7 +1059,7 @@ export interface CreationScreenReady {
    * come back without a no and the project's work is read to have a runner. */
   readonly start: CreationStart;
   /** Whether the abilities read has not said the reader may not administer. */
-  readonly mayAdminister: boolean;
+  readonly mayOverride: boolean;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
@@ -1080,9 +1080,9 @@ function CreationScreenRead(props: {
     useProjectAbilityRead(partition, "dispatch"),
     useWorkRunner(partition, "Reader"),
   );
-  const mayAdminister = !projectAbilityRefused(
+  const mayOverride = !projectAbilityRefused(
     useProjectAbilities(partition),
-    "administer",
+    "overrideTicketConfig",
   );
   const list = creationContextList(partition);
   const queryKey = list.key;
@@ -1099,7 +1099,7 @@ function CreationScreenRead(props: {
             queryKey,
             context,
             start,
-            mayAdminister,
+            mayOverride,
             onDirty: setDirty,
             onCreated: (ticket) => {
               guard.release();

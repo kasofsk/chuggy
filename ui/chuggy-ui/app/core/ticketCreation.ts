@@ -1093,27 +1093,27 @@ function creationChoicesOf(
 
 /** Whether a reader may set what a ticket overrides, and what the draft already holds of it. */
 export interface OverridesStanding {
-  readonly mayAdminister: boolean;
+  readonly mayOverride: boolean;
   /** The overrides the draft holds, none for a ticket not yet made. */
   readonly held?: unknown;
 }
 
-const overridesAdministerReason =
-  "only a project administrator may set what a ticket overrides; remove them to continue";
+const overridesRefusedReason =
+  "your role in this project may not override its checked-in configuration; remove the overrides to continue";
 
-/** The fault of overrides a reader who may not administer is changing, if it is one. */
+/** The fault of overrides a reader who may not override is changing, if it is one. */
 function creationOverridesFaults(
   overrides: unknown,
   standing: OverridesStanding | undefined,
 ): readonly CreationFault[] {
   if (
     standing === undefined ||
-    standing.mayAdminister ||
+    standing.mayOverride ||
     overrides === undefined ||
     overridesSame(overrides, standing.held)
   )
     return [];
-  return [{ field: "overrides", reason: overridesAdministerReason }];
+  return [{ field: "overrides", reason: overridesRefusedReason }];
 }
 
 /**

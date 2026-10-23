@@ -389,6 +389,7 @@ test("the reader's abilities hang from the partition and are read door by door",
     mutate: false,
     dispatch: false,
     manageSelector: false,
+    overrideTicketConfig: false,
     administer: false,
   };
   const held = recording(() => abilities);

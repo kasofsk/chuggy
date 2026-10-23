@@ -177,7 +177,7 @@ function ParkedOverridesEdit(props: {
   const busy = parkedOverridesSaving(saving);
   const refused = projectAbilityRefused(
     useProjectAbilities(props.partition),
-    "administer",
+    "overrideTicketConfig",
   );
   return (
     <div className="grid gap-2">

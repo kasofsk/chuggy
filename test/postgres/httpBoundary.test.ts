@@ -520,7 +520,7 @@ test("real HTTP ingress files a draft's overrides and a released ticket's read a
   harness.access.grant({
     partition,
     principal,
-    access: new Set(["Read", "Mutate", "Administer"]),
+    access: new Set(["Read", "Mutate", "OverrideTicketConfig"]),
   });
   const repository = await postgresHarnessBinding(harness, partition);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);

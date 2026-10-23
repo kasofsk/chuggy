@@ -92,7 +92,7 @@ function useEditSubmit(props: {
   readonly subject: EditSubject;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
-  readonly mayAdminister: boolean;
+  readonly mayOverride: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
 }): {
@@ -122,7 +122,7 @@ function useEditSubmit(props: {
       props.offers,
       form,
       props.repositories,
-      props.mayAdminister,
+      props.mayOverride,
     );
     if (assembled.assembled === "Faults") {
       props.onFaults(assembled.faults);
@@ -164,7 +164,7 @@ interface EditFormProps {
   readonly bound: readonly ProjectRepositoryResponse[];
   readonly partial?: boolean;
   /** Whether the reader may set overrides; absent, they may. */
-  readonly mayAdminister?: boolean;
+  readonly mayOverride?: boolean;
   readonly onUpdated: () => void;
   readonly onDirty?: (dirty: boolean) => void;
 }
@@ -183,9 +183,9 @@ export function EditForm(props: EditFormProps): ReactNode {
   const draft = props.subject.draft;
   const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
-  const mayAdminister = props.mayAdminister !== false;
+  const mayOverride = props.mayOverride !== false;
   const running = useEditSubmit({
-    mayAdminister,
+    mayOverride,
     ports: props.ports,
     partition: props.partition,
     subject: props.subject,
@@ -212,7 +212,7 @@ export function EditForm(props: EditFormProps): ReactNode {
         repositories={repositories}
         dependenciesLocked
         assemble={(held) =>
-          editRevisionFrom(draft, offers, held, repositories, mayAdminister)
+          editRevisionFrom(draft, offers, held, repositories, mayOverride)
         }
         storeKey={storeKey}
         submitLabel="revise and release"
@@ -230,7 +230,7 @@ export function EditForm(props: EditFormProps): ReactNode {
             partial={props.partial === true}
             repositories={repositories}
             dependenciesLocked
-            mayAdminister={mayAdminister}
+            mayOverride={mayOverride}
             api={props}
           />
         }
@@ -306,9 +306,9 @@ function EditOffered(props: {
   readonly onDirty: (dirty: boolean) => void;
 }): ReactNode {
   const { context, partition, subject } = props;
-  const mayAdminister = !projectAbilityRefused(
+  const mayOverride = !projectAbilityRefused(
     useProjectAbilities(partition),
-    "administer",
+    "overrideTicketConfig",
   );
   return (
     <EditOffersRead
@@ -324,7 +324,7 @@ function EditOffered(props: {
           edit={edit}
           bound={context.repositories}
           partial={context.partial}
-          mayAdminister={mayAdminister}
+          mayOverride={mayOverride}
           onDirty={props.onDirty}
           onUpdated={props.onUpdated}
         />

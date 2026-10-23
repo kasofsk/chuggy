@@ -1112,7 +1112,7 @@ function createDraftNaming(web: NativeWeb, brief: DraftBrief) {
   });
 }
 
-test("a draft naming overrides asks for the project's administrators", async () => {
+test("a draft naming overrides asks for OverrideTicketConfig", async () => {
   const { web, calls } = boundary(false);
   const brief = briefNamingImages([]);
   await createDraftNaming(web, brief);
@@ -1125,7 +1125,10 @@ test("a draft naming overrides asks for the project's administrators", async () 
     brief,
     overrides: { workloads: { build: { practices: [] } } },
   });
-  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Administer"]);
+  assert.deepEqual(calls, [
+    "authorize:Mutate",
+    "authorize:OverrideTicketConfig",
+  ]);
 });
 
 function authorizations(calls: readonly string[]): string[] {
@@ -1150,7 +1153,7 @@ function reviseNamingOverrides(
   });
 }
 
-test("a revision asks for the project's administrators only where its overrides differ from the draft it is fenced on", async () => {
+test("a revision asks for OverrideTicketConfig only where its overrides differ from the draft it is fenced on", async () => {
   const holding = (calls: string[]): AuthoringStore => ({
     ...authoringStore(calls),
     draft: () =>
@@ -1191,10 +1194,12 @@ test("a revision asks for the project's administrators only where its overrides 
   await reviseNamingOverrides(changed.web, {
     workloads: { build: { practices: ["RegressionCoverage"] } },
   });
-  assert.deepEqual(authorizations(changed.calls), ["authorize:Administer"]);
+  assert.deepEqual(authorizations(changed.calls), [
+    "authorize:OverrideTicketConfig",
+  ]);
 });
 
-test("submitting a change of a ticket's overrides asks for the project's administrators where it names any", async () => {
+test("submitting a change of a ticket's overrides asks for OverrideTicketConfig where it names any", async () => {
   const changing = (overrides: ConfigurationOverrides): ProjectCommand => ({
     version: 1,
     command: "ChangeTicketOverrides",
@@ -1205,7 +1210,7 @@ test("submitting a change of a ticket's overrides asks for the project's adminis
   });
   const named = boundary(true);
   await named.web.submit(principal, submissionOf(changing(storedOverrides)));
-  assert.equal(named.calls[0], "authorize:Administer");
+  assert.equal(named.calls[0], "authorize:OverrideTicketConfig");
   const cleared = boundary(true);
   await cleared.web.submit(principal, submissionOf(changing({})));
   assert.equal(cleared.calls[0], "authorize:Mutate");

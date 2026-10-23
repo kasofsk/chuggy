@@ -836,18 +836,18 @@ test("the images a form holds are the brief's, by identity, and bounded", () => 
   ]);
 });
 
-test("a reader who may not administer is refused overrides on a new ticket, and an administrator is not", () => {
+test("a reader who may not override is refused overrides on a new ticket, and one who may is not", () => {
   const form = {
     ...creationForm(),
     overrides: { practices: ["Mine"] },
   };
   const refused = creationBodyFrom(creationOffers, form, noBindings, {
-    mayAdminister: false,
+    mayOverride: false,
   });
   const faults = refused.assembled === "Faults" ? refused.faults : [];
   expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
-  expect(faults[0]?.reason).toMatch(/administrator/u);
-  for (const standing of [{ mayAdminister: true }, undefined])
+  expect(faults[0]?.reason).toMatch(/may not override/u);
+  for (const standing of [{ mayOverride: true }, undefined])
     expect(
       creationBodyFrom(creationOffers, form, noBindings, standing).assembled,
     ).toBe("Body");
@@ -855,7 +855,7 @@ test("a reader who may not administer is refused overrides on a new ticket, and 
     creationOffers,
     { ...form, overrides: {} },
     noBindings,
-    { mayAdminister: false },
+    { mayOverride: false },
   );
   expect(none.assembled).toBe("Body");
 });

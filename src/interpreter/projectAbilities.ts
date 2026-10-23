@@ -20,6 +20,7 @@ export const projectAbilityKinds: Readonly<
   mutate: "Mutate",
   dispatch: "DispatchTicket",
   manageSelector: "ManageProjectSelector",
+  overrideTicketConfig: "OverrideTicketConfig",
   administer: "Administer",
 };
 
@@ -39,14 +40,22 @@ export async function projectAbilities(
     return { result: "NotFound" };
   const held = async (kind: ProjectAccessKind) =>
     (await access.authorize(principal, partition, kind)) !== undefined;
-  const [mutate, dispatch, manageSelector, administer] = await Promise.all([
-    held(projectAbilityKinds.mutate),
-    held(projectAbilityKinds.dispatch),
-    held(projectAbilityKinds.manageSelector),
-    held(projectAbilityKinds.administer),
-  ]);
+  const [mutate, dispatch, manageSelector, overrideTicketConfig, administer] =
+    await Promise.all([
+      held(projectAbilityKinds.mutate),
+      held(projectAbilityKinds.dispatch),
+      held(projectAbilityKinds.manageSelector),
+      held(projectAbilityKinds.overrideTicketConfig),
+      held(projectAbilityKinds.administer),
+    ]);
   return {
     result: "Authorized",
-    value: { mutate, dispatch, manageSelector, administer },
+    value: {
+      mutate,
+      dispatch,
+      manageSelector,
+      overrideTicketConfig,
+      administer,
+    },
   };
 }

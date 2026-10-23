@@ -2102,6 +2102,7 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   mutate: z.boolean(),
   dispatch: z.boolean(),
   manageSelector: z.boolean(),
+  overrideTicketConfig: z.boolean(),
   administer: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<

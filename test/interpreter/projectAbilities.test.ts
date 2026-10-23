@@ -28,6 +28,7 @@ const none: ProjectAbilitiesResponse = {
   mutate: false,
   dispatch: false,
   manageSelector: false,
+  overrideTicketConfig: false,
   administer: false,
 };
 
@@ -39,6 +40,7 @@ const asked: readonly (readonly [
   ["mutate", "Mutate"],
   ["dispatch", "DispatchTicket"],
   ["manageSelector", "ManageProjectSelector"],
+  ["overrideTicketConfig", "OverrideTicketConfig"],
   ["administer", "Administer"],
 ];
 
