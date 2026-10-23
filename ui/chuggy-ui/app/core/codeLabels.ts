@@ -745,6 +745,10 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Configuration cannot take this selection";
     case "ProgramExceedsPlan":
       return "Program exceeds the evaluation plan";
+    case "OverridesUnsupported":
+      return "Configuration cannot take these overrides";
+    case "OverridesUnknown":
+      return "Overrides name no catalog workload";
     case "TicketCapacityReached":
       return "Ticket capacity reached";
     case "FinalizationRequestClosed":

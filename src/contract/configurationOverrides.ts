@@ -150,6 +150,28 @@ function configurationOverridesPromptTexts(
   );
 }
 
+/**
+ * The fields of a workload an override keeps: none where it names another
+ * runner, since no field of one runner is a field of the other, and all but
+ * the placement where it names an image or a requirement, the two being one
+ * choice.
+ */
+function configurationOverridesWorkloadKept(
+  workload: Readonly<Record<string, unknown>>,
+  named: readonly (readonly [string, unknown])[],
+): Readonly<Record<string, unknown>> {
+  const fields = new Map(named);
+  if (fields.has("runner") && fields.get("runner") !== workload["runner"])
+    return {};
+  const placed = fields.has("image") || fields.has("executionRequirement");
+  return Object.fromEntries(
+    Object.entries(workload).filter(
+      ([field]) =>
+        !placed || (field !== "image" && field !== "executionRequirement"),
+    ),
+  );
+}
+
 /** One workload with the fields an override names replaced, a prompt path read as the text stored beside it. */
 function configurationOverridesWorkload(
   workload: unknown,
@@ -160,15 +182,7 @@ function configurationOverridesWorkload(
   const named = Object.entries(override).filter(
     ([, value]) => value !== undefined,
   );
-  const placed = named.some(
-    ([field]) => field === "image" || field === "executionRequirement",
-  );
-  const kept = Object.fromEntries(
-    Object.entries(workload).filter(
-      ([field]) =>
-        !placed || (field !== "image" && field !== "executionRequirement"),
-    ),
-  );
+  const kept = configurationOverridesWorkloadKept(workload, named);
   const prompt = override.prompt;
   const text =
     prompt !== undefined && "path" in prompt

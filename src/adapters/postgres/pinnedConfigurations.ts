@@ -68,6 +68,7 @@ function postgresPinnedWorkloadTask(
       : pinnedWorkloadTask(
           document,
           pin,
+          storedOverridesOf(row.overrides),
           storedSelectionOf(row.selection),
           position,
         );

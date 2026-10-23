@@ -464,6 +464,7 @@ function briefed(
     document,
     pin,
     undefined,
+    undefined,
     purpose === "Work"
       ? { taskKind: "Work" }
       : { taskKind: "Evaluation", stage: 0, evaluator: 1 },

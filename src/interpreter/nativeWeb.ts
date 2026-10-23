@@ -21,6 +21,11 @@ import {
   authorizedProjectValue,
   type AuthorizedResult,
 } from "./authorizedProject.ts";
+import {
+  overridesAccess,
+  overridesNamed,
+  overridesRevisionAccess,
+} from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
@@ -925,6 +930,8 @@ export interface NativeWeb {
 }
 
 function submissionAccess(command: ProjectCommand): ProjectAccessKind {
+  if (command.command === "ChangeTicketOverrides")
+    return overridesAccess(command.overrides);
   if (command.command === "ManualDispatch") return "DispatchTicket";
   if (command.command === "ProposeDispatch") return "ProposeDispatch";
   return "Mutate";
@@ -1252,6 +1259,7 @@ function nativeDraftCreationMethod(
           ? { ...created, landing: nativeDraftLanding(landed, created.draft) }
           : created;
       },
+      overridesAccess(input.overrides),
     );
 }
 
@@ -1261,7 +1269,7 @@ function nativeDraftRevisionMethod(
   authoring: AuthoringStore,
   projectArtifacts?: ProjectArtifactPort,
 ): NativeWeb["reviseDraft"] {
-  return (principal, input) =>
+  return async (principal, input) =>
     authorizedProjectMutation(
       access,
       principal,
@@ -1283,6 +1291,12 @@ function nativeDraftRevisionMethod(
           ? { ...revised, landing: nativeDraftLanding(landed, revised.draft) }
           : revised;
       },
+      overridesNamed(input.overrides)
+        ? overridesRevisionAccess(
+            await authoring.draft(input.partition, input.ticket),
+            input,
+          )
+        : "Mutate",
     );
 }
 
@@ -1299,6 +1313,7 @@ function nativeAuthoringMethods(
         principal,
         input.partition,
         (authority) => authoring.createConfiguration({ ...input, authority }),
+        "Administer",
       ),
     createDraft: nativeDraftCreationMethod(access, authoring, projectArtifacts),
     reviseDraft: nativeDraftRevisionMethod(access, authoring, projectArtifacts),

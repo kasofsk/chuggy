@@ -1140,6 +1140,31 @@ function createDraftNaming(web: NativeWeb, brief: DraftBrief) {
   });
 }
 
+test("a draft naming overrides, or a configuration written by hand, asks for the project's administrators", async () => {
+  const { web, calls } = boundary(false);
+  const brief = briefNamingImages([]);
+  await createDraftNaming(web, brief);
+  await web.createDraft(principal, {
+    partition,
+    configurationRevision: asConfigurationRevisionId("revision"),
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 0,
+    authoring: noAuthoring,
+    brief,
+    overrides: { workloads: { build: { practices: [] } } },
+  });
+  await web.createConfiguration(principal, {
+    partition,
+    revision: asConfigurationRevisionId("revision"),
+    canonical: canonicalConfigurationOf({ version: 2 }),
+  });
+  assert.deepEqual(calls, [
+    "authorize:Mutate",
+    "authorize:Administer",
+    "authorize:Administer",
+  ]);
+});
+
 /** A project artifact port that rejects if either method is called. */
 function unreachableProjectArtifacts(): ProjectArtifactPort {
   return {

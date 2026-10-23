@@ -115,6 +115,20 @@ test("a workload's image and execution requirement are one placement, and naming
   );
 });
 
+test("naming another runner keeps none of the workload's fields, and naming its own runner keeps them all", () => {
+  const effective = configurationWithOverrides(catalog, {
+    workloads: {
+      build: { runner: "Commands", commands: ["npm test"] },
+      review: { runner: "Agent" },
+    },
+  }) as typeof catalog;
+  assert.deepEqual(effective.workloads.build, {
+    runner: "Commands",
+    commands: ["npm test"],
+  });
+  assert.deepEqual(effective.workloads.review, catalog.workloads.review);
+});
+
 test("a prompt named by path is the text the catalog's import stored beside it", () => {
   const effective = configurationWithOverrides(catalog, {
     workloads: { build: { prompt: { path: "prompts/review.md" } } },

@@ -664,6 +664,8 @@ test("the refusal code roster is exhaustive over its union", () => {
     SelectionUnknown: true,
     SelectionUnsupported: true,
     ProgramExceedsPlan: true,
+    OverridesUnsupported: true,
+    OverridesUnknown: true,
     TicketCapacityReached: true,
     FinalizationRequestClosed: true,
     OverridesMoveDefinition: true,

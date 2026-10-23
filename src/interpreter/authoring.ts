@@ -105,6 +105,8 @@ export const releasePairingFaults = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "OverridesUnsupported",
+  "OverridesUnknown",
 ] as const satisfies readonly BoundaryRefusalCode[];
 export type ReleasePairingFault = (typeof releasePairingFaults)[number];
 
@@ -263,6 +265,8 @@ function releaseDocumentTicketReadiness(
 ): TicketConfigurationReadiness {
   if (!configurationSelectionEmpty(selection))
     return { readiness: "Incomplete", fault: "SelectionUnsupported" };
+  if (overrides?.workloads !== undefined)
+    return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const readiness = releaseDocumentReadiness(
     configurationWithOverrides(value, overrides),
     brief,
@@ -275,10 +279,32 @@ function releaseDocumentTicketReadiness(
       };
 }
 
+/** Whether a catalog ticket's overrides name a workload, or a prompt file, its catalog does not hold. */
+function workloadTicketOverridesUnknown(
+  catalog: WorkloadConfiguration,
+  workloads: NonNullable<ConfigurationOverrides["workloads"]>,
+): boolean {
+  const prompts = new Set(
+    Object.values(catalog.workloads).flatMap((workload) =>
+      workload.runner === "Agent" && workload.prompt.path !== undefined
+        ? [workload.prompt.path]
+        : [],
+    ),
+  );
+  return Object.entries(workloads).some(
+    ([name, override]) =>
+      !Object.hasOwn(catalog.workloads, name) ||
+      (override.prompt !== undefined &&
+        "path" in override.prompt &&
+        !prompts.has(override.prompt.path)),
+  );
+}
+
 /**
- * A version 2 ticket: the catalog and the entries the ticket selected from it.
- * A catalog takes no overrides, since a ticket changes what it runs by
- * selecting among reviewed entries rather than by rewriting one.
+ * A version 2 ticket: the catalog with the ticket's workload overrides
+ * applied, and the entries the ticket selected from it. A catalog ticket
+ * overrides workloads alone, since every other field it could name is one a
+ * catalog does not have.
  */
 function workloadTicketReadiness(
   value: unknown,
@@ -286,9 +312,22 @@ function workloadTicketReadiness(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
 ): TicketConfigurationReadiness {
-  if (overrides !== undefined)
-    return { readiness: "Incomplete", fault: "SelectionUnsupported" };
-  const readiness = workloadConfigurationReadiness(value);
+  const { workloads, ...unsupported } = overrides ?? {};
+  if (Object.values(unsupported).some((field) => field !== undefined))
+    return { readiness: "Incomplete", fault: "OverridesUnsupported" };
+  const pinned = workloadConfigurationReadiness(value);
+  if (pinned.readiness === "Incomplete") return pinned;
+  if (
+    workloads !== undefined &&
+    workloadTicketOverridesUnknown(pinned.configuration, workloads)
+  )
+    return { readiness: "Incomplete", fault: "OverridesUnknown" };
+  const readiness =
+    workloads === undefined
+      ? pinned
+      : workloadConfigurationReadiness(
+          configurationWithOverrides(value, { workloads }),
+        );
   if (readiness.readiness === "Incomplete") return readiness;
   const selected = selectedCatalogEntries(readiness.configuration, selection);
   if (selected.selected === "Unknown")

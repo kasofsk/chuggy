@@ -303,6 +303,8 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "OverridesUnsupported",
+  "OverridesUnknown",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",

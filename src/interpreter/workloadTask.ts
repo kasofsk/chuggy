@@ -1,6 +1,7 @@
 /**
- * The one workload a version 2 task runs, read out of the pinned catalog by
- * the selection its ticket was released with.
+ * The one workload a version 2 task runs, read out of the pinned catalog with
+ * its ticket's workload overrides applied, by the selection its ticket was
+ * released with.
  *
  * A TASK OF A CATALOG IS BRIEFED FROM ITS OWN WORKLOAD AND NOTHING ELSE. The
  * work runs the selected work workload, and an evaluator the workload at its
@@ -13,6 +14,10 @@
  * change is held to and never changes what any workload is.
  */
 
+import {
+  configurationWithOverrides,
+  type ConfigurationOverrides,
+} from "../contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import type { ConfigurationPin } from "./projectDecision.ts";
 import {
@@ -51,10 +56,13 @@ export type WorkloadTaskPosition =
  */
 export function catalogWorkloadTask(
   value: unknown,
+  overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
   position: WorkloadTaskPosition,
 ): WorkloadTask | undefined {
-  const ready = workloadConfigurationReadiness(value);
+  const ready = workloadConfigurationReadiness(
+    configurationWithOverrides(value, { workloads: overrides?.workloads }),
+  );
   if (ready.readiness !== "Ready") return undefined;
   const selected = selectedCatalogEntries(ready.configuration, selection);
   if (selected.selected !== "Selected") return undefined;
@@ -79,10 +87,11 @@ export function catalogWorkloadTask(
 export function pinnedWorkloadTask(
   value: unknown,
   pin: ConfigurationPin,
+  overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
   position: WorkloadTaskPosition,
 ): PinnedWorkloadTask | undefined {
-  const task = catalogWorkloadTask(value, selection, position);
+  const task = catalogWorkloadTask(value, overrides, selection, position);
   return task === undefined ? undefined : { ...pin, version: 2, ...task };
 }
 
