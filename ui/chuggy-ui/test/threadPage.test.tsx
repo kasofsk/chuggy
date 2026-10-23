@@ -15,7 +15,13 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -143,6 +149,16 @@ async function mountedAt(path: string): Promise<ReturnType<typeof routerAt>> {
   return router;
 }
 
+/** The names of what the thread's menu offers, its menu opened. */
+async function threadMenuOffers(): Promise<readonly string[]> {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Thread actions" }), {
+    key: "ArrowDown",
+  });
+  return within(await screen.findByRole("menu"))
+    .getAllByRole("menuitem")
+    .map((item) => item.textContent);
+}
+
 function threadPath(session: string): string {
   return `/${threadPartition.tenant}/${threadPartition.project}/threads/${session}`;
 }
@@ -165,8 +181,11 @@ test("a thread's address draws its conversation as the page, with no chat pane a
   expect(conversation.closest(".chat-reading")).not.toBeNull();
   expect(screen.getByText("a member's question")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "Copy link" })).toBeDefined();
-  expect(screen.queryByRole("link", { name: "Open" })).toBeNull();
+  expect(await threadMenuOffers()).toStrictEqual([
+    "Copy link",
+    "Rename",
+    "Close",
+  ]);
   styleless();
 });
 
@@ -187,9 +206,8 @@ test("another member's thread is read without a composer", async () => {
   ).toBeDefined();
   expect(screen.getByText("a member's question")).toBeDefined();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Close" })).toBeDefined();
   expect(chatDrawn()).toBeNull();
+  expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);
   styleless();
 });
 
@@ -209,8 +227,15 @@ test("Open goes to the thread's page, and back draws the pane holding what it he
   });
   await settled();
   expect(paneHolds()).toBe("theirs");
+  fireEvent.keyDown(
+    within(chatDrawn() ?? document.body).getByRole("button", {
+      name: "Thread actions",
+    }),
+    { key: "ArrowDown" },
+  );
+  const menu = await screen.findByRole("menu");
   await turned(() => {
-    fireEvent.click(screen.getByRole("link", { name: "Open" }));
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Open" }));
   });
   await settled();
   expect(router.state.location.pathname).toBe(threadPath(threadOtherSession));

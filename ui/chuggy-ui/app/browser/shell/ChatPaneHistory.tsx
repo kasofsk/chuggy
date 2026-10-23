@@ -34,8 +34,7 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 import {
   ChatPaneHeaderRow,
   ChatPaneIcon,
-  ChatPaneIconButton,
-  ChatPaneIconTip,
+  ChatPaneMark,
 } from "./chatPaneIcons.tsx";
 import type { ChatPaneGlyphName } from "./chatPaneIcons.tsx";
 import {
@@ -232,99 +231,118 @@ function ChatPaneThreadTitle(props: {
   );
 }
 
-/** The thread's own page, as a real anchor in the look of the pane's icon
- * buttons, so a modified press opens it in a tab of its own. */
-function ChatPaneThreadOpen(props: {
-  readonly partition: PartitionIdentity;
-  readonly session: string;
-}): ReactNode {
-  return (
-    <ChatPaneIconTip label="Open">
-      <Link
-        to={navRoutes.thread}
-        params={{ ...props.partition, session: props.session }}
-        className={buttonLookClassName({ size: "icon", variant: "quiet" })}
-      >
-        <ChatPaneIcon glyph="page" label="Open" />
-      </Link>
-    </ChatPaneIconTip>
-  );
-}
+const chatPaneThreadMenuLabel = "Thread actions";
 
-/** The whole address of the thread's own page onto the clipboard, built by
- * the router that answers it. */
-function ChatPaneThreadCopy(props: {
-  readonly partition: PartitionIdentity;
-  readonly session: string;
+/** One item of the thread's menu: its glyph, then its name. */
+function ChatPaneThreadItemFace(props: {
+  readonly glyph: ChatPaneGlyphName;
+  readonly label: string;
 }): ReactNode {
-  const router = useRouter();
-  const copy = useCopyPress();
-  if (copy === undefined) return null;
   return (
     <>
-      <ChatPaneIconButton
-        glyph={copy.copied ? "copied" : "link"}
-        label="Copy link"
-        onClick={() => {
-          const page = router.buildLocation({
-            to: navRoutes.thread,
-            params: { ...props.partition, session: props.session },
-          });
-          copy.press(new URL(page.href, currentOrigin()).href);
-        }}
-      />
-      <CopySaid copied={copy.copied} />
+      <ChatPaneMark glyph={props.glyph} />
+      {props.label}
     </>
   );
 }
 
-/** The buttons beside the title: Rename and Close where the reader may change
- * the thread, and the way to its own page wherever it is not that page. */
-function ChatPaneThreadButtons(props: {
+/** The thread's own page, as a real anchor, so a modified press opens it in a
+ * tab of its own. */
+function ChatPaneThreadOpenItem(props: {
+  readonly page: PartitionIdentity & { readonly session: string };
+}): ReactNode {
+  return (
+    <DropdownMenu.Item
+      className={`${menuItemClassName} text-ink-1 no-underline`}
+      asChild
+    >
+      <Link to={navRoutes.thread} params={props.page}>
+        <ChatPaneThreadItemFace glyph="page" label="Open" />
+      </Link>
+    </DropdownMenu.Item>
+  );
+}
+
+/**
+ * What is done to the thread, behind one control beside its title: Open where
+ * this is not the thread's own page; Copy link, which stays open to say it
+ * copied; and Rename and Close where the reader may change the thread.
+ */
+function ChatPaneThreadMenu(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly at: ChatPaneThreadActionsAt;
   readonly actions: ThreadEntryActions;
   readonly changes: boolean;
-  readonly confirming: boolean;
-  readonly onConfirming: (confirming: boolean) => void;
+  readonly onConfirming: () => void;
 }): ReactNode {
+  const router = useRouter();
+  const copy = useCopyPress();
+  const page = { ...props.partition, session: props.session };
+  const renames = props.actions.renameable && props.changes;
+  const closes = props.actions.closable && props.changes;
   return (
     <>
-      {props.actions.renameable && props.changes ? (
-        <ChatPaneIconButton
-          glyph="rename"
-          label="Rename"
-          onClick={props.actions.startRename}
-        />
-      ) : null}
-      {props.actions.closable && props.changes ? (
-        <ChatPaneIconButton
-          glyph="close"
-          label="Close"
-          pressed={props.confirming}
-          onClick={() => {
-            props.onConfirming(!props.confirming);
-          }}
-        />
-      ) : null}
-      {props.at === "Pane" ? (
-        <ChatPaneThreadOpen
-          partition={props.partition}
-          session={props.session}
-        />
-      ) : null}
-      <ChatPaneThreadCopy partition={props.partition} session={props.session} />
+      <DropdownMenu.Root modal={false}>
+        <Tooltip text={chatPaneThreadMenuLabel}>
+          <DropdownMenu.Trigger
+            className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
+          >
+            <ChatPaneIcon glyph="more" label={chatPaneThreadMenuLabel} />
+          </DropdownMenu.Trigger>
+        </Tooltip>
+        <DropdownMenu.Portal>
+          <MenuContent sideOffset={4} align="start">
+            {props.at === "Pane" ? (
+              <ChatPaneThreadOpenItem page={page} />
+            ) : null}
+            {copy === undefined ? null : (
+              <DropdownMenu.Item
+                className={menuItemClassName}
+                onSelect={(event) => {
+                  event.preventDefault();
+                  const located = router.buildLocation({
+                    to: navRoutes.thread,
+                    params: page,
+                  });
+                  copy.press(new URL(located.href, currentOrigin()).href);
+                }}
+              >
+                <ChatPaneThreadItemFace
+                  glyph={copy.copied ? "copied" : "link"}
+                  label={copy.copied ? "Copied" : "Copy link"}
+                />
+              </DropdownMenu.Item>
+            )}
+            {renames ? (
+              <DropdownMenu.Item
+                className={menuItemClassName}
+                onSelect={props.actions.startRename}
+              >
+                <ChatPaneThreadItemFace glyph="rename" label="Rename" />
+              </DropdownMenu.Item>
+            ) : null}
+            {closes ? (
+              <DropdownMenu.Item
+                className={menuItemClassName}
+                onSelect={props.onConfirming}
+              >
+                <ChatPaneThreadItemFace glyph="close" label="Close" />
+              </DropdownMenu.Item>
+            ) : null}
+          </MenuContent>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      {copy === undefined ? null : <CopySaid copied={copy.copied} />}
     </>
   );
 }
 
 /**
  * The thread the pane or its page holds, at the start of the header's one row:
- * its title, and beside it Rename, Close, which asks before it closes, and the
- * links to its own page. While a rename is open the editor takes the title's
- * place and the buttons stand aside for it; what closing asks and what either
- * was refused for go under the row.
+ * its title, and beside it the menu of what is done to it. While a rename is
+ * open the editor takes the title's place and the menu stands aside for it;
+ * what closing asks and what either was refused for go under the row.
  */
 export function ChatPaneThreadActions(props: {
   readonly partition: PartitionIdentity;
@@ -348,14 +366,15 @@ export function ChatPaneThreadActions(props: {
         ) : (
           <>
             <ChatPaneThreadTitle thread={props.thread} at={props.at} />
-            <ChatPaneThreadButtons
+            <ChatPaneThreadMenu
               partition={props.partition}
               session={props.thread.session}
               at={props.at}
               actions={actions}
               changes={props.viewOnly !== true}
-              confirming={confirming}
-              onConfirming={setConfirming}
+              onConfirming={() => {
+                setConfirming(true);
+              }}
             />
           </>
         )}

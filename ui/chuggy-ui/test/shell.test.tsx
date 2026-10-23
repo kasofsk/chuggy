@@ -714,10 +714,7 @@ test("the pane's title and every control of it stand in the header's one row", a
   expect(title?.classList.contains("min-w-0")).toBe(true);
   const named = (name: string): Element | null =>
     headerItem(screen.getByRole("button", { name }));
-  expect(named("Rename")).toBe(title);
-  expect(named("Close")).toBe(title);
-  expect(named("Copy link")).toBe(title);
-  expect(headerItem(screen.getByRole("link", { name: "Open" }))).toBe(title);
+  expect(named("Thread actions")).toBe(title);
   const controls = ["New", "History", "Full screen", "Collapse"].map(named);
   for (const control of controls) {
     expect(control).not.toBeNull();
@@ -1907,16 +1904,25 @@ const heldOwn = threadEntry({
 });
 
 /** What the frame offers a reader to change: the bar's way to a new ticket,
- * the pane's New, what is done to a held thread, and the box. */
-function offeredToChange(): Record<string, boolean> {
+ * the pane's New, what a held thread's menu offers to do to it, and the box. */
+async function offeredToChange(): Promise<Record<string, boolean>> {
   const named = (role: string, name: string): boolean =>
     screen.queryByRole(role, { name }) !== null;
-  return {
+  const offered = {
     newTicket: named("link", "New ticket"),
     new: named("button", "New"),
-    rename: named("button", "Rename"),
-    close: named("button", "Close"),
     box: named("textbox", "Message"),
+  };
+  const menu = screen.queryByRole("button", { name: "Thread actions" });
+  if (menu === null) return { ...offered, rename: false, close: false };
+  fireEvent.keyDown(menu, { key: "ArrowDown" });
+  const items = within(await screen.findByRole("menu"))
+    .getAllByRole("menuitem")
+    .map((item) => item.textContent);
+  return {
+    ...offered,
+    rename: items.includes("Rename"),
+    close: items.includes("Close"),
   };
 }
 
@@ -1929,7 +1935,7 @@ test("a reader who may not mutate is told View only once in the bar and once whe
     viewportDeskEm,
     abilitiesFetch({ ...abilitiesEvery, mutate: false }, threadServed([])),
   );
-  expect(offeredToChange()).toStrictEqual({
+  expect(await offeredToChange()).toStrictEqual({
     newTicket: false,
     new: false,
     rename: false,
@@ -1951,7 +1957,7 @@ test("a reader who may not mutate keeps a held thread's title and transcript, wi
     ),
   );
   expect(screen.getByRole("heading", { name: "held" })).toBeDefined();
-  expect(offeredToChange()).toStrictEqual({
+  expect(await offeredToChange()).toStrictEqual({
     newTicket: false,
     new: false,
     rename: false,
@@ -1971,7 +1977,7 @@ test.each(abilitiesUnrefusing)(
       viewportDeskEm,
       abilitiesFetch(abilities, threadServed([heldOwn])),
     );
-    expect(offeredToChange()).toStrictEqual({
+    expect(await offeredToChange()).toStrictEqual({
       newTicket: true,
       new: true,
       rename: true,
@@ -1987,7 +1993,7 @@ test.each(abilitiesUnrefusing)(
   "a reader the abilities read %s is offered the first message's box",
   async (_said, abilities) => {
     await mounted(viewportDeskEm, abilitiesFetch(abilities, threadServed([])));
-    expect(offeredToChange()).toMatchObject({ new: true, box: true });
+    expect(await offeredToChange()).toMatchObject({ new: true, box: true });
     expect(viewOnlySaid(null)).toBe(0);
     styleless();
   },

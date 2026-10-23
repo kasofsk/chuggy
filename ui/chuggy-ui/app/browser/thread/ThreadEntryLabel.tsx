@@ -3,8 +3,8 @@
  * and the editor the rename opens into.
  *
  * The state is separate from what draws it because the header drawing them
- * swaps the title for this editor while a rename is open, and the buttons
- * beside it come and go with the same state, over one call to
+ * swaps the title for this editor while a rename is open, and the menu
+ * beside it comes and goes with the same state, over one call to
  * `useThreadEntryActions`.
  */
 
