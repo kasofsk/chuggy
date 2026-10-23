@@ -162,7 +162,6 @@ export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;
   readonly label: string;
   readonly onClick: () => void;
-  readonly pressed?: boolean;
   readonly busy?: boolean;
   readonly disabled?: boolean;
 }): ReactNode {
@@ -172,7 +171,6 @@ export function ChatPaneIconButton(props: {
         <Button
           variant="quiet"
           size="icon"
-          {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
           {...(props.busy === undefined ? {} : { busy: props.busy })}
           {...(props.disabled === undefined
             ? {}

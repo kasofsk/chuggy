@@ -13,8 +13,8 @@
  * through it, since what it says is true of the chat as well.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
- * navigation under it: the pages change beneath the bar and the conversation
- * does not. It takes the body three ways and no fourth — a column beside the
+ * navigation between the pages: they change beneath the bar and the
+ * conversation does not. It takes the body three ways and no fourth — a column beside the
  * pages, the whole body, or the strip its own control expands — and a viewport
  * too narrow to divide stacks the column or the strip under the pages instead,
  * starting as the strip until the reader expands it. A thread's own page is

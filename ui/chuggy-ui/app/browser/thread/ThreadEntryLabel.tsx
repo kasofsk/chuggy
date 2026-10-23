@@ -36,7 +36,7 @@ export interface ThreadEntryActions {
 }
 
 /** The rename and close state for one thread, called once and shared by the
- * title it swaps and the buttons beside it. */
+ * title it swaps and the menu beside it. */
 export function useThreadEntryActions(
   partition: PartitionIdentity,
   thread: Pick<ThreadEntryResponse, "session" | "mine" | "state">,

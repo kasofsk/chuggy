@@ -29,6 +29,7 @@ import { Shell } from "../app/browser/Shell.tsx";
 import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
 import { chatPaneStoreKey } from "../app/core/chatPane.ts";
+import { abilitiesEvery, abilitiesOver } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -132,9 +133,16 @@ function routerAt(path: string) {
   });
 }
 
-async function mountedAt(path: string): Promise<ReturnType<typeof routerAt>> {
+async function mountedAt(
+  path: string,
+  over: (served: typeof fetch) => typeof fetch = (served) => served,
+): Promise<ReturnType<typeof routerAt>> {
   viewportAtEm(viewportDeskEm);
-  vi.stubGlobal("fetch", (url: string) => Promise.resolve(threadsServed(url)));
+  vi.stubGlobal(
+    "fetch",
+    over(((url: string) =>
+      Promise.resolve(threadsServed(url))) as typeof fetch),
+  );
   const router = routerAt(path);
   render(
     <ScreenHarness
@@ -208,6 +216,16 @@ test("another member's thread is read without a composer", async () => {
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(chatDrawn()).toBeNull();
   expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);
+  styleless();
+});
+
+test("a reader who may not mutate is offered only the link on a thread's page", async () => {
+  await mountedAt(
+    threadPath(threadMineSession),
+    abilitiesOver({ ...abilitiesEvery, mutate: false }),
+  );
+  expect(screen.getByRole("heading", { level: 1, name: "mine" })).toBeDefined();
+  expect(await threadMenuOffers()).toStrictEqual(["Copy link"]);
   styleless();
 });
 
