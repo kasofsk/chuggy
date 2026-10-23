@@ -87,7 +87,7 @@ test("a selected plan draws the program, its length and the stage its commands r
     { key: 2, evaluators: [{ key: 1 }] },
   ]);
   expect(drawn.choices.programStagesMax).toBe(2);
-  expect(drawn.commandedCheckStage).toBe(1);
+  expect(drawn.commandedCheckStage).toBe(2);
   const plain = configurationCatalogInitialization(
     creationCatalogOffer().initialization,
     {},
@@ -102,7 +102,7 @@ test("a selected plan drops the note the server wrote of the plan it read", () =
     { ...read, commandedCheckStageNote: "No stage takes checks." },
     { evaluation: "gated" },
   );
-  expect(drawn.commandedCheckStage).toBe(1);
+  expect(drawn.commandedCheckStage).toBe(2);
   expect("commandedCheckStageNote" in drawn).toBe(false);
 });
 

@@ -237,7 +237,8 @@ test("a brief's checks join the first evaluator the selected plan runs as comman
   );
   assert.equal(
     ticketCommandedCheckStage(ticketOf({ evaluation: "thorough" })),
-    0,
+    1,
+    "the stage is answered by its key, counted from one",
   );
 });
 

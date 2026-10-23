@@ -41,10 +41,14 @@ const settings = (
  * own roster is what does not admit it. Asserting membership of the thread's
  * roster rather than absence from the whole is the point — a `create_draft`
  * silently dropped from every capability would pass an absence check — and
- * revoking is held the same way, by the same capability.
+ * revoking and updating are held the same way, by the same capability.
  */
-test("origination and revoking are admitted for a thread's roster and refused for a lead's", () => {
-  const memberOnly = ["create_draft", "revoke_ticket"] as const;
+test("origination, revoking and updating are admitted for a thread's roster and refused for a lead's", () => {
+  const memberOnly = [
+    "create_draft",
+    "revoke_ticket",
+    "update_ticket",
+  ] as const;
 
   assert.deepEqual(chuggyToolCapabilities.DraftOriginate, memberOnly);
   for (const tool of memberOnly) {

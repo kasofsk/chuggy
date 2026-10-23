@@ -1474,22 +1474,22 @@ const gatedCatalog = catalogPlanned({
   gated: [...reviewPlan, { name: "tests", evaluators: ["tests"] }],
 });
 
-/** Each configuration and selection an initialization reads, the stage it answers and the note beside it. */
+/** Each configuration and selection an initialization reads, the stage key it answers and the note beside it. */
 const checkStageNoteCases = [
   {
     canonical: checkedConfiguration,
-    stage: 1,
+    stage: 2,
     note: "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
   },
   {
     canonical: catalogConfiguration,
-    stage: 1,
+    stage: 2,
     note: 'Under plan "standard", a brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands the plan runs there.',
   },
   {
     canonical: gatedCatalog,
     selection: { evaluation: "gated" },
-    stage: 1,
+    stage: 2,
     note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "tests", after the commands the plan runs there.',
   },
   {
@@ -1547,6 +1547,13 @@ test("draft initialization says in words which stage a brief's checks run in, un
       },
       { stage: each.stage, note: each.note },
     );
+    if (initialized?.commandedCheckStage !== undefined)
+      assert.ok(
+        initialized.commandedCheckStageNote.includes(
+          `evaluation stage ${String(initialized.commandedCheckStage)}, counted from one`,
+        ),
+        "the stage answered is the one its note names",
+      );
   }
 });
 

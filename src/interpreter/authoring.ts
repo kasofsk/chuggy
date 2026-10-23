@@ -740,8 +740,9 @@ export interface DraftInitialization {
   readonly dependencyCandidatesTruncated: boolean;
   /**
    * The stage this configuration runs as commands and a ticket's own check
-   * lines would join, absent where it commands none — which is what makes a
-   * brief carrying them unreleasable against this configuration.
+   * lines would join, by its program stage key, absent where it commands none
+   * — which is what makes a brief carrying them unreleasable against this
+   * configuration.
    */
   readonly commandedCheckStage?: number;
   /** The same fact in words, stated whether or not a stage takes them. */
@@ -823,17 +824,18 @@ function draftInitializationProgram(
 }
 
 /**
- * The stage a ticket's own check lines join, by its index from zero: the first
- * block a document runs as commands, or the stage holding the first evaluator a
- * catalog's selected plan runs as commands.
+ * The stage a ticket's own check lines join, by the key its program stage
+ * takes, counted from one: the first block a document runs as commands, or the
+ * stage holding the first evaluator a catalog's selected plan runs as commands.
  */
 export function ticketCommandedCheckStage(
   ticket: TicketConfiguration,
 ): number | undefined {
-  if (ticket.version === 1)
-    return firstCommandedCheckStage(ticket.configuration);
-  const first = selectedFirstCommandsEvaluator(ticket.selection);
-  return first === undefined ? undefined : first.stage - 1;
+  if (ticket.version === 1) {
+    const at = firstCommandedCheckStage(ticket.configuration);
+    return at === undefined ? undefined : at + 1;
+  }
+  return selectedFirstCommandsEvaluator(ticket.selection)?.stage;
 }
 
 const ticketCommandedCheckStageNoteNone =
@@ -851,7 +853,7 @@ export function ticketCommandedCheckStageNote(
   if (ticket.version === 1)
     return stage === undefined
       ? ticketCommandedCheckStageNoteNone
-      : `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, after the commands this configuration runs there.`;
+      : `A brief's checks run in evaluation stage ${String(stage)}, counted from one, after the commands this configuration runs there.`;
   const plan = ticket.selection.plan;
   if (stage === undefined) {
     const commanded = catalogPlansCommanded(ticket.configuration);
@@ -859,12 +861,12 @@ export function ticketCommandedCheckStageNote(
       ? ticketCommandedCheckStageNoteNone
       : `Plan "${plan.name}" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: ${commanded.map((name) => `"${name}"`).join(", ")}.`;
   }
-  const named = plan.stages[stage]?.name;
+  const named = plan.stages[stage - 1]?.name;
   if (named === undefined)
     throw new RangeError(
       `catalog: plan ${plan.name} has no stage ${String(stage)}`,
     );
-  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, named "${named}", after the commands the plan runs there.`;
+  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage)}, counted from one, named "${named}", after the commands the plan runs there.`;
 }
 
 /**

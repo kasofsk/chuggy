@@ -154,12 +154,13 @@ const chuggyToolRoster = {
   /**
    * What a thread does on its member's own word, which no lead roster carries:
    * it files the draft its owner asked for, against no parent, because the
-   * member asking is where the work came from, and it revokes the ticket its
-   * owner said to end. Neither tool is in `DraftAuthor`, for the reason
-   * `DraftAuthor` exists, and `revoke_ticket` is here because a thread holds
-   * this capability and a lead does not.
+   * member asking is where the work came from; it revokes the ticket its owner
+   * said to end; and it releases the revision of a Pending ticket's draft its
+   * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
+   * exists, and `revoke_ticket` and `update_ticket` are here because a thread
+   * holds this capability and a lead does not.
    */
-  DraftOriginate: ["create_draft", "revoke_ticket"],
+  DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
   LeadDecision: [
     "dispatch",
     "refuse",
