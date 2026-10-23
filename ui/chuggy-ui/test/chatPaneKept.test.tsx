@@ -4,21 +4,17 @@
  * holds them, said as not sent, when it is next drawn.
  */
 
-import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
-import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, ScreenHarness, settled, turned } from "./screenHarness.tsx";
+import { answer, settled, turned } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { frame, streamServer } from "./streamDouble.ts";
+import { frame } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
 import {
   threadBody,
   threadEntry,
-  threadPartition,
   threadSessionResource,
 } from "./threadFixture.ts";
 import {
@@ -26,8 +22,7 @@ import {
   stageBox,
   stageColumn,
   stageDoor,
-  stageLiveOpening,
-  stageProjectOpening,
+  stagePaneMounted,
   stageSent,
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
@@ -73,24 +68,7 @@ async function paneOpened(): Promise<Pane> {
       return answer(threadBody({ session, state, streamless: true }));
     }),
   );
-  const server = streamServer([stageProjectOpening], "token", [
-    stageLiveOpening(),
-  ]);
-  render(
-    <ScreenHarness
-      partition={threadPartition}
-      client={new QueryClient()}
-      transport={server.ports.fetch}
-    >
-      <ChatPaneProvider twoColumn>
-        <ChatPane
-          partition={threadPartition}
-          chat={{ placement: "Right", presentation: "Docked" }}
-        />
-      </ChatPaneProvider>
-    </ScreenHarness>,
-  );
-  await settled();
+  const { server } = await stagePaneMounted();
   return {
     ...doors,
     closed: async () => {

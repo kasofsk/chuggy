@@ -2,12 +2,11 @@
  * The console's chat pane: every thread the reader can reach, beside every page
  * rather than on one.
  *
- * A THREAD IS READ HERE AND NOWHERE ELSE. There is no screen for one, so the
- * pane holds the reader's own open thread by default and its history is how any
- * other is reached — a listing that was a page of its own while a thread was
- * also a page, and is a control now that neither is. Collapsing it leaves the
- * strip its own control expands, rather than nothing — a pane that vanished
- * would leave the reader hunting the bar for where it went.
+ * The pane holds the reader's own open thread by default and its history is
+ * how any other is reached. Each thread also has a page of its own, which the
+ * pane links to and which draws no pane, so no thread is drawn twice.
+ * Collapsing it leaves the strip its own control expands, rather than nothing —
+ * a pane that vanished would leave the reader hunting the bar for where it went.
  *
  * THE COLLAPSED PANE READS NOTHING. The strip mounts none of the reads, so a
  * reader who put the chat away is not paying for a thread they cannot see on
@@ -29,6 +28,7 @@ import {
   apiThreads,
 } from "../../core/apiRoutes.ts";
 import {
+  chatPaneChosenIn,
   chatPaneFilled,
   chatPaneHeaderDoor,
   chatPaneHolding,
@@ -167,10 +167,9 @@ function ChatPaneStartDoor(props: {
  * thread, so the hosted grant or the runner a close does not ask refuses before
  * anything is closed — and withheld while the one they have is still answering.
  *
- * IT NAVIGATES NOWHERE — the pane is where a thread is read, so opening one and
- * then going to its page would draw the same conversation twice, once under the
- * bar and once beside it; the open writes a `Session` frame, the frame stales
- * the listing this pane holds, and the pane answers the new thread.
+ * IT NAVIGATES NOWHERE — the thread is drawn where New was pressed: the open
+ * writes a `Session` frame, the frame stales the listing this pane holds, and
+ * the pane answers the new thread.
  */
 function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
@@ -536,9 +535,10 @@ function useChatPaneDoor(partition: PartitionIdentity): {
 }
 
 /**
- * Which thread the open pane draws: the one the reader chose or the pane holds
- * for them, kept off the screen while a first message is being sent and until
- * the thread that message opened has been read.
+ * Which thread the open pane draws: the one the reader chose, which the shell
+ * holds so it outlives the pane, or the one the pane holds for them, kept off
+ * the screen while a first message is being sent and until the thread that
+ * message opened has been read.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
@@ -556,21 +556,24 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
   const threads = useChatPaneThreads(partition);
   const mine = threads === undefined ? undefined : threadMine(threads);
   const answering = useChatPaneAnswering(partition, mine?.session);
-  const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const [named, setNamed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [opening, setOpening] = useState<string | undefined>(undefined);
   const read = useCallback(() => {
     setStarting(false);
     setOpening(undefined);
   }, []);
+  const { chosen: picked, choose } = useChatPane();
+  const chosen = chatPaneChosenIn(picked, partition);
   return {
     threads,
     holding: chatPaneHolding(threads, answering, chosen),
-    named: chosen !== undefined,
+    named,
     starting,
     opening,
     chose: (session) => {
-      setChosen(session);
+      choose({ partition, session });
+      setNamed(true);
       read();
     },
     began: () => {
@@ -580,7 +583,8 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
       setStarting(false);
     },
     sent: (session) => {
-      setChosen(session);
+      choose({ partition, session });
+      setNamed(true);
       setOpening(session);
     },
     read,
@@ -600,6 +604,7 @@ function ChatPaneHeld(props: {
       partition={props.partition}
       thread={props.thread}
       viewOnly={props.viewOnly}
+      at="Pane"
     />
   );
 }

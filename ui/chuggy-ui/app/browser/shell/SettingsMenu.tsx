@@ -11,13 +11,14 @@
  * `<style>` element the served `style-src 'self'` refuses.
  */
 
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useParams, useRouterState } from "@tanstack/react-router";
 import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { navEntryCurrent, shellSetupNav } from "../../core/shellNav.ts";
 import {
+  chatPaneOnPage,
   chatPanePlacements,
   chatPaneRepositioned,
 } from "../../core/chatPane.ts";
@@ -112,21 +113,27 @@ function SettingsTheme(): ReactNode {
   );
 }
 
+/** Where the pane sits, offered on every page that draws one. */
 function SettingsChatPlacement(): ReactNode {
   const held = useChatPane();
+  const route = useParams({ strict: false });
+  if (chatPaneOnPage(held.state, route) === undefined) return null;
   return (
-    <SettingsChoice
-      label="Chat position"
-      value={held.state.placement}
-      options={chatPanePlacements}
-      onChoose={(picked) => {
-        const placement = chatPanePlacements.find(
-          (candidate) => candidate === picked,
-        );
-        if (placement === undefined) return;
-        held.moveTo(chatPaneRepositioned(held.state, placement));
-      }}
-    />
+    <>
+      <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+      <SettingsChoice
+        label="Chat position"
+        value={held.state.placement}
+        options={chatPanePlacements}
+        onChoose={(picked) => {
+          const placement = chatPanePlacements.find(
+            (candidate) => candidate === picked,
+          );
+          if (placement === undefined) return;
+          held.moveTo(chatPaneRepositioned(held.state, placement));
+        }}
+      />
+    </>
   );
 }
 
@@ -197,12 +204,7 @@ export function SettingsMenu(props: {
             <SettingsSetup partition={props.partition} />
           )}
           <SettingsTheme />
-          {props.partition === undefined ? null : (
-            <>
-              <DropdownMenu.Separator className="bg-edge my-1 h-px" />
-              <SettingsChatPlacement />
-            </>
-          )}
+          {props.partition === undefined ? null : <SettingsChatPlacement />}
           <DropdownMenu.Separator className="bg-edge my-1 h-px" />
           <SettingsSignOut />
         </MenuContent>

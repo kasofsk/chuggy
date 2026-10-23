@@ -13,17 +13,18 @@
  * through it, since what it says is true of the chat as well.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
- * navigation under it: the pages change beneath the bar and the conversation
- * does not. It takes the body three ways and no fourth — a column beside the
+ * navigation between the pages: they change beneath the bar and the
+ * conversation does not. It takes the body three ways and no fourth — a column beside the
  * pages, the whole body, or the strip its own control expands — and a viewport
  * too narrow to divide stacks the column or the strip under the pages instead,
- * starting as the strip until the reader expands it.
+ * starting as the strip until the reader expands it. A thread's own page is
+ * drawn with no pane at all, since the thread is the page there.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
  */
 
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useParams } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
 import type { ReactNode } from "react";
 
@@ -32,6 +33,7 @@ import {
   chatPaneContentDrawn,
   chatPaneCoversBar,
   chatPaneNarrowed,
+  chatPaneOnPage,
   chatPaneStripped,
 } from "../core/chatPane.ts";
 import type { ChatPanePlacement, ChatPaneState } from "../core/chatPane.ts";
@@ -109,8 +111,8 @@ const shellPaneEdges: Readonly<Record<ChatPanePlacement, string>> = {
   Bottom: "border-t border-edge",
 };
 
-function shellBodyTracksDrawn(chat: ChatPaneState): string {
-  if (!chatPaneContentDrawn(chat)) return "grid-cols-1";
+function shellBodyTracksDrawn(chat: ChatPaneState | undefined): string {
+  if (chat === undefined || !chatPaneContentDrawn(chat)) return "grid-cols-1";
   return chatPaneStripped(chat)
     ? shellStripTracks[chat.placement]
     : shellBodyTracks[chat.placement];
@@ -161,14 +163,14 @@ function ShellHeader(props: {
 }
 
 /** Everything under the bar, which is what the pages and the pane divide
- * between them. */
+ * between them, or what the pages have alone where no pane is drawn. */
 function ShellBody(props: {
   readonly children: ReactNode;
-  readonly chat: ChatPaneState;
+  readonly chat: ChatPaneState | undefined;
 }): ReactNode {
   return (
     <div
-      data-chat={props.chat.presentation.toLowerCase()}
+      data-chat={props.chat?.presentation.toLowerCase() ?? "none"}
       className={`grid min-h-0 min-w-0 ${shellBodyTracksDrawn(props.chat)}`}
     >
       {props.children}
@@ -181,32 +183,36 @@ function ShellDrawn(props: {
   readonly twoColumn: boolean;
 }): ReactNode {
   const narrow = !useViewportAtLeastEm(viewportNarrowEm);
-  const chat = chatPaneNarrowed(useChatPane().state, props.twoColumn);
-  const drawn = chatPaneContentDrawn(chat);
-  const pages = drawn ? (
-    <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]">
-      <DetailsPane>
-        <Outlet />
-      </DetailsPane>
-    </div>
-  ) : null;
-  const pane = (
-    <div
-      className={`grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] ${
-        pages === null ? "" : shellPaneEdges[chat.placement]
-      }`}
-    >
-      <ChatPane partition={props.partition} chat={chat} />
-    </div>
+  const chat = chatPaneOnPage(
+    chatPaneNarrowed(useChatPane().state, props.twoColumn),
+    useParams({ strict: false }),
   );
+  const pages =
+    chat === undefined || chatPaneContentDrawn(chat) ? (
+      <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]">
+        <DetailsPane>
+          <Outlet />
+        </DetailsPane>
+      </div>
+    ) : null;
+  const pane =
+    chat === undefined ? null : (
+      <div
+        className={`grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] ${
+          pages === null ? "" : shellPaneEdges[chat.placement]
+        }`}
+      >
+        <ChatPane partition={props.partition} chat={chat} />
+      </div>
+    );
   return (
     <ShellFrame>
       <ShellHeader
         partition={props.partition}
-        covered={chatPaneCoversBar(chat, narrow)}
+        covered={chat !== undefined && chatPaneCoversBar(chat, narrow)}
       />
       <ShellBody chat={chat}>
-        {chat.placement === "Left" ? (
+        {chat?.placement === "Left" ? (
           <>
             {pane}
             {pages}

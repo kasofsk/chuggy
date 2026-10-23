@@ -21,6 +21,7 @@ import type {
   SessionRunnerStanding,
   SessionState,
   SessionTurnState,
+  ThreadStanding,
   TicketLandingState,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
@@ -183,6 +184,19 @@ export function sessionStateTone(state: SessionState): Tone {
       return "live";
     case "Closed":
       return "retired";
+  }
+}
+
+/** Where a member's thread stands: taking messages, ended, or held by a member
+ * who is gone, which is something to act on rather than retired. */
+export function threadStandingTone(standing: ThreadStanding): Tone {
+  switch (standing) {
+    case "Open":
+      return "live";
+    case "Closed":
+      return "retired";
+    case "Orphaned":
+      return "parked";
   }
 }
 

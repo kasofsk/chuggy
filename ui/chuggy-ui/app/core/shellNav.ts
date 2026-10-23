@@ -5,8 +5,8 @@
  *
  * Every entry is a route and none is an action, so the renderer is a loop
  * rather than a switch over what each entry means. What a reader has said and
- * been told is not here and is not a screen at all — a thread is read in the
- * chat pane, and the pane's own history is how one is reached.
+ * been told is not an entry — a thread is reached from the chat pane, whose
+ * history lists them and which links to each one's own page.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -23,6 +23,7 @@ export const navRoutes = {
   repositories: "/$tenant/$project/repositories",
   runners: "/$tenant/$project/runners",
   ticketNew: "/$tenant/$project/tickets/new",
+  thread: "/$tenant/$project/threads/$session",
 } as const;
 
 export type NavRoute = (typeof navRoutes)[keyof typeof navRoutes];

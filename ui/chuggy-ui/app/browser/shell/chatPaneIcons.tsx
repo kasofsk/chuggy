@@ -105,9 +105,38 @@ const chatPaneGlyphPaths = {
     </>
   ),
   orphaned: <circle cx="8" cy="8" r="5.5" strokeDasharray="2 2" />,
+  more: (
+    <ChatPaneLucide>
+      <circle cx="12" cy="12" r="1" />
+      <circle cx="19" cy="12" r="1" />
+      <circle cx="5" cy="12" r="1" />
+    </ChatPaneLucide>
+  ),
+  page: (
+    <ChatPaneLucide>
+      <path d="M21 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h6M21 3l-9 9M15 3h6v6" />
+    </ChatPaneLucide>
+  ),
+  link: (
+    <ChatPaneLucide>
+      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+    </ChatPaneLucide>
+  ),
+  copied: (
+    <ChatPaneLucide>
+      <path d="M20 6 9 17l-5-5" />
+    </ChatPaneLucide>
+  ),
 } as const;
 
 export type ChatPaneGlyphName = keyof typeof chatPaneGlyphPaths;
+
+/** A glyph alone, beside a name that is already its words. */
+export function ChatPaneMark(props: {
+  readonly glyph: ChatPaneGlyphName;
+}): ReactNode {
+  return <ChatPaneGlyph>{chatPaneGlyphPaths[props.glyph]}</ChatPaneGlyph>;
+}
 
 export function ChatPaneIcon(props: {
   readonly glyph: ChatPaneGlyphName;
@@ -115,7 +144,7 @@ export function ChatPaneIcon(props: {
 }): ReactNode {
   return (
     <>
-      <ChatPaneGlyph>{chatPaneGlyphPaths[props.glyph]}</ChatPaneGlyph>
+      <ChatPaneMark glyph={props.glyph} />
       <span className="visually-hidden">{props.label}</span>
     </>
   );
@@ -133,7 +162,6 @@ export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;
   readonly label: string;
   readonly onClick: () => void;
-  readonly pressed?: boolean;
   readonly busy?: boolean;
   readonly disabled?: boolean;
 }): ReactNode {
@@ -143,7 +171,6 @@ export function ChatPaneIconButton(props: {
         <Button
           variant="quiet"
           size="icon"
-          {...(props.pressed === undefined ? {} : { pressed: props.pressed })}
           {...(props.busy === undefined ? {} : { busy: props.busy })}
           {...(props.disabled === undefined
             ? {}

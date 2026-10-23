@@ -5,23 +5,19 @@
  * as out by the thread that takes the composer's place.
  */
 
-import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
-import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, ScreenHarness, settled, turned } from "./screenHarness.tsx";
+import { answer, settled, turned } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { frame, streamServer } from "./streamDouble.ts";
+import { frame } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
 import {
   threadBody,
   threadEntry,
-  threadPartition,
   threadSessionResource,
 } from "./threadFixture.ts";
 import {
@@ -31,8 +27,7 @@ import {
   stageColumn,
   stageColumnIs,
   stageDoor,
-  stageLiveOpening,
-  stageProjectOpening,
+  stagePaneMounted,
   stageSent,
   stageStopped,
   stageTurn,
@@ -79,28 +74,11 @@ async function paneOpened(): Promise<Pane> {
         : answer({ threads: [] });
     }),
   );
-  const server = streamServer([stageProjectOpening], "token", [
-    stageLiveOpening(),
-  ]);
-  const view = render(
-    <ScreenHarness
-      partition={threadPartition}
-      client={new QueryClient()}
-      transport={server.ports.fetch}
-    >
-      <ChatPaneProvider twoColumn>
-        <ChatPane
-          partition={threadPartition}
-          chat={{ placement: "Right", presentation: "Docked" }}
-        />
-      </ChatPaneProvider>
-    </ScreenHarness>,
-  );
-  await settled();
+  const { server, container } = await stagePaneMounted();
   return {
     ...doors,
     server,
-    container: view.container,
+    container,
     read: async (thread) => {
       listed = thread;
       for (const answered of waiting.splice(0)) answered(answer(thread));
