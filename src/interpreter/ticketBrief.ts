@@ -63,10 +63,12 @@
  * from the remote, so a branch that is itself the default is the finalizer's to
  * hold and the doors' to refuse where no branch is named at all.
  *
- * A RELEASED TICKET'S BRIEF NO LONGER MOVES, which is what lets a retry read it
- * rather than pin it: a revision is refused for a draft that is not one, so the
- * row a ticket reaches is frozen the moment the ticket exists. That refusal is
- * the server's, so the case for it is `test/postgres/authoring.test.ts`'s.
+ * A TICKET PAST PENDING NO LONGER MOVES ITS BRIEF, which is what lets a retry
+ * read it rather than pin it. A Pending ticket's draft takes revisions and an
+ * update releases one, but past Pending the revision is refused for a draft
+ * that is not one and the update as `TicketNotPending`, so the brief a
+ * dispatched ticket's work reads is the last one released. Both refusals are
+ * the server's, so the cases for them are `test/postgres/authoring.test.ts`'s.
  */
 
 import {
@@ -75,6 +77,7 @@ import {
   briefImagesMax,
   briefIntentCharsMax,
   briefLandingIsWhole,
+  briefLineCharsMax,
   briefLinkScheme,
   briefLinksMax,
   briefTitleCharsMax,
@@ -244,14 +247,34 @@ export function asBriefLinkUrl(value: string): BriefLinkUrl {
 }
 
 /**
- * Brands one appended check line. It renders as one briefing line and is run as
- * one shell command line, so the line rule is the whole of what bounds it and
- * there is no second bound here to disagree with the wire.
+ * Brands one appended check line, which renders as one briefing line and is run
+ * as one shell command line, so the line rule is the whole of what bounds it
+ * and there is no second bound here to disagree with the wire. A refusal names
+ * the line by its position in the brief's checks, counted from zero as the
+ * wire's own path to it is, and the part of the rule it breaks.
  */
-export function asBriefCheckLine(value: string): BriefCheckLine {
-  if (taskConfigurationLineFault(value) !== undefined)
-    throw new RangeError("ticket check: the line is not a printable command");
+export function asBriefCheckLine(value: string, index: number): BriefCheckLine {
+  const fault = taskConfigurationLineFault(value);
+  if (fault !== undefined)
+    throw new RangeError(
+      `brief.checks.${String(index)}: ${asBriefCheckLineRefusal(fault)}`,
+    );
   return value as BriefCheckLine;
+}
+
+function asBriefCheckLineRefusal(
+  fault: NonNullable<ReturnType<typeof taskConfigurationLineFault>>,
+): string {
+  switch (fault) {
+    case "EmptyLine":
+      return "a check line is empty";
+    case "TextTooLong":
+      return `a check line is longer than ${String(briefLineCharsMax)} characters`;
+    case "TextUnreadable":
+      return "a check line holds a tab, a line break or another character a briefing cannot print, and is one command line with none";
+    case "TooManyLines":
+      throw new Error("ticket check: one line was refused as a list of them");
+  }
 }
 
 /** Brands a branch through the one reference-name grammar this tree states. */
@@ -320,7 +343,7 @@ export function asDraftBrief(value: {
     intent: asBriefIntent(value.intent),
     links: value.links.map(asBriefLinkUrl),
     images: images.map(asProjectArtifactId),
-    checks: checks.map(asBriefCheckLine),
+    checks: checks.map((check, index) => asBriefCheckLine(check, index)),
     ...(value.repository === undefined
       ? {}
       : { repository: asRepositoryId(value.repository) }),

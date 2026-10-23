@@ -252,19 +252,36 @@ test("a brief carries the title it was given and omits the one it was not", () =
 
 test("a check line is branded by the rule one briefing line is, and bounded in number", () => {
   assert.equal(
-    asBriefCheckLine(".chug/tasks/ci.sh --full"),
+    asBriefCheckLine(".chug/tasks/ci.sh --full", 0),
     ".chug/tasks/ci.sh --full",
   );
-  for (const value of [
-    "",
-    "npm test\nrm -rf /",
-    "a".repeat(briefLineCharsMax + 1),
-  ])
+  for (const [value, refusal] of [
+    ["", /^brief\.checks\.3: a check line is empty$/u],
+    ["npm test\nrm -rf /", /^brief\.checks\.3: .*a line break/u],
+    ["npm\ttest", /^brief\.checks\.3: .*a tab/u],
+    [
+      "a".repeat(briefLineCharsMax + 1),
+      new RegExp(
+        `^brief\\.checks\\.3: a check line is longer than ${String(briefLineCharsMax)} characters$`,
+        "u",
+      ),
+    ],
+  ] as const)
     assert.throws(
-      () => asBriefCheckLine(value),
-      RangeError,
+      () => asBriefCheckLine(value, 3),
+      (error) => error instanceof RangeError && refusal.test(error.message),
       `refused: ${JSON.stringify(value)}`,
     );
+  assert.throws(
+    () =>
+      asDraftBrief({
+        intent: "Fix the importer.",
+        links: [],
+        checks: ["npm run lint", "npm\ttest"],
+      }),
+    /^RangeError: brief\.checks\.1: .*a tab/u,
+    "a brief's refused check is named by its own position",
+  );
   assert.deepEqual(
     asDraftBrief({
       intent: "Fix the importer.",
@@ -287,7 +304,7 @@ test("a check line is branded by the rule one briefing line is, and bounded in n
 
 test("a check line's bound counts code points, matching the schema in front of it", () => {
   const line = "😀".repeat(briefLineCharsMax);
-  assert.equal(asBriefCheckLine(line), line);
+  assert.equal(asBriefCheckLine(line, 0), line);
 });
 
 test("a finalization target takes the branch's own grammar and no other mode lands", () => {

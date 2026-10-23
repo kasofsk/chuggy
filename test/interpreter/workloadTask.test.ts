@@ -79,7 +79,7 @@ const catalog = {
 const ticketBrief = asDraftBrief({
   intent: "Import rows without dropping any.",
   links: [],
-  checks: [asBriefCheckLine("npm run lint")],
+  checks: [asBriefCheckLine("npm run lint", 0)],
   repository: asRepositoryId("repository-one"),
 });
 

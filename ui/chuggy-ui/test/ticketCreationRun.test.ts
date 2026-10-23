@@ -18,6 +18,7 @@ import {
   createAndReleaseTicket,
   creationContextSentence,
   creationOffersMax,
+  creationProjectNotActiveSentence,
   readCreationContext,
   reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
@@ -499,6 +500,24 @@ test("a fence the API refuses returns the reader to the form, unreleased", async
     () => undefined,
   );
   expect(created.created).toBe("Stale");
+  expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
+});
+
+test("a project that is not active is a refusal, not a fence to submit again over", async () => {
+  const held = answering(() => ({
+    status: 409,
+    body: { error: { code: "ProjectNotActive" }, lifecycle: "Suspended" },
+  }));
+  const created = await createAndReleaseTicket(
+    held.ports,
+    creationPartition,
+    releaseSubmission,
+    () => undefined,
+  );
+  expect(created).toMatchObject({
+    created: "Refused",
+    reason: creationProjectNotActiveSentence,
+  });
   expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
 });
 

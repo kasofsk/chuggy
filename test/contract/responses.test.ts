@@ -1328,6 +1328,25 @@ test("an initialization parses with what its note says of checks", () => {
   );
 });
 
+test("an initialization names the stage a brief's checks join by its program stage key, counted from one", () => {
+  const body = initializationBody();
+  assert.equal(
+    draftInitializationResponseSchema.parse({
+      ...body,
+      commandedCheckStage: 1,
+    }).commandedCheckStage,
+    1,
+  );
+  assert.equal(
+    draftInitializationResponseSchema.safeParse({
+      ...body,
+      commandedCheckStage: 0,
+    }).success,
+    false,
+    "no program stage is keyed zero",
+  );
+});
+
 test("a hand-assembled read drops an unknown field at every depth", () => {
   const body = draftResponse(draftResource).body as Record<string, unknown>;
   const inner = body["authoring"] as Record<string, unknown>;
@@ -1456,6 +1475,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   assert.deepEqual(briefed.brief, {
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
+    images: [],
     checks: ["npm test"],
     branch: "refs/heads/rt/ticket-brief",
     finalization: { mode: "PullRequest", target: "refs/heads/main" },

@@ -1196,7 +1196,8 @@ export const draftInitializationResponseSchema = z.object({
   }),
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
-  commandedCheckStage: countSchema.optional(),
+  /** The program stage key a brief's checks join, counted from one, absent where no stage takes them. */
+  commandedCheckStage: ticketNumberSchema.optional(),
   /**
    * Where a brief's checks run, in words, naming the plan for a catalog, or
    * that they are refused. It is absent from a server that predates it.

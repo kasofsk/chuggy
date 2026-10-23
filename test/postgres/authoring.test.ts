@@ -314,6 +314,49 @@ test("draft creation rejects a stale initialization fence", async () => {
     "UPDATE project SET head=head+1 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
+  const creation = (expectedProjectSequence: number) =>
+    store.createDraft({
+      partition,
+      authority,
+      configurationRevision: revision,
+      configurationDigest: initialized.configuration.digest,
+      expectedProjectSequence,
+      authoring: plainAuthoring,
+      brief: postgresHarnessBrief,
+    });
+  const stale = await creation(initialized.projectSequence);
+  assert.deepEqual(stale, {
+    created: "Stale",
+    currentProjectSequence: initialized.projectSequence + 1,
+  });
+  if (stale.created !== "Stale") throw new Error("the fence did not miss");
+  assert.equal(
+    (await creation(stale.currentProjectSequence)).created,
+    "Created",
+    "the head a stale creation answers is one a creation is taken at",
+  );
+});
+
+test("draft creation in a project that is not Active is refused as that, not as stale", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "draft-creation-not-active",
+  );
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("draft was not initialized");
+  await harness.query(
+    "UPDATE project SET lifecycle='Suspended' WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
   assert.deepEqual(
     await store.createDraft({
       partition,
@@ -324,7 +367,7 @@ test("draft creation rejects a stale initialization fence", async () => {
       authoring: plainAuthoring,
       brief: postgresHarnessBrief,
     }),
-    { created: "Stale" },
+    { created: "NotActive", lifecycle: "Suspended" },
   );
 });
 

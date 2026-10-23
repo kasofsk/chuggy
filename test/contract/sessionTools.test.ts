@@ -58,6 +58,7 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "release_draft",
     "create_draft",
     "revoke_ticket",
+    "update_ticket",
     "dispatch",
     "refuse",
     "lift",
@@ -129,6 +130,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
   assert.deepEqual(chuggyToolCapabilities.DraftOriginate, [
     "create_draft",
     "revoke_ticket",
+    "update_ticket",
   ]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
     "dispatch",

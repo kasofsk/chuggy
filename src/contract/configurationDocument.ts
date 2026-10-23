@@ -477,7 +477,7 @@ export const executionRequirementsSchema = z
         executionRequirementSchema,
       )
       .describe(
-        "The requirement a task runs under in place of ticketDefault, or of platformDefault without one, by the kind of task. Work is the work task's. Where evaluations is absent, Evaluation is every evaluation stage's and an Evaluation:N key is unused; where evaluations is listed, Evaluation:N is the Nth stage's, counting from one, and Evaluation is unused.",
+        "The requirement a task runs under in place of ticketDefault, or of platformDefault without one, by the kind of task. Work is the work task's. Where evaluations is absent, Evaluation is every evaluation stage's and an Evaluation:N key is unused; where evaluations is listed, Evaluation:N is the Nth stage's, counting from one, and Evaluation and an Evaluation:N past the last stage are unused. An unused key is accepted and changes nothing.",
       )
       .optional(),
   })

@@ -27,6 +27,7 @@ import {
   parsePartition,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
+import { failureResponse } from "../../src/adapters/http/outcomes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { checkedExecutionListQuery } from "../../src/interpreter/operationsView.ts";
@@ -491,6 +492,51 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
     }).brief.checks,
     ["npm test"],
     "the lines a brief appends reach the interpreter branded and in order",
+  );
+});
+
+test("a refused check line is answered by its position and the rule it breaks", () => {
+  const refused = (() => {
+    try {
+      parseDraftCreation({
+        configurationRevision: "revision",
+        configurationDigest: "a".repeat(64),
+        expectedProjectSequence: 7,
+        authoring,
+        brief: { ...brief, checks: ["npm test", "npm\ttest"] },
+      });
+    } catch (failure) {
+      return failureResponse(failure);
+    }
+    assert.fail("a check holding a tab reached a draft");
+  })();
+  assert.equal(refused.status, 400);
+  assert.match(
+    (refused.body as { error: { message: string } }).error.message,
+    /^brief\.checks\.1: .*a tab/u,
+  );
+});
+
+test("the images a brief carries cross the door on creation and on revision", () => {
+  const carrying = { ...brief, images: ["artifact-1", "artifact-2"] };
+  assert.deepEqual(
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+      brief: carrying,
+    }).brief.images,
+    ["artifact-1", "artifact-2"],
+  );
+  assert.deepEqual(
+    parseDraftRevision({
+      expectedVersion: 3,
+      configurationRevision: "revision",
+      authoring,
+      brief: carrying,
+    }).brief.images,
+    ["artifact-1", "artifact-2"],
   );
 });
 
