@@ -207,6 +207,7 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
     "Do not assume I has a docker client: a check or setup that runs docker needs an image whose build installs the client, and it reaches an engine only where the runner's owner has handed jobs one.",
     `chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage start at ${bootstrapDocsIndex}, which links each page's Markdown; read the ones a choice here turns on.`,
     "Command the checks the repository already runs, and put in each workload's setup the lines L, if any, that install what it needs, such as npm ci or uv sync; setup runs at the repository root before its workload does, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
+    'A setup line L passes a variable on to the setup lines after it, the agent\'s shells and the commands of its own job by appending NAME=value to the file CHUG_ENV names, as echo "PATH=$HOME/.tool/bin:$PATH" >> "$CHUG_ENV" does; each workload\'s job runs only its own setup, so every workload that needs the variable sets it in its own. A NAME starting CHUG_ or CHUGGY_ is chuggy\'s, and setting one fails the setup.',
   ];
 }
 

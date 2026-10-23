@@ -313,7 +313,12 @@ export const configurationWorkerModeSchema = z.discriminatedUnion("agent", [
 ]);
 
 const configurationWorkerFields = {
-  setup: z.array(z.string()).max(workerEntriesMax),
+  setup: z
+    .array(z.string())
+    .max(workerEntriesMax)
+    .describe(
+      "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset.",
+    ),
   files: z
     .array(
       z.object({
