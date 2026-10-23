@@ -173,8 +173,8 @@ export const allSessionCapabilities = [
   /** The chuggy server's authorship: drafts, and releasing one. */
   "DraftAuthor",
   /**
-   * Originating a draft from nothing and revoking a ticket, which a member
-   * may do and the lead may not. It is its own member rather than part of
+   * Originating a draft from nothing, applying a Pending ticket's revision
+   * and revoking a ticket, which a member may do and the lead may not. It is its own member rather than part of
    * `DraftAuthor` because `DraftAuthor` is where the derived-work rule sits —
    * a dependent is filed against a parent that already exists, and there is
    * no bare create — and widening it would hand the lead the one thing that

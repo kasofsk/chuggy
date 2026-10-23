@@ -271,7 +271,7 @@ function asBriefCheckLineRefusal(
     case "TextTooLong":
       return `a check line is longer than ${String(briefLineCharsMax)} characters`;
     case "TextUnreadable":
-      return "a check line holds a tab, a line break or another control character, and is one command line with none";
+      return "a check line holds a tab, a line break or another character a briefing cannot print, and is one command line with none";
     case "TooManyLines":
       throw new Error("ticket check: one line was refused as a list of them");
   }
