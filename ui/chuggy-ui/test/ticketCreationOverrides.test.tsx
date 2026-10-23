@@ -17,6 +17,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { ComponentProps } from "react";
 
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -25,7 +26,9 @@ import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import { chooseConfiguration } from "./creationPicker.ts";
 import type { Sent } from "./answeringApi.ts";
+import { creationFormFrom } from "../app/core/ticketCreation.ts";
 import {
+  creationCatalogOffer,
   creationDeclared,
   creationDraft,
   creationOffer,
@@ -95,7 +98,11 @@ function api(): { readonly ports: ApiPorts; readonly sent: Sent[] } {
   });
 }
 
-function draw(ports: ApiPorts): void {
+function draw(
+  ports: ApiPorts,
+  extra: Partial<ComponentProps<typeof CreationForm>> = {},
+  offers: readonly CreationOffer[] = [basic, sonnet],
+): void {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <CreationForm
@@ -104,13 +111,14 @@ function draw(ports: ApiPorts): void {
         queryKey={creationContextList(creationPartition).key}
         context={{
           context: "Ready",
-          offers: [basic, sonnet],
+          offers,
           partial: false,
           repositories: [],
         }}
         start="Waits"
         onCreated={() => undefined}
         existing={() => null}
+        {...extra}
       />
     </QueryClientProvider>,
   );
@@ -225,4 +233,30 @@ test("choosing another configuration keeps what was overridden, and draws the re
   const body = await submitted(held.sent);
   expect(body["configurationRevision"]).toBe("n-basic");
   expect(body["overrides"]).toMatchObject({ worker: { setup: ["make"] } });
+});
+
+test("a catalog form whose workload overrides a reader may not set is refused where the selection is drawn", async () => {
+  const held = api();
+  const offers = [creationCatalogOffer()];
+  const form = {
+    ...creationFormFrom(offers, []),
+    workloads: { quick: { prompt: { text: "Do it slowly." } } },
+  };
+  const dropped = {
+    repository: undefined,
+    dependencies: [],
+    configuration: undefined,
+  };
+  draw(
+    held.ports,
+    { mayAdminister: false, duplicate: { from: 1, seed: { form, dropped } } },
+    offers,
+  );
+  fireEvent.change(screen.getByPlaceholderText("what this ticket is for"), {
+    target: { value: "ship it" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  expect(await screen.findByText(/administrator/u)).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Overrides" })).toBeNull();
+  expect(held.sent.some((one) => one.method === "POST")).toBe(false);
 });

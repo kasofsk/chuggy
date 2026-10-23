@@ -27,6 +27,7 @@ import {
   type OperationInbox,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import {
   asProjectId,
@@ -1163,6 +1164,89 @@ test("a draft naming overrides, or a configuration written by hand, asks for the
     "authorize:Administer",
     "authorize:Administer",
   ]);
+});
+
+function authorizations(calls: readonly string[]): string[] {
+  return calls.filter((call) => call.startsWith("authorize:"));
+}
+
+const storedOverrides = { workloads: { build: { practices: [] } } };
+
+/** A revision of ticket 1, fenced on version 1, naming the overrides a case gives. */
+function reviseNamingOverrides(
+  web: NativeWeb,
+  overrides: ConfigurationOverrides | undefined,
+) {
+  return web.reviseDraft(principal, {
+    partition,
+    ticket: asTicketId(1),
+    expectedVersion: 1,
+    configurationRevision: asConfigurationRevisionId("revision"),
+    authoring: noAuthoring,
+    brief: briefNamingImages([]),
+    ...(overrides === undefined ? {} : { overrides }),
+  });
+}
+
+test("a revision asks for the project's administrators only where its overrides differ from the draft it is fenced on", async () => {
+  const holding = (calls: string[]): AuthoringStore => ({
+    ...authoringStore(calls),
+    draft: () =>
+      Promise.resolve({
+        partition,
+        ticket: asTicketId(1),
+        authoringVersion: 1,
+        state: "Draft",
+        configurationRevision: asConfigurationRevisionId("revision"),
+        authoring: noAuthoring,
+        overrides: storedOverrides,
+      }),
+  });
+  const kept = boundary(
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    holding,
+  );
+  await reviseNamingOverrides(kept.web, storedOverrides);
+  assert.deepEqual(authorizations(kept.calls), ["authorize:Mutate"]);
+  const changed = boundary(
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    holding,
+  );
+  await reviseNamingOverrides(changed.web, {
+    workloads: { build: { practices: ["RegressionCoverage"] } },
+  });
+  assert.deepEqual(authorizations(changed.calls), ["authorize:Administer"]);
+});
+
+test("submitting a change of a ticket's overrides asks for the project's administrators where it names any", async () => {
+  const changing = (overrides: ConfigurationOverrides): ProjectCommand => ({
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: id(1),
+    action: "action",
+    authorizingSeq: 1,
+    overrides,
+  });
+  const named = boundary(true);
+  await named.web.submit(principal, submissionOf(changing(storedOverrides)));
+  assert.equal(named.calls[0], "authorize:Administer");
+  const cleared = boundary(true);
+  await cleared.web.submit(principal, submissionOf(changing({})));
+  assert.equal(cleared.calls[0], "authorize:Mutate");
 });
 
 /** A project artifact port that rejects if either method is called. */

@@ -236,7 +236,7 @@ export function ticketYamlMaterialized(
   const parsed = parseDocument(fragment);
   if (!isMap(parsed.contents)) return undefined;
   parsed.contents.comment = ticketYamlWorkloadUnset(parsed.toJSON()) ?? null;
-  if (!document.hasIn(["workloads"]))
+  if (!isMap(document.get("workloads", true)))
     document.set("workloads", document.createNode({}));
   document.setIn(path, parsed.contents);
   return document.toString({ lineWidth: 0, nullStr: "" });

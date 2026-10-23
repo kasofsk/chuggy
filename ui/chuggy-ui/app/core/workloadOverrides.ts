@@ -23,6 +23,7 @@ import {
 } from "../../../../src/contract/configurationOverrides.ts";
 import { workloadOverrideSchema } from "../../../../src/contract/configurationDocument.ts";
 
+import { overridesSame } from "./ticketOverrides.ts";
 import { configurationCatalogOf } from "./configurationCatalog.ts";
 
 type WorkloadRecord = Readonly<Record<string, unknown>>;
@@ -65,22 +66,6 @@ function workloadRestored(written: unknown, held: unknown): unknown {
       ]),
     ),
   };
-}
-
-function workloadSame(a: unknown, b: unknown): boolean {
-  if (Array.isArray(a) || Array.isArray(b))
-    return (
-      Array.isArray(a) &&
-      Array.isArray(b) &&
-      a.length === b.length &&
-      a.every((item, index) => workloadSame(item, b[index]))
-    );
-  if (workloadIsRecord(a) || workloadIsRecord(b)) {
-    if (!workloadIsRecord(a) || !workloadIsRecord(b)) return false;
-    const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-    return [...keys].every((key) => workloadSame(a[key], b[key]));
-  }
-  return a === b;
 }
 
 /** The catalog a configuration's bytes are, as the raw document its workloads are read from. */
@@ -130,6 +115,20 @@ export function workloadsOverriddenOf(
   );
 }
 
+/** A catalog's canonical JSON with a ticket's workload overrides applied: the catalog as that ticket runs it. */
+export function workloadsEffectiveCanonicalOf(
+  canonical: string,
+  overrides: Readonly<Record<string, WorkloadOverride>> | undefined,
+): string {
+  const document = workloadCatalogDocumentOf(canonical);
+  if (document === undefined || overrides === undefined) return canonical;
+  return JSON.stringify(
+    configurationWithOverrides(JSON.parse(canonical), {
+      workloads: overrides,
+    }),
+  );
+}
+
 /** What one written workload overrides, or why it cannot be read as an override, with the path the fault is at. */
 export type WorkloadOverrideRead =
   | { readonly read: "Override"; readonly override: WorkloadOverride }
@@ -163,7 +162,7 @@ function workloadPlacementOverride(
   catalogImage: unknown,
 ): WorkloadRecord {
   const changed = workloadPlacementFields.some(
-    (field) => !workloadSame(written[field], held[field]),
+    (field) => !overridesSame(written[field], held[field]),
   );
   if (!changed) return {};
   const named = Object.fromEntries(
@@ -172,6 +171,15 @@ function workloadPlacementOverride(
     ),
   );
   return Object.keys(named).length === 0 ? { image: catalogImage } : named;
+}
+
+/** Whether a written workload names another runner than the catalog's, which keeps none of the catalog's fields. */
+function workloadSwitchesRunner(written: unknown, held: WorkloadRecord) {
+  return (
+    workloadIsRecord(written) &&
+    written["runner"] !== undefined &&
+    written["runner"] !== held["runner"]
+  );
 }
 
 /**
@@ -185,8 +193,8 @@ export function workloadOverrideRead(
   written: unknown,
 ): WorkloadOverrideRead {
   const document = workloadCatalogDocumentOf(canonical);
-  const held = document?.workloads[name];
-  if (document === undefined || !workloadIsRecord(held))
+  const catalogHeld = document?.workloads[name];
+  if (document === undefined || !workloadIsRecord(catalogHeld))
     return {
       read: "Refused",
       message: `the catalog holds no workload \`${name}\``,
@@ -198,6 +206,7 @@ export function workloadOverrideRead(
       message: "write the workload as a map of its fields",
       path: [],
     };
+  const held = workloadSwitchesRunner(written, catalogHeld) ? {} : catalogHeld;
   const restored = workloadRestored(written, held) as WorkloadRecord;
   if (workloadPlacementFields.every((field) => restored[field] !== undefined))
     return {
@@ -222,7 +231,7 @@ export function workloadOverrideRead(
       if (workloadPlacementFields.includes(field)) return [];
       const replaced =
         field === "prompt" ? workloadPromptOverride(value, held[field]) : value;
-      return replaced === undefined || workloadSame(replaced, held[field])
+      return replaced === undefined || overridesSame(replaced, held[field])
         ? []
         : [[field, replaced]];
     }),

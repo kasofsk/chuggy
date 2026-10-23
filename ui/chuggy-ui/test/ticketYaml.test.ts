@@ -20,7 +20,13 @@ import {
   creationStageOf,
 } from "../app/core/ticketCreation.ts";
 import {
+  ticketYamlCatalogOf,
+  ticketYamlMaterialized,
+} from "../app/browser/editor/ticketYamlFragments.ts";
+import {
   creationBinding,
+  creationCatalogCanonical,
+  creationCatalogOffer,
   creationDeclared,
   creationForm,
   creationOffer,
@@ -531,5 +537,70 @@ test("overrides are a configuration's: under none the text reads as no form, and
     const named = ticketYamlRead(`configuration: ${name}\n${rest}`, several);
     expect(named.problems).toStrictEqual([]);
     expect(named.form?.overrides).toStrictEqual({ practices: ["Kept"] });
+  }
+});
+
+const catalogOffers = [creationCatalogOffer()];
+const catalogContext: TicketYamlContext = {
+  ...context,
+  base: { ...creationFormFrom(catalogOffers, []), intent: "" },
+  offers: catalogOffers,
+};
+
+test("a workload a form overrides is written whole under workloads and reads back as the same form", () => {
+  const form = {
+    ...catalogContext.base,
+    title: "t",
+    intent: "i",
+    workloads: { quick: { prompt: { text: "Do it slowly." } } },
+  };
+  const text = ticketYamlOf(form, catalogContext);
+  expect(text).toContain("workloads:\n  quick:");
+  expect(text).toContain("Do it slowly.");
+  const read = ticketYamlRead(text, catalogContext);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+});
+
+test("a workloads key that is no map, or names a workload the catalog lacks, is refused", () => {
+  const head = "title: t\nintent: i\n";
+  const scalar = ticketYamlRead(`${head}workloads: nope\n`, catalogContext);
+  expect(scalar.form).toBe(undefined);
+  expect(scalar.problems[0]?.message).toContain("write the workloads as a map");
+  const unknown = ticketYamlRead(
+    `${head}workloads:\n  nowhere:\n    runner: Commands\n`,
+    catalogContext,
+  );
+  expect(unknown.problems[0]?.message).toContain("no workload `nowhere`");
+});
+
+test("a workloads key with nothing under it overrides nothing", () => {
+  const read = ticketYamlRead(
+    "title: t\nintent: i\nworkloads:\n",
+    catalogContext,
+  );
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form?.workloads).toStrictEqual({});
+});
+
+test("taking a workload into a ticket whose workloads is empty or a scalar writes a map", () => {
+  const catalog = ticketYamlCatalogOf(creationCatalogCanonical);
+  if (catalog === undefined) throw new Error("no catalog");
+  const reference = {
+    kind: "Workload",
+    name: "gates",
+    path: ["selection", "work"],
+    from: 0,
+    to: 0,
+    key: "k",
+  } as const;
+  for (const held of ["workloads:\n", "workloads: nope\n"]) {
+    const taken = ticketYamlMaterialized(
+      `title: t\n${held}`,
+      reference,
+      catalog,
+    );
+    expect(taken).toContain("workloads:\n  gates:");
+    expect(taken).toContain("npm test");
   }
 });

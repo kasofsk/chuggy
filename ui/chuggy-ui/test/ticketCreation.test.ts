@@ -836,7 +836,7 @@ test("the images a form holds are the brief's, by identity, and bounded", () => 
   ]);
 });
 
-test("a reader who may not administer is refused overrides on a new ticket, and an administer is not", () => {
+test("a reader who may not administer is refused overrides on a new ticket, and an administrator is not", () => {
   const form = {
     ...creationForm(),
     overrides: { practices: ["Mine"] },

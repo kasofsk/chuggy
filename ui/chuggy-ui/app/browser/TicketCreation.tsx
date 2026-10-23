@@ -226,9 +226,13 @@ const selectionLabels: Readonly<Record<keyof CatalogSelected, string>> = {
 /**
  * What the ticket selects from the catalog it is drawn under, each field
  * starting on the catalog's default and a finalizer asked only of a catalog
- * that holds one. A configuration that is no catalog has nothing to select.
+ * that holds one, and the fault of overrides a reader may not set, which no
+ * panel of a catalog's form draws. A configuration that is no catalog has
+ * nothing to select.
  */
-function Selection(props: FormDrawn): ReactNode {
+function Selection(
+  props: FormDrawn & { readonly faults: readonly CreationFault[] },
+): ReactNode {
   const { form, onChange, offers, repositories } = props;
   const catalog = creationCatalogOf(
     creationOfferOf(offers, form.configuration),
@@ -264,6 +268,7 @@ function Selection(props: FormDrawn): ReactNode {
           </div>
         ),
       )}
+      <Fault field="overrides" faults={props.faults} />
     </>
   );
 }
@@ -650,7 +655,7 @@ export function CreationFields(
   return (
     <>
       <Configuration {...drawing} />
-      <Selection {...drawing} />
+      <Selection {...drawing} faults={faults} />
       <Fault field="configuration" faults={faults} />
       {props.partial === true ? (
         <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
