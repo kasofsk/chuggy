@@ -94,6 +94,7 @@ import {
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
+import { repositoryConfigurationWorkFile } from "./repositoryConfigurationFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -496,37 +497,7 @@ function repositoryImportPorts(
         calls.push(`snapshot:${commit}`);
         return Promise.resolve({
           read: "Snapshot",
-          files: [
-            {
-              path: [".chug", "configurations", "work.json"].join("/"),
-              kind: "File",
-              content: JSON.stringify({
-                version: 1,
-                name: "work",
-                configuration: {
-                  version: 1,
-                  image: "worker:v1",
-                  practices: [],
-                  brief: {
-                    motivation: ["Do the work."],
-                    acceptanceCriteria: ["The work is done."],
-                    constraints: [],
-                  },
-                  work: { instructions: [] },
-                  review: { instructions: [] },
-                  worker: {
-                    mode: {
-                      type: "SingleAgent",
-                      agent: "Claude",
-                      arguments: [],
-                    },
-                    setup: [],
-                    files: [],
-                  },
-                },
-              }),
-            },
-          ],
+          files: [repositoryConfigurationWorkFile],
         });
       },
     },

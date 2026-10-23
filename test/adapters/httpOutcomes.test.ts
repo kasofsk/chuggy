@@ -68,6 +68,7 @@ import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { parseDraftRevision } from "../../src/adapters/http/contract.ts";
+import { repositoryConfigurationWorkFile } from "../interpreter/repositoryConfigurationFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -88,33 +89,7 @@ test("a repository head that could be read is answered with what it declares, re
   const ready = repositoryConfigurationImportReadiness({
     repository: asRepositoryId("repository"),
     commit: asGitObjectId("e".repeat(40)),
-    files: [
-      {
-        path: `${repositoryDeclarationRoot}configurations/work.json`,
-        kind: "File",
-        content: JSON.stringify({
-          version: 1,
-          name: "work",
-          configuration: {
-            version: 1,
-            image: "worker:v1",
-            practices: [],
-            brief: {
-              motivation: ["Do the work."],
-              acceptanceCriteria: ["The work is done."],
-              constraints: [],
-            },
-            work: { instructions: [] },
-            review: { instructions: [] },
-            worker: {
-              mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
-              setup: [],
-              files: [],
-            },
-          },
-        }),
-      },
-    ],
+    files: [repositoryConfigurationWorkFile],
   });
   if (ready.readiness !== "Ready") throw new Error("fixture was refused");
   const at = {
