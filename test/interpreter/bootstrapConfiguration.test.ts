@@ -839,6 +839,29 @@ test("the worker and the published schema say which job a shell line runs in, an
   assert.ok(!published.includes("always set"));
 });
 
+test("the worker and the published schema say how a setup line passes a variable on, and how far it reaches", () => {
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) =>
+        line.includes("appending NAME=value to the file CHUG_ENV names") &&
+        line.includes("the commands of its own job") &&
+        line.includes("each workload's job runs only its own setup") &&
+        line.includes("A NAME starting CHUG_ or CHUGGY_ is chuggy's"),
+    ),
+  );
+  const published = JSON.stringify(configurationDocumentJsonSchema());
+  for (const said of [
+    "appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER",
+    "the later value wins",
+    "A value reaches only this job's later setup lines, its agent's shells and its commands",
+    "one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n",
+    "more than the worker's bound on what setup passes",
+    "Nothing scrubs these values",
+    "has CHUG_ENV only where the runner installed there sets it",
+  ])
+    assert.ok(published.includes(said), said);
+});
+
 /** A published schema's object, as far as these fields are read from it. */
 interface PublishedObject {
   readonly properties?: Readonly<
