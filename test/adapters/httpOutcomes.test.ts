@@ -163,6 +163,59 @@ test("a repository head that could be read is answered with what it declares, re
   );
 });
 
+test("a head with no branch, no commit, no configurations or no read is answered by which it was", () => {
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const headOf = (
+    outcome: Parameters<typeof repositoryConfigurationHeadResponse>[0],
+  ) => {
+    const answered = repositoryConfigurationHeadResponse(outcome);
+    assert.equal(answered.status, 200);
+    return repositoryConfigurationHeadResponseSchema.parse(answered.body).head;
+  };
+  assert.deepEqual(headOf({ result: "BranchAbsent" }), {
+    state: "BranchAbsent",
+  });
+  assert.deepEqual(
+    headOf({ ...at, read: { result: "SnapshotAbsent", absent: "Commit" } }),
+    { state: "CommitAbsent", branch: "main", commit: "e".repeat(40) },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: {
+        result: "SnapshotAbsent",
+        absent: "ConfigurationDirectory",
+        ignored: {
+          paths: [".chug/configurations/README.md"],
+          truncated: false,
+        },
+      },
+    }),
+    {
+      state: "ConfigurationsAbsent",
+      branch: "main",
+      commit: "e".repeat(40),
+      ignored: { paths: [".chug/configurations/README.md"], truncated: false },
+    },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: { result: "SnapshotRefused", refused: "Credential" },
+    }),
+    {
+      state: "SnapshotRefused",
+      branch: "main",
+      commit: "e".repeat(40),
+      refused: "Credential",
+    },
+  );
+});
+
 test("repository import outcomes distinguish retry, refusal, and conflict", () => {
   assert.equal(
     repositoryConfigurationImportResponse({

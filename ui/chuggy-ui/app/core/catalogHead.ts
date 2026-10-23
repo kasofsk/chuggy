@@ -90,7 +90,7 @@ const catalogHeadUnreadTexts: Readonly<
   >
 > = {
   BranchAbsent: "The repository has no default branch to read.",
-  CommitAbsent: "The repository's head moved while it was read; read it again.",
+  CommitAbsent: "The repository's head moved while it was read.",
   SnapshotRefused: "The repository refused a read of its head.",
 };
 

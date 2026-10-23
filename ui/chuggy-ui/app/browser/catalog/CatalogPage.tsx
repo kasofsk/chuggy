@@ -19,6 +19,7 @@ import type { ConfigurationSummary } from "../../../../../src/contract/responses
 import { apiConfiguration } from "../../core/apiRoutes.ts";
 import {
   catalogConfigurationHolding,
+  catalogConfigurationNewestFrom,
   catalogConfigurationOpening,
   catalogConfigurationsOf,
   catalogConfigurationVersionOf,
@@ -113,7 +114,10 @@ function CatalogChosenHead(props: {
       partition={partition}
       repository={summary.provenance.repository}
       name={holding.name}
-      newestDigest={holding.versions[0]?.digest ?? summary.digest}
+      newestDigest={
+        catalogConfigurationNewestFrom(holding, summary.provenance.repository)
+          ?.digest ?? summary.digest
+      }
       query={{ ...props.query, configuration: props.revision }}
     />
   );
@@ -247,6 +251,13 @@ function CatalogDrawn(props: {
         repository={provenance.repository}
         name={holding.name}
         query={{ ...props.query, configuration: props.revision }}
+        imported={
+          <CatalogRevision
+            partition={props.partition}
+            revision={props.revision}
+            selected={props.query.entry}
+          />
+        }
       />
     );
   return (

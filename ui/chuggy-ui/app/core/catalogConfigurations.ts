@@ -79,6 +79,18 @@ export function catalogConfigurationHolding(
   );
 }
 
+/** The newest revision an import from one repository made of the configuration, which that repository's head is compared with. */
+export function catalogConfigurationNewestFrom(
+  configuration: CatalogConfiguration,
+  repository: string,
+): ConfigurationSummary | undefined {
+  return configuration.revisions.find(
+    (summary) =>
+      summary.provenance.source === "Repository" &&
+      summary.provenance.repository === repository,
+  );
+}
+
 /** The version a revision holds, by the revision the configuration's versions draw it with. */
 export function catalogConfigurationVersionOf(
   configuration: CatalogConfiguration,

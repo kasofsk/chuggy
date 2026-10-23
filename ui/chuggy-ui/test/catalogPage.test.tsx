@@ -310,3 +310,51 @@ test("a head an import would refuse lists why", async () => {
     within(screen.getByRole("status")).getByRole("listitem").textContent,
   ).toBe(".chug/configurations/chuggy-development.json · EnvelopeInvalid");
 });
+
+test("an address asking for a head that declares no such configuration says so, and draws the import", async () => {
+  await drawPage({ configuration: "r4", source: "head" }, undefined, {
+    head: {
+      state: "ConfigurationsAbsent",
+      branch: "main",
+      commit: "e".repeat(40),
+    },
+  });
+  expect(screen.getByRole("status").textContent).toContain(
+    "The repository's main at eeeeeee declares no chuggy-development.",
+  );
+  expect(screen.getByRole("link", { name: "Show the import" })).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: "Workloads" }))
+      .getByRole("link", { name: /^build/u })
+      .getAttribute("href"),
+  ).toBe("?configuration=r4&entry=workloads%2Fbuild");
+});
+
+test("a head is compared with the newest import from its own repository, not another's", async () => {
+  const elsewhere = {
+    ...(listed("r6", "chuggy-development", 3, true) as Record<string, unknown>),
+    provenance: {
+      source: "Repository",
+      repository: "https://forge.test/kasofsk/elsewhere",
+      commit: "b".repeat(40),
+      path: ".chug/configurations/chuggy-development.json",
+      name: "chuggy-development",
+    },
+  };
+  await drawPage(
+    { configuration: "r4" },
+    [
+      elsewhere,
+      listed("r4", "chuggy-development", 2, true),
+      listed("r2", "chuggy-development", 1, true),
+    ],
+    headDeclaring("2".repeat(64)),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Compare with the repository head" }),
+  );
+  await settled();
+  expect(screen.getByRole("status").textContent).toContain(
+    "declares chuggy-development as its newest import stored it.",
+  );
+});

@@ -85,7 +85,8 @@ export function CatalogHeadLine(props: {
   return (
     <div className="catalog-head" role="status">
       <p>
-        {showing && standing.standing !== "Unread"
+        {showing &&
+        (standing.standing === "Matches" || standing.standing === "Differs")
           ? catalogHeadShowingText(standing.at, props.name)
           : catalogHeadText(standing, props.name)}{" "}
         {showing ? (
@@ -112,17 +113,18 @@ export function CatalogHeadLine(props: {
   );
 }
 
-/** The head's own version of one configuration, drawn as an imported one is. */
+/** The head's own version of one configuration, drawn as an imported one is, and the import where the head holds none. */
 export function CatalogHeadRevision(props: {
   readonly partition: PartitionIdentity;
   readonly repository: string;
   readonly name: string;
   readonly query: CatalogQuery;
+  readonly imported: ReactNode;
 }): ReactNode {
   const state = useCatalogHead(props.partition, props.repository, true);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const declaration = catalogHeadDeclaration(state.value.head, props.name);
-  if (declaration === undefined) return null;
+  if (declaration === undefined) return props.imported;
   const catalog = configurationCatalogOf(declaration.canonical);
   if (catalog === undefined)
     return (
