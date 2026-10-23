@@ -93,7 +93,6 @@ function servedWeb(
     configurations: notFound,
     ticketNativeActions: () => Promise.resolve(actions()),
     nativeActions: notFound,
-    createConfiguration: notFound,
     importRepositoryConfigurations: notFound,
     repositoryConfigurationHead: notFound,
     createDraft: notFound,

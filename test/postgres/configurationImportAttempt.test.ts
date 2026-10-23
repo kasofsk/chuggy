@@ -420,14 +420,13 @@ function routeOver(bound: BoundCases) {
   );
 }
 
-test("the route keeps each way an import it was asked for came out, at the commit it named", async () => {
+test("the route keeps each way an import it was asked for came out, at its default branch's head", async () => {
   const bound = await bindCases("import-attempt-route", atCommit);
   const web = routeOver(bound);
   for (const [repository, each] of bound.answered) {
     if (each.head.read !== "Branch") throw new Error("the case names no head");
     await web.importRepositoryConfigurations(principal, bound.partition, {
       repository,
-      commit: each.head.commit,
     });
   }
   assert.deepEqual(await keptOf(bound), expectedOf(atCommit));

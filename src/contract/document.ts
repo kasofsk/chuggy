@@ -15,7 +15,6 @@ import {
   personalRunnersMax,
 } from "./http.ts";
 import {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -51,9 +50,6 @@ function nativeHttpContractDocumentInput(schema: z.ZodType): unknown {
 function nativeHttpContractDocumentSchemas(): unknown {
   return {
     publicMutation: nativeHttpContractDocumentInput(publicMutationSchema),
-    configurationCreation: nativeHttpContractDocumentInput(
-      configurationCreationSchema,
-    ),
     repositoryConfigurationImport: nativeHttpContractDocumentInput(
       repositoryConfigurationImportSchema,
     ),

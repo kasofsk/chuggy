@@ -100,7 +100,6 @@ import type {
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -1356,22 +1355,6 @@ export function apiCancelOperation(
       ...(signal ? { signal } : {}),
     },
     (value) => operationAcceptanceSchema.parse(value),
-  );
-}
-
-export function apiCreateConfiguration(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  creation: z.infer<typeof configurationCreationSchema>,
-): Promise<ApiResult<ConfigurationResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "configurations"),
-      body: creation,
-    },
-    (value) => configurationResponseSchema.parse(value),
   );
 }
 

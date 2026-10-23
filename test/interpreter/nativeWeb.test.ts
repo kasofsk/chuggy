@@ -645,33 +645,7 @@ test("draft pages authorize and enforce their bound before reading", async () =>
   );
 });
 
-test("repository imports authorize, pin one snapshot, then persist ready declarations", async () => {
-  const calls: string[] = [];
-  const subject = boundary(
-    true,
-    openExecutionBacklogGuard,
-    repositoryImportPorts(calls),
-  );
-  const commit = asGitObjectId("a".repeat(40));
-  const repository = asRepositoryId("repository-named");
-  assert.deepEqual(
-    await subject.web.importRepositoryConfigurations(principal, partition, {
-      repository,
-      commit,
-    }),
-    { result: "Imported", declarations: 1 },
-  );
-  assert.deepEqual(subject.calls, ["authorize:Mutate"]);
-  assert.deepEqual(calls, [
-    `landing:${repository}`,
-    `binding:${repository}`,
-    `snapshot:${commit}`,
-    "import:1",
-    `kept:Imported@${commit}`,
-  ]);
-});
-
-test("a repository import naming no commit imports at the default branch's head, and keeps it", async () => {
+test("a repository import authorizes, then imports at the default branch's head and keeps it", async () => {
   const calls: string[] = [];
   const subject = boundary(
     true,
@@ -702,7 +676,7 @@ test("a repository import naming no commit imports at the default branch's head,
  * absent, an unreadable one as unavailable, the credential named where only
  * the credential answered.
  */
-test("a repository import naming no commit at a head naming none keeps the attempt with no commit", async () => {
+test("a repository import at a head naming no commit keeps the attempt with no commit", async () => {
   for (const [read, answered] of [
     [{ read: "Absent" }, { result: "SnapshotAbsent", absent: "Commit" }],
     [
@@ -766,7 +740,6 @@ test("a repository import naming a repository this project retired is answered a
   assert.deepEqual(
     await subject.web.importRepositoryConfigurations(principal, partition, {
       repository,
-      commit: asGitObjectId("a".repeat(40)),
     }),
     { result: "RepositoryAbsent" },
   );
@@ -787,7 +760,6 @@ test("repository imports conceal denial before reading any outer port", async ()
   assert.deepEqual(
     await subject.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "NotFound" },
   );
@@ -800,7 +772,6 @@ test("repository imports are unavailable when their infrastructure is not compos
   assert.deepEqual(
     await allowed.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "Unavailable", unavailable: "Repository" },
   );
@@ -810,7 +781,6 @@ test("repository imports are unavailable when their infrastructure is not compos
   assert.deepEqual(
     await denied.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "NotFound" },
   );
@@ -902,14 +872,15 @@ test("repository imports refuse invalid declarations without writing", async () 
   const result = await subject.web.importRepositoryConfigurations(
     principal,
     partition,
-    { repository, commit: asGitObjectId("c".repeat(40)) },
+    { repository },
   );
   assert.equal(result.result, "DeclarationsRefused");
   assert.deepEqual(calls, [
     `landing:${repository}`,
     `binding:${repository}`,
+    `head:${repository}`,
     "snapshot:invalid",
-    `kept:DeclarationsRefused@${"c".repeat(40)}`,
+    `kept:DeclarationsRefused@${repositoryImportHead}`,
   ]);
 });
 
@@ -1141,7 +1112,7 @@ function createDraftNaming(web: NativeWeb, brief: DraftBrief) {
   });
 }
 
-test("a draft naming overrides, or a configuration written by hand, asks for the project's administrators", async () => {
+test("a draft naming overrides asks for the project's administrators", async () => {
   const { web, calls } = boundary(false);
   const brief = briefNamingImages([]);
   await createDraftNaming(web, brief);
@@ -1154,16 +1125,7 @@ test("a draft naming overrides, or a configuration written by hand, asks for the
     brief,
     overrides: { workloads: { build: { practices: [] } } },
   });
-  await web.createConfiguration(principal, {
-    partition,
-    revision: asConfigurationRevisionId("revision"),
-    canonical: canonicalConfigurationOf({ version: 2 }),
-  });
-  assert.deepEqual(calls, [
-    "authorize:Mutate",
-    "authorize:Administer",
-    "authorize:Administer",
-  ]);
+  assert.deepEqual(calls, ["authorize:Mutate", "authorize:Administer"]);
 });
 
 function authorizations(calls: readonly string[]): string[] {

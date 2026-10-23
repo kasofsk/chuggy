@@ -92,7 +92,6 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseForgeAuthorization,
   parseForgeCredentialRequest,
   parseForgeInstallationId,
@@ -124,7 +123,6 @@ import {
 } from "./contract.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
   repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   configurationResponse,
@@ -273,7 +271,6 @@ type InitialNativeWeb = Pick<
   | "cancel"
   | "configuration"
   | "configurations"
-  | "createConfiguration"
   | "importRepositoryConfigurations"
   | "repositoryConfigurationHead"
   | "createDraft"
@@ -1881,17 +1878,6 @@ function registerConfigurations(
     });
     nativeHttpSend(reply, configurationsResponse(result));
   });
-  app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.createConfiguration(principalOf(request), {
-        partition: partitionOf(request),
-        ...parseConfigurationCreation(request.body),
-      });
-      nativeHttpSend(reply, configurationCreationResponse(result));
-    },
-  );
   app.post(
     `${root}/imports`,
     { preValidation: requireVersionedJson },

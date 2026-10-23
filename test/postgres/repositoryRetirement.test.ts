@@ -27,6 +27,7 @@ import {
 } from "../../src/compose.ts";
 import {
   asGitObjectId,
+  asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
@@ -482,9 +483,13 @@ test("the member import refuses a repository its project retired, and after anot
       undefined,
       undefined,
       {
-        defaultBranch: () => Promise.resolve({ read: "Absent" }),
+        defaultBranch: () =>
+          Promise.resolve({
+            read: "Branch",
+            branch: asGitRefName("refs/heads/main"),
+            commit: asGitObjectId("c".repeat(40)),
+          }),
         referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
-
         snapshot: () =>
           Promise.resolve({
             read: "Snapshot",
@@ -511,7 +516,6 @@ test("the member import refuses a repository its project retired, and after anot
           partition,
           {
             repository: asRepositoryId(repository),
-            commit: asGitObjectId("c".repeat(40)),
           },
         )
       ).result;

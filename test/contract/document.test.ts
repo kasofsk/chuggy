@@ -122,7 +122,6 @@ test("the golden names every route and not an empty stand-in", () => {
 test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
     "actionReport",
-    "configurationCreation",
     "draftCreation",
     "draftRevision",
     "executionPlacement",

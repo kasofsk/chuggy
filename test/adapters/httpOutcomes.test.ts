@@ -14,7 +14,6 @@ import {
 } from "../../src/interpreter/authoring.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -470,30 +469,8 @@ const draft = {
 };
 const landing = { mode: "Push", source: "Default" } as const;
 
-test("configuration outcomes are closed and location-bearing", () => {
+test("an absent configuration is answered as not found", () => {
   assert.equal(configurationResponse(undefined).status, 404);
-  const cases = [
-    { value: { created: "Created", revision: configuration }, status: 201 },
-    {
-      value: { created: "AlreadyExists", revision: configuration },
-      status: 200,
-    },
-    { value: { created: "IdentityConflict" }, status: 409 },
-    { value: { created: "ParentNotFound" }, status: 404 },
-  ] as const;
-  for (const each of populated(cases, "configuration creation outcomes")) {
-    assert.equal(
-      configurationCreationResponse({
-        result: "Authorized",
-        value: each.value,
-      }).status,
-      each.status,
-    );
-  }
-  assert.equal(
-    configurationCreationResponse({ result: "NotFound" }).status,
-    404,
-  );
 });
 
 test("configuration pages expose only an opaque continuation cursor", () => {

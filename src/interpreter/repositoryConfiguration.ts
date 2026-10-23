@@ -272,7 +272,7 @@ export interface RepositoryConfigurationImportPorts {
   readonly attempts: RepositoryConfigurationImportAttempts;
 }
 
-/** An import's ports and where a repository's default branch points, which an import naming no commit is made at. */
+/** An import's ports and where a repository's default branch points, which every import is made at. */
 export interface RepositoryConfigurationHeadImportPorts extends RepositoryConfigurationImportPorts {
   readonly heads: RepositoryDefaultBranchPort;
 }

@@ -64,10 +64,8 @@ import type {
 import type { Refusal } from "./refusal.ts";
 import type {
   AuthoringStore,
-  CanonicalConfiguration,
   ConfigurationPage,
   ConfigurationPageQuery,
-  ConfigurationCreated,
   ConfigurationRevisionResource,
   ConfigurationRevisionId,
   DraftCreated,
@@ -189,10 +187,9 @@ import {
   sessionStoreStreamsAnswered,
   workerErrorPath,
 } from "../contract/http.ts";
-import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import type { RepositoryId } from "./finalizer.ts";
 import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
-  importRepositoryConfigurations,
   importRepositoryConfigurationsAtHead,
   readRepositoryConfigurationHead,
   type RepositoryConfigurationHeadImportPorts,
@@ -764,28 +761,16 @@ export interface NativeWeb {
     partition: Partition,
     operation: OperationId,
   ): Promise<NativeCancellation>;
-  createConfiguration(
-    principal: Principal,
-    input: {
-      readonly partition: Partition;
-      readonly revision: ConfigurationRevisionId;
-      readonly parent?: ConfigurationRevisionId;
-      readonly canonical: CanonicalConfiguration;
-    },
-  ): Promise<AuthorizedResult<ConfigurationCreated>>;
   configurations(
     principal: Principal,
     partition: Partition,
     query: ConfigurationPageQuery,
   ): Promise<AuthorizedResult<ConfigurationPage>>;
-  /** Imports at `commit`, or where the repository's default branch points now where it names none. */
+  /** Imports where the repository's default branch points now, and at no other commit. */
   importRepositoryConfigurations(
     principal: Principal,
     partition: Partition,
-    source: {
-      readonly repository: RepositoryId;
-      readonly commit?: GitObjectId;
-    },
+    source: { readonly repository: RepositoryId },
   ): Promise<RepositoryConfigurationImportOutcome>;
   repositoryConfigurationHead(
     principal: Principal,
@@ -945,12 +930,7 @@ function checkedInventoryLimit(limit: number): number {
 
 type NativeAuthoringMethods = Pick<
   NativeWeb,
-  | "draft"
-  | "drafts"
-  | "createConfiguration"
-  | "createDraft"
-  | "reviseDraft"
-  | "deleteDraft"
+  "draft" | "drafts" | "createDraft" | "reviseDraft" | "deleteDraft"
 >;
 
 function nativeDraftInitializationMethod(
@@ -1034,7 +1014,7 @@ function nativeConfigurationMethods(
 
 /**
  * What a member's import and head read are composed from: the import's own
- * ports with the default branch it reads where a member names no commit, and
+ * ports with the default branch it reads, and
  * the binding door that answers a binding's retirement, which the import's
  * binding read does not.
  */
@@ -1044,7 +1024,8 @@ export interface NativeRepositoryConfigurationImportPorts extends RepositoryConf
 
 /**
  * Imports only from a repository this project binds live, so a member cannot
- * read one their project retired, which another may since have bound.
+ * read one their project retired, which another may since have bound, and only
+ * at its default branch, so what a member imports is what was checked in.
  */
 function nativeRepositoryConfigurationImportMethod(
   access: ProjectAccess,
@@ -1058,20 +1039,12 @@ function nativeRepositoryConfigurationImportMethod(
     const bound = await ports.landing.landing(partition, source.repository);
     if (bound === undefined || bound.retiredAt !== undefined)
       return { result: "RepositoryAbsent" };
-    return source.commit === undefined
-      ? importRepositoryConfigurationsAtHead({
-          partition,
-          repository: source.repository,
-          authority,
-          ports,
-        })
-      : importRepositoryConfigurations({
-          partition,
-          repository: source.repository,
-          commit: source.commit,
-          authority,
-          ports,
-        });
+    return importRepositoryConfigurationsAtHead({
+      partition,
+      repository: source.repository,
+      authority,
+      ports,
+    });
   };
 }
 
@@ -1307,14 +1280,6 @@ function nativeAuthoringMethods(
 ): NativeAuthoringMethods {
   return {
     ...nativeDraftReadMethods(access, authoring),
-    createConfiguration: (principal, input) =>
-      authorizedProjectMutation(
-        access,
-        principal,
-        input.partition,
-        (authority) => authoring.createConfiguration({ ...input, authority }),
-        "Administer",
-      ),
     createDraft: nativeDraftCreationMethod(access, authoring, projectArtifacts),
     reviseDraft: nativeDraftRevisionMethod(access, authoring, projectArtifacts),
     deleteDraft: (principal, input) =>

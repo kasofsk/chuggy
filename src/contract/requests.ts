@@ -119,16 +119,9 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
 
 export type PublicMutation = z.infer<typeof publicMutationSchema>;
 
-export const configurationCreationSchema = z.strictObject({
-  revision: bodyIdentitySchema,
-  parent: bodyIdentitySchema.optional(),
-  canonical: bodyIdentitySchema,
-});
-
-/** An import at `commit`, or at where the repository's default branch points now where it names none. */
+/** An import at where the repository's default branch points now, which is what the repository has checked in. */
 export const repositoryConfigurationImportSchema = z.strictObject({
   repository: bodyIdentitySchema,
-  commit: bodyIdentitySchema.optional(),
 });
 
 export const forgeCredentialRequestSchema = z.strictObject({

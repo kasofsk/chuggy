@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
-  ConfigurationCreated,
   ConfigurationPage,
   ConfigurationRevisionResource,
   DraftInitializationRead,
@@ -947,39 +946,6 @@ export function configurationsResponse(
               ),
             }),
       });
-}
-
-function configurationCreated(value: ConfigurationCreated): NativeHttpResponse {
-  switch (value.created) {
-    case "Created":
-      return response(201, value.revision, {
-        location: resourcePath(
-          value.revision.partition,
-          "configurations",
-          value.revision.revision,
-        ),
-      });
-    case "AlreadyExists":
-      return response(200, value.revision);
-    case "IdentityConflict":
-      return response(
-        409,
-        nativeHttpError(
-          "ConfigurationIdentityConflict",
-          "The configuration identity conflicts.",
-        ),
-      );
-    case "ParentNotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-  }
-}
-
-export function configurationCreationResponse(
-  result: AuthorizedResult<ConfigurationCreated>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : configurationCreated(result.value);
 }
 
 /**

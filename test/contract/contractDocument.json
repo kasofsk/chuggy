@@ -891,35 +891,11 @@
         }
       ]
     },
-    "configurationCreation": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "revision": {
-          "type": "string",
-          "minLength": 1
-        },
-        "parent": {
-          "type": "string",
-          "minLength": 1
-        },
-        "canonical": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["revision", "canonical"],
-      "additionalProperties": false
-    },
     "repositoryConfigurationImport": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
         "repository": {
-          "type": "string",
-          "minLength": 1
-        },
-        "commit": {
           "type": "string",
           "minLength": 1
         }
