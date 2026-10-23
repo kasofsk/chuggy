@@ -142,12 +142,12 @@ test("a brief appends bounded command lines or appends none at all", () => {
 test("the longest check the wire accepts is the longest one the server brands", () => {
   const lineOf = (chars: number) => "a".repeat(chars);
   assert.ok(briefCheckSchema.safeParse(lineOf(briefLineCharsMax)).success);
-  assert.doesNotThrow(() => asBriefCheckLine(lineOf(briefLineCharsMax)));
+  assert.doesNotThrow(() => asBriefCheckLine(lineOf(briefLineCharsMax), 0));
   assert.equal(
     briefCheckSchema.safeParse(lineOf(briefLineCharsMax + 1)).success,
     false,
   );
-  assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1)));
+  assert.throws(() => asBriefCheckLine(lineOf(briefLineCharsMax + 1), 0));
 });
 
 /** The whole text an intent may be, written as one line and as a line to every character. */

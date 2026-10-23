@@ -160,7 +160,7 @@ test("the seeded file lives under the directory an import reads", () => {
 test("a ticket carrying check lines is not releasable against it", () => {
   const readiness = releaseConfigurationReadiness(
     bootstrapConfiguration({ repository, defaultBranch, image }),
-    { checks: [asBriefCheckLine("npm test")] },
+    { checks: [asBriefCheckLine("npm test", 0)] },
   );
   assert.deepEqual(readiness, {
     readiness: "Incomplete",
@@ -326,7 +326,7 @@ test("a declaration written to the shape its worker is told, at every bound it i
   assert.ok(declaration !== undefined);
   assert.equal(
     releaseConfigurationReadiness(declaration.canonical, {
-      checks: [asBriefCheckLine("npm test")],
+      checks: [asBriefCheckLine("npm test", 0)],
     }).readiness,
     "Ready",
   );

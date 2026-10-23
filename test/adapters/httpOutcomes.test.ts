@@ -418,6 +418,7 @@ test("a draft answers the brief it was written with, title and all", () => {
     title: "Serve the title on the draft",
     intent: "Serve the brief on the draft resource.",
     links: ["https://example.test/issues/340"],
+    images: ["artifact-1"],
     repository: "origin/chuggy",
   });
   assert.deepEqual(
@@ -426,6 +427,7 @@ test("a draft answers the brief it was written with, title and all", () => {
       title: "Serve the title on the draft",
       intent: "Serve the brief on the draft resource.",
       links: ["https://example.test/issues/340"],
+      images: ["artifact-1"],
       checks: [],
       repository: "origin/chuggy",
     },
@@ -437,10 +439,11 @@ test("a draft answers the brief it was written with, title and all", () => {
   );
 });
 
-test("revising a draft with exactly the brief it was read back with keeps its repository", () => {
+test("revising a draft with exactly the brief it was read back with keeps its repository and images", () => {
   const brief = asDraftBrief({
     intent: "Serve the brief on the draft resource.",
     links: [],
+    images: ["artifact-1"],
     repository: "origin/chuggy",
   });
   const readBack = (
@@ -458,6 +461,7 @@ test("revising a draft with exactly the brief it was read back with keeps its re
     brief: readBack,
   });
   assert.equal(revision.brief.repository, "origin/chuggy");
+  assert.deepEqual(revision.brief.images, ["artifact-1"]);
 });
 
 test("a drafts page names its cursor exactly where it says there is more", () => {

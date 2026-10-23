@@ -238,7 +238,7 @@ test("a stage that briefs an agent with no worker to run it is not releasable", 
     );
     assert.deepEqual(
       releaseConfigurationReadiness(workerlessConfiguration(stages), {
-        checks: [asBriefCheckLine("npm test")],
+        checks: [asBriefCheckLine("npm test", 0)],
       }),
       { readiness: "Incomplete", fault: "WorkerUndeclared" },
       `${which}, refused for itself before any pairing`,
@@ -252,7 +252,7 @@ test("a configuration whose every stage runs commands is releasable with no work
       work: commandedWork,
       evaluations: [commandedCheck],
     }),
-    { checks: [asBriefCheckLine("npm test")] },
+    { checks: [asBriefCheckLine("npm test", 0)] },
   );
   assert.equal(readiness.readiness, "Ready");
 });
@@ -266,7 +266,7 @@ test("a configuration commanding no check stage refuses a brief that appends che
       { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
     ],
   });
-  const appending = { checks: [asBriefCheckLine("npm test")] };
+  const appending = { checks: [asBriefCheckLine("npm test", 0)] };
   assert.deepEqual(
     releaseConfigurationReadiness(readyConfiguration, appending),
     { readiness: "Incomplete", fault: "BriefChecksUncommanded" },
@@ -378,7 +378,7 @@ test("the configuration's own refusals are answered before the repository's", ()
   assert.deepEqual(
     draftReleaseReadiness(
       readyConfiguration,
-      { checks: [asBriefCheckLine("npm test")] },
+      { checks: [asBriefCheckLine("npm test", 0)] },
       undefined,
       undefined,
     ),
@@ -388,7 +388,10 @@ test("the configuration's own refusals are answered before the repository's", ()
   assert.deepEqual(
     draftReleaseReadiness(
       readyConfiguration,
-      { checks: [asBriefCheckLine("npm test")], repository: firstRepository },
+      {
+        checks: [asBriefCheckLine("npm test", 0)],
+        repository: firstRepository,
+      },
       secondRepository,
       undefined,
     ),

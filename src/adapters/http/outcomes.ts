@@ -886,6 +886,7 @@ function briefBody(brief: DraftBrief): unknown {
     ...(brief.title === undefined ? {} : { title: brief.title }),
     intent: brief.intent,
     links: [...brief.links],
+    images: [...brief.images],
     checks: [...brief.checks],
     ...(brief.repository === undefined ? {} : { repository: brief.repository }),
     ...(brief.branch === undefined ? {} : { branch: brief.branch }),

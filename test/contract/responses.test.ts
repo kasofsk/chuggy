@@ -1456,6 +1456,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   assert.deepEqual(briefed.brief, {
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
+    images: [],
     checks: ["npm test"],
     branch: "refs/heads/rt/ticket-brief",
     finalization: { mode: "PullRequest", target: "refs/heads/main" },

@@ -221,7 +221,7 @@ test("a catalog takes no overrides, and a document takes no selection", () => {
 });
 
 test("a brief's checks join the first evaluator the selected plan runs as commands, and a plan running none refuses them", () => {
-  const checked = { ...brief, checks: [asBriefCheckLine("npm run lint")] };
+  const checked = { ...brief, checks: [asBriefCheckLine("npm run lint", 0)] };
   assert.deepEqual(
     draftReleaseReadiness(canonical, checked, undefined, undefined),
     {

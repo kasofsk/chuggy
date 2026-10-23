@@ -370,6 +370,7 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
     ...(value.title === undefined ? {} : { title: value.title }),
     intent: value.intent,
     links: value.links,
+    ...(value.images === undefined ? {} : { images: value.images }),
     ...(value.checks === undefined ? {} : { checks: value.checks }),
     ...(value.repository === undefined ? {} : { repository: value.repository }),
     ...(value.branch === undefined ? {} : { branch: value.branch }),
