@@ -413,3 +413,18 @@ test("a catalog plan says its stages run in order, and that a stage's several ev
     within(rowOf("Stage 2 · gates")).queryByText("Evaluators run side by side"),
   ).toBeNull();
 });
+
+test("a catalog ticket is drawn under its workload overrides, the workload and its fields marked", async () => {
+  await drawTicket(
+    creationCatalogCanonical,
+    { workloads: { build: { prompt: { text: "Build it twice." } } } },
+    undefined,
+    undefined,
+  );
+  await sectionOpened("Provenance");
+  expect(screen.getByText("Build it twice.")).toBeDefined();
+  expect(screen.queryByText("Build it.")).toBeNull();
+  expect(screen.getAllByText("Overridden").length).toBeGreaterThan(0);
+  expect(screen.getByText("prompt")).toBeDefined();
+  expect(screen.getByText("Pinned ·")).toBeDefined();
+});

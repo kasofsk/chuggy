@@ -50,7 +50,10 @@ import { tags } from "@lezer/highlight";
 import { vim } from "@replit/codemirror-vim";
 import { basicSetup } from "codemirror";
 
-import type { TicketYamlKey, TicketYamlProblem } from "./ticketYaml.ts";
+import { chugFragments } from "./chugFragments.ts";
+import type { TicketYamlProblem } from "./ticketYaml.ts";
+import type { TicketYamlKey } from "./ticketYamlKey.ts";
+import type { TicketYamlCatalog } from "./ticketYamlFragments.ts";
 
 export interface EditorHandle {
   getValue(): string;
@@ -62,6 +65,10 @@ export interface EditorHandle {
   destroy(): void;
   foldAll(): void;
   unfoldAll(): void;
+  /** The catalog the text's references resolve against, none where its configuration is no catalog. */
+  setCatalog(catalog: TicketYamlCatalog | undefined): void;
+  expandReferences(): void;
+  collapseReferences(): void;
 }
 
 export interface EditorOptions {
@@ -136,13 +143,33 @@ function chugEditorDiagnosticOf(
 export type ChugEditorAsked =
   | { readonly asked: "Key"; readonly typed: number }
   | { readonly asked: "Value"; readonly key: string; readonly typed: number }
-  | { readonly asked: "Nested"; readonly typed: number };
+  | { readonly asked: "Nested"; readonly typed: number }
+  | { readonly asked: "Field"; readonly typed: number };
 
 const chugEditorKeyAsked = /^(\w*)$/;
+const chugEditorFieldAsked = /^(\s+)(\w*)$/;
 const chugEditorValueAsked =
   /^\s*(?:-\s+)?(\w+):\s*(?:\[(?:[^\]]*,)?\s*)?([\w./-]*)$/;
-const chugEditorItemAsked = /^\s+-\s+([\w./-]*)$/;
-const chugEditorOwnerLine = /^(\w+):/;
+const chugEditorItemAsked = /^(\s+)-\s+([\w./-]*)$/;
+const chugEditorOwnerLine = /^(\s*)(\w+):/;
+
+/** The key nearest above that a line indented this far sits under, none where no line above owns it. */
+function chugEditorOwnerOf(
+  above: readonly string[],
+  indent: number,
+): string | undefined {
+  for (const line of above) {
+    const owner = chugEditorOwnerLine.exec(line);
+    if (owner?.[2] !== undefined && (owner[1]?.length ?? 0) < indent)
+      return owner[2];
+  }
+  return undefined;
+}
+
+/** The key at the top of the document a line sits under. */
+function chugEditorTopOf(above: readonly string[]): string | undefined {
+  return chugEditorOwnerOf(above, 1);
+}
 
 /** The caret's line up to the caret, and the lines above it nearest first. */
 export function chugEditorAsked(
@@ -151,15 +178,19 @@ export function chugEditorAsked(
 ): ChugEditorAsked | undefined {
   if (chugEditorKeyAsked.test(before))
     return { asked: "Key", typed: before.length };
+  const field = chugEditorFieldAsked.exec(before);
+  if (field !== null)
+    return chugEditorTopOf(above) === "workloads" ||
+      chugEditorTopOf(above) === "selection"
+      ? { asked: "Field", typed: field[2]?.length ?? 0 }
+      : undefined;
   const value = chugEditorValueAsked.exec(before);
   if (value?.[1] !== undefined)
     return { asked: "Value", key: value[1], typed: value[2]?.length ?? 0 };
   const item = chugEditorItemAsked.exec(before);
   if (item === null) return undefined;
-  const typed = item[1]?.length ?? 0;
-  const owner = above
-    .map((line) => chugEditorOwnerLine.exec(line)?.[1])
-    .find((found) => found !== undefined);
+  const typed = item[2]?.length ?? 0;
+  const owner = chugEditorOwnerOf(above, item[1]?.length ?? 0);
   if (owner === "program") return { asked: "Nested", typed };
   return owner === undefined
     ? undefined
@@ -186,8 +217,13 @@ export function chugEditorOffered(
   switch (asked.asked) {
     case "Key":
     case "Nested":
+    case "Field":
       return keys
-        .filter((key) => (key.nested === true) === (asked.asked === "Nested"))
+        .filter(
+          (key) =>
+            key.place ===
+            { Key: undefined, Nested: "Stage", Field: "Workload" }[asked.asked],
+        )
         .map((key) => ({
           label: key.key,
           apply: `${key.key}: `,
@@ -343,6 +379,34 @@ const editorTheme = EditorView.theme({
     fontFamily: "var(--font-prose)",
     fontSize: "var(--text-sm)",
   },
+  ".cm-fragment-reference": {
+    textDecoration: "underline dotted",
+    textUnderlineOffset: "0.2em",
+  },
+  ".cm-fragment-actions": { marginLeft: "var(--space-2)" },
+  ".cm-fragment-action": {
+    font: "inherit",
+    color: "var(--ink-3)",
+    background: "none",
+    border: "none",
+    cursor: "pointer",
+    padding: "0 var(--space-1)",
+  },
+  ".cm-fragment-action:hover": { color: "var(--ink-1)" },
+  ".cm-fragment-preview": {
+    margin: "var(--space-1) 0 var(--space-1) var(--space-4)",
+    padding: "var(--space-1) var(--space-3)",
+    borderLeft: "var(--hairline) solid var(--edge)",
+    background: "var(--surface-1)",
+    fontFamily: "var(--font-mono)",
+    whiteSpace: "pre-wrap",
+  },
+  ".cm-fragment-label": {
+    color: "var(--ink-3)",
+    fontSize: "var(--text-sm)",
+    fontFamily: "var(--font-prose)",
+  },
+  ".cm-fragment-prose": { fontFamily: "var(--font-prose)" },
   ".cm-completionDetail": {
     color: "var(--ink-3)",
     marginLeft: "var(--space-2)",
@@ -359,8 +423,10 @@ function chugEditorExtensions(
   options: EditorOptions,
   vimCompartment: Compartment,
   vocabulary: () => readonly TicketYamlKey[],
+  fragments: Extension,
 ): Extension {
   return [
+    fragments,
     vimCompartment.of(options.vim ? vim() : []),
     basicSetup,
     yaml(),
@@ -387,9 +453,15 @@ export function createChugEditor(
 ): EditorHandle {
   const vimCompartment = new Compartment();
   let vocabulary = options.vocabulary;
+  const fragments = chugFragments(ticketHighlighting);
   const state = EditorState.create({
     doc: options.doc,
-    extensions: chugEditorExtensions(options, vimCompartment, () => vocabulary),
+    extensions: chugEditorExtensions(
+      options,
+      vimCompartment,
+      () => vocabulary,
+      fragments.extension,
+    ),
   });
   const view = new EditorView({ state, parent });
   return {
@@ -421,6 +493,15 @@ export function createChugEditor(
     },
     setVocabulary(next) {
       vocabulary = next;
+    },
+    setCatalog(catalog) {
+      fragments.setCatalog(view, catalog);
+    },
+    expandReferences() {
+      fragments.expandAll(view);
+    },
+    collapseReferences() {
+      fragments.collapseAll(view);
     },
     setProblems(problems) {
       view.dispatch(

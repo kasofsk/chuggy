@@ -29,7 +29,6 @@ import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
 import type { SelectorReviewOutcome } from "../../contract/rosters.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
 import {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -63,9 +62,7 @@ import type {
 } from "../../interpreter/selector.ts";
 import { asTaskId, asTicketId } from "../../domain/ids.ts";
 import {
-  asCanonicalConfiguration,
   asConfigurationRevisionId,
-  type CanonicalConfiguration,
   type ConfigurationPageCursor,
   type ConfigurationRevisionId,
   type DraftPageCursor,
@@ -105,9 +102,7 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import {
-  asGitObjectId,
   asRepositoryId,
-  type GitObjectId,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import {
@@ -165,15 +160,8 @@ import {
   type WorkerPoolRedemptionRequest,
   type WorkerPoolRegistrationTokenRequest,
 } from "../../contract/workerPool.ts";
-export interface ParsedConfigurationCreation {
-  readonly revision: ConfigurationRevisionId;
-  readonly parent?: ConfigurationRevisionId;
-  readonly canonical: CanonicalConfiguration;
-}
-
 export interface ParsedRepositoryConfigurationImport {
   readonly repository: RepositoryId;
-  readonly commit?: GitObjectId;
 }
 
 /**
@@ -203,12 +191,14 @@ export function parseRepositoryConfigurationImport(
   body: unknown,
 ): ParsedRepositoryConfigurationImport {
   const parsed = repositoryConfigurationImportSchema.parse(body);
-  return {
-    repository: asRepositoryId(parsed.repository),
-    ...(parsed.commit === undefined
-      ? {}
-      : { commit: asGitObjectId(parsed.commit) }),
-  };
+  return { repository: asRepositoryId(parsed.repository) };
+}
+
+/** The repository a head read names, from the query that names it. */
+export function parseRepositoryConfigurationHead(query: unknown): RepositoryId {
+  return asRepositoryId(
+    nativeHttpEndpoints.configurationHead.query.parse(query).repository,
+  );
 }
 
 /** One minting request as the wire carries it, both fields already narrowed. */
@@ -378,19 +368,6 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
       ? {}
       : { finalization: releaseBriefFinalization(value.finalization) }),
   });
-}
-
-export function parseConfigurationCreation(
-  body: unknown,
-): ParsedConfigurationCreation {
-  const value = configurationCreationSchema.parse(body);
-  return {
-    revision: asConfigurationRevisionId(value.revision),
-    ...(value.parent === undefined
-      ? {}
-      : { parent: asConfigurationRevisionId(value.parent) }),
-    canonical: asCanonicalConfiguration(value.canonical),
-  };
 }
 
 /**

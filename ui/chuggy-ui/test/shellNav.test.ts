@@ -10,13 +10,18 @@
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { navEntryCurrent, navRoutes, shellNav } from "../app/core/shellNav.ts";
+import {
+  navEntryCurrent,
+  navRoutes,
+  shellNav,
+  shellSetupNav,
+} from "../app/core/shellNav.ts";
 import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
 test("every entry names a route of the partition and carries its params", () => {
-  const entries = shellNav({ partition: atlas });
+  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
   const routes = Object.values(navRoutes);
   for (const entry of entries) {
     expect(routes).toContain(entry.to);
@@ -26,10 +31,11 @@ test("every entry names a route of the partition and carries its params", () => 
     "overview",
     "inbox",
     "lead",
+    "catalog",
+    "ticket-new",
     "settings",
     "repositories",
     "runners",
-    "ticket-new",
   ]);
 });
 
@@ -58,9 +64,7 @@ test("New ticket is left out only for a reader the abilities read said may not m
     "overview",
     "inbox",
     "lead",
-    "settings",
-    "repositories",
-    "runners",
+    "catalog",
   ]);
   expect(entryIds(abilitiesEvery).at(-1)).toBe("ticket-new");
   expect(entryIds({ ...abilitiesNone, mutate: true }).at(-1)).toBe(
@@ -70,7 +74,7 @@ test("New ticket is left out only for a reader the abilities read said may not m
 });
 
 function currentAt(pathname: string): readonly string[] {
-  return shellNav({ partition: atlas })
+  return [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)]
     .filter((entry) => navEntryCurrent(entry, pathname))
     .map((entry) => entry.id);
 }
@@ -79,6 +83,7 @@ test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
   expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
+  expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);
   expect(currentAt("/acme/atlas/runners")).toStrictEqual(["runners"]);
   expect(currentAt("/acme/atlas/repositories")).toStrictEqual(["repositories"]);

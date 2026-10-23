@@ -15,7 +15,9 @@ import type { ReactNode, RefObject } from "react";
 import { Button } from "../ui/Button.tsx";
 import { createChugEditor } from "./chugEditor.ts";
 import type { EditorHandle } from "./chugEditor.ts";
-import type { TicketYamlKey, TicketYamlProblem } from "./ticketYaml.ts";
+import type { TicketYamlProblem } from "./ticketYaml.ts";
+import type { TicketYamlKey } from "./ticketYamlKey.ts";
+import type { TicketYamlCatalog } from "./ticketYamlFragments.ts";
 
 import "./TicketEditor.css";
 
@@ -24,6 +26,8 @@ export interface TicketEditorProps {
   readonly onChange: (text: string) => void;
   readonly problems: readonly TicketYamlProblem[];
   readonly vocabulary: readonly TicketYamlKey[];
+  /** What the text's catalog names resolve to, none where its configuration is no catalog. */
+  readonly catalog: TicketYamlCatalog | undefined;
 }
 
 function useEditorHandle(props: TicketEditorProps): {
@@ -113,6 +117,24 @@ function EditorActions(props: {
       >
         Unfold all
       </Button>
+      <Button
+        size="sm"
+        variant="quiet"
+        onClick={() => {
+          handle.current?.expandReferences();
+        }}
+      >
+        Expand references
+      </Button>
+      <Button
+        size="sm"
+        variant="quiet"
+        onClick={() => {
+          handle.current?.collapseReferences();
+        }}
+      >
+        Collapse references
+      </Button>
       <label>
         <input
           type="checkbox"
@@ -146,6 +168,9 @@ export default function TicketEditor(props: TicketEditorProps): ReactNode {
   useEffect(() => {
     if (ready) handle.current?.setVocabulary(props.vocabulary);
   }, [ready, handle, props.vocabulary]);
+  useEffect(() => {
+    if (ready) handle.current?.setCatalog(props.catalog);
+  }, [ready, handle, props.catalog]);
   return (
     <div className="ticket-editor">
       <EditorActions handle={handle} ready={ready} />

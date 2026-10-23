@@ -2,15 +2,16 @@
  * What every settings page is drawn in: its title, then its sections as one
  * column filling the width the settings' frame gives it.
  *
- * A settings page is drawn inside a project's shell and outside it, so where
- * its title goes is decided here and by no page: the top bar where the shell
- * is around it, and a heading over its sections where it is not.
+ * A settings page is drawn inside a project's shell and outside it, so how
+ * its title is drawn is decided here and by no page: for a reader who does not
+ * see the bar where the shell is around it, since the settings' own nav names
+ * the page there, and as a heading over its sections where it is not.
  */
 
 import { useParams } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { TopBarSlot, useShellSlotsOffered } from "../shell/slots.tsx";
+import { ScreenTitle, useShellSlotsOffered } from "../shell/slots.tsx";
 
 /** The workspace a settings page is of, whichever of its addresses was matched. */
 export function useSettingsTenant(): string {
@@ -36,7 +37,12 @@ export function SettingsPage(props: {
   return (
     <div className="grid min-w-0 gap-4">
       {shelled ? (
-        <TopBarSlot>{titled}</TopBarSlot>
+        <>
+          <ScreenTitle>{props.title}</ScreenTitle>
+          {props.chips === undefined ? null : (
+            <div className="flex min-w-0 items-center gap-2">{props.chips}</div>
+          )}
+        </>
       ) : (
         <div className="flex min-w-0 items-center gap-2">{titled}</div>
       )}

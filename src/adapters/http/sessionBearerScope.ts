@@ -69,6 +69,7 @@ export const sessionBearerRouteClasses = {
   ticketNativeActions: partitionRead,
   ticketAgenticRefusals: partitionRead,
   ticketActionReach: partitionRead,
+  configurationHead: partitionRead,
   ticketLandings: partitionRead,
   nativeActions: partitionRead,
   agenticRefusals: partitionRead,

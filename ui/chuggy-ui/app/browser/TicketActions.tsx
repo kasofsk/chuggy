@@ -36,7 +36,10 @@ import type {
   TicketResponse,
   DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiCancelOperation } from "../core/apiRoutes.ts";
+import {
+  apiCancelOperation,
+  apiTicketDispatchView,
+} from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -61,14 +64,22 @@ import type {
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
 import { ticketArrival } from "../core/ticketArrival.ts";
-import { ticketDispatchList } from "../core/ticketActions.ts";
+import {
+  manualDispatchAction,
+  ticketDispatchList,
+} from "../core/ticketActions.ts";
 import type {
   TicketAction,
   TicketActionName,
   TicketAttempt,
 } from "../core/ticketActions.ts";
+import {
+  ticketOffersAllowed,
+  ticketOffersStartable,
+} from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
-import { useApiPorts } from "./api.ts";
+import { useApiPorts, usePanelList } from "./api.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { applyResourceArrival } from "./stream.tsx";
 import {
   ticketAttemptDropped,
@@ -86,7 +97,7 @@ import {
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
-import { AddRunnerLink } from "./workRunner.tsx";
+import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 
 interface Attempt {
   readonly action: TicketAction;
@@ -651,5 +662,95 @@ export function TicketAnswerActions(props: {
       resume={props.resume}
       onChoose={props.acting.submitting.submit}
     />
+  );
+}
+
+/** The press a ready row's state chip answers, where the row may be dispatched. */
+export interface TicketRowDispatch {
+  readonly busy: boolean;
+  readonly effect: string;
+  readonly press: () => void;
+}
+
+/**
+ * The Dispatch a ready row of the ticket list offers, as the press its state
+ * chip answers and the notes its follow draws beside it. The reader's
+ * abilities and the project's runner take it away as they take it on the
+ * ticket page, and a press is followed by the same submission the ticket page
+ * would follow.
+ */
+function TicketRowDispatchDrawn(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly dispatch: TicketAction | undefined;
+  readonly children: (
+    dispatch: TicketRowDispatch | undefined,
+    notes: ReactNode,
+  ) => ReactNode;
+}): ReactNode {
+  const abilities = useProjectAbilities(props.partition);
+  const runner = useWorkRunner(props.partition, "Unknown");
+  const { offers } = ticketOffersStartable(
+    ticketOffersAllowed(
+      {
+        offers: "Actions",
+        editable: false,
+        actions: props.dispatch === undefined ? [] : [props.dispatch],
+      },
+      abilities,
+    ),
+    runner,
+  );
+  const offered =
+    offers.offers === "Actions"
+      ? offers.actions.find((action) => action.action === "Dispatch")
+      : undefined;
+  if (offered === undefined) return props.children(undefined, null);
+  const effect = ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect;
+  return (
+    <TicketActingScope partition={props.partition} ticket={props.ticket}>
+      {(acting) =>
+        props.children(
+          {
+            busy: acting.busy,
+            effect,
+            press: () => {
+              acting.submitting.submit(offered);
+            },
+          },
+          <FollowNotes submitting={acting.submitting} />,
+        )
+      }
+    </TicketActingScope>
+  );
+}
+
+/** A ready row reads the one page of the dispatch view that names it, because
+ * a dispatch names the version it was offered. */
+export function TicketRowDispatchScope(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly children: (
+    dispatch: TicketRowDispatch | undefined,
+    notes: ReactNode,
+  ) => ReactNode;
+}): ReactNode {
+  const { partition, ticket } = props;
+  const dispatchState = usePanelList(
+    ticketDispatchList(partition, ticket),
+    (ports) => apiTicketDispatchView(ports, partition, ticket),
+  );
+  return (
+    <TicketRowDispatchDrawn
+      partition={partition}
+      ticket={ticket}
+      dispatch={
+        dispatchState.state === "Ready"
+          ? manualDispatchAction(ticket, dispatchState.value)
+          : undefined
+      }
+    >
+      {props.children}
+    </TicketRowDispatchDrawn>
   );
 }

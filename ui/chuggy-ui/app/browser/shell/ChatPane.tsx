@@ -83,8 +83,13 @@ import type { ThreadKeptAway } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import { useChatPane } from "./chatPaneHeld.tsx";
-import { ChatPaneHeaderRow, ChatPaneIconButton } from "./chatPaneIcons.tsx";
+import {
+  ChatPaneHeaderRow,
+  ChatPaneIcon,
+  ChatPaneIconButton,
+} from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 
 /** The list entry the pane keeps its answering read under, distinct from the
@@ -231,7 +236,9 @@ function ChatPaneStartControl(props: {
 /** How much of the frame the pane takes, which is the move a reader makes
  * while reading. Where it sits is set once and lives in the bar's settings
  * menu instead. */
-function ChatPaneControls(): ReactNode {
+function ChatPaneControls(props: {
+  readonly placement: ChatPanePlacement;
+}): ReactNode {
   const held = useChatPane();
   const state = held.state;
   return (
@@ -254,7 +261,7 @@ function ChatPaneControls(): ReactNode {
         />
       )}
       <ChatPaneIconButton
-        glyph="collapse"
+        glyph={`collapse${props.placement}`}
         label="Collapse"
         onClick={() => {
           held.moveTo(chatPaneToggled(state));
@@ -420,19 +427,30 @@ function ChatPaneFirst(props: {
   );
 }
 
-/** The collapsed pane: the one control that brings it back, and nothing that
- * reads. */
-function ChatPaneStrip(): ReactNode {
+/** The collapsed pane: the one control that brings it back, named on its
+ * face, and nothing that reads. */
+function ChatPaneStrip(props: {
+  readonly placement: ChatPanePlacement;
+}): ReactNode {
   const held = useChatPane();
   return (
-    <div className="grid content-start justify-center bg-surface-1 py-2">
-      <ChatPaneIconButton
-        glyph="chat"
-        label="Expand chat"
+    <div
+      className="chat-strip bg-surface-1"
+      data-placement={props.placement.toLowerCase()}
+    >
+      <Button
+        variant="quiet"
+        size="sm"
+        expanded={false}
         onClick={() => {
           held.moveTo(chatPaneToggled(held.state));
         }}
-      />
+      >
+        <ChatPaneIcon glyph={`expand${props.placement}`} label="Expand chat" />
+        <span aria-hidden="true" className="chat-strip-name">
+          Chat
+        </span>
+      </Button>
     </div>
   );
 }
@@ -588,9 +606,9 @@ function ChatPaneHeld(props: {
 
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
-  /** Whether the pane has the whole frame, and so sets its conversation as a
-   * column to read. */
-  readonly reading: boolean;
+  /** Where the pane is drawn, and whether it has the whole frame and so sets
+   * its conversation as a column to read. */
+  readonly chat: ChatPaneState;
 }): ReactNode {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
@@ -605,7 +623,7 @@ function ChatPaneOpen(props: {
   return (
     <section
       aria-label="Chat"
-      className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
+      className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
     >
       <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
         <ChatPaneHeld
@@ -635,7 +653,7 @@ function ChatPaneOpen(props: {
             onChoose={pane.chose}
           />
         )}
-        <ChatPaneControls />
+        <ChatPaneControls placement={props.chat.placement} />
       </header>
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <ChatPaneBody
@@ -664,29 +682,8 @@ export function ChatPane(props: {
   readonly chat: ChatPaneState;
 }): ReactNode {
   return chatPaneStripped(props.chat) ? (
-    <ChatPaneStrip />
+    <ChatPaneStrip placement={props.chat.placement} />
   ) : (
-    <ChatPaneOpen
-      partition={props.partition}
-      reading={props.chat.presentation === "Full"}
-    />
-  );
-}
-
-/** What puts the pane away and brings it back, drawn in the bar above every
- * page. */
-export function ChatPaneToggle(): ReactNode {
-  const held = useChatPane();
-  return (
-    <Button
-      variant="quiet"
-      size="sm"
-      pressed={held.state.presentation !== "Collapsed"}
-      onClick={() => {
-        held.moveTo(chatPaneToggled(held.state));
-      }}
-    >
-      Chat
-    </Button>
+    <ChatPaneOpen partition={props.partition} chat={props.chat} />
   );
 }

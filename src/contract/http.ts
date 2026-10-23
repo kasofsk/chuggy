@@ -504,6 +504,7 @@ export const nativeHttpRoutes = {
   events: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/events`,
   configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
+  configurationHead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports/head`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,

@@ -67,6 +67,7 @@ import type {
   CreationFault,
   CreationField,
   CreationMotion,
+  CreationAssembly,
   CreationOffer,
   CreationStart,
   TicketCreationForm,
@@ -100,12 +101,20 @@ import {
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
-import { useProjectAbilityRead } from "./projectAbilities.tsx";
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
+import {
+  useProjectAbilities,
+  useProjectAbilityRead,
+} from "./projectAbilities.tsx";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import { DraftScreen } from "./ticket/DraftScreen.tsx";
 import { TicketCreationAdvanced } from "./TicketCreationAdvanced.tsx";
 import { ConfigurationOverrides } from "./ConfigurationOverrides.tsx";
-import { overrideDocumentOf, overrideFields } from "../core/ticketOverrides.ts";
+import {
+  overrideDocumentOf,
+  overrideFields,
+  overridesNestedOf,
+} from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
 import { Panel } from "./ui/Panel.tsx";
 import { CreationImages } from "./TicketCreationImages.tsx";
@@ -217,9 +226,13 @@ const selectionLabels: Readonly<Record<keyof CatalogSelected, string>> = {
 /**
  * What the ticket selects from the catalog it is drawn under, each field
  * starting on the catalog's default and a finalizer asked only of a catalog
- * that holds one. A configuration that is no catalog has nothing to select.
+ * that holds one, and the fault of overrides a reader may not set, which no
+ * panel of a catalog's form draws. A configuration that is no catalog has
+ * nothing to select.
  */
-function Selection(props: FormDrawn): ReactNode {
+function Selection(
+  props: FormDrawn & { readonly faults: readonly CreationFault[] },
+): ReactNode {
   const { form, onChange, offers, repositories } = props;
   const catalog = creationCatalogOf(
     creationOfferOf(offers, form.configuration),
@@ -255,6 +268,7 @@ function Selection(props: FormDrawn): ReactNode {
           </div>
         ),
       )}
+      <Fault field="overrides" faults={props.faults} />
     </>
   );
 }
@@ -630,6 +644,9 @@ export function CreationFields(
     /** The branch a screen that proposes one sends for a box left empty. */
     readonly branchProposed?: string | undefined;
     readonly api: CreationImagesApi;
+    /** Whether the reader may set overrides; the panel is drawn for one who may
+     * not only while the form holds some, which they can remove. Absent, they may. */
+    readonly mayOverride?: boolean;
   },
 ): ReactNode {
   const { faults, form, onChange, offers, repositories } = props;
@@ -638,7 +655,7 @@ export function CreationFields(
   return (
     <>
       <Configuration {...drawing} />
-      <Selection {...drawing} />
+      <Selection {...drawing} faults={faults} />
       <Fault field="configuration" faults={faults} />
       {props.partial === true ? (
         <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
@@ -681,7 +698,9 @@ export function CreationFields(
         />
       )}
       <Fault field="authoring" faults={faults} />
-      {creationCatalogOf(drawn) === undefined ? (
+      {creationCatalogOf(drawn) === undefined &&
+      (props.mayOverride !== false ||
+        overridesNestedOf(form.overrides) !== undefined) ? (
         <Overrides {...props} offer={drawn} />
       ) : null}
       <Fault field="fence" faults={faults} />
@@ -763,6 +782,7 @@ function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
+  readonly mayOverride: boolean;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dispatches: boolean;
@@ -774,6 +794,7 @@ function useCreationSubmit(props: {
   const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
     dispatches,
+    mayOverride,
     offers,
     onCreated,
     onFaults,
@@ -784,7 +805,9 @@ function useCreationSubmit(props: {
   } = props;
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
-    const assembled = creationBodyFrom(offers, form, repositories);
+    const assembled = creationBodyFrom(offers, form, repositories, {
+      mayOverride,
+    });
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
@@ -880,6 +903,16 @@ function CreationDuplicateDropped(props: {
   return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
+/** The assembly a creation form is judged by, for a reader who may or may not override. */
+function creationAssembler(
+  offers: readonly CreationOffer[],
+  repositories: readonly ProjectRepositoryResponse[],
+  mayOverride: boolean,
+): (form: TicketCreationForm) => CreationAssembly {
+  return (form) =>
+    creationBodyFrom(offers, form, repositories, { mayOverride });
+}
+
 interface CreationFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
@@ -887,6 +920,8 @@ interface CreationFormProps {
   readonly context: Extract<CreationContext, { context: "Ready" }>;
   /** What a submit goes on to once the ticket it makes is released. */
   readonly start: CreationStart;
+  /** Whether the reader may set overrides; absent, they may. */
+  readonly mayOverride?: boolean;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
@@ -906,7 +941,9 @@ export function CreationForm(props: CreationFormProps): ReactNode {
   const duplicate = props.duplicate;
   const storeKey = creationStoreKey(props.partition, duplicate);
   const onCreated = props.onCreated;
+  const mayOverride = props.mayOverride !== false;
   const running = useCreationSubmit({
+    mayOverride,
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
@@ -930,7 +967,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
         offers={offers}
         repositories={repositories}
         dependenciesLocked={false}
-        assemble={(form) => creationBodyFrom(offers, form, repositories)}
+        assemble={creationAssembler(offers, repositories, mayOverride)}
         proposed={creationFormProposed}
         storeKey={storeKey}
         submitLabel="Create ticket"
@@ -953,6 +990,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             offers={offers}
             partial={partial}
             repositories={repositories}
+            mayOverride={mayOverride}
             branchProposed={creationBranchProposed(held.form)}
             api={props}
           />
@@ -1020,6 +1058,8 @@ export interface CreationScreenReady {
   /** What a submit goes on to, which is a start once the abilities read has
    * come back without a no and the project's work is read to have a runner. */
   readonly start: CreationStart;
+  /** Whether the abilities read has not said the reader may not override. */
+  readonly mayOverride: boolean;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
@@ -1040,6 +1080,10 @@ function CreationScreenRead(props: {
     useProjectAbilityRead(partition, "dispatch"),
     useWorkRunner(partition, "Reader"),
   );
+  const mayOverride = !projectAbilityRefused(
+    useProjectAbilities(partition),
+    "overrideTicketConfig",
+  );
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
@@ -1055,6 +1099,7 @@ function CreationScreenRead(props: {
             queryKey,
             context,
             start,
+            mayOverride,
             onDirty: setDirty,
             onCreated: (ticket) => {
               guard.release();
@@ -1079,6 +1124,8 @@ function CreationScreenRead(props: {
  * open a ticket. */
 export function CreationScreen(props: {
   readonly heading: ReactNode;
+  /** Whether the bar's current entry already says the heading. */
+  readonly named?: boolean;
   readonly children: (ready: CreationScreenReady) => ReactNode;
 }): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
@@ -1087,7 +1134,11 @@ export function CreationScreen(props: {
     project: params.project,
   };
   return (
-    <DraftScreen partition={partition} heading={props.heading}>
+    <DraftScreen
+      partition={partition}
+      heading={props.heading}
+      named={props.named === true}
+    >
       <CreationScreenRead partition={partition}>
         {props.children}
       </CreationScreenRead>
@@ -1097,7 +1148,7 @@ export function CreationScreen(props: {
 
 export function TicketCreation(): ReactNode {
   return (
-    <CreationScreen heading="New ticket">
+    <CreationScreen heading="New ticket" named>
       {(ready) => <CreationForm {...ready} />}
     </CreationScreen>
   );

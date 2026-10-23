@@ -92,7 +92,6 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseForgeAuthorization,
   parseForgeCredentialRequest,
   parseForgeInstallationId,
@@ -105,6 +104,7 @@ import {
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
+  parseRepositoryConfigurationHead,
   parseRepositoryConfigurationImport,
   parseConfigurationSelection,
   parseDraftCreation,
@@ -123,7 +123,7 @@ import {
 } from "./contract.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   configurationResponse,
   configurationsResponse,
@@ -271,8 +271,8 @@ type InitialNativeWeb = Pick<
   | "cancel"
   | "configuration"
   | "configurations"
-  | "createConfiguration"
   | "importRepositoryConfigurations"
+  | "repositoryConfigurationHead"
   | "createDraft"
   | "initializeDraft"
   | "deleteDraft"
@@ -1879,17 +1879,6 @@ function registerConfigurations(
     nativeHttpSend(reply, configurationsResponse(result));
   });
   app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.createConfiguration(principalOf(request), {
-        partition: partitionOf(request),
-        ...parseConfigurationCreation(request.body),
-      });
-      nativeHttpSend(reply, configurationCreationResponse(result));
-    },
-  );
-  app.post(
     `${root}/imports`,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
@@ -1900,6 +1889,17 @@ function registerConfigurations(
       );
       nativeHttpSend(reply, repositoryConfigurationImportResponse(result));
     },
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.configurationHead,
+    (request, principal, partition) =>
+      web.repositoryConfigurationHead(
+        principal,
+        partition,
+        parseRepositoryConfigurationHead(request.query),
+      ),
+    repositoryConfigurationHeadResponse,
   );
   app.get(`${root}/:revision`, async (request, reply) => {
     const params = record(request.params);

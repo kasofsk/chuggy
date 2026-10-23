@@ -9,7 +9,10 @@
  * rather than a browser's.
  */
 
-import { configurationRequirementCapabilitiesMax } from "./configurationDocument.ts";
+import {
+  configurationReferencePathSchema,
+  configurationRequirementCapabilitiesMax,
+} from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
@@ -1024,6 +1027,12 @@ export const configurationResponseSchema = z.object({
   canonical: z.string().min(1),
   digest: z.string().min(1),
   version: configurationVersionSchema.optional(),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional()
+    .describe(
+      "The repository file each catalog workload named by path was read from, by the name the catalog holds it under. Absent for an authored revision, and for one imported before imports kept it.",
+    ),
 });
 export type ConfigurationResponse = z.infer<typeof configurationResponseSchema>;
 
@@ -1128,6 +1137,65 @@ export const repositoryConfigurationRefusalsSchema = z.object({
 });
 export type RepositoryConfigurationRefusals = z.infer<
   typeof repositoryConfigurationRefusalsSchema
+>;
+
+/** One configuration a repository's head declares, as an import of it would store it. */
+export const repositoryConfigurationHeadDeclarationSchema = z.object({
+  name: identitySchema,
+  path: configurationReferencePathSchema,
+  revision: identitySchema,
+  canonical: z.string().min(1),
+  digest: z.string().min(1),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional(),
+});
+
+export type RepositoryConfigurationHeadDeclaration = z.infer<
+  typeof repositoryConfigurationHeadDeclarationSchema
+>;
+
+const repositoryConfigurationHeadAt = {
+  branch: identitySchema,
+  commit: identitySchema,
+};
+
+/**
+ * What a repository's default branch declares where it points now, read as an
+ * import would and stored nowhere: the configurations an import would store,
+ * or what it would be refused with.
+ */
+export const repositoryConfigurationHeadResponseSchema = z.object({
+  head: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("BranchAbsent") }),
+    z.object({
+      state: z.literal("CommitAbsent"),
+      ...repositoryConfigurationHeadAt,
+    }),
+    z.object({
+      state: z.literal("ConfigurationsAbsent"),
+      ...repositoryConfigurationHeadAt,
+      ...repositoryConfigurationIgnoredShape,
+    }),
+    z.object({
+      state: z.literal("SnapshotRefused"),
+      ...repositoryConfigurationHeadAt,
+      refused: z.enum(["Credential", "Snapshot"]),
+    }),
+    z.object({
+      state: z.literal("ConfigurationsRefused"),
+      ...repositoryConfigurationHeadAt,
+      faults: page(repositoryConfigurationRefusalSchema),
+    }),
+    z.object({
+      state: z.literal("Ready"),
+      ...repositoryConfigurationHeadAt,
+      configurations: z.array(repositoryConfigurationHeadDeclarationSchema),
+    }),
+  ]),
+});
+export type RepositoryConfigurationHeadResponse = z.infer<
+  typeof repositoryConfigurationHeadResponseSchema
 >;
 
 export const draftResponseSchema = z.object({
@@ -2034,6 +2102,7 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   mutate: z.boolean(),
   dispatch: z.boolean(),
   manageSelector: z.boolean(),
+  overrideTicketConfig: z.boolean(),
   administer: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<

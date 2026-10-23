@@ -45,8 +45,10 @@ import {
 import type {
   CatalogPlanStage,
   CatalogWorkload,
+  CatalogSelected,
   ConfigurationCatalog,
 } from "../core/configurationCatalog.ts";
+import { workloadsEffectiveCanonicalOf } from "../core/workloadOverrides.ts";
 import { agoFigure } from "../core/figures.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
@@ -58,6 +60,7 @@ import {
 } from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
 import { usePanelResource } from "./api.ts";
+import { useCreatorEmails } from "./creatorEmails.ts";
 import { DataSection, PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -166,12 +169,16 @@ function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
 }
 
 /** The member who filed the ticket, drawn only where the wire names one. */
-function FiledBy(props: { readonly ticket: TicketResponse }): ReactNode {
+function FiledBy(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: TicketResponse;
+}): ReactNode {
+  const emails = useCreatorEmails(props.partition);
   const creator = props.ticket.creator;
   if (creator === undefined) return null;
   return (
     <Field name="filed by">
-      <Identity label={creatorLabel(creator)} />
+      <Identity label={creatorLabel(creator, emails)} />
     </Field>
   );
 }
@@ -193,7 +200,7 @@ export function TicketBrief(props: {
           ) : (
             <Brief partition={props.partition} brief={ticket.brief} />
           )}
-          <FiledBy ticket={ticket} />
+          <FiledBy partition={props.partition} ticket={ticket} />
           <ReleasedUnder ticket={ticket} />
         </dl>
       )}
@@ -731,13 +738,23 @@ function ConfigurationOverridesUnplaced(props: {
 function CatalogWorkloadBody(props: {
   readonly name: string;
   readonly workload: CatalogWorkload | undefined;
+  /** The fields the ticket overrode of it, none where it overrode nothing. */
+  readonly overridden: readonly string[] | undefined;
 }): ReactNode {
   const { workload } = props;
   if (workload === undefined)
     return <p className="text-ink-3 text-sm">{`No workload ${props.name}`}</p>;
+  const mark =
+    props.overridden === undefined ? null : (
+      <span className="eyebrow">
+        <OverriddenMark />
+        {props.overridden.join(", ")}
+      </span>
+    );
   if (workload.runner === "Commands")
     return (
       <div className="ticket-config-evaluation-runs">
+        {mark}
         <span className="ticket-config-evaluation-runs-label">Runs</span>
         {workload.commands.map((line) => (
           <code key={line} className="ticket-config-command">
@@ -747,11 +764,23 @@ function CatalogWorkloadBody(props: {
       </div>
     );
   return (
-    <ConfigurationText
-      heading={workload.promptPath ?? "Prompt"}
-      lines={workload.prompt === undefined ? [] : workload.prompt.split("\n")}
-    />
+    <>
+      {mark}
+      <ConfigurationText
+        heading={workload.promptPath ?? "Prompt"}
+        lines={workload.prompt === undefined ? [] : workload.prompt.split("\n")}
+      />
+    </>
   );
+}
+
+/** The fields a ticket overrode of one workload, none where it overrode none. */
+function catalogOverriddenOf(
+  overrides: CatalogOverrides,
+  name: string,
+): readonly string[] | undefined {
+  const override = overrides?.[name];
+  return override === undefined ? undefined : Object.keys(override);
 }
 
 /** What a selected entry is: the ticket's own choice, or the catalog's default it left standing. */
@@ -766,8 +795,12 @@ function catalogChosenMeta(
       : "Selected";
 }
 
+/** A catalog ticket's workload overrides, by the name of the workload each replaces. */
+type CatalogOverrides = NonNullable<TicketResponse["overrides"]>["workloads"];
+
 function CatalogStageRow(props: {
   readonly catalog: ConfigurationCatalog;
+  readonly overrides: CatalogOverrides;
   readonly index: number;
   readonly stage: CatalogPlanStage;
 }): ReactNode {
@@ -792,11 +825,64 @@ function CatalogStageRow(props: {
                   .filter((part) => part !== undefined)
                   .join(" · ")}
               </span>
-              <CatalogWorkloadBody name={name} workload={workload} />
+              <CatalogWorkloadBody
+                name={name}
+                workload={workload}
+                overridden={catalogOverriddenOf(props.overrides, name)}
+              />
             </div>
           );
         })}
       </div>
+    </div>
+  );
+}
+
+/** The cells of a catalog ticket's summary: what it selected, and what that runs. */
+function CatalogSummary(props: {
+  readonly catalog: ConfigurationCatalog;
+  readonly overrides: CatalogOverrides;
+  readonly selected: CatalogSelected;
+  readonly work: CatalogWorkload | undefined;
+}): ReactNode {
+  const { catalog, overrides, selected, work } = props;
+  const { defaults } = catalog;
+  const finalizer = catalog.finalizers.find(
+    (held) => held.name === selected.finalization,
+  );
+  return (
+    <div className="ticket-config-settings">
+      <SummaryCell
+        name="Work"
+        large
+        value={selected.work}
+        meta={catalogChosenMeta(selected.work, defaults.work)}
+        overridden={catalogOverriddenOf(overrides, selected.work) !== undefined}
+      />
+      <SummaryCell
+        name="Model"
+        value={work?.model ?? absentMark}
+        overridden={
+          catalogOverriddenOf(overrides, selected.work)?.includes("worker") ===
+          true
+        }
+      />
+      <SummaryCell
+        name="Evaluation"
+        value={selected.evaluation}
+        meta={catalogChosenMeta(selected.evaluation, defaults.evaluation)}
+      />
+      <SummaryCell
+        name="Finalizer"
+        value={selected.finalization ?? absentMark}
+        meta={
+          finalizer === undefined
+            ? undefined
+            : finalizer.approvalRequired
+              ? "Approved first"
+              : "Lands unapproved"
+        }
+      />
     </div>
   );
 }
@@ -809,44 +895,26 @@ function CatalogStageRow(props: {
 function CatalogBody(props: {
   readonly configuration: ConfigurationResponse;
   readonly catalog: ConfigurationCatalog;
+  readonly overrides: CatalogOverrides;
   readonly selection: TicketResponse["selection"];
 }): ReactNode {
-  const { catalog, configuration } = props;
-  const { defaults } = catalog;
+  const { catalog, configuration, overrides } = props;
   const selected = configurationCatalogSelected(catalog, props.selection);
   const work = configurationCatalogWorkload(catalog, selected.work);
-  const finalizer = catalog.finalizers.find(
-    (held) => held.name === selected.finalization,
-  );
   return (
     <div className="ticket-config">
-      <div className="ticket-config-settings">
-        <SummaryCell
-          name="Work"
-          large
-          value={selected.work}
-          meta={catalogChosenMeta(selected.work, defaults.work)}
-        />
-        <SummaryCell name="Model" value={work?.model ?? absentMark} />
-        <SummaryCell
-          name="Evaluation"
-          value={selected.evaluation}
-          meta={catalogChosenMeta(selected.evaluation, defaults.evaluation)}
-        />
-        <SummaryCell
-          name="Finalizer"
-          value={selected.finalization ?? absentMark}
-          meta={
-            finalizer === undefined
-              ? undefined
-              : finalizer.approvalRequired
-                ? "Approved first"
-                : "Lands unapproved"
-          }
-        />
-      </div>
+      <CatalogSummary
+        catalog={catalog}
+        overrides={overrides}
+        selected={selected}
+        work={work}
+      />
       <div className="ticket-config-instructions">
-        <CatalogWorkloadBody name={selected.work} workload={work} />
+        <CatalogWorkloadBody
+          name={selected.work}
+          workload={work}
+          overridden={catalogOverriddenOf(overrides, selected.work)}
+        />
       </div>
       <div className="ticket-config-evaluations">
         <EvaluationHead />
@@ -856,6 +924,7 @@ function CatalogBody(props: {
               <CatalogStageRow
                 key={index}
                 catalog={catalog}
+                overrides={overrides}
                 index={index}
                 stage={stage}
               />
@@ -867,24 +936,31 @@ function CatalogBody(props: {
         revision={configuration.revision}
         digest={configuration.digest}
         canonical={configuration.canonical}
-        overridden={false}
+        overridden={overrides !== undefined}
       />
     </div>
   );
 }
 
-function ConfigurationBody(props: {
+/** A configuration as a ticket runs it, or as it stands where nothing overrides or selects from it. */
+export function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
 }): ReactNode {
   const configuration = props.configuration;
-  const catalog = configurationCatalogOf(configuration.canonical);
+  const catalog = configurationCatalogOf(
+    workloadsEffectiveCanonicalOf(
+      configuration.canonical,
+      props.overrides?.workloads,
+    ),
+  );
   if (catalog !== undefined)
     return (
       <CatalogBody
         configuration={configuration}
         catalog={catalog}
+        overrides={props.overrides?.workloads}
         selection={props.selection}
       />
     );

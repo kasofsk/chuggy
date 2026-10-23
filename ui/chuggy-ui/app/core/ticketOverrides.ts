@@ -34,7 +34,8 @@ import type {
   ConfigurationView,
 } from "./configurationView.ts";
 
-type Overrides = ConfigurationOverrides;
+/** The overrides of a version 1 configuration, which a form holds field by field; a catalog's workloads are held whole. */
+type Overrides = Omit<ConfigurationOverrides, "workloads">;
 
 /** One overridable field by its path in a configuration: a top-level list by
  * its name, and a field of a block beside the block's. */
@@ -196,6 +197,25 @@ export function overridesNestedOf(
     };
   }
   return Object.keys(nested).length === 0 ? undefined : nested;
+}
+
+/** Whether two parsed values are structurally the same, whatever order their keys were written in. */
+export function overridesSame(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) || Array.isArray(right))
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => overridesSame(item, right[index]))
+    );
+  if (overrideIsRecord(left) && overrideIsRecord(right)) {
+    const keys = Object.keys(left);
+    return (
+      keys.length === Object.keys(right).length &&
+      keys.every((key) => key in right && overridesSame(left[key], right[key]))
+    );
+  }
+  return left === right;
 }
 
 /** A canonical document as the value it holds, or none where it is not JSON. */

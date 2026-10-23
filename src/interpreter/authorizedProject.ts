@@ -1,6 +1,6 @@
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { ProjectAccess } from "./projectAccess.ts";
+import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
 export type AuthorizedResult<Value> =
@@ -39,14 +39,15 @@ export function authorizedProjectValue<Arguments extends unknown[], Value>(
   };
 }
 
-/** Supplies the granted authority to a mutation without catching authority outages. */
+/** Supplies the granted authority to a mutation, `Mutate` unless the door asks for more, without catching authority outages. */
 export async function authorizedProjectMutation<Value>(
   access: ProjectAccess,
   principal: Principal,
   partition: Partition,
   work: (authority: Authority) => Promise<Value>,
+  kind: ProjectAccessKind = "Mutate",
 ): Promise<AuthorizedResult<Value>> {
-  const authority = await access.authorize(principal, partition, "Mutate");
+  const authority = await access.authorize(principal, partition, kind);
   return authority === undefined
     ? { result: "NotFound" }
     : { result: "Authorized", value: await work(authority) };

@@ -208,13 +208,14 @@ test("revoke asks before it is sent, and only the ask's own button sends it", as
   ).toBe(true);
 });
 
-test("the top bar names how many the inbox holds", async () => {
+/** The bar's current entry already says Inbox and how many it holds, so the
+ * page draws no row of its own saying either. */
+test("the inbox names itself only for a reader who does not see the bar", async () => {
   drawInbox(served);
   await settled();
-  const count = screen.getByRole("heading", {
-    name: "Inbox",
-  }).nextElementSibling;
-  expect(count?.textContent).toBe("1");
+  const heading = screen.getByRole("heading", { name: "Inbox" });
+  expect(heading.className).toBe("visually-hidden");
+  expect(heading.nextElementSibling?.textContent).not.toBe("1");
 });
 
 test("an answer's button still opens the sentence it sends", async () => {

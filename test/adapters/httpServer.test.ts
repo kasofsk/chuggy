@@ -273,8 +273,8 @@ function fakeConfigurations(
   NativeWeb,
   | "configuration"
   | "configurations"
-  | "createConfiguration"
   | "importRepositoryConfigurations"
+  | "repositoryConfigurationHead"
 > {
   return {
     configuration: (_principal, _partition, revision) => {
@@ -285,15 +285,13 @@ function fakeConfigurations(
       calls.push(`configurations:${String(query.limit)}`);
       return Promise.resolve({ result: "NotFound" });
     },
-    createConfiguration: (_principal, input) => {
-      calls.push(`createConfiguration:${input.revision}`);
-      return Promise.resolve({ result: "NotFound" });
-    },
     importRepositoryConfigurations: (_principal, _partition, source) => {
-      calls.push(
-        `importRepositoryConfigurations:${source.repository}:${"commit" in source ? String(source.commit) : "head"}`,
-      );
+      calls.push(`importRepositoryConfigurations:${source.repository}`);
       return Promise.resolve({ result: "Imported", declarations: 1 });
+    },
+    repositoryConfigurationHead: (_principal, _partition, repository) => {
+      calls.push(`repositoryConfigurationHead:${repository}`);
+      return Promise.resolve({ result: "BranchAbsent" });
     },
   };
 }
@@ -1482,15 +1480,6 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     headers: { authorization: "Bearer valid" },
   });
   await app.inject({
-    method: "POST",
-    url: `${project}/configurations`,
-    headers,
-    body: {
-      revision: "revision",
-      canonical: '{"image":"worker:v1","version":1}',
-    },
-  });
-  await app.inject({
     url: `${project}/configurations/revision`,
     headers: { authorization: "Bearer valid" },
   });
@@ -1498,7 +1487,11 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     method: "POST",
     url: `${project}/configurations/imports`,
     headers,
-    body: { repository: "repository-named", commit: "a".repeat(40) },
+    body: { repository: "repository-named" },
+  });
+  await app.inject({
+    url: `${project}/configurations/imports/head?repository=repository-named`,
+    headers: { authorization: "Bearer valid" },
   });
   await app.inject({
     method: "POST",
@@ -1528,9 +1521,9 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
   });
   assert.deepEqual(calls, [
     "configurations:2",
-    "createConfiguration:revision",
     "configuration:revision",
-    `importRepositoryConfigurations:repository-named:${"a".repeat(40)}`,
+    "importRepositoryConfigurations:repository-named",
+    "repositoryConfigurationHead:repository-named",
     "createDraft",
     "reviseDraft:2",
     "deleteDraft:3",
@@ -1538,11 +1531,8 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
   ]);
 });
 
-/**
- * An import naming no commit reaches the web naming none, rather than one the
- * route made up, and is answered as an import naming its commit is.
- */
-test("an import naming no commit asks the web for the head and answers as one that named it", async () => {
+/** An import reaches the web naming only its repository, and is answered that it imported. */
+test("an import asks the web for its repository and answers that it imported", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
   const imported = await app.inject({
@@ -1556,9 +1546,7 @@ test("an import naming no commit asks the web for the head and answers as one th
   });
   assert.equal(imported.statusCode, 200);
   assert.deepEqual(imported.json(), { imported: true });
-  assert.deepEqual(calls, [
-    "importRepositoryConfigurations:repository-named:head",
-  ]);
+  assert.deepEqual(calls, ["importRepositoryConfigurations:repository-named"]);
 });
 
 /** A draft creation carrying `intent`, as a member's console or a session's tool sends it. */

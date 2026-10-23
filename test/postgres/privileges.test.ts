@@ -467,6 +467,18 @@ test("the API cannot bypass versioned authoring functions", async () => {
       "DELETE FROM repository_configuration_provenance",
       "repository_configuration_provenance",
     ],
+    [
+      "INSERT INTO repository_configuration_workload_path DEFAULT VALUES",
+      "repository_configuration_workload_path",
+    ],
+    [
+      "UPDATE repository_configuration_workload_path SET path='.chug/workloads/ci.json'",
+      "repository_configuration_workload_path",
+    ],
+    [
+      "DELETE FROM repository_configuration_workload_path",
+      "repository_configuration_workload_path",
+    ],
     ["UPDATE draft SET state='Released'", "draft"],
     ["UPDATE project SET ticket_next=ticket_next+1", "project"],
   ] as readonly (readonly [string, string])[]) {

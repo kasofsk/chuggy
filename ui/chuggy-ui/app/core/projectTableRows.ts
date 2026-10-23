@@ -32,16 +32,14 @@ import type {
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 
-import { capabilitiesShortened, creatorLabel, workerLabel } from "./labels.ts";
+import { capabilitiesShortened, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
 import type {
   ProjectExecutionIndex,
   ProjectExecutionKnown,
 } from "./projectExecutionIndex.ts";
-import { ticketBadgeLabel, ticketSectionOf } from "./ticketSections.ts";
-import type { TicketSection } from "./ticketSections.ts";
-import { upNextOrdered } from "./upNextOrder.ts";
+import { ticketBadgeLabel } from "./ticketSections.ts";
 import type { UpNextOpenDependency } from "./upNextOrder.ts";
 
 export const projectTableExecutionReads = [
@@ -55,10 +53,10 @@ export type ProjectTableExecutionRead =
 export interface ProjectTableRow {
   readonly ticket: number;
   readonly title: string | undefined;
-  /** The member who filed the ticket, absent where the wire names none. */
-  readonly creator: Label | undefined;
+  /** The principal who filed the ticket, absent where the wire names none;
+   * drawn by `creatorLabel` against the project's people. */
+  readonly creator: string | undefined;
   readonly phase: TicketPhase;
-  readonly section: TicketSection;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
   readonly executionStatus: ExecutionStatus | undefined;
@@ -122,10 +120,8 @@ export function projectTableRow(
   return {
     ticket: ticket.ticket,
     title: ticket.title,
-    creator:
-      ticket.creator === undefined ? undefined : creatorLabel(ticket.creator),
+    creator: ticket.creator,
     phase: ticket.phase,
-    section: ticketSectionOf(ticket.phase),
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
     executionRead: read,
     executionStatus: execution?.status,
@@ -174,14 +170,4 @@ export function projectTableRows(
       index.truncated,
     ),
   );
-}
-
-/** A section's rows in the read's order, but for "Up next", which is drawn
- * nearest to dispatchable first. */
-export function projectTableRowsIn(
-  rows: readonly ProjectTableRow[],
-  section: TicketSection,
-): readonly ProjectTableRow[] {
-  const held = rows.filter((row) => row.section === section);
-  return section === "UpNext" ? upNextOrdered(held) : held;
 }

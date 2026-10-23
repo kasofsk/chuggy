@@ -130,6 +130,15 @@ test("an import stores every referenced workload inline and every prompt's text 
   });
 });
 
+test("the file a workload was read from is kept beside the revision, and one written inline names none", () => {
+  const declared = readyDeclaration(everyFile);
+  assert.deepEqual(declared.workloadPaths, { review: reviewWorkload });
+  assert.equal(
+    JSON.stringify(declared.canonical).includes(reviewWorkload),
+    false,
+  );
+});
+
 test("a prompt naming a path holds what the file held, whatever text it was written with", () => {
   const written = {
     ...catalog,

@@ -12,6 +12,7 @@ export const abilitiesEvery: ProjectAbilitiesResponse = {
   mutate: true,
   dispatch: true,
   manageSelector: true,
+  overrideTicketConfig: true,
   administer: true,
 };
 
@@ -19,6 +20,7 @@ export const abilitiesNone: ProjectAbilitiesResponse = {
   mutate: false,
   dispatch: false,
   manageSelector: false,
+  overrideTicketConfig: false,
   administer: false,
 };
 

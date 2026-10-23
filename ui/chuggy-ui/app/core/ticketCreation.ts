@@ -29,6 +29,7 @@ import {
 } from "../../../../src/contract/brief.ts";
 import { imageMediaTypes } from "../../../../src/contract/http.ts";
 import type { ImageMediaType } from "../../../../src/contract/http.ts";
+import type { WorkloadOverride } from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
@@ -67,6 +68,7 @@ import {
   overrideFieldLabel,
   overrideFields,
   overridesNestedOf,
+  overridesSame,
 } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import type { WorkRunner } from "./workRunner.ts";
@@ -106,6 +108,10 @@ export interface TicketCreationForm extends CreationAuthoring {
    * catalog's default; sent only under a catalog, and cleared when another
    * configuration is chosen, whose names are its own. */
   readonly selection: ConfigurationSelection;
+  /** What this ticket replaces of each catalog workload, by the name the
+   * catalog holds it under; sent only under a catalog, and cleared with the
+   * selection. */
+  readonly workloads: Readonly<Record<string, WorkloadOverride>>;
 }
 
 export type CreationField =
@@ -488,6 +494,7 @@ export function creationFormFrom(
     }),
     overrides: {},
     selection: {},
+    workloads: {},
   };
 }
 
@@ -607,12 +614,15 @@ export function creationConfigurationChosen(
   name: string,
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return creationDrawnChosen(
-    form,
-    offers,
-    { configuration: name, selection: {} },
-    repositories,
-  );
+  return {
+    ...creationDrawnChosen(
+      form,
+      offers,
+      { configuration: name, selection: {} },
+      repositories,
+    ),
+    workloads: {},
+  };
 }
 
 /** The form with another selection from the catalog it is drawn under. */
@@ -1060,20 +1070,50 @@ function creationUndrawnFaults(
 }
 
 /**
- * What a form sends of its configuration's own choices: the selection under a
- * catalog and the overrides under any other configuration, each with no key at
- * all where it holds none.
+ * What a form sends of its configuration's own choices: the selection and the
+ * workloads it overrides under a catalog, and the overrides under any other
+ * configuration, each with no key at all where it holds none.
  */
 function creationChoicesOf(
   form: TicketCreationForm,
   offer: CreationOffer | undefined,
 ): { readonly overrides?: unknown; readonly selection?: unknown } {
   if (creationCatalogOf(offer) !== undefined)
-    return Object.keys(form.selection).length === 0
-      ? {}
-      : { selection: form.selection };
+    return {
+      ...(Object.keys(form.selection).length === 0
+        ? {}
+        : { selection: form.selection }),
+      ...(Object.keys(form.workloads).length === 0
+        ? {}
+        : { overrides: { workloads: form.workloads } }),
+    };
   const overrides = overridesNestedOf(form.overrides);
   return overrides === undefined ? {} : { overrides };
+}
+
+/** Whether a reader may set what a ticket overrides, and what the draft already holds of it. */
+export interface OverridesStanding {
+  readonly mayOverride: boolean;
+  /** The overrides the draft holds, none for a ticket not yet made. */
+  readonly held?: unknown;
+}
+
+const overridesRefusedReason =
+  "your role in this project may not override its checked-in configuration; remove the overrides to continue";
+
+/** The fault of overrides a reader who may not override is changing, if it is one. */
+function creationOverridesFaults(
+  overrides: unknown,
+  standing: OverridesStanding | undefined,
+): readonly CreationFault[] {
+  if (
+    standing === undefined ||
+    standing.mayOverride ||
+    overrides === undefined ||
+    overridesSame(overrides, standing.held)
+  )
+    return [];
+  return [{ field: "overrides", reason: overridesRefusedReason }];
 }
 
 /**
@@ -1086,6 +1126,7 @@ export function creationBodyFrom(
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
+  standing?: OverridesStanding,
 ): CreationAssembly {
   const offer = creationOfferDrawn(offers, form);
   const drawn = offer?.initialization;
@@ -1109,10 +1150,17 @@ export function creationBodyFrom(
     ...creationChoicesOf(form, offer),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
-  if (parsed.success && stated.length === 0)
+  const refused = creationOverridesFaults(
+    parsed.success ? parsed.data.overrides : undefined,
+    standing,
+  );
+  if (parsed.success && stated.length === 0 && refused.length === 0)
     return { assembled: "Body", body: parsed.data };
   const issues = parsed.success ? [] : parsed.error.issues;
-  return { assembled: "Faults", faults: creationFaultsOf(issues, stated) };
+  return {
+    assembled: "Faults",
+    faults: [...creationFaultsOf(issues, stated), ...refused],
+  };
 }
 
 /** The mutation that turns the draft just created into a ticket the machine runs. */

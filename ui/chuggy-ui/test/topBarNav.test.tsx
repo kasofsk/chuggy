@@ -72,8 +72,12 @@ async function drawnAt(path: string): Promise<readonly string[]> {
     .map((link) => link.textContent);
 }
 
-test("the Runners page is the one current entry, and Tickets is not beside it", async () => {
-  expect(await drawnAt("/acme/atlas/runners")).toStrictEqual(["Runners"]);
+test("the Inbox page is the one current entry, and Tickets is not beside it", async () => {
+  expect(await drawnAt("/acme/atlas/inbox")).toStrictEqual(["Inbox"]);
+});
+
+test("a setup page, which the gear holds, leaves no screen current", async () => {
+  expect(await drawnAt("/acme/atlas/runners")).toStrictEqual([]);
 });
 
 test("the overview is Tickets alone", async () => {

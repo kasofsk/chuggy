@@ -100,7 +100,6 @@ import type {
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -783,6 +782,19 @@ export const apiTicketActionReach = apiProjectEndpoint(
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
 );
 
+/** A head read fetches from the repository's forge, which takes longer than a read of the store. */
+export const apiRepositoryHeadTimeoutMs = 60_000;
+
+/** What a repository's default branch declares now, read as an import would and stored nowhere. */
+export const apiRepositoryConfigurationHead = apiProjectEndpoint(
+  nativeHttpEndpoints.configurationHead,
+  (partition, repository: string) => ({
+    parameters: partition,
+    query: { repository },
+    timeoutMs: apiRepositoryHeadTimeoutMs,
+  }),
+);
+
 /** Every landing the ticket has had, which the ticket read omits. */
 export const apiTicketLandings = apiProjectEndpoint(
   nativeHttpEndpoints.ticketLandings,
@@ -1343,22 +1355,6 @@ export function apiCancelOperation(
       ...(signal ? { signal } : {}),
     },
     (value) => operationAcceptanceSchema.parse(value),
-  );
-}
-
-export function apiCreateConfiguration(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  creation: z.infer<typeof configurationCreationSchema>,
-): Promise<ApiResult<ConfigurationResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "configurations"),
-      body: creation,
-    },
-    (value) => configurationResponseSchema.parse(value),
   );
 }
 

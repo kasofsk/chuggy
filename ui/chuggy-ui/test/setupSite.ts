@@ -734,6 +734,7 @@ function abilities(
       mutate: true,
       dispatch: true,
       manageSelector: administer,
+      overrideTicketConfig: administer,
       administer,
     })
   );

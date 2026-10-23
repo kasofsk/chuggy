@@ -6,13 +6,21 @@
  * does not name is the configuration's. Nothing is merged, so an author who
  * names a list reads what the ticket runs from the override alone.
  *
- * ONLY HOW THE WORK IS DONE IS OVERRIDABLE. The image and every authority are
- * what the repository's reviewed configuration asked of the operator, and a
- * replaced block that left its authority out would widen the ticket past that
- * review, which is why `work.instructions` is here and the `work` block is
- * not. A plan names its stages by position in `evaluations`, so replacing that
- * list would change what a key in an existing plan means. Every other field is
- * refused by the schema rather than dropped.
+ * A VERSION 1 TICKET OVERRIDES ONLY HOW THE WORK IS DONE. The image and every
+ * authority are what the repository's reviewed configuration asked of the
+ * operator, and a replaced block that left its authority out would widen the
+ * ticket past that review, which is why `work.instructions` is here and the
+ * `work` block is not. A plan names its stages by position in `evaluations`,
+ * so replacing that list would change what a key in an existing plan means.
+ * Every other field is refused by the schema rather than dropped.
+ *
+ * A CATALOG TICKET OVERRIDES ANY FIELD OF A WORKLOAD, under `workloads` by the
+ * name the catalog holds it under. Where a task runs is still bounded by the
+ * runners whose pools declare what it requires, which no override reaches, so
+ * an image or a requirement is overridable like the prompt. The two are one
+ * placement, and naming either drops the other. A prompt named by path is the
+ * text the catalog's import stored beside that path, so nothing reads a
+ * repository after import.
  *
  * THE EFFECTIVE CONFIGURATION IS STILL A CONFIGURATION, and it is judged by
  * whatever judges a pinned one: this module checks shape, never readiness.
@@ -25,6 +33,12 @@
  */
 
 import { z } from "zod";
+
+import {
+  configurationCatalogEntriesMax,
+  configurationCatalogNameSchema,
+  workloadOverrideSchema,
+} from "./configurationDocument.ts";
 
 const overrideLinesSchema = z.array(z.string());
 
@@ -64,7 +78,17 @@ export const configurationOverridesSchema = z.strictObject({
   work: z
     .strictObject({ instructions: overrideLinesSchema.optional() })
     .optional(),
+  workloads: z
+    .record(configurationCatalogNameSchema, workloadOverrideSchema)
+    .refine(
+      (workloads) =>
+        Object.keys(workloads).length <= configurationCatalogEntriesMax,
+    )
+    .optional(),
 });
+
+/** What one ticket replaces of one catalog workload. */
+export type WorkloadOverride = z.infer<typeof workloadOverrideSchema>;
 
 export type ConfigurationOverrides = z.infer<
   typeof configurationOverridesSchema
@@ -108,6 +132,96 @@ function configurationOverridesBlock(
   };
 }
 
+/** The prompt texts a catalog's import stored, by the path each was read from. */
+function configurationOverridesPromptTexts(
+  workloads: Readonly<Record<string, unknown>>,
+): ReadonlyMap<string, string> {
+  return new Map(
+    Object.values(workloads).flatMap((workload) => {
+      const prompt = configurationOverridesIsRecord(workload)
+        ? workload["prompt"]
+        : undefined;
+      return configurationOverridesIsRecord(prompt) &&
+        typeof prompt["path"] === "string" &&
+        typeof prompt["text"] === "string"
+        ? [[prompt["path"], prompt["text"]] as const]
+        : [];
+    }),
+  );
+}
+
+/**
+ * The fields of a workload an override keeps: none where it names another
+ * runner, since no field of one runner is a field of the other, and all but
+ * the placement where it names an image or a requirement, the two being one
+ * choice.
+ */
+function configurationOverridesWorkloadKept(
+  workload: Readonly<Record<string, unknown>>,
+  named: readonly (readonly [string, unknown])[],
+): Readonly<Record<string, unknown>> {
+  const fields = new Map(named);
+  if (fields.has("runner") && fields.get("runner") !== workload["runner"])
+    return {};
+  const placed = fields.has("image") || fields.has("executionRequirement");
+  return Object.fromEntries(
+    Object.entries(workload).filter(
+      ([field]) =>
+        !placed || (field !== "image" && field !== "executionRequirement"),
+    ),
+  );
+}
+
+/** One workload with the fields an override names replaced, a prompt path read as the text stored beside it. */
+function configurationOverridesWorkload(
+  workload: unknown,
+  override: WorkloadOverride,
+  promptTexts: ReadonlyMap<string, string>,
+): unknown {
+  if (!configurationOverridesIsRecord(workload)) return workload;
+  const named = Object.entries(override).filter(
+    ([, value]) => value !== undefined,
+  );
+  const kept = configurationOverridesWorkloadKept(workload, named);
+  const prompt = override.prompt;
+  const text =
+    prompt !== undefined && "path" in prompt
+      ? promptTexts.get(prompt.path)
+      : undefined;
+  return {
+    ...kept,
+    ...Object.fromEntries(named),
+    ...(text === undefined || prompt === undefined
+      ? {}
+      : { prompt: { ...prompt, text } }),
+  };
+}
+
+/** A catalog's workloads with each one an override names replaced; a name the catalog lacks is its reader's to refuse. */
+function configurationOverridesWorkloads(
+  workloads: unknown,
+  overrides: Readonly<Record<string, WorkloadOverride>> | undefined,
+): unknown {
+  if (overrides === undefined || !configurationOverridesIsRecord(workloads))
+    return workloads;
+  const promptTexts = configurationOverridesPromptTexts(workloads);
+  return {
+    ...workloads,
+    ...Object.fromEntries(
+      Object.entries(overrides)
+        .filter(([name]) => Object.hasOwn(workloads, name))
+        .map(([name, override]) => [
+          name,
+          configurationOverridesWorkload(
+            workloads[name],
+            override,
+            promptTexts,
+          ),
+        ]),
+    ),
+  };
+}
+
 /**
  * The configuration one ticket runs: the pinned document with the overrides
  * applied. Without overrides it is the document itself, so a ticket naming
@@ -133,5 +247,10 @@ export function configurationWithOverrides(
   }
   if (overrides.practices !== undefined)
     effective["practices"] = overrides.practices;
+  if (overrides.workloads !== undefined)
+    effective["workloads"] = configurationOverridesWorkloads(
+      document["workloads"],
+      overrides.workloads,
+    );
   return effective;
 }

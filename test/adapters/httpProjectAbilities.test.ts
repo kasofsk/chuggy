@@ -40,7 +40,9 @@ function accessOf(kinds: readonly ProjectAccessKind[]): ProjectAccess {
 }
 
 test("a member is answered exactly its abilities", async () => {
-  await using app = appOver(accessOf(["Read", "DispatchTicket"]));
+  await using app = appOver(
+    accessOf(["Read", "DispatchTicket", "OverrideTicketConfig"]),
+  );
   const found = await app.inject({ url, headers: authorized });
   assert.equal(found.statusCode, 200);
   const body: unknown = found.json();
@@ -48,6 +50,7 @@ test("a member is answered exactly its abilities", async () => {
     mutate: false,
     dispatch: true,
     manageSelector: false,
+    overrideTicketConfig: true,
     administer: false,
   });
   assert.deepEqual(nativeHttpEndpoints.abilities.response.parse(body), body);

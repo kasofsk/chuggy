@@ -17,7 +17,7 @@ import {
   createChugEditor,
 } from "../app/browser/editor/chugEditor.ts";
 import TicketEditor from "../app/browser/editor/TicketEditor.tsx";
-import type { TicketYamlKey } from "../app/browser/editor/ticketYaml.ts";
+import type { TicketYamlKey } from "../app/browser/editor/ticketYamlKey.ts";
 
 afterEach(cleanup);
 
@@ -28,6 +28,7 @@ test("the editor mounts in a shadow root and adds no style to the document", asy
       onChange={() => undefined}
       problems={[]}
       vocabulary={[]}
+      catalog={undefined}
     />,
   );
   const host = screen.getByRole("group", { name: "Ticket YAML" });
@@ -89,7 +90,7 @@ const vocabulary: readonly TicketYamlKey[] = [
     key: "evaluators",
     hint: "how many",
     values: [{ label: "1" }],
-    nested: true,
+    place: "Stage",
   },
 ];
 

@@ -223,7 +223,7 @@ export function RunConversation(props: {
       )}
       <div
         role="group"
-        aria-label="Conversation"
+        aria-label="Transcript"
         className="flex max-h-(--height-run-conversation) min-h-0 flex-col"
       >
         {props.attempt.run?.configuration === undefined ? (

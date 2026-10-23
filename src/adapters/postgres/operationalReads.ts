@@ -62,7 +62,7 @@ import {
   workerErrorPath,
 } from "../../contract/http.ts";
 import { projectRowCounter } from "./rows.ts";
-import { storedSelectionOf } from "./ticketBrief.ts";
+import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 import {
   postgresAttemptRuns,
@@ -100,6 +100,8 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly canonical: string;
   /** The catalog entries the ticket selected, as text, which a version 1 ticket holds none of. */
   readonly selection: string | null;
+  /** The overrides the ticket holds, as text, where it holds any. */
+  readonly overrides: string | null;
   readonly status: string;
   readonly outcome: string | null;
   readonly retries_spent: string;
@@ -234,6 +236,7 @@ function executionSummaryWorkloadCarrier(
       ? undefined
       : catalogWorkloadTask(
           configuration,
+          storedOverridesOf(row.overrides),
           storedSelectionOf(row.selection),
           position,
         );
@@ -388,6 +391,9 @@ async function executionRows(
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
+               (SELECT d.overrides::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -484,6 +490,9 @@ async function oneExecution(
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
+               (SELECT d.overrides::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project

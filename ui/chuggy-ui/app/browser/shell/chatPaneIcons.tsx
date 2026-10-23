@@ -29,8 +29,19 @@ function ChatPaneGlyph(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
+/** A glyph drawn on lucide's 24-unit grid, as chuggernaut draws its pane's
+ * controls, scaled to this one at the same stroke as the rest. */
+function ChatPaneLucide(props: { readonly children: ReactNode }): ReactNode {
+  return (
+    <g transform="scale(0.6667)" strokeWidth="2.25">
+      {props.children}
+    </g>
+  );
+}
+
+const chatPanePanel = <rect width="18" height="18" x="3" y="3" rx="2" />;
+
 const chatPaneGlyphPaths = {
-  chat: <path d="M2.5 4h11v6.5h-6L4.5 13v-2.5h-2z" />,
   new: <path d="M8 3v10M3 8h10" />,
   history: (
     <>
@@ -38,15 +49,53 @@ const chatPaneGlyphPaths = {
       <path d="M8 5v3l2 1.5" />
     </>
   ),
-  fill: <path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9" />,
-  restore: <path d="M13.5 6.5h-4v-4M2.5 9.5h4v4M9.5 6.5l4-4M6.5 9.5l-4 4" />,
+  fill: (
+    <ChatPaneLucide>
+      <path d="M15 3h6v6M21 3l-7 7M3 21l7-7M9 21H3v-6" />
+    </ChatPaneLucide>
+  ),
+  restore: (
+    <ChatPaneLucide>
+      <path d="m14 10 7-7M20 10h-6V4M3 21l7-7M4 14h6v6" />
+    </ChatPaneLucide>
+  ),
   rename: <path d="M10.5 2.5l3 3L6 13H3v-3z" />,
   close: <path d="M4 4l8 8M12 4l-8 8" />,
-  collapse: (
-    <>
-      <rect x="2.5" y="3" width="11" height="10" rx="1.5" />
-      <path d="M10 3v10" />
-    </>
+  collapseRight: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M15 3v18m-7-12 3 3-3 3" />
+    </ChatPaneLucide>
+  ),
+  expandRight: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M15 3v18m-5-6-3-3 3-3" />
+    </ChatPaneLucide>
+  ),
+  collapseLeft: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M9 3v18m7-6-3-3 3-3" />
+    </ChatPaneLucide>
+  ),
+  expandLeft: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M9 3v18m5-12 3 3-3 3" />
+    </ChatPaneLucide>
+  ),
+  collapseBottom: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M3 15h18M15 8l-3 3-3-3" />
+    </ChatPaneLucide>
+  ),
+  expandBottom: (
+    <ChatPaneLucide>
+      {chatPanePanel}
+      <path d="M3 15h18M9 10l3-3 3 3" />
+    </ChatPaneLucide>
   ),
   open: <circle cx="8" cy="8" r="3" fill="currentColor" />,
   closed: (

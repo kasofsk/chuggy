@@ -19,6 +19,8 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import { catalogQueryOf } from "../core/catalogConfigurations.ts";
+import type { CatalogQuery } from "../core/catalogConfigurations.ts";
 import {
   forgeCallbackQueryOf,
   forgeCallbackRoutePath,
@@ -36,6 +38,7 @@ import type { ProjectCreationQuery } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
+import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
@@ -152,6 +155,18 @@ const leadRoute = createRoute({
   component: LeadPage,
 });
 
+function CatalogRoute(): ReactNode {
+  return <CatalogPage query={catalogRoute.useSearch()} />;
+}
+
+const catalogRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/catalog",
+  component: CatalogRoute,
+  validateSearch: (search: Readonly<Record<string, unknown>>): CatalogQuery =>
+    catalogQueryOf(search),
+});
+
 const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
@@ -254,6 +269,7 @@ const routeTree = rootRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
+    catalogRoute,
     projectSettingsRoutes(partitionRoute),
     repositoriesRoute,
     repositoryRoute,

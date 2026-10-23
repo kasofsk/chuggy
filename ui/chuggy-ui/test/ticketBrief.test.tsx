@@ -9,8 +9,14 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import {
+  cleanup,
+  render as drawn,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import type { ReactNode } from "react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
   ticketResponseSchema,
@@ -28,6 +34,25 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
+
+/** The brief says who filed it by the address the project's people read
+ * names, so every case draws it under a session; a server that knows nobody
+ * leaves it the principal. A case that reads more stubs its own. */
+beforeEach(() => {
+  vi.stubGlobal("fetch", () =>
+    Promise.resolve(answer({ error: "NotFound" }, 404)),
+  );
+});
+
+function render(node: ReactNode): ReturnType<typeof drawn> {
+  return drawn(
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider client={new QueryClient()}>
+        {node}
+      </QueryClientProvider>
+    </SessionProvider>,
+  );
+}
 
 const briefPartition = { tenant: "acme", project: "atlas" };
 
@@ -265,8 +290,9 @@ test("a brief's images are drawn as images, from the project's read of each", as
   expect(
     screen.getAllByRole("img").map((image) => image.getAttribute("src")),
   ).toStrictEqual(["data:image/png;base64,AQID", "data:image/png;base64,AQID"]);
-  expect(read.map((url) => url.split("/").at(-1))).toStrictEqual([
-    "artifact-1",
-    "artifact-2",
-  ]);
+  expect(
+    read
+      .map((url) => url.split("/").at(-1))
+      .filter((last) => last?.startsWith("artifact")),
+  ).toStrictEqual(["artifact-1", "artifact-2"]);
 });

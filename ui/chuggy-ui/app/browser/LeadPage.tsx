@@ -151,7 +151,7 @@ function LeadTopBar(props: {
   const lead = props.lead;
   return (
     <TopBarSlot>
-      <h1 className="text-md font-strong text-ink-1 truncate">Lead</h1>
+      <h1 className="visually-hidden">Lead</h1>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <Pill tone={sessionStateTone(lead.state)} emphasis>
           {lead.state}

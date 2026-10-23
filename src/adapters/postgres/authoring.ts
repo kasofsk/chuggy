@@ -58,7 +58,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
-import { configurationRevisionDigest } from "./digest.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
@@ -90,6 +90,11 @@ interface ConfigurationRow extends ConfigurationVersionRow {
   readonly parent: string | null;
   readonly canonical: string;
   readonly digest: string;
+}
+
+/** A revision's row, with the file each of its workloads was read from as one JSON object. */
+interface ConfigurationReadRow extends ConfigurationRow {
+  readonly workload_paths: string | null;
 }
 
 interface ConfigurationPageRow extends ConfigurationVersionRow {
@@ -338,14 +343,31 @@ async function readDrafts(
   };
 }
 
+/** The file each workload was read from, as the read aggregated them. */
+function workloadPathsOf(stored: string): Readonly<Record<string, string>> {
+  const parsed: unknown = JSON.parse(stored);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((path) => typeof path !== "string")
+  )
+    throw new Error("configuration workload paths are not names to paths");
+  return parsed as Readonly<Record<string, string>>;
+}
+
 async function readConfiguration(
   pool: pg.Pool,
   partition: Partition,
   revision: string,
 ): Promise<ConfigurationRevisionResource | undefined> {
-  const found = await pool.query<ConfigurationRow>(
+  const found = await pool.query<ConfigurationReadRow>(
     sql`SELECT c.parent,c.canonical,c.digest,
-               v.name AS version_name,v.number::text AS version_number
+               v.name AS version_name,v.number::text AS version_number,
+               (SELECT jsonb_object_agg(w.workload,w.path)
+                  FROM repository_configuration_workload_path w
+                 WHERE w.tenant=c.tenant AND w.project=c.project
+                   AND w.revision=c.revision)::text AS workload_paths
           FROM configuration_revision c
           LEFT JOIN repository_configuration_provenance p
             USING (tenant,project,revision)
@@ -367,6 +389,9 @@ async function readConfiguration(
     canonical,
     digest: row.digest,
     ...(version === undefined ? {} : { version }),
+    ...(row.workload_paths === null
+      ? {}
+      : { workloadPaths: workloadPathsOf(row.workload_paths) }),
   };
   return row.parent === null
     ? resource
@@ -535,7 +560,7 @@ async function importRepositoryConfigurations(
     for (const declaration of input.declarations) {
       const digest = configurationRevisionDigest(declaration.canonical);
       const imported = await client.query<{ result: string | null }>(
-        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${input.binding.repository},${input.binding.recoveryEpoch},${declaration.revision},${declaration.canonical},${digest},${declaration.commit},${declaration.path},${declaration.name},${input.authority.kind},${input.authority.subject})::text AS result`,
+        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${input.binding.repository},${input.binding.recoveryEpoch},${declaration.revision},${declaration.canonical},${digest},${declaration.commit},${declaration.path},${declaration.name},${JSON.stringify(declaration.workloadPaths)},${input.authority.kind},${input.authority.subject})::text AS result`,
       );
       const result = imported.rows[0]?.result;
       if (result === "StaleBinding") {

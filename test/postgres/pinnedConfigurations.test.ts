@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
-import { configurationRevisionDigest } from "../../src/adapters/postgres/digest.ts";
+import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,

@@ -1,13 +1,341 @@
-/* The card's own number, dim and mono like its table counterpart: that pairing
-   is `.tabular .ticket-row-number` in Table.css, scoped to a table this list
-   is not, so the same optical size is stated again here, scoped to the card
-   instead. */
+/* The ticket list: the controls, then the rows joined into one column with
+   the outer corners rounded, each row the same height so the state chips line
+   up down the right edge. The row reads as two lines — the title, then the
+   number, the meta and what it waits on — over a foot of its state, which on
+   a ready row is the button that dispatches it; where the list is wide the foot moves beside them and the title keeps
+   to one line. Where it is narrow the meta keeps only its activity and what it
+   is running, and on a phone the rows run edge to edge with the controls
+   stacked full width. */
 
 @layer page {
-  .overview-card-title .ticket-row-number {
-    margin-inline-start: var(--space-2);
+  .ticket-list-page {
+    container-type: inline-size;
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-list-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    padding-bottom: var(--space-3);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-list-search {
+    display: flex;
+    width: min(var(--width-aside), 100%);
+    min-width: 0;
+  }
+
+  .ticket-list-search > .input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .ticket-list-selects {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .ticket-list-status {
+    margin: 0;
     color: var(--ink-3);
-    font-family: var(--font-mono);
-    font-size: var(--mono-optical);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-list {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ticket-list-row {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: var(--space-3);
+    min-height: calc(var(--space-7) * 3.5);
+    padding: var(--space-4) var(--space-5);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-bottom: 0;
+  }
+
+  .ticket-list-item:first-child .ticket-list-row {
+    border-start-start-radius: var(--radius-3);
+    border-start-end-radius: var(--radius-3);
+  }
+
+  .ticket-list-item:last-child .ticket-list-row {
+    border-bottom: var(--hairline) solid var(--edge);
+    border-end-start-radius: var(--radius-3);
+    border-end-end-radius: var(--radius-3);
+  }
+
+  .ticket-list-head {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .ticket-list-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    margin: 0;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    color: var(--ink-1);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+  }
+
+  .ticket-list-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .ticket-list-title a:hover {
+    text-decoration: underline;
+  }
+
+  .ticket-list-info {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  .ticket-list-number {
+    flex: none;
+    color: var(--ink-3);
+    font: var(--weight-strong) var(--text-lg) var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .ticket-list-number a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .ticket-list-number a::before {
+    content: "#";
+  }
+
+  .ticket-list-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    white-space: nowrap;
+  }
+
+  .ticket-list-meta > * {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .ticket-list-execution {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+  }
+
+  .ticket-list-runs-on {
+    display: inline-block;
+    max-width: var(--col-spent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: bottom;
+  }
+
+  .ticket-list-dependencies {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    max-width: 45%;
+    min-width: 0;
+    overflow-x: auto;
+    font-size: var(--text-sm);
+  }
+
+  .ticket-list-dependencies > * {
+    flex: none;
+  }
+
+  .ticket-list-waits {
+    color: var(--ink-3);
+  }
+
+  .ticket-list-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-list-notes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  /* The chip is as wide on every row whatever it says, and its tone is the
+     row's standing: an outline for what can start, a wash for what is moving,
+     parked or finished, and the inset for what waits or was stopped. */
+
+  .ticket-list-state {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: calc(12ch + var(--space-6));
+    height: calc(var(--space-6) + var(--space-2));
+    margin-inline-start: auto;
+    border: var(--hairline) solid transparent;
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    white-space: nowrap;
+  }
+
+  .ticket-list-state[data-tone="pass"] {
+    border-color: var(--tone-pass);
+    background: var(--surface-1);
+    color: var(--tone-pass);
+  }
+
+  button.ticket-list-state {
+    font-family: inherit;
+    cursor: pointer;
+    box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
+    transition:
+      background var(--duration-1) var(--ease-out),
+      box-shadow var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-list-state:hover:not(:disabled) {
+    background: var(--wash-pass);
+    box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
+  }
+
+  button.ticket-list-state:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  button.ticket-list-state:disabled {
+    cursor: progress;
+    opacity: 0.6;
+  }
+
+  .ticket-list-state[data-standing="Done"] {
+    border-color: transparent;
+    background: var(--wash-pass);
+    font-weight: var(--weight-medium);
+  }
+
+  .ticket-list-state[data-tone="live"] {
+    background: var(--wash-live);
+    color: var(--tone-live);
+  }
+
+  .ticket-list-state[data-tone="parked"] {
+    background: var(--wash-parked);
+    color: var(--tone-parked);
+  }
+
+  .ticket-list-state[data-tone="queued"] {
+    color: var(--tone-parked);
+  }
+
+  .ticket-list-state[data-tone="retired"] {
+    color: var(--ink-3);
+  }
+
+  .ticket-list-more {
+    display: flex;
+    justify-content: center;
+    padding-top: var(--space-2);
+  }
+
+  @container (max-width: 53em) {
+    .ticket-list-creator,
+    .ticket-list-runs-on {
+      display: none;
+    }
+  }
+
+  @container (min-width: 53em) {
+    .ticket-list-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      grid-template-rows: minmax(0, 1fr);
+      gap: var(--space-5);
+      min-height: calc(var(--space-7) * 2.25);
+    }
+
+    .ticket-list-title {
+      -webkit-line-clamp: 1;
+    }
+
+    .ticket-list-foot {
+      gap: var(--space-5);
+    }
+  }
+
+  @container (max-width: 40em) {
+    .ticket-list {
+      margin-inline: calc(-1 * var(--space-4));
+    }
+
+    .ticket-list-row {
+      border-inline: 0;
+      padding: var(--space-3) max(var(--space-3), env(safe-area-inset-right))
+        var(--space-3) max(var(--space-3), env(safe-area-inset-left));
+    }
+
+    .ticket-list-item:first-child .ticket-list-row,
+    .ticket-list-item:last-child .ticket-list-row {
+      border-radius: 0;
+    }
+
+    .ticket-list-foot {
+      gap: var(--space-2);
+    }
+
+    .ticket-list-search,
+    .ticket-list-selects {
+      width: 100%;
+      margin-inline-start: 0;
+    }
+
+    .ticket-list-selects > * {
+      flex: 1;
+    }
+
+    .ticket-list-search .input-box {
+      font-size: var(--text-unzoomed);
+    }
   }
 }

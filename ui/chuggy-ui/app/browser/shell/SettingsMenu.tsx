@@ -1,24 +1,28 @@
 /**
- * The frame's own settings, behind one gear in the bar: how the console looks,
- * and where the chat pane sits where the frame has one.
+ * Everything a reader reaches rarely, behind one gear in the bar: the pages
+ * that set the open project up, how the console looks, where the chat pane
+ * sits where the frame has one, and signing out.
  *
- * These are the controls that belong to the frame rather than to any page, and
- * a reader sets them once and forgets them — so the bar carries the gear and
- * the choices live inside it, rather than every choice spending bar width on
- * every screen.
+ * A reader visits these once and forgets them — so the bar carries the gear
+ * and they live inside it, rather than each spending bar width on every
+ * screen.
  *
  * `modal={false}` keeps `react-remove-scroll` out of the tree: it appends a
  * `<style>` element the served `style-src 'self'` refuses.
  */
 
+import { Link, useRouterState } from "@tanstack/react-router";
 import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { navEntryCurrent, shellSetupNav } from "../../core/shellNav.ts";
 import {
   chatPanePlacements,
   chatPaneRepositioned,
 } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
+import { useSessionHolder } from "../session.tsx";
 import {
   themeChoiceApply,
   themeChoiceRead,
@@ -28,7 +32,8 @@ import {
 import type { ThemeChoice } from "../theme.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
-import { useChatPane } from "./chatPaneHeld.tsx";
+import { useChatPane, useChatPaneYields } from "./chatPaneHeld.tsx";
+import { NavIcon } from "./navIcons.tsx";
 import { useState } from "react";
 
 import "../ui/Picker.css";
@@ -36,17 +41,17 @@ import "../ui/Picker.css";
 function SettingsGear(): ReactNode {
   return (
     <svg
-      viewBox="0 0 16 16"
+      viewBox="0 0 24 24"
       aria-hidden="true"
       className="size-4"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.5"
+      strokeWidth="2"
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <circle cx="8" cy="8" r="2.25" />
-      <path d="M8 1.5v1.6M8 12.9v1.6M14.5 8h-1.6M3.1 8H1.5M12.6 3.4l-1.1 1.1M4.5 11.5l-1.1 1.1M12.6 12.6l-1.1-1.1M4.5 4.5 3.4 3.4" />
+      <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
@@ -125,7 +130,59 @@ function SettingsChatPlacement(): ReactNode {
   );
 }
 
-export function SettingsMenu(props: { readonly chat: boolean }): ReactNode {
+/** The project's setup pages, each a link that also puts a pane that filled
+ * the body back beside the pages, as a screen's entry in the bar does. */
+function SettingsSetup(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const yields = useChatPaneYields();
+  const pathname = useRouterState({
+    select: (router) => router.location.pathname,
+  });
+  return (
+    <>
+      {shellSetupNav(props.partition).map((entry) => (
+        <DropdownMenu.Item
+          key={entry.id}
+          className={`${menuItemClassName} text-ink-1 no-underline`}
+          asChild
+        >
+          <Link
+            to={entry.to}
+            params={entry.params}
+            onClick={yields}
+            aria-current={navEntryCurrent(entry, pathname) ? "page" : undefined}
+          >
+            <span className="picker-gutter">
+              <NavIcon id={entry.id} />
+            </span>
+            {entry.label}
+          </Link>
+        </DropdownMenu.Item>
+      ))}
+      <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+    </>
+  );
+}
+
+function SettingsSignOut(): ReactNode {
+  const holder = useSessionHolder();
+  return (
+    <DropdownMenu.Item
+      className={menuItemClassName}
+      onSelect={() => {
+        void holder.signOut();
+      }}
+    >
+      <span className="picker-gutter" />
+      Sign out
+    </DropdownMenu.Item>
+  );
+}
+
+export function SettingsMenu(props: {
+  readonly partition: PartitionIdentity | undefined;
+}): ReactNode {
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger
@@ -135,14 +192,19 @@ export function SettingsMenu(props: { readonly chat: boolean }): ReactNode {
         <span className="visually-hidden">Settings</span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
-        <MenuContent sideOffset={4} align="end">
+        <MenuContent className="settings-menu" sideOffset={4} align="end">
+          {props.partition === undefined ? null : (
+            <SettingsSetup partition={props.partition} />
+          )}
           <SettingsTheme />
-          {props.chat ? (
+          {props.partition === undefined ? null : (
             <>
               <DropdownMenu.Separator className="bg-edge my-1 h-px" />
               <SettingsChatPlacement />
             </>
-          ) : null}
+          )}
+          <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+          <SettingsSignOut />
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

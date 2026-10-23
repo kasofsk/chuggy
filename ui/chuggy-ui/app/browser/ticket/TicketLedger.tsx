@@ -173,8 +173,8 @@ function SetRowNote(props: {
 }
 
 /** What a row opens beneath itself: everything its run left, the run's
- * conversation alone, or its result whole under whichever label it has now. */
-type RowDetail = "Details" | "Conversation" | "Result";
+ * transcript alone, or its result whole under whichever label it has now. */
+type RowDetail = "Details" | "Transcript" | "Result";
 
 interface RowOpened {
   readonly execution: string;
@@ -244,8 +244,8 @@ function setRowResultExpands(
   ];
 }
 
-/** The row's expanders: the run's conversation, where one of its attempts
- * recorded a transcript, its result, and its details. */
+/** The row's expanders: the run's transcript, where one of its attempts
+ * recorded one, its result, and its details. */
 function setRowExpands(
   chrome: RowChrome,
   execution: string,
@@ -261,8 +261,8 @@ function setRowExpands(
           setRowExpand(
             chrome,
             execution,
-            "Conversation",
-            { label: "Conversation", hide: "Hide conversation" },
+            "Transcript",
+            { label: "Transcript", hide: "Hide transcript" },
             <RunConversationFollowed
               key={attempt.attempt}
               partition={partition}

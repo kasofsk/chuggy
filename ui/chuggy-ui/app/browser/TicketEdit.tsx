@@ -10,6 +10,8 @@
  * not offered the form, because the update it would send is refused.
  */
 
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -90,6 +92,7 @@ function useEditSubmit(props: {
   readonly subject: EditSubject;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly mayOverride: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
 }): {
@@ -119,6 +122,7 @@ function useEditSubmit(props: {
       props.offers,
       form,
       props.repositories,
+      props.mayOverride,
     );
     if (assembled.assembled === "Faults") {
       props.onFaults(assembled.faults);
@@ -151,11 +155,7 @@ function useEditSubmit(props: {
   return { attempt, submit };
 }
 
-/**
- * The form over one draft. What was typed is held from the first keystroke, so
- * a draft read again after a refusal re-seeds only a form nobody has touched.
- */
-export function EditForm(props: {
+interface EditFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly subject: EditSubject;
@@ -163,9 +163,17 @@ export function EditForm(props: {
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
   readonly partial?: boolean;
+  /** Whether the reader may set overrides; absent, they may. */
+  readonly mayOverride?: boolean;
   readonly onUpdated: () => void;
   readonly onDirty?: (dirty: boolean) => void;
-}): ReactNode {
+}
+
+/**
+ * The form over one draft. What was typed is held from the first keystroke, so
+ * a draft read again after a refusal re-seeds only a form nobody has touched.
+ */
+export function EditForm(props: EditFormProps): ReactNode {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
@@ -175,7 +183,9 @@ export function EditForm(props: {
   const draft = props.subject.draft;
   const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
+  const mayOverride = props.mayOverride !== false;
   const running = useEditSubmit({
+    mayOverride,
     ports: props.ports,
     partition: props.partition,
     subject: props.subject,
@@ -201,7 +211,9 @@ export function EditForm(props: {
         offers={offers}
         repositories={repositories}
         dependenciesLocked
-        assemble={(held) => editRevisionFrom(draft, offers, held, repositories)}
+        assemble={(held) =>
+          editRevisionFrom(draft, offers, held, repositories, mayOverride)
+        }
         storeKey={storeKey}
         submitLabel="revise and release"
         busy={running.attempt.attempt === "Running"}
@@ -218,6 +230,7 @@ export function EditForm(props: {
             partial={props.partial === true}
             repositories={repositories}
             dependenciesLocked
+            mayOverride={mayOverride}
             api={props}
           />
         }
@@ -293,6 +306,10 @@ function EditOffered(props: {
   readonly onDirty: (dirty: boolean) => void;
 }): ReactNode {
   const { context, partition, subject } = props;
+  const mayOverride = !projectAbilityRefused(
+    useProjectAbilities(partition),
+    "overrideTicketConfig",
+  );
   return (
     <EditOffersRead
       partition={partition}
@@ -307,6 +324,7 @@ function EditOffered(props: {
           edit={edit}
           bound={context.repositories}
           partial={context.partial}
+          mayOverride={mayOverride}
           onDirty={props.onDirty}
           onUpdated={props.onUpdated}
         />

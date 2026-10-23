@@ -39,6 +39,7 @@ import {
   selectorProposalsResponseSchema,
   selectorProposalReviewResponseSchema,
   ticketLandingsResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
 } from "./responses.ts";
 
 function endpointInteger(name: string, fallback?: number) {
@@ -70,6 +71,16 @@ const transcriptQuery = endpointQuery({
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
 export const nativeHttpEndpoints = {
+  configurationHead: {
+    method: "GET",
+    path: nativeHttpRoutes.configurationHead,
+    query: endpointQuery({
+      repository: z
+        .unknown()
+        .transform((value) => textField({ repository: value }, "repository")),
+    }),
+    response: repositoryConfigurationHeadResponseSchema,
+  },
   operationalStatus: {
     method: "GET",
     path: nativeHttpRoutes.operationalStatus,

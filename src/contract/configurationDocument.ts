@@ -710,6 +710,36 @@ export const workloadSchema = z.discriminatedUnion("runner", [
   commandsWorkloadSchema,
 ]);
 
+/** A prompt one ticket names in place of a workload's: its text, or the path of a prompt file its catalog's import read. */
+export const workloadPromptOverrideSchema = z
+  .union([
+    z.strictObject({ text: configurationPromptTextSchema }),
+    z.strictObject({ path: configurationReferencePathSchema }),
+  ])
+  .describe(
+    "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names.",
+  );
+
+/** What one ticket replaces of one workload: any of its fields, each in place of the workload's whole. */
+export const workloadOverrideSchema = z
+  .strictObject({
+    runner: z.enum(["Agent", "Commands"]).optional(),
+    purpose: agentWorkloadSchema.shape.purpose,
+    prompt: workloadPromptOverrideSchema.optional(),
+    worker: z
+      .union([configurationModeWorkerSchema, configurationPreparationSchema])
+      .optional(),
+    authority: configurationAuthoritySchema.optional(),
+    framing: agentWorkloadSchema.shape.framing,
+    practices: configurationPracticesSchema.optional(),
+    brief: configurationBriefSchema.optional(),
+    commands: configurationCommandLinesSchema.optional(),
+    ...workloadPlacementShape,
+  })
+  .describe(
+    "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema.",
+  );
+
 /** Whether a map holds no more entries than a catalog map may. */
 function configurationCatalogBounded(map: Readonly<Record<string, unknown>>) {
   return Object.keys(map).length <= configurationCatalogEntriesMax;

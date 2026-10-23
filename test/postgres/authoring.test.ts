@@ -557,6 +557,59 @@ test("repository configuration imports are idempotent and expose provenance", as
   );
 });
 
+test("an import keeps the file each workload was read from beside its revision, and a different file is a conflict", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-configuration-workload-paths",
+  );
+  const binding = await repositoryBinding(partition);
+  const [declared] = repositoryDeclarations("b".repeat(40), ["work"]);
+  if (declared === undefined) throw new Error("declaration fixture is absent");
+  const workloadPaths = { review: ".chug/workloads/review.json" };
+  const importing = (paths: Readonly<Record<string, string>>) =>
+    harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations: [{ ...declared, workloadPaths: paths }],
+    });
+  assert.equal((await importing(workloadPaths)).imported, "Imported");
+  assert.equal((await importing(workloadPaths)).imported, "Imported");
+  const read = await harness.authoring.configuration(
+    partition,
+    declared.revision,
+  );
+  assert.deepEqual(read?.workloadPaths, workloadPaths);
+  assert.equal(read?.version?.number, 1);
+  assert.equal(
+    (await importing({ review: ".chug/workloads/ci.json" })).imported,
+    "IdentityConflict",
+  );
+});
+
+test("a revision whose workloads were all written inline names no file", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-configuration-inline-workloads",
+  );
+  const binding = await repositoryBinding(partition);
+  const declarations = repositoryDeclarations("c".repeat(40), ["work"]);
+  await harness.authoring.importRepositoryConfigurations({
+    partition,
+    binding,
+    authority,
+    declarations,
+  });
+  const [declared] = declarations;
+  if (declared === undefined) throw new Error("declaration fixture is absent");
+  const read = await harness.authoring.configuration(
+    partition,
+    declared.revision,
+  );
+  assert.ok(read !== undefined);
+  assert.equal("workloadPaths" in read, false);
+});
+
 /** One single-name snapshot imported, and the version its revision came back with. */
 async function importedConfigurationVersion(
   partition: Partition,

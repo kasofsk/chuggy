@@ -130,7 +130,7 @@ import {
 } from "./ticketBrief.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter, projectRowStanding } from "./rows.ts";
-import { configurationRevisionDigest } from "./digest.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 
 /** One decision-input row as the transaction reads it under its lock. */
 interface DecisionCauseRow {

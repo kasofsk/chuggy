@@ -155,13 +155,11 @@ test("the card leads with the newest note, the call still out, and the notes bef
 test("opening the card draws the run's conversation prompt first, and reads the prompt then", async () => {
   const drawn = await runPageDrawn(atlas, runningRun(transcribed));
   await turned(() => {
-    within(nowCard())
-      .getByRole("button", { name: "Show conversation" })
-      .click();
+    within(nowCard()).getByRole("button", { name: "Show transcript" }).click();
   });
   await settled();
   const conversation = within(nowCard()).getByRole("group", {
-    name: "Conversation",
+    name: "Transcript",
   });
   const text = conversation.textContent ?? "";
   expect(text.startsWith("Prompt")).toBe(true);
@@ -171,7 +169,7 @@ test("opening the card draws the run's conversation prompt first, and reads the 
   );
   expect(configurationReads(drawn.reads)).toBe(1);
   expect(
-    within(nowCard()).getByRole("button", { name: "Hide conversation" }),
+    within(nowCard()).getByRole("button", { name: "Hide transcript" }),
   ).toBeDefined();
 });
 
@@ -319,9 +317,7 @@ test("a long run opens on its newest batches and reads earlier ones on asking", 
   );
   expect(transcriptReads(drawn.reads)).toEqual(["?after=14", "?after=22"]);
   await turned(() => {
-    within(nowCard())
-      .getByRole("button", { name: "Show conversation" })
-      .click();
+    within(nowCard()).getByRole("button", { name: "Show transcript" }).click();
   });
   await settled();
   await turned(() => {

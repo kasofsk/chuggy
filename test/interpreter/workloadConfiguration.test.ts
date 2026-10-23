@@ -188,12 +188,12 @@ test("a selection is resolved against the catalog, each absent name the default,
     );
 });
 
-test("a catalog takes no overrides, and a document takes no selection", () => {
+test("a catalog takes overrides of its workloads alone, and a document takes no selection and no workload overrides", () => {
   assert.deepEqual(
     draftReleaseReadiness(canonical, brief, undefined, {
       work: { instructions: ["Something else."] },
     }),
-    { readiness: "Incomplete", fault: "SelectionUnsupported" },
+    { readiness: "Incomplete", fault: "OverridesUnsupported" },
   );
   const document = canonicalConfigurationOf({
     version: 1,
@@ -214,8 +214,53 @@ test("a catalog takes no overrides, and a document takes no selection", () => {
     }),
     { readiness: "Incomplete", fault: "SelectionUnsupported" },
   );
+  assert.deepEqual(
+    draftReleaseReadiness(document, brief, undefined, {
+      workloads: { build: { practices: [] } },
+    }),
+    { readiness: "Incomplete", fault: "OverridesUnsupported" },
+  );
   assert.equal(
     draftReleaseReadiness(document, brief, undefined, undefined, {}).readiness,
+    "Ready",
+  );
+});
+
+test("a catalog ticket runs the workload its overrides make, each field in place of the catalog's", () => {
+  const readiness = ticketConfigurationReadiness(
+    canonical,
+    brief,
+    { workloads: { build: { prompt: { text: "Build it twice." } } } },
+    undefined,
+  );
+  if (readiness.readiness !== "Ready" || readiness.ticket.version !== 2)
+    throw new Error("the overridden ticket is not ready");
+  const work = readiness.ticket.selection.work.workload;
+  assert.deepEqual(work.runner === "Agent" ? work.prompt : undefined, {
+    text: "Build it twice.",
+  });
+  assert.deepEqual(
+    readiness.ticket.configuration.workloads["spike"],
+    ticketOf(undefined).configuration.workloads["spike"],
+  );
+});
+
+test("overrides naming a workload or a prompt file the catalog does not hold are refused under their own code", () => {
+  for (const workloads of [
+    { absent: { practices: [] } },
+    { build: { prompt: { path: ".chug/configurations/basic-coding.json" } } },
+  ])
+    assert.deepEqual(
+      draftReleaseReadiness(canonical, brief, undefined, { workloads }),
+      { readiness: "Incomplete", fault: "OverridesUnknown" },
+    );
+});
+
+test("overrides that leave a workload unready refuse the release as the catalog would", () => {
+  assert.notEqual(
+    draftReleaseReadiness(canonical, brief, undefined, {
+      workloads: { tests: { runner: "Agent" } },
+    }).readiness,
     "Ready",
   );
 });

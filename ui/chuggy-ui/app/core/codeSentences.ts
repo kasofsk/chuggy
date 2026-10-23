@@ -161,9 +161,13 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
     case "SelectionUnknown":
       return "the draft selects a workload, plan or finalizer the configuration's catalog does not hold";
     case "SelectionUnsupported":
-      return "only a version 2 configuration takes a selection, and it takes no overrides; revise the draft to ask the configuration for what it holds";
+      return "only a version 2 configuration takes a selection; revise the draft to ask the configuration for what it holds";
     case "ProgramExceedsPlan":
       return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
+    case "OverridesUnsupported":
+      return "a catalog takes overrides only of its workloads, and a version 1 configuration takes none of workloads; revise the draft's overrides to fit its configuration";
+    case "OverridesUnknown":
+      return "the overrides name a workload, or a prompt file, the configuration's catalog does not hold";
     case "TicketCapacityReached":
       return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
     case "FinalizationRequestClosed":

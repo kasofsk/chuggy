@@ -9,6 +9,11 @@
  * text beside its path. A commit can be rewritten, so nothing past the import
  * could recover what the path held.
  *
+ * THE PATH A WORKLOAD WAS READ FROM IS KEPT BESIDE IT, not in it: the stored
+ * workload is what runs and what a revision's digest covers, and where the
+ * repository kept it is neither, so a catalog moving a workload into a file
+ * changes no revision that would run the same.
+ *
  * A WORKLOAD FILE IS THE ONLY REFERENCED FILE THAT NAMES ANOTHER, by its
  * prompt's path, so what a catalog names is known once its workload files are
  * read, and a prompt file names nothing.
@@ -183,6 +188,12 @@ function repositoryConfigurationPromptResolved(
   };
 }
 
+/** A configuration with what it names stored inline, and the file each workload named by path was read from. */
+export interface RepositoryConfigurationResolution {
+  readonly configuration: unknown;
+  readonly workloadPaths: Readonly<Record<string, string>>;
+}
+
 /**
  * One configuration with every file it names stored inline, or the first
  * reference that could not be. A prompt naming a path holds what that file
@@ -191,12 +202,11 @@ function repositoryConfigurationPromptResolved(
 export function repositoryConfigurationResolved(
   configuration: unknown,
   referenced: RepositoryConfigurationReferencedFiles,
-):
-  | { readonly configuration: unknown }
-  | RepositoryConfigurationReferenceRefusal {
+): RepositoryConfigurationResolution | RepositoryConfigurationReferenceRefusal {
   const workloads = repositoryConfigurationCatalogWorkloads(configuration);
-  if (workloads === undefined) return { configuration };
+  if (workloads === undefined) return { configuration, workloadPaths: {} };
   const resolved: Record<string, unknown> = {};
+  const workloadPaths: Record<string, string> = {};
   for (const [name, entry] of Object.entries(workloads)) {
     const path = repositoryConfigurationReferencePath(entry);
     const read =
@@ -213,11 +223,13 @@ export function repositoryConfigurationResolved(
     );
     if ("fault" in workload) return workload;
     resolved[name] = workload.workload;
+    if (path !== undefined) workloadPaths[name] = path;
   }
   return {
     configuration: {
       ...repositoryConfigurationRecord(configuration),
       workloads: resolved,
     },
+    workloadPaths,
   };
 }

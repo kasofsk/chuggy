@@ -20,7 +20,6 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -80,6 +79,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/events",
   "/api/v1/tenants/:tenant/projects/:project/configurations",
   "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
+  "/api/v1/tenants/:tenant/projects/:project/configurations/imports/head",
   "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
   "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
   "/api/v1/tenants/:tenant/projects/:project/repositories",
@@ -149,40 +149,23 @@ const brief = {
   finalization: { mode: "PullRequest", target: "refs/heads/main" },
 } as const;
 
-test("an import names the repository it reads and the commit in it", () => {
+test("an import names the repository it reads and no commit in it", () => {
   assert.deepEqual(
-    parseRepositoryConfigurationImport({
-      repository: "repository",
-      commit: "a".repeat(40),
-    }),
-    { repository: "repository", commit: "a".repeat(40) },
+    parseRepositoryConfigurationImport({ repository: "repository" }),
+    { repository: "repository" },
   );
-  assert.throws(
-    () => parseRepositoryConfigurationImport({ commit: "a".repeat(40) }),
-    /repository/u,
-  );
+  assert.throws(() => parseRepositoryConfigurationImport({}), /repository/u);
   assert.throws(
     () =>
       parseRepositoryConfigurationImport({
         repository: "repository",
         commit: "a".repeat(40),
-        branch: "untrusted",
       }),
     /[Uu]nrecognized key/u,
   );
 });
 
 test("authoring DTOs translate into existing application types", () => {
-  assert.deepEqual(
-    parseConfigurationCreation({
-      revision: "revision",
-      canonical: '{"image":"worker:v1","version":1}',
-    }),
-    {
-      revision: "revision",
-      canonical: '{"image":"worker:v1","version":1}',
-    },
-  );
   assert.deepEqual(
     parseDraftCreation({
       configurationRevision: "revision",
@@ -231,12 +214,6 @@ test("authoring DTOs reject duplicates, unknown fields, and noncanonical config"
     parseDraftCreation({
       configurationRevision: "revision",
       authoring: { ...authoring, hidden: true },
-    }),
-  );
-  assert.throws(() =>
-    parseConfigurationCreation({
-      revision: "revision",
-      canonical: '{"version":1,"image":"worker:v1"}',
     }),
   );
 });

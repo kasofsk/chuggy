@@ -14,7 +14,6 @@ import {
 } from "../../src/interpreter/authoring.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -29,6 +28,7 @@ import {
   operationResponse,
   projectArtifactReadResponse,
   projectResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   runErrorResponse,
   runTranscriptResponse,
@@ -44,6 +44,7 @@ import {
 import {
   draftsResponseSchema,
   projectArtifactResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   chuggyToolImageResponseBytesMax,
@@ -53,12 +54,20 @@ import {
   imageMediaTypes,
   projectArtifactEncoding,
 } from "../../src/contract/sessionTools.ts";
+import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
+import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { parseDraftRevision } from "../../src/adapters/http/contract.ts";
+import { repositoryConfigurationWorkFile } from "../interpreter/repositoryConfigurationFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -74,6 +83,112 @@ const standing = {
   admission: "Ordinary" as const,
   lifecycleGeneration: 1,
 };
+
+test("a repository head that could be read is answered with what it declares, refused or not", () => {
+  const ready = repositoryConfigurationImportReadiness({
+    repository: asRepositoryId("repository"),
+    commit: asGitObjectId("e".repeat(40)),
+    files: [repositoryConfigurationWorkFile],
+  });
+  if (ready.readiness !== "Ready") throw new Error("fixture was refused");
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const answered = repositoryConfigurationHeadResponse({
+    ...at,
+    read: { result: "Ready", declarations: ready.declarations },
+  });
+  assert.equal(answered.status, 200);
+  const head = repositoryConfigurationHeadResponseSchema.parse(
+    answered.body,
+  ).head;
+  assert.equal(head.state, "Ready");
+  if (head.state !== "Ready") throw new Error("unreachable");
+  const [declared] = ready.declarations;
+  assert.deepEqual(
+    head.configurations[0]?.digest,
+    configurationRevisionDigest(declared?.canonical ?? ""),
+  );
+  assert.equal("workloadPaths" in (head.configurations[0] ?? {}), false);
+  const refused = repositoryConfigurationHeadResponse({
+    ...at,
+    read: {
+      result: "DeclarationsRefused",
+      faults: [{ path: "declaration", fault: "EnvelopeInvalid" }],
+    },
+  });
+  assert.equal(refused.status, 200);
+  assert.equal(
+    repositoryConfigurationHeadResponseSchema.parse(refused.body).head.state,
+    "ConfigurationsRefused",
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({
+      result: "Unavailable",
+      unavailable: "Repository",
+    }).status,
+    503,
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({ result: "RepositoryAbsent" }).status,
+    404,
+  );
+});
+
+test("a head with no branch, no commit, no configurations or no read is answered by which it was", () => {
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const headOf = (
+    outcome: Parameters<typeof repositoryConfigurationHeadResponse>[0],
+  ) => {
+    const answered = repositoryConfigurationHeadResponse(outcome);
+    assert.equal(answered.status, 200);
+    return repositoryConfigurationHeadResponseSchema.parse(answered.body).head;
+  };
+  assert.deepEqual(headOf({ result: "BranchAbsent" }), {
+    state: "BranchAbsent",
+  });
+  assert.deepEqual(
+    headOf({ ...at, read: { result: "SnapshotAbsent", absent: "Commit" } }),
+    { state: "CommitAbsent", branch: "main", commit: "e".repeat(40) },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: {
+        result: "SnapshotAbsent",
+        absent: "ConfigurationDirectory",
+        ignored: {
+          paths: [".chug/configurations/README.md"],
+          truncated: false,
+        },
+      },
+    }),
+    {
+      state: "ConfigurationsAbsent",
+      branch: "main",
+      commit: "e".repeat(40),
+      ignored: { paths: [".chug/configurations/README.md"], truncated: false },
+    },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: { result: "SnapshotRefused", refused: "Credential" },
+    }),
+    {
+      state: "SnapshotRefused",
+      branch: "main",
+      commit: "e".repeat(40),
+      refused: "Credential",
+    },
+  );
+});
 
 test("repository import outcomes distinguish retry, refusal, and conflict", () => {
   assert.equal(
@@ -354,30 +469,8 @@ const draft = {
 };
 const landing = { mode: "Push", source: "Default" } as const;
 
-test("configuration outcomes are closed and location-bearing", () => {
+test("an absent configuration is answered as not found", () => {
   assert.equal(configurationResponse(undefined).status, 404);
-  const cases = [
-    { value: { created: "Created", revision: configuration }, status: 201 },
-    {
-      value: { created: "AlreadyExists", revision: configuration },
-      status: 200,
-    },
-    { value: { created: "IdentityConflict" }, status: 409 },
-    { value: { created: "ParentNotFound" }, status: 404 },
-  ] as const;
-  for (const each of populated(cases, "configuration creation outcomes")) {
-    assert.equal(
-      configurationCreationResponse({
-        result: "Authorized",
-        value: each.value,
-      }).status,
-      each.status,
-    );
-  }
-  assert.equal(
-    configurationCreationResponse({ result: "NotFound" }).status,
-    404,
-  );
 });
 
 test("configuration pages expose only an opaque continuation cursor", () => {
