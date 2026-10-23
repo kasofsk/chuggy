@@ -97,7 +97,7 @@ export const sessionBearerRouteClasses = {
   operation: { GET: "Partition", DELETE: "Partition" },
   notifications: partitionRead,
   events: partitionRead,
-  configurations: { GET: "Partition", POST: "Partition" },
+  configurations: partitionRead,
   configurationImports: partitionWrite,
   configuration: partitionRead,
   forgeCredentials: partitionWrite,
