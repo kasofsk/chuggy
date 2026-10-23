@@ -1139,6 +1139,65 @@ export type RepositoryConfigurationRefusals = z.infer<
   typeof repositoryConfigurationRefusalsSchema
 >;
 
+/** One configuration a repository's head declares, as an import of it would store it. */
+export const repositoryConfigurationHeadDeclarationSchema = z.object({
+  name: identitySchema,
+  path: configurationReferencePathSchema,
+  revision: identitySchema,
+  canonical: z.string().min(1),
+  digest: z.string().min(1),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional(),
+});
+
+export type RepositoryConfigurationHeadDeclaration = z.infer<
+  typeof repositoryConfigurationHeadDeclarationSchema
+>;
+
+const repositoryConfigurationHeadAt = {
+  branch: identitySchema,
+  commit: identitySchema,
+};
+
+/**
+ * What a repository's default branch declares where it points now, read as an
+ * import would and stored nowhere: the configurations an import would store,
+ * or what it would be refused with.
+ */
+export const repositoryConfigurationHeadResponseSchema = z.object({
+  head: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("BranchAbsent") }),
+    z.object({
+      state: z.literal("CommitAbsent"),
+      ...repositoryConfigurationHeadAt,
+    }),
+    z.object({
+      state: z.literal("ConfigurationsAbsent"),
+      ...repositoryConfigurationHeadAt,
+      ...repositoryConfigurationIgnoredShape,
+    }),
+    z.object({
+      state: z.literal("SnapshotRefused"),
+      ...repositoryConfigurationHeadAt,
+      refused: z.enum(["Credential", "Snapshot"]),
+    }),
+    z.object({
+      state: z.literal("ConfigurationsRefused"),
+      ...repositoryConfigurationHeadAt,
+      faults: page(repositoryConfigurationRefusalSchema),
+    }),
+    z.object({
+      state: z.literal("Ready"),
+      ...repositoryConfigurationHeadAt,
+      configurations: z.array(repositoryConfigurationHeadDeclarationSchema),
+    }),
+  ]),
+});
+export type RepositoryConfigurationHeadResponse = z.infer<
+  typeof repositoryConfigurationHeadResponseSchema
+>;
+
 export const draftResponseSchema = z.object({
   partition: partitionValueSchema,
   ticket: ticketNumberSchema,

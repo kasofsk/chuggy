@@ -211,6 +211,13 @@ export function parseRepositoryConfigurationImport(
   };
 }
 
+/** The repository a head read names, from the query that names it. */
+export function parseRepositoryConfigurationHead(query: unknown): RepositoryId {
+  return asRepositoryId(
+    nativeHttpEndpoints.configurationHead.query.parse(query).repository,
+  );
+}
+
 /** One minting request as the wire carries it, both fields already narrowed. */
 export function parseForgeCredentialRequest(
   body: unknown,

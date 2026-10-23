@@ -783,6 +783,19 @@ export const apiTicketActionReach = apiProjectEndpoint(
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
 );
 
+/** A head read fetches from the repository's forge, which takes longer than a read of the store. */
+export const apiRepositoryHeadTimeoutMs = 60_000;
+
+/** What a repository's default branch declares now, read as an import would and stored nowhere. */
+export const apiRepositoryConfigurationHead = apiProjectEndpoint(
+  nativeHttpEndpoints.configurationHead,
+  (partition, repository: string) => ({
+    parameters: partition,
+    query: { repository },
+    timeoutMs: apiRepositoryHeadTimeoutMs,
+  }),
+);
+
 /** Every landing the ticket has had, which the ticket read omits. */
 export const apiTicketLandings = apiProjectEndpoint(
   nativeHttpEndpoints.ticketLandings,

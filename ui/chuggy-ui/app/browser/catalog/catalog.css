@@ -1,4 +1,5 @@
-/* The catalog: the chooser and where the version came from, then the entries
+/* The catalog: the chooser, where the version came from and what the
+   repository's head says of it, then the entries
    grouped by what each is, one card per group with its rows ruled. With an
    entry chosen the list and the entry sit side by side, the entry held in
    view and scrolling on its own while the list scrolls; where the page is
@@ -36,6 +37,26 @@
     color: var(--ink-3);
     font-size: var(--text-sm);
     overflow-wrap: anywhere;
+  }
+
+  .catalog-head {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    overflow-wrap: anywhere;
+  }
+
+  .catalog-head p {
+    margin: 0;
+  }
+
+  .catalog-head-faults {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    padding-left: var(--space-4);
   }
 
   .catalog-none {

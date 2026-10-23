@@ -95,6 +95,7 @@ function servedWeb(
     nativeActions: notFound,
     createConfiguration: notFound,
     importRepositoryConfigurations: notFound,
+    repositoryConfigurationHead: notFound,
     createDraft: notFound,
     initializeDraft: notFound,
     deleteDraft: notFound,

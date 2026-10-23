@@ -105,6 +105,7 @@ import {
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
+  parseRepositoryConfigurationHead,
   parseRepositoryConfigurationImport,
   parseConfigurationSelection,
   parseDraftCreation,
@@ -124,6 +125,7 @@ import {
 import {
   cancellationResponse,
   configurationCreationResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   configurationResponse,
   configurationsResponse,
@@ -273,6 +275,7 @@ type InitialNativeWeb = Pick<
   | "configurations"
   | "createConfiguration"
   | "importRepositoryConfigurations"
+  | "repositoryConfigurationHead"
   | "createDraft"
   | "initializeDraft"
   | "deleteDraft"
@@ -1900,6 +1903,17 @@ function registerConfigurations(
       );
       nativeHttpSend(reply, repositoryConfigurationImportResponse(result));
     },
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.configurationHead,
+    (request, principal, partition) =>
+      web.repositoryConfigurationHead(
+        principal,
+        partition,
+        parseRepositoryConfigurationHead(request.query),
+      ),
+    repositoryConfigurationHeadResponse,
   );
   app.get(`${root}/:revision`, async (request, reply) => {
     const params = record(request.params);

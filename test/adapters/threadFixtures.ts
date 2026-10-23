@@ -76,6 +76,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   configurations: unserved("configurations"),
   createConfiguration: unserved("create configuration"),
   importRepositoryConfigurations: unserved("import configurations"),
+  repositoryConfigurationHead: unserved("read a repository head"),
   createDraft: unserved("create draft"),
   initializeDraft: unserved("initialize draft"),
   deleteDraft: unserved("delete draft"),

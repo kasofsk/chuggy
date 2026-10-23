@@ -845,6 +845,64 @@ test("repository imports are unavailable when their infrastructure is not compos
   assert.deepEqual(denied.calls, ["authorize:Mutate"]);
 });
 
+test("a repository's head is read for a member who may read the project, at its default branch, and stored nowhere", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  const repository = asRepositoryId("repository-read");
+  const head = await subject.web.repositoryConfigurationHead(
+    principal,
+    partition,
+    repository,
+  );
+  assert.equal(head.result, "Read");
+  if (head.result !== "Read") throw new Error("unreachable");
+  assert.equal(head.commit, repositoryImportHead);
+  assert.equal(head.read.result, "Ready");
+  assert.deepEqual(subject.calls, ["authorize:Read"]);
+  assert.deepEqual(calls, [
+    `landing:${repository}`,
+    `binding:${repository}`,
+    `head:${repository}`,
+    `snapshot:${repositoryImportHead}`,
+  ]);
+});
+
+test("a repository head read conceals denial, and reads nothing of a retired binding", async () => {
+  const calls: string[] = [];
+  const denied = boundary(
+    false,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  assert.deepEqual(
+    await denied.web.repositoryConfigurationHead(
+      principal,
+      partition,
+      asRepositoryId("repository"),
+    ),
+    { result: "NotFound" },
+  );
+  const retired = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls, "2026-10-14T00:00:00Z"),
+  );
+  const repository = asRepositoryId("repository-retired");
+  assert.deepEqual(
+    await retired.web.repositoryConfigurationHead(
+      principal,
+      partition,
+      repository,
+    ),
+    { result: "RepositoryAbsent" },
+  );
+  assert.deepEqual(calls, [`landing:${repository}`]);
+});
+
 test("repository imports refuse invalid declarations without writing", async () => {
   const calls: string[] = [];
   const ports = repositoryImportPorts(calls);

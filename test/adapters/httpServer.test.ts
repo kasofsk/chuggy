@@ -275,6 +275,7 @@ function fakeConfigurations(
   | "configurations"
   | "createConfiguration"
   | "importRepositoryConfigurations"
+  | "repositoryConfigurationHead"
 > {
   return {
     configuration: (_principal, _partition, revision) => {
@@ -294,6 +295,10 @@ function fakeConfigurations(
         `importRepositoryConfigurations:${source.repository}:${"commit" in source ? String(source.commit) : "head"}`,
       );
       return Promise.resolve({ result: "Imported", declarations: 1 });
+    },
+    repositoryConfigurationHead: (_principal, _partition, repository) => {
+      calls.push(`repositoryConfigurationHead:${repository}`);
+      return Promise.resolve({ result: "BranchAbsent" });
     },
   };
 }
@@ -1501,6 +1506,10 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     body: { repository: "repository-named", commit: "a".repeat(40) },
   });
   await app.inject({
+    url: `${project}/configurations/imports/head?repository=repository-named`,
+    headers: { authorization: "Bearer valid" },
+  });
+  await app.inject({
     method: "POST",
     url: `${project}/drafts`,
     headers,
@@ -1531,6 +1540,7 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "createConfiguration:revision",
     "configuration:revision",
     `importRepositoryConfigurations:repository-named:${"a".repeat(40)}`,
+    "repositoryConfigurationHead:repository-named",
     "createDraft",
     "reviseDraft:2",
     "deleteDraft:3",

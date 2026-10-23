@@ -58,7 +58,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
-import { configurationRevisionDigest } from "./digest.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 

@@ -29,6 +29,7 @@ import {
   operationResponse,
   projectArtifactReadResponse,
   projectResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   runErrorResponse,
   runTranscriptResponse,
@@ -44,6 +45,7 @@ import {
 import {
   draftsResponseSchema,
   projectArtifactResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   chuggyToolImageResponseBytesMax,
@@ -53,6 +55,13 @@ import {
   imageMediaTypes,
   projectArtifactEncoding,
 } from "../../src/contract/sessionTools.ts";
+import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
+import {
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
+import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
@@ -74,6 +83,85 @@ const standing = {
   admission: "Ordinary" as const,
   lifecycleGeneration: 1,
 };
+
+test("a repository head that could be read is answered with what it declares, refused or not", () => {
+  const ready = repositoryConfigurationImportReadiness({
+    repository: asRepositoryId("repository"),
+    commit: asGitObjectId("e".repeat(40)),
+    files: [
+      {
+        path: `${repositoryDeclarationRoot}configurations/work.json`,
+        kind: "File",
+        content: JSON.stringify({
+          version: 1,
+          name: "work",
+          configuration: {
+            version: 1,
+            image: "worker:v1",
+            practices: [],
+            brief: {
+              motivation: ["Do the work."],
+              acceptanceCriteria: ["The work is done."],
+              constraints: [],
+            },
+            work: { instructions: [] },
+            review: { instructions: [] },
+            worker: {
+              mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+              setup: [],
+              files: [],
+            },
+          },
+        }),
+      },
+    ],
+  });
+  if (ready.readiness !== "Ready") throw new Error("fixture was refused");
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const answered = repositoryConfigurationHeadResponse({
+    ...at,
+    read: { result: "Ready", declarations: ready.declarations },
+  });
+  assert.equal(answered.status, 200);
+  const head = repositoryConfigurationHeadResponseSchema.parse(
+    answered.body,
+  ).head;
+  assert.equal(head.state, "Ready");
+  if (head.state !== "Ready") throw new Error("unreachable");
+  const [declared] = ready.declarations;
+  assert.deepEqual(
+    head.configurations[0]?.digest,
+    configurationRevisionDigest(declared?.canonical ?? ""),
+  );
+  assert.equal("workloadPaths" in (head.configurations[0] ?? {}), false);
+  const refused = repositoryConfigurationHeadResponse({
+    ...at,
+    read: {
+      result: "DeclarationsRefused",
+      faults: [{ path: "declaration", fault: "EnvelopeInvalid" }],
+    },
+  });
+  assert.equal(refused.status, 200);
+  assert.equal(
+    repositoryConfigurationHeadResponseSchema.parse(refused.body).head.state,
+    "ConfigurationsRefused",
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({
+      result: "Unavailable",
+      unavailable: "Repository",
+    }).status,
+    503,
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({ result: "RepositoryAbsent" }).status,
+    404,
+  );
+});
 
 test("repository import outcomes distinguish retry, refusal, and conflict", () => {
   assert.equal(

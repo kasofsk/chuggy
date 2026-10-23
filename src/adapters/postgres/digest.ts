@@ -45,11 +45,6 @@ import type { DecisionCause } from "../../interpreter/projectDecision.ts";
 import type { ConfigurationPin } from "../../interpreter/projectDecision.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 
-/** The content address of one canonical authored configuration revision. */
-export function configurationRevisionDigest(canonical: string): string {
-  return createHash("sha256").update(canonical).digest("hex");
-}
-
 /** Names the format these digests are of, so a chain cannot be read as a later one's. */
 const journalChainFormat = "chuggy:journal:v1";
 const journalEnvelopeFormat = "chuggy:journal-envelope:v2";

@@ -78,8 +78,8 @@ import {
   parseEntry,
   type Parsed,
 } from "../../interpreter/wire.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import {
-  configurationRevisionDigest,
   journalChainDigest,
   journalChainGenesis,
   journalEnvelopeDigest,

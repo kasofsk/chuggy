@@ -95,6 +95,7 @@
     "events": "/api/v1/tenants/:tenant/projects/:project/events",
     "configurations": "/api/v1/tenants/:tenant/projects/:project/configurations",
     "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
+    "configurationHead": "/api/v1/tenants/:tenant/projects/:project/configurations/imports/head",
     "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
     "forgeCredentials": "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     "projectRepositories": "/api/v1/tenants/:tenant/projects/:project/repositories",

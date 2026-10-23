@@ -90,10 +90,21 @@ export function catalogConfigurationVersionOf(
   return configuration.versions.find((summary) => summary.digest === digest);
 }
 
-/** What the page's address says: the revision drawn and the entry shown, each none where it names none. */
+/** What the page's address says: the revision drawn, the entry shown, and whether the repository's head is drawn in the revision's place. */
 export interface CatalogQuery {
   readonly configuration?: string;
   readonly entry?: string;
+  readonly source?: "head";
+}
+
+/** The address with the import it names drawn, rather than the repository's head. */
+export function catalogQueryImported(query: CatalogQuery): CatalogQuery {
+  return {
+    ...(query.configuration === undefined
+      ? {}
+      : { configuration: query.configuration }),
+    ...(query.entry === undefined ? {} : { entry: query.entry }),
+  };
 }
 
 function catalogQueryText(value: unknown): string | undefined {
@@ -108,5 +119,6 @@ export function catalogQueryOf(
   return {
     ...(configuration === undefined ? {} : { configuration }),
     ...(entry === undefined ? {} : { entry }),
+    ...(search["source"] === "head" ? { source: "head" } : {}),
   };
 }

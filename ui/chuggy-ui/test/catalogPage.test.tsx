@@ -1,12 +1,18 @@
 /**
  * The Catalog page: which version it opens on, the entries it lists, what an
- * entry chosen in the address shows, and a version 1 configuration drawn as
- * a ticket's page draws one.
+ * entry chosen in the address shows, a version 1 configuration drawn as a
+ * ticket's page draws one, and the repository's head read only when asked.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -103,6 +109,26 @@ const canonicals: Readonly<Record<string, string>> = {
   r5: versionOne,
 };
 
+/** The head as the repository's default branch declares chuggy-development, under a digest. */
+function headDeclaring(digest: string): unknown {
+  return {
+    head: {
+      state: "Ready",
+      branch: "main",
+      commit: "e".repeat(40),
+      configurations: [
+        {
+          name: "chuggy-development",
+          path: ".chug/configurations/chuggy-development.json",
+          revision: "r9",
+          canonical: creationCatalogCanonical,
+          digest,
+        },
+      ],
+    },
+  };
+}
+
 async function drawPage(
   query: CatalogQuery,
   configurations: readonly unknown[] = [
@@ -110,10 +136,13 @@ async function drawPage(
     listed("r4", "chuggy-development", 2, true),
     listed("r2", "chuggy-development", 1, true),
   ],
+  head: unknown = headDeclaring("2".repeat(64)),
 ): Promise<readonly string[]> {
   const sent: string[] = [];
   vi.stubGlobal("fetch", (url: string) => {
     sent.push(url);
+    if (url.includes("/configurations/imports/head?"))
+      return Promise.resolve(answer(head));
     const revision = /\/configurations\/([^/?]+)$/u.exec(url)?.[1];
     if (revision !== undefined)
       return Promise.resolve(
@@ -205,4 +234,79 @@ test("a version 1 configuration is drawn as no catalog", async () => {
 test("a project that imported nothing says so", async () => {
   await drawPage({}, []);
   expect(screen.getByText("No configuration imported")).toBeTruthy();
+});
+
+test("the repository's head is read only once a reader asks, and a head that matches says so", async () => {
+  const sent = await drawPage({ configuration: "r4" });
+  expect(sent.some((url) => url.includes("/imports/head"))).toBe(false);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Compare with the repository head" }),
+  );
+  await settled();
+  expect(sent.find((url) => url.includes("/imports/head"))).toContain(
+    `repository=${encodeURIComponent("https://forge.test/kasofsk/chuggy")}`,
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "The repository's main at eeeeeee declares chuggy-development as its newest import stored it. ",
+  );
+});
+
+test("a head that differs from the newest import offers to be drawn in its place", async () => {
+  await drawPage(
+    { configuration: "r4" },
+    undefined,
+    headDeclaring("f".repeat(64)),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Compare with the repository head" }),
+  );
+  await settled();
+  expect(
+    screen.getByRole("link", { name: "Show the head" }).getAttribute("href"),
+  ).toBe("?configuration=r4&source=head");
+});
+
+test("an address asking for the head draws the head's catalog, its links keeping the head", async () => {
+  await drawPage(
+    { configuration: "r4", source: "head" },
+    undefined,
+    headDeclaring("f".repeat(64)),
+  );
+  expect(screen.getByRole("status").textContent).toContain(
+    "Showing chuggy-development as the repository's main at eeeeeee declares it.",
+  );
+  expect(
+    screen.getByRole("link", { name: "Show the import" }).getAttribute("href"),
+  ).toBe("?configuration=r4");
+  expect(
+    within(screen.getByRole("region", { name: "Workloads" }))
+      .getByRole("link", { name: /^build/u })
+      .getAttribute("href"),
+  ).toBe("?configuration=r4&source=head&entry=workloads%2Fbuild");
+});
+
+test("a head an import would refuse lists why", async () => {
+  await drawPage({ configuration: "r4" }, undefined, {
+    head: {
+      state: "ConfigurationsRefused",
+      branch: "main",
+      commit: "e".repeat(40),
+      faults: [
+        {
+          path: ".chug/configurations/chuggy-development.json",
+          fault: "EnvelopeInvalid",
+        },
+      ],
+    },
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Compare with the repository head" }),
+  );
+  await settled();
+  expect(screen.getByRole("status").textContent).toContain(
+    "An import of the repository's main at eeeeeee would be refused.",
+  );
+  expect(
+    within(screen.getByRole("status")).getByRole("listitem").textContent,
+  ).toBe(".chug/configurations/chuggy-development.json · EnvelopeInvalid");
 });

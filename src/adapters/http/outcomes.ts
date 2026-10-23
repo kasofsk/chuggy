@@ -124,6 +124,8 @@ import {
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import {
   repositoryConfigurationIgnoredField,
+  type RepositoryConfigurationDeclaration,
+  type RepositoryConfigurationHeadOutcome,
   type RepositoryConfigurationImportOutcome,
 } from "../../interpreter/repositoryConfiguration.ts";
 import {
@@ -186,8 +188,10 @@ import type { ActionReported } from "../../interpreter/actionReport.ts";
 import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
 import type {
   ProjectAbilitiesResponse,
+  RepositoryConfigurationHeadDeclaration,
   TicketLandingsResponse,
 } from "../../contract/responses.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -1994,6 +1998,80 @@ export function repositoryConfigurationImportResponse(
       );
     case "Imported":
       return response(200, { imported: true });
+    default:
+      return assertNever(result);
+  }
+}
+
+/** What the head declares, each configuration as an import of it would store it. */
+function repositoryConfigurationHeadDeclarations(
+  declarations: readonly RepositoryConfigurationDeclaration[],
+): readonly RepositoryConfigurationHeadDeclaration[] {
+  return declarations.map((declaration) => ({
+    name: declaration.name,
+    path: declaration.path,
+    revision: declaration.revision,
+    canonical: declaration.canonical,
+    digest: configurationRevisionDigest(declaration.canonical),
+    ...(Object.keys(declaration.workloadPaths).length === 0
+      ? {}
+      : { workloadPaths: declaration.workloadPaths }),
+  }));
+}
+
+/** A head that could be read is answered whatever it declares, since what an import would refuse is what the reader asked to see. */
+export function repositoryConfigurationHeadResponse(
+  result: RepositoryConfigurationHeadOutcome,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+    case "RepositoryAbsent":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, 1, "RepositoryUnavailable");
+    case "BranchAbsent":
+      return response(200, { head: { state: "BranchAbsent" } });
+    case "Read": {
+      const at = { branch: result.branch, commit: result.commit };
+      const { read } = result;
+      switch (read.result) {
+        case "SnapshotAbsent":
+          return response(200, {
+            head:
+              read.absent === "Commit"
+                ? { state: "CommitAbsent", ...at }
+                : {
+                    state: "ConfigurationsAbsent",
+                    ...at,
+                    ...repositoryConfigurationIgnoredField(read.ignored),
+                  },
+          });
+        case "SnapshotRefused":
+          return response(200, {
+            head: { state: "SnapshotRefused", ...at, refused: read.refused },
+          });
+        case "DeclarationsRefused":
+          return response(200, {
+            head: {
+              state: "ConfigurationsRefused",
+              ...at,
+              faults: read.faults,
+            },
+          });
+        case "Ready":
+          return response(200, {
+            head: {
+              state: "Ready",
+              ...at,
+              configurations: repositoryConfigurationHeadDeclarations(
+                read.declarations,
+              ),
+            },
+          });
+        default:
+          return assertNever(read);
+      }
+    }
     default:
       return assertNever(result);
   }

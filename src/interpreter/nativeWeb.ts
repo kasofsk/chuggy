@@ -189,7 +189,9 @@ import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
   importRepositoryConfigurations,
   importRepositoryConfigurationsAtHead,
+  readRepositoryConfigurationHead,
   type RepositoryConfigurationHeadImportPorts,
+  type RepositoryConfigurationHeadOutcome,
   type RepositoryConfigurationImportOutcome,
 } from "./repositoryConfiguration.ts";
 import {
@@ -780,6 +782,11 @@ export interface NativeWeb {
       readonly commit?: GitObjectId;
     },
   ): Promise<RepositoryConfigurationImportOutcome>;
+  repositoryConfigurationHead(
+    principal: Principal,
+    partition: Partition,
+    repository: RepositoryId,
+  ): Promise<RepositoryConfigurationHeadOutcome>;
   createDraft(
     principal: Principal,
     input: {
@@ -1019,10 +1026,10 @@ function nativeConfigurationMethods(
 }
 
 /**
- * What a member's import is composed from: the import's own ports with the
- * default branch it reads where a member names no commit, and the binding door
- * that answers a binding's retirement, which the import's binding read does
- * not.
+ * What a member's import and head read are composed from: the import's own
+ * ports with the default branch it reads where a member names no commit, and
+ * the binding door that answers a binding's retirement, which the import's
+ * binding read does not.
  */
 export interface NativeRepositoryConfigurationImportPorts extends RepositoryConfigurationHeadImportPorts {
   readonly landing: Pick<ProjectRepositoryLandingStore, "landing">;
@@ -1058,6 +1065,27 @@ function nativeRepositoryConfigurationImportMethod(
           authority,
           ports,
         });
+  };
+}
+
+/**
+ * Reads a repository's head for any member who may read the project, since it
+ * stores nothing, and only from a repository the project binds live, as the
+ * import does.
+ */
+function nativeRepositoryConfigurationHeadMethod(
+  access: ProjectAccess,
+  ports?: NativeRepositoryConfigurationImportPorts,
+): NativeWeb["repositoryConfigurationHead"] {
+  return async (principal, partition, repository) => {
+    const authority = await access.authorize(principal, partition, "Read");
+    if (authority === undefined) return { result: "NotFound" };
+    if (ports === undefined)
+      return { result: "Unavailable", unavailable: "Repository" };
+    const bound = await ports.landing.landing(partition, repository);
+    if (bound === undefined || bound.retiredAt !== undefined)
+      return { result: "RepositoryAbsent" };
+    return readRepositoryConfigurationHead({ partition, repository, ports });
   };
 }
 
@@ -2497,6 +2525,10 @@ export function nativeWeb(
       projectAbilities(access, principal, partition),
     ...nativeLeadInquiryMethods(access, inquiries, sessionRoutes),
     importRepositoryConfigurations: nativeRepositoryConfigurationImportMethod(
+      access,
+      repositoryConfigurationImports,
+    ),
+    repositoryConfigurationHead: nativeRepositoryConfigurationHeadMethod(
       access,
       repositoryConfigurationImports,
     ),
