@@ -414,3 +414,53 @@ test("the short label counts what the sentence spells out", () => {
   ).toBe("2 unreleased");
   expect(draftUnreleasedLabel(draftReleaseOf(unbriefed))).toBe("Not recorded");
 });
+
+/** A reader who may not administer revises the draft's overrides only as they stand. */
+test("a reader who may not administer keeps the draft's overrides in any key order, and is refused a change", () => {
+  const draft: DraftResponse = {
+    ...released,
+    overrides: { worker: { setup: ["npm ci"] }, practices: ["Kept"] },
+  };
+  const bound = [creationBinding(repository)];
+  const form = editFormFrom(draft, bound, "r3");
+  const shuffled = {
+    "worker.setup": ["npm ci"],
+    practices: ["Kept"],
+  } as const;
+  const kept = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: shuffled },
+    bound,
+    false,
+  );
+  expect(kept.assembled === "Body" && kept.body.overrides).toStrictEqual(
+    draft.overrides,
+  );
+  const changed = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: { ...shuffled, practices: ["Other"] } },
+    bound,
+    false,
+  );
+  const faults = changed.assembled === "Faults" ? changed.faults : [];
+  expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
+  expect(faults[0]?.reason).toMatch(/administrator/u);
+  const admin = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: { ...shuffled, practices: ["Other"] } },
+    bound,
+    true,
+  );
+  expect(admin.assembled).toBe("Body");
+  const removed = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: {} },
+    bound,
+    false,
+  );
+  expect(removed.assembled).toBe("Body");
+});

@@ -835,3 +835,27 @@ test("the images a form holds are the brief's, by identity, and bounded", () => 
     `one ticket carries at most ${String(briefImagesMax)} images`,
   ]);
 });
+
+test("a reader who may not administer is refused overrides on a new ticket, and an administer is not", () => {
+  const form = {
+    ...creationForm(),
+    overrides: { practices: ["Mine"] },
+  };
+  const refused = creationBodyFrom(creationOffers, form, noBindings, {
+    mayAdminister: false,
+  });
+  const faults = refused.assembled === "Faults" ? refused.faults : [];
+  expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
+  expect(faults[0]?.reason).toMatch(/administrator/u);
+  for (const standing of [{ mayAdminister: true }, undefined])
+    expect(
+      creationBodyFrom(creationOffers, form, noBindings, standing).assembled,
+    ).toBe("Body");
+  const none = creationBodyFrom(
+    creationOffers,
+    { ...form, overrides: {} },
+    noBindings,
+    { mayAdminister: false },
+  );
+  expect(none.assembled).toBe("Body");
+});

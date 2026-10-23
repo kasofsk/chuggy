@@ -199,6 +199,25 @@ export function overridesNestedOf(
   return Object.keys(nested).length === 0 ? undefined : nested;
 }
 
+/** Whether two parsed values are structurally the same, whatever order their keys were written in. */
+export function overridesSame(left: unknown, right: unknown): boolean {
+  if (Array.isArray(left) || Array.isArray(right))
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((item, index) => overridesSame(item, right[index]))
+    );
+  if (overrideIsRecord(left) && overrideIsRecord(right)) {
+    const keys = Object.keys(left);
+    return (
+      keys.length === Object.keys(right).length &&
+      keys.every((key) => key in right && overridesSame(left[key], right[key]))
+    );
+  }
+  return left === right;
+}
+
 /** A canonical document as the value it holds, or none where it is not JSON. */
 export function overrideDocumentOf(canonical: string): unknown {
   try {

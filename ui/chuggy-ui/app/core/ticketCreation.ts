@@ -68,6 +68,7 @@ import {
   overrideFieldLabel,
   overrideFields,
   overridesNestedOf,
+  overridesSame,
 } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import type { WorkRunner } from "./workRunner.ts";
@@ -1090,6 +1091,31 @@ function creationChoicesOf(
   return overrides === undefined ? {} : { overrides };
 }
 
+/** Whether a reader may set what a ticket overrides, and what the draft already holds of it. */
+export interface OverridesStanding {
+  readonly mayAdminister: boolean;
+  /** The overrides the draft holds, none for a ticket not yet made. */
+  readonly held?: unknown;
+}
+
+const overridesAdministerReason =
+  "only a project administrator may set what a ticket overrides; remove them to continue";
+
+/** The fault of overrides a reader who may not administer is changing, if it is one. */
+function creationOverridesFaults(
+  overrides: unknown,
+  standing: OverridesStanding | undefined,
+): readonly CreationFault[] {
+  if (
+    standing === undefined ||
+    standing.mayAdminister ||
+    overrides === undefined ||
+    overridesSame(overrides, standing.held)
+  )
+    return [];
+  return [{ field: "overrides", reason: overridesAdministerReason }];
+}
+
 /**
  * The whole creation body, fence and all, or every field a reader has to
  * revisit. The revision and the fence are those of the offer the form names,
@@ -1100,6 +1126,7 @@ export function creationBodyFrom(
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
+  standing?: OverridesStanding,
 ): CreationAssembly {
   const offer = creationOfferDrawn(offers, form);
   const drawn = offer?.initialization;
@@ -1123,10 +1150,17 @@ export function creationBodyFrom(
     ...creationChoicesOf(form, offer),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
-  if (parsed.success && stated.length === 0)
+  const refused = creationOverridesFaults(
+    parsed.success ? parsed.data.overrides : undefined,
+    standing,
+  );
+  if (parsed.success && stated.length === 0 && refused.length === 0)
     return { assembled: "Body", body: parsed.data };
   const issues = parsed.success ? [] : parsed.error.issues;
-  return { assembled: "Faults", faults: creationFaultsOf(issues, stated) };
+  return {
+    assembled: "Faults",
+    faults: [...creationFaultsOf(issues, stated), ...refused],
+  };
 }
 
 /** The mutation that turns the draft just created into a ticket the machine runs. */

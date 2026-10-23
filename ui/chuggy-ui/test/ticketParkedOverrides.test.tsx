@@ -384,7 +384,7 @@ const setupFailed = {
 };
 const setupLine = "Fix it under Overrides · Setup, then Resume";
 
-test("a ticket whose setup failed tells a member to fix it under the card's Setup, and a reader who may not mutate nothing of it", async () => {
+test("a ticket whose setup failed tells a member to fix it under the card's Setup, and a reader who may not administer nothing of it", async () => {
   serving(
     "WorkFailureEscalated",
     "Answered",
@@ -408,7 +408,7 @@ test("a ticket whose setup failed tells a member to fix it under the card's Setu
   );
   vi.stubGlobal(
     "fetch",
-    abilitiesFetch({ ...abilitiesEvery, mutate: false }, fetch),
+    abilitiesFetch({ ...abilitiesEvery, administer: false }, fetch),
   );
   const refused = await drawn();
   expect(within(refused).getByText("Setup failed")).toBeDefined();
@@ -464,8 +464,8 @@ function overridesOffers(card: HTMLElement): readonly boolean[] {
   );
 }
 
-test("a reader who may not mutate reads the overrides and is offered neither Save overrides nor Discard", async () => {
-  const card = await typedBy({ ...abilitiesEvery, mutate: false });
+test("a reader who may not administer reads the overrides and is offered neither Save overrides nor Discard", async () => {
+  const card = await typedBy({ ...abilitiesEvery, administer: false });
   expect(within(card).getByLabelText(/^Model/u)).toBeDefined();
   expect(overridesOffers(card)).toStrictEqual([false, false]);
 });

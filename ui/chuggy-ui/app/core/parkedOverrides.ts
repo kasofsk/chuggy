@@ -61,8 +61,8 @@ export function parkedOverridesFence(
 /**
  * Whether the card offers this reader the ticket's setup lines to change: its
  * overrides are drawn, fenced to a resume over the configuration read as
- * `canonical` where that is no catalog, and saved by a reader the mutate door
- * does not refuse.
+ * `canonical` where that is no catalog, and saved by a reader the administer
+ * door does not refuse.
  */
 export function parkedSetupOverridable(
   fence: NativeActionResponse | undefined,
@@ -73,7 +73,7 @@ export function parkedSetupOverridable(
     fence !== undefined &&
     canonical !== undefined &&
     configurationCatalogOf(canonical) === undefined &&
-    !projectAbilityRefused(abilities, "mutate")
+    !projectAbilityRefused(abilities, "administer")
   );
 }
 
