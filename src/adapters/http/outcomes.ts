@@ -2110,13 +2110,21 @@ function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
     case "Stale":
-      return response(
-        409,
-        nativeHttpError(
+      return response(409, {
+        ...nativeHttpError(
           "DraftInitializationStale",
           "The draft initialization is stale.",
         ),
-      );
+        currentProjectSequence: value.currentProjectSequence,
+      });
+    case "NotActive":
+      return response(409, {
+        ...nativeHttpError(
+          "ProjectNotActive",
+          "The project is not active, so it takes no new draft.",
+        ),
+        lifecycle: value.lifecycle,
+      });
   }
 }
 

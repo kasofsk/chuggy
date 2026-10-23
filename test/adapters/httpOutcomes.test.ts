@@ -542,7 +542,8 @@ test("draft creation maps every closed result, a branchless landing among them",
       value: { created: "Unavailable", retryAfterSeconds: 5 },
       status: 503,
     },
-    { value: { created: "Stale" }, status: 409 },
+    { value: { created: "Stale", currentProjectSequence: 9 }, status: 409 },
+    { value: { created: "NotActive", lifecycle: "Suspended" }, status: 409 },
     { value: { created: "LandingUnbranched" }, status: 422 },
   ] as const;
   for (const each of populated(creations, "draft creation outcomes")) {
@@ -559,6 +560,34 @@ test("draft creation maps every closed result, a branchless landing among them",
     (refused.body as { error: { code: string } }).error.code,
     "LandingUnbranched",
     "the reason a caller acts on is the code and not the status",
+  );
+  assert.deepEqual(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "Stale", currentProjectSequence: 9 },
+    }).body,
+    {
+      error: {
+        code: "DraftInitializationStale",
+        message: "The draft initialization is stale.",
+      },
+      currentProjectSequence: 9,
+    },
+    "a stale head is answered with the one to write against",
+  );
+  assert.deepEqual(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "NotActive", lifecycle: "Suspended" },
+    }).body,
+    {
+      error: {
+        code: "ProjectNotActive",
+        message: "The project is not active, so it takes no new draft.",
+      },
+      lifecycle: "Suspended",
+    },
+    "a project no head admits a draft to is not answered as a stale one",
   );
 });
 

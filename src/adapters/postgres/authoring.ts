@@ -53,7 +53,7 @@ import type {
   RepositoryConfigurationsHeld,
   RepositoryConfigurationsHeldRead,
 } from "../../interpreter/repositoryOnboarding.ts";
-import { projectRowCounter } from "./rows.ts";
+import { projectRowCounter, projectRowLifecycle } from "./rows.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
@@ -598,13 +598,39 @@ async function createDraft(
     return { created: "RepositoryNotBound" };
   if (row?.result === "LandingUnbranched")
     return { created: "LandingUnbranched" };
-  if (row?.result === "Stale") return { created: "Stale" };
+  if (row?.result === "Stale") return createDraftStale(pool, input.partition);
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");
   return {
     created: "Created",
     draft: await requiredDraft(pool, input.partition, Number(row.ticket)),
   };
+}
+
+/**
+ * Why the head fence missed, read after it did: a project that is not Active
+ * mints no ticket at any head, and an Active one answers the head it holds now.
+ */
+async function createDraftStale(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<DraftCreated> {
+  const found = await pool.query<{ head: string; lifecycle: string }>(
+    sql`SELECT head,lifecycle FROM project WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+  );
+  const standing = found.rows[0];
+  if (standing === undefined)
+    throw new Error("draft creation found no project behind its fence");
+  const lifecycle = projectRowLifecycle(standing.lifecycle);
+  return lifecycle === "Active"
+    ? {
+        created: "Stale",
+        currentProjectSequence: projectRowCounter(
+          standing.head,
+          "project head",
+        ),
+      }
+    : { created: "NotActive", lifecycle };
 }
 
 async function reviseDraft(

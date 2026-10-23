@@ -21,7 +21,7 @@ import {
 import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
 import type { Authority } from "./operationInbox.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Lifecycle, Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type {
@@ -722,7 +722,10 @@ export type DraftCreated =
   | { readonly created: "ArtifactNotBound" }
   | { readonly created: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly created: "LandingUnbranched" }
-  | { readonly created: "Stale" };
+  /** The project head moved past the one the initialization answered, and is at this one now. */
+  | { readonly created: "Stale"; readonly currentProjectSequence: number }
+  /** The project's lifecycle mints no ticket at any head, so no head to retry with is answered. */
+  | { readonly created: "NotActive"; readonly lifecycle: Lifecycle };
 
 export interface DraftInitialization {
   readonly configuration: ConfigurationRevisionResource;
