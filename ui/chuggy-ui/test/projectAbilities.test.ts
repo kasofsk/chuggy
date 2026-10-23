@@ -16,6 +16,7 @@ const abilities: readonly ProjectAbility[] = [
   "mutate",
   "dispatch",
   "manageSelector",
+  "overrideTicketConfig",
   "administer",
 ];
 

@@ -903,7 +903,7 @@ function CreationDuplicateDropped(props: {
   return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
-/** The assembly a creation form is judged by, for a reader who may or may not administer. */
+/** The assembly a creation form is judged by, for a reader who may or may not override. */
 function creationAssembler(
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
@@ -1058,7 +1058,7 @@ export interface CreationScreenReady {
   /** What a submit goes on to, which is a start once the abilities read has
    * come back without a no and the project's work is read to have a runner. */
   readonly start: CreationStart;
-  /** Whether the abilities read has not said the reader may not administer. */
+  /** Whether the abilities read has not said the reader may not override. */
   readonly mayOverride: boolean;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
