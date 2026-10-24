@@ -15,7 +15,6 @@ import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { useTicketDelivery } from "../app/browser/ticket/TicketDelivery.tsx";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { ticketDeliveryPolledMs } from "../app/core/ticketDelivery.ts";
@@ -44,7 +43,7 @@ import {
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 

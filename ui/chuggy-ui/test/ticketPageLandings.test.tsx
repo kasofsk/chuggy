@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { ticketLandingsPolledMs } from "../app/core/ticketLandings.ts";
 import {
   answer,
@@ -35,7 +34,7 @@ import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 

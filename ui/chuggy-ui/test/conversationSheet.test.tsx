@@ -19,7 +19,12 @@ import type { ConversationExchange } from "../app/core/conversation.ts";
 import tokenSheet from "../app/styles/tokens.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
-import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
+import {
+  sheetConditioned,
+  sheetDeclared,
+  sheetNarrowCondition,
+  sheetRules,
+} from "./sheet.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -272,4 +277,20 @@ test("a pane given the whole frame sets the conversation as a column to read, an
     expect(wide(column, "max-width")).toBe(
       "var(--conversation-width, var(--width-column))",
     );
+});
+
+/** A pane is as narrow as the reader leaves it on any screen, so the
+ * composer's inset narrows with the pane it stands in and not with the
+ * screen. */
+test("the composer's inset narrows with the pane it stands in, not the screen", () => {
+  const { root } = drawn("chat-pane");
+  const foot = root.querySelector(".conversation-foot");
+  if (foot === null) throw new Error("the conversation draws no foot");
+  const inset = (rules: readonly CSSStyleRule[]): string =>
+    sheetDeclared(rules, foot, "padding");
+  expect(inset(sheetConditioned(conversationSheet, CSSContainerRule))).toBe(
+    "0 var(--space-2) var(--space-2)",
+  );
+  expect(inset(sheetConditioned(conversationSheet, CSSMediaRule))).toBe("");
+  expect(wide(foot, "padding")).toBe("0 var(--space-4) var(--space-4)");
 });

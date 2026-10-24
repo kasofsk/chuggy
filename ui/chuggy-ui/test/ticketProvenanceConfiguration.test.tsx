@@ -26,7 +26,6 @@ import type { ConfigurationOverrides } from "../../../src/contract/configuration
 import type { ConfigurationSelection } from "../../../src/contract/configurationSelection.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -38,8 +37,10 @@ import {
 } from "./screenHarness.tsx";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -265,6 +266,19 @@ test("the evaluation list draws one row per stage, its checks or its instruction
   if (!(stage2 instanceof HTMLElement)) throw new Error("no stage 2 row");
   expect(within(stage2).getByText("Changed call paths")).toBeDefined();
   expect(within(stage2).getByText("Acceptance criteria")).toBeDefined();
+});
+
+/** A check is one token as often as not, and the column it stands in is as
+ * narrow as the reader leaves the pages. */
+test("a stage's check breaks inside the column rather than widening it", async () => {
+  await drawTicket();
+  await sectionOpened("Provenance");
+  const check = screen.getByText(".chug/tasks/ci.sh");
+  const rules = sheetRules(ticketSheet, []);
+  expect(check.classList.contains("ticket-config-command")).toBe(true);
+  expect(sheetDeclared(rules, check, "overflow-wrap")).toBe("anywhere");
+  expect(sheetDeclared(rules, check, "min-width")).toBe("0px");
+  expect(sheetDeclared(rules, check, "max-width")).toBe("100%");
 });
 
 /** The stages' order and their stop are the configuration's semantics, so a version 1 configuration and a catalog plan say them alike. */

@@ -558,9 +558,14 @@
     color: var(--ink-1);
   }
 
+  /* A command is one token as often as not, and breaks where it must rather
+     than widen the column it stands in. */
   .ticket-config-command {
     display: inline-block;
     align-self: flex-start;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
     padding: var(--space-1) var(--space-2);
     background: var(--surface-2);
     border-radius: var(--radius-2);

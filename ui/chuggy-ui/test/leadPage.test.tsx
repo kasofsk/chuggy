@@ -24,7 +24,7 @@ import type { ReactNode } from "react";
 
 import { LeadPage } from "../app/browser/LeadPage.tsx";
 import { useShellSlotsFilled } from "../app/browser/shell/slots.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { ViewportColumnAsideProvider } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -37,7 +37,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import {
   sessionStorePageBatchesMax,
@@ -192,12 +192,12 @@ function DetailsOpenProbe(): ReactNode {
   return <p>details {useShellSlotsFilled().detailsOpen ? "open" : "closed"}</p>;
 }
 
-/** The page at a given width, with `DetailsOpenProbe` beside it. */
-async function drawLeadAtEm(
-  em: number,
+/** The page in a column that does or does not hold the details beside it,
+ * with `DetailsOpenProbe` beside it. */
+async function drawLeadBeside(
+  beside: boolean,
   holding: () => LeadServed,
 ): Promise<void> {
-  viewportAtEm(em);
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -213,10 +213,12 @@ async function drawLeadAtEm(
       client={new QueryClient()}
       transport={server.ports.fetch}
     >
-      <ShellSlotHarness>
-        <DetailsOpenProbe />
-        <LeadPage />
-      </ShellSlotHarness>
+      <ViewportColumnAsideProvider value={beside}>
+        <ShellSlotHarness>
+          <DetailsOpenProbe />
+          <LeadPage />
+        </ShellSlotHarness>
+      </ViewportColumnAsideProvider>
     </ScreenHarness>,
   );
   await settled();
@@ -279,13 +281,13 @@ test.each([
 /** Below the desk width an open details pane would replace the page a reader
  * came here to see, so `openFirst` starts it closed there — the toggle is
  * still the reader's to press. */
-test("openFirst leaves the details closed under the desk width", async () => {
-  await drawLeadAtEm(40, () => opening);
+test("openFirst leaves the details closed in a column too narrow to hold them beside the page", async () => {
+  await drawLeadBeside(false, () => opening);
   expect(screen.getByText("details closed")).toBeDefined();
 });
 
-test("openFirst opens the details at the desk width", async () => {
-  await drawLeadAtEm(viewportDeskEm, () => opening);
+test("openFirst opens the details in a column that holds them beside the page", async () => {
+  await drawLeadBeside(true, () => opening);
   expect(screen.getByText("details open")).toBeDefined();
 });
 

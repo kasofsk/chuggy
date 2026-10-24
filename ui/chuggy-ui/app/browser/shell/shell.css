@@ -7,6 +7,12 @@
    narrower than the frame, in larger text on a taller line — and beside the
    pages the pane leaves the conversation the console's own.
 
+   The edge between the pages and the pane is a hairline a reader drags, drawn
+   over both so its ring is not cut by either; the library dividing the frame
+   says whether it is hovered or held, and the stronger edge says so to the
+   reader. A drag held into the strip gives the open pane the strip's width
+   before the pane becomes the strip, and the pane draws nothing in it.
+
    The bar is two rows at every width: the project and the gear, then the
    screens. A screen's entry is its glyph and its name, and the screen the
    reader is on is marked three ways at once — its ink, a wash, and a bar along
@@ -53,6 +59,46 @@
 
   .chat-strip[data-placement="bottom"] .chat-strip-name {
     writing-mode: horizontal-tb;
+  }
+
+  .chat-separator {
+    position: relative;
+    z-index: 1;
+    background: var(--edge);
+    transition:
+      background-color var(--duration-1) var(--ease-out),
+      box-shadow var(--duration-1) var(--ease-out);
+  }
+
+  .chat-separator[aria-orientation="vertical"] {
+    width: var(--hairline);
+  }
+
+  .chat-separator[aria-orientation="horizontal"] {
+    height: var(--hairline);
+  }
+
+  .chat-separator[data-separator="hover"],
+  .chat-separator[data-separator="active"] {
+    background: var(--edge-strong);
+    box-shadow: 0 0 0 var(--hairline) var(--edge-strong);
+  }
+
+  .chat-separator:focus-visible {
+    border-radius: 0;
+    box-shadow: var(--ring-focus);
+  }
+
+  /* Beside the pages, a panel under the pane's least width is one a held drag
+   * has taken to the strip's. The least is stated in the root's type and read
+   * here in the pane's, which is smaller, so a pane laid at its least, short of
+   * it by what the library rounds, still draws. */
+  @container (max-width: 20em) {
+    [data-group]:has(> .chat-separator[aria-orientation="vertical"])
+      .chat-open
+      > * {
+      visibility: hidden;
+    }
   }
 
   .shell-banner > .notice {

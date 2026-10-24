@@ -3,15 +3,34 @@
  * it takes, and which of the reader's threads it holds.
  *
  * There are three ways it takes the frame and no fourth: a column beside the
- * pages, the whole frame, or the strip its own control expands. The width of
- * that column is the token's and not the reader's, so nothing here carries a
- * size.
+ * pages, the whole frame, or the strip its own control expands. How wide that
+ * column is, or what share of the height it takes under the pages, is the
+ * reader's: they drag its edge, and the sizes here are only where it starts
+ * and how far it goes. They are stated here rather than as tokens because the
+ * library that divides the frame takes them as props.
  *
  * The placement and the presentation are what a reader chose and what a reload
  * has to keep, so they are read from and written to a key-value store here
- * rather than held only in a component. A reader who has chosen nothing is
- * drawn a default the viewport decides: docked where it divides, and the strip
- * where it does not, since docked there the pane takes a share of every page.
+ * rather than held only in a component, and so is the share the reader dragged
+ * the column to. A reader who has chosen nothing is drawn a default the
+ * viewport decides: docked where it divides, and the strip where it does not,
+ * since docked there the pane takes a share of every page. The presentation
+ * stays the one record of whether the pane is collapsed: a drag across the
+ * collapse threshold moves it, as the pane's own control does.
+ *
+ * THE TRAIL IS THE PANE AFTER A READER'S MOVES, a model the frame is held to:
+ * which panels it draws and the pane's share of them, stated as the rules the
+ * shell keeps rather than worked out as the library dividing the frame works
+ * them. A collapsed pane is the strip. A docked one keeps the share it was
+ * last laid open at where it sits, through another side, a full screen, a
+ * thread's own page and the frame's height changing, and it is laid afresh
+ * only where it was the strip and on a reload: at the share the reader last
+ * dragged it open to there, else at its default. So the pane collapsed by its
+ * control and expanded again has the width it had, and one dragged into the
+ * strip expands to the width it was dragged from. Beside the pages the trail
+ * holds the frame's width: a pane no reader has sized keeps its pixels as the
+ * width changes, and another side, a full screen or a thread's own page then
+ * lays it at its default again.
  *
  * What the pane holds is derived from the reader's own thread listing, and a
  * listing that has not answered holds nothing and offers nothing — an offer to
@@ -75,16 +94,17 @@ export function chatPaneDefaultAt(twoColumn: boolean): ChatPaneState {
 export function chatPaneRead(store: KeyValuePort): ChatPaneState | undefined {
   const stored = store.read(chatPaneStoreKey);
   if (stored === null) return undefined;
-  const held = chatPaneSchema.safeParse(
-    ((): unknown => {
-      try {
-        return JSON.parse(stored);
-      } catch {
-        return undefined;
-      }
-    })(),
-  );
+  const held = chatPaneSchema.safeParse(chatPaneParsed(stored));
   return held.success ? held.data : undefined;
+}
+
+/** What a stored value parses to, which is nothing where it is not JSON. */
+function chatPaneParsed(stored: string): unknown {
+  try {
+    return JSON.parse(stored);
+  } catch {
+    return undefined;
+  }
 }
 
 export function chatPaneWrite(store: KeyValuePort, state: ChatPaneState): void {
@@ -171,6 +191,433 @@ export function chatPaneFilled(state: ChatPaneState): ChatPaneState {
  * and collapsing does not. */
 export function chatPaneRestored(state: ChatPaneState): ChatPaneState {
   return { placement: state.placement, presentation: "Docked" };
+}
+
+/** The axis the frame divides along, which is down for a pane under the pages
+ * and across for one beside them or with no pane drawn. */
+export type ChatPaneOrientation = "horizontal" | "vertical";
+
+export function chatPaneOrientation(
+  state: ChatPaneState | undefined,
+): ChatPaneOrientation {
+  return state?.placement === "Bottom" ? "vertical" : "horizontal";
+}
+
+/** Where a docked pane starts and how far a drag takes either side of its
+ * edge, in the terms the library dividing the frame takes. */
+export interface ChatPaneSizes {
+  readonly chatDefault: string;
+  readonly chatMin: string;
+  readonly pagesMin: string;
+}
+
+/**
+ * Across, neither side is dragged narrower than a phone draws it: the
+ * conversation at the narrowest phone, and the pages at the phone width every
+ * page already lays itself out at. Down, the bounds are shares, since a
+ * frame's height is the device's and a share never asks for more than it holds.
+ */
+export const chatPaneSizes: Readonly<
+  Record<ChatPaneOrientation, ChatPaneSizes>
+> = {
+  horizontal: {
+    chatDefault: "25%",
+    chatMin: "20rem",
+    pagesMin: "24rem",
+  },
+  vertical: {
+    chatDefault: "26rem",
+    chatMin: "33%",
+    pagesMin: "20%",
+  },
+};
+
+/**
+ * What the pane keeps as the frame around it resizes, which is the unit of the
+ * size it is held to: the strip's while it is the strip, else its least's. So
+ * a frame alone never carries a size the pane was laid at past the strip or
+ * its least, either of which the library would take for an expand or a
+ * collapse no reader made.
+ */
+export function chatPaneKept(
+  sizes: ChatPaneSizes,
+  stripped: boolean,
+): "preserve-pixel-size" | "preserve-relative-size" {
+  const held = stripped ? chatPaneSizeStrip : sizes.chatMin;
+  return held.endsWith("%") ? "preserve-relative-size" : "preserve-pixel-size";
+}
+
+/** The collapsed pane, which is a strip its own control expands rather than a
+ * share of the frame. */
+export const chatPaneSizeStrip = "2.5rem";
+
+/**
+ * The panels the frame divides into. The pane's is named for where it is
+ * drawn, so each side and the place under the pages is a configuration of its
+ * own: the library dividing the frame remembers the shares it last laid for
+ * each set of panels and stores the reader's under their names, and a share of
+ * one side's width says nothing of the other's or of a height.
+ */
+export const chatPanePanels = {
+  pages: "pages",
+  chat: { Right: "chat-right", Left: "chat-left", Bottom: "chat-bottom" },
+} as const satisfies {
+  readonly pages: string;
+  readonly chat: Readonly<Record<ChatPanePlacement, string>>;
+};
+
+const chatPaneLayoutPagesAlone = [chatPanePanels.pages] as const;
+
+const chatPaneLayoutChatAlone: Readonly<
+  Record<ChatPanePlacement, readonly string[]>
+> = {
+  Right: [chatPanePanels.chat.Right],
+  Left: [chatPanePanels.chat.Left],
+  Bottom: [chatPanePanels.chat.Bottom],
+};
+
+const chatPaneLayoutBeside: Readonly<
+  Record<ChatPanePlacement, readonly string[]>
+> = {
+  Right: [chatPanePanels.pages, chatPanePanels.chat.Right],
+  Left: [chatPanePanels.chat.Left, chatPanePanels.pages],
+  Bottom: [chatPanePanels.pages, chatPanePanels.chat.Bottom],
+};
+
+/** The panels drawn, in the order they are drawn: the pages alone on a
+ * thread's page, the pane alone over the whole frame, and the pane first where
+ * the reader put it on the left. */
+export function chatPaneLayoutPanels(
+  state: ChatPaneState | undefined,
+): readonly string[] {
+  if (state === undefined) return chatPaneLayoutPagesAlone;
+  return chatPaneContentDrawn(state)
+    ? chatPaneLayoutBeside[state.placement]
+    : chatPaneLayoutChatAlone[state.placement];
+}
+
+/** The pane as a drag left it: one dragged across the collapse threshold is
+ * the strip, one dragged back out is docked, and one over the whole frame is
+ * not dragged at all. The state itself where the drag changed neither. */
+export function chatPaneDragged(
+  state: ChatPaneState,
+  collapsed: boolean,
+): ChatPaneState {
+  if (!chatPaneContentDrawn(state) || chatPaneStripped(state) === collapsed)
+    return state;
+  return collapsed ? chatPaneToggled(state) : chatPaneRestored(state);
+}
+
+/** The name the frame's layouts are stored under, beside the pane's own
+ * state; the panels each one divides are named in its key. */
+export const chatPaneLayoutId = `${chatPaneStoreKey}.layout`;
+
+/** The shares a layout gives its panels, by their names. */
+export type ChatPaneLayout = Readonly<Record<string, number>>;
+
+/** The layout stored for these panels, or none where what was stored divides
+ * the frame among others: the library would refuse it. */
+export function chatPaneLayoutKept(
+  stored: ChatPaneLayout | undefined,
+  panels: readonly string[],
+): ChatPaneLayout | undefined {
+  if (stored === undefined) return undefined;
+  const named = Object.keys(stored);
+  const same =
+    named.length === panels.length &&
+    panels.every((panel) => named.includes(panel));
+  return same ? stored : undefined;
+}
+
+/** The share of the frame the pane takes in a layout, wherever it sits, and
+ * none in a layout without it. */
+export function chatPaneLayoutShare(
+  layout: ChatPaneLayout,
+): number | undefined {
+  for (const panel of Object.values(chatPanePanels.chat)) {
+    const share = layout[panel];
+    if (share !== undefined) return share;
+  }
+  return undefined;
+}
+
+/** What the edge says of the pane's share, which is the pane's own wherever it
+ * sits and not the share of the panel before the edge. */
+export function chatPaneShareText(
+  share: number | undefined,
+): string | undefined {
+  return share === undefined ? undefined : `${String(Math.round(share))}%`;
+}
+
+const chatPaneLayoutSchema = z.record(z.string(), z.number().finite());
+
+/**
+ * A layout store over a key-value store, which reads back only a layout: the
+ * library parses what it reads unguarded, so a value that is not one is read
+ * as nothing stored. What it was handed is read back where the store has
+ * nothing, so a browser that keeps nothing still opens the pane to the width
+ * the reader left until the page is loaded again.
+ */
+export function chatPaneLayoutStore(store: KeyValuePort): {
+  readonly getItem: (key: string) => string | null;
+  readonly setItem: (key: string, value: string) => void;
+} {
+  const handed = new Map<string, string>();
+  return {
+    getItem: (key) => {
+      const stored = store.read(key) ?? handed.get(key);
+      if (stored === undefined) return null;
+      return chatPaneLayoutSchema.safeParse(chatPaneParsed(stored)).success
+        ? stored
+        : null;
+    },
+    setItem: (key, value) => {
+      handed.set(key, value);
+      store.write(key, value);
+    },
+  };
+}
+
+/** The pane after a reader's moves, in a frame of two widths, one that divides
+ * it and one that does not, and of any height. So a share across it is only
+ * ever laid at the width that divides it, and one down it is kept at every
+ * height. */
+export interface ChatPaneTrail {
+  readonly frame: ChatPaneTrailFrame;
+  readonly twoColumn: boolean;
+  readonly heightEm: number;
+  /** What the reader chose, which is nothing until they move the pane. */
+  readonly chosen: ChatPaneState | undefined;
+  /** The share the reader last dragged the pane open to, by the panels it
+   * divided. */
+  readonly stored: Readonly<Record<string, number>>;
+  /** The share the pane was last laid open at, by the panels it divided, for
+   * as long as the frame is not loaded again. */
+  readonly laid: Readonly<Record<string, number>>;
+}
+
+/** The frame a trail is drawn in, in the root `em` the pane's sizes are stated
+ * in: a desk's width, or one too narrow to divide that still keeps the bar,
+ * and the height it starts at. */
+export interface ChatPaneTrailFrame {
+  readonly wideEm: number;
+  readonly narrowEm: number;
+  readonly heightEm: number;
+}
+
+/**
+ * A move the reader makes: a placement other than the one chosen, from the
+ * gear; a control of the pane; the window narrowed, widened or made another
+ * height; a thread's own page and back; a reload; or the edge dragged to a
+ * share of the frame along its axis. A drag short of the pane's least is one
+ * into the strip: the threshold between the two is the library's, and a trail
+ * drags past it.
+ */
+export type ChatPaneMove =
+  | { readonly move: "Placed"; readonly placement: ChatPanePlacement }
+  | { readonly move: "Dragged"; readonly share: number }
+  | { readonly move: "Resized"; readonly heightEm: number }
+  | {
+      readonly move:
+        | "Collapsed"
+        | "Expanded"
+        | "Filled"
+        | "Restored"
+        | "Narrowed"
+        | "Widened"
+        | "Visited"
+        | "Reloaded";
+    };
+
+/** What the frame draws at a point on a trail: the pane's share is of the
+ * panels beside each other, and none where one panel has the frame. */
+export interface ChatPaneTrailDrawn {
+  readonly state: ChatPaneState;
+  readonly orientation: ChatPaneOrientation;
+  readonly panels: readonly string[];
+  readonly share: number | undefined;
+}
+
+export function chatPaneTrailStarted(frame: ChatPaneTrailFrame): ChatPaneTrail {
+  return {
+    frame,
+    twoColumn: true,
+    heightEm: frame.heightEm,
+    chosen: undefined,
+    stored: {},
+    laid: {},
+  };
+}
+
+/** The pane as the shell holds it, which is the default until the reader
+ * chooses. */
+export function chatPaneTrailHeld(trail: ChatPaneTrail): ChatPaneState {
+  return trail.chosen ?? chatPaneDefaultAt(trail.twoColumn);
+}
+
+/** A size the pane states, as a share of an axis this many `em` long. */
+function chatPaneTrailShareOf(size: string, axisEm: number): number {
+  const amount = Number.parseFloat(size);
+  if (size.endsWith("%")) return amount;
+  if (size.endsWith("rem")) return (amount / axisEm) * 100;
+  throw new Error(`a pane size in a unit the trail does not read: ${size}`);
+}
+
+/** How long the frame is along an axis, in root `em`. */
+export function chatPaneTrailAxisEm(
+  trail: ChatPaneTrail,
+  orientation: ChatPaneOrientation,
+): number {
+  if (orientation === "vertical") return trail.heightEm;
+  return trail.twoColumn ? trail.frame.wideEm : trail.frame.narrowEm;
+}
+
+/** How far the pane's share goes along an axis of the frame, and where it
+ * starts. */
+function chatPaneTrailBounds(
+  trail: ChatPaneTrail,
+  orientation: ChatPaneOrientation,
+): {
+  readonly chatDefault: number;
+  readonly chatMin: number;
+  readonly chatMax: number;
+  readonly strip: number;
+} {
+  const axisEm = chatPaneTrailAxisEm(trail, orientation);
+  const sizes = chatPaneSizes[orientation];
+  const chatMin = chatPaneTrailShareOf(sizes.chatMin, axisEm);
+  const chatMax = 100 - chatPaneTrailShareOf(sizes.pagesMin, axisEm);
+  const chatDefault = chatPaneTrailShareOf(sizes.chatDefault, axisEm);
+  return {
+    chatDefault: Math.min(Math.max(chatDefault, chatMin), chatMax),
+    chatMin,
+    chatMax,
+    strip: chatPaneTrailShareOf(chatPaneSizeStrip, axisEm),
+  };
+}
+
+export function chatPaneTrailDrawn(trail: ChatPaneTrail): ChatPaneTrailDrawn {
+  const state = chatPaneNarrowed(chatPaneTrailHeld(trail), trail.twoColumn);
+  const orientation = chatPaneOrientation(state);
+  const panels = chatPaneLayoutPanels(state);
+  const bounds = chatPaneTrailBounds(trail, orientation);
+  const key = panels.join();
+  const opened = trail.laid[key] ?? trail.stored[key] ?? bounds.chatDefault;
+  const share = chatPaneStripped(state) ? bounds.strip : opened;
+  return {
+    state,
+    orientation,
+    panels,
+    share: panels.length < 2 ? undefined : share,
+  };
+}
+
+/** The edge let go at a share: open, it is stored and laid, and in the strip it
+ * moves the presentation as the control would and leaves the stored share. */
+function chatPaneTrailDragged(
+  trail: ChatPaneTrail,
+  share: number,
+): ChatPaneTrail {
+  const drawn = chatPaneTrailDrawn(trail);
+  if (drawn.share === undefined)
+    throw new Error("a drag where no edge is drawn");
+  const bounds = chatPaneTrailBounds(trail, drawn.orientation);
+  const collapsed = share < bounds.chatMin;
+  const held = chatPaneTrailHeld(trail);
+  const moved = chatPaneDragged(held, collapsed);
+  const stored = { [drawn.panels.join()]: Math.min(share, bounds.chatMax) };
+  return {
+    ...trail,
+    chosen: moved === held ? trail.chosen : moved,
+    stored: collapsed ? trail.stored : { ...trail.stored, ...stored },
+    laid: collapsed ? trail.laid : { ...trail.laid, ...stored },
+  };
+}
+
+/** The trail with the share the frame now draws laid for its panels, or none
+ * where the pane is the strip: expanded, it is laid afresh. */
+function chatPaneTrailLaid(trail: ChatPaneTrail): ChatPaneTrail {
+  const drawn = chatPaneTrailDrawn(trail);
+  if (drawn.share === undefined) return trail;
+  const key = drawn.panels.join();
+  const others = Object.entries(trail.laid).filter(
+    ([panels]) => panels !== key,
+  );
+  const laid = chatPaneStripped(drawn.state)
+    ? others
+    : [...others, [key, drawn.share] as const];
+  return { ...trail, laid: Object.fromEntries(laid) };
+}
+
+/** The trail after one more move, with the share the frame then draws laid. */
+export function chatPaneTrailMoved(
+  trail: ChatPaneTrail,
+  move: ChatPaneMove,
+): ChatPaneTrail {
+  return chatPaneTrailLaid(chatPaneTrailChanged(trail, move));
+}
+
+/** What one move changes. A thread's own page leaves the frame to draw again
+ * what it drew, a height changes no share laid, and a reload forgets them. */
+function chatPaneTrailChanged(
+  trail: ChatPaneTrail,
+  move: ChatPaneMove,
+): ChatPaneTrail {
+  const held = chatPaneTrailHeld(trail);
+  const chose = (chosen: ChatPaneState): ChatPaneTrail => ({
+    ...trail,
+    chosen,
+  });
+  switch (move.move) {
+    case "Placed":
+      if (move.placement === held.placement)
+        throw new Error(
+          `the pane placed where it already is: ${held.placement}`,
+        );
+      return chose(chatPaneRepositioned(held, move.placement));
+    case "Collapsed":
+    case "Expanded":
+      return chose(chatPaneToggled(held));
+    case "Filled":
+      return chose(chatPaneFilled(held));
+    case "Restored":
+      return chose(chatPaneRestored(held));
+    case "Narrowed":
+      return { ...trail, twoColumn: false };
+    case "Widened":
+      return { ...trail, twoColumn: true };
+    case "Resized":
+      return { ...trail, heightEm: move.heightEm };
+    case "Visited":
+      return trail;
+    case "Reloaded":
+      return { ...trail, laid: {} };
+    case "Dragged":
+      return chatPaneTrailDragged(trail, move.share);
+  }
+}
+
+/** The moves the frame offers the reader now: the gear, the window, a thread
+ * and a reload always, the edge wherever it is drawn, and the controls the
+ * pane draws as it is presented. */
+export function chatPaneTrailOffered(
+  trail: ChatPaneTrail,
+): readonly ChatPaneMove["move"][] {
+  const always = [
+    "Placed",
+    trail.twoColumn ? "Narrowed" : "Widened",
+    "Resized",
+    "Visited",
+    "Reloaded",
+  ] as const;
+  switch (chatPaneTrailDrawn(trail).state.presentation) {
+    case "Docked":
+      return [...always, "Collapsed", "Filled", "Dragged"];
+    case "Collapsed":
+      return [...always, "Expanded", "Dragged"];
+    case "Full":
+      return [...always, "Collapsed", "Restored"];
+  }
 }
 
 /** The thread the reader picked for the pane to hold, and the project they
