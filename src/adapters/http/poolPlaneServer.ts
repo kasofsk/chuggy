@@ -29,8 +29,8 @@
  * and every earlier runner send none.
  *
  * A POLL MAY NAME THE CAPABILITIES ITS RUNNER HAS, and one whose header names
- * no set this side reads is refused with a 400, as any part of a poll this side
- * cannot read is, rather than served as naming none. The set steers what is
+ * no set this side reads is refused with a 400, as a query this side cannot
+ * read is, rather than served as naming none. The set steers what is
  * claimed, so a poll whose set was dropped would go on claiming under the one
  * its owner meant to replace; a runner reads the 400 as final, and a set that
  * did not read once does not read on the next poll either.
