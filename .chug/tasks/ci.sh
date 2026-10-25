@@ -27,18 +27,23 @@
 #
 # A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN, given a Track Record token
 # and a `track-record` that runs. Every gate but check-roster and doc-lint, and
-# every suite, then runs under `track-record run`, keyed on the tracked tree as
-# it is on disk, the ignored files beside it, what npm installed, the version
-# of node, what else that gate's verdict reads, and the salt below. A key on
-# record replays its log instead of running, and only an exit of 0 is
-# recorded. A reused pass is a pass and nothing more: it is counted as one,
-# and the clean line says how many there were. What no key sees, a reused
-# pass does not check: a different server behind the same URL, a container
-# reused by name, a file outside the tree or outside the scope
-# `_ignored-inputs.sh` keys, such as a package changed under node_modules by
-# hand, and git's own state: HEAD, the index and history, except where a gate
-# keys them itself. Without a token, or with TRACK_RECORD_OFF=1, nothing is
-# wrapped and every gate runs itself.
+# every suite, then runs under `track-record run`, keyed on what
+# `.chug/tasks/_ci-select.sh` declares it reads: the tracked files its
+# pathspecs match as they are on disk, the ignored files among them, and npm's
+# record of the packages it names, or of the whole install. A gate declared
+# keyed on the whole tree is keyed on every tracked file, every ignored file
+# in scope and the whole install. Every key also holds the version of node,
+# what else that gate's verdict reads, and the salt below; none holds this
+# script, the selection or the base it selects against. A key on record
+# replays its log instead of running, and only an exit of 0 is recorded. A
+# reused pass is a pass and nothing more: it is counted as one, and the clean
+# line says how many there were. What no key sees, a reused pass does not
+# check: a file a gate reads that its declaration does not name, a different
+# server behind the same URL, a container reused by name, a file outside the
+# tree or outside the scope `_ignored-inputs.sh` keys, such as a package
+# changed under node_modules by hand, and git's own state: HEAD, the index and
+# history, except where a gate keys them itself. Without a token, or with
+# TRACK_RECORD_OFF=1, nothing is wrapped and every gate runs itself.
 #
 # Env:
 #   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
@@ -75,15 +80,18 @@ echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
 # store keeps the first pass recorded for a key, and a fresh run does not
 # replace it; bump the salt when passes already recorded must stop counting
 # for a reason no key can see, such as a pass found to be false.
-record_salt="chuggy-ci-1"
+record_salt="chuggy-ci-2"
 
-# Every key also holds npm's own record of what it installed, since a lock that
-# changed after `npm ci` names packages that are not the ones installed, and
-# the ignored files a gate's walk can reach, which `_ignored-inputs.sh` prints
-# and says the scope of.
+# A key holds npm's own record of what it installed rather than the lock, since
+# a lock that changed after `npm ci` names packages that are not the ones
+# installed: the whole of it, or the packages a gate names with what each
+# depends on, which `_installed-inputs.sh` prints. It holds the ignored files
+# too, which `_ignored-inputs.sh` prints and says the scope of: every one a
+# walk of the tree can reach, or those within a gate's pathspecs.
 record_tool_node="node --version"
 record_tool_install="cat node_modules/.package-lock.json"
 record_tool_ignored="sh .chug/tasks/_ignored-inputs.sh"
+record_tool_installed="sh .chug/tasks/_installed-inputs.sh"
 record=""
 # A token is read as track-record reads one, so a variable naming a file that
 # is not there wraps nothing rather than announcing reuse that cannot happen.
@@ -144,6 +152,45 @@ record_reused() { # <name> <stderr file>
 	return 1
 }
 
+# A word as the shell reads it back, for `eval`.
+record_quote() { # <word>
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+# What a gate's or a suite's key holds of the tree, the ignored files and the
+# install, as words for `eval`: the inputs `_ci-select.sh` declares for it, or
+# the whole of each for one it declares keyed on the whole tree.
+record_scope() { # <gate id or suite path>
+	ci_inputs "$1"
+	if [ "$CI_INPUTS_TREE" = 1 ]; then
+		printf '%s ' --tool "$(record_quote "$record_tool_install")" \
+			--tool "$(record_quote "$record_tool_ignored")"
+		return 0
+	fi
+	record_specs=""
+	record_packages=""
+	set -f
+	IFS='
+'
+	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE; do
+		record_specs="$record_specs $(record_quote "$record_word")"
+	done
+	for record_word in $CI_INPUTS_PACKAGES; do
+		record_packages="$record_packages $(record_quote "$record_word")"
+	done
+	if [ "$CI_INPUTS_INSTALL" = 1 ]; then
+		printf '%s ' --tool "$(record_quote "$record_tool_install")"
+	elif [ -n "$record_packages" ]; then
+		printf '%s ' --tool "$(record_quote "$record_tool_installed$record_packages")"
+	fi
+	printf '%s ' --tool "$(record_quote "$record_tool_ignored$record_specs")"
+	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE; do
+		printf '%s ' --inputs "$(record_quote "$record_word")"
+	done
+	unset IFS
+	set +f
+}
+
 # What else a gate's verdict reads goes into its key, so a pass is reused only
 # where the same question would be asked: the server a caller names or the
 # image one is started from, since a server started by hand is not the one an
@@ -174,12 +221,13 @@ record_gate() { # <gate-id> <script> [args...]
 		;;
 	*) set -- -- "$@" ;;
 	esac
+	record_scoped="$(record_scope "$record_name")"
+	eval "set -- $record_scoped --salt \"\$record_salt\" \"\$@\""
 	rm -f "$record_dir/rc"
 	{
 		{
 			track-record run --name "$record_name" --tool "$record_tool_node" \
-				--tool "$record_tool_install" --tool "$record_tool_ignored" \
-				--salt "$record_salt" "$@" 2>&1 1>&3 3>&-
+				"$@" 2>&1 1>&3 3>&-
 			echo "$?" >"$record_dir/rc"
 		} | tee "$record_dir/err" >&2
 	} 3>&1
@@ -306,9 +354,9 @@ else
 		for suite in $suites; do
 			printf '  - %s\n' "$suite"
 			if [ -n "$record" ]; then
-				set -- track-record run --name "$suite" --tool "$record_tool_node" \
-					--tool "$record_tool_install" --tool "$record_tool_ignored" \
-					--salt "$record_salt" --platform -- sh "$suite"
+				record_scoped="$(record_scope "$suite")"
+				eval "set -- track-record run --name \"\$suite\" --tool \"\$record_tool_node\" \
+					$record_scoped --salt \"\$record_salt\" --platform -- sh \"\$suite\""
 			else
 				set -- sh "$suite"
 			fi

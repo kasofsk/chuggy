@@ -18,6 +18,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 SUT="$HERE/ci.sh"
 SELECT="$HERE/_ci-select.sh"
 IGNORED="$HERE/_ignored-inputs.sh"
+INSTALLED="$HERE/_installed-inputs.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -55,6 +56,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	cp "$SUT" "$R/.chug/tasks/ci.sh"
 	cp "$SELECT" "$R/.chug/tasks/_ci-select.sh"
 	cp "$IGNORED" "$R/.chug/tasks/_ignored-inputs.sh"
+	cp "$INSTALLED" "$R/.chug/tasks/_installed-inputs.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -550,32 +552,60 @@ run_last_commit
 check "the directed model selects the replay that reads it" 0 "$RC" "stub check-conformance"
 check "the directed model selects the random replay" 0 "$RC" "stub check-random"
 
+# A lock as npm writes one: quint and a package it depends on, the schema
+# library the generated API imports, the formatter that writes it, and a
+# package none of the narrow gates reads, each at the version named.
+lock_json() { # <quint> <grpc> <zod> <left-pad>
+	printf '{\n  "lockfileVersion": 3,\n  "packages": {\n'
+	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s" } },\n' "$1" "$3" "$4"
+	printf '    "node_modules/@informalsystems/quint": { "version": "%s", "dependencies": { "@grpc/grpc-js": "^%s" } },\n' "$1" "$2"
+	printf '    "node_modules/@grpc/grpc-js": { "version": "%s" },\n' "$2"
+	printf '    "node_modules/zod": { "version": "%s" },\n' "$3"
+	printf '    "node_modules/prettier": { "version": "3.0.0" },\n'
+	printf '    "node_modules/left-pad": { "version": "%s" }\n' "$4"
+	printf '  }\n}\n'
+}
+
 # The console is a workspace the root lockfile pins, and npm reads every
 # workspace's manifest before it runs a script in one. Its format script takes
 # Prettier's settings and what Prettier leaves out from the root, and its
 # bundler takes the root's compiler settings for the contract it imports. The
-# replays run under the module type the root manifest declares and the schema
-# library the lockfile pins, which the generated API imports.
+# replays run under the module type the nearest manifest above each file
+# declares and the schema library the lockfile pins, which the generated API
+# imports, and no other package: a lock that moves another leaves them out.
 stub_repo 0
 mkdir -p "$R/test/rig"
-printf '{}\n' > "$R/package-lock.json"
+lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
 printf 'model/\n' > "$R/.prettierignore"
 printf '{}\n' > "$R/.prettierrc.json"
 printf '{}\n' > "$R/tsconfig.json"
 printf '{}\n' > "$R/test/rig/package.json"
 commit_all baseline
-printf '{ "lockfileVersion": 3 }\n' > "$R/package-lock.json"
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 > "$R/package-lock.json"
 commit_all lock
 run_last_commit
 refute "a lockfile change selects the console" 0 "$RC" "check-console: SKIPPED"
-check "a lockfile change selects the replay" 0 "$RC" "stub check-conformance"
-check "a lockfile change selects the random replay" 0 "$RC" "stub check-random"
+check "a lockfile change the schema library is not in skips the replay" 0 "$RC" "check-conformance: SKIPPED"
+check "a lockfile change the schema library is not in skips the random replay" 0 "$RC" "check-random: SKIPPED"
+lock_json 0.32.0 1.0.0 4.0.1 1.0.1 > "$R/package-lock.json"
+commit_all schema
+run_last_commit
+check "a lockfile that moves the schema library selects the replay" 0 "$RC" "stub check-conformance"
+check "a lockfile that moves the schema library selects the random replay" 0 "$RC" "stub check-random"
 printf '{ "private": true }\n' > "$R/package.json"
 commit_all manifest
 run_last_commit
 refute "a package manifest change selects the console" 0 "$RC" "check-console: SKIPPED"
 check "a package manifest change selects the replay" 0 "$RC" "stub check-conformance"
 check "a package manifest change selects the random replay" 0 "$RC" "stub check-random"
+mkdir -p "$R/src"
+printf '{ "type": "commonjs" }\n' > "$R/src/package.json"
+commit_all nested-manifest
+run_last_commit
+check "a manifest arriving above the sources selects the replay" 0 "$RC" "stub check-conformance"
+check "a manifest arriving above the sources selects the generated API" 0 "$RC" "stub check-model-api"
+refute "a manifest arriving above the sources selects the console" 0 "$RC" "check-console: SKIPPED"
+check "a manifest is no input of the model's gate" 0 "$RC" "check-model: SKIPPED"
 printf 'dist/\n' > "$R/.prettierignore"
 commit_all ignore
 run_last_commit
@@ -782,50 +812,54 @@ commit_all rules
 run_last_commit 1
 check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
 
-# THE MODEL'S GATE FOLLOWS QUINT: a package change that names no quint line
-# leaves it out, and one that moves quint's own line brings it in.
-package_at() { # <quint version> <other version>
-	printf '{\n  "devDependencies": {\n    "@informalsystems/quint": "%s",\n    "left-pad": "%s"\n  }\n}\n' "$1" "$2" > "$R/package.json"
-}
+# THE MODEL'S GATE FOLLOWS QUINT: a lock that moves no package in quint's
+# closure leaves it out, and one that moves quint or a package quint depends on
+# brings it in, read past any colour or diff program git is configured with. A
+# lock that cannot be read at either end brings it in too. The manifest is not
+# one of its inputs.
 stub_repo 0
-package_at 0.32.0 1.0.0
+lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
+printf '{ "devDependencies": { "left-pad": "1.0.0" } }\n' > "$R/package.json"
 commit_all baseline
-package_at 0.32.0 1.0.1
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 > "$R/package-lock.json"
+printf '{ "devDependencies": { "left-pad": "1.0.1" } }\n' > "$R/package.json"
 commit_all other-package
 run_last_commit
-check "a package change that leaves quint alone skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a lock change that leaves quint's closure alone skips Quint" 0 "$RC" "check-model: SKIPPED"
 check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
-package_at 0.33.0 1.0.1
+lock_json 0.32.0 1.1.0 4.0.0 1.0.1 > "$R/package-lock.json"
 run_last_commit
-refute "a quint bump not yet committed selects Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock moving what quint depends on, not yet committed, selects Quint" 0 "$RC" "check-model: SKIPPED"
+commit_all quint-dependency
+run_last_commit
+refute "a lock moving a package quint depends on selects Quint" 0 "$RC" "check-model: SKIPPED"
+lock_json 0.33.0 1.1.0 4.0.0 1.0.1 > "$R/package-lock.json"
 commit_all quint
 run_last_commit
-refute "a package change that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
-lock_at() { # <quint version>
-	printf '{\n  "packages": {\n    "node_modules/@informalsystems/quint": {\n      "resolved": "https://registry.npmjs.org/@informalsystems/quint/-/quint-%s.tgz"\n    }\n  }\n}\n' "$1" > "$R/package-lock.json"
-}
-lock_at 0.33.0
-commit_all lock-baseline
-lock_at 0.34.0
-commit_all lock-quint
-run_last_commit
-refute "a lockfile that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock that moves quint selects Quint" 0 "$RC" "check-model: SKIPPED"
 git -C "$R" config color.ui always
-run_last_commit
-refute "a quint bump is read through a git that colours its diffs" 0 "$RC" "check-model: SKIPPED"
 git -C "$R" config diff.external "echo rendered"
 run_last_commit
-refute "a quint bump is read past a diff program of the member's own" 0 "$RC" "check-model: SKIPPED"
+refute "a quint bump is read past a git that colours and renders its own way" 0 "$RC" "check-model: SKIPPED"
+lock_json 0.33.0 1.1.0 4.0.0 1.0.2 > "$R/package-lock.json"
+commit_all other-package-again
+run_last_commit
+check "a lock that leaves quint alone is read the same way there" 0 "$RC" "check-model: SKIPPED"
 git -C "$R" config --unset diff.external
+git -C "$R" config --unset color.ui
+printf 'not a lock\n' > "$R/package-lock.json"
+commit_all unreadable
+run_last_commit
+refute "a lock that cannot be read selects Quint" 0 "$RC" "check-model: SKIPPED"
 stub_repo 0
 commit_all baseline
-package_at 0.32.0 1.0.0
+lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
 OUT="$WORK/.out"
 set +e
 (cd "$R" && CHUG_CI_ALLOW_UNTRACKED=1 CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
 RC=$?
 set -e
-refute "package files git cannot diff select Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock the base does not hold selects Quint" 0 "$RC" "check-model: SKIPPED"
 
 # A RUN THAT RAN NOTHING SAYS SO.
 stub_repo 0
@@ -1031,6 +1065,14 @@ check "no suites found exits 2, not 0" 2 "$RC" "matched nothing"
 # it also logs a digest of what its tools print, as track-record keys on it,
 # and each tool that fails, which would leave the gate unrecorded; for the name
 # STUB_TR_KILL gives, it kills the shell that ran it.
+#
+# Under STUB_TR_STORE, a directory, it keeps a store as track-record does: it
+# keys each call on its name, its command, each tool's command and output, each
+# variable, the platform, the salt and the tracked files its inputs match, or
+# the whole tree given none, as they are on disk, and logs the key; it neither
+# looks up nor records where a tool fails or an untracked file sits within the
+# inputs; it replays a pass on record, unless TRACK_RECORD_FRESH=1, and records
+# an exit of 0. Unlike track-record it takes an input that matches nothing.
 TRBIN="$WORK/trbin"
 TRLOG="$WORK/tr.log"
 mkdir -p "$TRBIN"
@@ -1045,19 +1087,31 @@ if [ "$1" = "--version" ]; then exit "${STUB_TR_VERSION_RC:-0}"; fi
 } >>"$STUB_TR_LOG"
 name=""
 tools=""
+specs=""
+keyed=1
+material="$STUB_TR_LOG.material"
+: >"$material"
 while [ "$#" -gt 0 ]; do
 	case "$1" in
 	--) shift; break ;;
-	--name) name="$2"; shift 2 ;;
+	--name) name="$2"; printf 'name %s\n' "$2" >>"$material"; shift 2 ;;
+	--inputs) specs="$specs$2
+"; shift 2 ;;
 	--tool)
-		if [ -n "${STUB_TR_DIGEST:-}" ]; then
+		if [ -n "${STUB_TR_DIGEST:-}${STUB_TR_STORE:-}" ]; then
 			if ! sh -c "$2" >"$STUB_TR_LOG.out" 2>"$STUB_TR_LOG.err"; then
 				printf 'toolfail|%s|%s\n' "$name" "$2" >>"$STUB_TR_LOG"
+				keyed=0
 			fi
 			tools="$tools$(cksum <"$STUB_TR_LOG.out") $(cksum <"$STUB_TR_LOG.err")/"
+			printf 'tool %s\n' "$2" >>"$material"
+			cat "$STUB_TR_LOG.out" "$STUB_TR_LOG.err" >>"$material"
 		fi
 		shift 2
 		;;
+	--env) printf 'env %s %s\n' "$2" "$(printenv "$2" || echo '(unset)')" >>"$material"; shift 2 ;;
+	--salt) printf 'salt %s\n' "$2" >>"$material"; shift 2 ;;
+	--platform) printf 'platform %s\n' "$(uname -sm)" >>"$material"; shift ;;
 	*) shift ;;
 	esac
 done
@@ -1070,16 +1124,45 @@ for listed in ${STUB_TR_REUSE:-}; do
 		exit "${STUB_TR_REUSE_RC:-0}"
 	fi
 done
-exec "$@"
+[ -n "${STUB_TR_STORE:-}" ] || exec "$@"
+printf 'argv' >>"$material"
+printf ' %s' "$@" >>"$material"
+printf '\n' >>"$material"
+(
+	set -f
+	IFS='
+'
+	# shellcheck disable=SC2086 # a pathspec a line, by construction
+	git ls-files -- $specs | while IFS= read -r file; do
+		if [ -f "$file" ]; then
+			if [ -x "$file" ]; then kind=exec; else kind=file; fi
+			printf 'file %s %s %s\n' "$file" "$kind" "$(git hash-object --no-filters -- "$file")"
+		else
+			printf 'file %s deleted\n' "$file"
+		fi
+	done
+	# shellcheck disable=SC2086 # a pathspec a line, by construction
+	git ls-files --others --exclude-standard -- $specs | sed 's/^/untracked /'
+) >>"$material"
+if grep -q '^untracked ' "$material"; then keyed=0; fi
+key="$(cksum <"$material" | cut -d' ' -f1)"
+printf 'key|%s|%s|%s\n' "$name" "$key" "$keyed" >>"$STUB_TR_LOG"
+if [ "$keyed" = 1 ] && [ "${TRACK_RECORD_FRESH:-0}" != 1 ] && [ -e "$STUB_TR_STORE/$key" ]; then
+	echo "stub log replayed for $name"
+	echo "track-record: REUSED $name (recorded 2026-01-01T00:00:00Z by stub)" >&2
+	exit 0
+fi
+"$@"
+rc=$?
+if [ "$rc" -eq 0 ] && [ "$keyed" = 1 ]; then : >"$STUB_TR_STORE/$key"; fi
+exit "$rc"
 STUB
 chmod +x "$TRBIN/track-record"
 salt="$(sed -n 's/^record_salt="\(.*\)"$/\1/p' "$SUT")"
-record_tool_node="" record_tool_install="" record_tool_ignored=""
-eval "$(awk '
-	/^record_tool_(node|install)=/ { print; next }
-	/^record_tool_ignored=/ { open = 1 }
-	open { print; if ($0 !~ /\\$/) exit }
-' "$SUT")"
+record_tool_node="" record_tool_install="" record_tool_ignored="" record_tool_installed=""
+eval "$(sed -n '/^record_tool_[a-z]*="[^"]*"$/p' "$SUT")"
+[ -n "$record_tool_node" ] && [ -n "$record_tool_install" ] && [ -n "$record_tool_ignored" ] &&
+	[ -n "$record_tool_installed" ]
 # Every gate the sequencer names is wrapped but check-roster and doc-lint.
 gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint)"
 
@@ -1121,10 +1204,9 @@ for case in "no token|" "a token file that is not there|TRACK_RECORD_TOKEN_FILE=
 done
 
 # A token, in the variable or in a file, wraps every gate the sequencer calls
-# once but check-roster and doc-lint, named by its id, keyed on node, the
-# install, the ignored files and the salt and on what else its verdict reads,
-# and never on the platform. check-roster and doc-lint run as they do
-# unwrapped.
+# once but check-roster and doc-lint, named by its id, keyed on node and the
+# salt and on what else its verdict reads, and never on the platform.
+# check-roster and doc-lint run as they do unwrapped.
 printf 'trk_stub\n' > "$WORK/token"
 run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
 check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
@@ -1137,26 +1219,64 @@ refute "no gate is keyed on the platform" 0 "$RC" "|--platform|"
 refute "check-roster is not wrapped" 0 "$RC" "run|--name|check-roster|"
 refute "doc-lint is not wrapped" 0 "$RC" "run|--name|doc-lint|"
 check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
+# A gate keyed on the whole tree holds the whole install record and every
+# ignored file, and passes no inputs.
 common="--tool|$record_tool_node|--tool|$record_tool_install|--tool|$record_tool_ignored|--salt|$salt|"
+keyed=0
 for gate in \
 	"check-paths|${common}--tool|git log --diff-filter=D --name-only --format=|--|./.chug/tasks/check-paths.sh|" \
 	"source-static|--|./.chug/tasks/check-source.sh|--static|" \
-	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|" \
-	"check-conformance|${common}--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
-	"check-random|${common}--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
-	"check-postgres|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-postgres.sh|" \
-	"check-queries|${common}--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-queries.sh|" \
-	"check-keto|${common}--env|CHUG_KETO_READ_URL|--env|CHUG_KETO_WRITE_URL|--env|CHUG_KETO_IMAGE|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-keto.sh|" \
-	"check-model|--|./.chug/tasks/check-model.sh|"; do
+	"source-unit|${common}--env|CHUG_SETUP_PROGRAM|--|./.chug/tasks/check-source.sh|--unit|"; do
 	id="${gate%%|*}"
 	shape="${gate#*|}"
 	case "$shape" in --\|*) shape="$common$shape" ;; esac
-	check "$id is keyed on what its verdict reads" 0 "$RC" "run|--name|$id|$shape"
-	case "$shape" in "$common--|"*) ;; *) keyed=$((${keyed:-0} + 1)) ;; esac
+	check "$id is keyed on the whole tree and what else its verdict reads" 0 "$RC" "run|--name|$id|$shape"
+	case "$shape" in "$common--|"*) ;; *) keyed=$((keyed + 1)) ;; esac
 done
-# Every gate the table does not key on more is keyed on nothing more.
+# The model's gate holds its model, its script and quint's installed closure,
+# and the ignored files among them, and nothing else of the tree.
+check "check-model is keyed on the model, its script and quint alone" 0 "$RC" \
+	"run|--name|check-model|--tool|$record_tool_node|--tool|$record_tool_installed '@informalsystems/quint'|--tool|$record_tool_ignored ':(glob)model/**/*.qnt' '.chug/tasks/check-model.sh'|--inputs|:(glob)model/**/*.qnt|--inputs|.chug/tasks/check-model.sh|--salt|$salt|--|./.chug/tasks/check-model.sh|"
+# Every other narrowed gate passes its inputs and scopes its ignored files to
+# them; a gate that runs the root's toolchain broadly holds the whole install
+# record, and one that runs named packages holds their closure.
+narrowed=0
+for gate in \
+	"check-model|packages|--|./.chug/tasks/check-model.sh|" \
+	"check-model-api|packages|--|./.chug/tasks/check-model-api.sh|" \
+	"check-conformance|packages|--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
+	"check-random|packages|--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
+	"check-console|install|--|./.chug/tasks/check-console.sh|" \
+	"check-postgres|install|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-postgres.sh|" \
+	"check-queries|install|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-queries.sh|" \
+	"check-keto|install|--env|CHUG_KETO_READ_URL|--env|CHUG_KETO_WRITE_URL|--env|CHUG_KETO_IMAGE|--env|CHUG_PG_URL|--env|CHUG_PG_IMAGE|--|./.chug/tasks/check-keto.sh|"; do
+	id="${gate%%|*}"
+	rest="${gate#*|}"
+	held="${rest%%|*}"
+	tail="${rest#*|}"
+	grep "^run|--name|$id|" "$TRLOG" > "$WORK/.line" || true
+	OUT="$WORK/.line"
+	check "$id is keyed on its inputs and what else its verdict reads" 0 "$RC" "|--salt|$salt|$tail"
+	check "$id passes its inputs" 0 "$RC" "|--inputs|"
+	check "$id holds the ignored files within its inputs" 0 "$RC" "|--tool|$record_tool_ignored '"
+	refute "$id holds no ignored file outside them" 0 "$RC" "|--tool|$record_tool_ignored|"
+	case "$held" in
+	install) check "$id holds the whole install record" 0 "$RC" "|--tool|$record_tool_install|" ;;
+	*) refute "$id holds no more of the install than it runs" 0 "$RC" "|--tool|$record_tool_install|" ;;
+	esac
+	case "$held" in
+	packages) check "$id holds the closure of the packages it runs" 0 "$RC" "|--tool|$record_tool_installed '" ;;
+	*) refute "$id holds no package closure" 0 "$RC" "|--tool|$record_tool_installed '@" ;;
+	esac
+	OUT="$WORK/.log"
+	narrowed=$((narrowed + 1))
+done
+# Every gate neither table names is keyed on the whole tree and nothing more.
 printf 'plain %s\n' "$(grep -cF "|$common--|./" "$TRLOG" || true)" >> "$OUT"
-check "a gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" "plain $((gate_calls - keyed))"
+check "a whole-tree gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" \
+	"plain $((gate_calls - narrowed - keyed))"
+printf 'with inputs %s\n' "$(grep -c '|--inputs|' "$TRLOG" || true)" >> "$OUT"
+check "no gate keyed on the whole tree passes inputs" 0 "$RC" "with inputs $narrowed"
 
 run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_URL=http://store.test TRACK_RECORD_NAMESPACE=elsewhere
 recorded_log
@@ -1190,8 +1310,8 @@ check "a reused gate's log is printed" 0 "$RC" "stub log replayed for check-figu
 refute "a reused gate does not run" 0 "$RC" "stub check-figures"
 check "a reused suite says so" 0 "$RC" "    track-record: REUSED .chug/tasks/passing.test.sh (recorded"
 recorded_log
-check "a suite is wrapped, keyed on the platform too" 0 "$RC" \
-	"run|--name|.chug/tasks/passing.test.sh|$common--platform|--|sh|.chug/tasks/passing.test.sh|"
+check "a suite is wrapped on its inputs, keyed on the platform too" 0 "$RC" \
+	"run|--name|.chug/tasks/passing.test.sh|--tool|$record_tool_node|--tool|$record_tool_ignored '.chug/tasks/passing.test.sh' '.chug/tasks/passing.sh' '.chug/tasks/_suite.sh'|--inputs|.chug/tasks/passing.test.sh|--inputs|.chug/tasks/passing.sh|--inputs|.chug/tasks/_suite.sh|--salt|$salt|--platform|--|sh|.chug/tasks/passing.test.sh|"
 
 # A REUSED line turns no failure into a pass and counts nothing then.
 stub_failing() { # <gate> <exit> — every named gate stubbed clean but that one
@@ -1333,6 +1453,168 @@ listed="$(sed -n 's/^workspaces="\(.*\)"$/\1/p' "$IGNORED" | tr ' ' '\n' | LC_AL
 printf 'declared %s|\nlisted %s|\n' "$declared" "${listed% }" > "$WORK/.workspaces"
 OUT="$WORK/.workspaces"
 check "the workspaces left out are package.json's" 0 0 "listed $declared|"
+
+# A PASS STANDS UNTIL WHAT ITS GATE READS MOVES. Against the stub's store, a
+# first run records every gate and the same tree again reuses each. Then each
+# change below reruns the gates that read it and reuses the model's, which
+# reads the model, its own script, quint's installed closure, node and the
+# salt alone: no source or console change, page under the model, package
+# quint does not reach, ignored file outside the model, sequencer change or
+# other base reruns it. Every gate is selected, by a base that does not
+# resolve, so a gate that does not rerun is one reused rather than skipped.
+stored_repo() {
+	stub_repo 0
+	mkdir -p "$R/model" "$R/ui/chuggy-ui" "$R/src" "$R/test" "$R/node_modules"
+	printf 'module m {}\n' > "$R/model/m.qnt"
+	printf '# the model\n' > "$R/model/README.md"
+	printf 'export {}\n' > "$R/ui/chuggy-ui/a.ts"
+	printf 'export {}\n' > "$R/src/a.ts"
+	printf 'node_modules\n*.log\n' > "$R/.gitignore"
+	lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/node_modules/.package-lock.json"
+	commit_all baseline
+}
+# The run against the store, as $OUT: a line for each gate that ran and each
+# one reused, `ran <id>|` and `reused <id>|`, the stubs printing their file's
+# name and track-record the gate's id.
+run_stored() { # [VAR=value...]
+	run_recorded TRACK_RECORD_TOKEN=t STUB_TR_STORE="$WORK/store" CHUG_CI_BASE=no-such-base "$@"
+	{
+		printf 'rc %s\n' "$RC"
+		sed -n 's/^stub \([a-z-]*\)$/ran \1|/p' "$OUT"
+		sed -n 's/^track-record: REUSED \([^ ]*\) .*/reused \1|/p' "$OUT"
+	} > "$WORK/.stored"
+	cp "$OUT" "$WORK/.stored-run"
+	OUT="$WORK/.stored"
+}
+rm -rf "$WORK/store"
+mkdir -p "$WORK/store"
+stored_repo
+run_stored
+check "a first run runs the model's gate" 0 "$RC" "ran check-model|"
+refute "a first run reuses nothing" 0 "$RC" "reused "
+run_stored
+check "the same tree again reuses the model's gate" 0 "$RC" "reused check-model|"
+refute "the same tree again runs no wrapped gate" 0 "$RC" "ran check-model|"
+printf 'gates run %s|\n' "$(grep -c '^ran ' "$OUT" || true)" >> "$OUT"
+check "the same tree again runs only the gates no key wraps" 0 "$RC" "gates run 2|"
+# A change, committed where git tracks any of it.
+commit_any() { # <message>
+	git -C "$R" add -A
+	git -C "$R" diff --cached --quiet || git -C "$R" commit -qm "$1"
+}
+# Each change and the gates it must rerun.
+stored_change() { # <label> <id that must rerun>...
+	stored_label="$1"
+	shift
+	commit_any "$stored_label"
+	run_stored
+	check "$stored_label reuses the model's gate" 0 "$RC" "reused check-model|"
+	for stored_id do
+		check "$stored_label reruns $stored_id" 0 "$RC" "ran $stored_id|"
+	done
+}
+printf 'export const a = 1\n' > "$R/ui/chuggy-ui/a.ts"
+stored_change "a console change" check-console check-source
+OUT="$WORK/.stored"
+check "a console change reuses the server's gate" 0 "$RC" "reused check-postgres|"
+printf 'export const a = 1\n' > "$R/src/a.ts"
+stored_change "a source change" check-postgres check-keto
+printf '# the model, read\n' > "$R/model/README.md"
+stored_change "a page under the model" check-conformance
+OUT="$WORK/.stored"
+check "a page under the model reuses its generated API" 0 "$RC" "reused check-model-api|"
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
+stored_change "an install that moves a package quint does not reach" check-console check-postgres
+OUT="$WORK/.stored"
+check "an install that leaves the schema library alone reuses the replay" 0 "$RC" "reused check-conformance|"
+printf 'built\n' > "$R/src/build.log"
+stored_change "an ignored file outside the model" check-figures
+OUT="$WORK/.stored"
+check "an ignored file outside the replay's inputs reuses it" 0 "$RC" "reused check-conformance|"
+check "an ignored file within the server gate's inputs reruns it" 0 "$RC" "ran check-postgres|"
+printf '# a sequencer comment\n' >> "$R/.chug/tasks/ci.sh"
+stored_change "a sequencer change" check-figures
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_STORE="$WORK/store" CHUG_CI_BASE=HEAD~3
+OUT="$WORK/.out"
+check "another base reuses the model's gate" 0 "$RC" "track-record: REUSED check-model ("
+# What it reads, each on its own, reruns it.
+stored_rerun() { # <label> [VAR=value...]
+	stored_label="$1"
+	shift
+	commit_any "$stored_label"
+	run_stored "$@"
+	check "$stored_label reruns the model's gate" 0 "$RC" "ran check-model|"
+}
+printf 'module m { val x = 1 }\n' > "$R/model/m.qnt"
+stored_rerun "a model change"
+OUT="$WORK/.stored"
+check "a model change reuses the server's gate" 0 "$RC" "reused check-postgres|"
+printf '# a gate comment\n' >> "$R/.chug/tasks/check-model.sh"
+stored_rerun "the gate's own script"
+OUT="$WORK/.stored"
+check "the model's script reuses its generated API" 0 "$RC" "reused check-model-api|"
+lock_json 0.32.0 1.1.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
+stored_rerun "an install that moves a package quint depends on"
+OUT="$WORK/.stored"
+check "an install that moves quint's closure reuses the replay" 0 "$RC" "reused check-conformance|"
+lock_json 0.33.0 1.1.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
+stored_rerun "an install that moves quint"
+printf 'model/gen.qnt\n' >> "$R/.git/info/exclude"
+printf 'module g {}\n' > "$R/model/gen.qnt"
+stored_rerun "an ignored file among the model's"
+sed 's/^record_salt=.*/record_salt="another-salt"/' "$R/.chug/tasks/ci.sh" > "$WORK/.salted"
+cat "$WORK/.salted" > "$R/.chug/tasks/ci.sh"
+stored_rerun "a new salt"
+# A key it cannot take is never recorded, and so never reused: an untracked
+# file among its inputs, or a tool that fails.
+printf 'module n {}\n' > "$R/model/n.qnt"
+run_stored CHUG_CI_ALLOW_UNTRACKED=1
+run_stored CHUG_CI_ALLOW_UNTRACKED=1
+check "a model holding an untracked file is never reused" 0 "$RC" "ran check-model|"
+rm "$R/model/n.qnt"
+printf 'module m { val y = 1 }\n' > "$R/model/m.qnt"
+commit_all "a model change under a lock that cannot be read"
+printf 'not a lock\n' > "$R/node_modules/.package-lock.json"
+run_stored
+run_stored
+check "a model keyed through a tool that fails is never reused" 0 "$RC" "ran check-model|"
+lock_json 0.33.0 1.1.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
+
+# A closure is found where node finds each package: a copy npm nested under
+# the package that asks for it before the one at the root, a workspace through
+# its link, and a dependency installed nowhere printed as absent. A record that
+# holds no package named fails, and so does a call that names none.
+cat > "$WORK/lock.json" <<'LOCK'
+{ "packages": {
+  "": { "dependencies": { "a": "1" } },
+  "node_modules/a": { "version": "1.0.0", "dependencies": { "b": "^2", "w": "*", "gone": "1" } },
+  "node_modules/a/node_modules/b": { "version": "2.0.0" },
+  "node_modules/b": { "version": "1.0.0" },
+  "node_modules/w": { "resolved": "ws/w", "link": true },
+  "ws/w": { "version": "0.0.1", "dependencies": { "b": "1" } },
+  "node_modules/unreached": { "version": "9.0.0" }
+} }
+LOCK
+set +e
+sh "$INSTALLED" --lock "$WORK/lock.json" a > "$WORK/.closure" 2>&1
+RC=$?
+set -e
+OUT="$WORK/.closure"
+check "a nested copy is the one its package gets" 0 "$RC" 'node_modules/a/node_modules/b {"version":"2.0.0"}'
+check "a workspace is followed through its link" 0 "$RC" 'ws/w {"version":"0.0.1","dependencies":{"b":"1"}}'
+check "a workspace gets the copy at the root" 0 "$RC" 'node_modules/b {"version":"1.0.0"}'
+check "a dependency installed nowhere is printed absent" 0 "$RC" "absent node_modules/a gone"
+refute "a package nothing named depends on is left out" 0 "$RC" "unreached"
+set +e
+sh "$INSTALLED" --lock "$WORK/lock.json" a nope > "$WORK/.closure" 2>&1
+RC=$?
+set -e
+check "a record holding no package named fails" 1 "$RC" "holds no nope"
+set +e
+sh "$INSTALLED" --lock "$WORK/lock.json" > "$WORK/.closure" 2>&1
+RC=$?
+set -e
+check "a call naming no package could not run" 2 "$RC" "name a package"
 
 # A wrapped suite still has its cap.
 stub_repo 0
