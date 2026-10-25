@@ -149,6 +149,14 @@ const poolClientSiteSchema = z.discriminatedUnion("fabric", [
   poolClientKubernetesSiteSchema,
 ]);
 
+/**
+ * How long an issuer's `invalid_client` must last before it ends the run:
+ * longer than the issuer stays ready with its database away, which its
+ * readiness probe bounds, and little more, since a deleted client's run ends
+ * only once it has passed.
+ */
+const poolClientRefusalConfirmMsDefault = 90_000;
+
 /** The value this process cannot start without, named in its own refusal. */
 function poolClientRequired(
   environment: PoolClientEnvironment,
@@ -225,6 +233,11 @@ export function poolClientConfig(
         environment,
         "TOKEN_MINT_COOLDOWN_MS",
         1_000,
+      ),
+      refusalConfirmMs: poolClientPositive(
+        environment,
+        "TOKEN_REFUSAL_CONFIRM_MS",
+        poolClientRefusalConfirmMsDefault,
       ),
     },
     plane: {

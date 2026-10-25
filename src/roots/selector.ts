@@ -238,6 +238,14 @@ async function nativeSourceReady(
   return response.status === 200;
 }
 
+/**
+ * How long an issuer's `invalid_client` must last before the source raises it
+ * as a refusal: longer than the issuer stays ready with its database away. The
+ * selector reads a refusal as it reads an outage, so this changes only what a
+ * failed read says.
+ */
+const selectorSourceRefusalConfirmMs = 90_000;
+
 /** One token source behind both clients of the API, so a replacement is minted once and presented by both. */
 export function selectorSourceAccessToken(
   source: SelectorSourceCommandConfig,
@@ -253,6 +261,7 @@ export function selectorSourceAccessToken(
     responseReadsMax: source.responseReadsMax,
     refreshMarginMs: source.credential.refreshMarginMs,
     mintCooldownMs: source.credential.mintCooldownMs,
+    refusalConfirmMs: selectorSourceRefusalConfirmMs,
   });
 }
 
