@@ -22,6 +22,9 @@ import {
   workerPoolSettlementPath,
   workerPoolSettlementRoutes,
   workerImageCharsMax,
+  workerPoolTokenCharsMax,
+  workerRunnerCapabilitiesOf,
+  workerRunnerCapabilitiesSchema,
   workerRunnerOf,
   workerRunnerReleaseSchema,
   workerRunnerReleaseUrlCharsMax,
@@ -302,6 +305,58 @@ test("a runner is named as its package and its version, and anything else names 
     "chuggy-linux/1234567890.0.0",
   ])
     assert.equal(workerRunnerOf(unread), undefined, String(unread));
+});
+
+test("a poll's capabilities are tokens separated by commas, an absent header names none and an empty one the empty set", () => {
+  const longest = `9${"a".repeat(workerPoolTokenCharsMax - 1)}`;
+  const most = Array.from(
+    { length: workerPoolCapabilitiesMax },
+    (_, index) => `Tool:${String(index)}`,
+  );
+  for (const [header, capabilities] of [
+    ["Platform:Linux:Amd64", ["Platform:Linux:Amd64"]],
+    ["Platform:Linux:Amd64,Tool:Bazel", ["Platform:Linux:Amd64", "Tool:Bazel"]],
+    [" Tool:Bazel ,\tAgent:Claude\t", ["Tool:Bazel", "Agent:Claude"]],
+    ["Tool:Bazel, , Agent:Claude,", ["Tool:Bazel", "Agent:Claude"]],
+    [longest, [longest]],
+    [most.join(", "), most],
+    ["", []],
+    [" , ", []],
+  ] as const)
+    assert.deepEqual(
+      workerRunnerCapabilitiesOf(header),
+      { named: "Set", capabilities },
+      JSON.stringify(header),
+    );
+  assert.deepEqual(workerRunnerCapabilitiesOf(undefined), { named: "None" });
+});
+
+test("a poll's capabilities header naming a token outside the grammar, one twice, or more than a pool declares is unread", () => {
+  for (const header of [
+    "Tool Bazel",
+    "Tool:Bazel;Agent:Claude",
+    "-Tool",
+    ":Tool",
+    "Tool/Bazel",
+    '"Tool:Bazel"',
+    "Tool:Bazel\nAgent:Claude",
+    "a".repeat(workerPoolTokenCharsMax + 1),
+    "Tool:Bazel, Tool:Bazel",
+    Array.from(
+      { length: workerPoolCapabilitiesMax + 1 },
+      (_, index) => `Tool:${String(index)}`,
+    ).join(","),
+  ])
+    assert.deepEqual(
+      workerRunnerCapabilitiesOf(header),
+      { named: "Unread" },
+      JSON.stringify(header).slice(0, 120),
+    );
+  assert.equal(
+    workerRunnerCapabilitiesSchema.safeParse(["Tool:Bazel", "Tool:Bazel"])
+      .success,
+    false,
+  );
 });
 
 test("a pool of a release the runner-release range accepts reads an answer naming a release, and one of any earlier refuses it", async () => {
