@@ -354,17 +354,29 @@ export function runStepLabel(step: RunStepEvidence): string {
       return "Push failed";
     case "RunTimedOut":
       return "Timed out";
+    case "RunDiskLow":
+      return "Disk low";
   }
 }
 
-/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change. */
+/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, and what a runner whose disk ran low needs. */
 export function runStepLine(
   failed: RunStepFailure,
   setupOverridable: boolean,
 ): string | undefined {
-  return failed.evidence === "RunSetupFailed" && setupOverridable
-    ? "Fix it under Overrides · Setup, then Resume"
-    : undefined;
+  switch (failed.evidence) {
+    case "RunSetupFailed":
+      return setupOverridable
+        ? "Fix it under Overrides · Setup, then Resume"
+        : undefined;
+    case "RunDiskLow":
+      return "Free space on its runner, then Resume";
+    case "RunCloneFailed":
+    case "RunCommitFailed":
+    case "RunPushFailed":
+    case "RunTimedOut":
+      return undefined;
+  }
 }
 
 /**

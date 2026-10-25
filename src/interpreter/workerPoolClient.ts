@@ -31,7 +31,9 @@
  * asks for none, and one whose job ceiling is 0 asks for no job. This is
  * chuggy-common's `poolLoop.mjs` in TypeScript, and a change to one is a
  * change to both, except that of a job's ends only one its backend refused is
- * reported here, and every other is left to its lease.
+ * reported here, and every other is left to its lease, and that a runner's
+ * backend may take no job while its disk is low, which a cluster leaves to
+ * its kubelet.
  *
  * A JOB THE BACKEND REFUSED AFTER TAKING IT IS SETTLED REFUSED, naming the
  * fault of its image, so the attempt's execution is blocked rather than its

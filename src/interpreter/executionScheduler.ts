@@ -597,6 +597,7 @@ export type AttemptEvidence =
   | "RunCommitFailed"
   | "RunPushFailed"
   | "RunTimedOut"
+  | "RunDiskLow"
   | WorkerImageFault;
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
@@ -621,6 +622,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
   ...workerImageFaults,
 ];
 
