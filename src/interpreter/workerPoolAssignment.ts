@@ -22,13 +22,19 @@
  * authenticates as a principal whose token is its lease, and holds its slots
  * against the plane's bound.
  *
- * ONE INVENTORY, BECAUSE A POLL ADVERTISES NONE. What a pool runs is what its
- * registration declares among its capability tokens: platforms, and
- * whatever else its owner declared. The model matches a session's observed inventory in
- * `canAssign` and a retained one in `placementOutcome`, and here both are the
- * registration's, which is `inventoryObservationSafe` holding by there being
- * one copy. So a configured pool's inventory is already its poll's, and
- * `placementOutcome` does not match it again for a pool it would place.
+ * ONE INVENTORY, WHICH A POLL PUBLISHES BEFORE IT CLAIMS. What a pool runs is
+ * the capability tokens kept for it: platforms, and whatever else its owner
+ * declared, as its registration recorded them or a later poll naming a set
+ * replaced them. The model matches a session's observed inventory in
+ * `canAssign` and a retained one in `placementOutcome`, and here both are that
+ * one set, since a poll writes what it names before its claims read it, which
+ * is `inventoryObservationSafe` holding by there being one copy. So a
+ * configured pool's inventory is already its poll's, and `placementOutcome`
+ * does not match it again for a pool it would place. The model sets an
+ * inventory only at `takeOver`, which moves the generation too; here a poll
+ * replaces it under the same registration, so what that registration holds
+ * stays current, and nothing the model proves ties an assignment to the
+ * inventory it was bound under.
  *
  * THE POLICY THE REGISTRY HAS NO COLUMN FOR IS DATA, NOT AN OMISSION. Class,
  * drain, trust, the allowance of secrets and source, an owner and an allowlist are
@@ -207,7 +213,7 @@ function workerPoolSamePartition(left: Partition, right: Partition): boolean {
   return left.tenant === right.tenant && left.project === right.project;
 }
 
-/** Whether a pool's registration declares what the requirement runs on, which is the model's `inventoryMatches`. */
+/** Whether the capabilities kept for a pool run the requirement, which is the model's `inventoryMatches`. */
 export function workerPoolInventoryMatches(
   requirement: ExecutionRequirement,
   pool: WorkerPoolRunner,

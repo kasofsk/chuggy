@@ -23,6 +23,7 @@ import {
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
@@ -623,6 +624,49 @@ test("a pool's claim is held back while any one of the owner's runners could tak
     );
     assert.equal(await poolClaimed(), fallback === "Preferred", fallback);
   }
+});
+
+test("a runner's poll naming capabilities replaces what it registered with, so what it claims and what a pool defers to it follow the set named", async () => {
+  const member = principal("member");
+  const project = await ownedProject("advertised", member, "Strict", 2);
+  await opened(project);
+  await opened(project);
+  const runner = await runnerOf(project.partition, member);
+  const runners = postgresWorkerPoolRunners(planePool);
+  await runners.named(runner, undefined, []);
+  assert.equal(
+    await claimed(runner, [project.partition]),
+    undefined,
+    "a runner claims nothing its poll's set does not run",
+  );
+  const pool = {
+    kind: "Dedicated",
+    partition: project.partition,
+    pool: "pool-advertised",
+    principal: principal("pool"),
+  } as const;
+  assert.equal(
+    await postgresWorkerPoolRegistry(apiPool).register({
+      ...pool,
+      capabilities: [platform],
+      class: "Dedicated",
+      clientId: `chuggy-pool-${randomUUID()}`,
+    }),
+    true,
+  );
+  assert.notEqual(
+    await assignments.claim(
+      pool,
+      { leaseSecs, heldMax: 4 },
+      `assignment-${randomUUID()}`,
+      `bearer-${randomUUID()}`,
+      [],
+    ),
+    undefined,
+    "a pool defers to no runner whose set does not run the work",
+  );
+  await runners.named(runner, undefined, [platform]);
+  assert.notEqual(await claimed(runner, [project.partition]), undefined);
 });
 
 /** The order a rotation draws `owners` in, as the window's digest orders them. */

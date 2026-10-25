@@ -309,32 +309,38 @@ export function postgresWorkerPoolDirectory(
 }
 
 /**
- * The runner each caller's newest poll named, on its own row and under its
- * current registration, written only where it differs from what is kept, so a
- * poll that names what it named before writes nothing.
+ * The runner and capabilities each caller's newest poll named, on its own row
+ * and under its current registration, written as one statement and only where
+ * it differs from what is kept, so a poll that names what it named before
+ * writes nothing; capabilities named as none keep the set recorded.
  */
 export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
   return {
-    named: async (identity, runner) => {
+    named: async (identity, runner, capabilities) => {
       const named = runner?.package ?? null;
       const version = runner?.version ?? null;
+      const advertised = capabilities === undefined ? null : [...capabilities];
       switch (identity.kind) {
         case "Dedicated":
           await pool.query(sql`UPDATE worker_pool w
-            SET runner_package=${named},runner_version=${version}
+            SET runner_package=${named},runner_version=${version},
+                capabilities=COALESCE(${advertised}::text[],w.capabilities)
             WHERE w.tenant=${identity.partition.tenant}
               AND w.project=${identity.partition.project}
               AND w.pool=${identity.pool} AND w.principal=${identity.principal}
-              AND (w.runner_package,w.runner_version)
-                IS DISTINCT FROM (${named}::text,${version}::text)`);
+              AND (w.runner_package,w.runner_version,w.capabilities)
+                IS DISTINCT FROM (${named}::text,${version}::text,
+                  COALESCE(${advertised}::text[],w.capabilities))`);
           return;
         case "Personal":
           await pool.query(sql`UPDATE personal_runner r
-            SET runner_package=${named},runner_version=${version}
+            SET runner_package=${named},runner_version=${version},
+                capabilities=COALESCE(${advertised}::text[],r.capabilities)
             WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
               AND r.principal=${identity.principal}
-              AND (r.runner_package,r.runner_version)
-                IS DISTINCT FROM (${named}::text,${version}::text)`);
+              AND (r.runner_package,r.runner_version,r.capabilities)
+                IS DISTINCT FROM (${named}::text,${version}::text,
+                  COALESCE(${advertised}::text[],r.capabilities))`);
           return;
       }
     },
