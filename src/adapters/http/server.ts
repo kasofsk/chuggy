@@ -119,7 +119,7 @@ import {
   parseThreadRename,
   parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
-  parseWorkerPoolTokenRequest,
+  parseRegistrationTokenRequest,
 } from "./contract.ts";
 import {
   cancellationResponse,
@@ -1215,7 +1215,7 @@ function registerWorkerPools(
           await pools.mint(
             principalOf(request),
             partitionOf(request),
-            parseWorkerPoolTokenRequest(request.body),
+            parseRegistrationTokenRequest(request.body),
           ),
         ),
       );
@@ -1303,7 +1303,7 @@ function registerPersonalRunners(
           await runners.mint(
             principalOf(request),
             tenantOf(request),
-            parseWorkerPoolTokenRequest(request.body),
+            parseRegistrationTokenRequest(request.body),
           ),
         ),
       );

@@ -112,6 +112,7 @@ import type {
   projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
+  RegistrationTokenRequest,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   selectorProposalReviewSchema,
@@ -119,7 +120,6 @@ import type {
   submissionSchema,
   threadMessageSchema,
 } from "../../../../src/contract/requests.ts";
-import type { workerPoolRegistrationTokenRequestSchema } from "../../../../src/contract/workerPool.ts";
 import type { z } from "zod";
 
 import { apiRead } from "./apiRequest.ts";
@@ -508,7 +508,7 @@ export function apiWorkerPools(
 export function apiMintWorkerPoolToken(
   ports: ApiPorts,
   partition: PartitionIdentity,
-  request: z.infer<typeof workerPoolRegistrationTokenRequestSchema>,
+  request: RegistrationTokenRequest,
 ): Promise<ApiResult<WorkerPoolTokenResponse>> {
   return apiRead(
     ports,
@@ -576,7 +576,7 @@ export function apiPersonalRunner(
 export function apiMintPersonalRunnerToken(
   ports: ApiPorts,
   tenant: string,
-  request: z.infer<typeof workerPoolRegistrationTokenRequestSchema>,
+  request: RegistrationTokenRequest,
 ): Promise<ApiResult<WorkerPoolTokenResponse>> {
   return apiRead(
     ports,

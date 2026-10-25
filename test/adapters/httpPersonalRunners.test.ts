@@ -57,8 +57,6 @@ function fakeRunnersRedeemed(
       };
     case "bounded":
       return { result: "LimitReached" };
-    case "unpermitted":
-      return { result: "CapabilityNotPermitted" };
     default:
       return { result: "NotFound" };
   }
@@ -98,9 +96,7 @@ function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
 function fakeRunners(calls: string[]): PersonalRunnerService {
   return {
     mint: (principal, tenant, request) => {
-      calls.push(
-        `mint:${principal}:${tenant}:${request.capabilities.join("+")}`,
-      );
+      calls.push(`mint:${principal}:${tenant}:${JSON.stringify(request)}`);
       if (tenant === "full") return Promise.resolve({ result: "LimitReached" });
       return Promise.resolve(
         tenant === "acme"
@@ -171,16 +167,21 @@ const allowed = (tenant: string, project: string) =>
 test("a member mints a token for their tenant as themselves, and a tenant that does not permit them is not found", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
-  const mint = (tenant: string) =>
+  const mint = (tenant: string, payload: object = {}) =>
     app.inject({
       method: "POST",
       url: tokens(tenant),
       headers: { ...bearer, ...json },
-      payload: JSON.stringify({ capabilities: ["linux"], lifetimeSecs: 60 }),
+      payload: JSON.stringify({ lifetimeSecs: 60, ...payload }),
     });
   const minted = await mint("acme");
   assert.equal(minted.statusCode, 201);
   assert.deepEqual(minted.json(), { token: "a-token", expiresAtMs: 5_000 });
+  assert.equal(
+    (await mint("acme", { capabilities: ["Platform:Linux:Amd64"] })).statusCode,
+    201,
+    "a mint still naming capabilities mints, and they reach nothing",
+  );
   assert.equal((await mint("other")).statusCode, 404);
   const full = await mint("full");
   assert.equal(full.statusCode, 409);
@@ -192,13 +193,14 @@ test("a member mints a token for their tenant as themselves, and a tenant that d
     method: "POST",
     url: tokens("acme"),
     headers: json,
-    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 60 }),
+    payload: JSON.stringify({ lifetimeSecs: 60 }),
   });
   assert.equal(unauthenticated.statusCode, 401);
   assert.deepEqual(calls, [
-    `mint:${caller}:acme:linux`,
-    `mint:${caller}:other:linux`,
-    `mint:${caller}:full:linux`,
+    `mint:${caller}:acme:{"lifetimeSecs":60}`,
+    `mint:${caller}:acme:{"lifetimeSecs":60}`,
+    `mint:${caller}:other:{"lifetimeSecs":60}`,
+    `mint:${caller}:full:{"lifetimeSecs":60}`,
   ]);
 });
 
@@ -231,7 +233,6 @@ test("a redemption needs no bearer and answers a file of kind Personal naming th
     "a pool's runner reading this file refuses it rather than inventing a project",
   );
   assert.equal((await redeem("spent")).statusCode, 404);
-  assert.equal((await redeem("unpermitted")).statusCode, 403);
   const bounded = await redeem("bounded");
   assert.equal(bounded.statusCode, 409);
   assert.equal(

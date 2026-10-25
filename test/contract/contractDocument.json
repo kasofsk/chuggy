@@ -2742,7 +2742,14 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "lifetimeSecs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
         "capabilities": {
+          "deprecated": true,
+          "description": "Ignored. A runner declares its capabilities when it redeems the token.",
           "maxItems": 64,
           "type": "array",
           "items": {
@@ -2750,14 +2757,9 @@
             "maxLength": 63,
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
           }
-        },
-        "lifetimeSecs": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
         }
       },
-      "required": ["capabilities", "lifetimeSecs"],
+      "required": ["lifetimeSecs"],
       "additionalProperties": false
     },
     "workerPoolRedemption": {

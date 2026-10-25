@@ -1139,25 +1139,13 @@ export function placementWriteResponse<View>(
   }
 }
 
-/**
- * A redemption, answered with the pool file once, the client's secret in it.
- * A capability the token does not permit is named rather than folded into
- * `NotFound`, because it is the one refusal here an operator can act on.
- */
+/** A redemption, answered with the pool file once, the client's secret in it. */
 export function workerPoolRedemptionResponse(
   result: WorkerPoolTokenRedeemed,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "CapabilityNotPermitted":
-      return response(
-        403,
-        nativeHttpError(
-          "CapabilityNotPermitted",
-          "The registration token does not permit every capability declared.",
-        ),
-      );
     case "Registered":
       return response(201, workerPoolCredentialsBody(result.value));
     default:
@@ -1207,13 +1195,12 @@ function personalRunnerCredentialsBody(
   };
 }
 
-/** A personal redemption, answered with the runner's file once, naming its capability refusal as a pool's does, and its bound with the token given back. */
+/** A personal redemption, answered with the runner's file once, and its bound with the token given back. */
 export function personalRunnerRedemptionResponse(
   result: PersonalRunnerTokenRedeemed,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
-    case "CapabilityNotPermitted":
       return workerPoolRedemptionResponse(result);
     case "LimitReached":
       return response(

@@ -108,22 +108,24 @@ export interface PersonalRunnerRegistry {
   disallow(key: PersonalRunnerKey, project: ProjectId): Promise<boolean>;
 }
 
-/** What a personal token permits, and the member it registers a runner for. */
+/** The tenant a personal token registers a runner in, and the member it registers it for. */
 export interface PersonalRunnerTokenTerms {
   readonly tenant: TenantId;
-  readonly capabilities: readonly string[];
   readonly mintedBy: Principal;
 }
 
 /** The most tokens one member may have outstanding in one tenant at once. */
 export const personalRunnerTokensLiveMax = 4;
 
-/** A personal token's whole life, as `WorkerPoolRegistrationTokens` is a pool token's, bounded per member and tenant. */
+/**
+ * A personal token's whole life, as `WorkerPoolRegistrationTokens` is a pool
+ * token's, bounded per member and tenant, and `permitted` beside it, which
+ * reads one neither spent nor expired without spending it.
+ */
 export interface PersonalRunnerRegistrationTokens {
   mint(
     tenant: TenantId,
     digest: string,
-    capabilities: readonly string[],
     expiresAtMs: number,
     mintedBy: Principal,
   ): Promise<WorkerPoolTokenWritten>;
@@ -256,7 +258,6 @@ export async function personalRunnerTokenMint(
   const written = await minting.tokens.mint(
     tenant,
     minting.digest(token),
-    request.capabilities,
     expiresAtMs,
     principal,
   );
@@ -281,7 +282,6 @@ export interface PersonalRunnerRedemption {
 /** What redeeming came to; `LimitReached` is the member already holding `personalRunnersMax`, and its token is given back. */
 export type PersonalRunnerTokenRedeemed =
   | { readonly result: "NotFound" }
-  | { readonly result: "CapabilityNotPermitted" }
   | { readonly result: "LimitReached" }
   | {
       readonly result: "Registered";
@@ -325,9 +325,11 @@ function personalRunnerCredentialsOf(
 }
 
 /**
- * Redemption, authenticated on the token alone and authorized on what it
- * permits and on its minter's current permit. As a pool token's, it is read
- * before it is spent and given back where the writes after the spend faulted.
+ * Redemption, authenticated on the token alone and authorized on its minter's
+ * current permit, registering the runner with what it declares. The token is
+ * read before it is spent, so one whose minter has lost the permit stays
+ * unspent, and given back where the writes after the spend faulted, as a pool
+ * token is.
  */
 export async function personalRunnerTokenRedeem(
   access: ProjectAccess,
@@ -339,8 +341,6 @@ export async function personalRunnerTokenRedeem(
   const digest = minting.digest(offered.token);
   const terms = await minting.tokens.permitted(digest);
   if (terms === undefined) return { result: "NotFound" };
-  if (!offered.capabilities.every((held) => terms.capabilities.includes(held)))
-    return { result: "CapabilityNotPermitted" };
   if (!(await personalRunnerMinterPermitted(access, terms)))
     return { result: "NotFound" };
   const spent = await minting.tokens.consume(digest);

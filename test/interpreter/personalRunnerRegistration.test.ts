@@ -239,13 +239,8 @@ function minting(): PersonalRunnerTokenMinting & {
     digest: (token) => `digest-of-${token}`,
     nowMs: () => 1_000,
     tokens: {
-      mint: (named, digest, capabilities, _expiresAtMs, mintedBy) => {
-        held.set(digest, {
-          tenant: named,
-          capabilities,
-          mintedBy,
-          spent: false,
-        });
+      mint: (named, digest, _expiresAtMs, mintedBy) => {
+        held.set(digest, { tenant: named, mintedBy, spent: false });
         return Promise.resolve("Minted");
       },
       permitted: (digest) => {
@@ -299,7 +294,6 @@ async function registered(
   capabilities: readonly string[] = ["linux"],
 ) {
   const minted = await composed.runners.mint(member, tenant, {
-    capabilities: ["linux", "macos"],
     lifetimeSecs: 60,
   });
   assert.equal(minted.result, "Minted");
@@ -310,10 +304,7 @@ async function registered(
 test("a member the tenant does not permit mints nothing", async () => {
   const composed = service({});
   assert.deepEqual(
-    await composed.runners.mint(member, tenant, {
-      capabilities: [],
-      lifetimeSecs: 60,
-    }),
+    await composed.runners.mint(member, tenant, { lifetimeSecs: 60 }),
     { result: "NotFound" },
   );
   assert.equal(composed.minting.held.size, 0);
@@ -336,7 +327,6 @@ test("a mint past the lifetime bound is refused before any authority is asked", 
   const asked: unknown[] = [];
   await assert.rejects(
     service(permitted, { asked }).runners.mint(member, tenant, {
-      capabilities: [],
       lifetimeSecs: 3_601,
     }),
     RangeError,
@@ -446,7 +436,7 @@ test("a redemption whose minter has lost the permit registers nothing and leaves
   const minted = await service(permitted, { minting: shared }).runners.mint(
     member,
     tenant,
-    { capabilities: [], lifetimeSecs: 60 },
+    { lifetimeSecs: 60 },
   );
   if (minted.result !== "Minted") throw new Error("the mint was refused");
   const revoked = service({}, { minting: shared });
@@ -465,12 +455,18 @@ test("a redemption whose minter has lost the permit registers nothing and leaves
   );
 });
 
-test("a capability the token does not permit is refused by name", async () => {
+test("a runner declaring capabilities nobody named at the mint is registered with them", async () => {
   const composed = service();
-  assert.deepEqual(await registered(composed, ["windows"]), {
-    result: "CapabilityNotPermitted",
-  });
-  assert.equal(composed.ports.live.size, 0);
+  const declared = ["Platform:Windows:Amd64", "Agent:Codex"];
+  const redeemed = await registered(composed, declared);
+  assert.deepEqual(
+    redeemed.result === "Registered" ? redeemed.value.capabilities : redeemed,
+    declared,
+  );
+  assert.deepEqual(
+    held(composed).map((row) => row.capabilities),
+    [declared],
+  );
 });
 
 test("a member holding their bound of runners registers none more, the client minted removed and the token given back to redeem once one is off", async () => {
@@ -478,7 +474,6 @@ test("a member holding their bound of runners registers none more, the client mi
   for (let count = 0; count < personalRunnersMax; count += 1)
     assert.equal((await registered(composed)).result, "Registered");
   const minted = await composed.runners.mint(member, tenant, {
-    capabilities: [],
     lifetimeSecs: 60,
   });
   if (minted.result !== "Minted") throw new Error("the mint was refused");

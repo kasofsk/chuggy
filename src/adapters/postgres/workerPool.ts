@@ -105,7 +105,6 @@ import { asWorkerPoolClass } from "../../interpreter/workerPoolAssignment.ts";
 import {
   workerPoolTokensLiveMax,
   type WorkerPoolRegistrationTokens,
-  type WorkerPoolRegistrationTokenTerms,
   type WorkerPoolTokenWritten,
 } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
@@ -117,20 +116,6 @@ import {
   workerPoolHeldPulls,
 } from "./personalExecutions.ts";
 import { postgresTransaction } from "./pool.ts";
-
-/** One token's terms as either statement returns them, read the same way by both. */
-function workerPoolTokenTerms(row: {
-  tenant: string;
-  project: string;
-  capabilities: string[];
-  minted_by: string | null;
-}): WorkerPoolRegistrationTokenTerms {
-  return {
-    partition: { tenant: row.tenant, project: row.project } as Partition,
-    capabilities: row.capabilities,
-    ...(row.minted_by === null ? {} : { mintedBy: asPrincipal(row.minted_by) }),
-  };
-}
 
 /**
  * One mint under the project's bound: the project's mints are serialized on an
@@ -144,7 +129,6 @@ async function workerPoolTokenMinted(
   client: pg.PoolClient,
   partition: Partition,
   digest: string,
-  capabilities: readonly string[],
   expiresAtMs: number,
   mintedBy: Principal,
 ): Promise<WorkerPoolTokenWritten> {
@@ -166,8 +150,8 @@ async function workerPoolTokenMinted(
   const row = counted.rows[0];
   if (row === undefined || !row.active) return "NotFound";
   if (row.live >= workerPoolTokensLiveMax) return "LimitReached";
-  await client.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,capabilities,expires_at,minted_by)
-    VALUES(${digest},${partition.tenant},${partition.project},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000),${mintedBy as string})`);
+  await client.query(sql`INSERT INTO worker_pool_registration_token(token_digest,tenant,project,expires_at,minted_by)
+    VALUES(${digest},${partition.tenant},${partition.project},to_timestamp(${expiresAtMs}::double precision/1000),${mintedBy as string})`);
   return "Minted";
 }
 
@@ -180,40 +164,26 @@ export function postgresWorkerPoolRegistrationTokens(
   pool: pg.Pool,
 ): WorkerPoolRegistrationTokens {
   return {
-    mint: (partition, digest, capabilities, expiresAtMs, mintedBy) =>
+    mint: (partition, digest, expiresAtMs, mintedBy) =>
       postgresTransaction(pool, (client) =>
-        workerPoolTokenMinted(
-          client,
-          partition,
-          digest,
-          capabilities,
-          expiresAtMs,
-          mintedBy,
-        ),
+        workerPoolTokenMinted(client, partition, digest, expiresAtMs, mintedBy),
       ),
-    permitted: async (digest) => {
-      const found = await pool.query<{
-        tenant: string;
-        project: string;
-        capabilities: string[];
-        minted_by: string | null;
-      }>(sql`SELECT t.tenant,t.project,t.capabilities,t.minted_by
-        FROM worker_pool_registration_token t
-        WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()`);
-      const row = found.rows[0];
-      return row === undefined ? undefined : workerPoolTokenTerms(row);
-    },
     consume: async (digest) => {
       const spent = await pool.query<{
         tenant: string;
         project: string;
-        capabilities: string[];
         minted_by: string | null;
       }>(sql`UPDATE worker_pool_registration_token t SET redeemed_at=now()
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()
-        RETURNING t.tenant,t.project,t.capabilities,t.minted_by`);
+        RETURNING t.tenant,t.project,t.minted_by`);
       const row = spent.rows[0];
-      return row === undefined ? undefined : workerPoolTokenTerms(row);
+      if (row === undefined) return undefined;
+      return {
+        partition: { tenant: row.tenant, project: row.project } as Partition,
+        ...(row.minted_by === null
+          ? {}
+          : { mintedBy: asPrincipal(row.minted_by) }),
+      };
     },
     restore: async (digest) => {
       const restored =

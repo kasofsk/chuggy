@@ -530,10 +530,7 @@ const shameRunner = {
   pinned: "0.14.1",
 };
 
-/**
- * Registration as the routes see it: one token stands for one project, and the
- * capability bound is the interpreter's rather than the route's.
- */
+/** Registration as the routes see it: one token stands for one project, and a mint is recorded as the service was asked it. */
 function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
   return {
     registered: (_principal, partition) => {
@@ -564,7 +561,7 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
     },
     mint: (_principal, partition, request) => {
       calls.push(
-        `worker-pool-token:${partition.project}:${request.capabilities.join("+")}:${String(request.lifetimeSecs)}`,
+        `worker-pool-token:${partition.project}:${JSON.stringify(request)}`,
       );
       if (partition.project === "full")
         return Promise.resolve({ result: "LimitReached" });
@@ -579,8 +576,6 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
     },
     redeem: (offered) => {
       calls.push(`worker-pool-redeem:${offered.pool}`);
-      if (offered.pool === "unpermitted")
-        return Promise.resolve({ result: "CapabilityNotPermitted" });
       if (offered.pool === "spent")
         return Promise.resolve({ result: "NotFound" });
       return Promise.resolve({
@@ -2178,10 +2173,7 @@ test("an owner mints a registration token and a project they may not administer 
     method: "POST",
     url: workerPoolTokenPath,
     headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({
-      capabilities: ["linux-containers"],
-      lifetimeSecs: 900,
-    }),
+    payload: JSON.stringify({ lifetimeSecs: 900 }),
   });
   assert.equal(minted.statusCode, 201);
   assert.deepEqual(minted.json(), {
@@ -2192,15 +2184,34 @@ test("an owner mints a registration token and a project they may not administer 
     method: "POST",
     url: "/api/v1/tenants/acme/projects/other/worker-pool-registration-tokens",
     headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+    payload: JSON.stringify({ lifetimeSecs: 900 }),
   });
   assert.equal(absent.statusCode, 404);
   assert.deepEqual(
     calls.filter((call) => call.startsWith("worker-pool-")),
     [
-      "worker-pool-token:atlas:linux-containers:900",
-      "worker-pool-token:other::900",
+      'worker-pool-token:atlas:{"lifetimeSecs":900}',
+      'worker-pool-token:other:{"lifetimeSecs":900}',
     ],
+  );
+});
+
+test("a mint still naming capabilities mints, and the service is asked only for the lifetime", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const minted = await app.inject({
+    method: "POST",
+    url: workerPoolTokenPath,
+    headers: { authorization: "Bearer valid", ...workerPoolJson },
+    payload: JSON.stringify({
+      capabilities: ["Platform:Linux:Amd64"],
+      lifetimeSecs: 900,
+    }),
+  });
+  assert.equal(minted.statusCode, 201);
+  assert.deepEqual(
+    calls.filter((call) => call.startsWith("worker-pool-")),
+    ['worker-pool-token:atlas:{"lifetimeSecs":900}'],
   );
 });
 
@@ -2210,7 +2221,7 @@ test("a project already holding its bound of live tokens is answered a conflict"
     method: "POST",
     url: "/api/v1/tenants/acme/projects/full/worker-pool-registration-tokens",
     headers: { authorization: "Bearer valid", ...workerPoolJson },
-    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 900 }),
+    payload: JSON.stringify({ lifetimeSecs: 900 }),
   });
   assert.equal(refused.statusCode, 409);
   assert.equal(
@@ -2226,7 +2237,7 @@ test("minting a registration token needs a bearer, and redeeming one needs none"
     method: "POST",
     url: workerPoolTokenPath,
     headers: workerPoolJson,
-    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 60 }),
+    payload: JSON.stringify({ lifetimeSecs: 60 }),
   });
   assert.equal(unauthenticated.statusCode, 401);
   const redeemed = await app.inject({
@@ -2258,19 +2269,17 @@ test("minting a registration token needs a bearer, and redeeming one needs none"
   );
 });
 
-test("a capability the token does not permit is named, and a spent token is not found", async () => {
-  const calls: string[] = [];
-  await using app = appOf(calls);
-  for (const [pool, status] of [
-    ["unpermitted", 403],
-    ["spent", 404],
-  ] as const) {
-    const answered = await app.inject({
-      method: "POST",
-      url: workerPoolRedemptionPath,
-      headers: workerPoolJson,
-      payload: JSON.stringify({ token: "a-token", pool, capabilities: [] }),
-    });
-    assert.equal(answered.statusCode, status, pool);
-  }
+test("a spent token is not found", async () => {
+  await using app = appOf([]);
+  const answered = await app.inject({
+    method: "POST",
+    url: workerPoolRedemptionPath,
+    headers: workerPoolJson,
+    payload: JSON.stringify({
+      token: "a-token",
+      pool: "spent",
+      capabilities: [],
+    }),
+  });
+  assert.equal(answered.statusCode, 404);
 });

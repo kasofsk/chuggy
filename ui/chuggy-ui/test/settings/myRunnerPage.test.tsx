@@ -161,13 +161,7 @@ test("a member the workspace lets register one asks what it is for, and is hande
       .filter((one) => one.method === "POST")
       .map((one) => [one.url.slice(tenantPath.length), one.body]),
   ).toStrictEqual([
-    [
-      "/personal-runner-registration-tokens",
-      {
-        capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-        lifetimeSecs: 3600,
-      },
-    ],
+    ["/personal-runner-registration-tokens", { lifetimeSecs: 3600 }],
   ]);
   const steps = screen.getByRole("list", { name: "Register runner" });
   expect(

@@ -52,7 +52,7 @@ export function useFocusedUnheld<
 /** The list takes the focus as it is drawn where nothing holds it. */
 export function RunnerSteps(props: {
   readonly minted: WorkerPoolTokenResponse;
-  /** What the token was minted for, which the register command declares. */
+  /** What the reader asked, which the register command declares. */
   readonly ask: RunnerAsk;
   readonly kind: RunnerKind;
   readonly onDone: () => void;

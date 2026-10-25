@@ -34,11 +34,9 @@ import {
   sessionPlacementSchema,
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
+  registrationTokenRequestSchema,
 } from "./requests.ts";
-import {
-  workerPoolRedemptionSchema,
-  workerPoolRegistrationTokenRequestSchema,
-} from "./workerPool.ts";
+import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 
 /** A request body as the JSON Schema of what its parser takes, which is the body a client sends. */
@@ -101,7 +99,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.hideThread.body,
     ),
     workerPoolRegistrationToken: nativeHttpContractDocumentInput(
-      workerPoolRegistrationTokenRequestSchema,
+      registrationTokenRequestSchema,
     ),
     workerPoolRedemption: nativeHttpContractDocumentInput(
       workerPoolRedemptionSchema,

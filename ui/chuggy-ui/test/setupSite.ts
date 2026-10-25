@@ -157,7 +157,6 @@ export interface SetupSite {
 }
 
 export interface SetupSiteMint {
-  readonly capabilities: readonly string[];
   readonly lifetimeSecs: number;
 }
 

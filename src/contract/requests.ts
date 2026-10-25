@@ -385,6 +385,25 @@ export const personalRunnerRedemptionSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
 });
 
+/**
+ * What an owner asks a registration token for, a pool's or their own runner's:
+ * how long it stands. A token permits registering and nothing about what the
+ * runner declares, so capabilities a request still names are ignored.
+ */
+export const registrationTokenRequestSchema = z.strictObject({
+  lifetimeSecs: z.number().int().positive().safe(),
+  capabilities: workerPoolCapabilitiesSchema.optional().meta({
+    deprecated: true,
+    description:
+      "Ignored. A runner declares its capabilities when it redeems the token.",
+  }),
+});
+
 export type PersonalRunnerRedemptionRequest = z.infer<
   typeof personalRunnerRedemptionSchema
+>;
+/** What a mint asks for, once the ignored field is dropped. */
+export type RegistrationTokenRequest = Omit<
+  z.infer<typeof registrationTokenRequestSchema>,
+  "capabilities"
 >;

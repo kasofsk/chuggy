@@ -174,9 +174,8 @@ function MyRunnerMinting(props: {
       <RunnerAskForm
         mint={mint}
         onMint={onMint}
-        minted={(capabilities) =>
+        minted={() =>
           apiMintPersonalRunnerToken(ports, props.tenant, {
-            capabilities: [...capabilities],
             lifetimeSecs: runnerTokenLifetimeSecs,
           })
         }

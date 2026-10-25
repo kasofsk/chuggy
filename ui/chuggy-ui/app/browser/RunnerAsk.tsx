@@ -1,9 +1,9 @@
 /**
- * What a registration token is minted for, asked before it is: the package
- * the machine runs and, folded away since few runners need either, whether it
- * runs work on itself and the capabilities it declares it meets. A mint is
- * refused here before it is sent where what was typed is not a capability, the
- * fold opened to say why, and a refused mint returns to the ask.
+ * What the register command a token is handed over in declares, asked before
+ * the token is minted: the package the machine runs and, folded away since few
+ * runners need either, whether it runs work on itself and the capabilities it
+ * declares it meets. Nothing is minted where what was typed is not a
+ * capability, the fold opened to say why, and a refused mint returns to the ask.
  */
 
 import { useId, useState } from "react";
@@ -150,9 +150,7 @@ function RunnerAskPresses(props: {
 export function RunnerAskForm(props: {
   readonly mint: Extract<RunnerMint, { readonly mint: "Asking" | "Minting" }>;
   readonly onMint: (mint: RunnerMint) => void;
-  readonly minted: (
-    capabilities: readonly string[],
-  ) => Promise<ApiResult<WorkerPoolTokenResponse>>;
+  readonly minted: () => Promise<ApiResult<WorkerPoolTokenResponse>>;
 }): ReactNode {
   const [chosen, setChosen] = useState<RunnerPackageName>("linux");
   const [host, setHost] = useState(false);
@@ -177,7 +175,7 @@ export function RunnerAskForm(props: {
         }
         props.onMint({ mint: "Minting" });
         void (async () => {
-          const minted = await props.minted(read.capabilities);
+          const minted = await props.minted();
           props.onMint(
             minted.outcome === "Ok"
               ? { mint: "Minted", minted: minted.value, ask: read.ask }

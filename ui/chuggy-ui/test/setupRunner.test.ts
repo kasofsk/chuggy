@@ -658,15 +658,12 @@ test("a project whose work the cluster runs and whose chats run on runners gets 
   expect(writes(machine)).toEqual([ownMint, serves]);
 });
 
-test("the one write a run makes is the mint, for the console's platforms and a life far shorter than the console asks for, and a run that finds the machine registered makes none", async () => {
+test("the one write a run makes is the mint, naming no capabilities and a life far shorter than the console asks for, and a run that finds the machine registered makes none", async () => {
   const machine = await fresh();
   await ran(machine);
   expect(writes(machine)).toEqual([mint]);
-  expect(machine.world.mints).toEqual([
-    {
-      capabilities: [...runnerPackageOffered.platforms],
-      lifetimeSecs: setupMintLifetimeSecs,
-    },
+  expect(machine.world.mints).toStrictEqual([
+    { lifetimeSecs: setupMintLifetimeSecs },
   ]);
   expect(setupMintLifetimeSecs * 2).toBeLessThan(runnerTokenLifetimeSecs);
   await ran(machine);
@@ -2219,7 +2216,7 @@ test("the ports the writes go out through pass the mint for this project's runne
     headers: {},
     signal: new AbortController().signal,
   });
-  const asked = { capabilities: [], lifetimeSecs: 1 };
+  const asked = { lifetimeSecs: 1 };
   expect((await apiMintWorkerPoolToken(ports, partition, asked)).outcome).toBe(
     "Ok",
   );

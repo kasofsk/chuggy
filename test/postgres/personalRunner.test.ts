@@ -405,12 +405,11 @@ test("a personal token is spent once, by whichever of two racing redemptions the
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("a1");
   assert.equal(
-    await tokens.mint(tenant, digest, ["linux"], Date.now() + 60_000, member),
+    await tokens.mint(tenant, digest, Date.now() + 60_000, member),
     "Minted",
   );
   assert.deepEqual(await tokens.permitted(digest), {
     tenant,
-    capabilities: ["linux"],
     mintedBy: member,
   });
   const spent = await Promise.all([
@@ -428,7 +427,7 @@ test("a personal token past its expiry is neither readable, spendable nor restor
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("b2");
   assert.equal(
-    await tokens.mint(tenant, digest, [], Date.now() - 1_000, member),
+    await tokens.mint(tenant, digest, Date.now() - 1_000, member),
     "Minted",
   );
   assert.equal(await tokens.permitted(digest), undefined);
@@ -442,7 +441,6 @@ test("a personal token names a tenant that is a row", async () => {
     await tokens.mint(
       asTenantId("tenant-never-made"),
       postgresHarnessTokenDigest("c3"),
-      [],
       Date.now() + 60_000,
       member,
     ),
@@ -457,7 +455,6 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
     await tokens.mint(
       tenant,
       postgresHarnessTokenDigest("d0"),
-      [],
       Date.now() - 1_000,
       member,
     ),
@@ -468,7 +465,6 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
       await tokens.mint(
         tenant,
         postgresHarnessTokenDigest(`d${String(minted)}`),
-        [],
         Date.now() + 60_000,
         member,
       ),
@@ -478,7 +474,6 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
     await tokens.mint(
       tenant,
       postgresHarnessTokenDigest("dff"),
-      [],
       Date.now() + 60_000,
       member,
     ),
@@ -488,7 +483,6 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
     await tokens.mint(
       tenant,
       postgresHarnessTokenDigest("e0"),
-      [],
       Date.now() + 60_000,
       other,
     ),
