@@ -124,6 +124,7 @@ export function creationBinding(
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }

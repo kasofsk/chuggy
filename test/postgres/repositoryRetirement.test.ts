@@ -205,6 +205,38 @@ test("the doors that answer a whole binding answer its retirement", async () => 
   );
 });
 
+/** A mint reads a retirement beside the allowance, so the row a retirement leaves keeps both. */
+test("a retired binding answers the pipeline definitions it allowed beside its retirement", async () => {
+  const partition = await fixtureProject("retire-pipelines");
+  const repository = await bindAt(partition, "retire-pipelines");
+  const landing = postgresProjectRepositoryLanding(pool);
+  const standing = await landing.landing(partition, asRepositoryId(repository));
+  assert.equal(
+    (
+      await landing.setLanding({
+        partition,
+        repository: asRepositoryId(repository),
+        expected: standing?.landing ?? { mode: "Push" },
+        landing: standing?.landing ?? { mode: "Push" },
+        pipelinesWritable: { expected: false, wanted: true },
+      })
+    ).outcome,
+    "Written",
+  );
+  const retired = await retire(partition, repository);
+  assert.deepEqual(
+    retired.outcome === "Retired"
+      ? [retired.binding.pipelinesWritable, typeof retired.binding.retiredAt]
+      : undefined,
+    [true, "string"],
+  );
+  const read = await landing.landing(partition, asRepositoryId(repository));
+  assert.deepEqual(
+    [read?.pipelinesWritable, typeof read?.retiredAt],
+    [true, "string"],
+  );
+});
+
 test("retiring one binding leaves the project's others live", async () => {
   const partition = await fixtureProject("retire-sibling");
   const retired = await bindAt(partition, "retire-sibling-retired");

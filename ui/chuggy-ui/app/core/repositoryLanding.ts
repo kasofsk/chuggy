@@ -1,13 +1,15 @@
 /**
- * A repository's landing default as one section edits it: the choice a reader
+ * A binding's settings as one section edits them: its landing default and
+ * whether its jobs may write its pipeline definitions, the choice a reader
  * holds, the write it becomes, and what that write answered.
  *
- * A WRITE THE LANDING MOVED UNDER IS NOT RETRIED. Every write carries the mode
- * the page read as well as the one it wants, so two administrators editing the
- * same binding cannot cross silently; the route answers `409` with the binding
- * as it stands and the draft is rebased onto it, an untouched choice taking what
- * now stands and a touched one standing while the next write fences against the
- * arriving mode.
+ * A WRITE A SETTING MOVED UNDER IS NOT RETRIED. Every write carries each
+ * setting as the page read it as well as the value it wants, so two
+ * administrators editing the same binding cannot cross silently; the route
+ * answers `409` with the binding as it stands and the draft is rebased onto it,
+ * an untouched choice taking what now stands and a touched one standing while
+ * the next write fences against the arriving value. A section edits one
+ * setting and writes the other as it read it.
  */
 
 import type { projectRepositoryLandingSchema } from "../../../../src/contract/requests.ts";
@@ -23,16 +25,23 @@ import type { z } from "zod";
 import type { ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 
-/** What the reader has chosen, beside the mode the page read it against. */
+/** What the reader has chosen of each setting, beside the value the page read it against. */
 export interface RepositoryLandingDraft {
   readonly mode: BriefFinalizationMode;
   readonly read: BriefFinalizationMode;
+  readonly pipelinesWritable: boolean;
+  readonly pipelinesWritableRead: boolean;
 }
 
 export function repositoryLandingDraft(
   binding: ProjectRepositoryResponse,
 ): RepositoryLandingDraft {
-  return { mode: binding.landing.mode, read: binding.landing.mode };
+  return {
+    mode: binding.landing.mode,
+    read: binding.landing.mode,
+    pipelinesWritable: binding.pipelinesWritable,
+    pipelinesWritableRead: binding.pipelinesWritable,
+  };
 }
 
 export function repositoryLandingChosen(
@@ -42,34 +51,54 @@ export function repositoryLandingChosen(
   return { ...draft, mode };
 }
 
-/** The draft with the reader's choice given up, which is what Cancel leaves. */
+export function repositoryLandingPipelinesChosen(
+  draft: RepositoryLandingDraft,
+  pipelinesWritable: boolean,
+): RepositoryLandingDraft {
+  return { ...draft, pipelinesWritable };
+}
+
+/** The draft with the reader's choices given up, which is what Cancel leaves. */
 export function repositoryLandingRestored(
   draft: RepositoryLandingDraft,
 ): RepositoryLandingDraft {
-  return { ...draft, mode: draft.read };
+  return {
+    ...draft,
+    mode: draft.read,
+    pipelinesWritable: draft.pipelinesWritableRead,
+  };
 }
 
-/** Nothing to write where the choice is the one the page read. */
+/** Nothing to write where every choice is the one the page read. */
 export function repositoryLandingSavable(
   draft: RepositoryLandingDraft,
 ): boolean {
-  return draft.mode !== draft.read;
+  return (
+    draft.mode !== draft.read ||
+    draft.pipelinesWritable !== draft.pipelinesWritableRead
+  );
 }
 
-/** The draft over the binding that now stands, which an untouched choice takes. */
+/** The draft over the binding that now stands, which each untouched choice takes. */
 export function repositoryLandingRebased(
   draft: RepositoryLandingDraft,
   binding: ProjectRepositoryResponse,
 ): RepositoryLandingDraft {
   const arriving = binding.landing.mode;
+  const arrivingPipelines = binding.pipelinesWritable;
   return {
     mode: draft.mode === draft.read ? arriving : draft.mode,
     read: arriving,
+    pipelinesWritable:
+      draft.pipelinesWritable === draft.pipelinesWritableRead
+        ? arrivingPipelines
+        : draft.pipelinesWritable,
+    pipelinesWritableRead: arrivingPipelines,
   };
 }
 
-/** The body the route refuses a write without: the binding, the mode the page
- * read, and the mode it wants. */
+/** The body the route refuses a write without: the binding, and each setting
+ * as the page read it and as it is wanted. */
 export function repositoryLandingWrite(
   draft: RepositoryLandingDraft,
   repository: string,
@@ -78,10 +107,14 @@ export function repositoryLandingWrite(
     repository,
     expected: { mode: draft.read },
     landing: { mode: draft.mode },
+    pipelinesWritable: {
+      expected: draft.pipelinesWritableRead,
+      wanted: draft.pipelinesWritable,
+    },
   };
 }
 
-/** Where the last write stands, both answers that moved the landing carrying
+/** Where the last write stands, both answers that moved a setting carrying
  * the binding behind it. */
 export type RepositoryLandingSaved =
   | { readonly saved: "Idle" }
@@ -90,7 +123,7 @@ export type RepositoryLandingSaved =
   | { readonly saved: "Conflict"; readonly binding: ProjectRepositoryResponse }
   | { readonly saved: "Failed"; readonly reason: string };
 
-/** The code the route names a moved landing by. The wire publishes no roster of
+/** The code the route names a moved setting by. The wire publishes no roster of
  * its error codes, so it is read as the string it arrives as. */
 const repositoryLandingMovedCode = "RepositoryLandingMoved";
 

@@ -38,19 +38,25 @@ test("a landing names a mode the wire publishes and nothing else", () => {
     );
 });
 
-test("a landing write names the repository, the landing read and the one wanted", () => {
+test("a landing write names the repository, and each setting as read and as wanted", () => {
   const body = {
     repository: "https://github.com/kasofsk/chuggy.git",
     expected: { mode: "Push" },
     landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: false, wanted: true },
   };
   assert.deepEqual(projectRepositoryLandingSchema.parse(body), body);
+  const { pipelinesWritable, ...landingOnly } = body;
   for (const value of [
-    { repository: body.repository, landing: body.landing },
-    { repository: body.repository, expected: body.expected },
-    { expected: body.expected, landing: body.landing },
+    { ...landingOnly, landing: undefined },
+    { ...body, expected: undefined },
+    { ...body, repository: undefined },
     { ...body, repository: "" },
     { ...body, expected: { mode: "Merge" } },
+    landingOnly,
+    { ...body, pipelinesWritable: { wanted: pipelinesWritable.wanted } },
+    { ...body, pipelinesWritable: { ...pipelinesWritable, wanted: "on" } },
+    { ...body, pipelinesWritable: true },
   ])
     assert.equal(
       projectRepositoryLandingSchema.safeParse(value).success,

@@ -6,19 +6,22 @@
  * What is here is the mint alone: which collection it posts to, how a named
  * permission set is spelled, and what a token is held under.
  *
- * PIPELINE DEFINITIONS ARE ASKED FOR ONLY AS FAR AS THE INSTALLATION GRANTS
- * THEM. An installation holds a permission its app requests only once the
- * installation's owner has accepted it, and the forge refuses a mint asking for
- * one the installation does not hold, so a set naming `pipelines` reads the
+ * PIPELINE DEFINITIONS ARE ASKED FOR ONLY WHERE THE REPOSITORY'S BINDING ALLOWS
+ * THEM, AND THEN ONLY AS FAR AS THE INSTALLATION GRANTS THEM. A request whose
+ * set names `pipelines` and whose binding allows them asks for them; any other
+ * asks for none. An installation holds a permission its app requests only once
+ * the installation's owner has accepted it, and the forge refuses a mint asking
+ * for one the installation does not hold, so such a request reads the
  * installation as the app first and spells `workflows` only where it is
- * granted. The read answers as a mint does, and a set naming no pipelines makes
- * none.
+ * granted. The read answers as a mint does, and a request asking for no
+ * pipelines makes none.
  *
  * A TOKEN IS HELD UNTIL ITS OWN EXPIRY, LESS A MARGIN, KEYED BY WHAT IT IS GOOD
  * FOR. Repeated mints for one key are one mint for as long as the held token
  * lasts; anything else is a different key, because a cache keyed more loosely
- * would hand a reader a credential that can push, or hand a caller acting on
- * one repository a token good for every repository the installation holds.
+ * would hand a reader a credential that can push, hand a caller acting on one
+ * repository a token good for every repository the installation holds, or hand
+ * a binding that allows no pipeline definitions a token that can write them.
  * What an installation grants is not in the key, so a token held from before
  * its owner accepted `workflows` is handed out without it until it expires.
  * Nothing tracks a request in flight, so mints racing on one key each send and
@@ -209,7 +212,16 @@ async function githubInstallationTokensPipelinesGranted(
   return read.permissions.workflows === "write";
 }
 
-/** The forge's own spelling of one named permission set, as far as the installation grants it. */
+/** The pipeline definitions a request asks for: what its set names, where its binding allows them. */
+function githubInstallationTokensPipelinesAsked(
+  request: ForgeTokenRequest,
+): "write" | undefined {
+  return request.pipelinesAllowed === true
+    ? forgePermissionSets[request.permissions].pipelines
+    : undefined;
+}
+
+/** The forge's own spelling of one named permission set, as far as the binding allows and the installation grants it. */
 async function githubInstallationTokensPermissions(
   own: GithubInstallationTokensState,
   request: ForgeTokenRequest,
@@ -224,16 +236,15 @@ async function githubInstallationTokensPermissions(
       ? {}
       : { administration: permissions.administration }),
   };
-  if (permissions.pipelines === undefined)
+  const pipelines = githubInstallationTokensPipelinesAsked(request);
+  if (pipelines === undefined)
     return { asked: "Permissions", permissions: spelled };
   const granted = await githubInstallationTokensPipelinesGranted(own, request);
   if (typeof granted !== "boolean")
     return { asked: "Refused", refused: granted };
   return {
     asked: "Permissions",
-    permissions: granted
-      ? { ...spelled, workflows: permissions.pipelines }
-      : spelled,
+    permissions: granted ? { ...spelled, workflows: pipelines } : spelled,
   };
 }
 
@@ -245,6 +256,7 @@ function githubInstallationTokensCacheKey(request: ForgeTokenRequest): string {
       ? null
       : [...request.repositories].sort(),
     request.permissions,
+    githubInstallationTokensPipelinesAsked(request) ?? null,
   ]);
 }
 

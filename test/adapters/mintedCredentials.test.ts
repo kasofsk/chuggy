@@ -6,6 +6,8 @@
  * A MINT IS THE ASSERTION AND SO IS ITS ABSENCE. A repository on another host,
  * an account nobody claimed and an account another tenant claimed are refused
  * without a mint being attempted, and the recorded requests are what prove it.
+ * The same goes for the pipeline definitions: what a request carries is the
+ * binding's allowance, and a set naming none reads no binding.
  */
 
 import assert from "node:assert/strict";
@@ -32,12 +34,28 @@ import {
   type RepositoryBinding,
   type RepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
+import type {
+  ProjectRepositoryBound,
+  ProjectRepositoryLandingStore,
+} from "../../src/interpreter/repositoryBinding.ts";
 
 const fixtureForgeId = asForgeId("github");
 const fixtureAccount = "kasofsk";
 const fixtureTenant = asTenantId("vteng");
 const fixtureOtherTenant = asTenantId("otherco");
+const fixturePartition: Partition = {
+  tenant: fixtureTenant,
+  project: asProjectId("chuggy"),
+};
+const fixtureOtherPartition: Partition = {
+  tenant: fixtureOtherTenant,
+  project: asProjectId("chuggy"),
+};
 const fixtureToken = asForgeInstallationToken("ghs-minted-q4w5e6");
 const fixtureRepository = asRepositoryId(
   `https://${githubRepositoryHost}/${fixtureAccount}/chuggy`,
@@ -79,6 +97,32 @@ function fixtureInstallations(
   };
 }
 
+/** One binding of the fixture repository, live and allowing the pipeline definitions unless a case says otherwise. */
+function fixtureBound(
+  standing: Partial<ProjectRepositoryBound> = {},
+): ProjectRepositoryBound {
+  return {
+    repository: fixtureRepository,
+    boundAt: "2026-10-25T00:00:00Z",
+    landing: { mode: "Push" },
+    pipelinesWritable: true,
+    ...standing,
+  };
+}
+
+/** The binding read a mint makes, recording each partition and repository it was asked about. */
+function fixtureBindings(
+  bound: ProjectRepositoryBound | undefined,
+  asked: (readonly [Partition, RepositoryId])[] = [],
+): Pick<ProjectRepositoryLandingStore, "landing"> {
+  return {
+    landing: (partition, repository) => {
+      asked.push([partition, repository]);
+      return Promise.resolve(bound);
+    },
+  };
+}
+
 function fixtureTokens(
   minted: ForgeTokenMinted,
   asked: ForgeTokenRequest[] = [],
@@ -97,6 +141,7 @@ function fixtureRepositoryTokens(
     readonly minted?: ForgeTokenMinted;
     readonly askedInstallations?: ForgeInstallationQuery[];
     readonly askedMints?: ForgeTokenRequest[];
+    readonly bindings?: Pick<ProjectRepositoryLandingStore, "landing">;
   } = {},
 ) {
   return mintedRepositoryTokens({
@@ -115,6 +160,7 @@ function fixtureRepositoryTokens(
       },
       options.askedMints,
     ),
+    bindings: options.bindings ?? fixtureBindings(fixtureBound()),
   });
 }
 
@@ -124,7 +170,7 @@ test("a repository's owner and the asking tenant select the installation, and th
   const minted = await fixtureRepositoryTokens({
     askedInstallations,
     askedMints,
-  }).token(fixtureRepository, fixtureTenant, "write");
+  }).token(fixtureRepository, fixturePartition, "read");
   assert.deepEqual(askedInstallations, [
     {
       forge: fixtureForgeId,
@@ -142,7 +188,7 @@ test("a repository's owner and the asking tenant select the installation, and th
         installationId: fixtureInstallationId,
       },
       repositories: ["chuggy"],
-      permissions: "write",
+      permissions: "read",
     },
   ]);
   assert.deepEqual(minted, {
@@ -163,7 +209,7 @@ test("a repository this forge does not hold and an account no tenant claimed are
     assert.deepEqual(
       await fixtureRepositoryTokens({ askedMints }).token(
         repository,
-        fixtureTenant,
+        fixturePartition,
         "read",
       ),
       { minted: "Denied", evidence: { mint: "Address" } },
@@ -173,7 +219,7 @@ test("a repository this forge does not hold and an account no tenant claimed are
   assert.deepEqual(
     await fixtureRepositoryTokens({ claimed: [], askedMints }).token(
       fixtureRepository,
-      fixtureTenant,
+      fixturePartition,
       "read",
     ),
     { minted: "Denied", evidence: { mint: "NoInstallation" } },
@@ -186,7 +232,7 @@ test("an account another tenant claimed is denied to this one, and the tenant is
   const askedMints: ForgeTokenRequest[] = [];
   const tokens = fixtureRepositoryTokens({ askedInstallations, askedMints });
   assert.deepEqual(
-    await tokens.token(fixtureRepository, fixtureOtherTenant, "write"),
+    await tokens.token(fixtureRepository, fixtureOtherPartition, "write"),
     { minted: "Denied", evidence: { mint: "NoInstallation" } },
   );
   assert.deepEqual(
@@ -308,9 +354,10 @@ test("a store and a mint that raised each say which, and still raise to a caller
       repositoryHost: githubRepositoryHost,
       installations,
       tokens,
+      bindings: fixtureBindings(fixtureBound()),
     });
     await assert.rejects(
-      repositoryTokens.token(fixtureRepository, fixtureTenant, "read"),
+      repositoryTokens.token(fixtureRepository, fixturePartition, "read"),
       (thrown) => thrown === raised,
     );
     assert.deepEqual(
@@ -322,4 +369,95 @@ test("a store and a mint that raised each say which, and still raise to a caller
       cause,
     );
   }
+});
+
+/**
+ * Each binding a write or a proposal can meet, and whether it allows the
+ * pipeline definitions: only a live one that allows them does, and a project
+ * binding no such repository allows nothing.
+ */
+const fixturePipelinesBindings: readonly (readonly [
+  string,
+  ProjectRepositoryBound | undefined,
+  boolean,
+])[] = [
+  ["a live binding allowing them", fixtureBound(), true],
+  [
+    "a live binding not allowing them",
+    fixtureBound({ pipelinesWritable: false }),
+    false,
+  ],
+  [
+    "a retired binding allowing them",
+    fixtureBound({ retiredAt: "2026-10-25T01:00:00Z" }),
+    false,
+  ],
+  ["no binding", undefined, false],
+];
+
+test("a write or a proposal carries the pipeline definitions only where the act's own project binds the repository live and allows them", async () => {
+  for (const permissions of ["write", "propose"] as const) {
+    for (const [binding, bound, allowed] of fixturePipelinesBindings) {
+      const askedMints: ForgeTokenRequest[] = [];
+      const askedBindings: (readonly [Partition, RepositoryId])[] = [];
+      assert.equal(
+        (
+          await fixtureRepositoryTokens({
+            askedMints,
+            bindings: fixtureBindings(bound, askedBindings),
+          }).token(fixtureRepository, fixturePartition, permissions)
+        ).minted,
+        "Token",
+      );
+      assert.deepEqual(
+        askedBindings,
+        [[fixturePartition, fixtureRepository]],
+        `${permissions}, ${binding}: the binding read is the act's own project's`,
+      );
+      assert.deepEqual(
+        askedMints.map((request) => request.pipelinesAllowed),
+        [allowed ? true : undefined],
+        `${permissions}, ${binding}`,
+      );
+    }
+  }
+});
+
+test("a set naming no pipeline definitions reads no binding and carries none", async () => {
+  for (const permissions of ["read", "administer"] as const) {
+    const askedMints: ForgeTokenRequest[] = [];
+    const askedBindings: (readonly [Partition, RepositoryId])[] = [];
+    await fixtureRepositoryTokens({
+      askedMints,
+      bindings: fixtureBindings(fixtureBound(), askedBindings),
+    }).token(fixtureRepository, fixturePartition, permissions);
+    assert.deepEqual(askedBindings, [], permissions);
+    assert.deepEqual(
+      askedMints.map((request) => request.pipelinesAllowed),
+      [undefined],
+      permissions,
+    );
+  }
+});
+
+/** A read that failed established nothing, so the mint waits rather than going ahead without the definitions. */
+test("a binding read that raised is an outage the source names, and mints nothing", async () => {
+  const askedMints: ForgeTokenRequest[] = [];
+  const raised = new Error("the binding read went away");
+  const tokens = fixtureRepositoryTokens({
+    askedMints,
+    bindings: { landing: () => Promise.reject(raised) },
+  });
+  await assert.rejects(
+    tokens.token(fixtureRepository, fixturePartition, "write"),
+    (thrown) => thrown === raised,
+  );
+  assert.deepEqual(
+    await mintedRepositoryCredentials({
+      tokens,
+      permissions: "write",
+    }).credential(fixtureBinding()),
+    { resolved: "Unavailable", evidence: { mint: "StoreRaised" } },
+  );
+  assert.deepEqual(askedMints, [], "no mint follows a binding nobody read");
 });

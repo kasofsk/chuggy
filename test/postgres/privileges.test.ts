@@ -1355,23 +1355,24 @@ test("the binding every evidence function opens with is nobody's to call", async
 });
 
 /**
- * The two landing doors and the retirement: moving a binding's landing and
+ * The two landing doors and the retirement: writing a binding's settings and
  * ending the binding are the API's questions, asked on behalf of one project by
- * routes it already gates. Reading one is the API's too, and the worker
- * plane's, which holds a repository a pod names to its project's live
- * bindings; every other runtime role reads a binding as part of a row it
+ * routes it already gates. Reading one is the API's too, the worker plane's,
+ * which holds a repository a pod names to its project's live bindings, and the
+ * finalizer's, whose mints read whether a binding allows the pipeline
+ * definitions; every other runtime role reads a binding as part of a row it
  * already holds a door for, so none of them holds these.
  */
-test("no runtime role but the API moves a binding's landing or retires one, and only it and the worker plane read one", async () => {
+test("no runtime role but the API writes a binding's settings or retires one, and only it, the worker plane and the finalizer read one", async () => {
   const calls = [
     [
       repositoryLandingReadFunction,
-      `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
-      [apiRole, workerPlaneRole],
+      `SELECT landing_mode,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      [apiRole, workerPlaneRole, finalizerRole],
     ],
     [
       repositoryLandingWriteFunction,
-      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push',false,false)`,
       [apiRole],
     ],
     [

@@ -1664,9 +1664,7 @@ function registerProjectRepositoryLanding(
           await onboarding.setLanding(
             principalOf(request),
             partitionOf(request),
-            written.repository,
-            written.expected,
-            written.landing,
+            written,
           ),
         ),
       );

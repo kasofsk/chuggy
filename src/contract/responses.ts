@@ -1944,14 +1944,16 @@ export type ProjectRepositoryCreatedResponse = z.infer<
 >;
 
 /**
- * One repository a project binds, when it was bound, and how a ticket in it
- * lands. `retiredAt` is present only on a binding that has been retired, which
- * is one no longer bound or elected, kept so its history reads by name.
+ * One repository a project binds, when it was bound, how a ticket in it lands,
+ * and whether its jobs may write its pipeline definitions. `retiredAt` is
+ * present only on a binding that has been retired, which is one no longer
+ * bound or elected, kept so its history reads by name.
  */
 export const projectRepositoryResponseSchema = z.object({
   repository: z.string().min(1),
   boundAt: instantSchema,
   landing: repositoryLandingSchema,
+  pipelinesWritable: z.boolean(),
   retiredAt: instantSchema.optional(),
 });
 export type ProjectRepositoryResponse = z.infer<

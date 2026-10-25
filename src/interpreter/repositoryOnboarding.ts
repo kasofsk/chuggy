@@ -137,6 +137,7 @@ import type {
   ProjectRepositoryBindingWrite,
   ProjectRepositoryBound,
   ProjectRepositoryLandingStore,
+  ProjectRepositoryLandingWrite,
   ProjectRepositoryRetirementStore,
   RepositoryLanding,
 } from "./repositoryBinding.ts";
@@ -395,7 +396,7 @@ export type ProjectRepositoryConfigureResult =
   | { readonly result: "NotFound" };
 
 /**
- * What moving one repository's landing came to. A conflict answers the binding
+ * What writing one binding's settings came to. A conflict answers the binding
  * as it stands, because the writer's next act is to read it again; a repository
  * this project does not bind is the same miss as a project it may not see.
  */
@@ -585,9 +586,7 @@ export interface RepositoryOnboarding {
   setLanding(
     principal: Principal,
     partition: Partition,
-    repository: RepositoryId,
-    expected: RepositoryLanding,
-    landing: RepositoryLanding,
+    written: ProjectRepositoryLandingWrite,
   ): Promise<ProjectRepositoryLandingResult>;
 
   retireRepository(
@@ -1318,17 +1317,16 @@ async function createRepositoryBound(
 }
 
 /**
- * One landing moved, behind the permit that binds: what a repository lands by
- * is the same administration as what a project binds, and a project this
+ * One binding's settings written, behind the permit that binds: what a
+ * repository lands by and whether its jobs may write its pipeline definitions
+ * are the same administration as what a project binds, and a project this
  * caller may not administer is not there.
  */
 async function setLanding(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   partition: Partition,
-  repository: RepositoryId,
-  expected: RepositoryLanding,
-  landing: RepositoryLanding,
+  write: ProjectRepositoryLandingWrite,
 ): Promise<ProjectRepositoryLandingResult> {
   const authority = await ports.access.authorize(
     principal,
@@ -1336,12 +1334,7 @@ async function setLanding(
     "Administer",
   );
   if (authority === undefined) return { result: "NotFound" };
-  const written = await ports.landing.setLanding({
-    partition,
-    repository,
-    expected,
-    landing,
-  });
+  const written = await ports.landing.setLanding({ ...write, partition });
   switch (written.outcome) {
     case "Written":
       return { result: "Written", repository: written.binding };
@@ -1535,8 +1528,8 @@ export function repositoryOnboarding(
     projectRepositories: (principal, partition) =>
       projectRepositories(ports, principal, partition),
 
-    setLanding: (principal, partition, repository, expected, landing) =>
-      setLanding(ports, principal, partition, repository, expected, landing),
+    setLanding: (principal, partition, written) =>
+      setLanding(ports, principal, partition, written),
 
     retireRepository: (principal, partition, repository) =>
       retireRepository(ports, principal, partition, repository),

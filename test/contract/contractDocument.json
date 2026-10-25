@@ -2509,9 +2509,22 @@
           },
           "required": ["mode"],
           "additionalProperties": false
+        },
+        "pipelinesWritable": {
+          "type": "object",
+          "properties": {
+            "expected": {
+              "type": "boolean"
+            },
+            "wanted": {
+              "type": "boolean"
+            }
+          },
+          "required": ["expected", "wanted"],
+          "additionalProperties": false
         }
       },
-      "required": ["repository", "expected", "landing"],
+      "required": ["repository", "expected", "landing", "pipelinesWritable"],
       "additionalProperties": false
     },
     "projectRepositoryRetirement": {

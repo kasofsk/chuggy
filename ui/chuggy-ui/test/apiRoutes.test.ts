@@ -755,6 +755,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
     repository: madeRepository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "PullRequest" },
+    pipelinesWritable: false,
   };
   const held = recordingRequests(() => ({ repository: row }));
   const answered = await apiWriteProjectRepositoryLanding(
@@ -764,6 +765,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
       repository: madeRepository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     },
   );
   expect(held.requests.map((request) => request.url)).toStrictEqual([

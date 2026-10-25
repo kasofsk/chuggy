@@ -59,7 +59,7 @@ const expiresAtMs = 1_700_000_000_000;
 /** What one mint was asked for, so a case can say the pod widened nothing. */
 interface Asked {
   readonly repository: RepositoryId;
-  readonly tenant: string;
+  readonly partition: Partition;
   readonly permissions: ForgePermissionSet;
 }
 
@@ -68,8 +68,12 @@ function tokensOf(
   asked: Asked[],
 ): ForgeRepositoryTokens {
   return {
-    token: (forRepository, tenant, permissions) => {
-      asked.push({ repository: forRepository, tenant, permissions });
+    token: (forRepository, partitionAsked, permissions) => {
+      asked.push({
+        repository: forRepository,
+        partition: partitionAsked,
+        permissions,
+      });
       return minted instanceof Error
         ? Promise.reject(minted)
         : Promise.resolve(minted);
@@ -111,6 +115,7 @@ function bindingOf(
     repository: bound,
     boundAt: "2026-10-01T00:00:00Z",
     landing: asRepositoryLanding("Push"),
+    pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }
@@ -159,9 +164,7 @@ test("a work attempt is minted write on the repository its own bundle pinned", a
     minted: "Credential",
     value: { username: forgeCredentialUsername, password: token, expiresAtMs },
   });
-  assert.deepEqual(asked, [
-    { repository, tenant: partition.tenant, permissions: "write" },
-  ]);
+  assert.deepEqual(asked, [{ repository, partition, permissions: "write" }]);
 });
 
 test("an evaluation attempt is minted read, because an evaluation pushes nothing", async () => {
@@ -237,9 +240,7 @@ test("a session is minted read on what its own project binds, never on what it n
     value: { username: forgeCredentialUsername, password: token, expiresAtMs },
   });
   assert.deepEqual(named, [{ partition, named: mirror }]);
-  assert.deepEqual(asked, [
-    { repository, tenant: partition.tenant, permissions: "read" },
-  ]);
+  assert.deepEqual(asked, [{ repository, partition, permissions: "read" }]);
 });
 
 test("a session naming what its project does not bind is minted nothing", async () => {
@@ -288,9 +289,7 @@ test("an attempt naming no repository is minted its own for what its task kind d
         expiresAtMs,
       },
     });
-    assert.deepEqual(asked, [
-      { repository, tenant: partition.tenant, permissions },
-    ]);
+    assert.deepEqual(asked, [{ repository, partition, permissions }]);
     assert.deepEqual(read, [], "its own repository was held to the bindings");
   }
 });
@@ -312,9 +311,7 @@ test("an attempt naming its own repository is minted read, whatever its task kin
         expiresAtMs,
       },
     });
-    assert.deepEqual(asked, [
-      { repository, tenant: partition.tenant, permissions: "read" },
-    ]);
+    assert.deepEqual(asked, [{ repository, partition, permissions: "read" }]);
     assert.deepEqual(read, [], "its own repository was held to the bindings");
   }
 });
@@ -338,7 +335,7 @@ test("an attempt naming another repository its project binds is minted read, wha
     });
     assert.deepEqual(read, [{ partition, named: sibling }]);
     assert.deepEqual(asked, [
-      { repository: sibling, tenant: partition.tenant, permissions: "read" },
+      { repository: sibling, partition, permissions: "read" },
     ]);
   }
 });

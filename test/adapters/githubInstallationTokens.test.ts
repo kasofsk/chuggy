@@ -293,22 +293,49 @@ function fixtureInstallationRead(grantsWorkflows: boolean): Response {
   });
 }
 
-test("a set naming no pipelines is the whole of what a body asks for, and reads no installation", async (t) => {
+test("a set naming no pipelines is the whole of what a body asks for, and reads no installation whatever its binding allows", async (t) => {
   const asked: unknown[] = [];
-  for (const permissions of ["read", "administer"] as const) {
+  for (const permissions of ["read", "administer"] as const)
+    for (const allowed of [false, true]) {
+      const which = `${permissions} ${String(allowed)}`;
+      const recorder = fixtureForge([fixtureMinted()]);
+      await fixtureAdapter(t, recorder).mint(
+        fixtureRequest({
+          permissions,
+          ...(allowed ? { pipelinesAllowed: true } : {}),
+        }),
+      );
+      assert.equal(recorder.calls.length, 1, which);
+      assert.equal(recorder.calls[0]?.method, "POST", which);
+      asked.push(fixtureAskedOf(recorder, 0));
+    }
+  assert.deepEqual(asked, [
+    { contents: "read" },
+    { contents: "read" },
+    { contents: "write", administration: "write" },
+    { contents: "write", administration: "write" },
+  ]);
+});
+
+test("a set naming pipelines its binding does not allow asks for none, and reads no installation", async (t) => {
+  const asked: unknown[] = [];
+  for (const permissions of ["write", "propose"] as const) {
     const recorder = fixtureForge([fixtureMinted()]);
-    await fixtureAdapter(t, recorder).mint(fixtureRequest({ permissions }));
+    const minted = await fixtureAdapter(t, recorder).mint(
+      fixtureRequest({ permissions }),
+    );
+    assert.equal(minted.minted, "Token", permissions);
     assert.equal(recorder.calls.length, 1, permissions);
     assert.equal(recorder.calls[0]?.method, "POST", permissions);
     asked.push(fixtureAskedOf(recorder, 0));
   }
   assert.deepEqual(asked, [
-    { contents: "read" },
-    { contents: "write", administration: "write" },
+    { contents: "write" },
+    { contents: "write", pull_requests: "write" },
   ]);
 });
 
-test("a set naming pipelines asks for workflows exactly where the installation, read as the app, grants them", async (t) => {
+test("a set naming pipelines its binding allows asks for workflows exactly where the installation, read as the app, grants them", async (t) => {
   const asked: unknown[] = [];
   for (const permissions of ["write", "propose"] as const)
     for (const grantsWorkflows of [true, false]) {
@@ -317,7 +344,7 @@ test("a set naming pipelines asks for workflows exactly where the installation, 
         fixtureMinted(),
       ]);
       const minted = await fixtureAdapter(t, recorder).mint(
-        fixtureRequest({ permissions }),
+        fixtureRequest({ permissions, pipelinesAllowed: true }),
       );
       const which = `${permissions} ${String(grantsWorkflows)}`;
       assert.equal(minted.minted, "Token", which);
@@ -384,7 +411,7 @@ test("an installation read refused, failing or unreadable is the mint's own answ
     for (const [answer, expected] of answers) {
       const recorder = fixtureForge([answer(), fixtureMinted()]);
       const minted = await fixtureAdapter(t, recorder).mint(
-        fixtureRequest({ permissions }),
+        fixtureRequest({ permissions, pipelinesAllowed: true }),
       );
       const which = `${permissions} ${JSON.stringify(expected)}`;
       assert.deepEqual(minted, expected, which);
@@ -408,6 +435,7 @@ test("an unheld mint naming pipelines reads the installation every time, and a h
     await tokens.mint(
       fixtureRequest({
         permissions: "write",
+        pipelinesAllowed: true,
         ...(unheld ? { unheld: true } : {}),
       }),
     );
@@ -674,6 +702,44 @@ test("a token held is keyed by everything it is good for", async (t) => {
     }),
   );
   assert.equal(recorder.calls.length, 4, "two repositories are a third token");
+});
+
+/**
+ * A binding that stopped allowing the pipeline definitions must not be handed
+ * the token held from when it did, and one that started must not be handed
+ * the token held from before: the allowance is a term of the key either way.
+ */
+test("a token held with the pipeline definitions never answers a mint its binding does not allow them, nor the other way", async (t) => {
+  const withThem = "ghs-workflows-k1l2m3";
+  const without = "ghs-contents-n4b5v6";
+  const recorder = fixtureForge([
+    fixtureInstallationRead(true),
+    fixtureMinted({ token: withThem }),
+    fixtureMinted({ token: without }),
+  ]);
+  const tokens = fixtureAdapter(t, recorder);
+  const answered: string[] = [];
+  for (const allowed of [true, false, true, false])
+    answered.push(
+      fixtureTokenOf(
+        await tokens.mint(
+          fixtureRequest({
+            permissions: "write",
+            ...(allowed ? { pipelinesAllowed: true } : {}),
+          }),
+        ),
+      ),
+    );
+  assert.deepEqual(answered, [withThem, without, withThem, without]);
+  assert.deepEqual(
+    recorder.calls.map((call) => call.method),
+    ["GET", "POST", "POST"],
+    "each allowance is minted once and then held",
+  );
+  assert.deepEqual(
+    [1, 2].map((index) => fixtureAskedOf(recorder, index)),
+    [{ contents: "write", workflows: "write" }, { contents: "write" }],
+  );
 });
 
 test("one repository name under two installations is two tokens", async (t) => {

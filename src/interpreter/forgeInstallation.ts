@@ -30,7 +30,7 @@ import {
   repositoryCredentialCharsMax,
   type RepositoryId,
 } from "./finalizer.ts";
-import type { TenantId } from "./projectStore.ts";
+import type { Partition, TenantId } from "./projectStore.ts";
 import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
 declare const forgeIdBrand: unique symbol;
@@ -132,10 +132,12 @@ export interface ForgeRepositoryPermissions {
   readonly changeProposals?: "write";
   readonly administration?: "write";
   /**
-   * Writing the definitions a forge runs on its own, which is asked for only as
-   * far as the installation grants it: its owner's acceptance on the forge is
-   * what admits this tree to write them. An installation that has not granted
-   * it is answered with a token without it rather than a refused mint.
+   * Writing the definitions a forge runs on its own, which a set naming it asks
+   * for only where the repository's binding allows it, and then only as far as
+   * the installation grants it: the binding is its project's own choice, and
+   * the owner's acceptance on the forge is what admits this tree to write them.
+   * Where either withholds it, the mint is answered with a token without it
+   * rather than refused.
    */
   readonly pipelines?: "write";
 }
@@ -320,6 +322,12 @@ export interface ForgeTokenRequest {
   readonly repositories?: readonly ForgeRepositoryName[] | undefined;
   readonly permissions: ForgePermissionSet;
   /**
+   * The repository's binding allows this mint the forge's pipeline
+   * definitions. It widens only a set naming `pipelines`, and only as far as
+   * the installation grants them; absent, the token carries none.
+   */
+  readonly pipelinesAllowed?: true;
+  /**
    * The token is minted for this request: none minted before it was asked for
    * answers it, and the one it mints answers no later request.
    */
@@ -351,12 +359,14 @@ export interface ForgeInstallationTokens {
  * A token for one repository, which is what every caller in this tree wants:
  * the owner in the repository's own address is what selects the installation,
  * so nothing above this names an account or an installation identity. The
- * tenant is the one asking, not the one the account turns out to belong to.
+ * partition's tenant is the one asking, not the one the account turns out to
+ * belong to, and its project's live binding of the repository is what allows a
+ * set naming `pipelines` the forge's pipeline definitions.
  */
 export interface ForgeRepositoryTokens {
   token(
     repository: RepositoryId,
-    tenant: TenantId,
+    partition: Partition,
     permissions: ForgePermissionSet,
   ): Promise<ForgeTokenMinted>;
 }

@@ -18,6 +18,12 @@
  * A TOKEN IS SCOPED TO ONE REPOSITORY AND TO ONE PERMISSION SET, and the set is
  * the composition's rather than the caller's: a source composed for reading a
  * snapshot cannot be asked for something that pushes.
+ *
+ * THE BINDING ALLOWS THE PIPELINE DEFINITIONS. A set naming `pipelines` asks
+ * the forge for them only where the project the act runs for binds the
+ * repository live and allows them, which is read here for every such set
+ * rather than trusted to each caller; a binding that is absent or retired
+ * allows none, and a read that raised is an outage.
  */
 
 import {
@@ -26,10 +32,11 @@ import {
   type RepositoryCredentialPort,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
-import type { TenantId } from "../../interpreter/projectStore.ts";
+import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asForgeAccount,
   asForgeRepositoryName,
+  forgePermissionSets,
   type ForgeApp,
   type ForgeId,
   type ForgeInstallationStore,
@@ -38,6 +45,7 @@ import {
   type ForgeRepositoryTokens,
   type ForgeTokenMinted,
 } from "../../interpreter/forgeInstallation.ts";
+import type { ProjectRepositoryLandingStore } from "../../interpreter/repositoryBinding.ts";
 import type { CredentialMintCause } from "../../interpreter/repositoryReadEvidence.ts";
 import { githubAddressOf } from "./githubAddress.ts";
 
@@ -62,17 +70,42 @@ export interface MintedRepositoryTokensOptions {
   readonly repositoryHost: string;
   readonly installations: ForgeInstallationStore;
   readonly tokens: ForgeInstallationTokens;
+  /** The project's own binding of the repository, read where the set names `pipelines`. */
+  readonly bindings: Pick<ProjectRepositoryLandingStore, "landing">;
 }
 
 /**
- * The token for one repository: its owner selects the installation, and the
- * mint is scoped to that repository alone.
+ * Whether the project the act runs for allows this mint the pipeline
+ * definitions: only for a set that names them, and only where it binds the
+ * repository live with them allowed.
+ */
+async function mintedRepositoryTokensPipelinesAllowed(
+  options: MintedRepositoryTokensOptions,
+  repository: RepositoryId,
+  partition: Partition,
+  permissions: ForgePermissionSet,
+): Promise<boolean> {
+  if (forgePermissionSets[permissions].pipelines === undefined) return false;
+  const bound = await options.bindings
+    .landing(partition, repository)
+    .catch(mintedRaisedMarked("StoreRaised"));
+  return (
+    bound !== undefined &&
+    bound.retiredAt === undefined &&
+    bound.pipelinesWritable
+  );
+}
+
+/**
+ * The token for one repository: its owner selects the installation, the mint
+ * is scoped to that repository alone, and its binding is what allows a set the
+ * pipeline definitions it names.
  */
 export function mintedRepositoryTokens(
   options: MintedRepositoryTokensOptions,
 ): ForgeRepositoryTokens {
   return {
-    token: async (repository, tenant, permissions) => {
+    token: async (repository, partition, permissions) => {
       const address = githubAddressOf(repository, options.repositoryHost);
       if (address === undefined)
         return { minted: "Denied", evidence: { mint: "Address" } };
@@ -81,16 +114,23 @@ export function mintedRepositoryTokens(
           forge: options.forge,
           app: options.app,
           account: asForgeAccount(address.owner),
-          tenant,
+          tenant: partition.tenant,
         })
         .catch(mintedRaisedMarked("StoreRaised"));
       if (installation === undefined)
         return { minted: "Denied", evidence: { mint: "NoInstallation" } };
+      const pipelinesAllowed = await mintedRepositoryTokensPipelinesAllowed(
+        options,
+        repository,
+        partition,
+        permissions,
+      );
       return options.tokens
         .mint({
           installation,
           repositories: [asForgeRepositoryName(address.name)],
           permissions,
+          ...(pipelinesAllowed ? { pipelinesAllowed: true } : {}),
         })
         .catch(mintedRaisedMarked("MintRaised"));
     },
@@ -128,7 +168,7 @@ export function mintedRepositoryCredentials(
         await mintedCredentialToken(
           options,
           repository.repository,
-          repository.partition.tenant,
+          repository.partition,
         ),
       ),
   };
@@ -138,10 +178,10 @@ export function mintedRepositoryCredentials(
 function mintedCredentialToken(
   options: MintedCredentialsOptions,
   repository: RepositoryId,
-  tenant: TenantId,
+  partition: Partition,
 ): Promise<ForgeTokenMinted> {
   return options.tokens
-    .token(repository, tenant, options.permissions)
+    .token(repository, partition, options.permissions)
     .catch((raised: unknown): ForgeTokenMinted => {
       const cause =
         typeof raised === "object" && raised !== null

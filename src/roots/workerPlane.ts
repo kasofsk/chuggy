@@ -198,6 +198,7 @@ async function planeCredentials(
     await pool.end();
     throw new Error(`${forgeAppKeyFileVariable}: ${verdict.why}`);
   }
+  const bindings = postgresProjectRepositoryLanding(pool);
   return workerPlaneCredentialMinting({
     tokens: mintedRepositoryTokens({
       forge: githubForgeId,
@@ -205,8 +206,9 @@ async function planeCredentials(
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
       tokens: githubInstallationTokens(options),
+      bindings,
     }),
-    bindings: postgresProjectRepositoryLanding(pool),
+    bindings,
   });
 }
 
