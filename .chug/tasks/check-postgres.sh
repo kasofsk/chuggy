@@ -13,7 +13,8 @@
 # and removes every clone and the template before returning. Ordinary suites
 # therefore exercise the current schema without replaying migrations;
 # `migration.test.ts` exercises fresh installation, ledger compatibility and
-# migration atomicity.
+# migration atomicity, and `migrationSteps.test.ts` the later migrations, each
+# from the version before it.
 #
 # WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY, each suite
 # against a clone of its own that is dropped as the suite ends. A suite reading
