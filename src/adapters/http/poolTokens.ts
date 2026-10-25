@@ -1,12 +1,15 @@
 /**
  * `WorkerPoolTokens` over this tree's own client-credentials source, which is
- * where a pool's client id and secret become a bearer.
+ * where a pool's client id and secret become a bearer. This and
+ * `src/adapters/http/clientCredentials.ts` are chuggy-common's `poolTokens.mjs`
+ * in TypeScript, and a change to one is a change to both.
  *
  * THE TWO FAILURES ARE KEPT APART AND NEITHER IS INVENTED HERE. The source
- * already raises `ClientCredentialsRefused` for the statuses the issuer refuses
- * this client with and an ordinary error for everything else, so this module
- * reads which it was and says so; merging them would have a pool with a typo in
- * its secret back off forever, or one behind a restarting issuer delete itself.
+ * already raises `ClientCredentialsRefused` for the issuer's own refusal of
+ * this client, for one that needs confirming only once it is, and an ordinary
+ * error for everything else, so this module reads which it was and says so;
+ * merging them would have a pool with a typo in its secret back off forever,
+ * or one behind a restarting issuer delete itself.
  *
  * A GRANT IS ASKED FOR EVERY PASS AND MINTED FAR LESS OFTEN. The source holds
  * its own grant until its refresh margin and shares one mint between the

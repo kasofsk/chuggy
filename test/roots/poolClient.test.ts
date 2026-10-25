@@ -84,12 +84,13 @@ function without(name: string): Readonly<Record<string, string>> {
 
 test("a client is composed from its variables, the absent bounds defaulting", async () => {
   const found = (await parsed(environment)).parsed as {
-    tokens: { audience: readonly string[] };
+    tokens: { audience: readonly string[]; refusalConfirmMs: number };
     plane: { baseUrl: string };
     site: { namespace: string; capabilities: Record<string, unknown> };
     client: { concurrencyMax: number; passesMax: number };
   };
   assert.deepEqual(found.tokens.audience, ["https://api.invalid"]);
+  assert.equal(found.tokens.refusalConfirmMs, 90_000);
   assert.equal(found.plane.baseUrl, "https://pool-plane.invalid");
   assert.equal(found.site.namespace, "pool");
   assert.deepEqual(found.site.capabilities, {});
@@ -116,9 +117,17 @@ test("a site naming a workspace, even the contract's, is refused", async () => {
 
 test("a stated bound is the one used", async () => {
   const found = (
-    await parsed({ ...environment, CHUG_POOL_CLIENT_CONCURRENCY_MAX: "9" })
-  ).parsed as { client: { concurrencyMax: number } };
+    await parsed({
+      ...environment,
+      CHUG_POOL_CLIENT_CONCURRENCY_MAX: "9",
+      CHUG_POOL_CLIENT_TOKEN_REFUSAL_CONFIRM_MS: "30000",
+    })
+  ).parsed as {
+    tokens: { refusalConfirmMs: number };
+    client: { concurrencyMax: number };
+  };
   assert.equal(found.client.concurrencyMax, 9);
+  assert.equal(found.tokens.refusalConfirmMs, 30_000);
 });
 
 test("every required variable is named in its own refusal", async () => {
