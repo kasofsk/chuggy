@@ -808,6 +808,45 @@ test("every poll the plane answers keeps the runner it named, or none where it n
   assert.deepEqual(refused, [], "a poll refused whole keeps nothing");
 });
 
+test("a poll naming capabilities keeps them before anything is claimed, once however long it waits, and one naming none keeps none", async () => {
+  const advertised = ["Platform:Linux:Amd64", "Tool:Bazel"];
+  for (const [over, kept] of [
+    [{ capabilities: advertised }, advertised],
+    [{ capabilities: [] }, []],
+    [{}, undefined],
+  ] as const) {
+    const made: unknown[] = [];
+    await workerPoolPoll(
+      ports(
+        {
+          ...idle,
+          claim: () => {
+            made.push("claim");
+            return Promise.resolve(undefined);
+          },
+        },
+        noSessions,
+        undefined,
+        undefined,
+        {
+          named: (_identity, _runner, capabilities) => {
+            made.push(["named", capabilities]);
+            return Promise.resolve();
+          },
+        },
+      ),
+      identity,
+      asked({ wanted: 1, ...over }),
+      settings,
+    );
+    assert.deepEqual(
+      made,
+      [["named", kept], "claim", "claim", "claim"],
+      JSON.stringify(over),
+    );
+  }
+});
+
 test("a settlement is made against the kind its assignment is", async () => {
   const calls: string[] = [];
   const recording = (kind: string) => {

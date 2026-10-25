@@ -75,6 +75,7 @@ import { migration074 } from "./074-override-refusals.ts";
 import { migration075 } from "./075-run-disk-low.ts";
 import { migration076 } from "./076-pipelines-writable.ts";
 import { migration077 } from "./077-tokens-carry-no-capabilities.ts";
+import { migration078 } from "./078-polls-name-capabilities.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -155,4 +156,5 @@ export const migrations: readonly Migration[] = [
   migration075,
   migration076,
   migration077,
+  migration078,
 ];

@@ -37,9 +37,9 @@
  * A CAPABILITY IS A PLACEMENT CONSTRAINT AND NOTHING ELSE. A token the site
  * maps contributes a node selector and the tolerations that let a node kept for
  * it be tainted against everything else; a token it does not map contributes
- * nothing, because a pool declared its capabilities at registration and a
- * token like a mounted provider credential is satisfied by the pool itself
- * rather than by a node.
+ * nothing, because a pool's capabilities are its own declaration and a token
+ * like a mounted provider credential is satisfied by the pool itself rather
+ * than by a node.
  *
  * IT RUNS JOBS AND NO SESSION. Every pod it holds is a job's, a session offered
  * to it is refused, and no session end is reported, so a pool running on it

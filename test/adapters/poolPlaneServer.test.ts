@@ -20,6 +20,7 @@ import {
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
+  workerRunnerCapabilitiesHeader,
   workerRunnerHeader,
 } from "../../src/contract/workerPool.ts";
 import {
@@ -292,17 +293,23 @@ const linuxPin = {
   integrity: `sha512-${"A".repeat(85)}g==`,
 };
 
-/** Records the runner each poll named, by the kind of caller that named it. */
+/** Records the runner and the capabilities each poll named, by the kind of caller that named them. */
 function runnerCalls(): {
   readonly named: unknown[];
+  readonly advertised: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
+  const advertised: unknown[] = [];
   return {
     named,
+    advertised,
     runners: {
-      named: (caller: PoolPlaneIdentity, runner) =>
-        Promise.resolve(void named.push([caller.kind, runner])),
+      named: (caller: PoolPlaneIdentity, runner, capabilities) => {
+        named.push([caller.kind, runner]);
+        advertised.push([caller.kind, capabilities]);
+        return Promise.resolve();
+      },
     },
   };
 }
@@ -474,6 +481,74 @@ test("a runner named twice names none, and its poll is served", async () => {
   assert.equal(answered.statusCode, 200);
   assert.equal("release" in answered.json<object>(), false);
   assert.deepEqual(recorded.named, [["Dedicated", undefined]]);
+});
+
+test("a poll naming its capabilities has them kept as one list however its header spells them, and a poll naming none keeps none", async () => {
+  const bazel = ["Platform:Linux:Amd64", "Tool:Bazel"];
+  for (const [why, headers, kept] of [
+    [
+      "a list",
+      {
+        ...speaking,
+        [workerRunnerCapabilitiesHeader]: " Platform:Linux:Amd64,Tool:Bazel ",
+      },
+      ["Dedicated", bazel],
+    ],
+    [
+      "a list sent on two lines",
+      {
+        ...speaking,
+        [workerRunnerCapabilitiesHeader]: [
+          "Platform:Linux:Amd64",
+          "Tool:Bazel",
+        ] as string[],
+      },
+      ["Dedicated", bazel],
+    ],
+    [
+      "an empty list",
+      { ...speaking, [workerRunnerCapabilitiesHeader]: "" },
+      ["Dedicated", []],
+    ],
+    ["no list", speaking, ["Dedicated", undefined]],
+    [
+      "a personal runner",
+      {
+        ...runnerSpeaking,
+        [workerRunnerCapabilitiesHeader]: "Platform:Linux:Amd64, Tool:Bazel",
+      },
+      ["Personal", bazel],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.advertised, [kept], why);
+  }
+});
+
+test("a poll naming capabilities this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const capabilities of [
+    "Tool Bazel",
+    "Tool:Bazel, Tool:Bazel",
+    ["Tool:Bazel", "Tool:Bazel"],
+  ]) {
+    const recorded = runnerCalls();
+    const made = calls();
+    const answered = await createPoolPlaneApp(
+      plane(made.ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({
+      method: "GET",
+      url: polling(["live"], 1),
+      headers: { ...speaking, [workerRunnerCapabilitiesHeader]: capabilities },
+    });
+    assert.equal(answered.statusCode, 400, String(capabilities));
+    assert.equal(answered.body, "", String(capabilities));
+    assert.deepEqual(recorded.named, [], String(capabilities));
+    assert.deepEqual(made.made, [], String(capabilities));
+  }
 });
 
 test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {

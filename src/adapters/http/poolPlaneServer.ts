@@ -27,6 +27,13 @@
  * runner's package where its release reads one. A header that does not name a
  * runner is a poll naming none, never a refusal, since the cluster's own pool
  * and every earlier runner send none.
+ *
+ * A POLL MAY NAME THE CAPABILITIES ITS RUNNER HAS, and one whose header names
+ * no set this side reads is refused with a 400, as a query this side cannot
+ * read is, rather than served as naming none. The set steers what is
+ * claimed, so a poll whose set was dropped would go on claiming under the one
+ * its owner meant to replace; a runner reads the 400 as final, and a set that
+ * did not read once does not read on the next poll either.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -38,10 +45,13 @@ import {
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
   workerPoolSettlementRoutes,
+  workerRunnerCapabilitiesHeader,
+  workerRunnerCapabilitiesOf,
   workerRunnerHeader,
   workerRunnerOf,
   type AssignmentOutcome,
   type WorkerRunner,
+  type WorkerRunnerCapabilitiesNamed,
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
@@ -123,6 +133,16 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
 function poolRunnerNamed(request: FastifyRequest): WorkerRunner | undefined {
   const named = request.headers[workerRunnerHeader];
   return workerRunnerOf(Array.isArray(named) ? named.join(", ") : named);
+}
+
+/** The capabilities a request names, a header sent more than once read as one list, as HTTP joins a list's lines. */
+function poolCapabilitiesNamed(
+  request: FastifyRequest,
+): WorkerRunnerCapabilitiesNamed {
+  const named = request.headers[workerRunnerCapabilitiesHeader];
+  return workerRunnerCapabilitiesOf(
+    Array.isArray(named) ? named.join(", ") : named,
+  );
 }
 
 /**
@@ -240,6 +260,8 @@ function poolAssignmentsRoute(
         workerPoolHeldNamedMax(service.settings),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
+      const capabilities = poolCapabilitiesNamed(request);
+      if (capabilities.named === "Unread") return reply.code(400).send();
       const runner = poolRunnerNamed(request);
       const contract = workerContractOffered(request);
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
@@ -252,6 +274,9 @@ function poolAssignmentsRoute(
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
             ...(runner === undefined ? {} : { runner }),
+            ...(capabilities.named === "Set"
+              ? { capabilities: capabilities.capabilities }
+              : {}),
             ...(contract === undefined ? {} : { contract }),
           },
           service.settings,

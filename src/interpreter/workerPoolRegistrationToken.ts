@@ -7,8 +7,8 @@
  * the owner mints a short-lived single-use token scoped to one partition and the
  * operator configures the machine with it. Redeeming it is the only path by
  * which anything but an owner's own command causes a client to exist. What the
- * pool declares it can run is its own claim, made as it redeems, as it is
- * where the owner registers one by command.
+ * pool declares it can run is its own claim, made as it redeems and again on
+ * any poll naming a set, as it is where the owner registers one by command.
  *
  * THE CONSUMING UPDATE ALONE DECIDES SINGLE USE: a second redeemer racing the
  * first is answered by that update and by nothing here. A fault after the

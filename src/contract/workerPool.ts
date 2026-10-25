@@ -243,6 +243,43 @@ export function workerRunnerOf(
   return read.success ? read.data : undefined;
 }
 
+/**
+ * The header a runner names the capabilities it has in on its poll, as tokens
+ * separated by commas with any spaces or tabs around each, whose set replaces
+ * the one its registration or an earlier poll recorded. A poll without it
+ * leaves the recorded set as it is, since the cluster's own pool and every
+ * earlier runner send none, and an empty one names the empty set.
+ */
+export const workerRunnerCapabilitiesHeader = "chuggy-capabilities";
+
+/** The set a poll names: what a pool declares, none twice. */
+export const workerRunnerCapabilitiesSchema =
+  workerPoolCapabilitiesSchema.refine(
+    (capabilities) => new Set(capabilities).size === capabilities.length,
+  );
+
+/** What a poll's capabilities header names: nothing where it is absent, a set, or something `workerRunnerCapabilitiesSchema` does not read. */
+export type WorkerRunnerCapabilitiesNamed =
+  | { readonly named: "None" }
+  | { readonly named: "Set"; readonly capabilities: readonly string[] }
+  | { readonly named: "Unread" };
+
+/** The set `header` names, an empty element of its list naming nothing. */
+export function workerRunnerCapabilitiesOf(
+  header: string | undefined,
+): WorkerRunnerCapabilitiesNamed {
+  if (header === undefined) return { named: "None" };
+  const read = workerRunnerCapabilitiesSchema.safeParse(
+    header
+      .split(",")
+      .map((element) => element.replace(/^[ \t]+|[ \t]+$/gu, ""))
+      .filter((element) => element !== ""),
+  );
+  return read.success
+    ? { named: "Set", capabilities: read.data }
+    : { named: "Unread" };
+}
+
 /** The longest address a runner's release is fetched from. */
 export const workerRunnerReleaseUrlCharsMax = 2_048;
 

@@ -45,6 +45,12 @@
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
+ * A POLL MAY NAME WHAT ITS CALLER CAN RUN, and the set it names replaces the
+ * one recorded before anything is claimed, so its own claims match it; a poll
+ * naming none leaves the record as it is. What the caller already holds was
+ * claimed under the set recorded then, and is renewed and settled as before,
+ * since nothing after a claim reads a set.
+ *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
  * model's `ownerRunners` reads it. The claim cannot ask the authority, so the
@@ -112,12 +118,13 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly runner?: WorkerRunner;
+  readonly capabilities?: readonly string[];
   readonly contract?: string;
 }
 
@@ -376,14 +383,17 @@ export interface WorkerPoolPollSettings {
 }
 
 /**
- * Where the runner a caller's newest poll named is kept, under its current
- * registration alone: a poll naming none keeps none, so a machine moved back
- * to a runner too old to name itself is not shown as the version it left.
+ * Where what a caller's newest poll named is kept, under its current
+ * registration alone: the runner, which a poll naming none keeps none of, so a
+ * machine moved back to a runner too old to name itself is not shown as the
+ * version it left; and the capabilities, which a poll naming none leaves as
+ * they were recorded.
  */
 export interface WorkerPoolRunners {
   named(
     identity: PoolPlaneIdentity,
     runner: WorkerRunner | undefined,
+    capabilities: readonly string[] | undefined,
   ): Promise<void>;
 }
 
@@ -712,11 +722,11 @@ async function workerPoolHoldingRead(
 }
 
 /**
- * Records the runner this poll named, and the poll as the caller's last of each
- * kind of work it could take: a session, with room for one or holding one from
- * a plane that names the API a session reaches, and, for a personal runner, an
- * execution, with room for one or holding one, which is what a pool's claim
- * reads it as live by.
+ * Records the runner this poll named and the capabilities it has where it named
+ * them, and the poll as the caller's last of each kind of work it could take: a
+ * session, with room for one or holding one from a plane that names the API a
+ * session reaches, and, for a personal runner, an execution, with room for one
+ * or holding one, which is what a pool's claim reads it as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -725,7 +735,7 @@ async function workerPoolPollRecorded(
   holding: WorkerPoolHolding,
   settings: WorkerPoolPollSettings,
 ): Promise<void> {
-  await ports.runners.named(identity, asked.runner);
+  await ports.runners.named(identity, asked.runner, asked.capabilities);
   if (
     settings.sessionApiUrl !== undefined &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)

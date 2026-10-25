@@ -269,13 +269,13 @@ test("each runner is read with the runner its own registration's newest poll nam
   const named = async () =>
     (await runners.runners(key))?.runners.map((runner) => runner.runner);
   assert.deepEqual(await named(), [undefined]);
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   assert.deepEqual(await named(), [linux]);
   const [written] = await harness.query(
     `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
     [partition.tenant],
   );
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   assert.deepEqual(
     await harness.query(
       `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
@@ -284,9 +284,9 @@ test("each runner is read with the runner its own registration's newest poll nam
     [written],
     "the same runner again writes nothing",
   );
-  await stamps.named(polled(), undefined);
+  await stamps.named(polled(), undefined, undefined);
   assert.deepEqual(await named(), [undefined], "a poll naming none keeps none");
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   const second = registration(key, clientNumbered(partition.tenant, 2));
   await runners.register(second);
   assert.deepEqual(
@@ -295,7 +295,7 @@ test("each runner is read with the runner its own registration's newest poll nam
     "a new registration names no runner",
   );
   const darwin = { package: "chuggy-darwin", version: "0.2.0" };
-  await stamps.named(polled(second.principal), darwin);
+  await stamps.named(polled(second.principal), darwin, undefined);
   assert.deepEqual(await named(), [linux, darwin]);
   await assert.rejects(
     harness.query(
@@ -522,7 +522,8 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
   assert.equal(
     await harness.attemptAs(
       poolPlaneRole,
-      `UPDATE personal_runner SET last_polled_at=now(),runner_package=NULL,runner_version=NULL
+      `UPDATE personal_runner
+          SET last_polled_at=now(),runner_package=NULL,runner_version=NULL,capabilities='{}'
         WHERE principal='none'`,
     ),
     undefined,
