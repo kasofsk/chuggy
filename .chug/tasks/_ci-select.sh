@@ -20,6 +20,17 @@
 # inputs means no lookup and no record, so a suite check-postgres or
 # check-keto finds but git does not track never earns a pass.
 #
+# A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. Prettier, ESLint,
+# Vite, PostCSS and browserslist look for their settings in each directory
+# above the files they read, npm for its own, and node for a package in each
+# `node_modules` above the module that asks and for its type in each manifest
+# above it, so a file arriving in one changes what a gate runs. `ci_probes`
+# declares each such place the gate's other inputs leave out, and
+# `ci_node_looks` node's from a directory its modules sit in: a change there
+# selects the gate, and its key holds what `.chug/tasks/_probed-inputs.sh`
+# prints of it, ignored and untracked files alike, since a pathspec matching
+# no tracked file would be Track Record's refusal.
+#
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE. Each holds the tree's
 # own files to one rule and is quick, and a cone for one is a second list of
 # what it reads that falls behind the first: a figure in a recipe, a manifest
@@ -143,6 +154,16 @@ ci_packages() { # <package>... — each with what it depends on, as npm installe
 	for ci_spec do CI_INPUTS_PACKAGES="$CI_INPUTS_PACKAGES$ci_spec
 "; done
 }
+ci_probes() { # <pathspec>... — where a tool looks for a file the tree need not hold
+	for ci_spec do CI_INPUTS_PROBES="$CI_INPUTS_PROBES$ci_spec
+"; done
+}
+# Where node looks from a module in each directory given: the directory's
+# node_modules for a package the module asks for, and its manifest for the
+# module's type.
+ci_node_looks() { # <directory>...
+	for ci_dir do ci_probes "$ci_dir/node_modules" "$ci_dir/package.json"; done
+}
 ci_install() { CI_INPUTS_INSTALL=1; }
 ci_tree() { CI_INPUTS_TREE=1; }
 
@@ -159,13 +180,15 @@ ci_toolchain() {
 	ci_install
 }
 
-# What a gate or suite reads: $CI_INPUTS_CODE and $CI_INPUTS_TEXT, a git
-# pathspec a line; $CI_INPUTS_PACKAGES, a package a line; $CI_INPUTS_INSTALL,
-# 1 for the whole install; and $CI_INPUTS_TREE, 1 for a key on the whole tree.
+# What a gate or suite reads: $CI_INPUTS_CODE, $CI_INPUTS_TEXT and
+# $CI_INPUTS_PROBES, a git pathspec a line; $CI_INPUTS_PACKAGES, a package a
+# line; $CI_INPUTS_INSTALL, 1 for the whole install; and $CI_INPUTS_TREE, 1
+# for a key on the whole tree.
 # A gate it does not name is read as text from the whole tree and keyed on it.
 ci_inputs() { # <gate id or suite path>
 	CI_INPUTS_CODE=""
 	CI_INPUTS_TEXT=""
+	CI_INPUTS_PROBES=""
 	CI_INPUTS_PACKAGES=""
 	CI_INPUTS_INSTALL=0
 	CI_INPUTS_TREE=0
@@ -206,34 +229,42 @@ ci_declare() { # <gate id or suite path>
 		ci_code src/contract test/fixtures/configurations .chug/configurations \
 			scripts/console-policy.ts scripts/check-console-policy.ts package-lock.json \
 			tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh
+		ci_probes .browserslistrc browserslist .editorconfig .npmrc .prettierrc package.yaml \
+			lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*'
+		ci_node_looks src
 		ci_manifests
 		ci_install
 		;;
 	check-conformance)
 		ci_code src/domain src/generated test/conformance test/domain test/itf test/golden \
 			model .chug/tasks/check-conformance.sh
+		ci_node_looks src
 		ci_manifests
 		ci_packages zod
 		;;
 	check-random)
 		ci_code src/domain src/generated test/random test/conformance test/domain test/itf \
 			model .chug/tasks/check-random.sh
+		ci_node_looks src
 		ci_manifests
 		ci_packages zod
 		;;
 	check-postgres)
 		ci_code src test deploy/rig/wipe-tickets.sql package.json .chug/tasks/_postgres.sh \
 			.chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh
+		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
 	check-queries)
 		ci_code src test scripts ui package.json tsconfig.json eslint.config.js \
 			.chug/tasks/_postgres.sh .chug/tasks/check-queries.sh
+		ci_probes ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
 		ci_install
 		;;
 	check-keto)
 		ci_code src test .chug/tasks/keto package.json .chug/tasks/_keto.sh \
 			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh
+		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
 	check-model)
@@ -243,12 +274,14 @@ ci_declare() { # <gate id or suite path>
 	check-model-api)
 		ci_code ':(glob)model/**/*.qnt' scripts/generate-model-api.ts src/generated \
 			src/domain/generated .chug/tasks/check-model-api.sh
+		ci_node_looks scripts
 		ci_manifests
 		ci_packages @informalsystems/quint prettier
 		;;
 	.chug/tasks/ci.test.sh)
 		ci_code "$1" .chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_ignored-inputs.sh \
-			.chug/tasks/_installed-inputs.sh .chug/tasks/_suite.sh justfile package.json
+			.chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh .chug/tasks/_suite.sh \
+			justfile package.json
 		;;
 	.chug/tasks/check-source.test.sh)
 		ci_code "$1" .chug/tasks/check-source.sh .chug/tasks/_suite.sh tsconfig.json \
@@ -307,23 +340,26 @@ ci_selected() { # <gate id or suite path>
 	[ "$CI_SELECT_MODE" = "full" ] && return 0
 	[ -n "$CI_CHANGED_FILES" ] || return 1
 	ci_inputs "$1"
+	ci_changed_listed "$CI_INPUTS_TEXT" ||
+		ci_changed_listed "$CI_INPUTS_CODE" ':(exclude)*.md' ||
+		ci_changed_listed "$CI_INPUTS_PROBES" ||
+		ci_packages_moved
+}
+
+# Whether the change touched what a list of pathspecs, one a line, matches,
+# narrowed by any pathspec given beside it; an empty list matches nothing.
+ci_changed_listed() { # <pathspecs, one a line> [<pathspec>...]
+	[ -n "$1" ] || return 1
+	ci_listed="$1"
+	shift
 	set -f
 	IFS='
 '
 	# shellcheck disable=SC2086 # a pathspec a line, by construction
-	set -- $CI_INPUTS_TEXT
+	set -- $ci_listed "$@"
 	unset IFS
 	set +f
-	if [ "$#" -gt 0 ] && ci_changed_within "$@"; then return 0; fi
-	set -f
-	IFS='
-'
-	# shellcheck disable=SC2086 # a pathspec a line, by construction
-	set -- $CI_INPUTS_CODE
-	unset IFS
-	set +f
-	if [ "$#" -gt 0 ] && ci_changed_within "$@" ':(exclude)*.md'; then return 0; fi
-	ci_packages_moved
+	ci_changed_within "$@"
 }
 
 # Whether the lock moved what the declaration in hand reads of the install.

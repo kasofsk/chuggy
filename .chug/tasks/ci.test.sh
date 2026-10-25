@@ -19,6 +19,7 @@ SUT="$HERE/ci.sh"
 SELECT="$HERE/_ci-select.sh"
 IGNORED="$HERE/_ignored-inputs.sh"
 INSTALLED="$HERE/_installed-inputs.sh"
+PROBED="$HERE/_probed-inputs.sh"
 BARE="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$BARE"' EXIT
 
@@ -57,6 +58,7 @@ stub_repo() { # <doc-lint exit> — every named gate stubbed clean but doc-lint
 	cp "$SELECT" "$R/.chug/tasks/_ci-select.sh"
 	cp "$IGNORED" "$R/.chug/tasks/_ignored-inputs.sh"
 	cp "$INSTALLED" "$R/.chug/tasks/_installed-inputs.sh"
+	cp "$PROBED" "$R/.chug/tasks/_probed-inputs.sh"
 	chmod +x "$R/.chug/tasks/ci.sh"
 	for gate in $(named_gates "$SUT"); do
 		printf '#!/bin/sh\necho stub %s\nexit 0\n' "$gate" > "$R/.chug/tasks/$gate.sh"
@@ -552,17 +554,31 @@ run_last_commit
 check "the directed model selects the replay that reads it" 0 "$RC" "stub check-conformance"
 check "the directed model selects the random replay" 0 "$RC" "stub check-random"
 
-# A lock as npm writes one: quint and a package it depends on, the schema
-# library the generated API imports, the formatter that writes it, and a
-# package none of the narrow gates reads, each at the version named.
-lock_json() { # <quint> <grpc> <zod> <left-pad>
+# A lock as npm writes one: quint, a package it depends on and one that
+# depends on in turn, the schema library the generated API imports, the
+# formatter that writes it, and a package none of the narrow gates reads, each
+# at the version named. A fifth word changes what the lock records and not
+# what any package gets: `flags` drops the flag npm derives from who asked for
+# each, and `hoisted` installs the copy quint's dependency gets under it, a
+# copy nothing here asks for taking its place at the root.
+lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
+	lock_dev=', "dev": true'
+	lock_long=node_modules/long
+	case "${5:-}" in
+	flags) lock_dev="" ;;
+	hoisted) lock_long=node_modules/@grpc/grpc-js/node_modules/long ;;
+	esac
 	printf '{\n  "lockfileVersion": 3,\n  "packages": {\n'
 	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s" } },\n' "$1" "$3" "$4"
-	printf '    "node_modules/@informalsystems/quint": { "version": "%s", "dependencies": { "@grpc/grpc-js": "^%s" } },\n' "$1" "$2"
-	printf '    "node_modules/@grpc/grpc-js": { "version": "%s" },\n' "$2"
-	printf '    "node_modules/zod": { "version": "%s" },\n' "$3"
-	printf '    "node_modules/prettier": { "version": "3.0.0" },\n'
-	printf '    "node_modules/left-pad": { "version": "%s" }\n' "$4"
+	printf '    "node_modules/@informalsystems/quint": { "version": "%s", "integrity": "sha512-quint-%s"%s, "dependencies": { "@grpc/grpc-js": "^%s" } },\n' "$1" "$1" "$lock_dev" "$2"
+	printf '    "node_modules/@grpc/grpc-js": { "version": "%s", "integrity": "sha512-grpc-%s"%s, "dependencies": { "long": "^5" } },\n' "$2" "$2" "$lock_dev"
+	printf '    "%s": { "version": "5.0.0", "integrity": "sha512-long-5"%s },\n' "$lock_long" "$lock_dev"
+	if [ "${5:-}" = hoisted ]; then
+		printf '    "node_modules/long": { "version": "4.0.0", "integrity": "sha512-long-4"%s },\n' "$lock_dev"
+	fi
+	printf '    "node_modules/zod": { "version": "%s", "integrity": "sha512-zod-%s"%s },\n' "$3" "$3" "$lock_dev"
+	printf '    "node_modules/prettier": { "version": "3.0.0", "integrity": "sha512-prettier-3"%s },\n' "$lock_dev"
+	printf '    "node_modules/left-pad": { "version": "%s", "integrity": "sha512-left-pad-%s"%s }\n' "$4" "$4" "$lock_dev"
 	printf '  }\n}\n'
 }
 
@@ -812,6 +828,40 @@ commit_all rules
 run_last_commit 1
 check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
 
+# A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. The console's
+# formatter, bundler, style pipeline, browser list and package manager each
+# look at the root for their settings, so one arriving there selects the
+# console, left in the tree or committed; a file no tool looks for does not.
+stub_repo 0
+commit_all baseline
+printf '# a page\n' > "$R/PAGE.md"
+commit_all page
+# The last commit and what is left in the tree, untracked files allowed.
+run_left_in_tree() {
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_ALLOW_UNTRACKED=1 CHUG_CI_SHELL_SUITES=0 \
+		./.chug/tasks/ci.sh) >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+for setting in .editorconfig .prettierrc postcss.config.mjs .postcssrc.json .browserslistrc \
+	browserslist .npmrc package.yaml lerna.json pnpm-workspace.yaml; do
+	printf 'x\n' > "$R/$setting"
+	run_left_in_tree
+	refute "$setting left at the root selects the console" 0 "$RC" "check-console: SKIPPED"
+	rm "$R/$setting"
+done
+printf 'x\n' > "$R/notes.txt"
+run_left_in_tree
+check "a file at the root no tool looks for leaves the console out" 0 "$RC" "check-console: SKIPPED"
+rm "$R/notes.txt"
+printf '[*]\nindent_style = tab\n' > "$R/.editorconfig"
+commit_all editorconfig
+run_last_commit
+refute "a setting committed at the root selects the console" 0 "$RC" "check-console: SKIPPED"
+check "a setting the console's tools read is no input of the model's gate" 0 "$RC" "check-model: SKIPPED"
+
 # THE MODEL'S GATE FOLLOWS QUINT: a lock that moves no package in quint's
 # closure leaves it out, and one that moves quint or a package quint depends on
 # brings it in, read past any colour or diff program git is configured with. A
@@ -827,6 +877,19 @@ commit_all other-package
 run_last_commit
 check "a lock change that leaves quint's closure alone skips Quint" 0 "$RC" "check-model: SKIPPED"
 check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
+# What npm records of a copy beside what it is: the flags it derives from who
+# asked, and where it put the copy, which a lock moves with nothing installed
+# changing for quint.
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 flags > "$R/package-lock.json"
+commit_all flags
+run_last_commit
+check "a lock that flips the flags npm derives skips Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock that flips the flags npm derives still selects the console" 0 "$RC" "check-console: SKIPPED"
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 hoisted > "$R/package-lock.json"
+commit_all hoisted
+run_last_commit
+check "a lock that moves where quint's copy of a package sits skips Quint" 0 "$RC" "check-model: SKIPPED"
+refute "a lock that moves where a copy sits still selects the console" 0 "$RC" "check-console: SKIPPED"
 lock_json 0.32.0 1.1.0 4.0.0 1.0.1 > "$R/package-lock.json"
 run_last_commit
 refute "a lock moving what quint depends on, not yet committed, selects Quint" 0 "$RC" "check-model: SKIPPED"
@@ -1160,9 +1223,10 @@ STUB
 chmod +x "$TRBIN/track-record"
 salt="$(sed -n 's/^record_salt="\(.*\)"$/\1/p' "$SUT")"
 record_tool_node="" record_tool_install="" record_tool_ignored="" record_tool_installed=""
+record_tool_probed=""
 eval "$(sed -n '/^record_tool_[a-z]*="[^"]*"$/p' "$SUT")"
 [ -n "$record_tool_node" ] && [ -n "$record_tool_install" ] && [ -n "$record_tool_ignored" ] &&
-	[ -n "$record_tool_installed" ]
+	[ -n "$record_tool_installed" ] && [ -n "$record_tool_probed" ]
 # Every gate the sequencer names is wrapped but check-roster and doc-lint.
 gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint)"
 
@@ -1271,6 +1335,32 @@ for gate in \
 	OUT="$WORK/.log"
 	narrowed=$((narrowed + 1))
 done
+# A narrowed gate whose tools look above its inputs holds each place they look:
+# the console the root's settings and the package directory above the
+# contract, the replays that one, the generated API the one above its
+# generator, the query check the linter's settings, and the server gates the
+# package directories and manifests above their database helper. The model's
+# gate looks nowhere else, and a whole-tree key holds every place already.
+for gate in \
+	"check-console|'.editorconfig'|'.prettierrc'|':(glob)postcss.config.*'|'src/node_modules'" \
+	"check-conformance|'src/node_modules'" "check-random|'src/node_modules'" \
+	"check-model-api|'scripts/node_modules'" \
+	"check-queries|':(glob)eslint.config.*'|'eslint-suppressions.json'" \
+	"check-postgres|'.chug/tasks/node_modules'|'.chug/tasks/package.json'" \
+	"check-keto|'.chug/node_modules'|'.chug/package.json'"; do
+	id="${gate%%|*}"
+	grep "^run|--name|$id|" "$TRLOG" > "$WORK/.line" || true
+	OUT="$WORK/.line"
+	places="${gate#*|}|"
+	while [ -n "$places" ]; do
+		check "$id holds ${places%%|*}, where its tools look" 0 "$RC" " ${places%%|*}"
+		places="${places#*|}"
+	done
+	check "$id holds the places its tools look" 0 "$RC" "|--tool|$record_tool_probed '"
+done
+OUT="$WORK/.log"
+printf 'looking %s\n' "$(grep -c "|--tool|$record_tool_probed" "$TRLOG" || true)" >> "$OUT"
+check "no other gate holds a place a tool looks" 0 "$RC" "looking 7"
 # Every gate neither table names is keyed on the whole tree and nothing more.
 printf 'plain %s\n' "$(grep -cF "|$common--|./" "$TRLOG" || true)" >> "$OUT"
 check "a whole-tree gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" \
@@ -1537,6 +1627,25 @@ stored_change "a sequencer change" check-figures
 run_recorded TRACK_RECORD_TOKEN=t STUB_TR_STORE="$WORK/store" CHUG_CI_BASE=HEAD~3
 OUT="$WORK/.out"
 check "another base reuses the model's gate" 0 "$RC" "track-record: REUSED check-model ("
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 flags > "$R/node_modules/.package-lock.json"
+stored_change "an install that flips the flags npm derives" check-console
+lock_json 0.32.0 1.0.0 4.0.0 1.0.1 hoisted > "$R/node_modules/.package-lock.json"
+stored_change "an install that moves where quint's copy of a package sits" check-console
+# A setting left at the root is keyed rather than refused, since no pathspec
+# holds it, and a package arriving above the sources moves the replays,
+# though none of their pathspecs holds it either.
+printf '[*]\nindent_style = tab\n' > "$R/.editorconfig"
+run_stored CHUG_CI_ALLOW_UNTRACKED=1
+check "a setting left at the root reruns the console" 0 "$RC" "ran check-console|"
+check "a setting left at the root reuses the model's gate" 0 "$RC" "reused check-model|"
+run_stored CHUG_CI_ALLOW_UNTRACKED=1
+check "the console's pass beside a setting left at the root is reused" 0 "$RC" "reused check-console|"
+stored_change "a setting committed as it was left" check-figures
+OUT="$WORK/.stored"
+check "a setting committed as it was left reuses the console" 0 "$RC" "reused check-console|"
+mkdir -p "$R/src/node_modules/zod"
+printf 'module.exports = {};\n' > "$R/src/node_modules/zod/index.js"
+stored_change "a package arriving above the sources" check-conformance check-random check-console
 # What it reads, each on its own, reruns it.
 stored_rerun() { # <label> [VAR=value...]
 	stored_label="$1"
@@ -1582,29 +1691,60 @@ lock_json 0.33.0 1.1.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
 
 # A closure is found where node finds each package: a copy npm nested under
 # the package that asks for it before the one at the root, a workspace through
-# its link, and a dependency installed nowhere printed as absent. A record that
-# holds no package named fails, and so does a call that names none.
-cat > "$WORK/lock.json" <<'LOCK'
-{ "packages": {
-  "": { "dependencies": { "a": "1" } },
-  "node_modules/a": { "version": "1.0.0", "dependencies": { "b": "^2", "w": "*", "gone": "1" } },
-  "node_modules/a/node_modules/b": { "version": "2.0.0" },
-  "node_modules/b": { "version": "1.0.0" },
-  "node_modules/w": { "resolved": "ws/w", "link": true },
-  "ws/w": { "version": "0.0.1", "dependencies": { "b": "1" } },
-  "node_modules/unreached": { "version": "9.0.0" }
-} }
-LOCK
-set +e
-sh "$INSTALLED" --lock "$WORK/lock.json" a > "$WORK/.closure" 2>&1
-RC=$?
-set -e
-OUT="$WORK/.closure"
-check "a nested copy is the one its package gets" 0 "$RC" 'node_modules/a/node_modules/b {"version":"2.0.0"}'
-check "a workspace is followed through its link" 0 "$RC" 'ws/w {"version":"0.0.1","dependencies":{"b":"1"}}'
-check "a workspace gets the copy at the root" 0 "$RC" 'node_modules/b {"version":"1.0.0"}'
-check "a dependency installed nowhere is printed absent" 0 "$RC" "absent node_modules/a gone"
+# its link, and a dependency installed nowhere printed as absent. Each package
+# is printed by what it is and each one asked for by what the asker gets. A
+# record that holds no package named fails, and so does a call that names
+# none.
+closure_lock() { # <b's flags> <where a's copy of b is> <where w's copy of b is>
+	printf '{ "packages": {\n'
+	printf '  "": { "dependencies": { "a": "1" } },\n'
+	printf '  "node_modules/a": { "version": "1.0.0", "integrity": "sha512-a"%s,\n' "$1"
+	printf '    "dependencies": { "b": "^2", "w": "*", "gone": "1" } },\n'
+	printf '  "%s": { "version": "2.0.0", "integrity": "sha512-b2"%s },\n' "$2" "$1"
+	printf '  "%s": { "version": "1.0.0", "integrity": "sha512-b1"%s },\n' "$3" "$1"
+	printf '  "node_modules/w": { "resolved": "ws/w", "link": true },\n'
+	printf '  "ws/w": { "name": "w", "version": "0.0.1", "dependencies": { "b": "1" } },\n'
+	printf '  "node_modules/unreached": { "version": "9.0.0", "integrity": "sha512-u" }\n'
+	printf '} }\n'
+}
+closure_of() { # <lock> <label> — a's closure, as $OUT and kept under the label
+	set +e
+	sh "$INSTALLED" --lock "$1" a > "$WORK/.closure" 2>&1
+	RC=$?
+	set -e
+	cp "$WORK/.closure" "$WORK/closure.$2"
+	OUT="$WORK/.closure"
+}
+closure_lock "" node_modules/a/node_modules/b node_modules/b > "$WORK/lock.json"
+closure_of "$WORK/lock.json" nested
+check "a package is what it is" 0 "$RC" "a@1.0.0 sha512-a"
+check "a nested copy is the one its package gets" 0 "$RC" "a@1.0.0 sha512-a > b b@2.0.0 sha512-b2"
+check "a workspace is followed through its link" 0 "$RC" "a@1.0.0 sha512-a > w w@0.0.1 ws/w"
+check "a workspace gets the copy at the root" 0 "$RC" "w@0.0.1 ws/w > b b@1.0.0 sha512-b1"
+check "a dependency installed nowhere is printed absent" 0 "$RC" "a@1.0.0 sha512-a > gone absent"
 refute "a package nothing named depends on is left out" 0 "$RC" "unreached"
+refute "no package is printed by where it is installed" 0 "$RC" "node_modules/"
+# What npm derives and where it put a copy move nothing; a package that gets
+# another copy does, though the same copies are installed.
+closure_lock ', "dev": true, "peer": true' node_modules/a/node_modules/b node_modules/b > "$WORK/lock.json"
+closure_of "$WORK/lock.json" flags
+closure_lock "" node_modules/b ws/w/node_modules/b > "$WORK/lock.json"
+closure_of "$WORK/lock.json" hoisted
+closure_lock "" node_modules/b node_modules/a/node_modules/b > "$WORK/lock.json"
+closure_of "$WORK/lock.json" swapped
+for closure in flags hoisted swapped; do
+	if cmp -s "$WORK/closure.nested" "$WORK/closure.$closure"; then
+		echo "same closure"
+	else
+		echo "new closure"
+	fi > "$WORK/.same"
+	OUT="$WORK/.same"
+	case "$closure" in
+	swapped) check "a package that gets another installed copy is a new closure" 0 0 "new closure" ;;
+	*) check "a lock that records b $closure is the same closure" 0 0 "same closure" ;;
+	esac
+done
+OUT="$WORK/.closure"
 set +e
 sh "$INSTALLED" --lock "$WORK/lock.json" a nope > "$WORK/.closure" 2>&1
 RC=$?
@@ -1615,6 +1755,34 @@ sh "$INSTALLED" --lock "$WORK/lock.json" > "$WORK/.closure" 2>&1
 RC=$?
 set -e
 check "a call naming no package could not run" 2 "$RC" "name a package"
+
+# A place a tool looks is described whatever git makes of what is there, a
+# file tracked, untracked or ignored each by its content, and a place that
+# holds nothing prints nothing. A call that names none could not run.
+stub_repo 0
+printf 'node_modules\n' > "$R/.gitignore"
+printf 'root = true\n' > "$R/.editorconfig"
+commit_all baseline
+printf '{}\n' > "$R/.prettierrc"
+mkdir -p "$R/src/node_modules/zod"
+printf 'module.exports = {};\n' > "$R/src/node_modules/zod/index.js"
+set +e
+(cd "$R" && sh .chug/tasks/_probed-inputs.sh .editorconfig .prettierrc .npmrc src/node_modules) \
+	> "$WORK/.raw" 2>&1
+RC=$?
+set -e
+tr '\0' '\n' < "$WORK/.raw" > "$WORK/.probed"
+OUT="$WORK/.probed"
+for place in .editorconfig .prettierrc src/node_modules/zod/index.js; do
+	check "$place, where a tool looks, is described" 0 "$RC" "$place"
+	check "$place is described by its content" 0 "$RC" "$(git -C "$R" hash-object -- "$place")"
+done
+refute "a place that holds nothing prints nothing" 0 "$RC" ".npmrc"
+set +e
+(cd "$R" && sh .chug/tasks/_probed-inputs.sh) > "$WORK/.probed" 2>&1
+RC=$?
+set -e
+check "a call naming no place could not run" 2 "$RC" "name a path"
 
 # A wrapped suite still has its cap.
 stub_repo 0

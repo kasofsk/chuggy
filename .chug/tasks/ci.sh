@@ -87,11 +87,14 @@ record_salt="chuggy-ci-2"
 # installed: the whole of it, or the packages a gate names with what each
 # depends on, which `_installed-inputs.sh` prints. It holds the ignored files
 # too, which `_ignored-inputs.sh` prints and says the scope of: every one a
-# walk of the tree can reach, or those within a gate's pathspecs.
+# walk of the tree can reach, or those within a gate's pathspecs. And it holds
+# what `_probed-inputs.sh` prints of the places a gate's tools look that the
+# tree need not hold.
 record_tool_node="node --version"
 record_tool_install="cat node_modules/.package-lock.json"
 record_tool_ignored="sh .chug/tasks/_ignored-inputs.sh"
 record_tool_installed="sh .chug/tasks/_installed-inputs.sh"
+record_tool_probed="sh .chug/tasks/_probed-inputs.sh"
 record=""
 # A token is read as track-record reads one, so a variable naming a file that
 # is not there wraps nothing rather than announcing reuse that cannot happen.
@@ -157,9 +160,10 @@ record_quote() { # <word>
 	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
 }
 
-# What a gate's or a suite's key holds of the tree, the ignored files and the
-# install, as words for `eval`: the inputs `_ci-select.sh` declares for it, or
-# the whole of each for one it declares keyed on the whole tree.
+# What a gate's or a suite's key holds of the tree, the ignored files, the
+# places its tools look and the install, as words for `eval`: the inputs
+# `_ci-select.sh` declares for it, or the whole of each for one it declares
+# keyed on the whole tree.
 record_scope() { # <gate id or suite path>
 	ci_inputs "$1"
 	if [ "$CI_INPUTS_TREE" = 1 ]; then
@@ -169,6 +173,7 @@ record_scope() { # <gate id or suite path>
 	fi
 	record_specs=""
 	record_packages=""
+	record_probes=""
 	set -f
 	IFS='
 '
@@ -178,12 +183,18 @@ record_scope() { # <gate id or suite path>
 	for record_word in $CI_INPUTS_PACKAGES; do
 		record_packages="$record_packages $(record_quote "$record_word")"
 	done
+	for record_word in $CI_INPUTS_PROBES; do
+		record_probes="$record_probes $(record_quote "$record_word")"
+	done
 	if [ "$CI_INPUTS_INSTALL" = 1 ]; then
 		printf '%s ' --tool "$(record_quote "$record_tool_install")"
 	elif [ -n "$record_packages" ]; then
 		printf '%s ' --tool "$(record_quote "$record_tool_installed$record_packages")"
 	fi
 	printf '%s ' --tool "$(record_quote "$record_tool_ignored$record_specs")"
+	if [ -n "$record_probes" ]; then
+		printf '%s ' --tool "$(record_quote "$record_tool_probed$record_probes")"
+	fi
 	for record_word in $CI_INPUTS_TEXT$CI_INPUTS_CODE; do
 		printf '%s ' --inputs "$(record_quote "$record_word")"
 	done

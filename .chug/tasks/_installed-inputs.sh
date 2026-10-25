@@ -1,10 +1,16 @@
 #!/bin/sh
 # What a Track Record key holds of the packages npm installed, printed for
-# ci.sh's `--tool`: the entries npm's own record of the install keeps for each
-# named package and for every package it depends on, one a line, by where it
-# is installed and what the record says of it. A gate that runs one tool
-# keys that tool's packages, and a package the tool does not reach moves none
-# of its keys.
+# ci.sh's `--tool`: each named package and every package it depends on, as
+# npm's own record of the install has them, one a line by what it is, and a
+# line for each package one asks for saying what it gets. A gate that runs
+# one tool keys that tool's packages, and a package the tool does not reach
+# moves none of its keys.
+#
+# A PACKAGE IS WHAT IT IS, NOT WHERE IT IS: its name, its version and the
+# integrity npm checked it against, or, wanting one, where it came from. Where
+# npm put a copy, and the flags it derives from who asked for one, are not
+# what node loads, so a copy hoisted or a flag that flipped moves no key. A
+# workspace, which has neither, is where it is declared.
 #
 # A DEPENDENCY IS FOUND WHERE NODE WOULD FIND IT: in the `node_modules` beside
 # the package that asks for it, then in each one above, so a copy npm nested
@@ -62,36 +68,48 @@ function candidates(from, name) {
     at = slash === -1 ? "" : at.slice(0, slash);
   }
 }
+// Where the package a name asked for from one location is, a link read as
+// the workspace it links to.
+function resolve(from, name) {
+  const location = candidates(from, name).find((at) => packages[at]);
+  if (location === undefined) return undefined;
+  const entry = packages[location];
+  return entry.link && typeof entry.resolved === "string" && packages[entry.resolved]
+    ? entry.resolved
+    : location;
+}
+function identity(location) {
+  const entry = packages[location];
+  const nested = location.lastIndexOf("node_modules/");
+  const name =
+    typeof entry.name === "string"
+      ? entry.name
+      : location.slice(nested === -1 ? 0 : nested + "node_modules/".length);
+  if (entry.link) return `${name} link ${entry.resolved}`;
+  return `${name}@${entry.version ?? ""} ${entry.integrity ?? entry.resolved ?? location}`;
+}
 const lines = new Set();
 const seen = new Set();
 const pending = [];
-function visit(location) {
-  if (seen.has(location)) return;
-  seen.add(location);
-  const entry = packages[location];
-  lines.add(`${location} ${JSON.stringify(entry)}`);
-  if (entry.link && typeof entry.resolved === "string" && packages[entry.resolved])
-    pending.push(entry.resolved);
-  else pending.push(location);
-}
-function resolve(from, name) {
-  return candidates(from, name).find((location) => packages[location]);
+function reach(location) {
+  if (!seen.has(location)) {
+    seen.add(location);
+    lines.add(identity(location));
+    pending.push(location);
+  }
+  return identity(location);
 }
 for (const name of named) {
   const location = resolve("", name);
-  if (!location) {
+  if (location === undefined) {
     console.error(`_installed-inputs: ${lockPath} holds no ${name}`);
     process.exit(1);
   }
-  visit(location);
+  reach(location);
 }
 while (pending.length > 0) {
   const from = pending.pop();
   const entry = packages[from];
-  if (from !== "" && !seen.has(from)) {
-    seen.add(from);
-    lines.add(`${from} ${JSON.stringify(entry)}`);
-  }
   const asked = {
     ...entry.peerDependencies,
     ...entry.optionalDependencies,
@@ -99,8 +117,7 @@ while (pending.length > 0) {
   };
   for (const name of Object.keys(asked)) {
     const location = resolve(from, name);
-    if (location) visit(location);
-    else lines.add(`absent ${from} ${name}`);
+    lines.add(`${identity(from)} > ${name} ${location === undefined ? "absent" : reach(location)}`);
   }
 }
 process.stdout.write([...lines].sort().join("\n") + "\n");
