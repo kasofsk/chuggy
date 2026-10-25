@@ -182,7 +182,8 @@ export interface WorkerRunEndedPort {
 
 /**
  * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline: a failure another attempt would repeat.
+ * killed at its deadline or because its runner's disk ran low: a failure
+ * another attempt would repeat.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -190,6 +191,7 @@ export const runStepEvidences = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 
@@ -222,6 +224,7 @@ export function runEndedLoss(evidence: RunEndedEvidence): AttemptLoss {
     case "RunCommitFailed":
     case "RunPushFailed":
     case "RunTimedOut":
+    case "RunDiskLow":
       return "Lost";
     default:
       return assertNever(evidence);

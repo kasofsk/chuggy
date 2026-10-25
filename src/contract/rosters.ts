@@ -200,14 +200,16 @@ export const attemptEvidences = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
   ...workerImageFaults,
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 
 /**
  * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline: a failure another attempt would repeat, so the work
- * waits for a person rather than being resumed.
+ * killed at its deadline or because its runner's disk ran low: a failure
+ * another attempt would repeat, so the work waits for a person rather than
+ * being resumed.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -215,6 +217,7 @@ export const runStepEvidences = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 

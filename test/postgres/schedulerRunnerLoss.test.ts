@@ -393,6 +393,7 @@ const stepReports = {
   RunCommitFailed: "The commit failed.",
   RunPushFailed: "The push failed.",
   RunTimedOut: "The run passed its deadline.",
+  RunDiskLow: "Its runner stopped the run because its disk ran low.",
 } as const;
 
 const workLost = { phase: "Escalated", escalation: "WorkFailureEscalated" };

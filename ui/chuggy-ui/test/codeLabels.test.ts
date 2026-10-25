@@ -295,7 +295,8 @@ test("a job lost on its runner names the runner and how often it was resumed", (
  * A run stopped at a failed step is said as that step, whichever wall the
  * machine parked it at, and leads to no page; setup alone is fixed through the
  * ticket's own overrides, so its line says so to a reader offered them and to
- * no other.
+ * no other, and a runner whose disk ran low needs room on that runner, which
+ * its line says to every reader.
  */
 test("a run stopped at a failed step names the step, and setup says where its fix goes to a reader who can make it", () => {
   const labels = new Set<string>();
@@ -313,9 +314,15 @@ test("a run stopped at a failed step names the step, and setup says where its fi
     expect(runStepLine(failed, true)).toBe(
       evidence === "RunSetupFailed"
         ? "Fix it under Overrides · Setup, then Resume"
+        : evidence === "RunDiskLow"
+          ? "Free space on its runner, then Resume"
+          : undefined,
+    );
+    expect(runStepLine(failed, false)).toBe(
+      evidence === "RunDiskLow"
+        ? "Free space on its runner, then Resume"
         : undefined,
     );
-    expect(runStepLine(failed, false)).toBeUndefined();
     for (const said of [
       runStepLabel(evidence),
       runStepLine(failed, true) ?? "",
@@ -330,6 +337,7 @@ test("a run stopped at a failed step names the step, and setup says where its fi
     "Commit failed",
     "Push failed",
     "Timed out",
+    "Disk low",
   ]);
 });
 

@@ -25,6 +25,12 @@ export const workerContractUnnamed: WorkerContractVersion = {
   minor: 0,
 };
 
+/** The first version whose job plane takes a run ended `RunDiskLow`: a runner sends that label only to a plane whose answers name this version or a later one. */
+export const workerContractRunDiskLow: WorkerContractVersion = {
+  major: 1,
+  minor: 17,
+};
+
 /** A release as the header carries it: major, minor and patch, each written without a leading zero. */
 const workerContractReleasePattern =
   /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/u;

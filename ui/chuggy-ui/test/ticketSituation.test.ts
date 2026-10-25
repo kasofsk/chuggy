@@ -187,13 +187,14 @@ test("a job lost on its runner says where, how often, and the attempt its worker
 /**
  * A run stopped at its setup names the step, says where a wrong line is fixed
  * to a reader offered the ticket's setup lines, and reads the worker's own line
- * off the attempt that kept one; any other step, and a reader not offered
- * them, keeps the wall's own line.
+ * off the attempt that kept one; a run its runner stopped for low disk says
+ * that runner needs room, to any reader; any other step, and a reader not
+ * offered the setup lines, keeps the wall's own line.
  */
 test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
   const parked = (
     failed: {
-      readonly evidence: "RunSetupFailed" | "RunPushFailed";
+      readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
       readonly execution: string;
       readonly attempt: string;
       readonly error?: { readonly bytes: number };
@@ -245,6 +246,23 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     step: undefined,
     more: "Failed work is not reworked",
     reason: undefined,
+  });
+  expect(
+    parked(
+      {
+        evidence: "RunDiskLow",
+        execution: "execution-1",
+        attempt: "attempt-3",
+        error: { bytes: 140 },
+      },
+      false,
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Disk low",
+    step: undefined,
+    more: "Free space on its runner, then Resume",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
   });
 });
 
