@@ -27,9 +27,9 @@
 # finishes one, so the longest starts at once and the rest drain past it. Size
 # stands in for length and is read from the tree on every run; the path breaks
 # a tie. A worker claims a suite by creating its claim with the shell's own
-# exclusive create, which exactly one worker can — not every `mkdir` is
-# atomic — and the clean line counts the suites that ran, so a suite no worker
-# took is a could-not-run rather than a pass.
+# exclusive create, which exactly one worker can, and the clean line counts the
+# suites that ran, so a suite no worker took is a could-not-run rather than a
+# pass.
 #
 # EVERY NAME THIS RUN MAKES CARRIES ITS OWN RUN ID AND THE DATABASE IT
 # CONNECTS TO. The run id is the pid and a part drawn at random for the run,

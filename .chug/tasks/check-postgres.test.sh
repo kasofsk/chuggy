@@ -28,9 +28,11 @@
 # that makes nothing.
 #
 # THE QUEUE IS READ OFF WHAT THE FIXTURE SUITES RECORD. Each writes its own name
-# as it runs, so one worker shows the order the queue is taken in; and a suite
+# as it runs, so one worker shows the order the queue is taken in; a suite
 # that passes only once the others have run proves a worker free of it drains
-# the rest, which a list dealt to the workers in advance would leave behind it.
+# the rest, which a list dealt to the workers in advance would leave behind it;
+# and a suite that claims a place itself leaves one no worker runs, which the
+# clean line must not count as a pass.
 #
 # THE SPELLINGS OF A UNIX SOCKET ARE DRIVEN SEPARATELY, because only the empty
 # authority leaves an empty host in the URL: the others put the path where a
@@ -98,6 +100,20 @@ test("a fixture case that waits for the rest of the queue", async () => {
     await delay(50);
   }
   throw new Error("the rest of the queue never ran");
+});
+TS
+}
+
+claiming_suite() { # <path> — a suite that claims the last of three places in the queue, so no worker runs it
+	cat >"$1" <<'TS'
+import { readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { test } from "node:test";
+test("a fixture case that takes the last place from the workers", () => {
+  const scratch = String(process.env["TMPDIR"]);
+  const runs = readdirSync(scratch).filter((name) => name.startsWith("chuggy-postgres-"));
+  if (runs.length !== 1) throw new Error(`expected one run directory, found ${runs.length}`);
+  writeFileSync(join(scratch, String(runs[0]), "claimed.3"), "");
 });
 TS
 }
@@ -328,6 +344,22 @@ git -C "$R" add -A
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" "FIXTURE_RECORD=$RECORD" FIXTURE_OTHERS=4 CHUG_PG_WORKERS=2
 check "a worker free of the largest suite runs every other one" 0 "$RC" \
 	"5 suite(s) clean against the server CHUG_PG_URL names with 2 worker(s)"
+
+# --- A suite no worker took is a could-not-run -------------------------------
+#
+# The one worker runs the largest suite first, and that suite claims the last
+# place itself, so the suite there never runs and the run is not clean.
+
+fixture
+claiming_suite "$R/test/postgres/z.test.ts"
+printf '/* %0400d */\n' 0 >>"$R/test/postgres/z.test.ts"
+passing_suite "$R/test/postgres/a.test.ts"
+passing_suite "$R/test/postgres/b.test.ts"
+git -C "$R" add -A
+TAKEN="$WORK/.taken"
+mkdir -p "$TAKEN"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "TMPDIR=$TAKEN" CHUG_PG_WORKERS=1
+check "a suite no worker took is a could-not-run" 2 "$RC" "2 of 3 suite(s) ran; no worker took the rest"
 
 # --- Two runs holding one pid on one server share no name -------------------
 
