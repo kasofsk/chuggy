@@ -18,9 +18,17 @@
 # WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY, each suite
 # against a clone of its own that is dropped as the suite ends. A suite reading
 # what spans the installation — a sweep, a bounded listing, a singleton row —
-# would otherwise answer for whatever the round-robin put before it. The cases
-# of a suite share its database, which is what exercises the partitioning the
-# store claims. The worker count moves throughput, not verdicts.
+# would otherwise answer for whatever ran before it. The cases of a suite share
+# its database, which is what exercises the partitioning the store claims. The
+# worker count moves throughput, not verdicts.
+#
+# THE SUITES ARE ONE QUEUE, LARGEST FIRST. A worker takes the next suite as it
+# finishes one, so the longest starts at once and the rest drain past it. Size
+# stands in for length and is read from the tree on every run; the path breaks
+# a tie. A worker claims a suite by creating its claim with the shell's own
+# exclusive create, which exactly one worker can — not every `mkdir` is
+# atomic — and the clean line counts the suites that ran, so a suite no worker
+# took is a could-not-run rather than a pass.
 #
 # EVERY NAME THIS RUN MAKES CARRIES ITS OWN RUN ID AND THE DATABASE IT
 # CONNECTS TO. The run id is the pid and a part drawn at random for the run,
@@ -36,7 +44,7 @@
 # NO DOCKER IS A COULD-NOT-RUN, NOT A PASS. Failure to acquire the server, to
 # prepare the template or to clone a suite's database means the suite did not
 # execute and exits two. A suite that goes red is a finding and exits one, and
-# the worker carrying it runs the rest of its list first.
+# the workers run the rest of the queue first.
 #
 # Env: CHUG_PG_URL, CHUG_PG_IMAGE, CHUG_PG_PORT, CHUG_PG_READY_SECS — read by
 # `.chug/tasks/_postgres.sh`, as is the seam CHUG_PG_RUN_PID, the suite's alone;
@@ -135,32 +143,21 @@ interrupted() {
 trap interrupted INT TERM HUP
 trap 'cleanup || true' EXIT
 
-worker=1
-while [ "$worker" -le "$workers" ]; do
-	: >"$work/$worker.suites"
-	worker=$((worker + 1))
-done
-worker=1
+queue="$work/queue"
 printf '%s\n' "$suites" | while IFS= read -r suite; do
-	printf '%s\n' "$suite" >>"$work/$worker.suites"
-	worker=$((worker + 1))
-	if [ "$worker" -gt "$workers" ]; then worker=1; fi
-done
+	printf '%s %s\n' "$(wc -c <"$suite")" "$suite"
+done | sort -k1,1nr -k2 | sed 's/^ *[0-9]* //' >"$queue"
 
-# Every name the run can make, taken before a worker starts: the cleanup drops
-# what a killed run was part way through, and a name it never reached is a drop
-# of a database that is not there. One that would not fit is never handed to it,
-# because the server would drop the name it truncates to.
+# Every name the run can make, one for each place in the queue, taken before a
+# worker starts: the cleanup drops what a killed run was part way through, and a
+# name it never reached is a drop of a database that is not there. One that
+# would not fit is never handed to it, because the server would drop the name
+# it truncates to.
 names="$template"
-worker=1
-while [ "$worker" -le "$workers" ]; do
-	dealt="$(grep -c '' "$work/$worker.suites" || true)"
-	position=1
-	while [ "$position" -le "$dealt" ]; do
-		names="${run_scope}_w${worker}_s${position} $names"
-		position=$((position + 1))
-	done
-	worker=$((worker + 1))
+position=1
+while [ "$position" -le "$suite_count" ]; do
+	names="${run_scope}_s${position} $names"
+	position=$((position + 1))
 done
 # shellcheck disable=SC2086 # database names are generated words.
 postgres_name_check $names
@@ -178,17 +175,19 @@ while [ "$worker" -le "$workers" ]; do
 		worker_rc=0
 		while IFS= read -r suite; do
 			position=$((position + 1))
-			database="${run_scope}_w${worker}_s${position}"
+			if ! (set -C && : >"$work/claimed.$position") 2>/dev/null; then continue; fi
+			database="${run_scope}_s${position}"
 			if ! node --experimental-strip-types "$database_helper" clone "$base_url" "$database" "$template"; then
 				echo "check-postgres: LINTER ERROR — could not clone a database for $suite"
 				exit 2
 			fi
 			suite_url="$(node -e 'const u=new URL(process.argv[1]);u.pathname=`/${process.argv[2]}`;process.stdout.write(u.toString())' "$base_url" "$database")"
 			CHUG_PG_URL="$suite_url" node --test --test-concurrency=1 --test-reporter=dot "$suite" || worker_rc=1
+			: >"$work/ran.$position"
 			# The run's own cleanup drops it again if this misses; what this
 			# buys is one live database per worker rather than all of them.
 			node --experimental-strip-types "$database_helper" drop "$base_url" "$database" || true
-		done <"$work/$worker.suites"
+		done <"$queue"
 		exit "$worker_rc"
 	) &
 	pids="$pids $!"
@@ -206,6 +205,7 @@ for pid in $pids; do
 	fi
 done
 pids=""
+ran="$(find "$work" -maxdepth 1 -name 'ran.*' | grep -c '' || true)"
 if ! cleanup; then
 	echo "check-postgres: LINTER ERROR — could not remove the cloned databases"
 	exit 2
@@ -219,4 +219,8 @@ if [ "$rc" -ne 0 ]; then
 	echo "check-postgres: FAILED — a worker went red against $subject"
 	exit 1
 fi
-echo "check-postgres: $suite_count suite(s) clean against $subject with $workers worker(s)"
+if [ "$ran" -ne "$suite_count" ]; then
+	echo "check-postgres: LINTER ERROR — $ran of $suite_count suite(s) ran; no worker took the rest"
+	exit 2
+fi
+echo "check-postgres: $ran suite(s) clean against $subject with $workers worker(s)"

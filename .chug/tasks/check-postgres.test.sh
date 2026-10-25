@@ -22,10 +22,15 @@
 # to share no name, created or dropped; a run whose names rested on the pid
 # would still create and drop consistently, and only this pair tells it apart.
 # Two runs of different pids are held to the same, so the pid cannot be read as
-# what keeps them apart. The longest names the gate can make — the highest
-# worker against a connected database long enough to be digested — are
+# what keeps them apart. The longest names the gate can make — the last place
+# in the queue against a connected database long enough to be digested — are
 # required to fit, and a pid long enough that they cannot is a could-not-run
 # that makes nothing.
+#
+# THE QUEUE IS READ OFF WHAT THE FIXTURE SUITES RECORD. Each writes its own name
+# as it runs, so one worker shows the order the queue is taken in; and a suite
+# that passes only once the others have run proves a worker free of it drains
+# the rest, which a list dealt to the workers in advance would leave behind it.
 #
 # THE SPELLINGS OF A UNIX SOCKET ARE DRIVEN SEPARATELY, because only the empty
 # authority leaves an empty host in the URL: the others put the path where a
@@ -65,16 +70,64 @@ test("a fixture case that waits to be interrupted", async () => {
 TS
 }
 
-suite_moves() { # <worker> — that worker's per-suite clones and drops, in order
+recording_suite() { # <path> — a suite that writes its own name to the file FIXTURE_RECORD names
+	cat >"$1" <<'TS'
+import { appendFileSync } from "node:fs";
+import { basename } from "node:path";
+import { test } from "node:test";
+test("a fixture case that says it ran", () => {
+  appendFileSync(String(process.env["FIXTURE_RECORD"]), `${basename(import.meta.filename)}\n`);
+});
+TS
+}
+
+outlasting_suite() { # <path> — larger than a recording suite, passing once FIXTURE_OTHERS suites have said they ran
+	cat >"$1" <<'TS'
+import { readFileSync } from "node:fs";
+import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
+test("a fixture case that waits for the rest of the queue", async () => {
+  for (let waits = 0; waits < 600; waits += 1) {
+    let said = "";
+    try {
+      said = readFileSync(String(process.env["FIXTURE_RECORD"]), "utf8");
+    } catch {
+      said = "";
+    }
+    if (said.split("\n").filter(Boolean).length >= Number(process.env["FIXTURE_OTHERS"])) return;
+    await delay(50);
+  }
+  throw new Error("the rest of the queue never ran");
+});
+TS
+}
+
+suite_lives() { # <workers> — each suite's clones and drops, and whether more were live at once than workers
 	# Two other lines name a database: a clone names its template as well and
 	# the run's cleanup drops every name at once, so the field count is what
 	# tells a move about one suite from a move about the run.
-	awk -v worker="$1" '
+	awk -v workers="$1" '
 		($1 == "clone" && NF == 3) || ($1 == "drop" && NF == 2) {
-			if (match($2, "_w" worker "_s[0-9]+$"))
-				printf "%s%s ", $1, substr($2, RSTART)
+			if (!match($2, "_s[0-9]+$")) next
+			suite = substr($2, RSTART + 1)
+			if ($1 == "clone") {
+				cloned[suite]++
+				live++
+				if (live > most) most = live
+			} else {
+				if (!(suite in cloned)) early[suite] = 1
+				dropped[suite]++
+				live--
+			}
 		}
-		END { print "" }
+		END {
+			for (suite in cloned)
+				printf "%s cloned %d, dropped %d%s\n", suite, cloned[suite], dropped[suite] + 0, (suite in early) ? ", dropped before it was cloned" : ""
+			for (suite in early)
+				if (!(suite in cloned)) printf "%s dropped before it was cloned\n", suite
+			if (most > workers) printf "%d live at once, more than %d worker(s)\n", most, workers
+			else printf "never more live than %d worker(s)\n", workers
+		}
 	' "$CHUG_PG_HELPER_LOG"
 }
 
@@ -217,9 +270,10 @@ check "every database it made is named inside the one it connected to" 0 0 "_t"
 
 # --- Each suite runs against a database of its own ---------------------------
 #
-# Three suites over two workers, so one worker is dealt two of them: what the
-# helper log has to show is that the second was cloned a database of its own
-# rather than given the first one's, and that the first was dropped before it.
+# Three suites over two workers, so one worker takes two of them: what the
+# helper log has to show is that each was cloned a database of its own rather
+# than given another's, dropped once it ended, and that a worker dropped one
+# before it cloned the next.
 
 fixture
 passing_suite "$R/test/postgres/one.test.ts"
@@ -229,14 +283,51 @@ git -C "$R" add -A
 HELPER_LOG="$WORK/.helper"
 : >"$HELPER_LOG"
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_WORKERS=2
-check "a run dealing suites over workers is clean" 0 "$RC" "3 suite(s) clean"
+check "a run sharing suites over workers is clean" 0 "$RC" "3 suite(s) clean"
 check "the clean line reports the workers that ran them" 0 "$RC" "with 2 worker(s)"
-MOVES="$WORK/.moves"
-{ suite_moves 1; suite_moves 2; } >"$MOVES"
-OUT="$MOVES"
-check "a worker clones a database per suite and drops it when the suite ends" 0 0 \
-	"clone_w1_s1 drop_w1_s1 clone_w1_s2 drop_w1_s2"
-check "the other worker does the same for the suite it was dealt" 0 0 "clone_w2_s1 drop_w2_s1"
+LIVES="$WORK/.lives"
+suite_lives 2 >"$LIVES"
+OUT="$LIVES"
+check "the first suite is cloned a database of its own and it is dropped" 0 0 "s1 cloned 1, dropped 1"
+check "so is the second" 0 0 "s2 cloned 1, dropped 1"
+check "and the third" 0 0 "s3 cloned 1, dropped 1"
+refute "no suite's database is dropped before it is cloned" 0 0 "before it was cloned"
+check "a worker drops one before it clones the next" 0 0 "never more live than 2 worker(s)"
+
+# --- The queue runs the largest suite first ----------------------------------
+#
+# One worker takes the queue in its order. The largest suite sorts last by
+# name, and the two others are the same size, so their names are the tie.
+
+fixture
+recording_suite "$R/test/postgres/a.test.ts"
+recording_suite "$R/test/postgres/b.test.ts"
+recording_suite "$R/test/postgres/z.test.ts"
+printf '/* %0400d */\n' 0 >>"$R/test/postgres/z.test.ts"
+git -C "$R" add -A
+RECORD="$WORK/.record"
+: >"$RECORD"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "FIXTURE_RECORD=$RECORD" CHUG_PG_WORKERS=1
+check "a run of one worker is clean" 0 "$RC" "3 suite(s) clean"
+OUT="$WORK/.order"
+tr '\n' ' ' <"$RECORD" >"$OUT"
+check "the largest suite runs first and a tie runs in name order" 0 0 "z.test.ts a.test.ts b.test.ts"
+
+# --- A worker free of the largest suite drains the rest of the queue ---------
+#
+# The largest suite passes only once every other suite has run, and two workers
+# share the queue, so the other worker has to take all of them.
+
+fixture
+outlasting_suite "$R/test/postgres/long.test.ts"
+for suite in one two three four; do
+	recording_suite "$R/test/postgres/$suite.test.ts"
+done
+git -C "$R" add -A
+: >"$RECORD"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" "FIXTURE_RECORD=$RECORD" FIXTURE_OTHERS=4 CHUG_PG_WORKERS=2
+check "a worker free of the largest suite runs every other one" 0 "$RC" \
+	"5 suite(s) clean against the server CHUG_PG_URL names with 2 worker(s)"
 
 # --- Two runs holding one pid on one server share no name -------------------
 
@@ -270,9 +361,9 @@ check "two runs of different pids make and drop no name in common" 0 0 "the runs
 
 # --- The longest names the gate makes are ones PostgreSQL keeps whole --------
 #
-# One suite more than the most workers there can be, so the highest worker is
-# dealt one and the first is dealt a second, against a connected database whose
-# name has to be digested to fit.
+# One suite more than the most workers there can be, so every worker takes one
+# and the last place in the queue is past the last worker, against a connected
+# database whose name has to be digested to fit.
 
 LONG_DATABASE="a_connected_database_named_long_enough_that_the_gate_has_to_digest_it_whole"
 LONG_URL="${ANSWERS%/ignored}/$LONG_DATABASE"
@@ -288,8 +379,7 @@ HELPER_LOG="$WORK/.helper"
 run_gate "$R" "CHUG_PG_URL=$LONG_URL" "CHUG_PG_HELPER_LOG=$HELPER_LOG" CHUG_PG_WORKERS=16
 check "a run at the most workers is clean" 0 "$RC" "17 suite(s) clean against the server CHUG_PG_URL names with 16 worker(s)"
 OUT="$HELPER_LOG"
-check "the highest worker clones a database" 0 0 "_w16_s1 "
-check "the first worker clones a second" 0 0 "_w1_s2 "
+check "the last place in the queue clones a database" 0 0 "_s17 "
 names_unfit "$HELPER_LOG"
 check "every name the run made was checked" 0 0 "18 name(s) checked"
 refute "and none is longer than PostgreSQL keeps whole" 0 0 "truncated:"
