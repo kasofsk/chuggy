@@ -87,20 +87,29 @@ test("every client here narrows its bounds through that one check", () => {
       }),
     /must be a positive safe integer/u,
   );
-  assert.throws(
-    () =>
-      clientCredentialsTokenSource({
-        tokenUrl: "https://auth.example/oauth2/token",
-        clientId: "selector",
-        clientSecret: "secret",
-        audience: [],
-        scope: [],
-        requestTimeoutMs: 1_000,
-        responseBytesMax: 1_000,
-        responseReadsMax: 1_000,
-        refreshMarginMs: 1_000,
-        mintCooldownMs: 0,
-      }),
-    /must be a positive safe integer/u,
-  );
+  for (const [narrowed, refused] of [
+    [{ mintCooldownMs: 0 }, /mint cooldown must be a positive safe integer/u],
+    [
+      { refusalConfirmMs: 0 },
+      /refusal confirmation must be a positive safe integer/u,
+    ],
+  ] as const)
+    assert.throws(
+      () =>
+        clientCredentialsTokenSource({
+          tokenUrl: "https://auth.example/oauth2/token",
+          clientId: "selector",
+          clientSecret: "secret",
+          audience: [],
+          scope: [],
+          requestTimeoutMs: 1_000,
+          responseBytesMax: 1_000,
+          responseReadsMax: 1_000,
+          refreshMarginMs: 1_000,
+          mintCooldownMs: 500,
+          refusalConfirmMs: 60_000,
+          ...narrowed,
+        }),
+      refused,
+    );
 });
