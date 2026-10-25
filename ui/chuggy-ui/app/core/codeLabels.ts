@@ -371,7 +371,10 @@ export function runStepLine(
         : undefined;
     case "RunDiskLow":
       return "Free space on its runner, then Resume";
-    default:
+    case "RunCloneFailed":
+    case "RunCommitFailed":
+    case "RunPushFailed":
+    case "RunTimedOut":
       return undefined;
   }
 }

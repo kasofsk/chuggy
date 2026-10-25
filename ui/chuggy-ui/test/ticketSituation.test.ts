@@ -184,50 +184,51 @@ test("a job lost on its runner says where, how often, and the attempt its worker
   });
 });
 
+/** The slot of a ticket whose work escalated at a failed step, to a reader offered the ticket's setup lines or not. */
+const parkedAtStep = (
+  failed: {
+    readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
+    readonly execution: string;
+    readonly attempt: string;
+    readonly error?: { readonly bytes: number };
+  },
+  setupOverridable = true,
+) =>
+  ticketSlot(
+    reads({
+      ticket: ticket({
+        phase: "Escalated",
+        escalation: {
+          kind: "WorkFailureEscalated",
+          resumeAt: "ResumeWork",
+          failed,
+        },
+      }),
+      setupOverridable,
+    }),
+  );
+
 /**
  * A run stopped at its setup names the step, says where a wrong line is fixed
  * to a reader offered the ticket's setup lines, and reads the worker's own line
- * off the attempt that kept one; a run its runner stopped for low disk says
- * that runner needs room, to any reader; any other step, and a reader not
- * offered the setup lines, keeps the wall's own line.
+ * off the attempt that kept one; any other step, and a reader not offered
+ * them, keeps the wall's own line.
  */
 test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
-  const parked = (
-    failed: {
-      readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
-      readonly execution: string;
-      readonly attempt: string;
-      readonly error?: { readonly bytes: number };
-    },
-    setupOverridable = true,
-  ) =>
-    ticketSlot(
-      reads({
-        ticket: ticket({
-          phase: "Escalated",
-          escalation: {
-            kind: "WorkFailureEscalated",
-            resumeAt: "ResumeWork",
-            failed,
-          },
-        }),
-        setupOverridable,
-      }),
-    );
   const setup = {
     evidence: "RunSetupFailed",
     execution: "execution-1",
     attempt: "attempt-3",
     error: { bytes: 61 },
   } as const;
-  expect(parked(setup)).toStrictEqual({
+  expect(parkedAtStep(setup)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
     step: undefined,
     more: "Fix it under Overrides · Setup, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
   });
-  expect(parked(setup, false)).toStrictEqual({
+  expect(parkedAtStep(setup, false)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
     step: undefined,
@@ -235,7 +236,7 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     reason: { execution: "execution-1", attempt: "attempt-3" },
   });
   expect(
-    parked({
+    parkedAtStep({
       evidence: "RunPushFailed",
       execution: "execution-1",
       attempt: "attempt-3",
@@ -247,8 +248,11 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     more: "Failed work is not reworked",
     reason: undefined,
   });
+});
+
+test("a run its runner stopped for low disk says that runner needs room, to any reader", () => {
   expect(
-    parked(
+    parkedAtStep(
       {
         evidence: "RunDiskLow",
         execution: "execution-1",
