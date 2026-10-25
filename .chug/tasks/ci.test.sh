@@ -830,8 +830,9 @@ check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/task
 
 # A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. The console's
 # formatter, bundler, style pipeline, browser list and package manager each
-# look at the root for their settings, so one arriving there selects the
-# console, left in the tree or committed; a file no tool looks for does not.
+# look at the root for their settings, and the bundler above the contract for
+# its compiler's, so one arriving there selects the console, left in the tree
+# or committed; a file no tool looks for does not.
 stub_repo 0
 commit_all baseline
 printf '# a page\n' > "$R/PAGE.md"
@@ -852,6 +853,11 @@ for setting in .editorconfig .prettierrc postcss.config.mjs .postcssrc.json .bro
 	refute "$setting left at the root selects the console" 0 "$RC" "check-console: SKIPPED"
 	rm "$R/$setting"
 done
+mkdir -p "$R/src"
+printf '{}\n' > "$R/src/tsconfig.json"
+run_left_in_tree
+refute "compiler settings left above the contract select the console" 0 "$RC" "check-console: SKIPPED"
+rm "$R/src/tsconfig.json"
 printf 'x\n' > "$R/notes.txt"
 run_left_in_tree
 check "a file at the root no tool looks for leaves the console out" 0 "$RC" "check-console: SKIPPED"
@@ -1336,13 +1342,14 @@ for gate in \
 	narrowed=$((narrowed + 1))
 done
 # A narrowed gate whose tools look above its inputs holds each place they look:
-# the console the root's settings and the package directory above the
-# contract, the replays that one, the generated API the one above its
-# generator, the query check the linter's settings, and the server gates the
-# package directories and manifests above their database helper. The model's
-# gate looks nowhere else, and a whole-tree key holds every place already.
+# the console the root's settings and the package directory and compiler
+# settings above the contract, the replays that package directory, the
+# generated API the one above its generator, the query check the linter's
+# settings, and the server gates the package directories and manifests above
+# their database helper. The model's gate looks nowhere else, and a whole-tree
+# key holds every place already.
 for gate in \
-	"check-console|'.editorconfig'|'.prettierrc'|':(glob)postcss.config.*'|'src/node_modules'" \
+	"check-console|'.editorconfig'|'.prettierrc'|':(glob)postcss.config.*'|'src/tsconfig.json'|'src/node_modules'" \
 	"check-conformance|'src/node_modules'" "check-random|'src/node_modules'" \
 	"check-model-api|'scripts/node_modules'" \
 	"check-queries|':(glob)eslint.config.*'|'eslint-suppressions.json'" \

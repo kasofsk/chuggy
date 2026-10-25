@@ -29,7 +29,8 @@
 # and a `track-record` that runs. Every gate but check-roster and doc-lint, and
 # every suite, then runs under `track-record run`, keyed on what
 # `.chug/tasks/_ci-select.sh` declares it reads: the tracked files its
-# pathspecs match as they are on disk, the ignored files among them, and npm's
+# pathspecs match as they are on disk, the ignored files among them, what
+# sits where its tools look for settings the tree need not hold, and npm's
 # record of the packages it names, or of the whole install. A gate declared
 # keyed on the whole tree is keyed on every tracked file, every ignored file
 # in scope and the whole install. Every key also holds the version of node,

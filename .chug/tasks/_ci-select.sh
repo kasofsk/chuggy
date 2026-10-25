@@ -25,11 +25,12 @@
 # above the files they read, npm for its own, and node for a package in each
 # `node_modules` above the module that asks and for its type in each manifest
 # above it, so a file arriving in one changes what a gate runs. `ci_probes`
-# declares each such place the gate's other inputs leave out, and
-# `ci_node_looks` node's from a directory its modules sit in: a change there
-# selects the gate, and its key holds what `.chug/tasks/_probed-inputs.sh`
-# prints of it, ignored and untracked files alike, since a pathspec matching
-# no tracked file would be Track Record's refusal.
+# declares each such place the gate's other inputs leave out, `ci_node_looks`
+# node's from a directory its modules sit in, and `ci_compiler_looks` Vite's:
+# a change there that git does not ignore selects the gate, and its key holds
+# what `.chug/tasks/_probed-inputs.sh` prints of it, ignored and untracked
+# files alike, since a pathspec matching no tracked file would be Track
+# Record's refusal.
 #
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE. Each holds the tree's
 # own files to one rule and is quick, and a cone for one is a second list of
@@ -164,6 +165,10 @@ ci_probes() { # <pathspec>... — where a tool looks for a file the tree need no
 ci_node_looks() { # <directory>...
 	for ci_dir do ci_probes "$ci_dir/node_modules" "$ci_dir/package.json"; done
 }
+# Vite takes a module's compiler settings from the nearest tsconfig above it.
+ci_compiler_looks() { # <directory>...
+	for ci_dir do ci_probes "$ci_dir/tsconfig.json"; done
+}
 ci_install() { CI_INPUTS_INSTALL=1; }
 ci_tree() { CI_INPUTS_TREE=1; }
 
@@ -232,6 +237,7 @@ ci_declare() { # <gate id or suite path>
 		ci_probes .browserslistrc browserslist .editorconfig .npmrc .prettierrc package.yaml \
 			lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*'
 		ci_node_looks src
+		ci_compiler_looks src
 		ci_manifests
 		ci_install
 		;;
