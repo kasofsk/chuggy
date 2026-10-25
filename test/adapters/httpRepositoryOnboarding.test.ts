@@ -472,6 +472,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
           repository: command.repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
         });
         return Promise.resolve("Bound" as const);
       }
@@ -481,6 +482,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
         repository: standing.repository,
         boundAt: standing.boundAt,
         landing: standing.landing,
+        pipelinesWritable: standing.pipelinesWritable,
       };
       return Promise.resolve("Bound" as const);
     },
@@ -502,14 +504,20 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
       if (standing === undefined)
         return Promise.resolve({ outcome: "NotBound" } as const);
       if (
-        standing.landing.mode !== command.expected.mode &&
-        standing.landing.mode !== command.landing.mode
+        (standing.landing.mode !== command.expected.mode &&
+          standing.landing.mode !== command.landing.mode) ||
+        (standing.pipelinesWritable !== command.pipelinesWritable.expected &&
+          standing.pipelinesWritable !== command.pipelinesWritable.wanted)
       )
         return Promise.resolve({
           outcome: "LandingMoved",
           binding: standing,
         } as const);
-      const written = { ...standing, landing: command.landing };
+      const written = {
+        ...standing,
+        landing: command.landing,
+        pipelinesWritable: command.pipelinesWritable.wanted,
+      };
       store.bound[at] = written;
       return Promise.resolve({ outcome: "Written", binding: written } as const);
     },
@@ -1337,6 +1345,7 @@ test("a bind is created at its own address and read back by the listing", async 
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "Push" },
+        pipelinesWritable: false,
         configured: false,
       },
     ],
@@ -1351,11 +1360,17 @@ test("the listing answers a binding's last import attempted, and nothing of one 
   const listing = fixtureCase(t, { granted: ["Read"] });
   const other = asRepositoryId("https://github.com/acme/other.git");
   listing.store.bound.push(
-    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
+    {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+      pipelinesWritable: false,
+    },
     {
       repository: other,
       boundAt: "2026-09-12T01:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
     },
   );
   const lastImport = {
@@ -1662,7 +1677,12 @@ test("a repository is made, seeded, reserved and bound, and the answer locates i
     ],
   );
   assert.deepEqual(composed.store.bound, [
-    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
+    {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+      pipelinesWritable: false,
+    },
   ]);
 });
 
@@ -1819,6 +1839,24 @@ function landingRequest(body: Record<string, unknown>) {
   };
 }
 
+/** A settings write a setting moved under: refused as moved, answering the binding as it stands. */
+function landingMovedAsserted(
+  served: { readonly statusCode: number; json<T>(): T },
+  standing: { readonly mode: string; readonly pipelinesWritable: boolean },
+): void {
+  assert.equal(served.statusCode, 409);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "RepositoryLandingMoved",
+  );
+  assert.deepEqual(served.json<{ repository: unknown }>().repository, {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: standing.mode },
+    pipelinesWritable: standing.pipelinesWritable,
+  });
+}
+
 /**
  * A project holding one binding, made through the bind route the console uses,
  * and composed with a configuration step where a case names its image.
@@ -1854,6 +1892,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 200);
@@ -1862,6 +1901,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       repository,
       boundAt: "2026-09-11T01:00:00Z",
       landing: { mode: "PullRequest" },
+      pipelinesWritable: false,
     },
   });
   const listed = await landed.app.inject({
@@ -1874,6 +1914,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "PullRequest" },
+        pipelinesWritable: false,
         configured: false,
       },
     ],
@@ -1887,6 +1928,7 @@ test("a landing that moved under the writer is a conflict carrying the row that 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   const served = await landed.app.inject(
@@ -1894,17 +1936,12 @@ test("a landing that moved under the writer is a conflict carrying the row that 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
-  assert.equal(served.statusCode, 409);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "RepositoryLandingMoved",
-  );
-  assert.deepEqual(served.json<{ repository: unknown }>().repository, {
-    repository,
-    boundAt: "2026-09-11T01:00:00Z",
-    landing: { mode: "PullRequest" },
+  landingMovedAsserted(served, {
+    mode: "PullRequest",
+    pipelinesWritable: false,
   });
 });
 
@@ -1915,6 +1952,7 @@ test("a repository this project does not bind has no landing to answer", async (
       repository: "https://github.com/acme/unbound.git",
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 404);
@@ -1928,6 +1966,7 @@ test("a landing move without the project permit is not found and writes nothing"
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 404);
@@ -1942,6 +1981,7 @@ test("a write the durable side could not complete is a wait and says how long", 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 503);
@@ -1952,17 +1992,103 @@ test("a write the durable side could not complete is a wait and says how long", 
   assert.equal(typeof served.headers["retry-after"], "string");
 });
 
-test("a landing no roster names is refused before the durable side is asked", async (t) => {
+test("allowing a repository's pipeline definitions answers the row and the listing agrees", async (t) => {
   const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.equal(
+    served.json<{ repository: { pipelinesWritable: unknown } }>().repository
+      .pipelinesWritable,
+    true,
+  );
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.deepEqual(
+    listed
+      .json<{ repositories: { pipelinesWritable: unknown }[] }>()
+      .repositories.map((row) => row.pipelinesWritable),
+    [true],
+  );
+});
+
+test("pipeline definitions allowed under the writer are a conflict carrying the row that stands", async (t) => {
+  const landed = await fixtureLanded(t);
+  await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
+    }),
+  );
+  landingMovedAsserted(served, { mode: "Push", pipelinesWritable: true });
+});
+
+test("allowing pipeline definitions without the project permit is not found and writes nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"]);
+  const reader = fixtureCase(t, { granted: ["Read"], store: landed.store });
+  const served = await reader.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 404);
+  assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
+});
+
+test("a landing no roster names, or a write missing either setting, is refused before the durable side is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  const unchanged = { expected: false, wanted: false };
   for (const body of [
-    { repository, expected: { mode: "Push" }, landing: { mode: "Merge" } },
-    { repository, landing: { mode: "Push" } },
-    { expected: { mode: "Push" }, landing: { mode: "Push" } },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Merge" },
+      pipelinesWritable: unchanged,
+    },
+    { repository, landing: { mode: "Push" }, pipelinesWritable: unchanged },
+    {
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: unchanged,
+    },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { wanted: true },
+    },
   ]) {
     const served = await landed.app.inject(landingRequest(body));
     assert.equal(served.statusCode, 400, JSON.stringify(body));
   }
   assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+  assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
 });
 
 /** The retirement route, as an administrator sends the end of one binding. */
@@ -1983,6 +2109,7 @@ test("retiring a binding answers the row it left and the listing agrees", async 
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: { mode: "Push" },
+    pipelinesWritable: false,
     retiredAt: fixtureRetiredAt,
   };
   assert.deepEqual(served.json(), { repository: retired });
@@ -2041,6 +2168,7 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           configured: false,
         },
       ],

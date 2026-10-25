@@ -436,6 +436,7 @@ function repositoryImportLanding(
         repository,
         boundAt: "2026-10-01T00:00:00Z",
         landing: asRepositoryLanding("Push"),
+        pipelinesWritable: false,
         ...(retiredAt === undefined ? {} : { retiredAt }),
       });
     },

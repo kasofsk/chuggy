@@ -212,11 +212,19 @@ export const repositoryLandingSchema = z.strictObject({
 });
 export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
 
-/** A repository's landing default, written against the one the writer read so two administrators cannot cross. */
+/**
+ * A repository's landing default and whether its jobs may write its pipeline
+ * definitions, each written against the value the writer read so two
+ * administrators cannot cross.
+ */
 export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
   expected: repositoryLandingSchema,
   landing: repositoryLandingSchema,
+  pipelinesWritable: z.strictObject({
+    expected: z.boolean(),
+    wanted: z.boolean(),
+  }),
 });
 
 /** Where a project's work and its evaluations run, both written whole. */

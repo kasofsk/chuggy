@@ -1,10 +1,10 @@
 /**
- * What a repository's landing section decides: what a reader's choice becomes,
+ * What a binding's settings sections decide: what a reader's choice becomes,
  * what the write carries, and what each answer to that write means.
  *
  * The conflict is the case worth checking here rather than on the screen — the
  * rebase is what stops two administrators clobbering each other, and it is
- * invisible in a rendering because both drafts draw the same two radios.
+ * invisible in a rendering because both drafts draw the same radios.
  */
 
 import { expect, test } from "vitest";
@@ -17,6 +17,7 @@ import {
   repositoryLandingAnswered,
   repositoryLandingChosen,
   repositoryLandingDraft,
+  repositoryLandingPipelinesChosen,
   repositoryLandingRebased,
   repositoryLandingRestored,
   repositoryLandingSavable,
@@ -29,17 +30,24 @@ const scratch = "https://forge.test/gdoteof/scratch";
 function binding(
   repository: string,
   mode: BriefFinalizationMode,
+  pipelinesWritable = false,
 ): ProjectRepositoryResponse {
   return {
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    pipelinesWritable,
   };
 }
 
-test("a draft starts on what the page read, and saves nothing until it moves", () => {
+test("a draft starts on what the page read, and saves nothing until a setting moves", () => {
   const draft = repositoryLandingDraft(binding(chuggy, "Push"));
-  expect(draft).toStrictEqual({ mode: "Push", read: "Push" });
+  expect(draft).toStrictEqual({
+    mode: "Push",
+    read: "Push",
+    pipelinesWritable: false,
+    pipelinesWritableRead: false,
+  });
   expect(repositoryLandingSavable(draft)).toBe(false);
   const moved = repositoryLandingChosen(draft, "PullRequest");
   expect(repositoryLandingSavable(moved)).toBe(true);
@@ -47,38 +55,72 @@ test("a draft starts on what the page read, and saves nothing until it moves", (
     false,
   );
   expect(repositoryLandingRestored(moved)).toStrictEqual(draft);
+  const allowed = repositoryLandingPipelinesChosen(draft, true);
+  expect(repositoryLandingSavable(allowed)).toBe(true);
+  expect(
+    repositoryLandingSavable(repositoryLandingPipelinesChosen(allowed, false)),
+  ).toBe(false);
+  expect(repositoryLandingRestored(allowed)).toStrictEqual(draft);
 });
 
-/** The write fences on the mode the page read and not on the one it wants, so
- * a landing that moved under the reader is refused rather than overwritten. */
-test("the write carries the binding, the mode read and the mode wanted", () => {
+/** The write fences on each setting as the page read it and not on the value
+ * it wants, so a setting that moved under the reader is refused rather than
+ * overwritten — including the one the reader did not touch. */
+test("the write carries the binding, and each setting as read and as wanted", () => {
   const moved = repositoryLandingChosen(
-    repositoryLandingDraft(binding(chuggy, "Push")),
+    repositoryLandingDraft(binding(chuggy, "Push", true)),
     "PullRequest",
   );
   expect(repositoryLandingWrite(moved, chuggy)).toStrictEqual({
     repository: chuggy,
     expected: { mode: "Push" },
     landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: true, wanted: true },
+  });
+  const allowed = repositoryLandingPipelinesChosen(
+    repositoryLandingDraft(binding(chuggy, "Push")),
+    true,
+  );
+  expect(repositoryLandingWrite(allowed, chuggy)).toStrictEqual({
+    repository: chuggy,
+    expected: { mode: "Push" },
+    landing: { mode: "Push" },
+    pipelinesWritable: { expected: false, wanted: true },
   });
 });
 
 /**
  * A reader who has chosen nothing is shown what now stands; one who has chosen
- * keeps the choice, and the next write fences against the arriving mode so the
- * second attempt is a decision and not a retry of a refused one.
+ * keeps the choice, and the next write fences against the arriving value so the
+ * second attempt is a decision and not a retry of a refused one. Each setting
+ * is rebased on its own, so a choice of one survives the other moving.
  */
-test("a rebase takes the arriving mode, and only an untouched choice with it", () => {
-  const arrived = binding(chuggy, "PullRequest");
+test("a rebase takes each arriving setting, and only an untouched choice with it", () => {
+  const arrived = binding(chuggy, "PullRequest", true);
   const untouched = repositoryLandingDraft(binding(chuggy, "Push"));
   expect(repositoryLandingRebased(untouched, arrived)).toStrictEqual({
     mode: "PullRequest",
     read: "PullRequest",
+    pipelinesWritable: true,
+    pipelinesWritableRead: true,
   });
   const touched = repositoryLandingChosen(untouched, "PullRequest");
-  expect(repositoryLandingRebased(touched, binding(chuggy, "Push"))).toEqual({
+  expect(
+    repositoryLandingRebased(touched, binding(chuggy, "Push", true)),
+  ).toStrictEqual({
     mode: "PullRequest",
     read: "Push",
+    pipelinesWritable: true,
+    pipelinesWritableRead: true,
+  });
+  const allowed = repositoryLandingPipelinesChosen(untouched, true);
+  expect(
+    repositoryLandingRebased(allowed, binding(chuggy, "PullRequest")),
+  ).toStrictEqual({
+    mode: "PullRequest",
+    read: "PullRequest",
+    pipelinesWritable: true,
+    pipelinesWritableRead: false,
   });
 });
 

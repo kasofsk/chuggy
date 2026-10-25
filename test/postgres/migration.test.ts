@@ -66,6 +66,7 @@ import {
 import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-runner-versions.ts";
 import { migration070 } from "../../src/adapters/postgres/schema/migrations/070-many-personal-runners.ts";
 import { migration072 } from "../../src/adapters/postgres/schema/migrations/072-lead-reads-run-errors.ts";
+import { migration076 } from "../../src/adapters/postgres/schema/migrations/076-pipelines-writable.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -877,7 +878,7 @@ test("the landing doors migrate without exposing the relation they read", async 
   await migrationDatabaseAt("Migrated", "i90grants", async (subject) => {
     for (const signature of [
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
     ])
       assert.equal(
         (
@@ -1143,7 +1144,7 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryRetirementWriteFunction}(text,text,text)`,
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
       `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
@@ -11420,4 +11421,110 @@ test("070 keeps every member's runner and allowlist, keys a runner by its client
       );
     },
   );
+});
+
+/** What the binding 076 is run beside answers of its pipeline definitions, through each door that answers a whole one. */
+async function pipelinesWritableAnswered076(
+  subject: pg.Pool,
+): Promise<unknown> {
+  return {
+    listed: (
+      await subject.query(
+        `SELECT repository,pipelines_writable
+           FROM ${repositoryBindingListFunction}('tenant-90','project-90',NULL)`,
+      )
+    ).rows,
+    read: (
+      await subject.query(
+        `SELECT pipelines_writable
+           FROM ${repositoryLandingReadFunction}('tenant-90','project-90','bound-90')`,
+      )
+    ).rows,
+  };
+}
+
+/** Whether each role 076 grants a binding door to still holds it, and the finalizer the read. */
+async function pipelinesWritableHolders076(subject: pg.Pool): Promise<unknown> {
+  const held = async (role: string, door: string) =>
+    (
+      await subject.query<{ granted: boolean }>(
+        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+        [role, door],
+      )
+    ).rows[0]?.granted;
+  const read = `${repositoryLandingReadFunction}(text,text,text)`;
+  const list = `${repositoryBindingListFunction}(text,text,bigint)`;
+  return {
+    schedulerLists: await held(schedulerRole, list),
+    planeReads: await held(workerPlaneRole, read),
+    finalizerReads: await held(finalizerRole, read),
+    finalizerLists: await held(finalizerRole, list),
+    publicReads: await held("public", read),
+  };
+}
+
+test("076 starts every binding that stood without the pipeline definitions, and lets the landing door alone allow them", async () => {
+  await migrationDatabase("pipelines_writable", async (subject) => {
+    await installationBefore(subject, migration076.version);
+    await seedLandinglessBinding(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration076.version));
+    assert.deepEqual(await pipelinesWritableAnswered076(subject), {
+      listed: [{ repository: "bound-90", pipelines_writable: false }],
+      read: [{ pipelines_writable: false }],
+    });
+    assert.deepEqual(await pipelinesWritableHolders076(subject), {
+      schedulerLists: true,
+      planeReads: true,
+      finalizerReads: true,
+      finalizerLists: false,
+      publicReads: false,
+    });
+    await assertDoorsStandOwned(subject, [
+      `${repositoryRetirementWriteFunction}(text,text,text)`,
+      `${repositoryBindingListFunction}(text,text,bigint)`,
+      `${repositoryLandingReadFunction}(text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
+    ]);
+    assert.equal(
+      await migrationHasFunction(
+        subject,
+        `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      ),
+      false,
+      "the write that could not say the pipeline definitions is gone",
+    );
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'project_repository','pipelines_writable','UPDATE') AS granted",
+          [boundaryOwnerRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT outcome,landing_mode,pipelines_writable
+             FROM ${repositoryLandingWriteFunction}(
+               'tenant-90','project-90','bound-90','PullRequest','PullRequest',false,true)`,
+        )
+      ).rows,
+      [
+        {
+          outcome: "Written",
+          landing_mode: "PullRequest",
+          pipelines_writable: true,
+        },
+      ],
+    );
+    await assert.rejects(
+      subject.query(
+        `UPDATE project_repository SET recovery_epoch='epoch-90',bound_at=now()
+          WHERE tenant='tenant-90' AND project='project-90'`,
+      ),
+      /repository bindings are immutable/u,
+      "the trigger lets the setting move and nothing more",
+    );
+  });
 });

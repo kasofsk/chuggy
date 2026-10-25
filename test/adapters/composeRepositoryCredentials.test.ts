@@ -10,6 +10,11 @@
  * `ForgeRepositoryTokens` that records what it was asked for, so a case pins the
  * composition's own choice rather than a permission it passed into its own
  * fixture.
+ *
+ * EVERY MINT THAT WRITES IS HELD TO ITS OWN PROJECT'S BINDING. The cases at
+ * the end compose each path that asks for `write` or `propose` over the minted
+ * source itself, so what reaches the forge is the binding's allowance as the
+ * path's own partition reads it, switched on and off.
  */
 
 import assert from "node:assert/strict";
@@ -19,6 +24,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { githubRepositoryHost } from "../../src/adapters/forge/githubAddress.ts";
+import { mintedRepositoryTokens } from "../../src/adapters/forge/mintedCredentials.ts";
 import {
   composeApiRepositoryCredentials,
   composeConfigurationImporterCredentials,
@@ -36,12 +42,30 @@ import {
   asRepositoryId,
   type RepositoryBinding,
 } from "../../src/interpreter/finalizer.ts";
+import { forgeCredentialMinting } from "../../src/interpreter/forgeCredentials.ts";
 import {
+  asForgeId,
+  asForgeInstallationId,
   asForgeInstallationToken,
   type ForgeInstallationTokens,
   type ForgePermissionSet,
+  type ForgeTokenRequest,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../src/interpreter/projectStore.ts";
+import type { ProjectRepositoryLandingStore } from "../../src/interpreter/repositoryBinding.ts";
+import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
+import {
+  asAttemptId,
+  asExecutionId,
+} from "../../src/interpreter/schedulerIdentity.ts";
+import { workerPlaneCredentialMinting } from "../../src/interpreter/workerPlaneCredentials.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const partition = {
   tenant: asTenantId("vteng"),
@@ -81,7 +105,7 @@ function recordingMinting(
   return {
     installationTokens: unusedInstallationTokens,
     tokens: {
-      token: (_repository, _tenant, permissions) => {
+      token: (_repository, _partition, permissions) => {
         asked.push(permissions);
         return Promise.resolve({
           minted: "Token" as const,
@@ -194,4 +218,167 @@ test("a deployment that mints still reaches another host through its files", asy
     { resolved: "Credential", credential: "mounted-a1b2c3" },
   );
   assert.deepEqual(asked, [], "the mint answers for its own host and no other");
+});
+
+/** What one path's mints came to: whether each mint carried the allowance, and whose binding was read for it. */
+interface Allowance {
+  readonly mints: ForgeTokenRequest[];
+  readonly reads: Partition[];
+}
+
+/**
+ * The minted source over a binding switched on or off, the installation and
+ * the mint recording what they were asked. The binding answers for the
+ * fixture's own project alone, so a path that read another's would mint
+ * without the allowance.
+ */
+function allowanceTokens(pipelinesWritable: boolean, allowance: Allowance) {
+  const bindings: Pick<ProjectRepositoryLandingStore, "landing"> = {
+    landing: (read, named) => {
+      allowance.reads.push(read);
+      return Promise.resolve(
+        read.tenant === partition.tenant &&
+          read.project === partition.project &&
+          named === repository
+          ? {
+              repository,
+              boundAt: "2026-10-25T00:00:00Z",
+              landing: { mode: "Push" },
+              pipelinesWritable,
+            }
+          : undefined,
+      );
+    },
+  };
+  return mintedRepositoryTokens({
+    forge: asForgeId("github"),
+    app: "portal",
+    repositoryHost: githubRepositoryHost,
+    installations: {
+      installation: (query) =>
+        Promise.resolve({
+          forge: query.forge,
+          app: query.app,
+          account: query.account,
+          installationId: asForgeInstallationId("156333284"),
+        }),
+    },
+    tokens: {
+      mint: (request) => {
+        allowance.mints.push(request);
+        return Promise.resolve({
+          minted: "Token" as const,
+          token: asForgeInstallationToken("ghs-minted-q4w5e6"),
+          expiresAtMs: 1,
+        });
+      },
+    },
+    bindings,
+  });
+}
+
+/** Runs one path with its binding on and then off, answering what each mint carried and whose binding it read. */
+async function allowanceOf(
+  path: (tokens: ReturnType<typeof allowanceTokens>) => unknown,
+): Promise<readonly [Allowance, Allowance]> {
+  const on: Allowance = { mints: [], reads: [] };
+  const off: Allowance = { mints: [], reads: [] };
+  await path(allowanceTokens(true, on));
+  await path(allowanceTokens(false, off));
+  return [on, off];
+}
+
+/** Asserts a path asked for one write-shaped set, read its own project's binding, and carried the allowance only where it was on. */
+function allowanceAsserted(
+  [on, off]: readonly [Allowance, Allowance],
+  permissions: ForgePermissionSet,
+): void {
+  for (const [which, allowance, carried] of [
+    ["on", on, true],
+    ["off", off, undefined],
+  ] as const) {
+    assert.deepEqual(
+      allowance.mints.map((request) => [
+        request.permissions,
+        request.pipelinesAllowed,
+      ]),
+      [[permissions, carried]],
+      which,
+    );
+    assert.deepEqual(allowance.reads, [partition], which);
+  }
+}
+
+test("the finalizer's push carries the pipeline definitions only where its project's binding allows them", async () => {
+  allowanceAsserted(
+    await allowanceOf((tokens) =>
+      composeFinalizerRepositoryCredentials(
+        { sources: [] },
+        { installationTokens: unusedInstallationTokens, tokens },
+      ).credential(binding),
+    ),
+    "write",
+  );
+});
+
+test("the finalizer's proposal carries the pipeline definitions only where its project's binding allows them", async () => {
+  allowanceAsserted(
+    await allowanceOf((tokens) =>
+      composeFinalizerForgeCredentials(
+        { bindings: [] },
+        { installationTokens: unusedInstallationTokens, tokens },
+      ).credential(proposal),
+    ),
+    "propose",
+  );
+});
+
+test("a work attempt's credential carries the pipeline definitions only where its project's binding allows them", async () => {
+  allowanceAsserted(
+    await allowanceOf((tokens) =>
+      workerPlaneCredentialMinting({
+        tokens,
+        bindings: { landing: () => Promise.resolve(undefined) },
+      }).attempt({
+        live: true,
+        partition,
+        execution: asExecutionId("execution-1"),
+        attempt: asAttemptId("attempt-1"),
+        generation: 1,
+        taskKind: "Work",
+        manifest: asResultManifestId("manifest-1"),
+        inputBundle: "bundle-1",
+        inputBundleDigest: "digest-1",
+        inputs: [{ ordinal: 0, kind: "Repository", reference: repository }],
+      }),
+    ),
+    "write",
+  );
+});
+
+test("a member's write or proposal carries the pipeline definitions only where the project's binding allows them", async () => {
+  const principal = asPrincipal("14:https://issuer/member");
+  for (const permissions of ["write", "propose"] as const)
+    allowanceAsserted(
+      await allowanceOf((tokens) =>
+        forgeCredentialMinting(
+          {
+            authorize: () => Promise.resolve(memberAuthority(principal)),
+            authorizeTenant: () => Promise.resolve(undefined),
+            authorizeSite: projectAccessSiteRefused,
+          },
+          {
+            landing: (_read, named) =>
+              Promise.resolve({
+                repository: named,
+                boundAt: "2026-10-25T00:00:00Z",
+                landing: { mode: "Push" },
+                pipelinesWritable: false,
+              }),
+          },
+          tokens,
+        ).mint(principal, partition, { repository, permissions }),
+      ),
+      permissions,
+    );
 });

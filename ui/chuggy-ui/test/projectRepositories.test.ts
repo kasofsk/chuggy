@@ -106,6 +106,7 @@ test("a row is marked bound by the address the binding names", () => {
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
         landing: { mode: "Push" as const },
+        pipelinesWritable: false,
       },
     ],
     [],
@@ -120,6 +121,7 @@ test("a row whose binding is retired is not marked bound", () => {
     repository: "https://forge.test/kasofsk/chuggy",
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode: "Push" as const },
+    pipelinesWritable: false,
   };
   const marked = (retiredAt: string | undefined): readonly boolean[] =>
     repositoryChoices(
@@ -567,6 +569,7 @@ test("an unbind the route retired leaves nothing to say, and a refusal is its wo
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
         landing: { mode: "Push" },
+        pipelinesWritable: false,
         retiredAt: "2026-09-14T00:00:00Z",
       },
     }),
@@ -834,6 +837,7 @@ const bound = {
   repository: "https://forge.test/kasofsk/chuggy",
   boundAt: "2026-09-11T00:00:00Z",
   landing: { mode: "Push" as const },
+  pipelinesWritable: false,
 };
 
 const both = [claim("portal", "kasofsk"), claim("worker", "kasofsk")];

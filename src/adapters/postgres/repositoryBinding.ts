@@ -73,6 +73,7 @@ interface ProjectRepositoryBoundRow {
   readonly repository: string | null;
   readonly bound_at: string | null;
   readonly landing_mode: string | null;
+  readonly pipelines_writable: boolean | null;
   readonly retired_at: string | null;
 }
 
@@ -82,13 +83,15 @@ function projectRepositoryBoundOf(
   if (
     row.repository === null ||
     row.bound_at === null ||
-    row.landing_mode === null
+    row.landing_mode === null ||
+    row.pipelines_writable === null
   )
     throw new Error("repository binding: a binding is half a row");
   return {
     repository: asRepositoryId(row.repository),
     boundAt: row.bound_at,
     landing: asRepositoryLanding(row.landing_mode),
+    pipelinesWritable: row.pipelines_writable,
     ...(row.retired_at === null ? {} : { retiredAt: row.retired_at }),
   };
 }
@@ -109,7 +112,7 @@ export function postgresProjectRepositoryBindings(
     ): Promise<readonly ProjectRepositoryBound[]> => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
         sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
-                   retired_at::text AS retired_at
+                   pipelines_writable,retired_at::text AS retired_at
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
                 ${projectRepositoriesAnsweredMax})`,
@@ -297,11 +300,11 @@ function postgresRepositoryLandingOutcome(
 }
 
 /**
- * One binding's landing, read through a door the API and the worker plane
- * hold EXECUTE on and moved through one only the API holds. The point read is
- * a door of its own rather than a search of the listing, because a project
- * binding more repositories than the listing answers would have the one asked
- * about fall off the end of it.
+ * One binding's settings, read through a door the API, the worker plane and
+ * the finalizer hold EXECUTE on and written through one only the API holds.
+ * The point read is a door of its own rather than a search of the listing,
+ * because a project binding more repositories than the listing answers would
+ * have the one asked about fall off the end of it.
  */
 export function postgresProjectRepositoryLanding(
   pool: pg.Pool,
@@ -310,7 +313,7 @@ export function postgresProjectRepositoryLanding(
     landing: async (partition, repository) => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
         sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
-                   retired_at::text AS retired_at
+                   pipelines_writable,retired_at::text AS retired_at
               FROM read_project_repository_landing(
                 ${partition.tenant},${partition.project},${repository})`,
       );
@@ -322,11 +325,13 @@ export function postgresProjectRepositoryLanding(
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
           sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
-                     retired_at::text AS retired_at
+                     pipelines_writable,retired_at::text AS retired_at
                 FROM set_project_repository_landing(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository},${command.expected.mode},
-                  ${command.landing.mode})`,
+                  ${command.landing.mode},
+                  ${command.pipelinesWritable.expected},
+                  ${command.pipelinesWritable.wanted})`,
         );
       } catch (failure) {
         if (repositoryBindingWriteIncomplete(failure))
@@ -366,7 +371,7 @@ export function postgresProjectRepositoryRetirement(
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
           sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
-                     retired_at::text AS retired_at
+                     pipelines_writable,retired_at::text AS retired_at
                 FROM retire_project_repository(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository})`,

@@ -1816,10 +1816,10 @@ export function projectRepositoriesResponse(
 }
 
 /**
- * One landing moved. A conflict answers the binding as it stands rather than a
- * bare code, because the writer's next act is to read it again; a repository
- * this project does not bind is the same miss as a project the caller may not
- * see, which is what every refused permit here answers.
+ * One binding's settings written. A conflict answers the binding as it stands
+ * rather than a bare code, because the writer's next act is to read it again;
+ * a repository this project does not bind is the same miss as a project the
+ * caller may not see, which is what every refused permit here answers.
  */
 export function projectRepositoryLandingResponse(
   result: ProjectRepositoryLandingResult,
@@ -1831,7 +1831,7 @@ export function projectRepositoryLandingResponse(
       return response(409, {
         ...nativeHttpError(
           "RepositoryLandingMoved",
-          "The repository's landing is not the one this write was made against.",
+          "The repository's settings are not the ones this write was made against.",
         ),
         repository: result.repository,
       });

@@ -67,7 +67,10 @@ import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
-import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
+import {
+  asRepositoryLanding,
+  type ProjectRepositoryLandingStore,
+} from "../../src/interpreter/repositoryBinding.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
@@ -777,6 +780,19 @@ test("a repository this caller may not mint for is not found and a forge that is
  * project of another tenant that has somehow bound the repository is answered
  * exactly as an unbound one is.
  */
+const realForgeCredentialsBindings: Pick<
+  ProjectRepositoryLandingStore,
+  "landing"
+> = {
+  landing: (_partition, repository) =>
+    Promise.resolve({
+      repository,
+      boundAt: "2026-10-01T00:00:00Z",
+      landing: asRepositoryLanding("Push"),
+      pipelinesWritable: false,
+    }),
+};
+
 function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
   return forgeCredentialMinting(
     {
@@ -784,14 +800,7 @@ function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
       authorizeTenant: () => Promise.resolve(undefined),
       authorizeSite: projectAccessSiteRefused,
     },
-    {
-      landing: (_partition, repository) =>
-        Promise.resolve({
-          repository,
-          boundAt: "2026-10-01T00:00:00Z",
-          landing: asRepositoryLanding("Push"),
-        }),
-    },
+    realForgeCredentialsBindings,
     mintedRepositoryTokens({
       forge: asForgeId("github"),
       app: "portal",
@@ -817,6 +826,7 @@ function realForgeCredentials(claimedBy: string): ForgeCredentialMinting {
             expiresAtMs: 1_757_500_000_000,
           }),
       },
+      bindings: realForgeCredentialsBindings,
     }),
   );
 }

@@ -73,6 +73,7 @@ import { migration072 } from "./072-lead-reads-run-errors.ts";
 import { migration073 } from "./073-workload-paths.ts";
 import { migration074 } from "./074-override-refusals.ts";
 import { migration075 } from "./075-run-disk-low.ts";
+import { migration076 } from "./076-pipelines-writable.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -151,4 +152,5 @@ export const migrations: readonly Migration[] = [
   migration073,
   migration074,
   migration075,
+  migration076,
 ];

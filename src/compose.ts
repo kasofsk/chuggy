@@ -388,7 +388,8 @@ export function repositoryCredentialFileOptions(
 }
 
 /**
- * What a process mints with, over the pool it owns and the key it holds. The
+ * What a process mints with, over the pool it owns and the key it holds, which
+ * is also where the binding allowing a set its pipeline definitions is read. The
  * permission is not here: one process mints under one key for several acts, and
  * each act's composition is what says how much it may ask for.
  */
@@ -408,6 +409,7 @@ export function composeForgeRepositoryMinting(
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
       tokens: installationTokens,
+      bindings: postgresProjectRepositoryLanding(pool),
     }),
   };
 }

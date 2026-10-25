@@ -111,7 +111,7 @@ import {
 } from "../../interpreter/ticketBrief.ts";
 import {
   asRepositoryLanding,
-  type RepositoryLanding,
+  type ProjectRepositoryLandingWrite,
 } from "../../interpreter/repositoryBinding.ts";
 
 /**
@@ -255,17 +255,16 @@ export function parseProjectRepositoryBind(
   };
 }
 
-/** One landing move as the wire carries it: the binding, the landing read, and the one wanted. */
-export function parseProjectRepositoryLanding(body: unknown): {
-  readonly repository: RepositoryId;
-  readonly expected: RepositoryLanding;
-  readonly landing: RepositoryLanding;
-} {
+/** One write of a binding's settings as the wire carries it: the binding, and each setting as read and as wanted. */
+export function parseProjectRepositoryLanding(
+  body: unknown,
+): ProjectRepositoryLandingWrite {
   const parsed = projectRepositoryLandingSchema.parse(body);
   return {
     repository: asRepositoryId(parsed.repository),
     expected: asRepositoryLanding(parsed.expected.mode),
     landing: asRepositoryLanding(parsed.landing.mode),
+    pipelinesWritable: parsed.pipelinesWritable,
   };
 }
 

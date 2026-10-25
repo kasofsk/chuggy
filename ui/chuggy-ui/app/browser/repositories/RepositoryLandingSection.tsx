@@ -1,9 +1,10 @@
 /**
- * How a finished ticket in this repository lands, and the write that moves it.
+ * How a finished ticket in this repository lands, and the write that moves it,
+ * which the binding's other settings write through as well.
  *
- * A WRITE THE LANDING MOVED UNDER IS NOT RETRIED. The route answers `409` with
+ * A WRITE A SETTING MOVED UNDER IS NOT RETRIED. The route answers `409` with
  * the binding as it stands; the section says so and stops, and the draft takes
- * that binding so the next Save fences against it rather than against the mode
+ * that binding so the next Save fences against it rather than against what
  * this page read before somebody else wrote.
  */
 
@@ -61,7 +62,7 @@ function RepositoryLandingNotice(props: {
     case "Written":
       return <Notice tone="live" inline detail="Written" />;
     case "Conflict":
-      return <Notice tone="parked" inline detail="Landing moved" />;
+      return <Notice tone="parked" inline detail="Settings moved" />;
     case "Failed":
       return (
         <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
@@ -82,9 +83,10 @@ function useRepositoryLandingDraft(
   const [draft, setDraft] = useState<RepositoryLandingDraft>(() =>
     repositoryLandingDraft(binding),
   );
-  const [seen, setSeen] = useState(binding.landing.mode);
-  if (seen !== binding.landing.mode) {
-    setSeen(binding.landing.mode);
+  const standing = `${binding.landing.mode}/${String(binding.pipelinesWritable)}`;
+  const [seen, setSeen] = useState(standing);
+  if (seen !== standing) {
+    setSeen(standing);
     const rebased = repositoryLandingRebased(draft, binding);
     setDraft(rebased);
     return { draft: rebased, setDraft };
@@ -99,9 +101,10 @@ interface RepositoryLandingWriting {
 }
 
 /**
- * The one door this section writes through. A write that landed IS the newest
- * read of its row, so it is written into the bindings the page holds rather
- * than left for a refetch nothing schedules: the route raises no frame.
+ * The one door the binding's settings write through. A write that landed IS
+ * the newest read of its row, so it is written into the bindings the page
+ * holds rather than left for a refetch nothing schedules: the route raises no
+ * frame.
  */
 function useRepositoryLandingWriting(
   partition: PartitionIdentity,
@@ -149,9 +152,18 @@ function useRepositoryLandingWriting(
   };
 }
 
-export function RepositoryLandingSection(props: {
+/**
+ * One of the binding's settings as a section, read until its Edit is pressed.
+ * Each section holds a draft of every setting and moves only its own, so its
+ * write carries the others as this page read them.
+ */
+export function RepositorySettingSection(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryResponse;
+  readonly title: string;
+  readonly about: string;
+  /** The section's own control, over the draft it moves. */
+  readonly body: (held: RepositoryLandingHeld, editing: boolean) => ReactNode;
 }): ReactNode {
   const held = useRepositoryLandingDraft(props.binding);
   const writing = useRepositoryLandingWriting(
@@ -164,8 +176,8 @@ export function RepositoryLandingSection(props: {
   const saved = writing.saved;
   return (
     <SettingsSection
-      title="Landing"
-      about="How a finished ticket lands. A ticket may choose otherwise."
+      title={props.title}
+      about={props.about}
       editing={editing}
       editable
       readOnly={projectAbilityRefused(abilities, "administer")}
@@ -190,17 +202,36 @@ export function RepositoryLandingSection(props: {
         });
       }}
     >
-      <RadioGroup
-        label="Landing"
-        value={held.draft.mode}
-        disabled={!editing}
-        options={landingOptions}
-        onChoose={(value) => {
-          const chosen = briefFinalizationModes.find((mode) => mode === value);
-          if (chosen !== undefined)
-            held.setDraft(repositoryLandingChosen(held.draft, chosen));
-        }}
-      />
+      {props.body(held, editing)}
     </SettingsSection>
+  );
+}
+
+export function RepositoryLandingSection(props: {
+  readonly partition: PartitionIdentity;
+  readonly binding: ProjectRepositoryResponse;
+}): ReactNode {
+  return (
+    <RepositorySettingSection
+      partition={props.partition}
+      binding={props.binding}
+      title="Landing"
+      about="How a finished ticket lands. A ticket may choose otherwise."
+      body={(held, editing) => (
+        <RadioGroup
+          label="Landing"
+          value={held.draft.mode}
+          disabled={!editing}
+          options={landingOptions}
+          onChoose={(value) => {
+            const chosen = briefFinalizationModes.find(
+              (mode) => mode === value,
+            );
+            if (chosen !== undefined)
+              held.setDraft(repositoryLandingChosen(held.draft, chosen));
+          }}
+        />
+      )}
+    />
   );
 }

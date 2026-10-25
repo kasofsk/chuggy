@@ -223,6 +223,7 @@ test("a personal runner holds no permit of any project its owner serves, so a pr
           repository,
           boundAt: "2026-10-01T00:00:00Z",
           landing: asRepositoryLanding("Push"),
+          pipelinesWritable: false,
         }),
     },
     {

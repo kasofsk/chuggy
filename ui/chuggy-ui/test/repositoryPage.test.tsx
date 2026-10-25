@@ -1,6 +1,7 @@
 /**
- * One repository's page: the landing it defaults to, what it declares under
- * `.chug/configurations`, and when that was last imported.
+ * One repository's page: the landing it defaults to, whether its jobs may
+ * change its workflow files, what it declares under `.chug/configurations`,
+ * and when that was last imported.
  *
  * THE CONFLICT IS THE CASE WITH TEETH. Two administrators editing one binding
  * must not clobber each other, so what is asserted about a `409` is the second
@@ -68,11 +69,16 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function binding(mode: string, repository = chuggy): unknown {
+function binding(
+  mode: string,
+  repository = chuggy,
+  pipelinesWritable = false,
+): unknown {
   return {
     repository,
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode },
+    pipelinesWritable,
     configured: true,
   };
 }
@@ -249,6 +255,26 @@ async function press(name: string): Promise<void> {
   await settled();
 }
 
+/** Opens one section, every section drawing an Edit of its own. */
+async function edit(title: string): Promise<void> {
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf(title)).getByRole("button", { name: "Edit" }),
+    );
+  });
+  await settled();
+}
+
+/** Whether the workflow files section draws them allowed. */
+function chosenWorkflowFiles(): string | undefined {
+  return ["Off", "On"].find(
+    (name) =>
+      within(sectionOf("Workflow files"))
+        .getByRole("radio", { name })
+        .getAttribute("aria-checked") === "true",
+  );
+}
+
 test("the page reads its own binding, and says what it lands as", async () => {
   await drawPage({ bound: [binding("PullRequest")] });
   const landing = sectionOf("Landing");
@@ -293,6 +319,7 @@ test.each([
           repository: chuggy,
           boundAt: "2026-09-11T00:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           configured: true,
           ...(retiredAt === undefined ? {} : { retiredAt }),
         },
@@ -309,7 +336,7 @@ test("a saved landing is written against the mode the page read", async () => {
   const sent = await drawPage({
     written: [answer({ repository: binding("PullRequest") })],
   });
-  await press("Edit");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -320,10 +347,13 @@ test("a saved landing is written against the mode the page read", async () => {
     repository: chuggy,
     expected: { mode: "Push" },
     landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: false, wanted: false },
   });
   expect(screen.getByText("Written")).toBeTruthy();
   expect(chosenLanding()).toBe("Pull request");
-  expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+  expect(
+    within(sectionOf("Landing")).getByRole("button", { name: "Edit" }),
+  ).toBeTruthy();
 });
 
 /**
@@ -347,12 +377,12 @@ test("a landing that moved under the write says so, and rebases onto what stands
       answer({ repository: binding("Push") }),
     ],
   });
-  await press("Edit");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
   await press("Save changes");
-  expect(screen.getByText("Landing moved")).toBeTruthy();
+  expect(screen.getByText("Settings moved")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Push" }));
@@ -364,7 +394,139 @@ test("a landing that moved under the write says so, and rebases onto what stands
     repository: chuggy,
     expected: { mode: "PullRequest" },
     landing: { mode: "Push" },
+    pipelinesWritable: { expected: false, wanted: false },
   });
+});
+
+test("the workflow files section says they are off until a binding allows them", async () => {
+  await drawPage();
+  const section = sectionOf("Workflow files");
+  expect(
+    within(section).getByText(
+      "Lets jobs change GitHub workflow files. The App needs Workflows too.",
+    ),
+  ).toBeTruthy();
+  expect(chosenWorkflowFiles()).toBe("Off");
+  expect(
+    within(section)
+      .getByRole("radio", { name: "On" })
+      .getAttribute("data-disabled"),
+  ).not.toBe(null);
+  cleanup();
+  await drawPage({ bound: [binding("Push", chuggy, true)] });
+  expect(chosenWorkflowFiles()).toBe("On");
+});
+
+/** The section moves its own setting and writes the landing as the page read
+ * it, so the landing it did not touch is fenced rather than written over. */
+test("allowing workflow files writes them against what the page read, the landing unchanged", async () => {
+  const sent = await drawPage({
+    bound: [binding("PullRequest")],
+    written: [answer({ repository: binding("PullRequest", chuggy, true) })],
+  });
+  await edit("Workflow files");
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
+    );
+  });
+  await press("Save changes");
+  const wrote = sent.find((one) => one.method === "PUT");
+  expect(wrote?.url.endsWith("/repositories/landing")).toBe(true);
+  expect(wrote?.body).toStrictEqual({
+    repository: chuggy,
+    expected: { mode: "PullRequest" },
+    landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: false, wanted: true },
+  });
+  expect(within(sectionOf("Workflow files")).getByText("Written")).toBeTruthy();
+  expect(chosenWorkflowFiles()).toBe("On");
+  expect(chosenLanding()).toBe("Pull request");
+});
+
+/** A landing written by the other section moves under this one; the retry is
+ * fenced against the landing that now stands, the choice standing. */
+test("workflow files the binding moved under say so, and the retry fences on what stands", async () => {
+  const sent = await drawPage({
+    written: [
+      answer(
+        {
+          error: {
+            code: "RepositoryLandingMoved",
+            message: "the settings moved under this write",
+          },
+          repository: binding("None"),
+        },
+        409,
+      ),
+      answer({ repository: binding("None", chuggy, true) }),
+    ],
+  });
+  await edit("Workflow files");
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
+    );
+  });
+  await press("Save changes");
+  expect(
+    within(sectionOf("Workflow files")).getByText("Settings moved"),
+  ).toBeTruthy();
+  expect(chosenWorkflowFiles()).toBe("On");
+  await press("Save changes");
+  const writes = sent.filter((one) => one.method === "PUT");
+  expect(writes.length).toBe(2);
+  expect(writes[1]?.body).toStrictEqual({
+    repository: chuggy,
+    expected: { mode: "None" },
+    landing: { mode: "None" },
+    pipelinesWritable: { expected: false, wanted: true },
+  });
+});
+
+/** One section's write moves the binding the other section's draft was read
+ * from, so the other's next write fences against the setting it now holds
+ * rather than writing back the one the page first read. */
+test("a landing saved after workflow files were allowed keeps them allowed", async () => {
+  const sent = await drawPage({
+    written: [
+      answer({ repository: binding("Push", chuggy, true) }),
+      answer({ repository: binding("PullRequest", chuggy, true) }),
+    ],
+  });
+  await edit("Workflow files");
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
+    );
+  });
+  await press("Save changes");
+  await edit("Landing");
+  await turned(() => {
+    fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
+  });
+  await press("Save changes");
+  const writes = sent.filter((one) => one.method === "PUT");
+  expect(writes.length).toBe(2);
+  expect(writes[1]?.body).toStrictEqual({
+    repository: chuggy,
+    expected: { mode: "Push" },
+    landing: { mode: "PullRequest" },
+    pipelinesWritable: { expected: true, wanted: true },
+  });
+  expect(chosenWorkflowFiles()).toBe("On");
+});
+
+test("cancelling workflow files leaves the setting the page read", async () => {
+  await drawPage();
+  await edit("Workflow files");
+  await turned(() => {
+    fireEvent.click(
+      within(sectionOf("Workflow files")).getByRole("radio", { name: "On" }),
+    );
+  });
+  await press("Cancel");
+  expect(chosenWorkflowFiles()).toBe("Off");
 });
 
 test("a refused write says so and leaves the edit open", async () => {
@@ -373,7 +535,7 @@ test("a refused write says so and leaves the edit open", async () => {
       answer({ error: { code: "RepositoryLocked", message: "no" } }, 403),
     ],
   });
-  await press("Edit");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -387,7 +549,7 @@ test("a refused write says so and leaves the edit open", async () => {
 
 test("cancelling a choice leaves the landing the page read", async () => {
   await drawPage();
-  await press("Edit");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -436,10 +598,9 @@ test("a walk the budget stopped says so under the rows it did read", async () =>
   styleless();
 });
 
-function landingEditOffered(): boolean {
+function landingEditOffered(title = "Landing"): boolean {
   return (
-    within(sectionOf("Landing")).queryByRole("button", { name: "Edit" }) !==
-    null
+    within(sectionOf(title)).queryByRole("button", { name: "Edit" }) !== null
   );
 }
 
@@ -451,11 +612,21 @@ test("a reader who may not administer reads the landing and is offered no Edit",
   expect(landingEditOffered()).toBe(false);
 });
 
+test("a reader who may not administer reads the workflow files and is offered no Edit", async () => {
+  await drawPage({
+    bound: [binding("Push", chuggy, true)],
+    over: abilitiesOver({ ...abilitiesEvery, administer: false }),
+  });
+  expect(chosenWorkflowFiles()).toBe("On");
+  expect(landingEditOffered("Workflow files")).toBe(false);
+});
+
 test.each(abilitiesUnrefusing)(
   "a reader the abilities read %s is offered the landing's Edit",
   async (_said, abilities) => {
     await drawPage({ over: abilitiesOver(abilities) });
     expect(landingEditOffered()).toBe(true);
+    expect(landingEditOffered("Workflow files")).toBe(true);
   },
 );
 

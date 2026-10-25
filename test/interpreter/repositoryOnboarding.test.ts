@@ -539,6 +539,7 @@ function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: given.landing ?? { mode: "Push" },
+    pipelinesWritable: false,
     ...(given.retiredAt === undefined ? {} : { retiredAt: given.retiredAt }),
   };
 }
@@ -586,7 +587,11 @@ function fixturePortsLanding(
       return Promise.resolve(
         given.landingOutcome ?? {
           outcome: "Written",
-          binding: { ...fixtureBinding(given), landing: command.landing },
+          binding: {
+            ...fixtureBinding(given),
+            landing: command.landing,
+            pipelinesWritable: command.pipelinesWritable.wanted,
+          },
         },
       );
     },
@@ -1515,6 +1520,7 @@ test("what a project binds is its readers' to read and nobody else's", async () 
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           configured: false,
         },
       ],
@@ -2074,17 +2080,16 @@ async function fixtureLanded(
   given: FixturePorts = {},
 ) {
   const composed = fixtureService(granted, given);
-  const written = await composed.service.setLanding(
-    principal,
-    partition,
+  const written = await composed.service.setLanding(principal, partition, {
     repository,
-    { mode: "Push" },
-    proposing,
-  );
+    expected: { mode: "Push" },
+    landing: proposing,
+    pipelinesWritable: { expected: false, wanted: true },
+  });
   return { written, asked: composed.asked, wrote: composed.wrote };
 }
 
-test("moving where a repository lands is asked behind the permit that binds one", async () => {
+test("a binding's landing and pipeline definitions are written behind the permit that binds one", async () => {
   const { written, asked, wrote } = await fixtureLanded(["Administer"]);
   assert.deepEqual(asked.askedProject, ["Administer"]);
   assert.deepEqual(wrote.landings, [
@@ -2093,18 +2098,25 @@ test("moving where a repository lands is asked behind the permit that binds one"
       repository,
       expected: { mode: "Push" },
       landing: proposing,
+      pipelinesWritable: { expected: false, wanted: true },
     },
   ]);
   assert.deepEqual(written, {
     result: "Written",
-    repository: { ...fixtureBinding({}), landing: proposing },
+    repository: {
+      ...fixtureBinding({}),
+      landing: proposing,
+      pipelinesWritable: true,
+    },
   });
 });
 
-test("a project this caller may only read is not one whose landing they may move", async () => {
-  const { written, wrote } = await fixtureLanded(["Read"]);
-  assert.deepEqual(written, { result: "NotFound" });
-  assert.deepEqual(wrote.landings, [], "the door was never asked");
+test("a project this caller may only read is not one whose settings they may write", async () => {
+  for (const granted of [["Read"], ["Execute"]] as const) {
+    const { written, wrote } = await fixtureLanded(granted);
+    assert.deepEqual(written, { result: "NotFound" }, granted[0]);
+    assert.deepEqual(wrote.landings, [], "the door was never asked");
+  }
 });
 
 test("a landing that moved under the writer is answered with the one that stands", async () => {
@@ -2431,6 +2443,7 @@ test("the listing answers what the project holds for each binding, and marks it 
       repository,
       boundAt: "2026-09-11T01:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
     };
     assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
       configurationsHeld === undefined

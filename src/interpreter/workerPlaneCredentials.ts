@@ -112,7 +112,7 @@ async function workerPlaneCredentialMinted(
   permissions: ForgePermissionSet,
 ): Promise<WorkerPlaneCredentialMinted> {
   const minted = await tokens
-    .token(repository, partition.tenant, permissions)
+    .token(repository, partition, permissions)
     .catch(() => ({ minted: "Unavailable" }) as const);
   switch (minted.minted) {
     case "Token":
