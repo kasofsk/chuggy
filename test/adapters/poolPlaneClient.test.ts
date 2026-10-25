@@ -263,6 +263,7 @@ test("a settlement the plane will not take says which kind of no it was", async 
     [409, "Lost"],
     [401, "Stale"],
     [404, "Denied"],
+    [400, "Denied"],
     [503, "Unavailable"],
   ] as const) {
     const plane = poolPlaneClient(planeSettings, () =>
