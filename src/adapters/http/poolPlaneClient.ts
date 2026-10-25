@@ -2,8 +2,8 @@
  * `WorkerPoolPlane` over the plane's own two calls, which is the whole of what
  * a third party would have to implement. This is chuggy-common's
  * `poolPlane.mjs` in TypeScript, and a change to one is a change to both, but
- * for the runner a poll names and the release an answer names for it, which
- * this cluster client neither names nor reads.
+ * for what a runner names on a poll and the release an answer names for it,
+ * which this cluster client neither names nor reads.
  *
  * THE STATUS LINE IS THE TAXONOMY AND THIS MODULE ONLY READS IT. The plane
  * already separates a token it rejected, a caller it does not serve and an
