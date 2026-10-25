@@ -9,8 +9,8 @@
  * way the landing is: refused where the row stands at neither the value the
  * writer read nor the one it asked for.
  *
- * THE FOUR BINDING DOORS ARE DROPPED AND RECREATED, because each answers the
- * row and a function's answer cannot be widened in place. Each is owned,
+ * THE BINDING DOORS ARE DROPPED AND RECREATED, because each answers the row
+ * and a function's answer cannot be widened in place. Each is owned,
  * withheld from the public and granted to the roles the baseline and 058 gave
  * it again. The finalizer is granted the read beside them: it mints for the
  * pushes and proposals it lands, and a mint reads whether the binding allows

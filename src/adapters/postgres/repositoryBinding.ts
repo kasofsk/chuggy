@@ -301,10 +301,10 @@ function postgresRepositoryLandingOutcome(
 
 /**
  * One binding's settings, read through a door the API, the worker plane and
- * the finalizer hold EXECUTE on and written through one only the API holds. The point read is
- * a door of its own rather than a search of the listing, because a project
- * binding more repositories than the listing answers would have the one asked
- * about fall off the end of it.
+ * the finalizer hold EXECUTE on and written through one only the API holds.
+ * The point read is a door of its own rather than a search of the listing,
+ * because a project binding more repositories than the listing answers would
+ * have the one asked about fall off the end of it.
  */
 export function postgresProjectRepositoryLanding(
   pool: pg.Pool,

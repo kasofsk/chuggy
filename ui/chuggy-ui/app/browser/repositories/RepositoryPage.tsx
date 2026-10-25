@@ -1,8 +1,9 @@
 /**
  * One bound repository: how a finished ticket in it lands, whether its jobs
  * may change its workflow files, what runs after evaluation, what it declares
- * under `.chug/configurations`, and when that was last imported. A retired binding, which the listing does not draw, says
- * Unbound beside its name and offers no import.
+ * under `.chug/configurations`, and when that was last imported. A retired
+ * binding, which the listing does not draw, says Unbound beside its name and
+ * offers no import.
  *
  * Only what a reader can act on is drawn. A revision's digest, its parent, the
  * practices it names and the instructions it counts are the configuration's own
