@@ -1,7 +1,10 @@
 #!/bin/sh
 # What a Track Record key holds of the files git ignores, printed for ci.sh's
-# `--tool`: every ignored entry a gate's walk can reach, by its name and by
-# what it is. A file is its content's hash; a symlink is its target, never
+# `--tool`: every ignored entry within the pathspecs it is given, or anywhere
+# in the tree given none, by its name and by what it is. A gate keyed on its
+# declared inputs is given those, so an ignored file outside them moves none
+# of its keys; a gate keyed on the whole tree is given none, since its walk
+# can reach any. A file is its content's hash; a symlink is its target, never
 # followed; anything else is its name alone, such as a directory git did not
 # descend into because it is another repository. No entry it lists makes it
 # fail, since a tool that fails leaves every wrapped gate unrecorded.
@@ -14,6 +17,7 @@
 # node_modules or a `dist` outside a console included, because tsc, eslint,
 # node and depcruise walk directories.
 #
+# Usage: sh .chug/tasks/_ignored-inputs.sh [<pathspec>...]
 # Run from the root. With `--entries` it describes the paths it is given.
 set -eu
 export LC_ALL=C
@@ -40,7 +44,7 @@ fi
 # The workspaces package.json declares, each of which npm may give its own
 # node_modules.
 workspaces="src/contract test/rig ui/chuggy-ui"
-set -- ':(exclude)node_modules' ':(exclude).claude' ':(glob,exclude)ui/*/dist/**'
+set -- "$@" ':(exclude)node_modules' ':(exclude).claude' ':(glob,exclude)ui/*/dist/**'
 for workspace in $workspaces; do
 	set -- "$@" ":(exclude)$workspace/node_modules"
 done
