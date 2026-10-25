@@ -473,10 +473,7 @@ async function setupTokenHanded(
   const lapseMins = Math.ceil(
     Math.max(runnerTokenLifetimeSecs, setupMintLifetimeSecs) / 60,
   );
-  const asked = {
-    capabilities: [...runnerPackageOffered.platforms],
-    lifetimeSecs: setupMintLifetimeSecs,
-  };
+  const asked = { lifetimeSecs: setupMintLifetimeSecs };
   const minted = await setupSiteAsked(run, setupRunnerWrites(run), (ports) =>
     kind === "Pool"
       ? apiMintWorkerPoolToken(ports, run.partition, asked)

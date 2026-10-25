@@ -267,15 +267,12 @@ test("a project with no pool says so and no more to a reader who may not add", a
   expect(within(sectionOf("Runners")).queryAllByRole("button")).toHaveLength(0);
 });
 
-test("adding a runner mints a token for the Linux platforms", async () => {
+test("adding a runner mints a token for how long it stands and nothing more", async () => {
   const sent = await drawPage({ written: [minted()] });
   await addRunner();
   const mint = sent.find((one) => one.method === "POST");
   expect(mint?.url.endsWith("/worker-pool-registration-tokens")).toBe(true);
-  expect(mint?.body).toStrictEqual({
-    capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-    lifetimeSecs: 3600,
-  });
+  expect(mint?.body).toStrictEqual({ lifetimeSecs: 3600 });
 });
 
 test("a minted token is handed over in three steps, a list: install, register, and the guide for what is left", async () => {
@@ -372,7 +369,7 @@ test("a mint the API refuses says so and draws no step", async () => {
   expect(add().closest("header")).not.toBeNull();
 });
 
-test("a Mac asked to run work on itself and to declare capabilities mints a token for them, and its steps install and register it so", async () => {
+test("a Mac asked to run work on itself and to declare capabilities mints a token that names none, and its steps install and register it so", async () => {
   const sent = await drawPage({ written: [minted()] });
   await addRunner({
     machine: "Mac",
@@ -380,14 +377,6 @@ test("a Mac asked to run work on itself and to declare capabilities mints a toke
     typed: "Agent:Claude Tool:Xcode",
   });
   expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
-    capabilities: [
-      "Platform:Linux:Amd64",
-      "Platform:Linux:Arm64",
-      "Platform:MacOS:Amd64",
-      "Platform:MacOS:Arm64",
-      "Agent:Claude",
-      "Tool:Xcode",
-    ],
     lifetimeSecs: 3600,
   });
   expect(step("Install").textContent).toContain("macOS · Node 24 · Colima");

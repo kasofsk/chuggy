@@ -280,8 +280,9 @@ export const workerPoolRegistrationSchema = z.strictObject({
 });
 
 /**
- * What an owner asks a registration token for: the capabilities the machine it
- * is about to configure may claim, and how long the token stands.
+ * @deprecated No endpoint reads this. A mint takes
+ * `registrationTokenRequestSchema` from `src/contract/requests.ts`, and a
+ * token carries no capabilities.
  */
 export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
@@ -290,7 +291,7 @@ export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
 
 /**
  * What an operator redeems with: the token, the name the pool takes, and the
- * capabilities it declares — which the token bounds rather than confirms.
+ * capabilities it declares.
  */
 export const workerPoolRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(workerPoolIdentityCharsMax),
@@ -311,6 +312,7 @@ export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
 >;
+/** @deprecated As `workerPoolRegistrationTokenRequestSchema`. */
 export type WorkerPoolRegistrationTokenRequest = z.infer<
   typeof workerPoolRegistrationTokenRequestSchema
 >;

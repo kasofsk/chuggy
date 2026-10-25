@@ -282,12 +282,10 @@ export function postgresPersonalRunnerPlaneRegistry(
 /** One personal token's terms as every statement returns them. */
 function personalRunnerTokenTerms(row: {
   tenant: string;
-  capabilities: string[];
   minted_by: string;
 }): PersonalRunnerTokenTerms {
   return {
     tenant: asTenantId(row.tenant),
-    capabilities: row.capabilities,
     mintedBy: asPrincipal(row.minted_by),
   };
 }
@@ -302,7 +300,6 @@ async function personalRunnerTokenMinted(
   client: pg.PoolClient,
   tenant: TenantId,
   digest: string,
-  capabilities: readonly string[],
   expiresAtMs: number,
   mintedBy: Principal,
 ): Promise<WorkerPoolTokenWritten> {
@@ -320,8 +317,8 @@ async function personalRunnerTokenMinted(
   );
   if ((counted.rows[0]?.live ?? 0) >= personalRunnerTokensLiveMax)
     return "LimitReached";
-  await client.query(sql`INSERT INTO personal_runner_registration_token(token_digest,tenant,minted_by,capabilities,expires_at)
-    VALUES(${digest},${tenant as string},${mintedBy as string},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000))`);
+  await client.query(sql`INSERT INTO personal_runner_registration_token(token_digest,tenant,minted_by,expires_at)
+    VALUES(${digest},${tenant as string},${mintedBy as string},to_timestamp(${expiresAtMs}::double precision/1000))`);
   return "Minted";
 }
 
@@ -330,14 +327,13 @@ export function postgresPersonalRunnerRegistrationTokens(
   pool: pg.Pool,
 ): PersonalRunnerRegistrationTokens {
   return {
-    mint: async (tenant, digest, capabilities, expiresAtMs, mintedBy) => {
+    mint: async (tenant, digest, expiresAtMs, mintedBy) => {
       try {
         return await postgresTransaction(pool, (client) =>
           personalRunnerTokenMinted(
             client,
             tenant,
             digest,
-            capabilities,
             expiresAtMs,
             mintedBy,
           ),
@@ -356,9 +352,8 @@ export function postgresPersonalRunnerRegistrationTokens(
     permitted: async (digest) => {
       const found = await pool.query<{
         tenant: string;
-        capabilities: string[];
         minted_by: string;
-      }>(sql`SELECT t.tenant,t.capabilities,t.minted_by
+      }>(sql`SELECT t.tenant,t.minted_by
         FROM personal_runner_registration_token t
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()`);
       const row = found.rows[0];
@@ -367,11 +362,10 @@ export function postgresPersonalRunnerRegistrationTokens(
     consume: async (digest) => {
       const spent = await pool.query<{
         tenant: string;
-        capabilities: string[];
         minted_by: string;
       }>(sql`UPDATE personal_runner_registration_token t SET redeemed_at=now()
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()
-        RETURNING t.tenant,t.capabilities,t.minted_by`);
+        RETURNING t.tenant,t.minted_by`);
       const row = spent.rows[0];
       return row === undefined ? undefined : personalRunnerTokenTerms(row);
     },

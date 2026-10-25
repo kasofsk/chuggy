@@ -382,7 +382,7 @@ test("a session bearer is refused a route addressed to no partition, and one tha
       method: "POST" as const,
       url: `${projectPath(own)}/worker-pool-registration-tokens`,
       headers: { "content-type": nativeHttpMediaType },
-      payload: { capabilities: ["linux-containers"], lifetimeSecs: 900 },
+      payload: { lifetimeSecs: 900 },
     },
   ]) {
     const answered = await app.inject({

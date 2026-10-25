@@ -38,7 +38,7 @@ function authority(allowed: boolean): ProjectAccess {
   };
 }
 
-/** A token store holding at most one token, so single use is what a case reads. */
+/** A token store holding at most one token, the one it holds or last minted, so single use is what a case reads. */
 function minting(input?: {
   readonly held?: WorkerPoolRegistrationTokenTerms;
   readonly answers?: WorkerPoolTokenWritten;
@@ -52,20 +52,12 @@ function minting(input?: {
     digest: (token) => `digest-of-${token}`,
     nowMs: () => 1_000,
     tokens: {
-      mint: (named, digest, capabilities, expiresAtMs, mintedBy) =>
-        Promise.resolve(
-          (made.push([
-            "mint",
-            named,
-            digest,
-            capabilities,
-            expiresAtMs,
-            mintedBy,
-          ]),
-          input?.answers ?? "Minted"),
-        ),
-      permitted: (digest) =>
-        Promise.resolve((made.push(["permitted", digest]), held)),
+      mint: (named, digest, expiresAtMs, mintedBy) => {
+        made.push(["mint", named, digest, expiresAtMs, mintedBy]);
+        const answers = input?.answers ?? "Minted";
+        if (answers === "Minted") held = { partition: named, mintedBy };
+        return Promise.resolve(answers);
+      },
       consume: (digest) => {
         made.push(["consume", digest]);
         spent = held;
@@ -107,11 +99,10 @@ function ports(): RegisterPoolPorts & { readonly made: unknown[] } {
   };
 }
 
-test("an owner's mint stores only the digest and answers the token once", async () => {
+test("an owner's mint stores only the digest, its scope, its minter and its expiry, and answers the token once", async () => {
   const store = minting();
   assert.deepEqual(
     await workerPoolTokenMint(authority(true), store, principal, partition, {
-      capabilities: ["linux-containers"],
       lifetimeSecs: 60,
     }),
     {
@@ -120,14 +111,7 @@ test("an owner's mint stores only the digest and answers the token once", async 
     },
   );
   assert.deepEqual(store.made, [
-    [
-      "mint",
-      partition,
-      "digest-of-a-drawn-token",
-      ["linux-containers"],
-      61_000,
-      principal,
-    ],
+    ["mint", partition, "digest-of-a-drawn-token", 61_000, principal],
   ]);
 });
 
@@ -135,7 +119,6 @@ test("a caller the authority does not admit mints nothing and is told nothing", 
   const store = minting();
   assert.deepEqual(
     await workerPoolTokenMint(authority(false), store, principal, partition, {
-      capabilities: [],
       lifetimeSecs: 60,
     }),
     { result: "NotFound" },
@@ -154,7 +137,7 @@ for (const [answers, result] of [
         minting({ answers }),
         principal,
         partition,
-        { capabilities: [], lifetimeSecs: 60 },
+        { lifetimeSecs: 60 },
       ),
       { result },
     );
@@ -164,7 +147,6 @@ for (const lifetimeSecs of [0, -1, 1.5, workerPoolTokenLifetimeSecsMax + 1])
   test(`a lifetime of ${String(lifetimeSecs)} is refused before anything is asked`, async () => {
     await assert.rejects(
       workerPoolTokenMint(authority(true), minting(), principal, partition, {
-        capabilities: [],
         lifetimeSecs,
       }),
       RangeError,
@@ -172,13 +154,7 @@ for (const lifetimeSecs of [0, -1, 1.5, workerPoolTokenLifetimeSecsMax + 1])
   });
 
 test("redeeming registers the pool for the partition the token named, by the member who minted it", async () => {
-  const store = minting({
-    held: {
-      partition,
-      capabilities: ["linux-containers", "amd64"],
-      mintedBy: principal,
-    },
-  });
+  const store = minting({ held: { partition, mintedBy: principal } });
   const made = ports();
   assert.deepEqual(
     await workerPoolTokenRedeem(store, made, site, {
@@ -223,7 +199,7 @@ test("a redemption carries the registry a runner pulls from only where the deplo
     capabilities: ["linux"],
   };
   const named = await workerPoolTokenRedeem(
-    minting({ held: { partition, capabilities: ["linux"] } }),
+    minting({ held: { partition } }),
     ports(),
     { ...site, registryHost: "registry.invalid" },
     offered,
@@ -233,7 +209,7 @@ test("a redemption carries the registry a runner pulls from only where the deplo
     "registry.invalid",
   );
   const unnamed = await workerPoolTokenRedeem(
-    minting({ held: { partition, capabilities: ["linux"] } }),
+    minting({ held: { partition } }),
     ports(),
     site,
     offered,
@@ -244,25 +220,39 @@ test("a redemption carries the registry a runner pulls from only where the deplo
   );
 });
 
-test("a capability the token does not permit registers nothing and spends nothing", async () => {
-  const store = minting({
-    held: { partition, capabilities: ["linux-containers"] },
+test("a minted token registers whatever its pool declares, nothing having been named for it at the mint", async () => {
+  const store = minting();
+  await workerPoolTokenMint(authority(true), store, principal, partition, {
+    lifetimeSecs: 60,
   });
   const made = ports();
+  const redeemed = await workerPoolTokenRedeem(store, made, site, {
+    token: "a-drawn-token",
+    pool: "pool-one",
+    capabilities: ["Platform:MacOS:Arm64", "Agent:Codex"],
+  });
   assert.deepEqual(
-    await workerPoolTokenRedeem(store, made, site, {
-      token: "a-drawn-token",
-      pool: "pool-one",
-      capabilities: ["macos"],
-    }),
-    { result: "CapabilityNotPermitted" },
+    redeemed.result === "Registered" ? redeemed.value.capabilities : redeemed,
+    ["Platform:MacOS:Arm64", "Agent:Codex"],
   );
-  assert.deepEqual(made.made, []);
-  assert.deepEqual(store.made, [["permitted", "digest-of-a-drawn-token"]]);
+  assert.deepEqual(made.made, [
+    [
+      "register",
+      {
+        partition,
+        pool: "pool-one",
+        capabilities: ["Platform:MacOS:Arm64", "Agent:Codex"],
+        class: "Dedicated",
+        clientId: "chuggy-pool-fixed",
+        principal: oidcPrincipal(issuer, "chuggy-pool-fixed"),
+        registeredBy: principal,
+      },
+    ],
+  ]);
 });
 
 test("a token is spent once, and the second redemption is told nothing", async () => {
-  const store = minting({ held: { partition, capabilities: ["linux"] } });
+  const store = minting({ held: { partition } });
   const offered = {
     token: "a-drawn-token",
     pool: "pool-one",
@@ -291,7 +281,7 @@ test("a token no store holds registers nothing", async () => {
 });
 
 test("a registration that faulted after the spend gives the token back for the retry", async () => {
-  const store = minting({ held: { partition, capabilities: ["linux"] } });
+  const store = minting({ held: { partition } });
   const made = ports();
   const outage = new Error("the issuer is unreachable");
   made.clients.create = () => Promise.reject(outage);

@@ -464,13 +464,13 @@ the API deletes it with their last runner. It has no unfinished work: an owner
 with no row has runners that serve nothing.
 
 `personal_runner_registration_token` — a single-use token a member mints to
-register their runner in a tenant: its digest, the minter, the capabilities it
-was minted with and its expiry. Written and read by the API role alone. Its
-identity is the digest, and it points at `tenant`. It is changed by a mint,
-which first deletes the minter's expired tokens and is refused past a bound on
-their live ones, and by a redemption, which marks it redeemed once and unmarks
-it where the registration it paid for was lost. It has no unfinished work: an
-unredeemed token expires, and the minter's next mint removes it.
+register their runner in a tenant: its digest, the minter and its expiry.
+Written and read by the API role alone. Its identity is the digest, and it
+points at `tenant`. It is changed by a mint, which first deletes the minter's
+expired tokens and is refused past a bound on their live ones, and by a
+redemption, which marks it redeemed once and unmarks it where the registration
+it paid for was lost. It has no unfinished work: an unredeemed token expires,
+and the minter's next mint removes it.
 
 `repository_action` — the actions each bound repository's newest imported head
 declares, each with its name and the commit it was read at. Owned by the

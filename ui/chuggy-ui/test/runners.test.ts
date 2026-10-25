@@ -160,8 +160,6 @@ test("setup offers the Linux package: what it needs, the command that installs i
   expect(runnerPackageOffered).toStrictEqual({
     label: "Linux",
     program: "chuggy-linux",
-    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-    hostPlatforms: [],
     needs: "Linux · Node 24 · Docker or Podman",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
@@ -169,12 +167,10 @@ test("setup offers the Linux package: what it needs, the command that installs i
   });
 });
 
-test("a Mac's package runs Linux work in its VM, and declares the Mac itself only where asked, as a Linux machine's declares nothing more", () => {
+test("a Mac's package is the reader's other choice, and what they ask of either is read as they asked it", () => {
   expect(runnerPackages.darwin).toStrictEqual({
     label: "Mac",
     program: "chuggy-darwin",
-    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-    hostPlatforms: ["Platform:MacOS:Amd64", "Platform:MacOS:Arm64"],
     needs: "macOS · Node 24 · Colima",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
@@ -187,22 +183,13 @@ test("a Mac's package runs Linux work in its VM, and declares the Mac itself onl
       host: true,
       capabilities: ["Agent:Claude", "Tool:Xcode"],
     },
-    capabilities: [
-      "Platform:Linux:Amd64",
-      "Platform:Linux:Arm64",
-      "Platform:MacOS:Amd64",
-      "Platform:MacOS:Arm64",
-      "Agent:Claude",
-      "Tool:Xcode",
-    ],
   });
-  expect(runnerAskRead("linux", true, "")).toStrictEqual({
-    ask: { package: "linux", host: true, capabilities: [] },
-    capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
+  expect(runnerAskRead("linux", false, "")).toStrictEqual({
+    ask: { package: "linux", host: false, capabilities: [] },
   });
 });
 
-test("capabilities typed are refused where one is not a capability, is a platform, or is named twice, and where there are more than a runner declares", () => {
+test("capabilities typed are refused where one is not a capability, is a platform, or is named twice", () => {
   expect(runnerCapabilitiesTyped("  ")).toStrictEqual({ capabilities: [] });
   expect(runnerCapabilitiesTyped("has-dash, Tool:Bazel\nx_1")).toStrictEqual({
     capabilities: ["has-dash", "Tool:Bazel", "x_1"],
@@ -222,9 +209,8 @@ test("capabilities typed are refused where one is not a capability, is a platfor
   expect(runnerCapabilitiesTyped("a a")).toStrictEqual({
     refused: "A capability is listed twice",
   });
-  const many = Array.from({ length: 63 }, (_, at) => `Tool:${String(at)}`);
-  expect(runnerAskRead("linux", false, many.join(" "))).toStrictEqual({
-    refused: "At most 64 capabilities, platforms included",
+  expect(runnerAskRead("linux", false, "Tool:Bazel Tool:Bazel")).toStrictEqual({
+    refused: "A capability is listed twice",
   });
 });
 

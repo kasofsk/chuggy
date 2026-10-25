@@ -67,6 +67,9 @@ import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-
 import { migration070 } from "../../src/adapters/postgres/schema/migrations/070-many-personal-runners.ts";
 import { migration072 } from "../../src/adapters/postgres/schema/migrations/072-lead-reads-run-errors.ts";
 import { migration076 } from "../../src/adapters/postgres/schema/migrations/076-pipelines-writable.ts";
+import { migration077 } from "../../src/adapters/postgres/schema/migrations/077-tokens-carry-no-capabilities.ts";
+import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
+import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
 import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
@@ -11526,5 +11529,79 @@ test("076 starts every binding that stood without the pipeline definitions, and 
       /repository bindings are immutable/u,
       "the trigger lets the setting move and nothing more",
     );
+  });
+});
+
+/** The columns each registration token relation holds, by relation. */
+async function tokenColumns077(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT table_name::text AS relation,
+              array_agg(column_name::text ORDER BY column_name) AS columns
+         FROM information_schema.columns
+        WHERE table_schema='public'
+          AND table_name IN ('worker_pool_registration_token',
+                             'personal_runner_registration_token')
+        GROUP BY table_name ORDER BY table_name`,
+    )
+  ).rows;
+}
+
+test("077 drops the capabilities each registration token was minted with, and a token standing across it is still spent once", async () => {
+  await migrationDatabase("tokens_carry_no_capabilities", async (subject) => {
+    const pooled = "a".repeat(64);
+    const personal = "b".repeat(64);
+    const minter = "https://issuer.invalid#a-member";
+    await installationBefore(subject, migration077.version);
+    await subject.query(`
+      ${tenantSeed("tenant-77")}
+      INSERT INTO project(tenant,project,lifecycle)
+      VALUES('tenant-77','project-77','Active');
+      INSERT INTO worker_pool_registration_token
+        (token_digest,tenant,project,capabilities,expires_at,minted_by)
+      VALUES('${pooled}','tenant-77','project-77','{Platform:Linux:Amd64}',
+             now()+interval '1 hour','${minter}');
+      INSERT INTO personal_runner_registration_token
+        (token_digest,tenant,minted_by,capabilities,expires_at)
+      VALUES('${personal}','tenant-77','${minter}','{Agent:Claude}',
+             now()+interval '1 hour');`);
+    assert.ok((await postgresMigrate(subject)).includes(migration077.version));
+    assert.deepEqual(await tokenColumns077(subject), [
+      {
+        relation: "personal_runner_registration_token",
+        columns: [
+          "expires_at",
+          "minted_at",
+          "minted_by",
+          "redeemed_at",
+          "tenant",
+          "token_digest",
+        ],
+      },
+      {
+        relation: "worker_pool_registration_token",
+        columns: [
+          "expires_at",
+          "minted_at",
+          "minted_by",
+          "project",
+          "redeemed_at",
+          "tenant",
+          "token_digest",
+        ],
+      },
+    ]);
+    const pool = postgresWorkerPoolRegistrationTokens(subject);
+    assert.deepEqual(await pool.consume(pooled), {
+      partition: { tenant: "tenant-77", project: "project-77" },
+      mintedBy: minter,
+    });
+    assert.equal(await pool.consume(pooled), undefined);
+    const member = postgresPersonalRunnerRegistrationTokens(subject);
+    assert.deepEqual(await member.consume(personal), {
+      tenant: "tenant-77",
+      mintedBy: minter,
+    });
+    assert.equal(await member.consume(personal), undefined);
   });
 });

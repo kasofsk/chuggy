@@ -141,9 +141,8 @@ function RunnersSection(props: {
         <RunnerAskForm
           mint={mint}
           onMint={setMint}
-          minted={(capabilities) =>
+          minted={() =>
             apiMintWorkerPoolToken(ports, partition, {
-              capabilities: [...capabilities],
               lifetimeSecs: runnerTokenLifetimeSecs,
             })
           }
