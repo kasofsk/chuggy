@@ -51,9 +51,10 @@
  * AGAIN, each only for a reader composed to. Whoever is told hears the
  * repository, the command, its code and an excerpt of what git wrote, which is
  * never part of what a read answers. A retry comes once, after a pause, under
- * the credential the read already held, and every retry of one reader together
- * takes no longer than the reader was given for them, a retry that would not
- * fit in what is left not being made.
+ * the credential the read already held. It is made only where what the
+ * reader's finished retries took leaves room for it, and runs under the
+ * smaller of the read's own bound and that room, so retries made one at a time
+ * together take no longer than the reader was given for them.
  */
 
 import { join } from "node:path";
@@ -152,7 +153,7 @@ export interface GitRepositoryConfigurationRemoteFailed {
   readonly said: string;
 }
 
-/** How long a remote read git died on waits before it is tried again, and the most every retry of one reader takes together, pauses included. */
+/** How long a remote read git died on waits before it is tried again, and the most a reader's retries made one at a time take together, pauses included. */
 export interface GitRepositoryConfigurationRetry {
   readonly pauseMs: number;
   readonly elapsedMsMax: number;
@@ -174,7 +175,7 @@ interface GitRepositoryConfigurationTurns {
   last: Promise<void>;
 }
 
-/** A reader's retries: its bounds, its clock, and how long the retries made so far took or are holding in reserve. */
+/** A reader's retries: its bounds, its clock, and how long the retries it has finished took. */
 interface GitRepositoryConfigurationRetries extends GitRepositoryConfigurationRetry {
   readonly monotonicNowMs: () => number;
   elapsedMs: number;
@@ -372,7 +373,7 @@ function gitRepositoryConfigurationRemoteTold(
   });
 }
 
-/** The bound a retry of one call runs under, which is what the reader's retries have left once its pause is taken, or nothing where too little is left. */
+/** The bound a retry of one call runs under, the smaller of the call's own and what the reader's retries have left once its pause is taken, or none where that is below the shortest a retry runs under. */
 function gitRepositoryConfigurationRetryTimeoutSecs(
   retries: GitRepositoryConfigurationRetries,
   call: GitScratchCall,
@@ -387,20 +388,14 @@ function gitRepositoryConfigurationRetryTimeoutSecs(
     : undefined;
 }
 
-/**
- * Tries one remote read again after the pause, under the bound it was given.
- * Its pause and its bound are held in reserve while it runs, so retries in
- * flight together never take more than the reader has left between them.
- */
+/** Tries one remote read again after the pause and under the bound it was given, counting what it took, pause included, against the reader's retries. */
 async function gitRepositoryConfigurationRetried(
   own: GitRepositoryConfigurationState,
   retries: GitRepositoryConfigurationRetries,
   read: GitRepositoryConfigurationRemoteRead,
   timeoutSecsMax: number,
 ): Promise<GitRan> {
-  const reservedMs = retries.pauseMs + timeoutSecsMax * 1000;
   const startedMs = retries.monotonicNowMs();
-  retries.elapsedMs += reservedMs;
   try {
     await gitRepositoryConfigurationPause(retries.pauseMs);
     const ran = await scratchRun(own.scratch, { ...read.call, timeoutSecsMax });
@@ -408,7 +403,7 @@ async function gitRepositoryConfigurationRetried(
       gitRepositoryConfigurationRemoteTold(own, read, ran, false);
     return ran;
   } finally {
-    retries.elapsedMs += retries.monotonicNowMs() - startedMs - reservedMs;
+    retries.elapsedMs += retries.monotonicNowMs() - startedMs;
   }
 }
 

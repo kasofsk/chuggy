@@ -33,6 +33,15 @@ test("a secret the caller names is redacted wherever git wrote it", () => {
   assert.equal(said.includes(secret), false);
 });
 
+test("each line of a secret the caller names is redacted where git wrote it alone", () => {
+  const said = gitRunSaid(
+    "warning: invalid credential line: tail.of!it\nfatal: refused\n",
+    ["head.of!it\ntail.of!it"],
+  );
+
+  assert.equal(said, `warning: invalid credential line: ${gitRunRedacted}`);
+});
+
 test("a token the caller never named is redacted by its shape", () => {
   const token = `ghs_${"a1B2c3D4e5".repeat(4)}`;
   const said = gitRunSaid(

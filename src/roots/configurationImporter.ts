@@ -22,10 +22,10 @@
  * attempted, and the run exits non-zero if any failed.
  *
  * A REMOTE READ GIT DIED ON IS TRIED ONCE MORE, after a pause, and only while
- * the run's retries together stay inside a share of its schedule, so a forge
- * refusing everything costs a run that share and no more. Every remote read
- * that failed is printed as it fails, with an excerpt of what git wrote that
- * is printed and never kept.
+ * the run's retries together stay inside the bound below, so a forge refusing
+ * everything lengthens a run by that bound and no more. Every remote read that
+ * failed is printed as it fails, with an excerpt of what git wrote that is
+ * printed and never kept.
  *
  * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
  * saying so. The listing is ordered by age, so a deployment holding more
@@ -79,7 +79,7 @@ const authority = {
 /** How long a remote read git died on waits before it is tried again. */
 const configurationImporterRetryPauseSecs = 2;
 
-/** The most one run's retries take together, pauses included, kept to a small share of the interval runs are scheduled at. */
+/** The most one run's retries take together, pauses included, past which a read git died on is not tried again. */
 const configurationImporterRetrySecsMax = 30;
 
 /** Prints one remote read that failed beside the binding it was for, where every failure a run reports is printed. */

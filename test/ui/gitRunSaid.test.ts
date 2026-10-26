@@ -13,10 +13,16 @@ import { setupExcerpt } from "../../ui/chuggy-ui/app/core/setupText.ts";
 
 const secret = "s3cr.t!";
 
+/** A secret of two lines, each of which either redacts wherever it stands alone. */
+const lined = "head.of!it\ntail.of!it";
+
 /** Single lines, since a line is all either is asked to keep, each carrying something one of the rules acts on. */
 const lines = [
   "fatal: Authentication failed for 'https://github.com/o/r/'",
   `fatal: ${secret} refused ${secret}`,
+  "warning: invalid credential line: tail.of!it",
+  `fatal: ${"😀".repeat(150)}`,
+  `fatal: ${"😀".repeat(250)}`,
   `remote: token ghs_${"a1B2c3D4e5".repeat(4)} rejected`,
   `fatal: just under the shape ${"x".repeat(23)} and at it ${"y".repeat(24)}`,
   "fatal:\u001b[31m red\t​there ",
@@ -26,8 +32,8 @@ const lines = [
 test("git's words are excerpted exactly as the setup program excerpts another program's", () => {
   for (const line of lines)
     assert.equal(
-      gitRunSaid(line, [secret]),
-      setupExcerpt(line, [secret]),
+      gitRunSaid(line, [secret, lined]),
+      setupExcerpt(line, [secret, lined]),
       line,
     );
 });

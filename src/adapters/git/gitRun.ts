@@ -233,18 +233,30 @@ export function gitRun(call: GitCall): Promise<GitRan> {
   });
 }
 
+// jscpd:ignore-start -- written twice with the setup program's excerpt, which test/ui/gitRunSaid.test.ts holds this one equal to
+/** Each secret named and each line of one, longest first, so a whole secret is replaced as one before its lines are. */
+function gitRunSecretParts(secrets: readonly string[]): readonly string[] {
+  const parts = new Set(
+    secrets.flatMap((secret) => [secret, ...secret.split(/\r\n|[\r\n]/u)]),
+  );
+  return [...parts]
+    .filter((part) => part.trim() !== "")
+    .sort((one, other) => other.length - one.length);
+}
+
 /**
  * The first line of what git wrote that says anything, made fit to print: each
- * secret named and everything shaped like one redacted, and no more than a
- * line's worth kept.
+ * secret named, whole and line by line, and everything shaped like one
+ * redacted, and no more than a line's worth kept.
  */
 export function gitRunSaid(
   written: string,
   secrets: readonly string[],
 ): string {
-  const known = secrets
-    .filter((secret) => secret !== "")
-    .reduce((kept, secret) => kept.split(secret).join(gitRunRedacted), written);
+  const known = gitRunSecretParts(secrets).reduce(
+    (kept, part) => kept.split(part).join(gitRunRedacted),
+    written,
+  );
   const line =
     known
       .replace(gitRunSecretShaped, gitRunRedacted)
@@ -255,6 +267,7 @@ export function gitRunSaid(
     ? line
     : `${[...line].slice(0, gitRunSaidCharsMax).join("")}…`;
 }
+// jscpd:ignore-end -- the excerpt written twice ends
 
 /** Whether a `git --version` line names a git new enough to write merge trees. */
 export function gitVersionAdmits(version: string): boolean {
