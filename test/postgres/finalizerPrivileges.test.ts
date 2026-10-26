@@ -336,12 +336,12 @@ const writeSurface = [
     table_name: "finalization_reconciliation",
     privilege_type: "INSERT",
     columns:
-      "candidate_commit,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
+      "candidate_commit,declined,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
   },
   {
     table_name: "finalization_reconciliation",
     privilege_type: "UPDATE",
-    columns: "observed_commit,reconciled_at,verdict",
+    columns: "declined,observed_commit,reconciled_at,verdict",
   },
   {
     table_name: "finalization_request",

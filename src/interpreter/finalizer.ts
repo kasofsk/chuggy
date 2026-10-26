@@ -75,6 +75,7 @@ import {
   type BriefFinalizationMode,
   type FinalizationUnavailableKind,
 } from "../contract/rosters.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type {
@@ -379,7 +380,9 @@ export type GitEvidence =
   | "RefUnreadable"
   | "ObjectMissing"
   | "IntegrationFailed"
-  | "PromotionTimedOut";
+  | "PromotionTimedOut"
+  | "RemoteDeclined"
+  | "WorkflowsRefused";
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
 export const allGitEvidence: readonly GitEvidence[] = [
@@ -389,7 +392,32 @@ export const allGitEvidence: readonly GitEvidence[] = [
   "ObjectMissing",
   "IntegrationFailed",
   "PromotionTimedOut",
+  "RemoteDeclined",
+  "WorkflowsRefused",
 ];
+
+/**
+ * A promotion the receiving repository would not take for a reason of its own,
+ * GitHub refusing a credential that may not change a workflow file apart from
+ * every other rule, hook or protection that declines a push.
+ */
+export type PromotionDecline = Extract<
+  GitEvidence,
+  "RemoteDeclined" | "WorkflowsRefused"
+>;
+
+/** Every decline, so a suite and a database CHECK iterate rather than restate. */
+export const allPromotionDeclines: readonly PromotionDecline[] = [
+  "RemoteDeclined",
+  "WorkflowsRefused",
+];
+
+/** The decline a git act's evidence names, or nothing where it names anything else. */
+export function promotionDeclineOf(
+  evidence: GitEvidence,
+): PromotionDecline | undefined {
+  return allPromotionDeclines.find((declined) => declined === evidence);
+}
 
 /** The authority kind every finalizer-submitted result is scoped and audited under. */
 export const finalizerAuthorityKind = "Finalizer";
@@ -514,13 +542,18 @@ export interface CommitPermit {
   readonly state: CommitPermitState;
 }
 
-/** What the target ref proved about the candidate, recorded per permit and never absent for a hold. */
+/**
+ * What the target ref proved about the candidate, recorded per permit and never
+ * absent for a hold. `declined` is present only on `NotPromoted`, where the push
+ * this permit authorized was declined by the repository it was made to.
+ */
 export interface FinalizationReconciliation {
   readonly permit: CommitPermitId;
   readonly candidate: GitObjectId;
   readonly target: GitRefName;
   readonly verdict: ReconciliationVerdict;
   readonly observed?: GitObjectId;
+  readonly declined?: PromotionDecline;
 }
 
 /**
@@ -607,7 +640,9 @@ export type FinalizationHoldKind =
   | "ProposalHeadMoved"
   | "ProposalMergeBlocked"
   | "ProposalMergesExhausted"
-  | "ProposalUnaddressed";
+  | "ProposalUnaddressed"
+  | "PromotionDeclined"
+  | "PromotionWorkflowsRefused";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -629,6 +664,8 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalMergeBlocked",
   "ProposalMergesExhausted",
   "ProposalUnaddressed",
+  "PromotionDeclined",
+  "PromotionWorkflowsRefused",
 ];
 
 /**
@@ -728,6 +765,14 @@ function finalizationNextAssertView(view: FinalizationView): void {
       "finalization view: the reconciliation concludes another permit",
     );
   }
+  if (
+    reconciliation?.declined !== undefined &&
+    reconciliation.verdict !== "NotPromoted"
+  ) {
+    throw new RangeError(
+      "finalization view: a declined push is read as anything but not promoted",
+    );
+  }
 }
 
 /** Whether another preparation is authorized, and the hold that is left when it is not. */
@@ -745,6 +790,42 @@ function finalizationNextRestart(
     return { decide: "Hold", hold: "PreparationRestartsExhausted" };
   }
   return { decide: "Prepare", target, restartsSpent };
+}
+
+/** The hold a declined promotion waits at, the workflow refusal apart because its way past is a repository setting. */
+function finalizationDeclinedHold(
+  declined: PromotionDecline,
+): FinalizationHoldKind {
+  switch (declined) {
+    case "RemoteDeclined":
+      return "PromotionDeclined";
+    case "WorkflowsRefused":
+      return "PromotionWorkflowsRefused";
+    default:
+      return assertNever(declined);
+  }
+}
+
+/**
+ * What a candidate the ref proved absent leads to. A push the repository
+ * declined over a target that did not move is held, because preparing again
+ * builds what the same repository would decline again; any other is the
+ * revision fence's, a target that moved being the information a restart needs.
+ */
+function finalizationNextNotPromoted(
+  config: FinalizerConfig,
+  view: FinalizationView,
+  reconciliation: FinalizationReconciliation,
+): FinalizationDecision {
+  const declined = reconciliation.declined;
+  if (
+    declined === undefined ||
+    allClosingLifecycles.includes(view.lifecycle) ||
+    reconciliation.observed !== view.attempt?.target.commit
+  ) {
+    return finalizationNextRestart(config, view);
+  }
+  return { decide: "Hold", hold: finalizationDeclinedHold(declined) };
 }
 
 /**
@@ -785,7 +866,7 @@ function finalizationNextUnderPermit(
     if (reconciliation.verdict === "Promoted") {
       return finalizationNextPromoted(view);
     }
-    return finalizationNextRestart(config, view);
+    return finalizationNextNotPromoted(config, view, reconciliation);
   }
   if (reconciliation === undefined) {
     return { decide: "Reconcile", permit: permit.permit };

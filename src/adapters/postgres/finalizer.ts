@@ -68,6 +68,7 @@ import {
   allFinalizationRequestStates,
   allFinalizationRequestKinds,
   allIntegrationStrategies,
+  allPromotionDeclines,
   allReconciliationVerdicts,
   asCommitPermitId,
   asFinalizationAttemptId,
@@ -176,6 +177,7 @@ interface ViewRow {
   readonly reconciled_candidate: string | null;
   readonly reconciled_ref: string | null;
   readonly observed_commit: string | null;
+  readonly declined: string | null;
   readonly approval_state: string | null;
   readonly approval_resolution: string | null;
   readonly attempts_made: string | null;
@@ -499,6 +501,15 @@ function finalizerRowReconciliation(
       ...(row.observed_commit === null
         ? {}
         : { observed: asGitObjectId(row.observed_commit) }),
+      ...(row.declined === null
+        ? {}
+        : {
+            declined: finalizerRowValue(
+              allPromotionDeclines,
+              row.declined,
+              "promotion decline",
+            ),
+          }),
     },
   };
 }
@@ -578,7 +589,7 @@ async function finalizerDurableView(
   p.permit, p.recovery_epoch AS permit_epoch,
   p.lifecycle_generation::text AS lifecycle_generation, p.state AS permit_state,
   r.verdict, r.candidate_commit AS reconciled_candidate,
-  r.target_ref AS reconciled_ref, r.observed_commit,
+  r.target_ref AS reconciled_ref, r.observed_commit, r.declined,
   n.state AS approval_state, n.resolution AS approval_resolution,
   c.made::text AS attempts_made
       FROM finalization_request f

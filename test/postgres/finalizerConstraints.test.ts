@@ -15,6 +15,7 @@ import {
   allFinalizationFailureKinds,
   allInputBundleReferenceKinds,
   allIntegrationStrategies,
+  allPromotionDeclines,
   allReconciliationVerdicts,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -394,6 +395,38 @@ test("a reconciliation's verdict is a closed set and its reading is whole", asyn
     );
   }
   assert.equal(allReconciliationVerdicts.includes("Unreadable"), true);
+});
+
+test("a reconciliation keeps a decline only beside not promoted, and only one the finalizer names", async () => {
+  const definition = await rig.pool.query<{ definition: string }>(
+    `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+      WHERE conname = 'finalization_reconciliation_decline_is_known'`,
+  );
+  const named = /ARRAY\[([^\]]*)\]/u.exec(
+    definition.rows[0]?.definition ?? "",
+  )?.[1];
+  assert.deepEqual(
+    [...(named ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
+    [...allPromotionDeclines],
+    "the installed declines are the finalizer's, member for member",
+  );
+  for (const [verdict, observed, declined] of [
+    ["Promoted", finalizerCommit(), "RemoteDeclined"],
+    ["Unreadable", null, "WorkflowsRefused"],
+    ["NotPromoted", finalizerCommit(), "RemoteUnreachable"],
+  ] as const) {
+    assert.match(
+      await rig.refusal(
+        `INSERT INTO finalization_reconciliation
+           (tenant, project, permit, candidate_commit, target_ref, verdict,
+            observed_commit, declined)
+         VALUES ($1,$2,$3,$4,'refs/heads/main',$5,$6,$7)`,
+        keys(permit, finalizerCommit(), verdict, observed, declined),
+      ),
+      /finalization_reconciliation_decline_is_known/u,
+      `${verdict}/${declined}`,
+    );
+  }
 });
 
 test("a reconciliation belongs to a permit and there is one of it per permit", async () => {

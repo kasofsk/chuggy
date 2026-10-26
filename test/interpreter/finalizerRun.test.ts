@@ -52,6 +52,7 @@ import type {
 } from "../../src/interpreter/finalizationProposal.ts";
 import {
   allClosingLifecycles,
+  allGitEvidence,
   asCommitPermitId,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
@@ -1148,6 +1149,38 @@ test("a pass held by an unreadable ref spends the permit on neither answer", asy
     ["Unreadable"],
   );
   assert.equal(store.readings[0]?.reconciliation.observed, undefined);
+});
+
+/**
+ * The evidence an ambiguous push answered with reaches the reading only where
+ * the repository declined it and the ref then proved not to hold the
+ * candidate; every other ambiguity is read as it always was.
+ */
+test("a declined push's reading keeps the decline, and no other ambiguity keeps one", async () => {
+  const kept: (readonly [string, string, string])[] = [];
+  for (const evidence of populated(allGitEvidence, "allGitEvidence")) {
+    for (const proved of [
+      { proved: "NotAncestor", observed: asGitObjectId(commitOf("a")) },
+      { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
+    ] as const) {
+      const store = recordingStore([promotableView("request-one")]);
+      const git = recordingGit();
+      git.promoted = { promoted: "Ambiguous", evidence };
+      git.proved = proved;
+      await passOver(serviceOf(store, git));
+      const reading = store.readings[0]?.reconciliation;
+      assert.equal(
+        reading?.verdict,
+        proved.proved === "Ancestor" ? "Promoted" : "NotPromoted",
+      );
+      if (reading?.declined !== undefined)
+        kept.push([evidence, proved.proved, reading.declined]);
+    }
+  }
+  assert.deepEqual(kept, [
+    ["RemoteDeclined", "NotAncestor", "RemoteDeclined"],
+    ["WorkflowsRefused", "NotAncestor", "WorkflowsRefused"],
+  ]);
 });
 
 test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {

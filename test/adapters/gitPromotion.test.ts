@@ -38,6 +38,7 @@ import {
 } from "../../src/adapters/git/gitRun.ts";
 import {
   scratchDigestOf,
+  scratchPushFailed,
   scratchRemoteArguments,
 } from "../../src/adapters/git/gitScratch.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -741,7 +742,7 @@ test("a ref another ref's tail repeats is read as itself and never as the shadow
   );
 });
 
-test("a push the receiving repository declined is ambiguous and never a refusal", async (t) => {
+test("a push the receiving repository declined is ambiguous, says so, and is never a refusal", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -760,12 +761,115 @@ test("a push the receiving repository declined is ambiguous and never a refusal"
   });
   assert.deepEqual(promoted, {
     promoted: "Ambiguous",
-    evidence: "RemoteUnreachable",
+    evidence: "RemoteDeclined",
   });
   assert.equal(
     fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
     target.commit,
   );
+});
+
+/** The reason GitHub declines a workflow change with, where the credential lacks the permission. */
+const fixtureWorkflowsRefusal =
+  "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission";
+
+/**
+ * A `proc-receive` hook answering every ref it is handed with the reason
+ * given, which is how a repository on disk declines with a reason of its own
+ * the way a forge does rather than the way a hook's exit does.
+ */
+function fixtureProcReceive(fixture: Fixture, reason: string): void {
+  fixtureGit(fixture.remote, "config", "receive.procReceiveRefs", "refs/heads");
+  const hook = join(fixture.remote, "hooks", "proc-receive");
+  writeFileSync(
+    hook,
+    [
+      `#!${process.execPath}`,
+      'const fs = require("node:fs");',
+      "let pending = Buffer.alloc(0);",
+      "function more() {",
+      "  const chunk = Buffer.alloc(65536);",
+      "  const read = fs.readSync(0, chunk);",
+      "  if (read === 0) process.exit(1);",
+      "  pending = Buffer.concat([pending, chunk.subarray(0, read)]);",
+      "}",
+      "function section() {",
+      "  const lines = [];",
+      "  for (;;) {",
+      "    while (pending.length < 4) more();",
+      "    const size = parseInt(pending.subarray(0, 4).toString(), 16);",
+      "    if (size === 0) { pending = pending.subarray(4); return lines; }",
+      "    while (pending.length < size) more();",
+      "    lines.push(pending.subarray(4, size).toString().trim());",
+      "    pending = pending.subarray(size);",
+      "  }",
+      "}",
+      "function write(lines) {",
+      '  const said = lines.map((line) => (Buffer.byteLength(line) + 5).toString(16).padStart(4, "0") + line + "\\n");',
+      '  fs.writeSync(1, said.join("") + "0000");',
+      "}",
+      "section();",
+      'write(["version=1"]);',
+      `write(section().map((command) => "ng " + command.split(" ")[2] + " " + ${JSON.stringify(reason)}));`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(hook, 0o700);
+}
+
+test("a push GitHub declined for a workflow file is told apart from every other decline", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    [".github/workflows/ci.yml", "on: push\n"],
+  ]);
+  fixtureProcReceive(fixture, fixtureWorkflowsRefusal);
+  const promoted = await port.promoteCandidate({
+    repository: binding,
+    permit: asCommitPermitId("permit-1"),
+    target,
+    candidate,
+  });
+  assert.deepEqual(promoted, {
+    promoted: "Ambiguous",
+    evidence: "WorkflowsRefused",
+  });
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    target.commit,
+  );
+});
+
+/**
+ * What the porcelain line says is read field by field: a remote that failed to
+ * report on the ref is not one that declined it, and a declined reason is
+ * carried whole with only the parentheses around it removed.
+ */
+test("a push's porcelain summary is refused, declined with its reason, or unknown", () => {
+  const line = (summary: string) =>
+    `To origin\n!\tabc:refs/heads/main\t${summary}\nDone\n`;
+  assert.deepEqual(scratchPushFailed(line("[rejected] (fetch first)")), {
+    pushed: "Refused",
+  });
+  assert.deepEqual(
+    scratchPushFailed(line("[remote rejected] (protected (by rule))")),
+    { pushed: "Declined", reason: "protected (by rule)" },
+  );
+  assert.deepEqual(scratchPushFailed(line("[remote rejected]")), {
+    pushed: "Declined",
+    reason: "",
+  });
+  assert.deepEqual(
+    scratchPushFailed(
+      line("[remote failure] (remote failed to report status)"),
+    ),
+    { pushed: "Unknown" },
+  );
+  assert.deepEqual(scratchPushFailed("fatal: the remote end hung up\n"), {
+    pushed: "Unknown",
+  });
 });
 
 test("a remote reaches git as a path and never as an option", () => {

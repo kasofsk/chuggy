@@ -21,6 +21,7 @@ import {
   allFinalizationHoldKinds,
   allFinalizationRequestStates,
   allGitObjectIdChars,
+  allPromotionDeclines,
   allReconciliationVerdicts,
   asCommitPermitId,
   asFinalizationAttemptId,
@@ -41,7 +42,9 @@ import {
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
+  type GitObjectId,
   type ObservedTarget,
+  type PromotionDecline,
   type ReconciliationVerdict,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -590,7 +593,7 @@ test("a granted permit with no reconciliation reads the ref rather than acting a
   );
 });
 
-test("a concluded reconciliation promotes or restarts, and nothing else", () => {
+test("a concluded reconciliation promotes or restarts where no decline is kept", () => {
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,
@@ -615,6 +618,97 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
     ),
     { decide: "Prepare", target, restartsSpent: 0 },
   );
+});
+
+/** The reading a declined push over a ref holding `observed` records. */
+function declinedOver(
+  declined: PromotionDecline,
+  observed: GitObjectId,
+): FinalizationReconciliation {
+  return { ...reconciliationOf("NotPromoted"), observed, declined };
+}
+
+/** A prepared attempt whose permit concluded, the view a reading is decided over. */
+const concluded = {
+  attempt: prepared,
+  attemptsMade: 1,
+  permit: permitIn("Concluded"),
+};
+
+/**
+ * A decline over a target that did not move is held, since preparing again
+ * builds what the same repository declines; a moved target is the information
+ * a restart needs.
+ */
+test("a push the repository declined holds under its own kind unless the target moved", () => {
+  const holds: readonly (readonly [PromotionDecline, string])[] = [
+    ["RemoteDeclined", "PromotionDeclined"],
+    ["WorkflowsRefused", "PromotionWorkflowsRefused"],
+  ];
+  assert.deepEqual(
+    holds.map(([declined]) => declined),
+    [...allPromotionDeclines],
+  );
+  for (const [declined, hold] of holds) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...concluded,
+          reconciliation: declinedOver(declined, target.commit),
+        }),
+      ),
+      { decide: "Hold", hold },
+      declined,
+    );
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...concluded,
+          reconciliation: declinedOver(declined, moved),
+        }),
+      ),
+      { decide: "Prepare", target, restartsSpent: 0 },
+      declined,
+    );
+  }
+});
+
+test("a closing project aborts whatever the push met, and a decline beside a promotion is refused", () => {
+  for (const declined of populated(
+    allPromotionDeclines,
+    "allPromotionDeclines",
+  )) {
+    for (const lifecycle of populated(
+      allClosingLifecycles,
+      "allClosingLifecycles",
+    )) {
+      assert.deepEqual(
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({
+            ...concluded,
+            lifecycle,
+            reconciliation: declinedOver(declined, target.commit),
+          }),
+        ),
+        { decide: "Abort", target },
+        lifecycle,
+      );
+    }
+    assert.throws(
+      () =>
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({
+            ...concluded,
+            reconciliation: { ...reconciliationOf("Promoted"), declined },
+          }),
+        ),
+      /a declined push is read as anything but not promoted/u,
+    );
+  }
 });
 
 test("a promoted candidate whose brief proposes is not concluded by the promotion", () => {

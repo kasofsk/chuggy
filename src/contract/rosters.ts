@@ -59,11 +59,12 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * Which finalization holds the machine reports `FinalizationResultUnavailable`
  * for — the ones a resume could clear, re-running the same operation against
  * the same pinned input, reaching the repository, the target, the proposal or
- * its base a second time and counting the finalizer's own budgets afresh; the
- * wire owns the list outright as `notificationKinds` is owned here, so the
- * finalizer recording a hold, the door admitting a result and the desk reading
- * one all name the same thirteen, and `test/contract/rosters.test.ts` holds it
- * against the interpreter's `allFinalizationHoldKinds` as
+ * its base a second time and counting the finalizer's own budgets afresh, a
+ * push the repository declined among them once its rules or settings allow
+ * it; the wire owns the list outright as `notificationKinds` is owned here, so
+ * the finalizer recording a hold, the door admitting a result and the desk
+ * reading one all name the same fifteen, and `test/contract/rosters.test.ts`
+ * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/migration.test.ts` holds it against the column that mirrors
  * it. The five left out stay holds, each for its own reason:
  * `ApprovalDeclined` is a human's answer, which a resume would put to the same
@@ -89,6 +90,8 @@ export const finalizationUnavailableKinds = [
   "PreparationRestartsExhausted",
   "ProposalCreationsExhausted",
   "ProposalMergesExhausted",
+  "PromotionDeclined",
+  "PromotionWorkflowsRefused",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -107,6 +110,8 @@ export const gitEvidences = [
   "ObjectMissing",
   "IntegrationFailed",
   "PromotionTimedOut",
+  "RemoteDeclined",
+  "WorkflowsRefused",
 ] as const;
 export type GitEvidenceLabel = (typeof gitEvidences)[number];
 

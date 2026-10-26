@@ -17,6 +17,13 @@
  * attempt may proceed, and an unreadable ref is a durable hold. None of the
  * three expires the permit or authorizes a second promotion.
  *
+ * A DECLINE IS KEPT WITH THE READING THAT FOLLOWS IT. A push the repository
+ * would not take for a reason of its own — a rule, a hook, a protected branch,
+ * a credential that may not change a workflow file — is as ambiguous as any
+ * other, and where the ref then proves not to hold the candidate the reading
+ * records the decline beside that verdict. The attempt holds there rather than
+ * preparing again, because what it would build the same repository declines.
+ *
  * A REFUSED UPDATE IS INFORMATION. The ref did not advance and the observed
  * value says what it holds instead, so the revision fence restarts preparation
  * from the newly observed immutable target under `preparationRestartsMax` and
@@ -213,6 +220,7 @@ import {
 import {
   checkedFinalizerConfig,
   finalizationNext,
+  promotionDeclineOf,
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
@@ -236,6 +244,7 @@ import {
   type InputBundleId,
   type InputBundleReference,
   type ObservedTarget,
+  type PromotionDecline,
   type RepositoryBinding,
   type RepositoryId,
   type TargetObserved,
@@ -340,7 +349,7 @@ const finalizerStrategy: IntegrationStrategy = "Merge";
 /** What one reading of the target ref records, an unreadable ref among the answers. */
 type FinalizerReading = Pick<
   FinalizationReconciliation,
-  "verdict" | "observed"
+  "verdict" | "observed" | "declined"
 >;
 
 /** Everything a reading needs to name the permit it settles. */
@@ -415,12 +424,19 @@ export async function finalizerFence(
 }
 
 /** What one ancestry proof says the reconciliation records. */
-function finalizerReadingOf(proved: AncestryProved): FinalizerReading {
+function finalizerReadingOf(
+  proved: AncestryProved,
+  declined?: PromotionDecline,
+): FinalizerReading {
   switch (proved.proved) {
     case "Ancestor":
       return { verdict: "Promoted", observed: proved.observed };
     case "NotAncestor":
-      return { verdict: "NotPromoted", observed: proved.observed };
+      return {
+        verdict: "NotPromoted",
+        observed: proved.observed,
+        ...(declined === undefined ? {} : { declined }),
+      };
     case "Unreadable":
       return { verdict: "Unreadable" };
     default:
@@ -665,12 +681,13 @@ function finalizerSubjectOf(
   };
 }
 
-/** Proves what the target ref holds about the candidate, and records what it proved. */
+/** Proves what the target ref holds about the candidate, and records what it proved beside the decline the push met, where it met one. */
 async function finalizerProve(
   service: FinalizerService,
   view: FinalizationView,
   permit: CommitPermitId,
   tally: FinalizerTally,
+  declined?: PromotionDecline,
 ): Promise<void> {
   const pinned = finalizerCandidateOf(view);
   const proved = await service.git.proveCandidateAncestry({
@@ -681,7 +698,7 @@ async function finalizerProve(
   await finalizerRecordReading(
     service,
     finalizerSubjectOf(view, permit),
-    finalizerReadingOf(proved),
+    finalizerReadingOf(proved, declined),
     tally,
   );
 }
@@ -737,7 +754,13 @@ async function finalizerPromote(
       );
       return;
     case "Ambiguous":
-      await finalizerProve(service, view, permit, tally);
+      await finalizerProve(
+        service,
+        view,
+        permit,
+        tally,
+        promotionDeclineOf(promoted.evidence),
+      );
       return;
     default:
       return assertNever(promoted);
