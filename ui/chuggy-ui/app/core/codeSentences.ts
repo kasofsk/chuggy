@@ -172,7 +172,7 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
     case "OverridesUnknown":
       return "the overrides name a workload, or a prompt file, the configuration's catalog does not hold";
     case "TicketCapacityReached":
-      return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
+      return "the project has no room for this ticket: it holds as many unfinished tickets as its configuration allows";
     case "FinalizationRequestClosed":
       return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
     case "OverridesMoveDefinition":
