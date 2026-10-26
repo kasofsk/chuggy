@@ -506,6 +506,7 @@ const idleBackend: WorkerPoolBackend = {
   stop: () => Promise.resolve({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
   ended: () => Promise.resolve([]),
+  clear: () => Promise.reject(new Error("an idle backend ends no job")),
 };
 
 interface IssuedPool {

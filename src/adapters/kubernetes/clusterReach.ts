@@ -281,25 +281,36 @@ export function kubernetesPodEnd(reached: KubernetesReached): KubernetesPodEnd {
 }
 
 /**
- * One key of a named Secret, decoded to the text it was written as, or nothing
- * where the cluster holds no such Secret or did not answer.
+ * What one key of a named Secret read as: the text it was written as, a
+ * Secret the cluster says is not there or holds no such key, or an answer
+ * that says neither, which a later read may.
  */
-export async function kubernetesSecretValue(
+export type KubernetesSecretRead =
+  | { readonly read: "Value"; readonly value: string }
+  | { readonly read: "Absent" }
+  | { readonly read: "Unavailable" };
+
+/** Reads one key of a named Secret. */
+export async function kubernetesSecretRead(
   site: KubernetesPodSite,
   fetcher: typeof fetch,
   name: string,
   key: string,
-): Promise<string | undefined> {
-  const document = kubernetesObjectRead(
-    await kubernetesReach(site, fetcher, {
-      method: "GET",
-      path: `${kubernetesSecretsPath(site)}/${encodeURIComponent(name)}`,
-    }),
-  ) as { readonly data?: Readonly<Record<string, unknown>> } | null | undefined;
-  const value = document?.data?.[key];
+): Promise<KubernetesSecretRead> {
+  const reached = await kubernetesReach(site, fetcher, {
+    method: "GET",
+    path: `${kubernetesSecretsPath(site)}/${encodeURIComponent(name)}`,
+  });
+  if (reached.reached === "Status" && reached.status === 404)
+    return { read: "Absent" };
+  const document = kubernetesObjectRead(reached) as
+    { readonly data?: Readonly<Record<string, unknown>> } | null | undefined;
+  if (typeof document !== "object" || document === null)
+    return { read: "Unavailable" };
+  const value = document.data?.[key];
   return typeof value === "string"
-    ? Buffer.from(value, "base64").toString("utf8")
-    : undefined;
+    ? { read: "Value", value: Buffer.from(value, "base64").toString("utf8") }
+    : { read: "Absent" };
 }
 
 /** One pod a listing found carrying the annotation asked for: its name, the annotation's value, whether it has ended, and the pod as listed. */

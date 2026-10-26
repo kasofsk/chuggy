@@ -5,10 +5,10 @@
  * workload did rather than when its lease runs out. The text goes first because
  * only a live attempt takes it, and the end is asked for either way.
  *
- * Each call is made once, as `./poolSessionPlaneClient.ts` ends a session,
- * because an attempt the plane did not hear about is still ended by its lease.
- * One that already reported is no longer live, so the plane refuses this end
- * and that report stands.
+ * Each call is made once and never retried here, because a job's backend
+ * names an end the plane did not answer again on the next pass. An attempt
+ * that already reported is no longer live, so the plane refuses a repeat and
+ * that report stands.
  */
 
 import { workerErrorPath } from "../../contract/http.ts";
