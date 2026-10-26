@@ -20,6 +20,8 @@ import {
   projectTableRows,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
+import { setVerdict } from "../app/core/ticketLedger.ts";
+import { executionTone, verdictTone } from "../app/core/tones.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const container: ExecutionSummary = {
@@ -271,10 +273,34 @@ test("the execution cell is the outcome where one exists, and the status where n
       ...finished,
       executionOutcome: "ProcessFailed",
     }),
-  ).toBe("Stopped");
+  ).toBe("Failed");
   expect(
     projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
   ).toBeUndefined();
+});
+
+/** Derived from the outcome roster, so an outcome the wire grows is a case
+ * this asks about for both kinds of task. */
+test("a finished execution's cell draws the word and hue its ticket's ledger does", () => {
+  const evaluator: ExecutionSummary["identity"] = {
+    type: "EvaluationTask",
+    value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  };
+  for (const identity of [container.identity, evaluator])
+    for (const outcome of executionOutcomes) {
+      const execution = {
+        ...container,
+        identity,
+        status: "Terminal",
+        outcome,
+      } as const;
+      const row = projectTableRow(working, known(execution), false);
+      const verdict = setVerdict([execution]);
+      expect([
+        projectTableExecutionPhrase(row),
+        executionTone("Terminal", row.executionOutcome, row.executionStopped),
+      ]).toEqual([verdict, verdictTone(verdict)]);
+    }
 });
 
 /** Derived from both rosters, so a status or an outcome the wire grows is a

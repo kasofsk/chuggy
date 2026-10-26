@@ -113,9 +113,10 @@ test("each arm a stage has without evaluators is its own word and its own tone",
 
 test("every execution status and every outcome draws a tone the pill knows", () => {
   for (const status of executionStatuses)
-    expect(pillTones).toContain(executionTone(status, undefined));
+    expect(pillTones).toContain(executionTone(status, undefined, false));
   for (const outcome of executionOutcomes)
-    expect(pillTones).toContain(executionTone("Terminal", outcome));
+    expect(pillTones).toContain(executionTone("Terminal", outcome, false));
+  expect(pillTones).toContain(executionTone("Terminal", "Blocked", true));
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {
