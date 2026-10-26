@@ -1,7 +1,7 @@
 /**
  * The configuration a repository declaring none starts on: that it is a
  * configuration at all, that a release would take it, and that the file it is
- * seeded as is one an import reads back.
+ * held as is one an import reads back.
  *
  * THE GENERATOR IS CHECKED THROUGH THE DOORS THAT WOULD TAKE IT rather than
  * against a remembered document. What matters about it is that the authoring
@@ -127,7 +127,7 @@ test("neither the configuration nor the one it tells its worker to declare lists
   for (const line of toldLines()) assert.doesNotMatch(line, /allowedTools/u);
 });
 
-test("the seeded file is a declaration an import reads back under its name", () => {
+test("the bootstrap as a file is a declaration an import reads back under its name", () => {
   const readiness = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -153,7 +153,7 @@ test("the seeded file is a declaration an import reads back under its name", () 
   );
 });
 
-test("the seeded file lives under the directory an import reads", () => {
+test("the bootstrap's file lives under the directory an import reads", () => {
   assert.ok(bootstrapConfigurationPath.startsWith(repositoryConfigurationRoot));
 });
 
@@ -919,7 +919,7 @@ function declaredNames(
   return imported.declarations.map((declaration) => declaration.name);
 }
 
-test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare, so the change is told to delete it", () => {
+test("no file may be left declaring the bootstrap's own name, which a repository that kept its file would still declare, so the change is told to delete it", () => {
   assert.ok(
     bootstrapBrief().acceptanceCriteria.some(
       (line) =>
@@ -928,7 +928,7 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
         line.includes("the change deletes that file"),
     ),
   );
-  const seeded = {
+  const kept = {
     path: bootstrapConfigurationPath,
     kind: "File" as const,
     content: bootstrapConfigurationFile({ repository, defaultBranch, image }),
@@ -938,7 +938,7 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
     kind: "File" as const,
     content: declaredFile(atEveryBound),
   };
-  assert.deepEqual(declaredNames([seeded, own]), [
+  assert.deepEqual(declaredNames([kept, own]), [
     bootstrapConfigurationName,
     "default",
   ]);
@@ -948,17 +948,17 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
 /** A configuration asking its ticket for the repository's configuration, in a criterion's words or a work line's. */
 const writesConfiguration = /\bwrite the repository's\b.*\bconfiguration\b/u;
 
-test("the seeded document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
+test("the bootstrap document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
   assert.ok(
     bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes("under another name") && writesConfiguration.test(line),
     ),
   );
-  const seeded: unknown = JSON.parse(
+  const kept: unknown = JSON.parse(
     bootstrapConfigurationFile({ repository, defaultBranch, image }),
   );
-  assert.ok(typeof seeded === "object" && seeded !== null);
+  assert.ok(typeof kept === "object" && kept !== null);
   const imported = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -966,7 +966,7 @@ test("the seeded document left under another name is one an import takes, so a c
       {
         path: declaredPath,
         kind: "File",
-        content: JSON.stringify({ ...seeded, name: "default" }),
+        content: JSON.stringify({ ...kept, name: "default" }),
       },
     ],
   });

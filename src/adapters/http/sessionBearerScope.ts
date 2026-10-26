@@ -102,7 +102,6 @@ export const sessionBearerRouteClasses = {
   configuration: partitionRead,
   forgeCredentials: partitionWrite,
   projectRepositories: { GET: "Partition", POST: "Partition" },
-  projectRepositoriesNew: partitionWrite,
   projectRepositoryLanding: partitionReplace,
   projectRepositoryRetirement: partitionReplace,
   projectRepositoryConfigurations: partitionReplace,

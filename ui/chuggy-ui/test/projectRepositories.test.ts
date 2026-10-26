@@ -56,7 +56,6 @@ import {
 } from "../app/core/projectRepositories.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
-import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   executionPlacementBody,
@@ -478,7 +477,30 @@ test("each refusal is the one line the picker draws under itself", () => {
       body: undefined,
     }),
   ).toBe("Not installed");
-  repositoryRefusalsDrawn(status);
+  expect(
+    status({ outcome: "Conflict", code: "RepositoryBound", body: undefined }),
+  ).toBe("Bound elsewhere");
+  expect(
+    status({ outcome: "Conflict", code: "OperationConflict", body: undefined }),
+  ).toBe("Conflict");
+  expect(
+    status({
+      outcome: "Retryable",
+      code: "ForgeUnavailable",
+      retryAfterSeconds: 5,
+    }),
+  ).toBe("Deferring");
+  expect(status({ outcome: "Absent" })).toBe("Not found");
+  expect(status({ outcome: "Unauthenticated" })).toBe("Not signed in");
+  expect(status({ outcome: "Fault", code: "InternalError", status: 500 })).toBe(
+    "Failed",
+  );
+  expect(status({ outcome: "Unreachable", reason: "offline" })).toBe(
+    "Unreachable",
+  );
+  expect(status({ outcome: "Unreadable", reason: "bad body" })).toBe(
+    "Unreadable",
+  );
 });
 
 /** A retired binding is the one refusal Retry cannot outlast, so it alone
@@ -659,7 +681,7 @@ const unauthorizing: PanelState<ForgeAppsResponse> = ready({ apps: [] });
  * only where the deployment answers a client to authorize, so a line that
  * carried a step either withholds is a step the reader cannot take.
  */
-test("the line under Add and Create says what is missing, and carries a step only where it is offered", () => {
+test("the line under Add says what is missing, and carries a step only where it is offered", () => {
   const cases: readonly (readonly [
     PanelState<ForgeInstallationsResponse>,
     PanelState<ForgeAppsResponse>,

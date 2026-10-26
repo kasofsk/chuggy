@@ -129,11 +129,6 @@ test("two tenants each record their own claim of one installation", async () => 
       first.account,
       tenant,
     );
-    assert.equal(
-      (await claims.accountClaim({ ...asked, tenant }))?.installationId,
-      installationId,
-      tenant,
-    );
   }
   assert.equal(
     await claims.claim(first.tenant, moved.installationId),
@@ -257,29 +252,6 @@ test("the claim under an installation identity is the asking tenant's own row", 
   assert.equal(
     await claims.claim(tenant, asForgeInstallationId("156901734")),
     undefined,
-  );
-});
-
-test("the claim on an account is the asking tenant's own row", async () => {
-  const recording = postgresForgeInstallationRecording(harness.pool);
-  const holder = asTenantId(`tenant-${randomUUID()}`);
-  const stranger = asTenantId(`tenant-${randomUUID()}`);
-  const held = claim({ tenant: holder });
-  assert.equal(await recording.record(held), "Recorded");
-  const claims = postgresForgeInstallationClaims(harness.pool);
-  const asked = {
-    forge: held.forge,
-    app: held.app,
-    account: held.account,
-  };
-  assert.equal(
-    (await claims.accountClaim({ tenant: holder, ...asked }))?.installationId,
-    held.installationId,
-  );
-  assert.equal(
-    await claims.accountClaim({ tenant: stranger, ...asked }),
-    undefined,
-    "an account another tenant claimed is not this tenant's to mint on",
   );
 });
 

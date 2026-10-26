@@ -136,8 +136,6 @@ import {
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
-  asForgeAccount,
-  asForgeRepositoryName,
   forgeAppKeyOf,
   githubForgeId,
   portalForgeApp,
@@ -145,13 +143,10 @@ import {
   type ForgeAppKey,
   type ForgeInstallationTokens,
 } from "../interpreter/forgeInstallation.ts";
-import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
-import { githubRepositoryCreation } from "../adapters/forge/githubRepositoryCreation.ts";
 import type {
   RepositoryConfigurationSnapshotPort,
   RepositoryDefaultBranchPort,
 } from "../interpreter/repositoryConfiguration.ts";
-import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
@@ -278,15 +273,12 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
  */
 const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
 /**
- * The worker image a bootstrap configuration commands, and the repository a
- * personal account's is copied from. Both are optional and each withholds one
- * thing — a deployment naming no image authors no bootstrap, and one naming no
- * template creates for organizations only — and the image is held only to the
+ * The worker image a bootstrap configuration commands. It is optional and a
+ * deployment naming none authors no bootstrap, and it is held only to the
  * reference grammar here, so an image chuggy's runtime cannot run in fails
  * where every other such image does, when its job starts.
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
-const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 /**
  * The origin this API is publicly reached at, which a bootstrap configuration
  * names the configuration schema under because a job is told no origin of its
@@ -939,41 +931,6 @@ export function nativePublicOrigin(): string | undefined {
 }
 
 /**
- * The repository a personal account's is copied from, named `owner/name`. A
- * setting this side cannot read as one repository is refused where it is read
- * rather than at the forge that would answer the request it composes.
- */
-function forgeTemplateRepository(): ForgeTemplateRepository | undefined {
-  const named = process.env[forgeTemplateRepositoryVariable];
-  if (named === undefined || named.length === 0) return undefined;
-  const parts = named.split("/");
-  const [account, name] = parts;
-  if (parts.length !== 2 || account === undefined || name === undefined)
-    throw new Error(`${forgeTemplateRepositoryVariable} must be owner/name`);
-  return {
-    account: asForgeAccount(account),
-    name: asForgeRepositoryName(name),
-  };
-}
-
-/** The three acts creating a repository is, under the portal app this process signs as. */
-function forgeRepositoryCreation(
-  portal: GithubInstallationTokensOptions,
-  tokens: ForgeInstallationTokens,
-): RepositoryCreationPorts {
-  const template = forgeTemplateRepository();
-  return {
-    forge: githubForgeId,
-    repositories: githubRepositoryCreation({
-      ...portal,
-      tokens,
-      appId: portal.appId,
-    }),
-    ...(template === undefined ? {} : { template }),
-  };
-}
-
-/**
  * The forge this process talks to: the credential source its own reads take,
  * the minting route's service, onboarding's, and the one adapter that reads a
  * repository — composed once because it opens one scratch, and handed to the
@@ -1024,11 +981,10 @@ async function nativeForge(
       apiPool: pools.pool,
       access,
       credentials,
-      forgeApps: half === undefined ? others : [half.onboarding, ...others],
+      forgeApps: half === undefined ? others : [half, ...others],
       ...(repositories === undefined ? {} : { repositories }),
       ...(image === undefined ? {} : { bootstrapImage: image }),
       ...(publicOrigin === undefined ? {} : { publicOrigin }),
-      ...(half === undefined ? {} : { creation: half.creation }),
       ...(authorization === undefined ? {} : { authorization }),
     }),
   };
@@ -1075,7 +1031,7 @@ export async function forgeClientSecretSetting<T>(
 /** The redemption of a person's authorization of the portal app, where this deployment names its client secret. */
 async function nativeForgeAuthorization(
   portal: ForgeAppPair | undefined,
-  half: NativePortalHalf | undefined,
+  half: RepositoryOnboardingForgeApp | undefined,
   pools: NativePools,
 ): Promise<RepositoryOnboardingAuthorization | undefined> {
   const secret = await forgeClientSecretSetting(
@@ -1094,7 +1050,7 @@ async function nativeForgeAuthorization(
         app: portalForgeApp,
         user: githubUserAuthorization({
           ...githubInstallationTokensOptions(secret.portal.key),
-          app: secret.portal.half.onboarding.apps,
+          app: secret.portal.half.apps,
           clientSecretPath: secret.path,
         }),
       };
@@ -1103,26 +1059,20 @@ async function nativeForgeAuthorization(
   }
 }
 
-/** What the portal app answers for, and nothing where this deployment holds no portal key. */
-interface NativePortalHalf {
-  readonly onboarding: RepositoryOnboardingForgeApp;
-  readonly creation: RepositoryCreationPorts;
-}
-
+/**
+ * The portal app's onboarding half, minting through this deployment's own
+ * minting, and nothing where it holds no portal key.
+ */
 function nativePortalHalf(
   portal: ForgeAppPair | undefined,
   minting: RepositoryCredentialMinting | undefined,
-): NativePortalHalf | undefined {
+): RepositoryOnboardingForgeApp | undefined {
   if (portal === undefined || minting === undefined) return undefined;
-  const options = githubInstallationTokensOptions(portal.key);
-  return {
-    onboarding: forgeAppHalf(
-      portalForgeApp,
-      options,
-      minting.installationTokens,
-    ),
-    creation: forgeRepositoryCreation(options, minting.installationTokens),
-  };
+  return forgeAppHalf(
+    portalForgeApp,
+    githubInstallationTokensOptions(portal.key),
+    minting.installationTokens,
+  );
 }
 
 function streamNoteText(note: ProjectStreamNote): string {

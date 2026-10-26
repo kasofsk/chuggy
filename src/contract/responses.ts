@@ -26,7 +26,6 @@ import {
   cursorSchema,
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
-  forgeRefusalMessageCharsMax,
   proposalMergeStateCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
@@ -1901,46 +1900,6 @@ export const projectRepositoryAlreadyBoundSchema = z.object({
 });
 export type ProjectRepositoryAlreadyBoundResponse = z.infer<
   typeof projectRepositoryAlreadyBoundSchema
->;
-
-/**
- * What reserving a created repository's default branch came to. A refusal
- * carries the forge's own account of it and leaves the repository standing,
- * unprotected and usable; `Skipped` is a repository with no branch to reserve.
- */
-export const projectRepositoryRulesetSchema = z.discriminatedUnion("result", [
-  z.object({ result: z.literal("Created") }),
-  z.object({
-    result: z.literal("Refused"),
-    message: z.string().max(forgeRefusalMessageCharsMax),
-  }),
-  z.object({ result: z.literal("Skipped") }),
-  z.object({ result: z.literal("Unavailable") }),
-]);
-export type ProjectRepositoryRulesetResponse = z.infer<
-  typeof projectRepositoryRulesetSchema
->;
-
-/**
- * What creating one repository came to: the repository the forge made, whether
- * a first commit was written into it, whether its default branch is reserved,
- * and what the binding that followed found. Every part of it is reported
- * because a step that did not take leaves a repository that stands.
- */
-export const projectRepositoryCreatedSchema = z.object({
-  repository: z.string().min(1),
-  landing: repositoryLandingSchema,
-  created: z.object({
-    account: identitySchema,
-    name: identitySchema,
-    url: z.string().min(1),
-  }),
-  seeded: z.boolean(),
-  ruleset: projectRepositoryRulesetSchema,
-  configurations: projectRepositoryConfigurationsSchema,
-});
-export type ProjectRepositoryCreatedResponse = z.infer<
-  typeof projectRepositoryCreatedSchema
 >;
 
 /**

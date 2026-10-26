@@ -1,6 +1,5 @@
 /**
- * The configuration a repository declaring none starts on, and the file a
- * repository this tree creates is seeded with.
+ * The configuration a repository declaring none starts on.
  *
  * IT IS A CATALOG OF TWO WORKLOADS, the work and the one reviewer its one plan
  * runs, so a repository starts on the version it is told to declare.
@@ -24,10 +23,10 @@
  * tickets run on what it declares is an import's doing once the change is on
  * the default branch, which no change can show, so it is said as motivation and
  * held against nothing. No file may be left declaring the bootstrap's own name:
- * a seeded repository holds this document under it, and a repository that kept
- * the name would still be declaring a bootstrap. Nor may the document be left
- * under another name, which an import takes like any other and which briefs
- * every later ticket to write the declarations again.
+ * a repository holding this document under it would still be declaring a
+ * bootstrap. Nor may the document be left under another name, which an import
+ * takes like any other and which briefs every later ticket to write the
+ * declarations again.
  *
  * BOTH ITS WORKLOADS TAKE CHUGGY'S FRAMING AND THE ONE BRIEF, since what the
  * brief says of the request's limit binds the worker and the reviewer alike.
@@ -90,12 +89,8 @@ export interface BootstrapConfigurationInput {
 /** The bootstrap's name, surfaced where the configuration it names is generated. */
 export { bootstrapConfigurationName };
 
-/** Where a seeded bootstrap configuration is written in the repository it configures. */
+/** Where the bootstrap configuration sits in a repository that holds it as a file. */
 export const bootstrapConfigurationPath = `${repositoryConfigurationRoot}${bootstrapConfigurationName}.json`;
-
-/** What the commit that writes that file says it is. */
-export const bootstrapConfigurationCommitMessage =
-  "Add the bootstrap chuggy configuration";
 
 /** The line naming the image, which is what bounds the image. */
 function bootstrapImageLine(image: string): string {
@@ -310,8 +305,8 @@ export function bootstrapConfiguration(
 /**
  * The same configuration as the file a repository declares it in, which an
  * import of that repository reads back as a declaration under its name. The
- * bytes inside the envelope are the checked ones, so a seeded file and an
- * authored revision cannot say different things.
+ * bytes inside the envelope are the checked ones, so the file and an authored
+ * revision cannot say different things.
  */
 export function bootstrapConfigurationFile(
   input: BootstrapConfigurationInput,

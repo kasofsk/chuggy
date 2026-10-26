@@ -24,7 +24,6 @@ import {
   projectNameCharsMax,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
-  projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   publicMutationSchema,
@@ -67,9 +66,6 @@ function nativeHttpContractDocumentSchemas(): unknown {
     projectCreation: nativeHttpContractDocumentInput(projectCreationSchema),
     projectRepositoryBind: nativeHttpContractDocumentInput(
       projectRepositoryBindSchema,
-    ),
-    projectRepositoryCreate: nativeHttpContractDocumentInput(
-      projectRepositoryCreateSchema,
     ),
     projectRepositoryLanding: nativeHttpContractDocumentInput(
       projectRepositoryLandingSchema,
@@ -185,8 +181,6 @@ export function nativeHttpContractDocument(): unknown {
       "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
     repositoryConfigurations:
       "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap that still releases and otherwise answers what the project holds; the bootstrap is one revision per project and never rewritten, so two requests racing author it once and a repository meeting one whose text differs, being another repository's or outgrown by the release rule, defers as BootstrapDiffers until it declares its own",
-    repositoryCreation:
-      "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
     ...runnerNotes,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",

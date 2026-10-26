@@ -86,8 +86,8 @@ import {
 import {
   allForgeAccountKinds,
   allForgeApps,
-  allForgeCredentialPermissionSets,
   allForgeIds,
+  allForgePermissionSets,
 } from "../../src/interpreter/forgeInstallation.ts";
 import {
   allForgeAccountProofs,
@@ -764,11 +764,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
-  assert.deepEqual(
-    forgeCredentialPermissions,
-    allForgeCredentialPermissionSets,
-    "a credential request never names the set that makes repositories",
-  );
+  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
   assert.deepEqual(forgeIds, allForgeIds);
   assert.deepEqual(forgeApps, allForgeApps);
   assert.deepEqual(forgeAccountKinds, allForgeAccountKinds);

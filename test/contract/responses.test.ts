@@ -38,7 +38,6 @@ import {
   projectRepositoryConfigureResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
-  projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
   runErrorResponse,
@@ -80,7 +79,6 @@ import {
   projectRepositoryLandingWrittenSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
-  projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
   projectRepositoryRetiredSchema,
   projectRepositoryConfigurationsHeldSchema,
@@ -118,9 +116,7 @@ import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
   ProjectRepositoryConfigurationsResult,
-  ProjectRepositoryCreateResult,
   ProjectRepositoryListed,
-  ProjectRepositoryRulesetResult,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
@@ -2335,139 +2331,6 @@ test("an import of a commit declaring none answers what its `.chug/` holds inste
   assert.deepEqual(repositoryConfigurationsAbsentSchema.parse(absent.body), {
     ignored: ignoredAtHead,
   });
-});
-
-/** One created repository as the route answers it, whichever part a case varies. */
-function onboardingCreated(
-  given: Partial<
-    Extract<ProjectRepositoryCreateResult, { readonly result: "Created" }>
-  > = {},
-): ProjectRepositoryCreateResult {
-  return {
-    result: "Created",
-    repository: onboardingRepository,
-    landing: { mode: "Push" },
-    created: {
-      account: asForgeAccount("kasofsk"),
-      name: asForgeRepositoryName("engine"),
-      url: onboardingRepository,
-    },
-    seeded: true,
-    ruleset: { result: "Created" },
-    configurations: { result: "Imported", count: 1 },
-    ...given,
-  };
-}
-
-test("a created repository names what was made and how far each step got", () => {
-  const created = projectRepositoryCreatedSchema.parse(
-    projectRepositoryCreateResponse(partition, onboardingCreated()).body,
-  );
-  assert.deepEqual(created.created, {
-    account: "kasofsk",
-    name: "engine",
-    url: onboardingRepository,
-  });
-  assert.equal(created.seeded, true);
-  assert.deepEqual(created.ruleset, { result: "Created" });
-});
-
-/** One object without one of its own fields, which is what each partial is. */
-function onboardingWithout(
-  whole: Readonly<Record<string, unknown>>,
-  absent: string,
-): Readonly<Record<string, unknown>> {
-  return Object.fromEntries(
-    Object.entries(whole).filter(([named]) => named !== absent),
-  );
-}
-
-/**
- * Every body one field short, named and one level deep. A loop over the top
- * level alone leaves a nested field free to become optional unseen.
- */
-function onboardingCreatedPartials(
-  body: Readonly<Record<string, unknown>>,
-): readonly (readonly [string, unknown])[] {
-  const partials: (readonly [string, unknown])[] = [];
-  for (const [named, value] of Object.entries(body)) {
-    partials.push([named, onboardingWithout(body, named)]);
-    if (typeof value !== "object" || value === null) continue;
-    const nested = value as Readonly<Record<string, unknown>>;
-    for (const inner of Object.keys(nested))
-      partials.push([
-        `${named}.${inner}`,
-        { ...body, [named]: onboardingWithout(nested, inner) },
-      ]);
-  }
-  return partials;
-}
-
-test("a created body is refused when any part of it is absent", () => {
-  const results: readonly ProjectRepositoryCreateResult[] = [
-    onboardingCreated(),
-    onboardingCreated({
-      ruleset: { result: "Refused", message: "rulesets are not available" },
-      configurations: {
-        result: "Bootstrapped",
-        revision: asConfigurationRevisionId("bootstrap"),
-      },
-    }),
-  ];
-  for (const result of results) {
-    const body = projectRepositoryCreateResponse(partition, result)
-      .body as Readonly<Record<string, unknown>>;
-    for (const [named, partial] of onboardingCreatedPartials(body))
-      assert.equal(
-        projectRepositoryCreatedSchema.safeParse(partial).success,
-        false,
-        named,
-      );
-  }
-});
-
-test("every ruleset outcome parses as the schema answers it", () => {
-  const rulesets: readonly ProjectRepositoryRulesetResult[] = [
-    { result: "Created" },
-    { result: "Refused", message: "rulesets are not available" },
-    { result: "Skipped" },
-    { result: "Unavailable" },
-  ];
-  for (const ruleset of rulesets) {
-    assert.deepEqual(
-      projectRepositoryCreatedSchema.parse(
-        projectRepositoryCreateResponse(
-          partition,
-          onboardingCreated({ ruleset }),
-        ).body,
-      ).ruleset,
-      ruleset,
-    );
-  }
-});
-
-test("each way a creation is refused is its own status and never a creation", () => {
-  const refusals: readonly (readonly [
-    ProjectRepositoryCreateResult,
-    number,
-  ])[] = [
-    [{ result: "InstallationMissing", app: asForgeApp("worker") }, 422],
-    [{ result: "PersonalAccountCreatesOnGitHub" }, 422],
-    [{ result: "RepositoryExists" }, 409],
-    [{ result: "ForgeRefused", step: "create", message: "no such org" }, 422],
-    [{ result: "BindRefused", bind: { result: "BoundElsewhere" } }, 409],
-    [{ result: "NotConfigured" }, 404],
-    [{ result: "NotFound" }, 404],
-    [{ result: "Unavailable" }, 503],
-  ];
-  for (const [result, status] of refusals) {
-    const answer = projectRepositoryCreateResponse(partition, result);
-    assert.equal(answer.status, status, result.result);
-    assert.equal(
-      errorEnvelopeSchema.parse(answer.body).error.code.length > 0,
-      true,
-    );
-  }
 });
 
 test("a reopened draft names the version its ticket runs beside the one it stands at", () => {

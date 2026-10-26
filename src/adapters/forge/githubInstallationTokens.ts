@@ -232,9 +232,6 @@ async function githubInstallationTokensPermissions(
     ...(permissions.changeProposals === undefined
       ? {}
       : { pull_requests: permissions.changeProposals }),
-    ...(permissions.administration === undefined
-      ? {}
-      : { administration: permissions.administration }),
   };
   const pipelines = githubInstallationTokensPipelinesAsked(request);
   if (pipelines === undefined)

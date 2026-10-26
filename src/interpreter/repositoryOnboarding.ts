@@ -69,10 +69,7 @@ import {
 } from "./authoring.ts";
 import {
   bootstrapConfiguration,
-  bootstrapConfigurationCommitMessage,
-  bootstrapConfigurationFile,
   bootstrapConfigurationName,
-  bootstrapConfigurationPath,
 } from "./bootstrapConfiguration.ts";
 import type {
   GitRefName,
@@ -102,17 +99,8 @@ import type {
   ForgeAccountKind,
   ForgeApp,
   ForgeId,
-  ForgeInstallation,
   ForgeInstallationId,
-  ForgeRepositoryName,
 } from "./forgeInstallation.ts";
-import type {
-  ForgeRepositoryCreation,
-  ForgeRepositoryCreationMode,
-  ForgeRepositoryMade,
-  ForgeRepositoryVisibility,
-  ForgeTemplateRepository,
-} from "./forgeRepositoryCreation.ts";
 import type {
   ForgeInstallationClaimed,
   ForgeInstallationClaims,
@@ -127,7 +115,6 @@ import {
   type ForgeUserAuthorization,
   type ForgeUserInstallation,
 } from "./forgeAuthorization.ts";
-import { allForgeApps } from "./forgeInstallation.ts";
 import type { Authority, OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -295,66 +282,6 @@ export type ProjectRepositoryBindResult =
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
-/** The steps of a creation a forge can refuse outright, each named in the refusal. */
-export const allProjectRepositoryCreateSteps = ["create", "seed"] as const;
-
-export type ProjectRepositoryCreateStep =
-  (typeof allProjectRepositoryCreateSteps)[number];
-
-/**
- * What reserving a created repository's default branch came to. `Skipped` is a
- * repository with no branch to reserve, which is what an unseeded one is, and
- * an outage is neither created nor refused: the ruleset may yet be this app's
- * to make, and reading it as a refusal would say a decision was taken.
- */
-export type ProjectRepositoryRulesetResult =
-  | { readonly result: "Created" }
-  | { readonly result: "Refused"; readonly message: string }
-  | { readonly result: "Skipped" }
-  | { readonly result: "Unavailable" };
-
-/** The repository a forge made, as the answer names it. */
-export interface ProjectRepositoryMade {
-  readonly account: ForgeAccount;
-  readonly name: ForgeRepositoryName;
-  readonly url: RepositoryId;
-}
-
-/**
- * What creating one repository came to. A repository that was made and then met
- * a refusal is reported with the refusal and not undone: it exists on the forge
- * either way, and the caller is told how far the request got so the bind route
- * can finish what this one started.
- */
-export type ProjectRepositoryCreateResult =
-  | {
-      readonly result: "Created";
-      readonly repository: RepositoryId;
-      readonly landing: RepositoryLanding;
-      readonly created: ProjectRepositoryMade;
-      readonly seeded: boolean;
-      readonly ruleset: ProjectRepositoryRulesetResult;
-      readonly configurations: ProjectRepositoryConfigurationsResult;
-    }
-  | { readonly result: "InstallationMissing"; readonly app: ForgeApp }
-  | { readonly result: "PersonalAccountCreatesOnGitHub" }
-  | { readonly result: "RepositoryExists" }
-  | {
-      readonly result: "ForgeRefused";
-      readonly step: ProjectRepositoryCreateStep;
-      readonly message: string;
-    }
-  | {
-      readonly result: "BindRefused";
-      readonly bind: Exclude<
-        ProjectRepositoryBindResult,
-        { readonly result: "Bound" }
-      >;
-    }
-  | { readonly result: "NotConfigured" }
-  | { readonly result: "NotFound" }
-  | { readonly result: "Unavailable" };
-
 /**
  * One binding as the listing answers it. `configurationsHeld` is the names
  * this repository declared into the project, or the bootstrap that still
@@ -433,18 +360,6 @@ export interface ProjectRepositoryBindRequest {
   readonly operation: OperationId;
 }
 
-/**
- * One repository to create, under the identity the binding inside it is one
- * attempt at. The forge is not the caller's to name: a deployment creates
- * through the one forge its creation half is composed for.
- */
-export interface ProjectRepositoryCreateRequest {
-  readonly account: ForgeAccount;
-  readonly name: ForgeRepositoryName;
-  readonly visibility: ForgeRepositoryVisibility;
-  readonly operation: OperationId;
-}
-
 /** One app's half of the composition, composed for each app this deployment holds a key for. */
 export interface RepositoryOnboardingForgeApp {
   readonly forge: ForgeId;
@@ -509,18 +424,6 @@ export interface RepositoryConfigurationsPorts {
   readonly publicOrigin?: string;
 }
 
-/**
- * The half creating a repository is composed with: which forge it makes one on,
- * the three acts it makes one by, and the repository a personal account's is
- * copied from. A deployment naming no template creates for organizations only,
- * which is the one shape a forge admits from an app without one.
- */
-export interface RepositoryCreationPorts {
-  readonly forge: ForgeId;
-  readonly repositories: ForgeRepositoryCreation;
-  readonly template?: ForgeTemplateRepository;
-}
-
 /** Everything the service is composed with, one forge half per app a key is held for. */
 export interface RepositoryOnboardingPorts {
   readonly access: ProjectAccess;
@@ -535,7 +438,6 @@ export interface RepositoryOnboardingPorts {
   readonly configurationsHeld: RepositoryConfigurationsHeldRead;
   readonly importAttempts: RepositoryConfigurationImportAttemptsRead;
   readonly configurations?: RepositoryConfigurationsPorts;
-  readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
@@ -571,12 +473,6 @@ export interface RepositoryOnboarding {
     partition: Partition,
     request: ProjectRepositoryBindRequest,
   ): Promise<ProjectRepositoryBindResult>;
-
-  createRepository(
-    principal: Principal,
-    partition: Partition,
-    request: ProjectRepositoryCreateRequest,
-  ): Promise<ProjectRepositoryCreateResult>;
 
   projectRepositories(
     principal: Principal,
@@ -1070,253 +966,6 @@ async function boundRepository(
 }
 
 /**
- * Both of this tenant's claims on the account, the portal's answered back
- * because it carries the kind of account the creation mode is decided from.
- * Both are required rather than the portal's alone: a repository this tree
- * makes is meant to run attempts from the moment it exists, and the plane mints
- * under the worker app.
- */
-async function createRepositoryClaims(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  tenant: TenantId,
-  account: ForgeAccount,
-): Promise<ForgeInstallationClaimed | { readonly missing: ForgeApp }> {
-  let portal: ForgeInstallationClaimed | undefined;
-  for (const app of allForgeApps) {
-    const claimed = await ports.claims.accountClaim({
-      tenant,
-      forge: creation.forge,
-      app,
-      account,
-    });
-    if (claimed === undefined) return { missing: app };
-    if (app === "portal") portal = claimed;
-  }
-  if (portal === undefined)
-    throw new Error("create repository: no portal app is named");
-  return portal;
-}
-
-/**
- * Which of a forge's collections the repository is made in, which the claimed
- * account's own kind decides. A personal account is served by copying a
- * template and by nothing else, so a deployment naming none has no way to make
- * one and says so.
- */
-function createRepositoryMode(
-  creation: RepositoryCreationPorts,
-  accountKind: ForgeAccountKind,
-): ForgeRepositoryCreationMode | undefined {
-  if (accountKind === "Organization") return { mode: "Organization" };
-  return creation.template === undefined
-    ? undefined
-    : { mode: "Template", template: creation.template };
-}
-
-/**
- * How far the first commit got, which is what puts a branch under a created
- * repository. A refusal is the forge's own and settled; an outage is the
- * caller's to retry, and the retry meets `RepositoryExists`.
- */
-type CreateRepositorySeeding =
-  | { readonly seeding: "Seeded" }
-  | { readonly seeding: "Unseeded" }
-  | { readonly seeding: "Refused"; readonly message: string }
-  | { readonly seeding: "Unavailable" };
-
-/**
- * The first commit, written where there is an image to command. A deployment
- * naming no bootstrap image seeds nothing: the file it would write is a
- * configuration commanding no image, which nothing could run.
- */
-async function createRepositorySeeded(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  installation: ForgeInstallation,
-  request: ProjectRepositoryCreateRequest,
-  made: ForgeRepositoryMade,
-): Promise<CreateRepositorySeeding> {
-  const image = ports.configurations?.bootstrapImage;
-  if (image === undefined) return { seeding: "Unseeded" };
-  const publicOrigin = ports.configurations?.publicOrigin;
-  const seeded = await creation.repositories.seed({
-    installation,
-    name: request.name,
-    branch: made.defaultBranch,
-    path: bootstrapConfigurationPath,
-    message: bootstrapConfigurationCommitMessage,
-    /**
-     * Uncontained, unlike the bind's step: the generator's only raise is its
-     * postcondition, over inputs branded shorter than the bound it checks.
-     */
-    content: bootstrapConfigurationFile({
-      repository: made.url,
-      defaultBranch: made.defaultBranch,
-      image,
-      ...(publicOrigin === undefined ? {} : { publicOrigin }),
-    }),
-  });
-  switch (seeded.seeded) {
-    case "Seeded":
-      return { seeding: "Seeded" };
-    case "Refused":
-      return { seeding: "Refused", message: seeded.message };
-    case "Unavailable":
-      return { seeding: "Unavailable" };
-    default:
-      return assertNever(seeded);
-  }
-}
-
-/**
- * The ruleset that reserves the default branch, which is asked for only where
- * there is a branch to reserve. A refusal leaves the repository standing and
- * unprotected, which is reported rather than undone.
- */
-async function createRepositoryRuleset(
-  creation: RepositoryCreationPorts,
-  installation: ForgeInstallation,
-  name: ForgeRepositoryName,
-  seeded: boolean,
-): Promise<ProjectRepositoryRulesetResult> {
-  if (!seeded) return { result: "Skipped" };
-  const reserved = await creation.repositories.reserveDefaultBranch({
-    installation,
-    name,
-  });
-  switch (reserved.created) {
-    case "Ruleset":
-      return { result: "Created" };
-    case "Refused":
-      return { result: "Refused", message: reserved.message };
-    case "Unavailable":
-      return { result: "Unavailable" };
-    default:
-      return assertNever(reserved);
-  }
-}
-
-/**
- * One repository made, seeded, reserved and bound. Nothing here is undone: the
- * repository is the forge's from the moment it answers, so each step after it
- * is reported beside a repository that stands, and a request that got as far as
- * making one and no further answers `RepositoryExists` when it is sent again.
- */
-async function createRepository(
-  ports: RepositoryOnboardingPorts,
-  principal: Principal,
-  partition: Partition,
-  request: ProjectRepositoryCreateRequest,
-): Promise<ProjectRepositoryCreateResult> {
-  const authority = await ports.access.authorize(
-    principal,
-    partition,
-    "Administer",
-  );
-  if (authority === undefined) return { result: "NotFound" };
-  const creation = ports.creation;
-  if (creation === undefined) return { result: "NotConfigured" };
-  const claimed = await createRepositoryClaims(
-    ports,
-    creation,
-    partition.tenant,
-    request.account,
-  );
-  if ("missing" in claimed)
-    return { result: "InstallationMissing", app: claimed.missing };
-  const mode = createRepositoryMode(creation, claimed.accountKind);
-  if (mode === undefined) return { result: "PersonalAccountCreatesOnGitHub" };
-  const installation: ForgeInstallation = {
-    forge: claimed.forge,
-    app: claimed.app,
-    account: claimed.account,
-    installationId: claimed.installationId,
-  };
-  const created = await creation.repositories.create({
-    installation,
-    name: request.name,
-    visibility: request.visibility,
-    creation: mode,
-  });
-  switch (created.created) {
-    case "Repository":
-      return createRepositoryBound(
-        ports,
-        creation,
-        { authority, installation, partition, request },
-        created.repository,
-      );
-    case "Exists":
-      return { result: "RepositoryExists" };
-    case "Refused":
-      return {
-        result: "ForgeRefused",
-        step: "create",
-        message: created.message,
-      };
-    case "Unavailable":
-      return { result: "Unavailable" };
-    default:
-      return assertNever(created);
-  }
-}
-
-/** Everything the steps after the create share, gathered so each of them takes one argument for it. */
-interface CreateRepositoryContext {
-  readonly authority: Authority;
-  readonly installation: ForgeInstallation;
-  readonly partition: Partition;
-  readonly request: ProjectRepositoryCreateRequest;
-}
-
-/** The seed, the ruleset and the binding, over a repository the forge has already made. */
-async function createRepositoryBound(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  context: CreateRepositoryContext,
-  made: ForgeRepositoryMade,
-): Promise<ProjectRepositoryCreateResult> {
-  const seeding = await createRepositorySeeded(
-    ports,
-    creation,
-    context.installation,
-    context.request,
-    made,
-  );
-  if (seeding.seeding === "Refused")
-    return { result: "ForgeRefused", step: "seed", message: seeding.message };
-  if (seeding.seeding === "Unavailable") return { result: "Unavailable" };
-  const seeded = seeding.seeding === "Seeded";
-  const ruleset = await createRepositoryRuleset(
-    creation,
-    context.installation,
-    context.request.name,
-    seeded,
-  );
-  const bound = await boundRepository(
-    ports,
-    context.partition,
-    context.authority,
-    { repository: made.url, operation: context.request.operation },
-  );
-  if (bound.result !== "Bound") return { result: "BindRefused", bind: bound };
-  return {
-    result: "Created",
-    repository: bound.repository,
-    landing: bound.landing,
-    created: {
-      account: context.installation.account,
-      name: context.request.name,
-      url: made.url,
-    },
-    seeded,
-    ruleset,
-    configurations: bound.configurations,
-  };
-}
-
-/**
  * One binding's settings written, behind the permit that binds: what a
  * repository lands by and whether its jobs may write its pipeline definitions
  * are the same administration as what a project binds, and a project this
@@ -1521,9 +1170,6 @@ export function repositoryOnboarding(
 
     bindRepository: (principal, partition, request) =>
       bindRepository(ports, principal, partition, request),
-
-    createRepository: (principal, partition, request) =>
-      createRepository(ports, principal, partition, request),
 
     projectRepositories: (principal, partition) =>
       projectRepositories(ports, principal, partition),

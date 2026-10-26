@@ -672,11 +672,6 @@ async function forgeClaimReadersAnswer(subject: pg.Pool): Promise<void> {
       "acme",
       tenant,
     );
-    assert.equal(
-      (await claims.accountClaim({ ...asked, tenant: named }))?.installationId,
-      installationId,
-      tenant,
-    );
   }
 }
 

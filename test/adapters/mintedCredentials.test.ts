@@ -424,20 +424,17 @@ test("a write or a proposal carries the pipeline definitions only where the act'
 });
 
 test("a set naming no pipeline definitions reads no binding and carries none", async () => {
-  for (const permissions of ["read", "administer"] as const) {
-    const askedMints: ForgeTokenRequest[] = [];
-    const askedBindings: (readonly [Partition, RepositoryId])[] = [];
-    await fixtureRepositoryTokens({
-      askedMints,
-      bindings: fixtureBindings(fixtureBound(), askedBindings),
-    }).token(fixtureRepository, fixturePartition, permissions);
-    assert.deepEqual(askedBindings, [], permissions);
-    assert.deepEqual(
-      askedMints.map((request) => request.pipelinesAllowed),
-      [undefined],
-      permissions,
-    );
-  }
+  const askedMints: ForgeTokenRequest[] = [];
+  const askedBindings: (readonly [Partition, RepositoryId])[] = [];
+  await fixtureRepositoryTokens({
+    askedMints,
+    bindings: fixtureBindings(fixtureBound(), askedBindings),
+  }).token(fixtureRepository, fixturePartition, "read");
+  assert.deepEqual(askedBindings, []);
+  assert.deepEqual(
+    askedMints.map((request) => request.pipelinesAllowed),
+    [undefined],
+  );
 });
 
 /** A read that failed established nothing, so the mint waits rather than going ahead without the definitions. */

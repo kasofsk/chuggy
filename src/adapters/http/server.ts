@@ -97,7 +97,6 @@ import {
   parseForgeInstallationId,
   parseProjectCreation,
   parseProjectRepositoryBind,
-  parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parseProjectOwnerFallback,
@@ -145,7 +144,6 @@ import {
   projectCreationResponse,
   projectRepositoryBindResponse,
   projectRepositoryConfigureResponse,
-  projectRepositoryCreateResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
   inventoryResponse,
@@ -1602,27 +1600,6 @@ function registerProjectRepositories(
             principalOf(request),
             partition,
             parseProjectRepositoryBind(request.body, key),
-          ),
-        ),
-      );
-    },
-  );
-  app.post(
-    "/api/v1/tenants/:tenant/projects/:project/repositories/new",
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const partition = partitionOf(request);
-      const key = request.headers["idempotency-key"];
-      if (typeof key !== "string")
-        throw new TypeError("idempotency key is absent");
-      nativeHttpSend(
-        reply,
-        projectRepositoryCreateResponse(
-          partition,
-          await onboarding.createRepository(
-            principalOf(request),
-            partition,
-            parseProjectRepositoryCreate(request.body, key),
           ),
         ),
       );
