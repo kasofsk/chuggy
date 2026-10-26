@@ -44,6 +44,7 @@ import {
   type TicketEvent,
   type TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import { genesisLedgers } from "../../src/domain/ledger.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { decodeEntry } from "../../src/generated/model-api.ts";
@@ -292,11 +293,13 @@ test("a row's projection changes are its own ticket's, whatever else in the grap
       const event = journal.stored[at]?.entry.event;
       if (event === undefined) return [];
       const named = eventTicket(event);
-      const other = [...pre.graph.tickets.keys()].find(
-        (id) =>
-          id !== named &&
-          !ticketEquals(ticketAt(pre.graph, id), ticketAt(last, id)),
-      );
+      const other = [...pre.graph.tickets.keys()]
+        .map(asTicketId)
+        .find(
+          (id) =>
+            id !== named &&
+            !ticketEquals(ticketAt(pre.graph, id), ticketAt(last, id)),
+        );
       return other === undefined ? [] : [{ pre, post, event, other }];
     })
     .at(0);
