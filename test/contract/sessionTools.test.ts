@@ -226,8 +226,9 @@ test("a dependent may be a follow-up and may not be a prerequisite", () => {
 });
 
 /**
- * A candidate pinned to the longest canonical configuration, each of its
- * characters the heaviest UTF-8 has, is past an ordinary answer's bound, so
+ * A candidate pinned to the longest canonical configuration, each of its code
+ * units the heaviest one UTF-8 encodes alone, is past an ordinary answer's
+ * bound, so
  * `dispatch_ticket` reading its page under that bound could never dispatch it.
  */
 test("a dispatch view page of the heaviest candidate is under the bound dispatch_ticket reads it with", () => {
@@ -249,9 +250,7 @@ test("a dispatch view page of the heaviest candidate is under the bound dispatch
         program: [],
         configurationRevision: "r".repeat(64),
         configurationDigest: "c".repeat(64),
-        configurationCanonical: "\u{1F600}".repeat(
-          configurationCanonicalCharsMax,
-        ),
+        configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
       },
     ],
     nextAfter: Number.MAX_SAFE_INTEGER,

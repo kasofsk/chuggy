@@ -148,7 +148,11 @@ export const chuggyToolTicketLandingsResponseBytesMax =
   ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
   nativeHttpBodyBytesMax;
 
-/** What one character weighs in UTF-8, at its heaviest. */
+/**
+ * What one UTF-16 code unit of an embedded canonical may weigh in UTF-8,
+ * escaping included: a code point's heaviest encoding, which no single code
+ * unit and no escaped character reaches.
+ */
 const chuggyToolCharBytesMax = 4;
 
 /**
