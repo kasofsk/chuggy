@@ -789,7 +789,8 @@ export function scratchPushFailed(stdout: string): ScratchPushed {
 /**
  * The one ref movement this adapter makes: a single-refspec push the receiving
  * repository applies atomically and refuses when it is not a fast-forward. A
- * stopped push is unknown, and one git ended is read off its porcelain line.
+ * push stopped at its deadline timed out and one stopped otherwise is unknown,
+ * and one git ended is read off its porcelain line.
  */
 export async function scratchPush(
   scratch: GitScratch,

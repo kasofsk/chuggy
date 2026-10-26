@@ -290,12 +290,13 @@ async function declinedRows(project: FinalizerProject): Promise<unknown> {
 }
 
 /**
- * A push the receiving repository declines over a real remote is pushed once:
- * the reading keeps the decline, the request holds under its own kind rather
- * than preparing again, and after the dwell the ticket escalates with that kind
- * as the evidence the desk reads.
+ * A push the receiving repository declines over a real remote is prepared and
+ * pushed again until the restarts are spent: each reading keeps the decline,
+ * the request then holds under its own kind rather than as restarts spent, and
+ * after the dwell the ticket escalates with that kind as the evidence the desk
+ * reads.
  */
-test("a declined push is pushed once, held under its own kind, and escalates with it", async () => {
+test("a declined push is pushed again until its restarts are spent, held under its own kind, and escalates with it", async () => {
   const { project, remote } = await finalizerSubject(
     rig,
     "unavailable-declined",
@@ -305,13 +306,21 @@ test("a declined push is pushed once, held under its own kind, and escalates wit
   writeFileSync(hook, "#!/bin/sh\nexit 1\n");
   chmodSync(hook, 0o700);
   const port = finalizerRemotePort(rig);
-  for (let pass = 0; pass < finalizerDefaults.holdPassesMax + 3; pass += 1) {
+  const attempts = finalizerDefaults.preparationRestartsMax + 1;
+  for (
+    let pass = 0;
+    pass < finalizerDefaults.holdPassesMax + 4 * attempts;
+    pass += 1
+  ) {
     await finalizerPassOnce(rig, project, port, `declined-${String(pass)}`);
     await finalizerExpireClaim(rig, project);
   }
   assert.deepEqual(await declinedRows(project), {
-    attempts: 1,
-    readings: [{ verdict: "NotPromoted", declined: "RemoteDeclined" }],
+    attempts,
+    readings: Array.from({ length: attempts }, () => ({
+      verdict: "NotPromoted",
+      declined: "RemoteDeclined",
+    })),
     request: { state: "Registered", hold_kind: "PromotionDeclined" },
   });
   await finalizerDrain(rig.harness, project.partition, project.memory);

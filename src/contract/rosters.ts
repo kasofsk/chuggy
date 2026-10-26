@@ -63,7 +63,7 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * push the repository declined among them once its rules or settings allow
  * it; the wire owns the list outright as `notificationKinds` is owned here, so
  * the finalizer recording a hold, the door admitting a result and the desk
- * reading one all name the same fifteen, and `test/contract/rosters.test.ts`
+ * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/migration.test.ts` holds it against the column that mirrors
  * it. The five left out stay holds, each for its own reason:

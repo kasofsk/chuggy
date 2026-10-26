@@ -14,8 +14,8 @@
  * repository that would not take the update for a reason of its own answers
  * `RemoteDeclined`, and GitHub refusing a credential that may not change a
  * workflow file answers `WorkflowsRefused`, read off the reason GitHub gives.
- * Neither is a refusal: the target did not move, so neither is sent to the
- * re-read that means it did.
+ * Neither is a refusal: a decline says nothing of the target, so neither is
+ * sent to the re-read that means it moved, and the reading proves where it is.
  *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by

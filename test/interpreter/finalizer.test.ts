@@ -636,31 +636,60 @@ const concluded = {
 };
 
 /**
- * A decline over a target that did not move is held, since preparing again
- * builds what the same repository declines; a moved target is the information
- * a restart needs.
+ * A workflow refusal over a target that did not move is held at once, since
+ * preparing again builds what the same repository refuses again; any other
+ * decline is prepared again until the restarts are spent, then held as
+ * declined; a moved target is the information a restart needs.
  */
-test("a push the repository declined holds under its own kind unless the target moved", () => {
-  const holds: readonly (readonly [PromotionDecline, string])[] = [
-    ["RemoteDeclined", "PromotionDeclined"],
-    ["WorkflowsRefused", "PromotionWorkflowsRefused"],
-  ];
+test("a push the repository declined holds under its own kind, at once for a workflow refusal and once restarts are spent for any other, unless the target moved", () => {
   assert.deepEqual(
-    holds.map(([declined]) => declined),
+    ["RemoteDeclined", "WorkflowsRefused"],
     [...allPromotionDeclines],
   );
-  for (const [declined, hold] of holds) {
-    assert.deepEqual(
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          ...concluded,
-          reconciliation: declinedOver(declined, target.commit),
-        }),
-      ),
-      { decide: "Hold", hold },
-      declined,
-    );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: declinedOver("WorkflowsRefused", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Prepare", target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        observedTarget: { ...target, commit: moved },
+        reconciliation: declinedOver("WorkflowsRefused", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+    "a target observed to move after the reading is the attempt's to judge",
+  );
+  for (const declined of allPromotionDeclines) {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,

@@ -792,25 +792,13 @@ function finalizationNextRestart(
   return { decide: "Prepare", target, restartsSpent };
 }
 
-/** The hold a declined promotion waits at, the workflow refusal apart because its way past is a repository setting. */
-function finalizationDeclinedHold(
-  declined: PromotionDecline,
-): FinalizationHoldKind {
-  switch (declined) {
-    case "RemoteDeclined":
-      return "PromotionDeclined";
-    case "WorkflowsRefused":
-      return "PromotionWorkflowsRefused";
-    default:
-      return assertNever(declined);
-  }
-}
-
 /**
- * What a candidate the ref proved absent leads to. A push the repository
- * declined over a target that did not move is held, because preparing again
- * builds what the same repository would decline again; any other is the
- * revision fence's, a target that moved being the information a restart needs.
+ * What a candidate the ref proved absent leads to: over a target that did not
+ * move, a workflow refusal is held, since preparing again builds what the same
+ * repository refuses again, and any other decline is prepared again while
+ * restarts remain, a repository taking the next time what it declined once,
+ * then held as declined. Anything else is the revision fence's, a target that
+ * moved being the information a restart needs.
  */
 function finalizationNextNotPromoted(
   config: FinalizerConfig,
@@ -825,7 +813,19 @@ function finalizationNextNotPromoted(
   ) {
     return finalizationNextRestart(config, view);
   }
-  return { decide: "Hold", hold: finalizationDeclinedHold(declined) };
+  switch (declined) {
+    case "WorkflowsRefused":
+      return { decide: "Hold", hold: "PromotionWorkflowsRefused" };
+    case "RemoteDeclined": {
+      const next = finalizationNextRestart(config, view);
+      return next.decide === "Hold" &&
+        next.hold === "PreparationRestartsExhausted"
+        ? { decide: "Hold", hold: "PromotionDeclined" }
+        : next;
+    }
+    default:
+      return assertNever(declined);
+  }
 }
 
 /**
