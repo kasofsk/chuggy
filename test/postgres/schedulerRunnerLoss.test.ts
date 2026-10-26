@@ -718,10 +718,11 @@ test("work whose lease lapsed on its runner is still resumed, as is work whose r
   assert.equal((await standing(routed))?.["phase"], "Work");
 });
 
-test("work whose push failed in the cluster concludes at once, and work whose run failed there is opened again", async () => {
-  for (const [evidence, opened] of [
-    ["RunPushFailed", "StepFailed"],
-    ["RunFailed", "Opened"],
+test("work whose push failed or whose run passed its deadline in the cluster concludes at once, and work whose run failed there is opened again", async () => {
+  for (const [evidence, opened, report] of [
+    ["RunPushFailed", "StepFailed", stepReports.RunPushFailed],
+    ["RunTimedOut", "StepFailed", stepReports.RunTimedOut],
+    ["RunFailed", "Opened", undefined],
   ] as const) {
     const label = `step-in-cluster-${evidence}`;
     const project = await schedulerProject(rig, label, { tasks: 1 });
@@ -763,7 +764,7 @@ test("work whose push failed in the cluster concludes at once, and work whose ru
     assert.equal(settled.outcome, "ProcessFailed");
     await drained(routed);
     assert.deepEqual(await standing(routed), workLost);
-    assert.equal(await settledReport(routed, execution), "The push failed.");
+    assert.equal(await settledReport(routed, execution), report, evidence);
     assert.deepEqual(await readFailed(routed), {
       evidence,
       execution,

@@ -1054,9 +1054,10 @@ export type AttemptPlacementOutcome =
 
 /**
  * What one look at a placed attempt's workload found that its own worker could
- * not report. A fault of the image carries the text its person is shown, and a
- * fault of the site says what an operator has to mend; `Unfaulted` is every
- * other answer together, because the lease is what collects all of them.
+ * not report. A fault of the image and a run its site stopped at its deadline
+ * carry the text their person is shown, and a fault of the site says what an
+ * operator has to mend; `Unfaulted` is every other answer together, because
+ * the lease is what collects all of them.
  */
 export type AttemptWorkloadObserved =
   | {
@@ -1064,6 +1065,7 @@ export type AttemptWorkloadObserved =
       readonly fault: WorkerImageFault;
       readonly text: string;
     }
+  | { readonly observed: "TimedOut"; readonly text: string }
   | { readonly observed: "SiteFault"; readonly why: string }
   | { readonly observed: "Unfaulted" };
 

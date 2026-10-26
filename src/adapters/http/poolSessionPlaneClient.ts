@@ -14,6 +14,7 @@ import {
   sessionEndedSchema,
   sessionPlaneRoutes,
 } from "../../contract/sessionPlane.ts";
+import { poolEndAnswer } from "./poolJobPlaneClient.ts";
 import type {
   WorkerPoolEndAnswer,
   WorkerPoolSessionEnd,
@@ -32,12 +33,6 @@ export function checkedPoolSessionPlaneClientSettings(
       "pool session plane timeout must be a positive integer",
     );
   return input;
-}
-
-function poolSessionEndAnswer(status: number): WorkerPoolEndAnswer {
-  if (status === 204) return "Ended";
-  if (status >= 400 && status < 500) return "Refused";
-  return "Unavailable";
 }
 
 async function poolSessionPlaneEnded(
@@ -61,7 +56,7 @@ async function poolSessionPlaneEnded(
       },
     );
     await answered.body?.cancel();
-    return poolSessionEndAnswer(answered.status);
+    return poolEndAnswer(answered.status);
   } catch {
     return "Unavailable";
   }

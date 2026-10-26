@@ -38,7 +38,10 @@ import {
   kubernetesPullFailureDwellSecs,
 } from "../../src/adapters/kubernetes/podFaults.ts";
 import type { KubernetesSidecar } from "../../src/adapters/kubernetes/sidecars.ts";
-import { kubernetesImageFaultText } from "../../src/adapters/kubernetes/workerFaults.ts";
+import {
+  kubernetesDeadlineText,
+  kubernetesImageFaultText,
+} from "../../src/adapters/kubernetes/workerFaults.ts";
 import { kubernetesWorkerContainerName } from "../../src/adapters/kubernetes/workerPod.ts";
 
 const root = mkdtempSync(join(tmpdir(), "chuggy-pool-kube-"));
@@ -483,15 +486,16 @@ function poolCapturedAt(name: string): number {
   );
 }
 
-/** Each assignment a backend's `ended` refused, with the fault it named. */
-function poolRefusedOf(
+/** Each assignment a backend's `ended` answered, with the fault it refused under or how it was killed. */
+function poolEndedOf(
   ended: Awaited<ReturnType<WorkerPoolBackend["ended"]>>,
 ): readonly (readonly [string, string])[] {
-  return ended.map((end) =>
-    end.kind === "Job"
-      ? [end.assignment, end.fault]
-      : [end.session.assignment, "Session"],
-  );
+  return ended.map((end) => {
+    if (end.kind === "Session") return [end.session.assignment, "Session"];
+    return "killed" in end
+      ? [end.job.assignment, end.killed]
+      : [end.assignment, end.fault];
+  });
 }
 
 /** One request a refusal makes, of the cluster or of the worker plane, as it was sent. */
@@ -638,7 +642,7 @@ test("a pull that can still succeed is held until its pod has stood for the dwel
     () => created + kubernetesPullFailureDwellSecs * 1_000,
   );
   assert.deepEqual(await after.held(), []);
-  assert.deepEqual(poolRefusedOf(await after.ended()), [
+  assert.deepEqual(poolEndedOf(await after.ended()), [
     ["pulling", "ImageUnpullable"],
   ]);
 });
@@ -655,6 +659,96 @@ test("a fault of the runtime copy is no refusal, and its pod is deleted as any e
   assert.deepEqual(
     reached.filter((made) => made.method === "DELETE").map((made) => made.url),
     ["https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-copy"],
+  );
+});
+
+test("a pod the cluster stopped at its deadline is not held, and is ended as killed under the attempt its envelope names, then deleted", async () => {
+  for (const name of ["deadline-exceeded", "deadline-exceeded-copying"]) {
+    const stopped = poolCaptured(name, "stopped");
+    const running = poolCaptured("running", "running");
+    const { reached, fetcher } = poolFaulted([stopped, running]);
+    const backend = kubernetesPoolBackend(config, fetcher, () =>
+      poolCapturedAt(name),
+    );
+    assert.deepEqual(
+      await backend.held(),
+      [{ assignment: "running", kind: "Job" }],
+      name,
+    );
+    assert.deepEqual(
+      reached.filter((made) => made.method === "DELETE"),
+      [],
+      `${name}: a pod stopped at its deadline is ended's, not held's to delete`,
+    );
+    reached.length = 0;
+    assert.deepEqual(
+      await backend.ended(),
+      [
+        {
+          kind: "Job",
+          job: {
+            assignment: "stopped",
+            callbackUrl: "https://callback.invalid/v1/ticket-execution",
+            bearer: "bearer-pool-stopped",
+          },
+          text: kubernetesDeadlineText,
+          killed: "Deadline",
+        },
+      ],
+      name,
+    );
+    assert.deepEqual(
+      reached,
+      [
+        {
+          method: "GET",
+          url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods",
+        },
+        {
+          method: "GET",
+          url: "https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/pool-stopped",
+        },
+        {
+          method: "DELETE",
+          url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-stopped",
+        },
+      ],
+      name,
+    );
+  }
+});
+
+test("a pod that failed for any other cause is never ended as killed at its deadline", async () => {
+  for (const name of ["oom-killed", "runtime-copy-failed", "succeeded"]) {
+    const { fetcher } = poolFaulted([poolCaptured(name, "other")]);
+    const backend = kubernetesPoolBackend(config, fetcher, () =>
+      poolCapturedAt(name),
+    );
+    assert.deepEqual(await backend.ended(), [], name);
+  }
+});
+
+test("a pod stopped at its deadline whose envelope could not be read is deleted all the same, its attempt left to its lease, and why told", async (t) => {
+  const { reached, fetcher } = poolFaulted(
+    [poolCaptured("deadline-exceeded", "unread")],
+    () => new Response("{}", { status: 404 }),
+  );
+  const backend = kubernetesPoolBackend(config, fetcher, () =>
+    poolCapturedAt("deadline-exceeded"),
+  );
+  const written = t.mock.method(process.stderr, "write", () => true);
+  const ended = await backend.ended();
+  const lines = written.mock.calls.map((call) => String(call.arguments[0]));
+  written.mock.restore();
+  assert.deepEqual(ended, []);
+  assert.deepEqual(
+    reached.map((made) => made.method),
+    ["GET", "GET", "DELETE"],
+  );
+  assert.equal(lines.length, 1);
+  assert.match(
+    lines[0] ?? "",
+    /pod pool-unread passed its deadline and its envelope Secret could not be read/u,
   );
 });
 
@@ -701,7 +795,7 @@ test("a refusal whose text could not be stored is refused all the same, its pod 
     const lines = written.mock.calls.map((call) => String(call.arguments[0]));
     written.mock.restore();
     assert.deepEqual(
-      poolRefusedOf(ended),
+      poolEndedOf(ended),
       [["unwritable", "ImageWorkspaceUnwritable"]],
       what,
     );

@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
+import { poolJobPlaneClient } from "../../src/adapters/http/poolJobPlaneClient.ts";
 import { poolPlaneClient } from "../../src/adapters/http/poolPlaneClient.ts";
 import { createPoolPlaneApp } from "../../src/adapters/http/poolPlaneServer.ts";
 import { poolSessionPlaneClient } from "../../src/adapters/http/poolSessionPlaneClient.ts";
@@ -1321,6 +1322,7 @@ test("a runner polls, runs the session it is handed through its turn, reports it
       pollTimeoutMs: 5_000,
       settleTimeoutMs: 5_000,
     }),
+    jobs: poolJobPlaneClient({ timeoutMs: 5_000 }),
     sessions: poolSessionPlaneClient({ timeoutMs: 5_000 }),
     backend: runtime.backend,
     settings: {

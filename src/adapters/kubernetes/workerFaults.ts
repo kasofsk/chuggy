@@ -1,7 +1,8 @@
 /**
  * What the cluster backend says of a worker whose pod met a fault the worker
- * itself could not report: the observation the scheduler acts on, and the
- * error text the backend stores in the worker's place.
+ * itself could not report, or was stopped at its deadline before it could:
+ * the observation the scheduler acts on, and the error text the backend
+ * stores in the worker's place.
  *
  * THE TEXT IS THE BACKEND'S, ONE FIXED TEXT PER FAULT. A person reading why
  * their job never ran is told what the image lacks in this backend's words,
@@ -61,6 +62,10 @@ export const kubernetesImageFaultTexts = {
     "The image this job names gives the job's user no temporary directory it can write.",
 } as const satisfies Readonly<Record<WorkerImageFault, string>>;
 
+/** What the cluster tells the person whose job's pod it stopped at its deadline, in the words a runner gives a job it killed at its own. */
+export const kubernetesDeadlineText =
+  "Worker exited before reporting: the cluster stopped its pod at its deadline";
+
 /** The text one fault is told by, the kubelet's message after it where the fault carried one. */
 export function kubernetesImageFaultText(
   fault: WorkerImageFault,
@@ -85,6 +90,8 @@ export function kubernetesWorkloadObserved(
   switch (found.fault) {
     case "None":
       return { observed: "Unfaulted" };
+    case "Deadline":
+      return { observed: "TimedOut", text: kubernetesDeadlineText };
     case "Image":
       return {
         observed: "ImageFault",

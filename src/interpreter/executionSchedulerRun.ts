@@ -127,13 +127,16 @@
  * stores the text its person reads first, while the attempt is still live
  * enough to take it. A fault of the site's own runtime withdraws the attempt as
  * `PlacementUnavailable` without spending the budget, because no change to the
- * ticket mends it, and the pass reports it for an operator. The pod is
- * cancelled after the durable move, so a pass that stops between them leaves an
- * ended attempt the cleanup removes. Each placed attempt costs one observation,
- * and one that faulted the further requests its error text and its cancel take,
- * which for a cluster are its bearer Secret's read, the worker plane's write and
- * the pod's delete; all are bounded by `attemptsPerPassMax` and taken one at a
- * time, as the session pass observes its pods.
+ * ticket mends it, and the pass reports it for an operator. A run its site
+ * stopped at its deadline is ended `RunTimedOut` as a worker ends a run it
+ * timed out itself, its text stored first, so it waits for a person rather
+ * than a lease and a retry. The pod is cancelled after the durable move, so a
+ * pass that stops between them leaves an ended attempt the cleanup removes.
+ * Each placed attempt costs one observation, and one that faulted or passed its
+ * deadline the further requests its error text and its cancel take, which for a
+ * cluster are its bearer Secret's read, the worker plane's write and the pod's
+ * delete; all are bounded by `attemptsPerPassMax` and taken one at a time, as
+ * the session pass observes its pods.
  *
  * NOTHING HERE READS A CLOCK. Claim leases, placement backoff and attempt
  * leases are durations handed to the store, which asks the database what time
@@ -163,6 +166,7 @@ import {
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
+import { runEndedLoss } from "./runEvidence.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
 import {
@@ -239,7 +243,7 @@ export type SchedulerPassNotice =
   | {
       readonly notice: "ErrorUnwritten";
       readonly attempt: FencedAttempt;
-      readonly fault: WorkerImageFault;
+      readonly ended: WorkerImageFault | "RunTimedOut";
       readonly text: string;
       readonly why: string;
     };
@@ -1130,7 +1134,29 @@ async function schedulerObserveOne(
         notices.push({
           notice: "ErrorUnwritten",
           attempt,
-          fault: workload.fault,
+          ended: workload.fault,
+          text: workload.text,
+          why: written.why,
+        });
+      await service.placement.cancel(attempt);
+      return ended;
+    }
+    case "TimedOut": {
+      const written = await service.placement.writeError(
+        attempt,
+        workload.text,
+      );
+      const ended = await schedulerEndAttempt(
+        service,
+        attempt,
+        runEndedLoss("RunTimedOut"),
+        "RunTimedOut",
+      );
+      if (ended && written.written === "Unwritten")
+        notices.push({
+          notice: "ErrorUnwritten",
+          attempt,
+          ended: "RunTimedOut",
           text: workload.text,
           why: written.why,
         });

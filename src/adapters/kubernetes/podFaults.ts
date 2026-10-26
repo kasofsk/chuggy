@@ -1,7 +1,15 @@
 /**
  * What a job's pod says went wrong before the job's own worker could say
  * anything, read from the status its kubelet keeps: a fault of the image the
- * job named, a fault of the site's runtime copy, or neither.
+ * job named, a fault of the site's runtime copy, a deadline the cluster stopped
+ * it at, or none of them.
+ *
+ * A POD STOPPED AT ITS DEADLINE IS READ AS THAT FIRST. A kubelet that finds a
+ * pod past its `activeDeadlineSeconds` fails the pod with the reason
+ * `kubernetesDeadlineExceeded` and then kills its containers, so what any of
+ * them ended in, a copy cut short included, is the kill's and not a fault of
+ * its own. Only the pod's phase and reason say it, so a container killed for
+ * any other cause is never read as one.
  *
  * ONLY THE JOB'S OWN CONTAINER SPEAKS FOR ITS IMAGE. The runtime is copied in
  * the site's image ahead of the job's container, and a job container that has
@@ -14,9 +22,9 @@
  * A STATUS NAMES AN IMAGE FAULT ONLY WHERE THE CONTRACT SAYS IT DOES. A pull
  * the kubelet could not make, a start that failed finding the shell the job's
  * command names, and an exit with one of `workerImageFaultStatuses` are the
- * image's; every other state, from running to a crash, a kill or a start that
- * failed for another cause, is no fault here, and the attempt's lease is still
- * what collects it.
+ * image's; every other state, from running to a crash, another kill or a start
+ * that failed for another cause, is no fault here, and the attempt's lease is
+ * still what collects it.
  *
  * A PULL IS THE IMAGE'S AT ONCE ONLY WHERE NO RETRY CAN CHANGE IT. A name that
  * is not one, and a registry that answered that the image is not there or not
@@ -52,8 +60,8 @@ export interface KubernetesJobContainers {
 }
 
 /**
- * What one job's pod says of its image and of the site's runtime copy. A
- * message is the kubelet's, kept where it says what a label cannot.
+ * What one job's pod says of its image, of the site's runtime copy and of its
+ * deadline. A message is the kubelet's, kept where it says what a label cannot.
  */
 export type KubernetesPodFault =
   | {
@@ -67,6 +75,7 @@ export type KubernetesPodFault =
       readonly exitCode?: number;
       readonly message?: string;
     }
+  | { readonly fault: "Deadline" }
   | { readonly fault: "None" };
 
 const millisecondsPerSecond = 1_000;
@@ -81,6 +90,9 @@ export const kubernetesPodMessageCharsMax = 1_024;
  * well inside the attempt lease the reaper would otherwise wait out.
  */
 export const kubernetesPullFailureDwellSecs = 120;
+
+/** The reason a kubelet fails a pod with once it has run past its `activeDeadlineSeconds`. */
+export const kubernetesDeadlineExceeded = "DeadlineExceeded";
 
 /** The waiting reasons a kubelet gives a container whose image it could not pull. */
 export const kubernetesPullFailures: ReadonlySet<string> = new Set([
@@ -159,6 +171,8 @@ const kubernetesPodStatusSchema = z.object({
   metadata: z.object({ creationTimestamp: z.string().optional() }).optional(),
   status: z
     .object({
+      phase: z.string().optional(),
+      reason: z.string().optional(),
       initContainerStatuses: z
         .array(kubernetesContainerStatusSchema)
         .optional(),
@@ -267,8 +281,9 @@ function kubernetesPodAgeSecs(
 }
 
 /**
- * What one pod document says at `nowEpochMs` of its job's image and of its
- * runtime copy, the copy read first because the job waits on it.
+ * What one pod document says at `nowEpochMs` of its deadline, its job's image
+ * and its runtime copy: the deadline first, because the kill it orders ends
+ * every container, and the copy before the job, because the job waits on it.
  */
 export function kubernetesPodFault(
   pod: unknown,
@@ -278,6 +293,11 @@ export function kubernetesPodFault(
   const parsed = kubernetesPodStatusSchema.safeParse(pod);
   if (!parsed.success) return { fault: "None" };
   const status = parsed.data.status;
+  if (
+    status?.phase === "Failed" &&
+    status.reason === kubernetesDeadlineExceeded
+  )
+    return { fault: "Deadline" };
   const runtime = kubernetesRuntimeFault(
     status?.initContainerStatuses?.find(
       (container) => container.name === containers.runtime,

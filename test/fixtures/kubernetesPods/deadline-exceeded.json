@@ -1,0 +1,189 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "capture-deadline",
+    "namespace": "chuggy-work",
+    "creationTimestamp": "2026-10-26T13:38:20Z"
+  },
+  "spec": {
+    "initContainers": [
+      {
+        "name": "chuggy-runtime",
+        "image": "docker.io/library/stand-in-runtime-deadline:1",
+        "command": ["cp", "-a", "/opt/chuggy", "/var/run/chuggy/runtime/"]
+      },
+      {
+        "name": "postgres",
+        "image": "docker.io/library/postgres:18-alpine"
+      }
+    ],
+    "containers": [
+      {
+        "name": "worker",
+        "image": "docker.io/library/stand-in-job-deadline:1",
+        "command": ["/bin/sh", "/opt/chuggy/check.sh"]
+      }
+    ]
+  },
+  "status": {
+    "conditions": [
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-26T13:39:10Z",
+        "status": "False",
+        "type": "PodReadyToStartContainers"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-26T13:38:26Z",
+        "status": "True",
+        "type": "Initialized"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-26T13:38:40Z",
+        "reason": "PodFailed",
+        "status": "False",
+        "type": "Ready"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-26T13:38:40Z",
+        "reason": "PodFailed",
+        "status": "False",
+        "type": "ContainersReady"
+      },
+      {
+        "lastProbeTime": null,
+        "lastTransitionTime": "2026-10-26T13:38:20Z",
+        "status": "True",
+        "type": "PodScheduled"
+      }
+    ],
+    "containerStatuses": [
+      {
+        "containerID": "containerd://4a1f85971b0c680b2bdb6a1cd2c8ce81d20e3eeb22b669859a9d1446de919187",
+        "image": "docker.io/library/stand-in-job-deadline:1",
+        "imageID": "sha256:6968e5412a9ee243acd0a97f94c29ce858665e13332f42eef9e3367f1ad40e10",
+        "lastState": {},
+        "name": "worker",
+        "ready": false,
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "terminated": {
+            "containerID": "containerd://4a1f85971b0c680b2bdb6a1cd2c8ce81d20e3eeb22b669859a9d1446de919187",
+            "exitCode": 137,
+            "finishedAt": "2026-10-26T13:39:10Z",
+            "reason": "Error",
+            "startedAt": "2026-10-26T13:38:26Z"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/run/golden/capability/bearer",
+            "name": "worker-capability",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/workspace",
+            "name": "worker-workspace"
+          },
+          {
+            "mountPath": "/var/run/chuggy/minted",
+            "name": "minted-credential"
+          },
+          {
+            "mountPath": "/var/run/golden/forge",
+            "name": "worker-credential-0",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/var/run/golden/workspace",
+            "name": "worker-credential-1",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          },
+          {
+            "mountPath": "/opt/chuggy",
+            "name": "chuggy-runtime",
+            "readOnly": true,
+            "recursiveReadOnly": "Disabled"
+          }
+        ]
+      }
+    ],
+    "hostIP": "172.17.0.4",
+    "hostIPs": [
+      {
+        "ip": "172.17.0.4"
+      }
+    ],
+    "initContainerStatuses": [
+      {
+        "containerID": "containerd://6d3023e5fa0139719f875ef50f56c8ac90e825ab6201c4ec51cb4018c10467ef",
+        "image": "docker.io/library/stand-in-runtime-deadline:1",
+        "imageID": "sha256:df706356ab5a3ef492c71eca27322c0f29370c021b636ad22bd91d59a4d6967c",
+        "lastState": {},
+        "name": "chuggy-runtime",
+        "ready": true,
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "terminated": {
+            "containerID": "containerd://6d3023e5fa0139719f875ef50f56c8ac90e825ab6201c4ec51cb4018c10467ef",
+            "exitCode": 0,
+            "finishedAt": "2026-10-26T13:38:22Z",
+            "reason": "Completed",
+            "startedAt": "2026-10-26T13:38:22Z"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/run/chuggy/runtime",
+            "name": "chuggy-runtime"
+          }
+        ]
+      },
+      {
+        "containerID": "containerd://82ac65fcb526051ac80fb086059b10854c75baeb005a5c8ff61c2c40de06825b",
+        "image": "docker.io/library/postgres:18-alpine",
+        "imageID": "sha256:b07129cc272f688c98f5b343138a0a52fa45b3d82f50d7a53ff441330624cd2e",
+        "lastState": {},
+        "name": "postgres",
+        "ready": false,
+        "restartCount": 0,
+        "started": false,
+        "state": {
+          "terminated": {
+            "containerID": "containerd://82ac65fcb526051ac80fb086059b10854c75baeb005a5c8ff61c2c40de06825b",
+            "exitCode": 0,
+            "finishedAt": "2026-10-26T13:39:10Z",
+            "reason": "Completed",
+            "startedAt": "2026-10-26T13:38:23Z"
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/var/lib/postgresql",
+            "name": "sidecar-postgres"
+          }
+        ]
+      }
+    ],
+    "message": "Pod was active on the node longer than the specified deadline",
+    "phase": "Failed",
+    "podIP": "10.42.0.2",
+    "podIPs": [
+      {
+        "ip": "10.42.0.2"
+      }
+    ],
+    "qosClass": "Burstable",
+    "reason": "DeadlineExceeded",
+    "startTime": "2026-10-26T13:38:20Z"
+  }
+}

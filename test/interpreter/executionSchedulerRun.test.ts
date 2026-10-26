@@ -2381,6 +2381,56 @@ test("a fault of the site's runtime withdraws the attempt without blocking or sp
   ]);
 });
 
+test("a run its site stopped at its deadline stores its text, then ends timed out as its worker's own report would, spending a retry, then cancels the pod", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  assert.deepEqual(
+    await observing(
+      calls,
+      { observed: "TimedOut", text: "stopped at its deadline" },
+      { written: "Written" },
+      true,
+      seen,
+    ),
+    { observed: 1, notices: [] },
+  );
+  assert.deepEqual(calls, [
+    "observed:attempt-one",
+    "wrote:attempt-one:stopped at its deadline",
+    "ended:Lost:RunTimedOut",
+    "cancelled:attempt-one:1",
+  ]);
+  assert.deepEqual(seen, ["attemptEnded:Lost:RunTimedOut"]);
+});
+
+test("a timed-out run whose text could not be stored still ends, and the text's absence is told", async () => {
+  const calls: string[] = [];
+  const why = "the worker plane answered 503";
+  assert.deepEqual(
+    await observing(
+      calls,
+      { observed: "TimedOut", text: "text" },
+      { written: "Unwritten", why },
+    ),
+    {
+      observed: 1,
+      notices: [
+        {
+          notice: "ErrorUnwritten",
+          attempt,
+          ended: "RunTimedOut",
+          text: "text",
+          why,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(calls.slice(2), [
+    "ended:Lost:RunTimedOut",
+    "cancelled:attempt-one:1",
+  ]);
+});
+
 test("a workload with no fault its worker cannot report is left to its lease", async () => {
   const calls: string[] = [];
   assert.deepEqual(await observing(calls, { observed: "Unfaulted" }), {
@@ -2405,7 +2455,7 @@ test("a fault whose text could not be stored still blocks, and the text's absenc
         {
           notice: "ErrorUnwritten",
           attempt,
-          fault: "ImageLacksGit",
+          ended: "ImageLacksGit",
           text: "text",
           why,
         },
@@ -2423,6 +2473,7 @@ test("an attempt something else ended first is neither counted nor told", async 
   for (const found of [
     { observed: "SiteFault", why: "pod one: copy failed" },
     { observed: "ImageFault", fault: "ImageLacksGit", text: "text" },
+    { observed: "TimedOut", text: "text" },
   ] as const) {
     assert.deepEqual(
       await observing(
