@@ -56,7 +56,7 @@ async function poolSessionPlaneEnded(
       },
     );
     await answered.body?.cancel();
-    return poolEndAnswer(answered.status);
+    return poolEndAnswer(answered);
   } catch {
     return "Unavailable";
   }

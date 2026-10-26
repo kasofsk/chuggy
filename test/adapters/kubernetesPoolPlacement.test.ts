@@ -18,6 +18,10 @@ import {
   workerPoolEvidenceCharsMax,
   type WorkerPoolAssignment,
 } from "../../src/contract/workerPool.ts";
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
 import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
 import {
@@ -903,9 +907,23 @@ test("a refusal whose text could not be stored is refused all the same, its pod 
 /** What a cluster and its worker plane answer while a kept pod waits, each changed between passes by the case. */
 interface PoolKeptAnswers {
   secret: () => Response;
-  ended: number;
+  ended: () => Response;
   settled: WorkerPoolSettled;
 }
+
+/** An end's answer as the worker plane gives one, naming its release. */
+const poolPlaneSaid = (status: number) => () =>
+  new Response(null, {
+    status,
+    headers: { [workerContractHeader]: workerContractRelease },
+  });
+
+/** What the edge in front of a worker plane with no process ready answers, naming no release. */
+const poolEdgeNotFound = () =>
+  new Response("404 page not found\n", {
+    status: 404,
+    headers: { "content-type": "text/plain" },
+  });
 
 /**
  * A cluster holding `pods` until each is deleted, and the worker plane their
@@ -922,12 +940,9 @@ function poolKeptCluster(
     sent.push(`${init?.method ?? "GET"} ${url.origin}${url.pathname}`);
     if (url.origin !== "https://cluster.invalid:6443")
       return Promise.resolve(
-        new Response(null, {
-          status:
-            url.pathname === workerPlaneRoutes.runEnded.path
-              ? answers.ended
-              : 204,
-        }),
+        url.pathname === workerPlaneRoutes.runEnded.path
+          ? answers.ended()
+          : new Response(null, { status: 204 }),
       );
     if (url.pathname === "/api/v1/namespaces/pool/pods")
       return Promise.resolve(
@@ -1015,13 +1030,30 @@ const poolKeptEnded = `POST https://callback.invalid${workerPlaneRoutes.runEnded
 const poolKeptUploaded = `${workerPlaneRoutes.artifact.method} https://callback.invalid${workerPlaneRoutes.artifact.path.replace("*", workerErrorPath)}`;
 
 test("a pod stopped at its deadline whose end the plane did not answer is kept, and the next pass ends it again and only then deletes it", async () => {
-  for (const [what, answered, taken] of [
-    ["an end taken now", 204, 1],
-    ["an end the plane took before, answered as no longer live", 401, 0],
+  for (const [what, unanswered, answered, taken] of [
+    [
+      "a plane answering 503, then an end taken now",
+      poolPlaneSaid(503),
+      204,
+      1,
+    ],
+    ["an edge's own 404, then an end taken now", poolEdgeNotFound, 204, 1],
+    [
+      "a plane answering 503, then an end it took before, answered as no longer live",
+      poolPlaneSaid(503),
+      401,
+      0,
+    ],
+    [
+      "an edge's own 404, then an end the plane took before, answered as no longer live",
+      poolEdgeNotFound,
+      401,
+      0,
+    ],
   ] as const) {
     const answers: PoolKeptAnswers = {
       secret: () => poolEnvelopeSecret("stopped"),
-      ended: 503,
+      ended: unanswered,
       settled: "Settled",
     };
     const kept = poolKept("deadline-exceeded", "stopped", answers);
@@ -1040,10 +1072,10 @@ test("a pod stopped at its deadline whose end the plane did not answer is kept, 
           poolKeptEnded,
         ],
       },
-      `${what}: a plane that is restarting`,
+      `${what}: unanswered`,
     );
     assert.deepEqual([...kept.pods.keys()], [name], what);
-    answers.ended = answered;
+    answers.ended = poolPlaneSaid(answered);
     assert.deepEqual(
       await poolKeptPass(kept),
       {
@@ -1071,7 +1103,7 @@ test("a pod stopped at its deadline whose end the plane did not answer is kept, 
 test("a pod stopped at its deadline whose envelope could not be read is kept, and the pass that reads it ends it and then deletes it", async (t) => {
   const answers: PoolKeptAnswers = {
     secret: () => new Response("{}", { status: 503 }),
-    ended: 204,
+    ended: poolPlaneSaid(204),
     settled: "Settled",
   };
   const kept = poolKept("deadline-exceeded", "stopped", answers);
@@ -1110,7 +1142,7 @@ test("a pod naming a fault of its image whose refusal the plane did not answer i
   ] as const) {
     const answers: PoolKeptAnswers = {
       secret: () => poolEnvelopeSecret("lacking"),
-      ended: 204,
+      ended: poolPlaneSaid(204),
       settled: unanswered,
     };
     const kept = poolKept("lacks-git", "lacking", answers);

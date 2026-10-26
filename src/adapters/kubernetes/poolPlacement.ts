@@ -42,7 +42,9 @@
  *
  * A POD WHOSE END IS NAMED IS DELETED BY `clear`, NOT BY `ended`. The pod is
  * the only record of an end the plane has not answered, so it stays until
- * the plane has, and every pass until then names its end again.
+ * the plane has, and every pass until then names its end again. A kept pod
+ * whose pull is backing off between tries names no fault on that pass, and is
+ * held as any other until a try names it again.
  *
  * A CAPABILITY IS A PLACEMENT CONSTRAINT AND NOTHING ELSE. A token the site
  * maps contributes a node selector and the tolerations that let a node kept for

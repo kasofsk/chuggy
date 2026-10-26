@@ -32,8 +32,10 @@
  * chuggy-common's `poolLoop.mjs` in TypeScript, and a change to one is a
  * change to both, except that of a job's ends only one its backend refused or
  * killed at its deadline is reported here, and every other is left to its
- * lease, and that a runner's backend may take no job while its disk is low,
- * which a cluster leaves to its kubelet.
+ * lease; that such an end the plane did not answer is reported again on every
+ * pass, where `poolLoop.mjs` reports each end once and leaves it to its lease;
+ * and that a runner's backend may take no job while its disk is low, which a
+ * cluster leaves to its kubelet.
  *
  * A JOB ITS BACKEND KILLED AT ITS DEADLINE IS ENDED TIMED OUT, on the job
  * plane under its own bearer, as a harness that timed its own run out ends
@@ -140,8 +142,10 @@ export interface WorkerPoolBackend {
   held(): Promise<readonly WorkerPoolHeld[]>;
   /**
    * Each session once, after `held` stopped naming it, and never one this
-   * pool stopped; and each job it refused or killed at its deadline, which
-   * `held` does not name, until that job is cleared.
+   * pool stopped; and each job it refused or killed at its deadline, until
+   * that job is cleared. `held` may name a refused job too, on a pass its
+   * workload shows no fault, which renews its lease and counts it against its
+   * ceiling as any held job, and so keeps its refusal one the plane takes.
    */
   ended(): Promise<readonly WorkerPoolEnded[]>;
   /** Lets go of one job `ended` named, whose end the plane has answered; idempotent. */

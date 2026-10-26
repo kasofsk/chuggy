@@ -12,9 +12,10 @@
  * comes back. The one status two answers share is a 409, where the plane
  * refusing this client's release is told from a lost assignment by its body.
  *
- * A 404 OR A 400 DENIES THE POOL ONLY WHERE THE PLANE GAVE IT. A proxy in front
- * of a plane it cannot reach answers those of its own, and the plane names its
- * release on every answer, so one naming none is an outage.
+ * A REFUSAL IS THE PLANE'S ONLY WHERE IT NAMES THE PLANE'S RELEASE. A proxy in
+ * front of a plane it cannot reach answers a 404 or a 400 of its own, and the
+ * plane names its release on every answer, so a denial or a lost assignment
+ * naming none is an outage.
  *
  * A MALFORMED ANSWER IS AN OUTAGE AND NOT A DENIAL. An assignment this side
  * cannot parse is a plane this client cannot work with, which is a condition an
@@ -130,8 +131,8 @@ function poolPlaneAssignmentsUrl(
   return url;
 }
 
-/** Whether the plane itself gave an answer, which names the release it was built with. */
-function poolPlaneAnswered(answered: Response): boolean {
+/** Whether a plane a pool calls gave an answer itself, which names the release it was built with where a proxy's names none. */
+export function poolPlaneAnswered(answered: Response): boolean {
   const release = answered.headers.get(workerContractHeader);
   return release !== null && workerContractVersionOf(release) !== undefined;
 }
@@ -254,10 +255,10 @@ async function poolPlaneReleaseRefused(answered: Response): Promise<boolean> {
 function poolPlaneSettlement(answered: Response): WorkerPoolSettled {
   const { status } = answered;
   if (status === 204) return "Settled";
-  if (status === 409) return "Lost";
   if (status === 401) return "Stale";
-  if ((status === 404 || status === 400) && poolPlaneAnswered(answered))
-    return "Denied";
+  if (!poolPlaneAnswered(answered)) return "Unavailable";
+  if (status === 409) return "Lost";
+  if (status === 404 || status === 400) return "Denied";
   return "Unavailable";
 }
 

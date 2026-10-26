@@ -60,8 +60,14 @@ function plane(
   };
 }
 
+/** An answer as the plane sends one, naming its release as every one does. */
 const answered = (status: number) => () =>
-  Promise.resolve(new Response(null, { status }));
+  Promise.resolve(
+    new Response(null, {
+      status,
+      headers: { [workerContractHeader]: workerContractRelease },
+    }),
+  );
 
 test("a killed job's text is left first, then its run is ended timed out, each once under the job's own bearer", async () => {
   const { sent, fetcher } = plane(answered(204), answered(204));
@@ -119,6 +125,32 @@ test("an end the plane refused is final, and anything else is an outage", async 
       ).end(ended),
       answer,
       String(status),
+    );
+  for (const [what, status, body, headers] of [
+    [
+      "a proxy's own 404",
+      404,
+      "404 page not found\n",
+      { "content-type": "text/plain" },
+    ],
+    ["a proxy's own 401", 401, "", {}],
+    ["a 409 naming no release", 409, "", {}],
+    [
+      "a 400 naming no release of the plane's",
+      400,
+      "",
+      { [workerContractHeader]: "not a release" },
+    ],
+  ] as const)
+    assert.equal(
+      await poolJobPlaneClient(
+        { timeoutMs: 1_000 },
+        plane(answered(204), () =>
+          Promise.resolve(new Response(body, { status, headers })),
+        ).fetcher,
+      ).end(ended),
+      "Unavailable",
+      what,
     );
   assert.equal(
     await poolJobPlaneClient(

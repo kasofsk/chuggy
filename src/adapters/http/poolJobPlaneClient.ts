@@ -9,6 +9,11 @@
  * names an end the plane did not answer again on the next pass. An attempt
  * that already reported is no longer live, so the plane refuses a repeat and
  * that report stands.
+ *
+ * A REFUSAL IS THE PLANE'S ONLY WHERE IT NAMES THE PLANE'S RELEASE. A proxy in
+ * front of a plane with no process ready answers a 404 of its own, and an end
+ * read as refused is cleared from its backend, so a 4xx naming no release is
+ * an outage, as it is to the pool plane's client.
  */
 
 import { workerErrorPath } from "../../contract/http.ts";
@@ -27,6 +32,7 @@ import type {
   WorkerPoolJobEnd,
   WorkerPoolJobPlane,
 } from "../../interpreter/workerPoolClient.ts";
+import { poolPlaneAnswered } from "./poolPlaneClient.ts";
 
 export interface PoolJobPlaneClientSettings {
   readonly timeoutMs: number;
@@ -48,20 +54,22 @@ export function checkedPoolJobPlaneClientSettings(
 }
 
 /** What the plane's answer to one end means, which a session's end shares. */
-export function poolEndAnswer(status: number): WorkerPoolEndAnswer {
+export function poolEndAnswer(answered: Response): WorkerPoolEndAnswer {
+  const { status } = answered;
   if (status === 204) return "Ended";
-  if (status >= 400 && status < 500) return "Refused";
+  if (status >= 400 && status < 500 && poolPlaneAnswered(answered))
+    return "Refused";
   return "Unavailable";
 }
 
-/** One call to a job's plane under its bearer, answered by its status, its body unread. */
-async function poolJobPlaneStatus(
+/** One call to a job's plane under its bearer, answered with its body unread. */
+async function poolJobPlaneCalled(
   settings: PoolJobPlaneClientSettings,
   fetcher: typeof fetch,
   ended: WorkerPoolJobEnd,
   route: { readonly method: string; readonly path: string },
   sent: { readonly contentType: string; readonly body: string | Uint8Array },
-): Promise<number> {
+): Promise<Response> {
   const answered = await fetcher(new URL(route.path, ended.job.callbackUrl), {
     method: route.method,
     signal: AbortSignal.timeout(settings.timeoutMs),
@@ -73,7 +81,7 @@ async function poolJobPlaneStatus(
     body: sent.body,
   });
   await answered.body?.cancel();
-  return answered.status;
+  return answered;
 }
 
 /** Leaves a killed job's error text on its attempt, answering nothing, since its end is asked for either way. */
@@ -83,7 +91,7 @@ async function poolJobPlaneErrorLeft(
   ended: WorkerPoolJobEnd,
 ): Promise<void> {
   try {
-    await poolJobPlaneStatus(
+    await poolJobPlaneCalled(
       settings,
       fetcher,
       ended,
@@ -114,7 +122,7 @@ async function poolJobPlaneEnded(
   );
   try {
     return poolEndAnswer(
-      await poolJobPlaneStatus(
+      await poolJobPlaneCalled(
         settings,
         fetcher,
         ended,
