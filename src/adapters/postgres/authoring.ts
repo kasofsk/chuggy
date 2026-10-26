@@ -22,6 +22,7 @@ import {
   type DraftPageQuery,
   type DraftResource,
   type DraftRevised,
+  type DraftRevisionPlan,
   type DraftState,
   type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
@@ -239,6 +240,40 @@ async function readDraft(
   );
   const row = found.rows[0];
   return row === undefined ? undefined : draftResourceOf(partition, row);
+}
+
+/** The revision one release names, read at the keys the release pins. */
+async function readDraftRevision(
+  pool: pg.Pool,
+  partition: Partition,
+  revision: Parameters<AuthoringStore["draftRevision"]>[1],
+): Promise<DraftRevisionPlan | undefined> {
+  const found = await pool.query<{
+    authoring: string;
+    overrides: string | null;
+    selection: string | null;
+    canonical: string;
+  }>(
+    sql`SELECT r.authoring,r.overrides::text AS overrides,r.selection::text AS selection,c.canonical
+       FROM draft_revision r
+       JOIN configuration_revision c
+         ON c.tenant=r.tenant AND c.project=r.project
+        AND c.revision=r.configuration_revision
+      WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
+        AND r.ticket=${revision.ticket}
+        AND r.authoring_version=${revision.authoringVersion}
+        AND r.configuration_revision=${revision.configurationRevision}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const overrides = storedOverridesOf(row.overrides);
+  const selection = storedSelectionOf(row.selection);
+  return {
+    canonical: asCanonicalConfiguration(row.canonical),
+    ...(overrides === undefined ? {} : { overrides }),
+    ...(selection === undefined ? {} : { selection }),
+    program: parseDraftAuthoring(row.authoring).prog,
+  };
 }
 
 /** One draft row as the resource both the single read and the page answer. */
@@ -749,6 +784,8 @@ export function postgresAuthoring(
       readConfiguration(pool, partition, revision),
     draft: (partition, ticket) => readDraft(pool, partition, ticket),
     drafts: (partition, query) => readDrafts(pool, partition, query),
+    draftRevision: (partition, revision) =>
+      readDraftRevision(pool, partition, revision),
     createConfiguration: (input) => createConfiguration(pool, input),
     importRepositoryConfigurations: (input) =>
       importRepositoryConfigurations(pool, input),

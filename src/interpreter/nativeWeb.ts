@@ -85,6 +85,7 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
+  ticketProgramShort,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
@@ -603,6 +604,11 @@ export interface NativeSubmission {
   readonly viaSession?: SessionId;
 }
 
+/**
+ * `ProgramSkipsPlannedEvaluations` is a release or an update whose program runs
+ * less than its configuration plans, submitted by a caller not holding
+ * `SkipPlannedEvaluations`; nothing was accepted.
+ */
 export type NativeSubmissionResult =
   | { readonly result: "NotFound" }
   | {
@@ -610,6 +616,7 @@ export type NativeSubmissionResult =
       readonly scope: BacklogScope;
       readonly retryAfterSeconds: number;
     }
+  | { readonly result: "ProgramSkipsPlannedEvaluations" }
   | { readonly result: "Authorized"; readonly acceptance: Accepted };
 
 export type NativeCancellation =
@@ -1292,10 +1299,82 @@ function nativeAuthoringMethods(
   };
 }
 
+/**
+ * Whether a release or an update runs less than its configuration plans,
+ * judged on the revision it names, which is never rewritten and which its
+ * decision resolves or refuses, so what this answers is what the decision
+ * releases. `Unretained` is a revision the project does not hold; a
+ * configuration that makes no ticket is refused at the decision, so it runs
+ * nothing and is not short.
+ */
+async function nativeSubmitRunsLessThanPlan(
+  authoring: AuthoringStore,
+  partition: Partition,
+  command: Extract<
+    ProjectCommand,
+    { readonly command: "ReleaseDraft" | "UpdateTicket" }
+  >,
+): Promise<boolean | "Unretained"> {
+  const revision = await authoring.draftRevision(partition, command);
+  if (revision === undefined) return "Unretained";
+  const readiness = ticketConfigurationReadiness(
+    revision.canonical,
+    undefined,
+    revision.overrides,
+    revision.selection,
+  );
+  return (
+    readiness.readiness === "Ready" &&
+    ticketProgramShort(readiness.ticket, revision.program)
+  );
+}
+
+/**
+ * What a release or an update is answered before the inbox, if anything: one
+ * running less than its plan, by a caller not holding `SkipPlannedEvaluations`,
+ * is refused for it; one naming a revision the project does not hold is refused
+ * as an invalid command, so a revision written after this read is never
+ * released unasked.
+ */
+async function nativeSubmitPlanRefusal(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+  principal: Principal,
+  submission: NativeSubmission,
+): Promise<NativeSubmissionResult | undefined> {
+  const command = submission.command;
+  if (command.command !== "ReleaseDraft" && command.command !== "UpdateTicket")
+    return undefined;
+  const short = await nativeSubmitRunsLessThanPlan(
+    authoring,
+    submission.partition,
+    command,
+  );
+  if (short === "Unretained")
+    return {
+      result: "Authorized",
+      acceptance: { accepted: "InvalidCommand" },
+    };
+  if (!short) return undefined;
+  const skips = await access.authorize(
+    principal,
+    submission.partition,
+    "SkipPlannedEvaluations",
+  );
+  return skips === undefined
+    ? { result: "ProgramSkipsPlannedEvaluations" }
+    : undefined;
+}
+
+/**
+ * A release or an update that runs less than its plan asks
+ * `SkipPlannedEvaluations` beside `Mutate`, before anything is accepted.
+ */
 function nativeSubmitMethod(
   access: ProjectAccess,
   inbox: OperationInbox,
   backlog: ExecutionBacklogGuard,
+  authoring: AuthoringStore,
 ): NativeWeb["submit"] {
   return async (principal, submission) => {
     const authority = await access.authorize(
@@ -1304,6 +1383,13 @@ function nativeSubmitMethod(
       submissionAccess(submission.command),
     );
     if (authority === undefined) return { result: "NotFound" };
+    const refused = await nativeSubmitPlanRefusal(
+      access,
+      authoring,
+      principal,
+      submission,
+    );
+    if (refused !== undefined) return refused;
     if (dispatchNeedsExecutionHeadroom(submission.command)) {
       const verdict = await backlog.admitsDispatch(submission.partition);
       if (verdict.admits === "Backlogged")
@@ -2525,7 +2611,7 @@ export function nativeWeb(
       access,
       selectorContexts,
     ),
-    submit: nativeSubmitMethod(access, inbox, backlog),
+    submit: nativeSubmitMethod(access, inbox, backlog, authoring),
     ...nativeProjectionMethods(access, reads),
     cancel: nativeCancelMethod(access, reads, inbox),
     notifications: authorizedProjectValue(access, (partition, cursor) =>

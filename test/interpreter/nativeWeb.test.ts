@@ -47,7 +47,9 @@ import {
   type AuthoringStore,
   type CanonicalConfiguration,
   type DraftResource,
+  type DraftRevisionPlan,
 } from "../../src/interpreter/authoring.ts";
+import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
@@ -182,6 +184,10 @@ function authoringStore(
     drafts: (_partition, query) => {
       calls.push(`read:drafts:${String(query.limit)}`);
       return Promise.resolve({ partition, drafts: [], more: false });
+    },
+    draftRevision: () => {
+      calls.push("read:draftRevision");
+      return Promise.resolve(undefined);
     },
     createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
     createDraft: () => {
@@ -1215,6 +1221,204 @@ test("submitting a change of a ticket's overrides asks for OverrideTicketConfig 
   const cleared = boundary(true);
   await cleared.web.submit(principal, submissionOf(changing({})));
   assert.equal(cleared.calls[0], "authorize:Mutate");
+});
+
+/** A catalog whose one plan runs commands then a review in its first stage, and a review in its second. */
+const plannedCatalog = canonicalConfigurationOf({
+  version: 2,
+  image: "worker:catalog",
+  workloads: {
+    tests: { runner: "Commands", commands: ["npm test"] },
+    build: {
+      runner: "Agent",
+      prompt: { text: "Build it." },
+      worker: {
+        mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        setup: [],
+        files: [],
+      },
+    },
+  },
+  plans: {
+    thorough: [
+      { name: "checks", evaluators: ["tests", "build"] },
+      { name: "second", evaluators: ["build"] },
+    ],
+  },
+  defaults: { work: "build", evaluation: "thorough" },
+});
+
+/** A program whose Nth stage draws the evaluator keys at N. */
+function programOf(stages: readonly (readonly number[])[]) {
+  return stages.map((evaluators, index) => ({
+    key: index + 1,
+    evaluators: evaluators.map((key) => ({ key })),
+  }));
+}
+
+const releaseOf = (
+  command: "ReleaseDraft" | "UpdateTicket" = "ReleaseDraft",
+): ProjectCommand =>
+  command === "ReleaseDraft"
+    ? {
+        version: 1,
+        command,
+        ticket: id(1),
+        authoringVersion: 2,
+        configurationRevision: "revision",
+      }
+    : {
+        version: 1,
+        command,
+        ticket: id(1),
+        expectedRevision: 1,
+        authoringVersion: 2,
+        configurationRevision: "revision",
+      };
+
+/** A boundary holding `held` alone, whose store retains `revision` at every key a release names. */
+function releasing(
+  held: readonly ProjectAccessKind[],
+  revision: DraftRevisionPlan | undefined,
+) {
+  const calls: string[] = [];
+  const access: ProjectAccess = {
+    authorize: (_principal, _partition, kind) => {
+      calls.push(`authorize:${kind}`);
+      return Promise.resolve(held.includes(kind) ? authority : undefined);
+    },
+    authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
+  };
+  const inbox: OperationInbox = {
+    accept: () => {
+      calls.push("accept");
+      return Promise.resolve({ accepted: "IdempotencyConflict" });
+    },
+    cancel: () => Promise.resolve({ cancelled: "Unknown" }),
+    operation: () => Promise.resolve(undefined),
+  };
+  const authoring: AuthoringStore = {
+    ...authoringStore(calls),
+    draftRevision: (_partition, named) => {
+      calls.push(
+        `read:draftRevision:${String(named.ticket)}/${String(named.authoringVersion)}/${named.configurationRevision}`,
+      );
+      return Promise.resolve(revision);
+    },
+  };
+  const web = nativeWeb(
+    access,
+    readStore(calls),
+    inbox,
+    authoring,
+    { read: () => Promise.reject(new Error("not read")) },
+    openExecutionBacklogGuard,
+  );
+  return { web, calls };
+}
+
+const revisionRead = "read:draftRevision:1/2/revision";
+
+test("a release or an update whose program leaves out a stage or an evaluator of its plan asks SkipPlannedEvaluations, and without it nothing is accepted", async () => {
+  for (const command of ["ReleaseDraft", "UpdateTicket"] as const)
+    for (const stages of [[[1, 2]], [[1], [1]]]) {
+      const revision = {
+        canonical: plannedCatalog,
+        program: programOf(stages),
+      };
+      const refused = releasing(["Mutate"], revision);
+      assert.deepEqual(
+        await refused.web.submit(principal, submissionOf(releaseOf(command))),
+        { result: "ProgramSkipsPlannedEvaluations" },
+        `${command} ${JSON.stringify(stages)}`,
+      );
+      assert.deepEqual(refused.calls, [
+        "authorize:Mutate",
+        revisionRead,
+        "authorize:SkipPlannedEvaluations",
+      ]);
+      const permitted = releasing(
+        ["Mutate", "SkipPlannedEvaluations"],
+        revision,
+      );
+      await permitted.web.submit(principal, submissionOf(releaseOf(command)));
+      assert.deepEqual(permitted.calls, [
+        "authorize:Mutate",
+        revisionRead,
+        "authorize:SkipPlannedEvaluations",
+        "accept",
+      ]);
+    }
+});
+
+test("a release running its whole plan asks what a release asks and nothing more", async () => {
+  for (const command of ["ReleaseDraft", "UpdateTicket"] as const) {
+    const { web, calls } = releasing(["Mutate"], {
+      canonical: plannedCatalog,
+      selection: { evaluation: "thorough" },
+      program: programOf([[2, 1], [1]]),
+    });
+    assert.deepEqual(
+      await web.submit(principal, submissionOf(releaseOf(command))),
+      { result: "Authorized", acceptance: { accepted: "IdempotencyConflict" } },
+    );
+    assert.deepEqual(calls, ["authorize:Mutate", revisionRead, "accept"]);
+  }
+});
+
+test("a document's release asks SkipPlannedEvaluations for a stage of its evaluations left out, and never for one listing none", async () => {
+  const parsed = JSON.parse(
+    asCanonicalConfiguration(
+      '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
+    ),
+  ) as Record<string, unknown>;
+  const evaluated = canonicalConfigurationOf({
+    ...parsed,
+    evaluations: [
+      { instructions: ["Review."], practices: [] },
+      { instructions: ["Test."], practices: [] },
+    ],
+  });
+  const short = releasing(["Mutate"], {
+    canonical: evaluated,
+    program: programOf([[1, 2]]),
+  });
+  assert.deepEqual(
+    await short.web.submit(principal, submissionOf(releaseOf())),
+    { result: "ProgramSkipsPlannedEvaluations" },
+  );
+  for (const revision of [
+    { canonical: evaluated, program: programOf([[1], [3]]) },
+    { canonical: canonicalConfigurationOf(parsed), program: programOf([[1]]) },
+  ]) {
+    const { web, calls } = releasing(["Mutate"], revision);
+    await web.submit(principal, submissionOf(releaseOf()));
+    assert.deepEqual(calls, ["authorize:Mutate", revisionRead, "accept"]);
+  }
+});
+
+test("a release naming a revision the project does not retain is refused as acceptance refuses it, without reaching the inbox or asking the permit", async () => {
+  const { web, calls } = releasing(
+    ["Mutate", "SkipPlannedEvaluations"],
+    undefined,
+  );
+  assert.deepEqual(await web.submit(principal, submissionOf(releaseOf())), {
+    result: "Authorized",
+    acceptance: { accepted: "InvalidCommand" },
+  });
+  assert.deepEqual(calls, ["authorize:Mutate", revisionRead]);
+});
+
+test("a release refused Mutate reads no revision", async () => {
+  const { web, calls } = releasing([], {
+    canonical: plannedCatalog,
+    program: programOf([[1]]),
+  });
+  assert.deepEqual(await web.submit(principal, submissionOf(releaseOf())), {
+    result: "NotFound",
+  });
+  assert.deepEqual(calls, ["authorize:Mutate"]);
 });
 
 /** A project artifact port that rejects if either method is called. */

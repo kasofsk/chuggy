@@ -30,6 +30,7 @@ export type BoundaryRefusalCode =
   | "SelectionUnknown"
   | "SelectionUnsupported"
   | "ProgramExceedsPlan"
+  | "ProgramSkipsBriefChecks"
   | "OverridesUnsupported"
   | "OverridesUnknown"
   | "TicketCapacityReached"
@@ -50,6 +51,7 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "ProgramSkipsBriefChecks",
   "OverridesUnsupported",
   "OverridesUnknown",
   "TicketCapacityReached",

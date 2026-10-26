@@ -10,7 +10,6 @@
  * not offered the form, because the update it would send is refused.
  */
 
-import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
@@ -37,8 +36,12 @@ import {
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { ticketRevisable } from "../core/ticketActions.ts";
-import { creationRepositories } from "../core/ticketCreation.ts";
+import {
+  creationRepositories,
+  creationStandingOf,
+} from "../core/ticketCreation.ts";
 import type {
+  AuthoringStanding,
   CreationFault,
   CreationOffer,
   TicketCreationForm,
@@ -92,7 +95,7 @@ function useEditSubmit(props: {
   readonly subject: EditSubject;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
-  readonly mayOverride: boolean;
+  readonly standing: AuthoringStanding;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
 }): {
@@ -122,7 +125,7 @@ function useEditSubmit(props: {
       props.offers,
       form,
       props.repositories,
-      props.mayOverride,
+      props.standing,
     );
     if (assembled.assembled === "Faults") {
       props.onFaults(assembled.faults);
@@ -163,8 +166,8 @@ interface EditFormProps {
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
   readonly partial?: boolean;
-  /** Whether the reader may set overrides; absent, they may. */
-  readonly mayOverride?: boolean;
+  /** What the reader may send; absent, they may override and leave out part of the plan. */
+  readonly standing?: AuthoringStanding;
   readonly onUpdated: () => void;
   readonly onDirty?: (dirty: boolean) => void;
 }
@@ -183,9 +186,9 @@ export function EditForm(props: EditFormProps): ReactNode {
   const draft = props.subject.draft;
   const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
-  const mayOverride = props.mayOverride !== false;
+  const standing = props.standing ?? { mayOverride: true };
   const running = useEditSubmit({
-    mayOverride,
+    standing,
     ports: props.ports,
     partition: props.partition,
     subject: props.subject,
@@ -212,7 +215,7 @@ export function EditForm(props: EditFormProps): ReactNode {
         repositories={repositories}
         dependenciesLocked
         assemble={(held) =>
-          editRevisionFrom(draft, offers, held, repositories, mayOverride)
+          editRevisionFrom(draft, offers, held, repositories, standing)
         }
         storeKey={storeKey}
         submitLabel="revise and release"
@@ -230,7 +233,7 @@ export function EditForm(props: EditFormProps): ReactNode {
             partial={props.partial === true}
             repositories={repositories}
             dependenciesLocked
-            mayOverride={mayOverride}
+            standing={standing}
             api={props}
           />
         }
@@ -306,10 +309,7 @@ function EditOffered(props: {
   readonly onDirty: (dirty: boolean) => void;
 }): ReactNode {
   const { context, partition, subject } = props;
-  const mayOverride = !projectAbilityRefused(
-    useProjectAbilities(partition),
-    "overrideTicketConfig",
-  );
+  const standing = creationStandingOf(useProjectAbilities(partition));
   return (
     <EditOffersRead
       partition={partition}
@@ -324,7 +324,7 @@ function EditOffered(props: {
           edit={edit}
           bound={context.repositories}
           partial={context.partial}
-          mayOverride={mayOverride}
+          standing={standing}
           onDirty={props.onDirty}
           onUpdated={props.onUpdated}
         />

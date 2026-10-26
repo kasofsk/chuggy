@@ -13,6 +13,7 @@ export const abilitiesEvery: ProjectAbilitiesResponse = {
   dispatch: true,
   manageSelector: true,
   overrideTicketConfig: true,
+  skipPlannedEvaluations: true,
   administer: true,
 };
 
@@ -21,6 +22,7 @@ export const abilitiesNone: ProjectAbilitiesResponse = {
   dispatch: false,
   manageSelector: false,
   overrideTicketConfig: false,
+  skipPlannedEvaluations: false,
   administer: false,
 };
 

@@ -31,6 +31,7 @@ import {
 } from "./ticketCreation.ts";
 import { overridesHeldOf } from "./ticketOverrides.ts";
 import type {
+  AuthoringStanding,
   CreationFault,
   CreationOffer,
   TicketCreationForm,
@@ -158,20 +159,21 @@ export type EditAssembly =
  * at and pinned to the revision of the offer the form names, which is how an
  * update re-pins a ticket and how it is moved to another configuration. A
  * reader who may not override revises with the draft's overrides as they
- * are, or with none.
+ * are, or with none, and one who may not skip planned evaluations with a
+ * program running the whole plan.
  */
 export function editRevisionFrom(
   draft: DraftResponse,
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
-  mayOverride = true,
+  standing: Omit<AuthoringStanding, "held"> = { mayOverride: true },
 ): EditAssembly {
   const assembled = creationBodyFrom(
     offers,
     { ...form, dependencies: draft.authoring.dependencies },
     repositories,
-    { mayOverride, held: draft.overrides },
+    { ...standing, held: draft.overrides },
   );
   if (assembled.assembled === "Faults") return assembled;
   return {

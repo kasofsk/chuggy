@@ -57,6 +57,7 @@ import {
   creationRepositories,
   creationRepositoryChosen,
   creationSelectionChosen,
+  creationStandingOf,
   creationStart,
   creationStepSentence,
   creationSubmitEffect,
@@ -64,6 +65,7 @@ import {
   creationTargetBranchFieldHint,
 } from "../core/ticketCreation.ts";
 import type {
+  AuthoringStanding,
   CreationFault,
   CreationField,
   CreationMotion,
@@ -101,7 +103,6 @@ import {
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
-import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   useProjectAbilities,
   useProjectAbilityRead,
@@ -633,22 +634,24 @@ function LockedDependencies(props: {
   );
 }
 
-export function CreationFields(
-  props: FormEdit & {
-    readonly faults: readonly CreationFault[];
-    readonly offers: readonly CreationOffer[];
-    /** Whether some offer may be missing from the ones given. */
-    readonly partial?: boolean;
-    readonly repositories: readonly ProjectRepositoryResponse[];
-    readonly dependenciesLocked?: boolean;
-    /** The branch a screen that proposes one sends for a box left empty. */
-    readonly branchProposed?: string | undefined;
-    readonly api: CreationImagesApi;
-    /** Whether the reader may set overrides; the panel is drawn for one who may
-     * not only while the form holds some, which they can remove. Absent, they may. */
-    readonly mayOverride?: boolean;
-  },
-): ReactNode {
+interface CreationFieldsProps extends FormEdit {
+  readonly faults: readonly CreationFault[];
+  readonly offers: readonly CreationOffer[];
+  /** Whether some offer may be missing from the ones given. */
+  readonly partial?: boolean;
+  readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly dependenciesLocked?: boolean;
+  /** The branch a screen that proposes one sends for a box left empty. */
+  readonly branchProposed?: string | undefined;
+  readonly api: CreationImagesApi;
+  /** What the reader may draw: the overrides panel is drawn for one who may
+   * not override only while the form holds some, which they can remove, and
+   * a program for one who may not skip planned evaluations runs the whole
+   * plan. Absent, they may do both. */
+  readonly standing?: AuthoringStanding;
+}
+
+export function CreationFields(props: CreationFieldsProps): ReactNode {
   const { faults, form, onChange, offers, repositories } = props;
   const drawn = creationOfferDrawn(offers, form);
   const drawing: FormDrawn = { form, onChange, offers, repositories };
@@ -695,11 +698,12 @@ export function CreationFields(
           onChange={onChange}
           initialization={drawn.initialization}
           dependenciesLocked={props.dependenciesLocked === true}
+          maySkipPlanned={props.standing?.maySkipPlanned !== false}
         />
       )}
       <Fault field="authoring" faults={faults} />
       {creationCatalogOf(drawn) === undefined &&
-      (props.mayOverride !== false ||
+      (props.standing?.mayOverride !== false ||
         overridesNestedOf(form.overrides) !== undefined) ? (
         <Overrides {...props} offer={drawn} />
       ) : null}
@@ -782,7 +786,7 @@ function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
-  readonly mayOverride: boolean;
+  readonly standing: AuthoringStanding;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly dispatches: boolean;
@@ -794,7 +798,7 @@ function useCreationSubmit(props: {
   const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
   const {
     dispatches,
-    mayOverride,
+    standing,
     offers,
     onCreated,
     onFaults,
@@ -805,9 +809,7 @@ function useCreationSubmit(props: {
   } = props;
 
   const submit = async (form: TicketCreationForm): Promise<void> => {
-    const assembled = creationBodyFrom(offers, form, repositories, {
-      mayOverride,
-    });
+    const assembled = creationBodyFrom(offers, form, repositories, standing);
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
@@ -903,14 +905,14 @@ function CreationDuplicateDropped(props: {
   return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
 }
 
-/** The assembly a creation form is judged by, for a reader who may or may not override. */
+/** The assembly a creation form is judged by, for a reader who may or may not
+ * override, and may or may not skip planned evaluations. */
 function creationAssembler(
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
-  mayOverride: boolean,
+  standing: AuthoringStanding,
 ): (form: TicketCreationForm) => CreationAssembly {
-  return (form) =>
-    creationBodyFrom(offers, form, repositories, { mayOverride });
+  return (form) => creationBodyFrom(offers, form, repositories, standing);
 }
 
 interface CreationFormProps {
@@ -920,8 +922,8 @@ interface CreationFormProps {
   readonly context: Extract<CreationContext, { context: "Ready" }>;
   /** What a submit goes on to once the ticket it makes is released. */
   readonly start: CreationStart;
-  /** Whether the reader may set overrides; absent, they may. */
-  readonly mayOverride?: boolean;
+  /** What the reader may send; absent, whatever a form draws. */
+  readonly standing?: AuthoringStanding;
   readonly onCreated: (ticket: number) => void;
   /** The way to a ticket a submit found already made. */
   readonly existing: (ticket: number) => ReactNode;
@@ -941,9 +943,9 @@ export function CreationForm(props: CreationFormProps): ReactNode {
   const duplicate = props.duplicate;
   const storeKey = creationStoreKey(props.partition, duplicate);
   const onCreated = props.onCreated;
-  const mayOverride = props.mayOverride !== false;
+  const standing = props.standing ?? { mayOverride: true };
   const running = useCreationSubmit({
-    mayOverride,
+    standing,
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
@@ -967,7 +969,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
         offers={offers}
         repositories={repositories}
         dependenciesLocked={false}
-        assemble={creationAssembler(offers, repositories, mayOverride)}
+        assemble={creationAssembler(offers, repositories, standing)}
         proposed={creationFormProposed}
         storeKey={storeKey}
         submitLabel="Create ticket"
@@ -990,7 +992,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             offers={offers}
             partial={partial}
             repositories={repositories}
-            mayOverride={mayOverride}
+            standing={standing}
             branchProposed={creationBranchProposed(held.form)}
             api={props}
           />
@@ -1058,8 +1060,8 @@ export interface CreationScreenReady {
   /** What a submit goes on to, which is a start once the abilities read has
    * come back without a no and the project's work is read to have a runner. */
   readonly start: CreationStart;
-  /** Whether the abilities read has not said the reader may not override. */
-  readonly mayOverride: boolean;
+  /** What the abilities read has not said the reader may not send. */
+  readonly standing: AuthoringStanding;
   readonly onDirty: (dirty: boolean) => void;
   readonly onCreated: (ticket: number) => void;
   readonly existing: (ticket: number) => ReactNode;
@@ -1080,10 +1082,7 @@ function CreationScreenRead(props: {
     useProjectAbilityRead(partition, "dispatch"),
     useWorkRunner(partition, "Reader"),
   );
-  const mayOverride = !projectAbilityRefused(
-    useProjectAbilities(partition),
-    "overrideTicketConfig",
-  );
+  const standing = creationStandingOf(useProjectAbilities(partition));
   const list = creationContextList(partition);
   const queryKey = list.key;
   const state = usePanelList(list, (readPorts) =>
@@ -1099,7 +1098,7 @@ function CreationScreenRead(props: {
             queryKey,
             context,
             start,
-            mayOverride,
+            standing,
             onDirty: setDirty,
             onCreated: (ticket) => {
               guard.release();

@@ -4,13 +4,20 @@
  *
  * Every field here offers exactly what the initialization offered and nothing
  * else, so a form cannot submit a value the project would refuse; what the
- * initialization derived is not drawn at all. The disclosure is the element's
- * own, so a closed panel costs no script.
+ * initialization derived is not drawn at all. A reader who may not skip
+ * planned evaluations is offered no program that runs less than its plan. The
+ * disclosure is the element's own, so a closed panel costs no script.
  */
 
 import type { ReactNode } from "react";
 
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
+import {
+  programPlanned,
+  programShort,
+  programStageLeast,
+} from "../core/programPlan.ts";
+import type { PlannedTask } from "../core/programPlan.ts";
 import {
   creationOffered,
   creationStageLabel,
@@ -95,9 +102,15 @@ function Dependencies(
   );
 }
 
-/** The counts a stage's picker offers: every width up to what the project allows. */
-function evaluatorCountsOffered(evaluatorsMax: number): readonly number[] {
-  return Array.from({ length: evaluatorsMax }, (_, index) => index + 1);
+/** The counts a stage's picker offers: every width from the least it may hold up to what the project allows. */
+function evaluatorCountsOffered(
+  least: number,
+  evaluatorsMax: number,
+): readonly number[] {
+  return Array.from(
+    { length: Math.max(evaluatorsMax - least + 1, 0) },
+    (_, index) => least + index,
+  );
 }
 
 /** A program with every stage's key set to its position, the rule the wire holds it to. */
@@ -114,14 +127,23 @@ function stageAdded(
   return programPositioned([...form.program, creationStageOf(count, 1)]);
 }
 
+/** A program without the stage at `index`, the ones after it moved up. */
+function stageRemoved(
+  form: TicketCreationForm,
+  index: number,
+): CreationStage[] {
+  return programPositioned(form.program.filter((_, at) => at !== index));
+}
+
 function Program(
   props: FormEdit & {
     readonly evaluatorsMax: number;
     readonly stagesMax: number;
+    /** What the plan runs, for a reader who may not leave any of it out. */
+    readonly planned: readonly PlannedTask[] | undefined;
   },
 ): ReactNode {
-  const { form, evaluatorsMax, onChange } = props;
-  const offered = evaluatorCountsOffered(evaluatorsMax);
+  const { form, evaluatorsMax, onChange, planned } = props;
   return (
     <fieldset className="creation-set">
       <legend>Evaluators per stage</legend>
@@ -132,7 +154,10 @@ function Program(
         >
           <ChoiceRow
             label={`Stage ${index + 1}`}
-            offered={offered}
+            offered={evaluatorCountsOffered(
+              planned === undefined ? 1 : programStageLeast(planned, index + 1),
+              evaluatorsMax,
+            )}
             chosen={stage.evaluators.length}
             render={(count) => String(count)}
             onChoose={(count) => {
@@ -146,19 +171,17 @@ function Program(
               });
             }}
           />
-          <Button
-            size="sm"
-            onClick={() => {
-              onChange({
-                ...form,
-                program: programPositioned(
-                  form.program.filter((_, at) => at !== index),
-                ),
-              });
-            }}
-          >
-            Remove
-          </Button>
+          {planned !== undefined &&
+          programShort(planned, stageRemoved(form, index)) ? null : (
+            <Button
+              size="sm"
+              onClick={() => {
+                onChange({ ...form, program: stageRemoved(form, index) });
+              }}
+            >
+              Remove
+            </Button>
+          )}
         </div>
       ))}
       <Button
@@ -178,6 +201,8 @@ export function TicketCreationAdvanced(
   props: FormEdit & {
     readonly initialization: DraftInitializationResponse;
     readonly dependenciesLocked?: boolean;
+    /** Whether the reader may draw a program that runs less than its plan; absent, they may. */
+    readonly maySkipPlanned?: boolean;
   },
 ): ReactNode {
   const { form, initialization, onChange } = props;
@@ -197,6 +222,11 @@ export function TicketCreationAdvanced(
           onChange={onChange}
           evaluatorsMax={initialization.choices.evaluatorsMax}
           stagesMax={initialization.choices.programStagesMax}
+          planned={
+            props.maySkipPlanned === false
+              ? programPlanned(initialization)
+              : undefined
+          }
         />
       </div>
     </Panel>

@@ -249,7 +249,10 @@ test("a catalog form whose workload overrides a reader may not set is refused wh
   };
   draw(
     held.ports,
-    { mayOverride: false, duplicate: { from: 1, seed: { form, dropped } } },
+    {
+      standing: { mayOverride: false },
+      duplicate: { from: 1, seed: { form, dropped } },
+    },
     offers,
   );
   fireEvent.change(screen.getByPlaceholderText("what this ticket is for"), {

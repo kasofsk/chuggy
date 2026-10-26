@@ -27,6 +27,7 @@ import {
 } from "../app/core/ticketEdit.ts";
 import {
   creationBinding,
+  creationCatalogOffer,
   creationDeclared,
   creationDraft,
   creationInitialization,
@@ -204,6 +205,39 @@ test("the revision sends the overrides the form holds, not the draft's", () => {
 
 /** The screen draws no dependency picker, and the revision does not trust that
  * it did not: a form holding other dependencies still sends the draft's. */
+/** A reader who may override and may not skip planned evaluations. */
+const nonholder = { mayOverride: true, maySkipPlanned: false };
+
+test("a draft already holding a program shorter than its plan revises only to the whole plan for a reader who may not skip it", () => {
+  const offers = [creationCatalogOffer(creationSummary("c1", "Ready"))];
+  const short: DraftResponse = {
+    ...released,
+    configurationRevision: "c1",
+    selection: { evaluation: "gated" },
+    authoring: {
+      dependencies: [],
+      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+    },
+  };
+  const form = {
+    ...editFormFrom(short, [], offers[0]?.name ?? ""),
+    repository,
+  };
+  const refused = editRevisionFrom(short, offers, form, [], nonholder);
+  expect(
+    refused.assembled === "Faults" &&
+      refused.faults.map((fault) => fault.field),
+  ).toStrictEqual(["authoring"]);
+  expect(editRevisionFrom(short, offers, form, []).assembled).toBe("Body");
+  const whole = {
+    ...form,
+    program: [...form.program, { key: 2, evaluators: [{ key: 1 }] }],
+  };
+  expect(editRevisionFrom(short, offers, whole, [], nonholder).assembled).toBe(
+    "Body",
+  );
+});
+
 test("the revision carries the draft's own dependencies whatever the form holds", () => {
   const form = {
     ...editFormFrom(released, [creationBinding(repository)], "r3"),
@@ -432,7 +466,7 @@ test("a reader who may not override keeps the draft's overrides in any key order
     creationOffers,
     { ...form, overrides: shuffled },
     bound,
-    false,
+    { mayOverride: false },
   );
   expect(kept.assembled === "Body" && kept.body.overrides).toStrictEqual(
     draft.overrides,
@@ -442,7 +476,7 @@ test("a reader who may not override keeps the draft's overrides in any key order
     creationOffers,
     { ...form, overrides: { ...shuffled, practices: ["Other"] } },
     bound,
-    false,
+    { mayOverride: false },
   );
   const faults = changed.assembled === "Faults" ? changed.faults : [];
   expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
@@ -452,7 +486,7 @@ test("a reader who may not override keeps the draft's overrides in any key order
     creationOffers,
     { ...form, overrides: { ...shuffled, practices: ["Other"] } },
     bound,
-    true,
+    { mayOverride: true },
   );
   expect(admin.assembled).toBe("Body");
   const removed = editRevisionFrom(
@@ -460,7 +494,7 @@ test("a reader who may not override keeps the draft's overrides in any key order
     creationOffers,
     { ...form, overrides: {} },
     bound,
-    false,
+    { mayOverride: false },
   );
   expect(removed.assembled).toBe("Body");
 });

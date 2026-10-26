@@ -93,10 +93,11 @@ export type TicketConfiguration =
  * The faults about the pairing of a brief and a configuration rather than
  * either document, either alone being fine: a configuration commanding no check
  * stage contradicts a brief that appends check lines to it, a brief naming no
- * repository has nothing to pair with, and a configuration imported from a
- * repository contradicts a brief working in a different one. A revision of the
- * brief mends each, so each is refused under its own code rather than as the
- * configuration's.
+ * repository has nothing to pair with, a configuration imported from a
+ * repository contradicts a brief working in a different one, and a program
+ * leaving out the task a brief's check lines join would never run them. A
+ * revision of the draft mends each, so each is refused under its own code
+ * rather than as the configuration's.
  */
 export const releasePairingFaults = [
   "BriefChecksUncommanded",
@@ -105,6 +106,7 @@ export const releasePairingFaults = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "ProgramSkipsBriefChecks",
   "OverridesUnsupported",
   "OverridesUnknown",
 ] as const satisfies readonly BoundaryRefusalCode[];
@@ -387,6 +389,62 @@ function ticketProgramFits(
   );
 }
 
+/** Whether a program runs one task: the stage keyed `stage`, and in it the evaluator keyed `evaluator` where one is named. */
+function ticketProgramRuns(
+  program: ReleaseAuthoringProgram,
+  stage: number,
+  evaluator?: number,
+): boolean {
+  const evaluators =
+    program.find((entry) => entry.key === stage)?.evaluators ?? [];
+  return evaluator === undefined
+    ? evaluators.length > 0
+    : evaluators.some((entry) => entry.key === evaluator);
+}
+
+/**
+ * Whether a program runs less than its ticket's configuration plans: a stage of
+ * a catalog's selected plan it does not run, or an evaluator of one it does;
+ * for a document, a block of its `evaluations` it runs no stage under. A
+ * document's stage runs one block whatever evaluator keys it lists, so only its
+ * stages count, and a document listing no `evaluations` plans none.
+ */
+export function ticketProgramShort(
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticket.version === 1)
+    return (ticket.configuration.evaluations ?? []).some(
+      (_block, index) => !ticketProgramRuns(program, index + 1),
+    );
+  return ticket.selection.plan.stages.some((stage, index) =>
+    stage.evaluators.some(
+      (_entry, position) =>
+        !ticketProgramRuns(program, index + 1, position + 1),
+    ),
+  );
+}
+
+/**
+ * Whether a program runs the task a brief's own check lines join: the stage
+ * `ticketCommandedCheckStage` names, and for a catalog the evaluator in it that
+ * runs commands. A configuration commanding none has nothing to leave out.
+ */
+function ticketProgramRunsBriefChecks(
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticket.version === 1) {
+    const stage = ticketCommandedCheckStage(ticket);
+    return stage === undefined || ticketProgramRuns(program, stage);
+  }
+  const commanded = selectedFirstCommandsEvaluator(ticket.selection);
+  return (
+    commanded === undefined ||
+    ticketProgramRuns(program, commanded.stage, commanded.evaluator)
+  );
+}
+
 /**
  * The release-time minimum for one draft: the configuration's own readiness
  * with what the draft asks of it applied, plus the repository the brief and the
@@ -412,6 +470,13 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
+  if (
+    program !== undefined &&
+    brief !== undefined &&
+    brief.checks.length > 0 &&
+    !ticketProgramRunsBriefChecks(readiness.ticket, program)
+  )
+    return { readiness: "Incomplete", fault: "ProgramSkipsBriefChecks" };
   const repository = brief?.repository;
   if (repository === undefined)
     return { readiness: "Incomplete", fault: "BriefNamesNoRepository" };
@@ -955,6 +1020,19 @@ export type DraftDeleted =
       readonly state: Exclude<DraftState, "Draft">;
     };
 
+/**
+ * One retained draft revision as a release of it is judged: the program it
+ * runs and what its configuration plans, from the configuration revision it
+ * pins with its overrides and selection. A revision is written once and never
+ * changed, so this is what the release's decision resolves.
+ */
+export interface DraftRevisionPlan {
+  readonly canonical: CanonicalConfiguration;
+  readonly overrides?: ConfigurationOverrides;
+  readonly selection?: ConfigurationSelection;
+  readonly program: ReleaseAuthoringProgram;
+}
+
 export interface AuthoringStore {
   initializeDraft(
     partition: Partition,
@@ -975,6 +1053,15 @@ export interface AuthoringStore {
   ): Promise<DraftResource | undefined>;
   /** One page of the drafts a project still holds open, ascending by ticket. */
   drafts(partition: Partition, query: DraftPageQuery): Promise<DraftPage>;
+  /** The revision a release or an update names, undefined where the project retains none at those keys. */
+  draftRevision(
+    partition: Partition,
+    revision: {
+      readonly ticket: TicketId;
+      readonly authoringVersion: number;
+      readonly configurationRevision: string;
+    },
+  ): Promise<DraftRevisionPlan | undefined>;
   createConfiguration(input: {
     readonly partition: Partition;
     readonly authority: Authority;

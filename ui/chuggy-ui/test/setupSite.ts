@@ -735,6 +735,7 @@ function abilities(
       dispatch: true,
       manageSelector: administer,
       overrideTicketConfig: administer,
+      skipPlannedEvaluations: administer,
       administer,
     })
   );

@@ -75,6 +75,7 @@ import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   noRunnerCode,
+  programSkipsPlannedEvaluationsCode,
   selectorProposalNotHeldCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
@@ -411,6 +412,14 @@ export function submissionResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Backlogged":
       return retry(429, result.retryAfterSeconds, "DispatchBacklog");
+    case "ProgramSkipsPlannedEvaluations":
+      return response(
+        403,
+        nativeHttpError(
+          programSkipsPlannedEvaluationsCode,
+          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+        ),
+      );
     case "Authorized":
       return acceptedResponse(partition, result.acceptance);
     default:
