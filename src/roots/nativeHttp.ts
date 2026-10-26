@@ -1,7 +1,5 @@
-import {
-  apiRole,
-  projectThreadsReadFunction,
-} from "../adapters/postgres/schema.ts";
+import { apiRole, selectorReviewRole } from "../adapters/postgres/schema.ts";
+import { postgresApiReady } from "../adapters/postgres/apiReadiness.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
 import {
@@ -82,10 +80,10 @@ import {
 } from "../contract/http.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
-  currentRuntimeSchemaContract,
-  postgresRuntimeSchema,
-} from "../adapters/postgres/runtimeSchema.ts";
-import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+  runtimePreconditionAnswer,
+  runtimePreconditionUndecided,
+  type RuntimePreconditionVerdict,
+} from "../interpreter/serviceRuntime.ts";
 import {
   checkedProjectAccessSettings,
   projectAccessTimeoutMsDefault,
@@ -97,7 +95,6 @@ import {
   postgresSelectorResolvedSettings,
 } from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
-import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
@@ -527,31 +524,37 @@ function oidcConfig(): OidcAuthenticationConfig {
   };
 }
 
-async function apiDatabaseReady(
+/**
+ * What one pool's check answered: refused under `refused` where its database
+ * answered no, and undecided under the failure's own message where it could
+ * not be reached or queried.
+ */
+function nativeDatabaseVerdict(
+  answered: Promise<boolean>,
+  refused: string,
+): Promise<RuntimePreconditionVerdict> {
+  return answered.then(
+    (met) => runtimePreconditionAnswer(met, refused),
+    runtimePreconditionUndecided,
+  );
+}
+
+function apiDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
-): Promise<boolean> {
-  try {
-    const found = await pool.query<{
-      current_role: string;
-      authorized: boolean;
-    }>(
-      `SELECT current_user AS current_role,
-         has_function_privilege(
-           current_user,'${projectThreadsReadFunction}(text,text,bigint)','EXECUTE') AS authorized`,
-    );
-    const row = found.rows[0];
-    if (row?.current_role !== apiRole || !row.authorized) return false;
-    return (
-      (
-        await schemaCompatibilityPrecondition(
-          postgresRuntimeSchema(pool),
-          currentRuntimeSchemaContract,
-        ).check(new AbortController().signal)
-      ).met === "Met"
-    );
-  } catch {
-    return false;
-  }
+): Promise<RuntimePreconditionVerdict> {
+  return nativeDatabaseVerdict(
+    postgresApiReady(pool),
+    `must be migrated and connect as ${apiRole}`,
+  );
+}
+
+function selectorReviewDatabaseReady(
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+): Promise<RuntimePreconditionVerdict> {
+  return nativeDatabaseVerdict(
+    postgresSelectorContextReady(selectorReviewPool),
+    `must connect as ${selectorReviewRole}`,
+  );
 }
 
 function selectorContextSource(
@@ -606,8 +609,8 @@ function nativeReadiness(
 ) {
   return {
     ready: async () =>
-      (await apiDatabaseReady(pool)) &&
-      (await postgresSelectorContextReady(selectorReviewPool)) &&
+      (await apiDatabaseReady(pool)).met === "Met" &&
+      (await selectorReviewDatabaseReady(selectorReviewPool)).met === "Met" &&
       (await ketoReadiness(access).ready()),
   };
 }
@@ -1372,26 +1375,43 @@ async function nativeAuthenticationStarted(
   return nativeAuthentication(oidc, pools);
 }
 
+/** What a start refuses one database's verdict with, or nothing where it was met. */
+function nativeDatabaseRefusal(
+  database: string,
+  verdict: RuntimePreconditionVerdict,
+): string | undefined {
+  switch (verdict.met) {
+    case "Met":
+      return undefined;
+    case "Refused":
+      return `${database} ${verdict.why}`;
+    case "Undecided":
+      return `${database} could not be reached or queried — ${verdict.why}`;
+    default:
+      return assertNever(verdict);
+  }
+}
+
 /**
- * Refuses to start on either pool this process must have, naming which one, and
- * leaves neither open behind the refusal.
+ * Refuses to start on either pool this process must have, naming which one and
+ * whether its database answered, and leaves neither open behind the refusal.
  */
-async function nativeDatabasesReady(
+export async function nativeDatabasesReady(
   pool: ReturnType<typeof postgresPool>,
   selectorReviewPool: ReturnType<typeof postgresPool>,
 ): Promise<void> {
-  if (!(await apiDatabaseReady(pool))) {
-    await closePools(pool, selectorReviewPool);
-    throw new Error(
-      `the native HTTP database must be migrated and connect as ${apiRole}`,
+  const refusal =
+    nativeDatabaseRefusal(
+      "the native HTTP database",
+      await apiDatabaseReady(pool),
+    ) ??
+    nativeDatabaseRefusal(
+      "the selector review database",
+      await selectorReviewDatabaseReady(selectorReviewPool),
     );
-  }
-  if (!(await postgresSelectorContextReady(selectorReviewPool))) {
-    await closePools(pool, selectorReviewPool);
-    throw new Error(
-      `the selector review database must connect as ${selectorReviewRole}`,
-    );
-  }
+  if (refusal === undefined) return;
+  await closePools(pool, selectorReviewPool);
+  throw new Error(refusal);
 }
 
 /**

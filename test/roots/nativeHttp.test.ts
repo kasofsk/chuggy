@@ -33,6 +33,10 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
+import {
+  apiRole,
+  selectorReviewRole,
+} from "../../src/adapters/postgres/schema.ts";
 import { fluxSignatureToleranceSecs } from "../../src/adapters/reporters/fluxSignature.ts";
 import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
 
@@ -549,6 +553,110 @@ test("the app closing closes every hub it was stopped with and then the pools, a
   );
   assert.equal(signalled.code, 0, signalled.out);
   assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
+});
+
+/** What a pool answers its readiness check: the role row first and the applied migrations after, or a refused connection. */
+type ReadinessAnswer = Readonly<Record<string, unknown>> | "ConnectionRefused";
+
+/**
+ * The root's start-up check over two pools that each answer as one case says
+ * and record being closed. What it refused with, if anything, is printed beside
+ * the pools it closed.
+ */
+function databasesReadyProgram(
+  api: ReadinessAnswer,
+  review: ReadinessAnswer,
+): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+  const ended = [];
+  const pooled = (named, answer) => {
+    let queries = 0;
+    return {
+      query: async () => {
+        queries += 1;
+        if (answer === 'ConnectionRefused')
+          throw new Error('connect ECONNREFUSED 127.0.0.1:1');
+        return {
+          rows: queries === 1 ? [answer] : schema.currentRuntimeSchemaContract.required,
+        };
+      },
+      end: async () => {
+        ended.push(named);
+      },
+    };
+  };
+  const refusal = await root
+    .nativeDatabasesReady(
+      pooled('pool', ${JSON.stringify(api)}),
+      pooled('selectorReviewPool', ${JSON.stringify(review)}),
+    )
+    .then(() => null, (failure) => failure.message);
+  process.stdout.write(JSON.stringify({ refusal, ended }));
+`;
+}
+
+async function databasesReady(
+  api: ReadinessAnswer,
+  review: ReadinessAnswer,
+): Promise<{ readonly refusal: string | null; readonly ended: string[] }> {
+  const ran = await rootRead({}, databasesReadyProgram(api, review));
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out) as {
+    refusal: string | null;
+    ended: string[];
+  };
+}
+
+const apiAnswered = { current_role: apiRole, authorized: true };
+const reviewAnswered = {
+  current_role: selectorReviewRole,
+  review_feedback_readable: true,
+};
+const bothPools = ["pool", "selectorReviewPool"];
+
+test("a start refuses a database it could not reach under the connection's own failure, never as unmigrated, and closes both pools", async () => {
+  const api = await databasesReady("ConnectionRefused", reviewAnswered);
+  assert.equal(
+    api.refusal,
+    "the native HTTP database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
+  );
+  assert.deepEqual(api.ended, bothPools);
+  const review = await databasesReady(apiAnswered, "ConnectionRefused");
+  assert.equal(
+    review.refusal,
+    "the selector review database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
+  );
+  assert.deepEqual(review.ended, bothPools);
+});
+
+test("a start refuses a database that answered as the wrong role as one to migrate and connect as its own, and closes both pools", async () => {
+  const api = await databasesReady(
+    { current_role: selectorReviewRole, authorized: true },
+    reviewAnswered,
+  );
+  assert.equal(
+    api.refusal,
+    `the native HTTP database must be migrated and connect as ${apiRole}`,
+  );
+  assert.deepEqual(api.ended, bothPools);
+  const review = await databasesReady(apiAnswered, {
+    current_role: apiRole,
+    review_feedback_readable: true,
+  });
+  assert.equal(
+    review.refusal,
+    `the selector review database must connect as ${selectorReviewRole}`,
+  );
+  assert.deepEqual(review.ended, bothPools);
+});
+
+test("a start whose two databases both answered as their roles refuses nothing and closes neither pool", async () => {
+  assert.deepEqual(await databasesReady(apiAnswered, reviewAnswered), {
+    refusal: null,
+    ended: [],
+  });
 });
 
 /**
