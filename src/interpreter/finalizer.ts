@@ -810,7 +810,7 @@ function finalizationNextRestart(
 
 /**
  * What a candidate the ref proved absent leads to: over a target the reading
- * found unmoved, or found still not created, a workflow refusal is held, since
+ * found unmoved, or found absent, a workflow refusal is held, since
  * preparing again builds what the same repository refuses again, and any other
  * decline is prepared again while restarts remain, a repository taking the next
  * time what it declined once, then held as declined. Anything else is the

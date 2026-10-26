@@ -1184,6 +1184,8 @@ test("a declined push's reading keeps the decline wherever the ref holds no cand
       git.proved = proved;
       await passOver(serviceOf(store, git));
       const reading = store.readings[0]?.reconciliation;
+      if (proved.proved === "Ancestor")
+        assert.equal(reading?.verdict, "Promoted");
       if (reading?.declined !== undefined)
         kept.push([evidence, proved.proved, reading.verdict, reading.declined]);
       else if (promotionDeclineOf(evidence) === undefined)
@@ -1227,6 +1229,8 @@ test("a held reading is re-read beside the decline it kept", async () => {
       const report = await passOver(serviceOf(store, git));
       assert.equal(report.rereadings, 1);
       const reading = store.readings[0]?.reconciliation;
+      if (proved.proved === "Ancestor")
+        assert.equal(reading?.verdict, "Promoted");
       if (declined === undefined) {
         assert.equal(reading?.verdict, undeclinedVerdicts[proved.proved]);
         assert.equal(reading?.declined, undefined);
