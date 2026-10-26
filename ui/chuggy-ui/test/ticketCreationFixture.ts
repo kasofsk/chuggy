@@ -15,6 +15,7 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
 import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
+import { configurationCatalogInitialization } from "../app/core/configurationCatalog.ts";
 import {
   creationConfigurationName,
   creationFormFrom,
@@ -252,5 +253,32 @@ export function creationCatalogOffer(
         canonical: creationCatalogCanonical,
       },
     },
+  };
+}
+
+/**
+ * An offer of the same catalog defaulting to its plan of a two-evaluator stage
+ * and a one-evaluator stage, initialized as the API answers under that default.
+ */
+export function creationGatedOffer(
+  listed: ConfigurationSummary = creationSummary("c1", "Ready"),
+): CreationOffer {
+  const offer = creationCatalogOffer(listed);
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    defaults: Record<string, string>;
+  };
+  catalog.defaults["evaluation"] = "gated";
+  return {
+    ...offer,
+    initialization: configurationCatalogInitialization(
+      {
+        ...offer.initialization,
+        configuration: {
+          ...offer.initialization.configuration,
+          canonical: JSON.stringify(catalog),
+        },
+      },
+      undefined,
+    ),
   };
 }

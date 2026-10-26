@@ -14,11 +14,12 @@
  * fallback, which is the only thing that makes its forward direction bite.
  */
 
-import type {
-  EscalationKind,
-  NativeActionKind,
-  OperationBoundaryRefusalCode,
-  OperationState,
+import {
+  programSkipsPlannedEvaluationsCode,
+  type EscalationKind,
+  type NativeActionKind,
+  type OperationBoundaryRefusalCode,
+  type OperationState,
 } from "../../../../src/contract/rosters.ts";
 import type {
   OperationResponse,
@@ -164,6 +165,8 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "only a version 2 configuration takes a selection; revise the draft to ask the configuration for what it holds";
     case "ProgramExceedsPlan":
       return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
+    case "ProgramSkipsBriefChecks":
+      return "the program leaves out the stage or evaluator the brief's checks run in; restore it, or remove the brief's checks";
     case "OverridesUnsupported":
       return "a catalog takes overrides only of its workloads, and a version 1 configuration takes none of workloads; revise the draft's overrides to fit its configuration";
     case "OverridesUnknown":
@@ -189,6 +192,7 @@ export const mutationRefusalCodes = [
   "InvalidMutation",
   "MutationNotAdmitted",
   "OperationNotPending",
+  programSkipsPlannedEvaluationsCode,
 ] as const;
 export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
 
@@ -202,6 +206,8 @@ export function mutationRefusalSentence(code: MutationRefusalCode): string {
       return "the project is not admitting this kind of mutation at the moment";
     case "OperationNotPending":
       return "that operation had already been decided, so there was nothing left to call off";
+    case "ProgramSkipsPlannedEvaluations":
+      return "the program leaves out part of its plan, which your role may not release; draw the whole plan, or ask an administrator";
   }
 }
 

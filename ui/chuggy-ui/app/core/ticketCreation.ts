@@ -58,7 +58,12 @@ import {
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import type { ProjectAbilityRead } from "./projectAbilities.ts";
+import { projectAbilityRefused } from "./projectAbilities.ts";
+import type {
+  ProjectAbilities,
+  ProjectAbilityRead,
+} from "./projectAbilities.ts";
+import { programPlanned, programShort } from "./programPlan.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
 import { sessionRunnerShortWord } from "./sessionRunners.ts";
@@ -1091,11 +1096,27 @@ function creationChoicesOf(
   return overrides === undefined ? {} : { overrides };
 }
 
-/** Whether a reader may set what a ticket overrides, and what the draft already holds of it. */
-export interface OverridesStanding {
+/**
+ * What a reader's role lets a form send: overrides, beside what the draft
+ * already holds of them, and a program that runs less than its plan.
+ */
+export interface AuthoringStanding {
   readonly mayOverride: boolean;
   /** The overrides the draft holds, none for a ticket not yet made. */
   readonly held?: unknown;
+  /** Whether the reader may release a program that leaves out part of its
+   * plan; absent, they may. */
+  readonly maySkipPlanned?: boolean;
+}
+
+/** What the abilities read lets a form send: everything it has not said no to. */
+export function creationStandingOf(
+  abilities: ProjectAbilities,
+): AuthoringStanding {
+  return {
+    mayOverride: !projectAbilityRefused(abilities, "overrideTicketConfig"),
+    maySkipPlanned: !projectAbilityRefused(abilities, "skipPlannedEvaluations"),
+  };
 }
 
 const overridesRefusedReason =
@@ -1104,7 +1125,7 @@ const overridesRefusedReason =
 /** The fault of overrides a reader who may not override is changing, if it is one. */
 function creationOverridesFaults(
   overrides: unknown,
-  standing: OverridesStanding | undefined,
+  standing: AuthoringStanding | undefined,
 ): readonly CreationFault[] {
   if (
     standing === undefined ||
@@ -1114,6 +1135,23 @@ function creationOverridesFaults(
   )
     return [];
   return [{ field: "overrides", reason: overridesRefusedReason }];
+}
+
+const programShortReason =
+  "your role in this project may not leave out part of the plan; restore every stage and evaluator it plans to continue";
+
+/** The fault of a program running less than its plan, for a reader who may not release one. */
+function creationProgramFaults(
+  drawn: DraftInitializationResponse,
+  program: TicketCreationForm["program"],
+  standing: AuthoringStanding | undefined,
+): readonly CreationFault[] {
+  if (
+    standing?.maySkipPlanned !== false ||
+    !programShort(programPlanned(drawn), program)
+  )
+    return [];
+  return [{ field: "authoring", reason: programShortReason }];
 }
 
 /**
@@ -1126,7 +1164,7 @@ export function creationBodyFrom(
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
-  standing?: OverridesStanding,
+  standing?: AuthoringStanding,
 ): CreationAssembly {
   const offer = creationOfferDrawn(offers, form);
   const drawn = offer?.initialization;
@@ -1150,10 +1188,13 @@ export function creationBodyFrom(
     ...creationChoicesOf(form, offer),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
-  const refused = creationOverridesFaults(
-    parsed.success ? parsed.data.overrides : undefined,
-    standing,
-  );
+  const refused = [
+    ...creationOverridesFaults(
+      parsed.success ? parsed.data.overrides : undefined,
+      standing,
+    ),
+    ...creationProgramFaults(drawn, form.program, standing),
+  ];
   if (parsed.success && stated.length === 0 && refused.length === 0)
     return { assembled: "Body", body: parsed.data };
   const issues = parsed.success ? [] : parsed.error.issues;

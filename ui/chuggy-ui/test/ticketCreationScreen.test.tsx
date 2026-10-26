@@ -43,6 +43,7 @@ import {
   creationBinding,
   creationDeclared,
   creationDraft,
+  creationGatedOffer,
   creationInitialization,
   creationListed,
   creationPartition,
@@ -397,3 +398,34 @@ test("a reader who may not dispatch reads the same line with no runner as with o
   );
   expect(effectDrawn()).toStrictEqual(waiting);
 });
+
+/** Every initialization answered as the gated catalog's, at the revision asked for. */
+function gatedInitialization({ url }: SentRequest): Response | undefined {
+  if (!url.includes("/draft-initializations/")) return undefined;
+  const revision = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+  const { initialization } = creationGatedOffer();
+  return answer({
+    ...initialization,
+    configuration: { ...initialization.configuration, revision },
+  });
+}
+
+test.each([
+  ["may", abilitiesEvery, 2],
+  ["may not", { ...abilitiesEvery, skipPlannedEvaluations: false }, 0],
+] as const)(
+  "a reader the abilities read says %s skip planned evaluations is offered a Remove on each stage the plan runs, or none",
+  async (_said, abilities, removes) => {
+    await drawCreation(gatedInitialization, abilitiesOver(abilities));
+    await offeredNames();
+    await turned(() => {
+      fireEvent.click(
+        screen.getByRole("menuitemradio", { name: "development" }),
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+    expect(screen.queryAllByRole("button", { name: "Remove" })).toHaveLength(
+      removes,
+    );
+  },
+);

@@ -306,6 +306,7 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "ProgramSkipsBriefChecks",
   "OverridesUnsupported",
   "OverridesUnknown",
   "TicketCapacityReached",
@@ -717,6 +718,15 @@ export type OwnerFallback = (typeof ownerFallbacks)[number];
  * so the code is shared rather than spelled at each end.
  */
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
+
+/**
+ * What a release or an update answers a caller whose draft runs less than its
+ * configuration plans — a stage or an evaluator of the plan left out — where
+ * the caller does not hold the project permit to skip planned evaluations. A
+ * console says which permit the release lacked, so the code is shared.
+ */
+export const programSkipsPlannedEvaluationsCode =
+  "ProgramSkipsPlannedEvaluations";
 
 /**
  * What the project-artifact routes answer while the store cannot, and what the

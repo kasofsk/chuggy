@@ -2105,6 +2105,7 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   dispatch: z.boolean(),
   manageSelector: z.boolean(),
   overrideTicketConfig: z.boolean(),
+  skipPlannedEvaluations: z.boolean(),
   administer: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<

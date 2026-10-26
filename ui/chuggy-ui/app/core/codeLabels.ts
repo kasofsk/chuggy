@@ -757,6 +757,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Configuration cannot take this selection";
     case "ProgramExceedsPlan":
       return "Program exceeds the evaluation plan";
+    case "ProgramSkipsBriefChecks":
+      return "Program skips the brief's checks";
     case "OverridesUnsupported":
       return "Configuration cannot take these overrides";
     case "OverridesUnknown":
@@ -781,6 +783,8 @@ export function mutationRefusalLabel(code: MutationRefusalCode): string {
       return "Not admitted right now";
     case "OperationNotPending":
       return "Already decided";
+    case "ProgramSkipsPlannedEvaluations":
+      return "Program skips planned evaluations";
   }
 }
 

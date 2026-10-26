@@ -3150,6 +3150,61 @@ test("a draft's selection is written with its revision and read back, and a cata
   );
 });
 
+test("a release's revision is read at the keys it pins, as it was written whatever the draft is revised to, and none is read at keys no revision holds", async () => {
+  const overrides = { workloads: { build: { practices: [] } } };
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    overrides,
+    { evaluation: "tested" },
+  );
+  const { partition, store, draft, revision, repository } = fixture;
+  const keys = {
+    ticket: draft.ticket,
+    authoringVersion: draft.authoringVersion,
+    configurationRevision: revision,
+  };
+  const written = {
+    canonical: catalogConfiguration,
+    overrides,
+    selection: { evaluation: "tested" },
+    program: plainAuthoring.prog,
+  };
+  assert.deepEqual(await store.draftRevision(partition, keys), written);
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: draft.authoringVersion,
+    configurationRevision: revision,
+    authoring: { deps: new Set(), prog: [] },
+    brief: { ...postgresHarnessBrief, repository },
+  });
+  assert.equal(revised.revised, "Revised");
+  assert.deepEqual(await store.draftRevision(partition, keys), written);
+  assert.deepEqual(
+    await store.draftRevision(partition, {
+      ...keys,
+      authoringVersion: draft.authoringVersion + 1,
+    }),
+    { canonical: catalogConfiguration, program: [] },
+  );
+  assert.equal(
+    await store.draftRevision(partition, {
+      ...keys,
+      authoringVersion: draft.authoringVersion + 2,
+    }),
+    undefined,
+  );
+  assert.equal(
+    await store.draftRevision(partition, {
+      ...keys,
+      configurationRevision: `config-${randomUUID()}`,
+    }),
+    undefined,
+  );
+});
+
 test("the scheduler's read of a released catalog ticket answers each task the workload its selection puts there", async (t) => {
   const fixture = await draftFixture(
     catalogConfiguration,

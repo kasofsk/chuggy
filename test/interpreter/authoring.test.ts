@@ -15,6 +15,8 @@ import {
   parseDraftAuthoring,
   releaseConfigurationReadiness,
   releasePairingFaults,
+  ticketConfigurationReadiness,
+  ticketProgramShort,
   type CanonicalConfiguration,
   type ReleaseConfigurationFault,
 } from "../../src/interpreter/authoring.ts";
@@ -397,6 +399,84 @@ test("the configuration's own refusals are answered before the repository's", ()
     ),
     uncommanded,
     "and before a configuration read in another repository",
+  );
+});
+
+/** A document reviewing in its first stage and running commands in its second. */
+const reviewedThenChecked = canonicalConfigurationOf({
+  ...(JSON.parse(readyConfiguration) as Record<string, unknown>),
+  evaluations: [
+    { purpose: "Review", instructions: ["Review it."], practices: [] },
+    { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+  ],
+});
+
+/** A program whose Nth stage draws the evaluator keys at N. */
+function programOf(stages: readonly (readonly number[])[]) {
+  return stages.map((evaluators, index) => ({
+    key: index + 1,
+    evaluators: evaluators.map((key) => ({ key })),
+  }));
+}
+
+test("a document's program runs less than it plans where it runs no stage under one of its evaluations, whatever its evaluators", () => {
+  const ticketOf = (configuration: CanonicalConfiguration) => {
+    const readiness = ticketConfigurationReadiness(
+      configuration,
+      undefined,
+      undefined,
+      undefined,
+    );
+    assert.equal(readiness.readiness, "Ready");
+    if (readiness.readiness !== "Ready") throw new Error("not ready");
+    return readiness.ticket;
+  };
+  const planned = ticketOf(reviewedThenChecked);
+  assert.equal(ticketProgramShort(planned, programOf([[1], [1]])), false);
+  assert.equal(
+    ticketProgramShort(planned, programOf([[1, 2], [3]])),
+    false,
+    "a stage runs its one block whatever evaluator keys it lists",
+  );
+  assert.equal(ticketProgramShort(planned, programOf([[1]])), true);
+  assert.equal(
+    ticketProgramShort(planned, programOf([[1], []])),
+    true,
+    "a stage drawn with no evaluator runs nothing",
+  );
+  assert.equal(
+    ticketProgramShort(ticketOf(readyConfiguration), programOf([[1]])),
+    false,
+    "a document listing no evaluations plans none",
+  );
+});
+
+test("a document's program leaving out the stage a brief's checks join is refused under its own fault", () => {
+  const checked = {
+    checks: [asBriefCheckLine("npm test", 0)],
+    repository: firstRepository,
+  };
+  const fault = (
+    stages: readonly (readonly number[])[],
+    brief: Parameters<typeof draftReleaseReadiness>[1] = checked,
+  ) => {
+    const readiness = draftReleaseReadiness(
+      reviewedThenChecked,
+      brief,
+      undefined,
+      undefined,
+      undefined,
+      programOf(stages),
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(fault([[1], [1]]), "Ready");
+  assert.equal(fault([[1]]), "ProgramSkipsBriefChecks");
+  assert.equal(fault([[1], []]), "ProgramSkipsBriefChecks");
+  assert.equal(
+    fault([[1]], { checks: [], repository: firstRepository }),
+    "Ready",
+    "a brief carrying no checks has nothing to leave out",
   );
 });
 

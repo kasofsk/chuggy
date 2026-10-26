@@ -76,6 +76,7 @@ const cancelled = {
 const submitted = {
   NotFound: { result: "NotFound" },
   Backlogged: { result: "Backlogged", scope: "Project", retryAfterSeconds: 3 },
+  ProgramSkipsPlannedEvaluations: { result: "ProgramSkipsPlannedEvaluations" },
   Authorized: { result: "Authorized", acceptance: acceptances.Accepted },
 } as const satisfies Record<
   NativeSubmissionResult["result"],

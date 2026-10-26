@@ -29,6 +29,7 @@ const none: ProjectAbilitiesResponse = {
   dispatch: false,
   manageSelector: false,
   overrideTicketConfig: false,
+  skipPlannedEvaluations: false,
   administer: false,
 };
 
@@ -41,6 +42,7 @@ const asked: readonly (readonly [
   ["dispatch", "DispatchTicket"],
   ["manageSelector", "ManageProjectSelector"],
   ["overrideTicketConfig", "OverrideTicketConfig"],
+  ["skipPlannedEvaluations", "SkipPlannedEvaluations"],
   ["administer", "Administer"],
 ];
 

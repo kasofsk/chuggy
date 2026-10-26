@@ -77,6 +77,7 @@ const samples: {
   SelectionUnknown: { type: "SelectionUnknown" },
   SelectionUnsupported: { type: "SelectionUnsupported" },
   ProgramExceedsPlan: { type: "ProgramExceedsPlan" },
+  ProgramSkipsBriefChecks: { type: "ProgramSkipsBriefChecks" },
   OverridesUnsupported: { type: "OverridesUnsupported" },
   OverridesUnknown: { type: "OverridesUnknown" },
   TicketCapacityReached: { type: "TicketCapacityReached" },

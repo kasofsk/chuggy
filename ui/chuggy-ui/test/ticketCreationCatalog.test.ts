@@ -106,6 +106,41 @@ test("selecting a finalizer that names a landing seeds the form with it, and a l
   expect(moved.landingMode).toBe("None");
 });
 
+test("a reader who may not skip planned evaluations is refused a program running less than its plan, and one who may is not", () => {
+  const form = creationSelectionChosen(
+    catalogForm(),
+    offers,
+    { evaluation: "gated" },
+    bound,
+  );
+  const whole = creationBodyFrom(offers, form, bound, {
+    mayOverride: true,
+    maySkipPlanned: false,
+  });
+  expect(whole.assembled).toBe("Body");
+  const [first, second] = form.program;
+  if (first === undefined || second === undefined) return;
+  const narrowed = { ...first, evaluators: first.evaluators.slice(0, 1) };
+  for (const program of [[first], [narrowed, second]]) {
+    const short = { ...form, program };
+    const refused = creationBodyFrom(offers, short, bound, {
+      mayOverride: true,
+      maySkipPlanned: false,
+    });
+    const faults = refused.assembled === "Faults" ? refused.faults : [];
+    expect(faults.map((fault) => fault.field)).toStrictEqual(["authoring"]);
+    expect(faults[0]?.reason).toMatch(/may not leave out part of the plan/u);
+    for (const standing of [
+      { mayOverride: true, maySkipPlanned: true },
+      { mayOverride: true },
+      undefined,
+    ])
+      expect(creationBodyFrom(offers, short, bound, standing).assembled).toBe(
+        "Body",
+      );
+  }
+});
+
 test("a form selecting nothing sends no selection", () => {
   const sent = creationBodyFrom(offers, catalogForm(), bound);
   expect(sent.assembled === "Body" && "selection" in sent.body).toBe(false);

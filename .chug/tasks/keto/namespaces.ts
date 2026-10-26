@@ -119,6 +119,7 @@ class Project implements Namespace {
       this.related.pools.includes(ctx.subject) || this.permits.develop(ctx),
     manage_selector: (ctx: Context): boolean => this.permits.administer(ctx),
     override_ticket_config: (ctx: Context): boolean => this.permits.administer(ctx),
+    skip_planned_evaluations: (ctx: Context): boolean => this.permits.administer(ctx),
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_developer: (ctx: Context): boolean => this.related.developer_granters.includes(ctx.subject),
     grant_dispatcher: (ctx: Context): boolean => this.related.dispatcher_granters.includes(ctx.subject),

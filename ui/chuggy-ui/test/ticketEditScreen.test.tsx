@@ -41,6 +41,7 @@ import {
   creationBinding,
   creationDeclared,
   creationDraft,
+  creationGatedOffer,
   creationInitialization,
   creationListed,
   creationPartition,
@@ -410,4 +411,46 @@ test("a reader the abilities read says may mutate is drawn the edit's form", asy
     over: abilitiesOver(abilitiesEvery),
   });
   expect(configurationChosen()).not.toBeNull();
+});
+
+/** A draft that already runs only the first stage of the gated catalog's plan,
+ * every initialization being answered as that catalog's. */
+function shortDrawing(abilities: typeof abilitiesEvery): Drawing {
+  const { initialization } = creationGatedOffer();
+  return {
+    draft: {
+      ...pinned("development", "n-development"),
+      authoring: {
+        dependencies: [],
+        program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+      },
+    },
+    unread: (url) =>
+      answer({
+        ...initialization,
+        configuration: {
+          ...initialization.configuration,
+          revision: decodeURIComponent(url.slice(url.lastIndexOf("/") + 1)),
+        },
+      }),
+    over: abilitiesOver(abilities),
+  };
+}
+
+test("a draft already running less than its plan is not revised by a reader the abilities read says may not skip planned evaluations, and is by one who may", async () => {
+  const refused = await drawEdit(
+    shortDrawing({ ...abilitiesEvery, skipPlannedEvaluations: false }),
+  );
+  await retitleAndSubmit();
+  expect(screen.getByText(/may not leave out part of the plan/u)).toBeDefined();
+  expect(revised(refused)).toBeUndefined();
+  cleanup();
+
+  const held = await drawEdit(shortDrawing(abilitiesEvery));
+  await retitleAndSubmit();
+  expect(revised(held)).toMatchObject({
+    authoring: {
+      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+    },
+  });
 });
