@@ -7,11 +7,12 @@
 # PATH: a verdict that depends on which version happens to be installed is not
 # a verdict. A version this gate does not expect is a could-not-run.
 #
-# THE RANDOMIZED RUNS ARE SEEDED FROM THE TREE WHEN A PASS CAN BE RECORDED.
+# THE RANDOMIZED RUNS ARE SEEDED FROM THE KEY WHEN A PASS CAN BE RECORDED.
 # `track-record run` hands the gate the key a pass is recorded under as
 # TRACK_RECORD_KEY, and its leading hex digits, as many as quint's simulator
 # takes for a seed, seed both runs: a pass on record is the one sweep that
-# reproduces it, and a tree that differs anywhere sweeps afresh. Without a key
+# reproduces it, and a model that differs, or anything else
+# `.chug/tasks/_ci-select.sh` keys this gate on, sweeps afresh. Without a key
 # the runs are unseeded and sweep afresh every time.
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
