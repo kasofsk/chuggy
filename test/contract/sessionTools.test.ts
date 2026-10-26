@@ -60,6 +60,7 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "dispatch_ticket",
     "dispatch",
     "refuse",
     "lift",
@@ -134,6 +135,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "revoke_ticket",
     "update_ticket",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
     "dispatch",
     "refuse",
@@ -152,6 +154,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     ProjectRead: [],
     DraftAuthor: [],
     DraftOriginate: [],
+    TicketDispatch: [],
     LeadDecision: [],
   });
 });

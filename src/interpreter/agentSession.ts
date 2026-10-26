@@ -181,6 +181,12 @@ export const allSessionCapabilities = [
    * rule withholds.
    */
   "DraftOriginate",
+  /**
+   * Dispatching a released ticket as the session's principal, which the API
+   * authorizes as that principal's own dispatch. It is not `LeadDecision`
+   * because a decision tool writes nothing and this one submits a command.
+   */
+  "TicketDispatch",
   /** The decision tools, which write nothing and compose the turn's answer. */
   "LeadDecision",
 ] as const;

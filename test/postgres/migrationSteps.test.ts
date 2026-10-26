@@ -54,6 +54,7 @@ import { migration079 } from "../../src/adapters/postgres/schema/migrations/079-
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
+import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
@@ -2915,5 +2916,55 @@ test("083 reads every attempt that stood as over a held target, keeps a bounded 
       unobserved: true,
       declined: null,
     });
+  });
+});
+
+/** The rosters of every thread, by principal. */
+async function threadRosters084(subject: pg.Pool): Promise<readonly unknown[]> {
+  return (
+    await subject.query<{ principal: string; capabilities: string[] }>(
+      `SELECT principal,capabilities FROM agent_session
+        WHERE kind='Thread' ORDER BY principal`,
+    )
+  ).rows;
+}
+
+test("084 leaves an open thread's roster as it stood, and a thread opened after it may dispatch", async () => {
+  await migrationDatabase("thread_dispatch", async (subject) => {
+    await installationBefore(subject, migration084.version);
+    await subject.query(`${tenantSeed("tenant-84")}
+      INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-84','project-84','Active');
+      SELECT * FROM open_member_thread('tenant-84','project-84','principal-a',
+        'session-84-a','slot-84','objectives-84')`);
+    assert.ok((await postgresMigrate(subject)).includes(migration084.version));
+    await subject.query(
+      `SELECT * FROM open_member_thread('tenant-84','project-84','principal-b',
+         'session-84-b','slot-84','objectives-84')`,
+    );
+    const opened = [
+      "RepositoryRead",
+      "RunCommands",
+      "ProjectRead",
+      "DraftAuthor",
+      "DraftOriginate",
+    ];
+    assert.deepEqual(await threadRosters084(subject), [
+      { principal: "principal-a", capabilities: opened },
+      {
+        principal: "principal-b",
+        capabilities: [...opened, "TicketDispatch"],
+      },
+    ]);
+    await assert.rejects(
+      subject.query(
+        `INSERT INTO agent_session
+           (tenant,project,session,kind,principal,capabilities,credential_slot,
+            account,cluster)
+         SELECT tenant,project,'session-84-c','Lead','principal-c',
+                ARRAY['Unknown']::text[],credential_slot,account,cluster
+           FROM agent_session WHERE session='session-84-a'`,
+      ),
+      /agent_session_capabilities_are_known/u,
+    );
   });
 });

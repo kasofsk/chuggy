@@ -203,6 +203,12 @@ const chuggyToolRoster = {
    * holds this capability and a lead does not.
    */
   DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
+  /**
+   * Dispatching one released ticket on the member's own word, as the member's
+   * `ManualDispatch`: the API authorizes it as that member's dispatch, so a
+   * session holding this may dispatch exactly what its owner may.
+   */
+  TicketDispatch: ["dispatch_ticket"],
   LeadDecision: [
     "dispatch",
     "refuse",
@@ -221,6 +227,7 @@ export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
+  ...chuggyToolRoster.TicketDispatch,
   ...chuggyToolRoster.LeadDecision,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
@@ -258,6 +265,7 @@ export const builtInToolCapabilities: Readonly<
   ProjectRead: [],
   DraftAuthor: [],
   DraftOriginate: [],
+  TicketDispatch: [],
   LeadDecision: [],
 };
 
@@ -281,6 +289,7 @@ export const chuggyToolRoutes = {
   ticket: nativeHttpRoutes.ticket,
   draft: nativeHttpRoutes.draft,
   drafts: nativeHttpRoutes.drafts,
+  dispatchView: nativeHttpRoutes.dispatchView,
   configurations: nativeHttpRoutes.configurations,
   configuration: nativeHttpRoutes.configuration,
   selectorHistory: nativeHttpRoutes.selectorHistory,
