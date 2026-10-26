@@ -8,9 +8,8 @@
  *
  * THE ORACLE IS THE WHOLE-FLEET REPLAY, KEPT HERE. Each row is stepped through
  * `replayStep` over the whole graph and the whole projection re-read against
- * the state before it, which is what `projectWriterLoad` did before it read
- * only the row's ticket; legality is the model's `journalLegalOn`
- * (`model/refinement.qnt`) asked of the whole prefix.
+ * the state before it; legality is folded over the whole prefix, each row
+ * checked against the whole fleet's graph.
  *
  * THE JOURNALS are every golden's decided rows, the pinned journal that
  * reworks, resumes every wall and revokes mid-run, and seeded walks of the
@@ -119,7 +118,7 @@ function oracleReplay(stored: readonly StoredEntry[]): readonly OracleRow[] {
   });
 }
 
-/** The model's `journalLegalOn`, folded over the whole prefix. */
+/** Legality folded over the whole prefix, each row checked against the whole fleet's graph. */
 function oracleLegalOn(stored: readonly StoredEntry[]): boolean {
   return stored.reduce(
     (held, row) => {
@@ -283,6 +282,36 @@ for (const journal of journals) {
     });
   });
 }
+
+test("a row's projection changes are its own ticket's, whatever else in the graph differs", () => {
+  const journal = walkJournal({ nTickets: 5, nTasks: 2, maxStages: 2 }, 1);
+  const oracle = oracleReplay(journal.stored);
+  const last = oracle.at(-1)?.post.graph ?? genesis;
+  const found = oracle
+    .flatMap(({ pre, post }, at) => {
+      const event = journal.stored[at]?.entry.event;
+      if (event === undefined) return [];
+      const named = eventTicket(event);
+      const other = [...pre.graph.tickets.keys()].find(
+        (id) =>
+          id !== named &&
+          !ticketEquals(ticketAt(pre.graph, id), ticketAt(last, id)),
+      );
+      return other === undefined ? [] : [{ pre, post, event, other }];
+    })
+    .at(0);
+  assert.ok(found, "a row whose graph holds another ticket that later moves");
+  const moved: TicketGraph = {
+    tickets: new Map(found.post.graph.tickets).set(
+      found.other,
+      ticketAt(last, found.other),
+    ),
+  };
+  assert.deepEqual(
+    projectionChanges(found.pre.graph, moved, found.event),
+    oracleChanges(found.pre.graph, found.post.graph),
+  );
+});
 
 /** Lays a journal's rows at dense seqs from the first. */
 function renumbered(stored: readonly StoredEntry[]): readonly StoredEntry[] {
