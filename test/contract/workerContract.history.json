@@ -93,5 +93,10 @@
     "release": "1.18.0",
     "wire": "1e97d001addbc4d136a04062105a2ac2d452b655db7e102126dc9a082f5478ae",
     "files": "14ad7b40fc0b178c30484e4a88c2affd477d2fdc44bb492bbc9a457656bea39e"
+  },
+  {
+    "release": "1.19.0",
+    "wire": "a4495adf95b0cf8368addd2a35bd960adc62e0a0ef9c651a3376836c1266a20d",
+    "files": "9187b6611e8236c4c1b7c5dea539a02c3ed70db7e3833ce59b7f4d2eed66dbb1"
   }
 ]
