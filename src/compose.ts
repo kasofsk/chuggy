@@ -21,6 +21,7 @@ import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
+  githubInstallationTokensSettled,
 } from "./adapters/forge/githubInstallationTokens.ts";
 import {
   mintedRepositoryCredentials,
@@ -63,7 +64,6 @@ import {
   githubForgeId,
   portalForgeApp,
   type ForgeAppKey,
-  type ForgeInstallationTokens,
   type ForgePermissionSet,
   type ForgeRepositoryTokens,
 } from "./interpreter/forgeInstallation.ts";
@@ -370,9 +370,14 @@ export interface RepositoryCredentialComposition {
 
 /** The minting half of one process's credentials, absent where it holds no app key. */
 export interface RepositoryCredentialMinting {
-  readonly installationTokens: ForgeInstallationTokens;
   readonly tokens: ForgeRepositoryTokens;
 }
+
+/**
+ * Whether a process answers a token the forge has just made once it has
+ * settled or at once, which `githubInstallationTokens.ts` says the reason for.
+ */
+export type ForgeTokenSettling = "Settled" | "Immediate";
 
 /** The files half of one process's credentials, which is what a precondition holds to a path. */
 export function repositoryCredentialFileOptions(
@@ -395,19 +400,21 @@ export function repositoryCredentialFileOptions(
 export function composeForgeRepositoryMinting(
   pool: pg.Pool,
   forge: ForgeAppKey | undefined,
+  settling: ForgeTokenSettling,
 ): RepositoryCredentialMinting | undefined {
   if (forge === undefined) return undefined;
-  const installationTokens = githubInstallationTokens(
-    githubInstallationTokensOptions(forge),
-  );
+  const options = githubInstallationTokensOptions(forge);
   return {
-    installationTokens,
     tokens: mintedRepositoryTokens({
       forge: githubForgeId,
       app: portalForgeApp,
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
-      tokens: installationTokens,
+      tokens: githubInstallationTokens(
+        settling === "Settled"
+          ? githubInstallationTokensSettled(options)
+          : options,
+      ),
       bindings: postgresProjectRepositoryLanding(pool),
     }),
   };
@@ -772,7 +779,7 @@ export function composeFinalizerRuntime(
     service: (pool) =>
       finalizerServiceRuntime(
         settings,
-        composeForgeRepositoryMinting(pool, settings.forge),
+        composeForgeRepositoryMinting(pool, settings.forge, "Settled"),
         credentialOptions,
         forgeOptions,
       ),

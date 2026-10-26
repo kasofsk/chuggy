@@ -517,7 +517,7 @@ export function ticketServiceProcessRoot(
   const pool = processPool(config.database);
   const credentials = composeTicketServiceCredentials(
     config.source,
-    composeForgeRepositoryMinting(pool, config.forge),
+    composeForgeRepositoryMinting(pool, config.forge, "Settled"),
   );
   const git = gitPromotion({ ...config.source, credentials });
   const bindings = postgresProjectRepositoryBinding(pool);
