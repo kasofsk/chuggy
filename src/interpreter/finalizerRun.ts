@@ -17,13 +17,16 @@
  * attempt may proceed, and an unreadable ref is a durable hold. None of the
  * three expires the permit or authorizes a second promotion.
  *
- * A DECLINE IS KEPT WITH THE READING THAT FOLLOWS IT. A push the repository
- * would not take for a reason of its own — a rule, a hook, a protected branch,
- * a credential that may not change a workflow file — is as ambiguous as any
- * other, and where the ref then proves not to hold the candidate the reading
- * records the decline beside that verdict. A workflow refusal holds there,
- * since what preparing again builds the same repository refuses; any other
- * decline is prepared again while restarts remain.
+ * A DECLINE IS KEPT WITH THE READING THAT FOLLOWS IT, UNTIL ONE CONCLUDES. A
+ * push the repository would not take for a reason of its own — a rule, a hook,
+ * a protected branch, a credential that may not change a workflow file — is as
+ * ambiguous as any other, so the reading records the decline beside whatever
+ * the ref proves short of the candidate, an unreadable ref included, and a
+ * re-reading carries it to the verdict that concludes. A ref the remote does
+ * not hold proves the candidate absent only beside a decline, the repository's
+ * own word that it created nothing, and is unreadable without one. A workflow
+ * refusal holds there, since what preparing again builds the same repository
+ * refuses; any other decline is prepared again while restarts remain.
  *
  * A REFUSED UPDATE IS INFORMATION. The ref did not advance and the observed
  * value says what it holds instead, so the revision fence restarts preparation
@@ -424,22 +427,23 @@ export async function finalizerFence(
   return stale + lapsed;
 }
 
-/** What one ancestry proof says the reconciliation records. */
+/** What one ancestry proof says the reconciliation records, beside the decline the push met wherever the ref holds no candidate. */
 function finalizerReadingOf(
   proved: AncestryProved,
   declined?: PromotionDecline,
 ): FinalizerReading {
+  const kept = declined === undefined ? {} : { declined };
   switch (proved.proved) {
     case "Ancestor":
       return { verdict: "Promoted", observed: proved.observed };
     case "NotAncestor":
-      return {
-        verdict: "NotPromoted",
-        observed: proved.observed,
-        ...(declined === undefined ? {} : { declined }),
-      };
+      return { verdict: "NotPromoted", observed: proved.observed, ...kept };
+    case "Absent":
+      return declined === undefined
+        ? { verdict: "Unreadable" }
+        : { verdict: "NotPromoted", declined };
     case "Unreadable":
-      return { verdict: "Unreadable" };
+      return { verdict: "Unreadable", ...kept };
     default:
       return assertNever(proved);
   }
@@ -470,7 +474,7 @@ async function finalizerRecordReading(
     finalizerHold(service, tally, "ReconciliationUnrecorded");
 }
 
-/** Re-proves the readings that could not settle, so a hold ends where the ref becomes readable. */
+/** Re-proves the readings that could not settle, each beside the decline it kept, so a hold ends where the ref becomes readable. */
 async function finalizerReadHolds(
   service: FinalizerService,
   epoch: RecoveryEpoch,
@@ -497,7 +501,7 @@ async function finalizerReadHolds(
         candidate: permit.candidate,
         target: permit.target,
       },
-      finalizerReadingOf(proved),
+      finalizerReadingOf(proved, permit.declined),
       tally,
     );
   }

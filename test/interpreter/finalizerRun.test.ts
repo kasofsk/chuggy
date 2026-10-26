@@ -53,6 +53,7 @@ import type {
 import {
   allClosingLifecycles,
   allGitEvidence,
+  allPromotionDeclines,
   asCommitPermitId,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
@@ -61,6 +62,7 @@ import {
   asInputBundleId,
   asRepositoryId,
   finalizerDefaults,
+  promotionDeclineOf,
   type AncestryProof,
   type AncestryProved,
   type CandidateIntegrated,
@@ -1151,35 +1153,99 @@ test("a pass held by an unreadable ref spends the permit on neither answer", asy
   assert.equal(store.readings[0]?.reconciliation.observed, undefined);
 });
 
+/** Every answer a proof can give, each over a ref that holds what the case says. */
+const everyProof: readonly AncestryProved[] = [
+  { proved: "NotAncestor", observed: asGitObjectId(commitOf("a")) },
+  { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
+  { proved: "Absent" },
+  { proved: "Unreadable", evidence: "RemoteUnreachable" },
+];
+
+/** What a proof is recorded as beside no decline, which is what it always was. */
+const undeclinedVerdicts = {
+  NotAncestor: "NotPromoted",
+  Ancestor: "Promoted",
+  Absent: "Unreadable",
+  Unreadable: "Unreadable",
+} as const;
+
 /**
  * The evidence an ambiguous push answered with reaches the reading only where
- * the repository declined it and the ref then proved not to hold the
- * candidate; every other ambiguity is read as it always was.
+ * the repository declined it and the ref then held no candidate, an absent or
+ * unreadable ref among them; every other ambiguity is read as it always was.
  */
-test("a declined push's reading keeps the decline, and no other ambiguity keeps one", async () => {
-  const kept: (readonly [string, string, string])[] = [];
+test("a declined push's reading keeps the decline wherever the ref holds no candidate, and no other ambiguity keeps one", async () => {
+  const kept: (readonly [string, string, string, string])[] = [];
   for (const evidence of populated(allGitEvidence, "allGitEvidence")) {
-    for (const proved of [
-      { proved: "NotAncestor", observed: asGitObjectId(commitOf("a")) },
-      { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
-    ] as const) {
+    for (const proved of everyProof) {
       const store = recordingStore([promotableView("request-one")]);
       const git = recordingGit();
       git.promoted = { promoted: "Ambiguous", evidence };
       git.proved = proved;
       await passOver(serviceOf(store, git));
       const reading = store.readings[0]?.reconciliation;
-      assert.equal(
-        reading?.verdict,
-        proved.proved === "Ancestor" ? "Promoted" : "NotPromoted",
-      );
+      if (proved.proved === "Ancestor")
+        assert.equal(reading?.verdict, "Promoted");
       if (reading?.declined !== undefined)
-        kept.push([evidence, proved.proved, reading.declined]);
+        kept.push([evidence, proved.proved, reading.verdict, reading.declined]);
+      else if (promotionDeclineOf(evidence) === undefined)
+        assert.equal(reading?.verdict, undeclinedVerdicts[proved.proved]);
     }
   }
   assert.deepEqual(kept, [
-    ["RemoteDeclined", "NotAncestor", "RemoteDeclined"],
-    ["WorkflowsRefused", "NotAncestor", "WorkflowsRefused"],
+    ["RemoteDeclined", "NotAncestor", "NotPromoted", "RemoteDeclined"],
+    ["RemoteDeclined", "Absent", "NotPromoted", "RemoteDeclined"],
+    ["RemoteDeclined", "Unreadable", "Unreadable", "RemoteDeclined"],
+    ["WorkflowsRefused", "NotAncestor", "NotPromoted", "WorkflowsRefused"],
+    ["WorkflowsRefused", "Absent", "NotPromoted", "WorkflowsRefused"],
+    ["WorkflowsRefused", "Unreadable", "Unreadable", "WorkflowsRefused"],
+  ]);
+});
+
+/**
+ * A held reading is re-proved beside the decline it kept, so the verdict that
+ * concludes carries it and an absent ref concludes as not promoted; one that
+ * kept none is read as it always was.
+ */
+test("a held reading is re-read beside the decline it kept", async () => {
+  const kept: (readonly [string, string, string, string])[] = [];
+  for (const declined of [undefined, ...allPromotionDeclines]) {
+    for (const proved of everyProof) {
+      const store = recordingStore(
+        [],
+        [
+          {
+            partition,
+            permit: asCommitPermitId("permit-held"),
+            repository: binding,
+            target: asGitRefName("refs/heads/main"),
+            candidate: asGitObjectId(commitOf("c")),
+            ...(declined === undefined ? {} : { declined }),
+          },
+        ],
+      );
+      const git = recordingGit();
+      git.proved = proved;
+      const report = await passOver(serviceOf(store, git));
+      assert.equal(report.rereadings, 1);
+      const reading = store.readings[0]?.reconciliation;
+      if (proved.proved === "Ancestor")
+        assert.equal(reading?.verdict, "Promoted");
+      if (declined === undefined) {
+        assert.equal(reading?.verdict, undeclinedVerdicts[proved.proved]);
+        assert.equal(reading?.declined, undefined);
+      } else if (reading?.declined !== undefined) {
+        kept.push([declined, proved.proved, reading.verdict, reading.declined]);
+      }
+    }
+  }
+  assert.deepEqual(kept, [
+    ["RemoteDeclined", "NotAncestor", "NotPromoted", "RemoteDeclined"],
+    ["RemoteDeclined", "Absent", "NotPromoted", "RemoteDeclined"],
+    ["RemoteDeclined", "Unreadable", "Unreadable", "RemoteDeclined"],
+    ["WorkflowsRefused", "NotAncestor", "NotPromoted", "WorkflowsRefused"],
+    ["WorkflowsRefused", "Absent", "NotPromoted", "WorkflowsRefused"],
+    ["WorkflowsRefused", "Unreadable", "Unreadable", "WorkflowsRefused"],
   ]);
 });
 

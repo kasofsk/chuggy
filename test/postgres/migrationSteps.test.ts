@@ -52,6 +52,8 @@ import { migration076 } from "../../src/adapters/postgres/schema/migrations/076-
 import { migration077 } from "../../src/adapters/postgres/schema/migrations/077-tokens-carry-no-capabilities.ts";
 import { migration079 } from "../../src/adapters/postgres/schema/migrations/079-lead-reads-ticket-landings.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
+import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
+import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
@@ -67,7 +69,10 @@ import {
   asForgeId,
   asForgeInstallationId,
 } from "../../src/interpreter/forgeInstallation.ts";
-import { asTenantId } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  asTenantId,
+} from "../../src/interpreter/projectStore.ts";
 import { baselineToolAllowlist } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -2740,6 +2745,108 @@ test("081 keeps every reading and hold that stood, and admits a decline beside n
     assert.deepEqual(await declinedRows081(subject), {
       readings: [{ verdict: "NotPromoted", declined: "WorkflowsRefused" }],
       holds: [{ hold_kind: "PromotionWorkflowsRefused" }],
+    });
+  });
+});
+
+/** One reading request-5's permits hold, as 082 is asked about it. */
+interface Reading082 {
+  readonly permit: string;
+  readonly verdict: string;
+  readonly unobserved: boolean;
+  readonly declined: string | null;
+}
+
+/** Every reading request-5's permits hold, in permit order. */
+async function readings082(subject: pg.Pool): Promise<readonly Reading082[]> {
+  return (
+    await subject.query<Reading082>(
+      `SELECT permit,verdict,observed_commit IS NULL AS unobserved,declined
+         FROM finalization_reconciliation ORDER BY permit`,
+    )
+  ).rows;
+}
+
+/** A concluded permit whose reading kept a decline over a ref that held a commit, beside a granted one whose reading is held unread. */
+const readingsBefore082 = `${deletionPartition}
+  ${renamedFinalization(renamedAttemptPrepared)};
+  INSERT INTO finalization_attempt
+    (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
+     target_ref,target_commit,strategy,configuration_revision,configuration_digest,
+     attempt_digest,approval_required,outcome,candidate_commit,failure_kind)
+  VALUES('tenant-5','project-5','attempt-5a','request-5',1,'repository-5','bundle-5',
+         repeat('b',64),'refs/heads/main',repeat('c',40),'Merge','revision-5','digest-5',
+         repeat('e',64),true,'Prepared',repeat('a',40),NULL);
+  INSERT INTO commit_permit
+    (tenant,project,permit,attempt,recovery_epoch,lifecycle_generation)
+  VALUES('tenant-5','project-5','permit-5a','attempt-5a','epoch-5',1);
+  INSERT INTO finalization_reconciliation
+    (tenant,project,permit,candidate_commit,target_ref,verdict,observed_commit,declined)
+  VALUES('tenant-5','project-5','permit-5a',repeat('a',40),'refs/heads/main',
+         'NotPromoted',repeat('c',40),'RemoteDeclined');
+  UPDATE commit_permit SET state='Concluded',concluded_at=now() WHERE permit='permit-5a';
+  INSERT INTO commit_permit
+    (tenant,project,permit,attempt,recovery_epoch,lifecycle_generation)
+  VALUES('tenant-5','project-5','permit-5','attempt-5','epoch-5',1);
+  INSERT INTO finalization_reconciliation
+    (tenant,project,permit,candidate_commit,target_ref,verdict,observed_commit)
+  VALUES('tenant-5','project-5','permit-5',repeat('c',40),'refs/heads/main',
+         'Unreadable',NULL)`;
+
+/** The readings 082 still refuses, each an assignment to the held one and the constraint that refuses it. */
+const refusedAfter082 = [
+  ["verdict='NotPromoted',declined=NULL", "reading_is_whole"],
+  ["verdict='Unreadable',observed_commit=repeat('c',40)", "reading_is_whole"],
+  ["verdict='Promoted',observed_commit=repeat('c',40)", "decline_is_known"],
+] as const;
+
+test("082 keeps every reading that stood, and admits a decline beside an unread ref and a declined ref read absent", async () => {
+  await migrationDatabase("decline_kept_unread", async (subject) => {
+    await installationBefore(subject, migration082.version);
+    await subject.query(readingsBefore082);
+    assert.ok((await postgresMigrate(subject)).includes(migration082.version));
+    assert.deepEqual(await readings082(subject), [
+      {
+        permit: "permit-5",
+        verdict: "Unreadable",
+        unobserved: true,
+        declined: null,
+      },
+      {
+        permit: "permit-5a",
+        verdict: "NotPromoted",
+        unobserved: false,
+        declined: "RemoteDeclined",
+      },
+    ]);
+    const store = postgresFinalizer(subject);
+    const epoch = asRecoveryEpoch("epoch-5");
+    assert.equal((await store.heldPermits(epoch, 8))[0]?.declined, undefined);
+    await subject.query(
+      "UPDATE finalization_reconciliation SET declined='WorkflowsRefused' WHERE permit='permit-5'",
+    );
+    assert.equal(
+      (await store.heldPermits(epoch, 8))[0]?.declined,
+      "WorkflowsRefused",
+      "a held reading hands its decline to the re-read",
+    );
+    for (const [assignment, constraint] of refusedAfter082) {
+      await assert.rejects(
+        subject.query(
+          `UPDATE finalization_reconciliation SET ${assignment} WHERE permit='permit-5'`,
+        ),
+        new RegExp(`finalization_reconciliation_${constraint}`, "u"),
+        assignment,
+      );
+    }
+    await subject.query(
+      "UPDATE finalization_reconciliation SET verdict='NotPromoted' WHERE permit='permit-5'",
+    );
+    assert.deepEqual((await readings082(subject))[0], {
+      permit: "permit-5",
+      verdict: "NotPromoted",
+      unobserved: true,
+      declined: "WorkflowsRefused",
     });
   });
 });

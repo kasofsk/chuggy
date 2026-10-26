@@ -1,7 +1,8 @@
 /**
  * The adapter behind `GitPromotionPort`: the remote reads a preparation pins,
  * the one conditional ref update a permit authorizes, and the ancestry proof
- * that says what the ref holds.
+ * that says what the ref holds, a ref the remote does not hold being an answer
+ * of its own rather than an unreadable one.
  *
  * A PROMOTION MAY BE AMBIGUOUS AND THAT IS AN ANSWER. The push either advanced
  * the ref, or was refused because the candidate was not a fast-forward of what
@@ -327,9 +328,7 @@ async function gitPromotionProve(
     credential,
     proof.ref,
   );
-  if (read.read === "Absent") {
-    return { proved: "Unreadable", evidence: "RefUnreadable" };
-  }
+  if (read.read === "Absent") return { proved: "Absent" };
   if (read.read === "Unreachable") {
     return { proved: "Unreadable", evidence: "RemoteUnreachable" };
   }

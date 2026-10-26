@@ -78,7 +78,11 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
+import {
+  finalizerRowDeclined,
+  finalizerRowPresent,
+  finalizerRowValue,
+} from "./finalizerRows.ts";
 
 /**
  * The namespace the permit lock is taken in. It is an arbitrary constant whose
@@ -126,6 +130,7 @@ interface HeldPermitRow {
   readonly binding_epoch: string;
   readonly target_ref: string;
   readonly candidate_commit: string;
+  readonly declined: string | null;
 }
 
 /** The refusal a grant answers with, which is a value and never a raised failure. */
@@ -364,7 +369,7 @@ export async function finalizerPermitHolds(
   const found = await client.query<HeldPermitRow>(
     sql`SELECT p.tenant, p.project, p.permit, b.repository,
             b.recovery_epoch AS binding_epoch,
-            r.target_ref, r.candidate_commit
+            r.target_ref, r.candidate_commit, r.declined
        FROM commit_permit p
        JOIN finalization_attempt a
          ON a.tenant=p.tenant AND a.project=p.project AND a.attempt=p.attempt
@@ -392,6 +397,7 @@ export async function finalizerPermitHolds(
       },
       target: asGitRefName(row.target_ref),
       candidate: asGitObjectId(row.candidate_commit),
+      ...finalizerRowDeclined(row.declined),
     };
   });
 }

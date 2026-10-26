@@ -22,6 +22,7 @@
  */
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { chmodSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -33,9 +34,15 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import {
   finalizerDefaults,
   type FinalizationClaim,
+  type GitPromotionPort,
 } from "../../src/interpreter/finalizer.ts";
+import {
+  gitDeclineByProcReceive,
+  gitDeclineWorkflowsReason,
+} from "../adapters/gitDeclineFixtures.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
+  finalizerBriefBranch,
   finalizerClaim,
   finalizerDrain,
   finalizerExpireClaim,
@@ -275,8 +282,11 @@ async function declinedRows(project: FinalizerProject): Promise<unknown> {
       )
     )[0]?.["made"],
     readings: await rig.harness.query(
-      `SELECT verdict, declined FROM finalization_reconciliation
-        WHERE tenant=$1 AND project=$2`,
+      `SELECT r.verdict, r.observed_commit IS NULL AS unobserved, r.declined,
+              p.state AS permit
+         FROM finalization_reconciliation r
+         JOIN commit_permit p USING (tenant, project, permit)
+        WHERE tenant=$1 AND project=$2 ORDER BY r.reconciled_at, r.permit`,
       keys,
     ),
     request: (
@@ -302,44 +312,202 @@ test("a declined push is pushed again until its restarts are spent, held under i
     "unavailable-declined",
     [{ path: "one.txt", content: "one\n" }],
   );
-  const hook = join(remote.origin, "hooks", "pre-receive");
+  declineByPreReceive(remote.origin);
+  await declinedPasses(project, finalizerRemotePort(rig), "declined");
+  const attempts = finalizerDefaults.preparationRestartsMax + 1;
+  assert.deepEqual(await declinedRows(project), {
+    attempts,
+    readings: Array.from({ length: attempts }, () => ({
+      verdict: "NotPromoted",
+      unobserved: false,
+      declined: "RemoteDeclined",
+      permit: "Concluded",
+    })),
+    request: { state: "Registered", hold_kind: "PromotionDeclined" },
+  });
+  assert.equal(await escalationEvidence(project), "PromotionDeclined");
+});
+
+/** The evidence the desk reads off the escalated ticket, once what the finalizer submitted is drained. */
+async function escalationEvidence(
+  project: FinalizerProject,
+): Promise<string | undefined> {
+  await finalizerDrain(rig.harness, project.partition, project.memory);
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    const escalation = (
+      await postgresNativeReads(asApi).ticket(
+        project.partition,
+        asTicketId(project.ticket),
+      )
+    )?.escalation;
+    assert.equal(escalation?.kind, "FinalizationUnavailableEscalated");
+    assert.equal(escalation.resumeAt, "ResumeFinalization");
+    return escalation.evidence;
+  } finally {
+    await asApi.end();
+  }
+}
+
+/** The branch the cases about a decline onto an uncreated branch land on, which no fixture remote holds. */
+const unheldBranch = "refs/heads/chuggy/unheld";
+
+/** A project whose ticket lands on a branch its remote does not hold, or on the default where `unheld` is false, with the remote declining every push. */
+async function declinedSubject(
+  label: string,
+  decline: (origin: string) => void,
+  unheld = true,
+): Promise<{ project: FinalizerProject; origin: string }> {
+  const { project, remote } = await finalizerSubject(rig, label, [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  if (unheld) {
+    await finalizerBriefBranch(
+      rig,
+      project.partition,
+      project.ticket,
+      unheldBranch,
+    );
+  }
+  decline(remote.origin);
+  return { project, origin: remote.origin };
+}
+
+/** A `pre-receive` hook that declines every push, the way a repository's own rule does. */
+function declineByPreReceive(origin: string): void {
+  const hook = join(origin, "hooks", "pre-receive");
   writeFileSync(hook, "#!/bin/sh\nexit 1\n");
   chmodSync(hook, 0o700);
-  const port = finalizerRemotePort(rig);
+}
+
+/** Runs passes enough for every restart a decline may spend and the dwell after it. */
+async function declinedPasses(
+  project: FinalizerProject,
+  port: GitPromotionPort,
+  label: string,
+): Promise<void> {
   const attempts = finalizerDefaults.preparationRestartsMax + 1;
   for (
     let pass = 0;
     pass < finalizerDefaults.holdPassesMax + 4 * attempts;
     pass += 1
   ) {
-    await finalizerPassOnce(rig, project, port, `declined-${String(pass)}`);
+    await finalizerPassOnce(rig, project, port, `${label}-${String(pass)}`);
     await finalizerExpireClaim(rig, project);
   }
+}
+
+/** Whether the remote holds the ref, read off git rather than off what the finalizer recorded. */
+function remoteHolds(origin: string, ref: string): boolean {
+  return (
+    spawnSync("git", ["-C", origin, "rev-parse", "--verify", "--quiet", ref])
+      .status === 0
+  );
+}
+
+/**
+ * A decline onto a branch the remote does not hold leaves the ref absent, and
+ * that is read as not promoted beside the decline: it is pushed again until
+ * the restarts are spent and escalates under the same kind as a decline over a
+ * branch that exists.
+ */
+test("a push declined onto a branch the remote does not hold is held and escalates as declined", async () => {
+  const { project, origin } = await declinedSubject(
+    "unavailable-unheld",
+    declineByPreReceive,
+  );
+  await declinedPasses(project, finalizerRemotePort(rig), "unheld");
+  const attempts = finalizerDefaults.preparationRestartsMax + 1;
   assert.deepEqual(await declinedRows(project), {
     attempts,
     readings: Array.from({ length: attempts }, () => ({
       verdict: "NotPromoted",
+      unobserved: true,
       declined: "RemoteDeclined",
+      permit: "Concluded",
     })),
     request: { state: "Registered", hold_kind: "PromotionDeclined" },
   });
-  await finalizerDrain(rig.harness, project.partition, project.memory);
-  const asApi = postgresHarnessRolePool(apiRole);
-  try {
-    assert.deepEqual(
-      (
-        await postgresNativeReads(asApi).ticket(
-          project.partition,
-          asTicketId(project.ticket),
-        )
-      )?.escalation,
-      {
-        kind: "FinalizationUnavailableEscalated",
-        evidence: "PromotionDeclined",
-        resumeAt: "ResumeFinalization",
-      },
+  assert.equal(remoteHolds(origin, unheldBranch), false);
+  assert.equal(await escalationEvidence(project), "PromotionDeclined");
+});
+
+/** A port whose first proof after each push cannot reach the remote, every later proof reading it. */
+function unreadAfterPush(port: GitPromotionPort): GitPromotionPort {
+  let pushed = false;
+  return {
+    ...port,
+    promoteCandidate: async (promotion) => {
+      const promoted = await port.promoteCandidate(promotion);
+      pushed = true;
+      return promoted;
+    },
+    proveCandidateAncestry: (proof) => {
+      if (!pushed) return port.proveCandidateAncestry(proof);
+      pushed = false;
+      return Promise.resolve({
+        proved: "Unreadable",
+        evidence: "RemoteUnreachable",
+      });
+    },
+  };
+}
+
+/** A `proc-receive` hook that declines every push the way GitHub refuses a workflow change. */
+function declineAsWorkflows(origin: string): void {
+  gitDeclineByProcReceive(origin, gitDeclineWorkflowsReason);
+}
+
+/**
+ * A decline whose first proof cannot read the remote keeps the decline while
+ * the reading is held, and the re-read concludes with it, over a branch the
+ * remote does not hold and over one it does. A workflow refusal then holds on
+ * its first attempt, and any other decline once its restarts are spent.
+ */
+test("a decline whose first proof is unreadable is held as declined, a workflow refusal on its first attempt", async () => {
+  const restarted = finalizerDefaults.preparationRestartsMax + 1;
+  for (const [label, decline, unheld, attempts, hold] of [
+    [
+      "unread-workflows",
+      declineAsWorkflows,
+      true,
+      1,
+      "PromotionWorkflowsRefused",
+    ],
+    [
+      "unread-declined",
+      declineByPreReceive,
+      true,
+      restarted,
+      "PromotionDeclined",
+    ],
+    ["unread-held", declineAsWorkflows, false, 1, "PromotionWorkflowsRefused"],
+  ] as const) {
+    const { project, origin } = await declinedSubject(label, decline, unheld);
+    await declinedPasses(
+      project,
+      unreadAfterPush(finalizerRemotePort(rig)),
+      label,
     );
-  } finally {
-    await asApi.end();
+    const declined =
+      hold === "PromotionWorkflowsRefused"
+        ? "WorkflowsRefused"
+        : "RemoteDeclined";
+    assert.deepEqual(
+      await declinedRows(project),
+      {
+        attempts,
+        readings: Array.from({ length: attempts }, () => ({
+          verdict: "NotPromoted",
+          unobserved: unheld,
+          declined,
+          permit: "Concluded",
+        })),
+        request: { state: "Registered", hold_kind: hold },
+      },
+      label,
+    );
+    assert.equal(remoteHolds(origin, unheldBranch), false, label);
+    assert.equal(await escalationEvidence(project), hold, label);
   }
 });

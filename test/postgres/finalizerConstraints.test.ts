@@ -381,6 +381,7 @@ test("a reconciliation's verdict is a closed set and its reading is whole", asyn
     ],
     ["Unreadable", finalizerCommit(), "reconciliation_reading_is_whole"],
     ["Promoted", null, "reconciliation_reading_is_whole"],
+    ["NotPromoted", null, "reconciliation_reading_is_whole"],
     ["Promoted", "not-a-commit", "reconciliation_commits_are_object_ids"],
   ] as readonly (readonly [string, string | null, string])[]) {
     assert.match(
@@ -397,7 +398,25 @@ test("a reconciliation's verdict is a closed set and its reading is whole", asyn
   assert.equal(allReconciliationVerdicts.includes("Unreadable"), true);
 });
 
-test("a reconciliation keeps a decline only beside not promoted, and only one the finalizer names", async () => {
+/** Writes one reading as the finalizer and rolls it back, so a case may show what is admitted without spending the permit's one reading. */
+async function readingAdmitted(values: readonly unknown[]): Promise<void> {
+  const client = await rig.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO finalization_reconciliation
+         (tenant, project, permit, candidate_commit, target_ref, verdict,
+          observed_commit, declined)
+       VALUES ($1,$2,$3,$4,'refs/heads/main',$5,$6,$7)`,
+      [...values],
+    );
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+}
+
+test("a reconciliation keeps a decline on any verdict but promoted, only one the finalizer names, and observes nothing only beside one", async () => {
   const definition = await rig.pool.query<{ definition: string }>(
     `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
       WHERE conname = 'finalization_reconciliation_decline_is_known'`,
@@ -411,8 +430,27 @@ test("a reconciliation keeps a decline only beside not promoted, and only one th
     "the installed declines are the finalizer's, member for member",
   );
   for (const [verdict, observed, declined] of [
-    ["Promoted", finalizerCommit(), "RemoteDeclined"],
     ["Unreadable", null, "WorkflowsRefused"],
+    ["NotPromoted", finalizerCommit(), "RemoteDeclined"],
+    ["NotPromoted", null, "RemoteDeclined"],
+  ] as const) {
+    await readingAdmitted(
+      keys(permit, finalizerCommit(), verdict, observed, declined),
+    );
+  }
+  assert.match(
+    await rig.refusal(
+      `INSERT INTO finalization_reconciliation
+         (tenant, project, permit, candidate_commit, target_ref, verdict,
+          observed_commit, declined)
+       VALUES ($1,$2,$3,$4,'refs/heads/main','Unreadable',$5,'RemoteDeclined')`,
+      keys(permit, finalizerCommit(), finalizerCommit()),
+    ),
+    /finalization_reconciliation_reading_is_whole/u,
+  );
+  for (const [verdict, observed, declined] of [
+    ["Promoted", finalizerCommit(), "RemoteDeclined"],
+    ["Unreadable", null, "RemoteUnreachable"],
     ["NotPromoted", finalizerCommit(), "RemoteUnreachable"],
   ] as const) {
     assert.match(

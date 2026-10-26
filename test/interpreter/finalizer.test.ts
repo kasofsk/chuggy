@@ -766,7 +766,87 @@ test("a closing project aborts whatever the push met, and a decline beside a pro
             reconciliation: { ...reconciliationOf("Promoted"), declined },
           }),
         ),
-      /a declined push is read as anything but not promoted/u,
+      /a declined push is read as promoted/u,
+    );
+  }
+});
+
+/** The reading a ref proving the candidate absent by being absent itself records, beside the decline the push met. */
+function readAbsent(declined?: PromotionDecline): FinalizationReconciliation {
+  return {
+    permit: permitId,
+    candidate,
+    target: target.ref,
+    verdict: "NotPromoted",
+    ...(declined === undefined ? {} : { declined }),
+  };
+}
+
+/**
+ * A decline that left the ref absent is held as one over a target that did not
+ * move, whatever the base the branch would be created from has done since; a
+ * ref read as absent beside no decline is no reading this machine concludes.
+ */
+test("a push declined onto a branch the remote does not hold holds as one declined over an unmoved target", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        observedTarget: { ...target, commit: moved },
+        reconciliation: readAbsent("WorkflowsRefused"),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: readAbsent("RemoteDeclined"),
+      }),
+    ),
+    { decide: "Prepare", target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: readAbsent("RemoteDeclined"),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...concluded, reconciliation: readAbsent() }),
+      ),
+    /a ref read as absent concludes with no decline beside it/u,
+  );
+});
+
+test("a decline kept beside a ref that could not be read waits on the reading under its permit", () => {
+  for (const declined of populated(
+    allPromotionDeclines,
+    "allPromotionDeclines",
+  )) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: permitIn("Granted"),
+          reconciliation: { ...reconciliationOf("Unreadable"), declined },
+        }),
+      ),
+      { decide: "Hold", hold: "ReconciliationUnreadable" },
+      declined,
     );
   }
 });

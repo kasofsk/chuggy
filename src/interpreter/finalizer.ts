@@ -550,8 +550,9 @@ export interface CommitPermit {
 
 /**
  * What the target ref proved about the candidate, recorded per permit and never
- * absent for a hold. `declined` is present only on `NotPromoted`, where the push
- * this permit authorized was declined by the repository it was made to.
+ * absent for a hold. `declined` is kept from the first reading of a push the
+ * repository declined, on every verdict but `Promoted`, and `observed` is absent
+ * on `NotPromoted` only where that decline left the ref absent.
  */
 export interface FinalizationReconciliation {
   readonly permit: CommitPermitId;
@@ -773,10 +774,19 @@ function finalizationNextAssertView(view: FinalizationView): void {
   }
   if (
     reconciliation?.declined !== undefined &&
-    reconciliation.verdict !== "NotPromoted"
+    reconciliation.verdict === "Promoted"
   ) {
     throw new RangeError(
-      "finalization view: a declined push is read as anything but not promoted",
+      "finalization view: a declined push is read as promoted",
+    );
+  }
+  if (
+    reconciliation?.verdict === "NotPromoted" &&
+    reconciliation.observed === undefined &&
+    reconciliation.declined === undefined
+  ) {
+    throw new RangeError(
+      "finalization view: a ref read as absent concludes with no decline beside it",
     );
   }
 }
@@ -799,12 +809,12 @@ function finalizationNextRestart(
 }
 
 /**
- * What a candidate the ref proved absent leads to: over a target that did not
- * move, a workflow refusal is held, since preparing again builds what the same
- * repository refuses again, and any other decline is prepared again while
- * restarts remain, a repository taking the next time what it declined once,
- * then held as declined. Anything else is the revision fence's, a target that
- * moved being the information a restart needs.
+ * What a candidate the ref proved absent leads to: over a target the reading
+ * found unmoved, or found absent, a workflow refusal is held, since
+ * preparing again builds what the same repository refuses again, and any other
+ * decline is prepared again while restarts remain, a repository taking the next
+ * time what it declined once, then held as declined. Anything else is the
+ * revision fence's, a target that moved being the information a restart needs.
  */
 function finalizationNextNotPromoted(
   config: FinalizerConfig,
@@ -815,7 +825,8 @@ function finalizationNextNotPromoted(
   if (
     declined === undefined ||
     allClosingLifecycles.includes(view.lifecycle) ||
-    reconciliation.observed !== view.attempt?.target.commit
+    (reconciliation.observed !== undefined &&
+      reconciliation.observed !== view.attempt?.target.commit)
   ) {
     return finalizationNextRestart(config, view);
   }
@@ -1068,10 +1079,11 @@ export interface AncestryProof {
   readonly candidate: GitObjectId;
 }
 
-/** What the ref proved, an unreadable ref kept apart from a ref that proved the candidate absent. */
+/** What the ref proved, a ref the remote does not hold and an unreadable ref each kept apart from a ref that proved the candidate absent. */
 export type AncestryProved =
   | { readonly proved: "Ancestor"; readonly observed: GitObjectId }
   | { readonly proved: "NotAncestor"; readonly observed: GitObjectId }
+  | { readonly proved: "Absent" }
   | { readonly proved: "Unreadable"; readonly evidence: GitEvidence };
 
 /**
@@ -1247,13 +1259,14 @@ export type Reconciled =
   | { readonly recorded: "Held" }
   | { readonly recorded: "Refused" };
 
-/** One permit a reading could not settle, carrying everything a re-reading needs. */
+/** One permit a reading could not settle, carrying everything a re-reading needs, the decline its push met among it. */
 export interface HeldPermit {
   readonly partition: Partition;
   readonly permit: CommitPermitId;
   readonly repository: RepositoryBinding;
   readonly target: GitRefName;
   readonly candidate: GitObjectId;
+  readonly declined?: PromotionDecline;
 }
 
 /**
