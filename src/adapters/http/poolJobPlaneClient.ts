@@ -13,7 +13,7 @@
  * A REFUSAL IS THE PLANE'S ONLY WHERE IT NAMES THE PLANE'S RELEASE. A proxy in
  * front of a plane with no process ready answers a 404 of its own, and an end
  * read as refused is cleared from its backend, so a 4xx naming no release is
- * an outage, as it is to the pool plane's client.
+ * an outage, as every 4xx but a 401 is to the pool plane's client.
  */
 
 import { workerErrorPath } from "../../contract/http.ts";

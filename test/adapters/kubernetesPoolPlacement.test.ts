@@ -961,8 +961,8 @@ function poolKeptCluster(
 
 /**
  * A client of this pool over a cluster holding one captured pod, named for its
- * assignment as this pool names it, with a plane offering nothing and settling
- * every refusal as `answers` says.
+ * assignment as this pool names it, with a plane offering nothing, settling
+ * every refusal as `answers` says and recording what each poll held and wanted.
  */
 function poolKept(
   captured: string,
@@ -970,6 +970,7 @@ function poolKept(
   answers: PoolKeptAnswers,
 ): {
   readonly sent: string[];
+  readonly polls: { held: readonly string[]; wanted: number }[];
   readonly pods: Map<string, unknown>;
   readonly client: WorkerPoolClient;
 } {
@@ -978,9 +979,11 @@ function poolKept(
   pod["metadata"] = { ...(pod["metadata"] as object), name };
   const pods = new Map<string, unknown>([[name, pod]]);
   const sent: string[] = [];
+  const polls: { held: readonly string[]; wanted: number }[] = [];
   const fetcher = poolKeptCluster(pods, answers, sent);
   return {
     sent,
+    polls,
     pods,
     client: {
       tokens: {
@@ -989,13 +992,15 @@ function poolKept(
         invalidate: () => undefined,
       },
       plane: {
-        poll: () =>
-          Promise.resolve({
+        poll: (_token, held, wanted) => {
+          polls.push({ held: [...held], wanted });
+          return Promise.resolve({
             polled: "Reconciled",
             assignments: [],
             sessions: [],
             stop: [],
-          }),
+          });
+        },
         settle: (_token, settled) => {
           sent.push(`SETTLE ${settled}`);
           return Promise.resolve(answers.settled);
@@ -1181,6 +1186,41 @@ test("a pod naming a fault of its image whose refusal the plane did not answer i
     );
     assert.deepEqual([...kept.pods.keys()], [], what);
   }
+});
+
+test("a kept refusal whose pull is backing off is held on that pass, its lease renewed and its room taken, and refused again once its fault shows", async () => {
+  const answers: PoolKeptAnswers = {
+    secret: () => poolEnvelopeSecret("missing"),
+    ended: poolPlaneSaid(204),
+    settled: "Unavailable",
+  };
+  const kept = poolKept("pull-missing-digest", "missing", answers);
+  const name = kubernetesPoolPodName(config, "missing");
+  const showing = (captured: string) => {
+    const pod = poolCaptured(captured, "missing");
+    pod["metadata"] = { ...(pod["metadata"] as object), name };
+    kept.pods.set(name, pod);
+  };
+  const settledThisPass = (sent: readonly string[]) =>
+    sent.includes("SETTLE missing");
+
+  const unanswered = await poolKeptPass(kept);
+  assert.equal(settledThisPass(unanswered.sent), true);
+  assert.deepEqual(kept.polls.at(-1), { held: [], wanted: 1 });
+  assert.deepEqual([...kept.pods.keys()], [name]);
+
+  showing("pull-missing-digest-backoff");
+  const backingOff = await poolKeptPass(kept);
+  assert.equal(settledThisPass(backingOff.sent), false);
+  assert.deepEqual(kept.polls.at(-1), { held: ["missing"], wanted: 0 });
+  assert.deepEqual([...kept.pods.keys()], [name]);
+
+  showing("pull-missing-digest");
+  answers.settled = "Settled";
+  const taken = await poolKeptPass(kept);
+  assert.equal(settledThisPass(taken.sent), true);
+  assert.equal(taken.ended, 1);
+  assert.deepEqual([...kept.pods.keys()], []);
 });
 
 test("a cluster that could not be listed raises rather than answering an empty pool", async () => {

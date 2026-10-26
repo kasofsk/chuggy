@@ -3,7 +3,9 @@
  * a third party would have to implement. This is chuggy-common's
  * `poolPlane.mjs` in TypeScript, and a change to one is a change to both, but
  * for what a runner names on a poll and the release an answer names for it,
- * which this cluster client neither names nor reads.
+ * which this cluster client neither names nor reads, and for a 409 naming no
+ * release, which is an outage here where `poolPlane.mjs` reads every 409 as a
+ * lost assignment.
  *
  * THE STATUS LINE IS THE TAXONOMY AND THIS MODULE ONLY READS IT. The plane
  * already separates a token it rejected, a caller it does not serve and an
