@@ -71,12 +71,7 @@ import type {
   TicketGraph,
   TicketState,
 } from "../domain/generated/modelTypes.ts";
-import {
-  canReleaseIn,
-  dependableIn,
-  depArtifacts,
-  waitsOn,
-} from "../domain/enablement.ts";
+import { dependableIn, depArtifacts, waitsOn } from "../domain/enablement.ts";
 import {
   alwaysPolicy,
   commandTaken,
@@ -87,7 +82,7 @@ import { decisionValid } from "../domain/decisionValid.ts";
 import { evolve } from "../domain/evolve.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import { genesisLedgers, ledgerAt, type Ledgers } from "../domain/ledger.ts";
-import { phaseOf } from "../domain/phase.ts";
+import { isTerminal, phaseOf } from "../domain/phase.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type {
   DispatchSource,
@@ -389,6 +384,18 @@ function projectWriterFailurePolicy(
 }
 
 /**
+ * Whether a project has room for one more release. The deployment's `nTickets`
+ * bounds the tickets a project holds unfinished, since a Done or Revoked ticket
+ * occupies no room and an id the server mints is never reused.
+ */
+function releaseRoomIn(config: Config, graph: TicketGraph): boolean {
+  return (
+    ticketIds(graph).filter((id) => !isTerminal(ticketAt(graph, id).state))
+      .length < config.nTickets
+  );
+}
+
+/**
  * What `decide` answers a command at the state in hand, an accepted one held
  * to `decisionValid` because every obligation it owes is about to become a
  * row. Outside `commandTaken` a release or an update is refused as the
@@ -416,7 +423,7 @@ function projectWriterDecision(
   if (
     command.type === "CreateTicket" &&
     !memory.graph.tickets.has(command.value.id) &&
-    !canReleaseIn(writer.config, memory.graph, asTicketId(command.value.id))
+    !releaseRoomIn(writer.config, memory.graph)
   )
     return { type: "Boundary", code: "TicketCapacityReached" };
   const decision = decide(

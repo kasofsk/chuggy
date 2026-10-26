@@ -511,8 +511,7 @@ module chuggy_domain {
   // machine's actions, the refinement's actors and the witness drivers draw
   // from. The release room is the one bound among them that `decide` does
   // not refuse over: it is this instance's N_TICKETS, not the package's, and
-  // an implementation's boundary refuses a release outside it before
-  // `decide` is asked.
+  // it keeps the instance finite.
 
   /// Room for one more release (the N_TICKETS release bound).
   pure def canReleaseIn(c: TicketGraph, j: int): bool = and {
