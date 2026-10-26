@@ -247,7 +247,7 @@ export function asGitObjectId(value: string): GitObjectId {
   return value as GitObjectId;
 }
 
-/** A character no credential holds, git being told one a line at a time. */
+/** A control character, which no forge's token holds. */
 const repositoryCredentialControl = /\p{Cc}/u;
 
 /** Brands a repository credential, refused the shapes any other bounded text is and any control character, a line break among them. */
@@ -258,9 +258,7 @@ export function asRepositoryCredential(value: string): RepositoryCredential {
     repositoryCredentialCharsMax,
   );
   if (repositoryCredentialControl.test(bounded))
-    throw new RangeError(
-      "repository credential: a control character is not a value git can be told",
-    );
+    throw new RangeError("repository credential: holds a control character");
   return bounded as RepositoryCredential;
 }
 

@@ -23,9 +23,9 @@
  *
  * A REMOTE READ GIT DIED ON IS TRIED ONCE MORE, after a pause, and only while
  * the run's retries together stay inside the bound below, so a forge refusing
- * everything lengthens a run by that bound and no more. Every remote read that
- * failed is printed as it fails, with an excerpt of what git wrote that is
- * printed and never kept.
+ * everything lengthens a run by that bound and no more. Every remote read git
+ * exited with a failure on is printed as it fails, with an excerpt of what git
+ * wrote that is printed and never kept.
  *
  * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
  * saying so. The listing is ordered by age, so a deployment holding more

@@ -47,14 +47,14 @@
  * repaired by removing its directory and starting the process again, never by
  * hand inside it.
  *
- * A REMOTE READ THAT FAILED IS TOLD OF, AND ONE GIT DIED ON MAY BE TRIED
- * AGAIN, each only for a reader composed to. Whoever is told hears the
- * repository, the command, its code and an excerpt of what git wrote, which is
- * never part of what a read answers. A retry comes once, after a pause, under
- * the credential the read already held. It is made only where what the
- * reader's finished retries took leaves room for it, and runs under the
- * smaller of the read's own bound and that room, so retries made one at a time
- * together take no longer than the reader was given for them.
+ * A REMOTE READ GIT EXITED WITH A FAILURE ON IS TOLD OF, AND ONE GIT DIED ON
+ * MAY BE TRIED AGAIN, each only for a reader composed to. Whoever is told hears
+ * the repository, the command, its code and an excerpt of what git wrote, which
+ * is never part of what a read answers. A retry comes once, after a pause,
+ * under the credential the read already held. It is made only where what the
+ * reader's finished retries took leaves room for it, and runs under the smaller
+ * of the read's own bound and that room, so retries made one at a time together
+ * take no longer than the reader was given for them.
  */
 
 import { join } from "node:path";
@@ -124,7 +124,7 @@ export interface GitRepositoryConfigurationOptions {
   readonly credentialUsername?: string;
   readonly localTimeoutSecsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
-  /** Who is told of each remote read that failed; a reader naming nobody tells nobody. */
+  /** Who is told of each remote read git exited with a failure on; a reader naming nobody tells nobody. */
   readonly remoteFailed?: (
     failed: GitRepositoryConfigurationRemoteFailed,
   ) => void;

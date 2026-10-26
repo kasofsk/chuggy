@@ -817,6 +817,24 @@ test("a reader's retries stop once what they took together leaves no room for an
   assert.equal(calls(), 5);
 });
 
+test("a retry's pause counts against its reader's retries, in the room it needs and in what it took", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const pauseMs = 1_000;
+  const { port, told, calls } = fixtureTold(fixture, "ls-remote", ["Said"], {
+    remoteRetry: { pauseMs, elapsedMsMax: 2 * pauseMs + 700 },
+  });
+  const repository = fixtureBinding(fixture.remote);
+
+  for (let read = 0; read < 2; read++) await port.defaultBranch(repository);
+  assert.deepEqual(
+    told.map(({ retrying }) => retrying),
+    [true, false, false],
+    "the first retry's pause, once taken, leaves the second read too little room for its own pause and the shortest retry",
+  );
+  assert.equal(calls(), 3);
+});
+
 test("a retry runs under what its reader's retries have left, not under the read's own bound", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureDeclared(fixture);
