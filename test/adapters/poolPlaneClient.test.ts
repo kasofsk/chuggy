@@ -257,6 +257,20 @@ test("a 404 or a 400 naming no release of the plane's is an outage, from a poll 
   }
 });
 
+test("a 409 naming no release of the plane's loses no assignment", async () => {
+  const proxy = poolPlaneClient(planeSettings, () =>
+    Promise.resolve(new Response("", { status: 409 })),
+  );
+  assert.equal(
+    await proxy.settle("pool-token", "one", {
+      outcome: "Refused",
+      evidence: "no git",
+      fault: "ImageLacksGit",
+    }),
+    "Unavailable",
+  );
+});
+
 test("a settlement the plane will not take says which kind of no it was", async () => {
   for (const [status, expected] of [
     [204, "Settled"],
@@ -506,6 +520,7 @@ const idleBackend: WorkerPoolBackend = {
   stop: () => Promise.resolve({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
   ended: () => Promise.resolve([]),
+  clear: () => Promise.reject(new Error("an idle backend ends no job")),
 };
 
 interface IssuedPool {

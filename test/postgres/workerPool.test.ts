@@ -474,6 +474,20 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     true,
   );
   assert.equal(
+    await assignments.refuse(mine, renewed.assignment, "a later refusal"),
+    false,
+    "a refusal posted again is answered as an assignment no longer held",
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT pool_refusal FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND assignment=$3`,
+      [project.partition.tenant, project.partition.project, renewed.assignment],
+    ),
+    [{ pool_refusal: "no node takes this" }],
+    "the refusal taken first stands",
+  );
+  assert.equal(
     await assignments.renew(mine, renewed.assignment, leaseSecs),
     false,
     "a refused assignment is not renewed again",

@@ -63,6 +63,7 @@ const idle: WorkerPoolBackend = {
   stop: () => Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
   ended: () => Promise.resolve([]),
+  clear: () => Promise.reject(new Error("no job ended in this case")),
 };
 
 /** A plane with nothing to say, answered by the poll that says so. */
@@ -733,7 +734,7 @@ test("a session whose container ended is reported on the session plane before th
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
 });
 
-test("a job its backend refused is settled refused under its fault before the poll, with no session plane, and only a taken refusal counts", async () => {
+test("a job its backend refused is settled refused under its fault before the poll, with no session plane, cleared once the plane answered, and only a taken refusal counts", async () => {
   const order: string[] = [];
   const posted: [string, string, unknown][] = [];
   const tokens = counting();
@@ -746,19 +747,20 @@ test("a job its backend refused is settled refused under its fault before the po
   const answers: Readonly<Record<string, WorkerPoolSettled>> = {
     taken: "Settled",
     gone: "Lost",
+    denied: "Denied",
     stale: "Stale",
   };
+  const named = ["taken", "gone", "denied", "stale", "unreached"];
   const passed = await workerPoolClientPass(
     client({
       tokens: tokens.tokens,
       backend: {
         ...idle,
-        ended: () =>
-          Promise.resolve([
-            refused("taken"),
-            refused("gone"),
-            refused("stale"),
-          ]),
+        ended: () => Promise.resolve(named.map(refused)),
+        clear: (assignment) => {
+          order.push(`clear:${assignment}`);
+          return Promise.resolve();
+        },
       },
       plane: {
         poll: (...asked) => {
@@ -775,18 +777,23 @@ test("a job its backend refused is settled refused under its fault before the po
   );
   assert.deepEqual(order, [
     "settle:taken",
+    "clear:taken",
     "settle:gone",
+    "clear:gone",
+    "settle:denied",
+    "clear:denied",
     "settle:stale",
+    "settle:unreached",
     "poll",
   ]);
   assert.deepEqual(
     posted,
-    ["taken", "gone", "stale"].map((named) => [
+    named.map((one) => [
       "pool-token-1",
-      named,
+      one,
       {
         outcome: "Refused",
-        evidence: `no git for ${named}`,
+        evidence: `no git for ${one}`,
         fault: "ImageLacksGit",
       },
     ]),
@@ -795,7 +802,7 @@ test("a job its backend refused is settled refused under its fault before the po
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
 });
 
-test("a job its backend killed at its deadline is ended on the job plane before the poll, settling nothing, and only a taken end counts", async () => {
+test("a job its backend killed at its deadline is ended on the job plane before the poll, settling nothing, cleared once the plane answered, and only a taken end counts", async () => {
   const order: string[] = [];
   const told: WorkerPoolJobEnd[] = [];
   const killed = (named: string): WorkerPoolJobEnd => ({
@@ -831,6 +838,10 @@ test("a job its backend killed at its deadline is ended on the job plane before 
             killed("reported"),
             killed("unreached"),
           ]),
+        clear: (assignment) => {
+          order.push(`clear:${assignment}`);
+          return Promise.resolve();
+        },
       },
       plane: {
         poll: (...asked) => {
@@ -846,7 +857,9 @@ test("a job its backend killed at its deadline is ended on the job plane before 
   );
   assert.deepEqual(order, [
     "end:taken",
+    "clear:taken",
     "end:reported",
+    "clear:reported",
     "end:unreached",
     "poll",
   ]);

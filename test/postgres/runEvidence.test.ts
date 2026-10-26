@@ -766,26 +766,34 @@ test("an ending under a generation the durable side has moved past ends nothing,
   }
 });
 
-test("a withdrawn attempt is ended once, so a redelivered ending moves nothing", async () => {
-  const { attempt } = await placedAttempt("run-withdrawn-twice");
-  const ending = {
-    secret: attempt.capability.secret,
-    generation: attempt.generation,
-    evidence: "RunRateLimited",
-  } as const;
-  assert.equal(await endings.end(ending), true);
-  assert.equal(await endings.end(ending), false);
-  assert.deepEqual(
-    await rig.harness.query(
-      `SELECT e.retries_spent::text AS retries_spent
-         FROM execution e
-         JOIN execution_attempt a ON a.tenant=e.tenant AND a.project=e.project
-                                 AND a.execution=e.execution
-        WHERE a.attempt=$1`,
-      [attempt.attempt],
-    ),
-    [{ retries_spent: "0" }],
-  );
+test("an attempt is ended once on either arm, so a redelivered ending moves nothing", async () => {
+  for (const [evidence, state, retries] of [
+    ["RunRateLimited", "Withdrawn", "0"],
+    ["RunTimedOut", "Lost", "1"],
+  ] as const) {
+    const { attempt } = await placedAttempt(
+      `run-ended-twice-${state.toLowerCase()}`,
+    );
+    const ending = {
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      evidence,
+    } as const;
+    assert.equal(await endings.end(ending), true, evidence);
+    assert.equal(await endings.end(ending), false, evidence);
+    assert.deepEqual(
+      await rig.harness.query(
+        `SELECT a.state,a.evidence,e.retries_spent::text AS retries_spent
+           FROM execution e
+           JOIN execution_attempt a ON a.tenant=e.tenant AND a.project=e.project
+                                   AND a.execution=e.execution
+          WHERE a.attempt=$1`,
+        [attempt.attempt],
+      ),
+      [{ state, evidence, retries_spent: retries }],
+      evidence,
+    );
+  }
 });
 
 test("a ticket's run totals sum every execution past the page bound", async () => {

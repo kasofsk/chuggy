@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { after, test, type TestContext } from "node:test";
 
 import {
   mintedCredentialDirectory,
@@ -18,12 +18,20 @@ import {
   workerPoolEvidenceCharsMax,
   type WorkerPoolAssignment,
 } from "../../src/contract/workerPool.ts";
+import {
+  workerContractHeader,
+  workerContractRelease,
+} from "../../src/contract/workerContract.ts";
 import { workerPlaneRoutes } from "../../src/contract/workerPlane.ts";
 import { poolEnvelopeSchema } from "../../src/contract/workerTask.ts";
-import type {
-  WorkerPoolBackend,
-  WorkerPoolPlacement,
+import {
+  workerPoolClientPass,
+  type WorkerPoolBackend,
+  type WorkerPoolClient,
+  type WorkerPoolPlacement,
+  type WorkerPoolSettled,
 } from "../../src/interpreter/workerPoolClient.ts";
+import { poolJobPlaneClient } from "../../src/adapters/http/poolJobPlaneClient.ts";
 import type { KubernetesPod } from "../../src/adapters/kubernetes/kubernetesSite.ts";
 import {
   checkedKubernetesPoolPlacementConfig,
@@ -570,7 +578,7 @@ function poolEnvelopeSecret(pod: string): Response {
   );
 }
 
-test("a pod naming a fault of its image is not held, and is refused under the fault once its text is stored, then deleted", async () => {
+test("a pod naming a fault of its image is not held, and is refused under the fault once its text is stored, its pod kept until it is cleared", async () => {
   const lacking = poolCaptured("lacks-git", "lacking");
   const running = poolCaptured("running", "running");
   const { reached, fetcher } = poolFaulted([lacking, running]);
@@ -610,9 +618,13 @@ test("a pod naming a fault of its image is not held, and is refused under the fa
       authorization: "Bearer bearer-pool-lacking",
       body: text,
     },
+  ]);
+  reached.length = 0;
+  await backend.clear("lacking");
+  assert.deepEqual(reached, [
     {
       method: "DELETE",
-      url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-lacking",
+      url: `https://cluster.invalid:6443/api/v1/namespaces/pool/pods/${kubernetesPoolPodName(config, "lacking")}`,
     },
   ]);
 });
@@ -662,7 +674,7 @@ test("a fault of the runtime copy is no refusal, and its pod is deleted as any e
   );
 });
 
-test("a pod the cluster stopped at its deadline is not held, and is ended as killed under the attempt its envelope names, then deleted", async () => {
+test("a pod the cluster stopped at its deadline is not held, and is ended as killed under the attempt its envelope names, its pod kept until it is cleared", async () => {
   for (const name of ["deadline-exceeded", "deadline-exceeded-copying"]) {
     const stopped = poolCaptured(name, "stopped");
     const running = poolCaptured("running", "running");
@@ -708,9 +720,17 @@ test("a pod the cluster stopped at its deadline is not held, and is ended as kil
           method: "GET",
           url: "https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/pool-stopped",
         },
+      ],
+      name,
+    );
+    reached.length = 0;
+    await backend.clear("stopped");
+    assert.deepEqual(
+      reached,
+      [
         {
           method: "DELETE",
-          url: "https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-stopped",
+          url: `https://cluster.invalid:6443/api/v1/namespaces/pool/pods/${kubernetesPoolPodName(config, "stopped")}`,
         },
       ],
       name,
@@ -728,10 +748,26 @@ test("a pod that failed for any other cause is never ended as killed at its dead
   }
 });
 
-test("a pod stopped at its deadline whose envelope could not be read is deleted all the same, its attempt left to its lease, and why told", async (t) => {
+/** A Secret the cluster holds under the envelope's key, carrying `text` as it was written. */
+function poolSecretHolding(key: string, text: string): Response {
+  return new Response(
+    JSON.stringify({ data: { [key]: Buffer.from(text).toString("base64") } }),
+    { status: 200 },
+  );
+}
+
+/** Reads `ended` of a backend over one pod stopped at its deadline whose Secret is answered by `secret`, with what it sent and told. */
+async function poolDeadlineUnread(
+  t: TestContext,
+  secret: () => Response,
+): Promise<{
+  readonly ended: Awaited<ReturnType<WorkerPoolBackend["ended"]>>;
+  readonly sent: readonly string[];
+  readonly lines: readonly string[];
+}> {
   const { reached, fetcher } = poolFaulted(
     [poolCaptured("deadline-exceeded", "unread")],
-    () => new Response("{}", { status: 404 }),
+    secret,
   );
   const backend = kubernetesPoolBackend(config, fetcher, () =>
     poolCapturedAt("deadline-exceeded"),
@@ -740,19 +776,71 @@ test("a pod stopped at its deadline whose envelope could not be read is deleted 
   const ended = await backend.ended();
   const lines = written.mock.calls.map((call) => String(call.arguments[0]));
   written.mock.restore();
-  assert.deepEqual(ended, []);
-  assert.deepEqual(
-    reached.map((made) => made.method),
-    ["GET", "GET", "DELETE"],
-  );
-  assert.equal(lines.length, 1);
-  assert.match(
-    lines[0] ?? "",
-    /pod pool-unread passed its deadline and its envelope Secret could not be read/u,
-  );
+  return {
+    ended,
+    sent: reached.map((made) => `${made.method} ${made.url}`),
+    lines,
+  };
+}
+
+test("a pod stopped at its deadline whose Secret holds no envelope is deleted, its attempt left to its lease, and why told", async (t) => {
+  for (const [what, secret] of [
+    ["no Secret", () => new Response("{}", { status: 404 })],
+    ["no envelope key", () => poolSecretHolding("other", "{}")],
+    ["no envelope", () => poolSecretHolding("task", "not json")],
+  ] as const) {
+    const { ended, sent, lines } = await poolDeadlineUnread(t, secret);
+    assert.deepEqual(ended, [], what);
+    assert.deepEqual(
+      sent,
+      [
+        "GET https://cluster.invalid:6443/api/v1/namespaces/pool/pods",
+        "GET https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/pool-unread",
+        "DELETE https://cluster.invalid:6443/api/v1/namespaces/pool/pods/pool-unread",
+      ],
+      what,
+    );
+    assert.equal(lines.length, 1, what);
+    assert.match(
+      lines[0] ?? "",
+      /pod pool-unread passed its deadline and its Secret holds no envelope, so the pod is deleted and its attempt left to its lease/u,
+      what,
+    );
+  }
 });
 
-test("a refusal whose text could not be stored is refused all the same, its pod deleted, and why told", async (t) => {
+test("a pod stopped at its deadline whose envelope Secret could not be read is kept for the next pass, and why told", async (t) => {
+  for (const [what, secret] of [
+    ["a cluster that answered 500", () => new Response("{}", { status: 500 })],
+    ["a forbidden read", () => new Response("{}", { status: 403 })],
+    ["a cluster that answered no document", () => new Response("null")],
+    [
+      "a cluster that could not be reached",
+      () => {
+        throw new TypeError("fetch failed");
+      },
+    ],
+  ] as const) {
+    const { ended, sent, lines } = await poolDeadlineUnread(t, secret);
+    assert.deepEqual(ended, [], what);
+    assert.deepEqual(
+      sent,
+      [
+        "GET https://cluster.invalid:6443/api/v1/namespaces/pool/pods",
+        "GET https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/pool-unread",
+      ],
+      what,
+    );
+    assert.equal(lines.length, 1, what);
+    assert.match(
+      lines[0] ?? "",
+      /pod pool-unread passed its deadline and its envelope Secret could not be read, so the pod is kept for the next pass/u,
+      what,
+    );
+  }
+});
+
+test("a refusal whose text could not be stored is refused all the same, its pod kept until it is cleared, and why told", async (t) => {
   const unparsed = new Response(
     JSON.stringify({
       data: { task: Buffer.from("not json").toString("base64") },
@@ -764,21 +852,28 @@ test("a refusal whose text could not be stored is refused all the same, its pod 
       "no Secret",
       () => new Response("{}", { status: 404 }),
       204,
-      ["GET", "GET", "DELETE"],
+      ["GET", "GET"],
       /envelope Secret pool-unwritable could not be read/u,
     ],
     [
       "no envelope",
       () => unparsed,
       204,
-      ["GET", "GET", "DELETE"],
+      ["GET", "GET"],
+      /envelope Secret pool-unwritable could not be read/u,
+    ],
+    [
+      "a Secret that could not be read",
+      () => new Response("{}", { status: 500 }),
+      204,
+      ["GET", "GET"],
       /envelope Secret pool-unwritable could not be read/u,
     ],
     [
       "a plane that refused it",
       undefined,
       500,
-      ["GET", "GET", workerPlaneRoutes.artifact.method, "DELETE"],
+      ["GET", "GET", workerPlaneRoutes.artifact.method],
       /worker plane answered 500/u,
     ],
   ] as const) {
@@ -807,6 +902,325 @@ test("a refusal whose text could not be stored is refused all the same, its pod 
     assert.equal(lines.length, 1, what);
     assert.match(lines[0] ?? "", why, what);
   }
+});
+
+/** What a cluster and its worker plane answer while a kept pod waits, each changed between passes by the case. */
+interface PoolKeptAnswers {
+  secret: () => Response;
+  ended: () => Response;
+  settled: WorkerPoolSettled;
+}
+
+/** An end's answer as the worker plane gives one, naming its release. */
+const poolPlaneSaid = (status: number) => () =>
+  new Response(null, {
+    status,
+    headers: { [workerContractHeader]: workerContractRelease },
+  });
+
+/** What the edge in front of a worker plane with no process ready answers, naming no release. */
+const poolEdgeNotFound = () =>
+  new Response("404 page not found\n", {
+    status: 404,
+    headers: { "content-type": "text/plain" },
+  });
+
+/**
+ * A cluster holding `pods` until each is deleted, and the worker plane their
+ * envelopes name, each answered from `answers` as it stands when asked and each
+ * request recorded in `sent` as its method and address.
+ */
+function poolKeptCluster(
+  pods: Map<string, unknown>,
+  answers: PoolKeptAnswers,
+  sent: string[],
+): typeof fetch {
+  return (input, init) => {
+    const url = new URL(reachedUrl(input));
+    sent.push(`${init?.method ?? "GET"} ${url.origin}${url.pathname}`);
+    if (url.origin !== "https://cluster.invalid:6443")
+      return Promise.resolve(
+        url.pathname === workerPlaneRoutes.runEnded.path
+          ? answers.ended()
+          : new Response(null, { status: 204 }),
+      );
+    if (url.pathname === "/api/v1/namespaces/pool/pods")
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [...pods.values()] }), {
+          status: 200,
+        }),
+      );
+    if (url.pathname.includes("/secrets/"))
+      return Promise.resolve().then(answers.secret);
+    const deleted = pods.delete(
+      decodeURIComponent(url.pathname.split("/").pop() ?? ""),
+    );
+    return Promise.resolve(new Response("{}", { status: deleted ? 200 : 404 }));
+  };
+}
+
+/**
+ * A client of this pool over a cluster holding one captured pod, named for its
+ * assignment as this pool names it, with a plane offering nothing, settling
+ * every refusal as `answers` says and recording what each poll held and wanted.
+ */
+function poolKept(
+  captured: string,
+  carried: string,
+  answers: PoolKeptAnswers,
+): {
+  readonly sent: string[];
+  readonly polls: { held: readonly string[]; wanted: number }[];
+  readonly pods: Map<string, unknown>;
+  readonly client: WorkerPoolClient;
+} {
+  const name = kubernetesPoolPodName(config, carried);
+  const pod = poolCaptured(captured, carried);
+  pod["metadata"] = { ...(pod["metadata"] as object), name };
+  const pods = new Map<string, unknown>([[name, pod]]);
+  const sent: string[] = [];
+  const polls: { held: readonly string[]; wanted: number }[] = [];
+  const fetcher = poolKeptCluster(pods, answers, sent);
+  return {
+    sent,
+    polls,
+    pods,
+    client: {
+      tokens: {
+        acquire: () =>
+          Promise.resolve({ acquired: "Token", token: "pool-token" }),
+        invalidate: () => undefined,
+      },
+      plane: {
+        poll: (_token, held, wanted) => {
+          polls.push({ held: [...held], wanted });
+          return Promise.resolve({
+            polled: "Reconciled",
+            assignments: [],
+            sessions: [],
+            stop: [],
+          });
+        },
+        settle: (_token, settled) => {
+          sent.push(`SETTLE ${settled}`);
+          return Promise.resolve(answers.settled);
+        },
+      },
+      jobs: poolJobPlaneClient({ timeoutMs: 1_000 }, fetcher),
+      backend: kubernetesPoolBackend(config, fetcher, () =>
+        poolCapturedAt(captured),
+      ),
+      settings: { concurrencyMax: 1, outageBackoffMs: 1, passesMax: 1 },
+    },
+  };
+}
+
+/** One pass of a client over a kept pod, answering how many ends the plane took and what the pass sent. */
+async function poolKeptPass(kept: ReturnType<typeof poolKept>): Promise<{
+  readonly ended: number;
+  readonly sent: readonly string[];
+}> {
+  kept.sent.length = 0;
+  const passed = await workerPoolClientPass(kept.client);
+  assert.equal(passed.passed, "Reconciled");
+  return {
+    ended: passed.passed === "Reconciled" ? passed.ended : -1,
+    sent: [...kept.sent],
+  };
+}
+
+const poolKeptListed =
+  "GET https://cluster.invalid:6443/api/v1/namespaces/pool/pods";
+const poolKeptEnded = `POST https://callback.invalid${workerPlaneRoutes.runEnded.path}`;
+const poolKeptUploaded = `${workerPlaneRoutes.artifact.method} https://callback.invalid${workerPlaneRoutes.artifact.path.replace("*", workerErrorPath)}`;
+
+test("a pod stopped at its deadline whose end the plane did not answer is kept, and the next pass ends it again and only then deletes it", async () => {
+  for (const [what, unanswered, answered, taken] of [
+    [
+      "a plane answering 503, then an end taken now",
+      poolPlaneSaid(503),
+      204,
+      1,
+    ],
+    ["an edge's own 404, then an end taken now", poolEdgeNotFound, 204, 1],
+    [
+      "a plane answering 503, then an end it took before, answered as no longer live",
+      poolPlaneSaid(503),
+      401,
+      0,
+    ],
+    [
+      "an edge's own 404, then an end the plane took before, answered as no longer live",
+      poolEdgeNotFound,
+      401,
+      0,
+    ],
+  ] as const) {
+    const answers: PoolKeptAnswers = {
+      secret: () => poolEnvelopeSecret("stopped"),
+      ended: unanswered,
+      settled: "Settled",
+    };
+    const kept = poolKept("deadline-exceeded", "stopped", answers);
+    const name = kubernetesPoolPodName(config, "stopped");
+    const secret = `GET https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/${name}`;
+    const deleted = `DELETE https://cluster.invalid:6443/api/v1/namespaces/pool/pods/${name}`;
+    assert.deepEqual(
+      await poolKeptPass(kept),
+      {
+        ended: 0,
+        sent: [
+          poolKeptListed,
+          poolKeptListed,
+          secret,
+          poolKeptUploaded,
+          poolKeptEnded,
+        ],
+      },
+      `${what}: unanswered`,
+    );
+    assert.deepEqual([...kept.pods.keys()], [name], what);
+    answers.ended = poolPlaneSaid(answered);
+    assert.deepEqual(
+      await poolKeptPass(kept),
+      {
+        ended: taken,
+        sent: [
+          poolKeptListed,
+          poolKeptListed,
+          secret,
+          poolKeptUploaded,
+          poolKeptEnded,
+          deleted,
+        ],
+      },
+      what,
+    );
+    assert.deepEqual([...kept.pods.keys()], [], what);
+    assert.deepEqual(
+      await poolKeptPass(kept),
+      { ended: 0, sent: [poolKeptListed, poolKeptListed] },
+      `${what}: a pass after the delete names nothing`,
+    );
+  }
+});
+
+test("a pod stopped at its deadline whose envelope could not be read is kept, and the pass that reads it ends it and then deletes it", async (t) => {
+  const answers: PoolKeptAnswers = {
+    secret: () => new Response("{}", { status: 503 }),
+    ended: poolPlaneSaid(204),
+    settled: "Settled",
+  };
+  const kept = poolKept("deadline-exceeded", "stopped", answers);
+  const name = kubernetesPoolPodName(config, "stopped");
+  const secret = `GET https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/${name}`;
+  t.mock.method(process.stderr, "write", () => true);
+  assert.deepEqual(await poolKeptPass(kept), {
+    ended: 0,
+    sent: [poolKeptListed, poolKeptListed, secret],
+  });
+  assert.deepEqual([...kept.pods.keys()], [name]);
+  answers.secret = () => poolEnvelopeSecret("stopped");
+  assert.deepEqual(await poolKeptPass(kept), {
+    ended: 1,
+    sent: [
+      poolKeptListed,
+      poolKeptListed,
+      secret,
+      poolKeptUploaded,
+      poolKeptEnded,
+      `DELETE https://cluster.invalid:6443/api/v1/namespaces/pool/pods/${name}`,
+    ],
+  });
+  assert.deepEqual([...kept.pods.keys()], []);
+});
+
+test("a pod naming a fault of its image whose refusal the plane did not answer is kept, and the next pass refuses it again and only then deletes it", async () => {
+  for (const [what, unanswered, answered, taken] of [
+    [
+      "a plane that could not be reached, then took it",
+      "Unavailable",
+      "Settled",
+      1,
+    ],
+    ["a rejected token, then a refusal taken before", "Stale", "Lost", 0],
+  ] as const) {
+    const answers: PoolKeptAnswers = {
+      secret: () => poolEnvelopeSecret("lacking"),
+      ended: poolPlaneSaid(204),
+      settled: unanswered,
+    };
+    const kept = poolKept("lacks-git", "lacking", answers);
+    const name = kubernetesPoolPodName(config, "lacking");
+    const secret = `GET https://cluster.invalid:6443/api/v1/namespaces/pool/secrets/${name}`;
+    assert.deepEqual(
+      await poolKeptPass(kept),
+      {
+        ended: 0,
+        sent: [
+          poolKeptListed,
+          poolKeptListed,
+          secret,
+          poolKeptUploaded,
+          "SETTLE lacking",
+        ],
+      },
+      what,
+    );
+    assert.deepEqual([...kept.pods.keys()], [name], what);
+    answers.settled = answered;
+    assert.deepEqual(
+      await poolKeptPass(kept),
+      {
+        ended: taken,
+        sent: [
+          poolKeptListed,
+          poolKeptListed,
+          secret,
+          poolKeptUploaded,
+          "SETTLE lacking",
+          `DELETE https://cluster.invalid:6443/api/v1/namespaces/pool/pods/${name}`,
+        ],
+      },
+      what,
+    );
+    assert.deepEqual([...kept.pods.keys()], [], what);
+  }
+});
+
+test("a kept refusal whose pull is backing off is held on that pass, its lease renewed and its room taken, and refused again once its fault shows", async () => {
+  const answers: PoolKeptAnswers = {
+    secret: () => poolEnvelopeSecret("missing"),
+    ended: poolPlaneSaid(204),
+    settled: "Unavailable",
+  };
+  const kept = poolKept("pull-missing-digest", "missing", answers);
+  const name = kubernetesPoolPodName(config, "missing");
+  const showing = (captured: string) => {
+    const pod = poolCaptured(captured, "missing");
+    pod["metadata"] = { ...(pod["metadata"] as object), name };
+    kept.pods.set(name, pod);
+  };
+  const settledThisPass = (sent: readonly string[]) =>
+    sent.includes("SETTLE missing");
+
+  const unanswered = await poolKeptPass(kept);
+  assert.equal(settledThisPass(unanswered.sent), true);
+  assert.deepEqual(kept.polls.at(-1), { held: [], wanted: 1 });
+  assert.deepEqual([...kept.pods.keys()], [name]);
+
+  showing("pull-missing-digest-backoff");
+  const backingOff = await poolKeptPass(kept);
+  assert.equal(settledThisPass(backingOff.sent), false);
+  assert.deepEqual(kept.polls.at(-1), { held: ["missing"], wanted: 0 });
+  assert.deepEqual([...kept.pods.keys()], [name]);
+
+  showing("pull-missing-digest");
+  answers.settled = "Settled";
+  const taken = await poolKeptPass(kept);
+  assert.equal(settledThisPass(taken.sent), true);
+  assert.equal(taken.ended, 1);
+  assert.deepEqual([...kept.pods.keys()], []);
 });
 
 test("a cluster that could not be listed raises rather than answering an empty pool", async () => {

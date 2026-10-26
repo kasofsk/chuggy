@@ -38,7 +38,7 @@ import type {
 import {
   kubernetesDeadline,
   kubernetesObjectRead,
-  kubernetesSecretValue,
+  kubernetesSecretRead,
   type KubernetesReached,
 } from "./clusterReach.ts";
 import type { KubernetesPodSite } from "./kubernetesSite.ts";
@@ -123,13 +123,13 @@ export async function kubernetesWorkerErrorWritten(
   bearer: { readonly secret: string; readonly key: string },
   text: string,
 ): Promise<AttemptErrorWritten> {
-  const token = await kubernetesSecretValue(
+  const token = await kubernetesSecretRead(
     site,
     fetcher,
     bearer.secret,
     bearer.key,
   );
-  if (token === undefined || token.length === 0)
+  if (token.read !== "Value" || token.value.length === 0)
     return {
       written: "Unwritten",
       why: `the bearer Secret ${bearer.secret} could not be read`,
@@ -137,7 +137,7 @@ export async function kubernetesWorkerErrorWritten(
   return kubernetesWorkerErrorPosted(
     site,
     fetcher,
-    { token, plane: site.workerPlaneUrl },
+    { token: token.value, plane: site.workerPlaneUrl },
     text,
   );
 }

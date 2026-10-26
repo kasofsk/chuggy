@@ -23,8 +23,8 @@
  * already claimed and already leased by the poll that offered it, so the accept
  * post confirms and writes nothing; a post that fails leaves a workload the
  * next pass reads back out of the backend and carries in its `held` list, which
- * is what renews its lease. Nothing here retries a settlement, because the
- * lease is the retry.
+ * is what renews its lease. Nothing here retries a placement's settlement,
+ * because the lease is the retry.
  *
  * A JOB AND A SESSION ARE COUNTED APART. Each kind has its own ceiling, its own
  * room on the poll and its own offers, a pool that names no session ceiling
@@ -32,8 +32,10 @@
  * chuggy-common's `poolLoop.mjs` in TypeScript, and a change to one is a
  * change to both, except that of a job's ends only one its backend refused or
  * killed at its deadline is reported here, and every other is left to its
- * lease, and that a runner's backend may take no job while its disk is low,
- * which a cluster leaves to its kubelet.
+ * lease; that such an end the plane did not answer is reported again on every
+ * pass, where `poolLoop.mjs` reports each end once and leaves it to its lease;
+ * and that a runner's backend may take no job while its disk is low, which a
+ * cluster leaves to its kubelet.
  *
  * A JOB ITS BACKEND KILLED AT ITS DEADLINE IS ENDED TIMED OUT, on the job
  * plane under its own bearer, as a harness that timed its own run out ends
@@ -44,8 +46,13 @@
  * A JOB THE BACKEND REFUSED AFTER TAKING IT IS SETTLED REFUSED, naming the
  * fault of its image, so the attempt's execution is blocked rather than its
  * lease lapsed and its run retried. The backend leaves the fault's text on the
- * attempt, where it can, before it answers the refusal, and a refusal the
- * plane did not take is left to the attempt's lease as an end is.
+ * attempt, where it can, before it answers the refusal.
+ *
+ * A JOB'S END IS CLEARED FROM ITS BACKEND ONLY ONCE THE PLANE HAS ANSWERED IT.
+ * The backend names it on every pass until then, so an end the plane could
+ * not be reached for, or a refusal posted under a token it rejected, is
+ * reported again by the next pass. The plane answers a repeat as an attempt
+ * no longer live or no longer held, which clears it as any refusal does.
  */
 import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
@@ -135,10 +142,14 @@ export interface WorkerPoolBackend {
   held(): Promise<readonly WorkerPoolHeld[]>;
   /**
    * Each session once, after `held` stopped naming it, and never one this
-   * pool stopped; and each job it refused or killed at its deadline, which
-   * `held` does not name.
+   * pool stopped; and each job it refused or killed at its deadline, until
+   * that job is cleared. `held` may name a refused job too, on a pass its
+   * workload shows no fault, which renews its lease and counts it against its
+   * ceiling as any held job, and so keeps its refusal one the plane takes.
    */
   ended(): Promise<readonly WorkerPoolEnded[]>;
+  /** Lets go of one job `ended` named, whose end the plane has answered; idempotent. */
+  clear(assignment: string): Promise<void>;
 }
 
 /**
@@ -179,7 +190,7 @@ export interface WorkerPoolPlane {
   ): Promise<WorkerPoolSettled>;
 }
 
-/** What reporting an end came to; `Refused` is an attempt no longer live, or one the plane refused to end. */
+/** What reporting an end came to; `Refused` is an attempt no longer live or held, or one the plane refused to end. */
 export type WorkerPoolEndAnswer = "Ended" | "Refused" | "Unavailable";
 
 /** The job plane as a pool reaches it, under each job's own bearer. */
@@ -330,25 +341,62 @@ function workerPoolClientSessionPlane(
   return client.sessions;
 }
 
-/** Settles one job its backend refused under the pass's token, answering whether the plane took it. */
+/**
+ * Settles one job its backend refused under the pass's token, answered in an
+ * end's words: an assignment no longer this pool's, or a pool the plane will
+ * not serve, is refused, and a rejected token is no answer, as an unreachable
+ * plane is.
+ */
 async function workerPoolClientRefused(
   client: WorkerPoolClient,
   token: string,
   refused: WorkerPoolJobRefused,
-): Promise<boolean> {
+): Promise<WorkerPoolEndAnswer> {
   const settled = await client.plane.settle(token, refused.assignment, {
     outcome: "Refused",
     evidence: refused.evidence,
     fault: refused.fault,
   });
-  if (settled === "Stale") client.tokens.invalidate(token);
-  return settled === "Settled";
+  switch (settled) {
+    case "Settled":
+      return "Ended";
+    case "Lost":
+    case "Denied":
+      return "Refused";
+    case "Stale":
+      client.tokens.invalidate(token);
+      return "Unavailable";
+    case "Unavailable":
+      return "Unavailable";
+  }
+}
+
+/**
+ * Reports one job's end, ending it if its backend killed it and settling it
+ * refused if its backend refused it, and clears it from the backend once the
+ * plane has answered.
+ */
+async function workerPoolClientJobEnded(
+  client: WorkerPoolClient,
+  token: string,
+  workload: WorkerPoolJobEnd | WorkerPoolJobRefused,
+): Promise<WorkerPoolEndAnswer> {
+  const answer =
+    "killed" in workload
+      ? await client.jobs.end(workload)
+      : await workerPoolClientRefused(client, token, workload);
+  if (answer !== "Unavailable")
+    await client.backend.clear(
+      "killed" in workload ? workload.job.assignment : workload.assignment,
+    );
+  return answer;
 }
 
 /**
  * Ends each session whose container ended unreported and each job its backend
- * killed, and settles each job it refused, counting what the planes took. One
- * not taken is left to its lease.
+ * killed, and settles each job it refused, counting what the planes took. A
+ * session not taken is left to its lease, and a job not answered to the next
+ * pass.
  */
 async function workerPoolClientEnded(
   client: WorkerPoolClient,
@@ -358,11 +406,7 @@ async function workerPoolClientEnded(
   let taken = 0;
   for (const workload of await client.backend.ended()) {
     if (workload.kind === "Job") {
-      if (
-        "killed" in workload
-          ? (await client.jobs.end(workload)) === "Ended"
-          : await workerPoolClientRefused(client, token, workload)
-      )
+      if ((await workerPoolClientJobEnded(client, token, workload)) === "Ended")
         taken += 1;
       continue;
     }

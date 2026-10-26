@@ -1267,6 +1267,7 @@ function sessionRuntime(): {
           })),
         ),
       ended: () => Promise.resolve(finished.splice(0)),
+      clear: () => Promise.reject(new Error("a session runtime ends no job")),
     },
   };
 }
