@@ -141,7 +141,7 @@ test("an offer the listing no longer holds is drawn without a commit", () => {
 
 /**
  * The bootstrap arrives authored at the revision its name is, or imported from
- * a repository seeded with it under that name. Either way the form says what
+ * a repository holding it under that name. Either way the form says what
  * its ticket is for, and under any other name it says nothing — an offer with
  * no row in the listing being known by the name it is offered under.
  */
