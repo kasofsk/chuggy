@@ -247,13 +247,19 @@ export function asGitObjectId(value: string): GitObjectId {
   return value as GitObjectId;
 }
 
-/** Brands a repository credential, which is refused the same two shapes any other bounded text is. */
+/** A control character, which no forge's token holds. */
+const repositoryCredentialControl = /\p{Cc}/u;
+
+/** Brands a repository credential, refused the shapes any other bounded text is and any control character, a line break among them. */
 export function asRepositoryCredential(value: string): RepositoryCredential {
-  return asBoundedText(
+  const bounded = asBoundedText(
     value,
     "repository credential",
     repositoryCredentialCharsMax,
-  ) as RepositoryCredential;
+  );
+  if (repositoryCredentialControl.test(bounded))
+    throw new RangeError("repository credential: holds a control character");
+  return bounded as RepositoryCredential;
 }
 
 /** The states I3 gave a focused finalization request, in the order its CHECK declares them. */

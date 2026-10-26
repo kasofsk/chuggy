@@ -30,19 +30,35 @@ export const setupRedacted = "[redacted]";
 /** A run of letters, digits, `-` and `_` too long to be a word, which is how a secret this run was never told is written. */
 const setupSecretShaped = /[A-Za-z0-9_-]{24,}/gu;
 
+/** Each secret named and each line of one, longest first, so a whole secret is replaced as one before its lines are. */
+function setupSecretParts(secrets: readonly string[]): readonly string[] {
+  const parts = new Set(
+    secrets.flatMap((secret) => [secret, ...secret.split(/\r\n|[\r\n]/u)]),
+  );
+  return [...parts]
+    .filter((part) => part.trim() !== "")
+    .sort((one, other) => other.length - one.length);
+}
+
+/** How many characters a text holds, a character outside the basic plane being one. */
+function setupCodePointsCount(text: string): number {
+  return [...text].length;
+}
+
 /**
  * Another program's words made fit to print beside this program's own: each
  * secret this run knows and everything shaped like one replaced, what is left
  * flattened, and no more than a line's worth kept.
  */
 export function setupExcerpt(text: string, secrets: readonly string[]): string {
-  const known = secrets
-    .filter((secret) => secret !== "")
-    .reduce((kept, secret) => kept.split(secret).join(setupRedacted), text);
+  const known = setupSecretParts(secrets).reduce(
+    (kept, part) => kept.split(part).join(setupRedacted),
+    text,
+  );
   const flat = setupFlat(known.replace(setupSecretShaped, setupRedacted));
-  return flat.length <= setupExcerptCharsMax
+  return setupCodePointsCount(flat) <= setupExcerptCharsMax
     ? flat
-    : `${flat.slice(0, setupExcerptCharsMax)}…`;
+    : `${[...flat].slice(0, setupExcerptCharsMax).join("")}…`;
 }
 
 /** A word a shell reads as itself, quoted where it would read it as anything else. */

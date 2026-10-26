@@ -46,9 +46,19 @@
  * later read of that repository a commit not held yet, and such a scratch is
  * repaired by removing its directory and starting the process again, never by
  * hand inside it.
+ *
+ * A REMOTE READ GIT EXITED WITH A FAILURE ON IS TOLD OF, AND ONE GIT DIED ON
+ * MAY BE TRIED AGAIN, each only for a reader composed to. Whoever is told hears
+ * the repository, the command, its code and an excerpt of what git wrote, which
+ * is never part of what a read answers. A retry comes once, after a pause,
+ * under the credential the read already held. It is made only where what the
+ * reader's finished retries took leaves room for it, and runs under the smaller
+ * of the read's own bound and that room, so retries made one at a time together
+ * take no longer than the reader was given for them.
  */
 
 import { join } from "node:path";
+import { setTimeout as gitRepositoryConfigurationPause } from "node:timers/promises";
 
 import { textCodePointsCount } from "../../contract/http.ts";
 import { assertNever } from "../../domain/assertNever.ts";
@@ -95,14 +105,16 @@ import type {
 } from "../../interpreter/repositoryReadEvidence.ts";
 import {
   scratchGitEvidence,
-  scratchObserveHead,
+  scratchObserveHeadCall,
+  scratchObserveHeadRead,
   scratchOpen,
   scratchRemoteArguments,
   scratchRun,
   type GitCommitIdentity,
   type GitScratch,
+  type GitScratchCall,
 } from "./gitScratch.ts";
-import type { GitEnvironment, GitRan } from "./gitRun.ts";
+import { gitRunSaid, type GitEnvironment, type GitRan } from "./gitRun.ts";
 
 export interface GitRepositoryConfigurationOptions {
   readonly scratchDirectory: string;
@@ -112,13 +124,47 @@ export interface GitRepositoryConfigurationOptions {
   readonly credentialUsername?: string;
   readonly localTimeoutSecsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
+  /** Who is told of each remote read git exited with a failure on; a reader naming nobody tells nobody. */
+  readonly remoteFailed?: (
+    failed: GitRepositoryConfigurationRemoteFailed,
+  ) => void;
+  /** How a remote read git died on is tried again; a reader given none tries each read once. */
+  readonly remoteRetry?: GitRepositoryConfigurationRetry;
+  readonly monotonicNowMs?: () => number;
 }
 
 export const gitRepositoryConfigurationDefaults = {
   credentialUsername: "chuggy",
   localTimeoutSecsMax: 60,
   remoteTimeoutSecsMax: 300,
+  monotonicNowMs: (): number => performance.now(),
 } as const;
+
+/** The git command a remote read runs. */
+export type GitRepositoryConfigurationRemoteCommand =
+  "ls-remote" | "fetch" | "cat-file";
+
+/** One remote read that failed: whose repository, which command and the code it exited with, whether it is tried again, and the excerpt of what git wrote. */
+export interface GitRepositoryConfigurationRemoteFailed {
+  readonly repository: RepositoryBinding;
+  readonly git: GitRepositoryConfigurationRemoteCommand;
+  readonly exited: number;
+  readonly retrying: boolean;
+  readonly said: string;
+}
+
+/** How long a remote read git died on waits before it is tried again, and the most a reader's retries made one at a time take together, pauses included. */
+export interface GitRepositoryConfigurationRetry {
+  readonly pauseMs: number;
+  readonly elapsedMsMax: number;
+}
+
+/** One failed remote read as the words a line ends in. */
+export function gitRepositoryConfigurationRemoteFailedWords(
+  failed: GitRepositoryConfigurationRemoteFailed,
+): string {
+  return `git ${failed.git} exited ${String(failed.exited)}${failed.retrying ? ", trying again" : ""}: ${failed.said}`;
+}
 
 /** The most reads of one repository in flight at once, the one whose turn it is among them; a read begun past it waits for none of them. */
 export const gitRepositoryConfigurationReadsInFlightMax = 4;
@@ -129,12 +175,36 @@ interface GitRepositoryConfigurationTurns {
   last: Promise<void>;
 }
 
-/** The scratch, the credential source, and the reads in flight of each repository being read. */
+/** A reader's retries: its bounds, its clock, and how long the retries it has finished took. */
+interface GitRepositoryConfigurationRetries extends GitRepositoryConfigurationRetry {
+  readonly monotonicNowMs: () => number;
+  elapsedMs: number;
+}
+
+/** The scratch, the credential source, the reads in flight of each repository being read, and who hears of a failed remote read and how it is tried again. */
 interface GitRepositoryConfigurationState {
   readonly scratch: GitScratch;
   readonly credentials: RepositoryCredentialPort;
   readonly turns: Map<RepositoryId, GitRepositoryConfigurationTurns>;
+  readonly remoteFailed?: (
+    failed: GitRepositoryConfigurationRemoteFailed,
+  ) => void;
+  readonly retries?: GitRepositoryConfigurationRetries;
 }
+
+/** One read of the remote: whose repository, the command and the call, and what of a call that exited says the read failed, which is any code but zero where it says nothing. */
+interface GitRepositoryConfigurationRemoteRead {
+  readonly repository: RepositoryBinding;
+  readonly git: GitRepositoryConfigurationRemoteCommand;
+  readonly call: GitScratchCall;
+  readonly failed?: (ran: GitRepositoryConfigurationExitedRan) => boolean;
+}
+
+/** A git call that exited, with its code and what it wrote. */
+type GitRepositoryConfigurationExitedRan = Extract<
+  GitRan,
+  { readonly ran: "Exited" }
+>;
 
 interface GitRepositoryConfigurationEntry {
   readonly mode: string;
@@ -203,7 +273,7 @@ const gitRepositoryConfigurationBlobOutputBytesMax =
 const gitRepositoryConfigurationScratchDirectory = "configuration";
 
 /** The name the repository is given as the promisor remote a read fetches from. */
-const gitRepositoryConfigurationRemote = "configuration-source";
+const gitRepositoryConfigurationRemoteName = "configuration-source";
 
 /** What a fetch leaves out of the commit, each blob being fetched only as it is read. */
 const gitRepositoryConfigurationFilter = "blob:none";
@@ -215,6 +285,12 @@ const gitRepositoryConfigurationHousekeeping = [
   "-c",
   "maintenance.autoDetach=false",
 ] as const;
+
+/** The code git exits with when it dies on a fatal error, which is the one code a remote read is tried again after. */
+const gitRepositoryConfigurationRetriedCode = 128;
+
+/** The shortest bound a retried call is run under, below which no retry is made. */
+const gitRepositoryConfigurationRetryTimeoutSecsMin = 1;
 
 /** A credential that resolved to none, as evidence: which way, and the mint's cause where it gave one. */
 function gitRepositoryConfigurationCredentialEvidence(
@@ -269,6 +345,91 @@ function gitRepositoryConfigurationExited(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/** Whether one remote read's call exited and failed, a call stopped before it exited having written nothing to tell of. */
+function gitRepositoryConfigurationRemoteFailedRan(
+  read: GitRepositoryConfigurationRemoteRead,
+  ran: GitRan,
+): ran is GitRepositoryConfigurationExitedRan {
+  if (ran.ran !== "Exited") return false;
+  return read.failed === undefined ? ran.code !== 0 : read.failed(ran);
+}
+
+/** Tells whoever hears of failed remote reads of one, what git wrote said only as an excerpt the read's credential is redacted from. */
+function gitRepositoryConfigurationRemoteTold(
+  own: GitRepositoryConfigurationState,
+  read: GitRepositoryConfigurationRemoteRead,
+  ran: GitRepositoryConfigurationExitedRan,
+  retrying: boolean,
+): void {
+  own.remoteFailed?.({
+    repository: read.repository,
+    git: read.git,
+    exited: ran.code,
+    retrying,
+    said: gitRunSaid(
+      ran.stderr,
+      read.call.credential === undefined ? [] : [read.call.credential],
+    ),
+  });
+}
+
+/** The bound a retry of one call runs under, the smaller of the call's own and what the reader's retries have left once its pause is taken, or none where that is below the shortest a retry runs under. */
+function gitRepositoryConfigurationRetryTimeoutSecs(
+  retries: GitRepositoryConfigurationRetries,
+  call: GitScratchCall,
+): number | undefined {
+  const leftMs = retries.elapsedMsMax - retries.elapsedMs - retries.pauseMs;
+  const timeoutSecsMax = Math.min(
+    call.timeoutSecsMax,
+    Math.floor(leftMs / 1000),
+  );
+  return timeoutSecsMax >= gitRepositoryConfigurationRetryTimeoutSecsMin
+    ? timeoutSecsMax
+    : undefined;
+}
+
+/** Tries one remote read again after the pause and under the bound it was given, counting what it took, pause included, against the reader's retries. */
+async function gitRepositoryConfigurationRetried(
+  own: GitRepositoryConfigurationState,
+  retries: GitRepositoryConfigurationRetries,
+  read: GitRepositoryConfigurationRemoteRead,
+  timeoutSecsMax: number,
+): Promise<GitRan> {
+  const startedMs = retries.monotonicNowMs();
+  try {
+    await gitRepositoryConfigurationPause(retries.pauseMs);
+    const ran = await scratchRun(own.scratch, { ...read.call, timeoutSecsMax });
+    if (gitRepositoryConfigurationRemoteFailedRan(read, ran))
+      gitRepositoryConfigurationRemoteTold(own, read, ran, false);
+    return ran;
+  } finally {
+    retries.elapsedMs += retries.monotonicNowMs() - startedMs;
+  }
+}
+
+/** Runs one read of the remote, telling of it where it failed and trying it once more where git died on it and the reader's retries have room. */
+async function gitRepositoryConfigurationRemote(
+  own: GitRepositoryConfigurationState,
+  read: GitRepositoryConfigurationRemoteRead,
+): Promise<GitRan> {
+  const ran = await scratchRun(own.scratch, read.call);
+  if (!gitRepositoryConfigurationRemoteFailedRan(read, ran)) return ran;
+  const retries = own.retries;
+  const timeoutSecsMax =
+    retries !== undefined && ran.code === gitRepositoryConfigurationRetriedCode
+      ? gitRepositoryConfigurationRetryTimeoutSecs(retries, read.call)
+      : undefined;
+  gitRepositoryConfigurationRemoteTold(
+    own,
+    read,
+    ran,
+    timeoutSecsMax !== undefined,
+  );
+  return retries === undefined || timeoutSecsMax === undefined
+    ? ran
+    : gitRepositoryConfigurationRetried(own, retries, read, timeoutSecsMax);
+}
+
 /**
  * The repository as the promisor remote of one call that fetches, configured
  * on the call and so already registered when a fetch would write it into the
@@ -279,7 +440,7 @@ function gitRepositoryConfigurationExited(
 function gitRepositoryConfigurationFetchArguments(
   repository: RepositoryId,
 ): readonly string[] {
-  const remote = `remote.${gitRepositoryConfigurationRemote}`;
+  const remote = `remote.${gitRepositoryConfigurationRemoteName}`;
   return [
     ...gitRepositoryConfigurationHousekeeping,
     "-c",
@@ -317,13 +478,17 @@ async function gitRepositoryConfigurationProbe(
   if (authorization.authorized === "Unavailable")
     return gitRepositoryConfigurationCredentialUnavailable(authorization);
   const repository = request.repository.repository;
-  const probe = await scratchRun(own.scratch, {
-    repository,
-    ...(authorization.authorized === "Credential"
-      ? { credential: authorization.credential }
-      : {}),
-    timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
-    argv: ["ls-remote", ...scratchRemoteArguments(repository)],
+  const probe = await gitRepositoryConfigurationRemote(own, {
+    repository: request.repository,
+    git: "ls-remote",
+    call: {
+      repository,
+      ...(authorization.authorized === "Credential"
+        ? { credential: authorization.credential }
+        : {}),
+      timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
+      argv: ["ls-remote", ...scratchRemoteArguments(repository)],
+    },
   });
   if (gitRepositoryConfigurationExited(probe)) return "Answered";
   return {
@@ -343,20 +508,24 @@ async function gitRepositoryConfigurationFetch(
   credential: RepositoryCredential | undefined,
 ): Promise<boolean> {
   const repository = request.repository.repository;
-  const fetched = await scratchRun(own.scratch, {
-    repository,
-    ...(credential === undefined ? {} : { credential }),
-    timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
-    argv: [
-      ...gitRepositoryConfigurationFetchArguments(repository),
-      "fetch",
-      "--quiet",
-      "--no-tags",
-      "--depth=1",
-      `--filter=${gitRepositoryConfigurationFilter}`,
-      gitRepositoryConfigurationRemote,
-      `+${request.commit}:refs/chuggy/configuration/${request.commit}`,
-    ],
+  const fetched = await gitRepositoryConfigurationRemote(own, {
+    repository: request.repository,
+    git: "fetch",
+    call: {
+      repository,
+      ...(credential === undefined ? {} : { credential }),
+      timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
+      argv: [
+        ...gitRepositoryConfigurationFetchArguments(repository),
+        "fetch",
+        "--quiet",
+        "--no-tags",
+        "--depth=1",
+        `--filter=${gitRepositoryConfigurationFilter}`,
+        gitRepositoryConfigurationRemoteName,
+        `+${request.commit}:refs/chuggy/configuration/${request.commit}`,
+      ],
+    },
   });
   return gitRepositoryConfigurationExited(fetched);
 }
@@ -411,19 +580,23 @@ async function gitRepositoryConfigurationBlob(
   object: string,
 ): Promise<GitRepositoryConfigurationBlobRead> {
   const repository = commit.request.repository.repository;
-  const ran = await scratchRun(own.scratch, {
-    repository,
-    ...(commit.credential === undefined
-      ? {}
-      : { credential: commit.credential }),
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
-    argv: [
-      ...gitRepositoryConfigurationFetchArguments(repository),
-      "cat-file",
-      "blob",
-      object,
-    ],
-    outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
+  const ran = await gitRepositoryConfigurationRemote(own, {
+    repository: commit.request.repository,
+    git: "cat-file",
+    call: {
+      repository,
+      ...(commit.credential === undefined
+        ? {}
+        : { credential: commit.credential }),
+      timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+      argv: [
+        ...gitRepositoryConfigurationFetchArguments(repository),
+        "cat-file",
+        "blob",
+        object,
+      ],
+      outputBytesMax: gitRepositoryConfigurationBlobOutputBytesMax,
+    },
   });
   if (ran.ran === "Stopped" && ran.stopped === "OutputCeiling")
     return { blob: "TooLarge" };
@@ -803,12 +976,19 @@ async function gitRepositoryDefaultBranch(
   );
   if (authorization.authorized === "Unavailable")
     return { read: "Unavailable", evidence: authorization.evidence };
-  const observed = await scratchObserveHead(
-    own.scratch,
-    repository.repository,
-    authorization.authorized === "Credential"
-      ? authorization.credential
-      : undefined,
+  const observed = scratchObserveHeadRead(
+    await gitRepositoryConfigurationRemote(own, {
+      repository,
+      git: "ls-remote",
+      call: scratchObserveHeadCall(
+        own.scratch,
+        repository.repository,
+        authorization.authorized === "Credential"
+          ? authorization.credential
+          : undefined,
+      ),
+      failed: (ran) => scratchObserveHeadRead(ran).read === "Unreachable",
+    }),
   );
   switch (observed.read) {
     case "Value":
@@ -832,6 +1012,29 @@ async function gitRepositoryDefaultBranch(
     default:
       return assertNever(observed);
   }
+}
+
+/** The retries a reader is given, refusing at construction a bound that is not a count of milliseconds. */
+function gitRepositoryConfigurationRetriesOf(
+  options: GitRepositoryConfigurationOptions,
+): { readonly retries?: GitRepositoryConfigurationRetries } {
+  const retry = options.remoteRetry;
+  if (retry === undefined) return {};
+  for (const ms of [retry.pauseMs, retry.elapsedMsMax])
+    if (!Number.isSafeInteger(ms) || ms < 0)
+      throw new RangeError(
+        "git repository configuration: a retry bound is not a count of milliseconds",
+      );
+  return {
+    retries: {
+      pauseMs: retry.pauseMs,
+      elapsedMsMax: retry.elapsedMsMax,
+      monotonicNowMs:
+        options.monotonicNowMs ??
+        gitRepositoryConfigurationDefaults.monotonicNowMs,
+      elapsedMs: 0,
+    },
+  };
 }
 
 export function gitRepositoryConfiguration(
@@ -862,6 +1065,10 @@ export function gitRepositoryConfiguration(
     }),
     credentials: options.credentials,
     turns: new Map(),
+    ...(options.remoteFailed === undefined
+      ? {}
+      : { remoteFailed: options.remoteFailed }),
+    ...gitRepositoryConfigurationRetriesOf(options),
   };
   return {
     snapshot: (request) => gitRepositoryConfigurationDeclared(own, request),

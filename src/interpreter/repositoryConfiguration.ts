@@ -1005,7 +1005,9 @@ export async function importBoundRepositories(input: {
 }
 
 /** The binding a line is about. */
-function boundRepositoryImportLineWhere(bound: BoundRepositoryImport): string {
+export function boundRepositoryImportLineWhere(
+  bound: Pick<BoundRepositoryImport, "partition" | "repository">,
+): string {
   return `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
 }
 

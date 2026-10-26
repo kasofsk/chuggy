@@ -152,6 +152,18 @@ test("a named file that cannot be read is an outage and not a denial", async (t)
   }
 });
 
+test("a file holding a credential across lines is refused, not read as its first line", async (t) => {
+  const root = directory(t);
+  const path = join(root, "one");
+  writeFileSync(path, "secret-a1b2c3\nsecond-line\n");
+  assert.deepEqual(
+    await credentialFiles({ sources: [{ repository: one, path }] }).credential(
+      binding(),
+    ),
+    { resolved: "Unavailable" },
+  );
+});
+
 test("a value longer than the credential source admits is refused, not truncated", async (t) => {
   const root = directory(t);
   const path = join(root, "one");

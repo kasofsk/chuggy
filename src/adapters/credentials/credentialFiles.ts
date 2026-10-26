@@ -17,8 +17,9 @@
  * A DENIAL IS THE COMPOSITION'S AND AN OUTAGE IS THE FILESYSTEM'S. A repository
  * this deployment names no file for is `Denied`, because that answer is settled
  * for as long as the process runs; a named file that cannot be opened, is
- * empty, or holds more than a credential may be is `Unavailable`, because every
- * one of those is a mount that may still arrive.
+ * empty, or holds more than a credential may be or a character none may hold
+ * is `Unavailable`, because every one of those is a mount that may still
+ * arrive.
  *
  * THE READ IS BOUNDED AND IS ONE READ. A file is read once into a buffer a byte
  * wider than a credential may be, so a device standing where a secret should be

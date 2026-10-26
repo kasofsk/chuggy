@@ -21,13 +21,23 @@
  * Everything else is reported on its own line, every other binding is still
  * attempted, and the run exits non-zero if any failed.
  *
+ * A REMOTE READ GIT DIED ON IS TRIED ONCE MORE, after a pause, and only while
+ * the run's retries together stay inside the bound below, so a forge refusing
+ * everything lengthens a run by that bound and no more. Every remote read git
+ * exited with a failure on is printed as it fails, with an excerpt of what git
+ * wrote that is printed and never kept.
+ *
  * A RUN THAT FILLED ITS BOUND DID NOT IMPORT THE ESTATE, and leaves non-zero
  * saying so. The listing is ordered by age, so a deployment holding more
  * bindings than one run may read imports the same prefix for ever, and a clean
  * exit would be the only thing telling anyone otherwise.
  */
 
-import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
+import {
+  gitRepositoryConfiguration,
+  gitRepositoryConfigurationRemoteFailedWords,
+  type GitRepositoryConfigurationRemoteFailed,
+} from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresRepositoryActions } from "../adapters/postgres/repositoryAction.ts";
@@ -50,6 +60,7 @@ import {
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
 import {
+  boundRepositoryImportLineWhere,
   boundRepositoryImportRefusal,
   boundRepositoryImportReport,
   importBoundRepositories,
@@ -64,6 +75,21 @@ const authority = {
   kind: asAuthorityKind("Service"),
   subject: asAuthoritySubject("configuration-mirror-importer"),
 };
+
+/** How long a remote read git died on waits before it is tried again. */
+const configurationImporterRetryPauseSecs = 2;
+
+/** The most one run's retries take together, pauses included, past which a read git died on is not tried again. */
+const configurationImporterRetrySecsMax = 30;
+
+/** Prints one remote read that failed beside the binding it was for, where every failure a run reports is printed. */
+function configurationImporterRemoteFailed(
+  failed: GitRepositoryConfigurationRemoteFailed,
+): void {
+  process.stderr.write(
+    `${boundRepositoryImportLineWhere(failed.repository)} ${gitRepositoryConfigurationRemoteFailedWords(failed)}\n`,
+  );
+}
 
 async function importerDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
@@ -114,6 +140,11 @@ function configurationImporterPorts(
     ...(config.git.remoteTimeoutSecsMax === undefined
       ? {}
       : { remoteTimeoutSecsMax: config.git.remoteTimeoutSecsMax }),
+    remoteFailed: configurationImporterRemoteFailed,
+    remoteRetry: {
+      pauseMs: configurationImporterRetryPauseSecs * 1000,
+      elapsedMsMax: configurationImporterRetrySecsMax * 1000,
+    },
   });
   return {
     listing: postgresRepositoryBindingListing(pool),

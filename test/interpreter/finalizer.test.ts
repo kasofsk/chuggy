@@ -28,6 +28,7 @@ import {
   asFinalizerOwnerId,
   asGitObjectId,
   asGitRefName,
+  asRepositoryCredential,
   asRepositoryId,
   checkedFinalizerConfig,
   finalizationNext,
@@ -232,6 +233,21 @@ test("an identity past its column width, empty, or unpaired is refused", () => {
     () => asGitRefName("x".repeat(gitRefNameCharsMax + 1)),
     RangeError,
   );
+});
+
+test("a repository credential holding a line break or any other control character is refused", () => {
+  assert.equal(asRepositoryCredential("ghs_a1-b2.c3"), "ghs_a1-b2.c3");
+  for (const bad of [
+    "first\nsecond",
+    "first\r\nsecond",
+    "tab\there",
+    "\u001b[31m",
+  ])
+    assert.throws(
+      () => asRepositoryCredential(bad),
+      RangeError,
+      JSON.stringify(bad),
+    );
 });
 
 test("a ref name's bound counts code points, matching the column it protects", () => {

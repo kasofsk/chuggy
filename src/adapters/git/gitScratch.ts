@@ -281,13 +281,13 @@ export function scratchGitEvidence(
     : { git, stopped: ran.stopped };
 }
 
-/** The branch the remote's own HEAD names and the commit it stands at, read from the remote rather than remembered. */
-export async function scratchObserveHead(
+/** The call that asks the remote where its own HEAD points, which a caller running it itself reads with `scratchObserveHeadRead`. */
+export function scratchObserveHeadCall(
   scratch: GitScratch,
   repository: RepositoryId,
   credential: RepositoryCredential | undefined,
-): Promise<ScratchRead<ObservedTarget>> {
-  const ran = await scratchRun(scratch, {
+): GitScratchCall {
+  return {
     repository,
     ...(credential === undefined ? {} : { credential }),
     timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
@@ -297,7 +297,27 @@ export async function scratchObserveHead(
       "--exit-code",
       ...scratchRemoteArguments(repository, "HEAD"),
     ],
-  });
+  };
+}
+
+/** The branch the remote's own HEAD names and the commit it stands at, read from the remote rather than remembered. */
+export async function scratchObserveHead(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  credential: RepositoryCredential | undefined,
+): Promise<ScratchRead<ObservedTarget>> {
+  return scratchObserveHeadRead(
+    await scratchRun(
+      scratch,
+      scratchObserveHeadCall(scratch, repository, credential),
+    ),
+  );
+}
+
+/** What the remote's answer to the head call says. */
+export function scratchObserveHeadRead(
+  ran: GitRan,
+): ScratchRead<ObservedTarget> {
   if (ran.ran === "Exited" && ran.code === scratchNoMatchingRefCode)
     return { read: "Absent" };
   if (ran.ran === "Stopped" || ran.code !== 0)
