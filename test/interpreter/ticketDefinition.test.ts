@@ -430,6 +430,58 @@ test("an override of a workload a parked catalog ticket runs moves its definitio
   }
 });
 
+test("a parked override that moves a brief's checks onto an evaluator the program leaves out is refused ProgramSkipsBriefChecks", () => {
+  const agent = (text: string) => ({
+    runner: "Agent",
+    prompt: { text },
+    worker: { mode: document.worker.mode, setup: [], files: [] },
+  });
+  const ticket = {
+    configuration: canonicalConfigurationOf({
+      version: 2,
+      image: "worker:v2",
+      workloads: {
+        build: agent("Do the work."),
+        review: agent("Review the work."),
+        tests: { runner: "Commands", commands: ["npm test"] },
+      },
+      plans: { gated: [{ name: "checks", evaluators: ["review", "tests"] }] },
+      defaults: { work: "build", evaluation: "gated" },
+    }),
+    configurationRepository: undefined,
+    authoring: {
+      deps: new Set<number>(),
+      prog: [{ key: 1, evaluators: [{ key: 2 }] }],
+    },
+    brief: asDraftBrief({
+      ...briefBeforeImages,
+      checks: ["npm run lint"],
+      repository: "repository-one",
+    }),
+  };
+  const commanded: ConfigurationOverrides = {
+    workloads: { review: { runner: "Commands", commands: ["true"] } },
+  };
+  assert.deepEqual(parkedOverridesVerdict(ticket, undefined, commanded), {
+    verdict: "Refused",
+    code: "ProgramSkipsBriefChecks",
+  });
+  assert.deepEqual(
+    parkedOverridesVerdict(
+      {
+        ...ticket,
+        brief: asDraftBrief({
+          ...briefBeforeImages,
+          repository: "repository-one",
+        }),
+      },
+      undefined,
+      commanded,
+    ),
+    { verdict: "Admitted" },
+  );
+});
+
 test("a parked ticket's overrides are held to the ones it holds, not to the configuration alone", () => {
   const ticket = {
     configuration: canonicalConfigurationOf(document),

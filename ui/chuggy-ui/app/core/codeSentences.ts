@@ -166,7 +166,7 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
     case "ProgramExceedsPlan":
       return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
     case "ProgramSkipsBriefChecks":
-      return "the program leaves out the stage or evaluator the brief's checks run in; draw it back, or remove the brief's checks";
+      return "the program leaves out the stage or evaluator the brief's checks run in; restore it, or remove the brief's checks";
     case "OverridesUnsupported":
       return "a catalog takes overrides only of its workloads, and a version 1 configuration takes none of workloads; revise the draft's overrides to fit its configuration";
     case "OverridesUnknown":
@@ -207,7 +207,7 @@ export function mutationRefusalSentence(code: MutationRefusalCode): string {
     case "OperationNotPending":
       return "that operation had already been decided, so there was nothing left to call off";
     case "ProgramSkipsPlannedEvaluations":
-      return "the program leaves out part of its evaluation plan, which only someone allowed to skip planned evaluations may release; draw the whole plan, or ask an administrator to release it";
+      return "the program leaves out part of its plan, which your role may not release; draw the whole plan, or ask an administrator";
   }
 }
 

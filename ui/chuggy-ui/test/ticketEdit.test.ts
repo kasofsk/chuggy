@@ -203,8 +203,6 @@ test("the revision sends the overrides the form holds, not the draft's", () => {
   expect(given.assembled === "Body" && "overrides" in given.body).toBe(false);
 });
 
-/** The screen draws no dependency picker, and the revision does not trust that
- * it did not: a form holding other dependencies still sends the draft's. */
 /** A reader who may override and may not skip planned evaluations. */
 const nonholder = { mayOverride: true, maySkipPlanned: false };
 
@@ -238,6 +236,8 @@ test("a draft already holding a program shorter than its plan revises only to th
   );
 });
 
+/** The screen draws no dependency picker, and the revision does not trust that
+ * it did not: a form holding other dependencies still sends the draft's. */
 test("the revision carries the draft's own dependencies whatever the form holds", () => {
   const form = {
     ...editFormFrom(released, [creationBinding(repository)], "r3"),
