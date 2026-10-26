@@ -26,11 +26,16 @@
  * one; git asks the helper below for it, and the helper reads it from the
  * environment it was started with. The floor is the oldest git whose
  * `merge-tree` writes trees, refused at construction rather than mid-promotion.
+ *
+ * WHAT GIT WROTE IS PRINTED ONLY AS AN EXCERPT, made the way the setup program
+ * makes one of another program's words: every secret the caller knows and
+ * everything shaped like one redacted, flattened onto one line and bounded.
  */
 
 import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import type { Readable } from "node:stream";
 
+import { textCodePointsCount } from "../../contract/http.ts";
 import type { RepositoryCredential } from "../../interpreter/finalizer.ts";
 
 /** The environment a git child is given, which the composition root supplies because `src/` reads none. */
@@ -69,7 +74,19 @@ const gitRunAmbientOverrides: readonly string[] = [
 const gitCredentialUserVariable = "CHUGGY_GIT_USERNAME";
 
 /** The environment name the credential helper reads the secret from. */
-const gitCredentialSecretVariable = "CHUGGY_GIT_CREDENTIAL";
+export const gitCredentialSecretVariable = "CHUGGY_GIT_CREDENTIAL";
+
+/** What stands where a secret was in what git wrote. */
+export const gitRunRedacted = "[redacted]";
+
+/** The most of what git wrote that one printed line carries. */
+export const gitRunSaidCharsMax = 200;
+
+/** A run of letters, digits, `-` and `_` too long to be a word, which is how a secret the caller was never told is written. */
+const gitRunSecretShaped = /[A-Za-z0-9_-]{24,}/gu;
+
+/** Every control character, every character that only directs how others are drawn, and every space and line end of any kind. */
+const gitRunUnprinted = /[\p{Cc}\p{Cf}\s]+/gu;
 
 /**
  * What git runs to be told a credential: a helper reading it from its own
@@ -214,6 +231,29 @@ export function gitRun(call: GitCall): Promise<GitRan> {
     child.stdin?.on("error", gitRunIgnored);
     child.stdin?.end(call.input ?? "");
   });
+}
+
+/**
+ * The first line of what git wrote that says anything, made fit to print: each
+ * secret named and everything shaped like one redacted, and no more than a
+ * line's worth kept.
+ */
+export function gitRunSaid(
+  written: string,
+  secrets: readonly string[],
+): string {
+  const known = secrets
+    .filter((secret) => secret !== "")
+    .reduce((kept, secret) => kept.split(secret).join(gitRunRedacted), written);
+  const line =
+    known
+      .replace(gitRunSecretShaped, gitRunRedacted)
+      .split(/[\r\n]/u)
+      .map((said) => said.replace(gitRunUnprinted, " ").trim())
+      .find((said) => said !== "") ?? "";
+  return textCodePointsCount(line) <= gitRunSaidCharsMax
+    ? line
+    : `${[...line].slice(0, gitRunSaidCharsMax).join("")}…`;
 }
 
 /** Whether a `git --version` line names a git new enough to write merge trees. */
