@@ -60,11 +60,12 @@ test("selector review readiness verifies role, privilege and schema", async () =
   );
 });
 
-test("selector review readiness becomes false when its pool is lost", async () => {
-  assert.equal(
-    await postgresSelectorContextReady({
-      query: () => Promise.reject(new Error("connection lost")),
+test("selector review readiness raises its pool's own failure rather than answering no", async () => {
+  await assert.rejects(
+    postgresSelectorContextReady({
+      query: () =>
+        Promise.reject(new Error("connect ECONNREFUSED 127.0.0.1:1")),
     } as never),
-    false,
+    /^Error: connect ECONNREFUSED 127\.0\.0\.1:1$/u,
   );
 });
