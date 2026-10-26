@@ -5,19 +5,20 @@
  * stores in the worker's place.
  *
  * THE TEXT IS THE BACKEND'S, ONE FIXED TEXT PER FAULT. A person reading why
- * their job never ran is told what the image lacks in this backend's words,
- * and for a pull or a start the kubelet's own message after it, because only
- * the kubelet knows which of the fault's causes it was. Nothing the workload
- * wrote is ever relayed.
+ * their job failed is told what went wrong in this backend's words, and for a
+ * pull or a start the kubelet's own message after it, because only the kubelet
+ * knows which of the fault's causes it was. Nothing the workload wrote is ever
+ * relayed.
  *
  * IT IS STORED WHERE THE WORKER WOULD HAVE STORED IT, UNDER THE WORKER'S OWN
- * BEARER. A worker that never started wrote nothing, so the backend that placed
- * it reads the bearer back from the Secret it made for the pod and uploads the
- * text through the worker plane's own artifact route, as a pool does for a job
- * of its own; the plane is what reserves and stores it, and this side holds no
- * store. The Secret goes with its pod, so the text is written before the pod is
- * cancelled, and a text that could not be written is an answer rather than a
- * raised failure, because the block it explains does not wait on it.
+ * BEARER. A worker that never started, or was killed before it could report,
+ * left no text of its own, so the backend that placed it reads the bearer back
+ * from the Secret it made for the pod and uploads the text through the worker
+ * plane's own artifact route, as a pool does for a job of its own; the plane
+ * is what reserves and stores it, and this side holds no store. The Secret goes
+ * with its pod, so the text is written before the pod is cancelled, and a text
+ * that could not be written is an answer rather than a raised failure, because
+ * the end or block it explains does not wait on it.
  */
 
 import { workerErrorPath } from "../../contract/http.ts";
