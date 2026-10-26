@@ -15,6 +15,11 @@
  * There is nowhere for them to live but the statement.
  */
 
+import {
+  allPromotionDeclines,
+  type PromotionDecline,
+} from "../../interpreter/finalizer.ts";
+
 /** Refuses a bound no work can be drawn under, naming the argument rather than the row. */
 export function finalizerBounded(value: number, what: string): void {
   if (!Number.isSafeInteger(value) || value <= 0) {
@@ -53,4 +58,19 @@ export function finalizerRowValue<Value extends string>(
     throw new Error(`finalizer row: ${value} is not a ${what} this code knows`);
   }
   return found;
+}
+
+/** The decline a reading's column keeps, narrowed, or nothing where it keeps none. */
+export function finalizerRowDeclined(value: string | null): {
+  readonly declined?: PromotionDecline;
+} {
+  return value === null
+    ? {}
+    : {
+        declined: finalizerRowValue(
+          allPromotionDeclines,
+          value,
+          "promotion decline",
+        ),
+      };
 }

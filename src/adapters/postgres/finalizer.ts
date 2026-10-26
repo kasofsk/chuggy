@@ -68,7 +68,6 @@ import {
   allFinalizationRequestStates,
   allFinalizationRequestKinds,
   allIntegrationStrategies,
-  allPromotionDeclines,
   allReconciliationVerdicts,
   asCommitPermitId,
   asFinalizationAttemptId,
@@ -127,6 +126,7 @@ import {
 } from "./finalizerPreparation.ts";
 import {
   finalizerBounded,
+  finalizerRowDeclined,
   finalizerRowPresent,
   finalizerRowValue,
 } from "./finalizerRows.ts";
@@ -501,15 +501,7 @@ function finalizerRowReconciliation(
       ...(row.observed_commit === null
         ? {}
         : { observed: asGitObjectId(row.observed_commit) }),
-      ...(row.declined === null
-        ? {}
-        : {
-            declined: finalizerRowValue(
-              allPromotionDeclines,
-              row.declined,
-              "promotion decline",
-            ),
-          }),
+      ...finalizerRowDeclined(row.declined),
     },
   };
 }

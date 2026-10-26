@@ -19,7 +19,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -62,6 +62,10 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  gitDeclineByProcReceive,
+  gitDeclineWorkflowsReason,
+} from "./gitDeclineFixtures.ts";
 
 /** The secret the fixture's credential port hands out, which must never reach an argument. */
 const fixtureSecret = "fixture-secret-a1b2c3";
@@ -769,54 +773,6 @@ test("a push the receiving repository declined is ambiguous, says so, and is nev
   );
 });
 
-/** The reason GitHub declines a workflow change with, where the credential lacks the permission. */
-const fixtureWorkflowsRefusal =
-  "refusing to allow a GitHub App to create or update workflow `.github/workflows/ci.yml` without `workflows` permission";
-
-/**
- * A `proc-receive` hook answering every ref it is handed with the reason
- * given, which is how a repository on disk declines with a reason of its own
- * the way a forge does rather than the way a hook's exit does.
- */
-function fixtureProcReceive(fixture: Fixture, reason: string): void {
-  fixtureGit(fixture.remote, "config", "receive.procReceiveRefs", "refs/heads");
-  const hook = join(fixture.remote, "hooks", "proc-receive");
-  writeFileSync(
-    hook,
-    [
-      `#!${process.execPath}`,
-      'const fs = require("node:fs");',
-      "let pending = Buffer.alloc(0);",
-      "function more() {",
-      "  const chunk = Buffer.alloc(65536);",
-      "  const read = fs.readSync(0, chunk);",
-      "  if (read === 0) process.exit(1);",
-      "  pending = Buffer.concat([pending, chunk.subarray(0, read)]);",
-      "}",
-      "function section() {",
-      "  const lines = [];",
-      "  for (;;) {",
-      "    while (pending.length < 4) more();",
-      "    const size = parseInt(pending.subarray(0, 4).toString(), 16);",
-      "    if (size === 0) { pending = pending.subarray(4); return lines; }",
-      "    while (pending.length < size) more();",
-      "    lines.push(pending.subarray(4, size).toString().trim());",
-      "    pending = pending.subarray(size);",
-      "  }",
-      "}",
-      "function write(lines) {",
-      '  const said = lines.map((line) => (Buffer.byteLength(line) + 5).toString(16).padStart(4, "0") + line + "\\n");',
-      '  fs.writeSync(1, said.join("") + "0000");',
-      "}",
-      "section();",
-      'write(["version=1"]);',
-      `write(section().map((command) => "ng " + command.split(" ")[2] + " " + ${JSON.stringify(reason)}));`,
-      "",
-    ].join("\n"),
-  );
-  chmodSync(hook, 0o700);
-}
-
 test("a push GitHub declined for a workflow file is told apart from every other decline", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
@@ -825,7 +781,7 @@ test("a push GitHub declined for a workflow file is told apart from every other 
   const candidate = await fixturePrepare(port, binding, target, [
     [".github/workflows/ci.yml", "on: push\n"],
   ]);
-  fixtureProcReceive(fixture, fixtureWorkflowsRefusal);
+  gitDeclineByProcReceive(fixture.remote, gitDeclineWorkflowsReason);
   const promoted = await port.promoteCandidate({
     repository: binding,
     permit: asCommitPermitId("permit-1"),
@@ -872,6 +828,111 @@ test("a push's porcelain summary is refused, declined with its reason, or unknow
   });
 });
 
+/** The ref prefix a fixture's receive-pack reports under another name, and the name it reports it under. */
+const fixtureUnreported = {
+  sent: "refs/heads/unreported/",
+  reported: "refs/heads/unreportee/",
+} as const;
+
+/**
+ * Points every push to the fixture's remote, addressed as a URL, through a
+ * receive-pack that applies the update and reports it on another ref's name.
+ * This is how git on disk is made to print `[remote failure]`, a status the
+ * remote failed to report on the ref the client sent.
+ */
+function fixtureMisreporting(fixture: Fixture): {
+  readonly url: string;
+  readonly environment: NodeJS.ProcessEnv;
+} {
+  const url = `file://${fixture.remote}`;
+  const wrapper = join(fixture.directory, "receive-pack");
+  writeFileSync(
+    wrapper,
+    [
+      `#!${process.execPath}`,
+      'const { spawn } = require("node:child_process");',
+      `const needle = Buffer.from(${JSON.stringify(fixtureUnreported.sent)});`,
+      `const other = Buffer.from(${JSON.stringify(fixtureUnreported.reported)});`,
+      'const child = spawn("git", ["receive-pack", ...process.argv.slice(2)], { stdio: ["inherit", "pipe", "inherit"] });',
+      "let held = Buffer.alloc(0);",
+      'child.stdout.on("data", (chunk) => {',
+      "  const data = Buffer.concat([held, chunk]);",
+      "  for (let at = data.indexOf(needle); at >= 0; at = data.indexOf(needle, at)) other.copy(data, at);",
+      "  let keep = Math.min(needle.length - 1, data.length);",
+      "  while (keep > 0 && !needle.subarray(0, keep).equals(data.subarray(data.length - keep))) keep -= 1;",
+      "  held = Buffer.from(data.subarray(data.length - keep));",
+      "  process.stdout.write(data.subarray(0, data.length - keep));",
+      "});",
+      'child.stdout.on("end", () => process.stdout.write(held));',
+      'child.on("exit", (code) => { process.exitCode = code ?? 1; });',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(wrapper, 0o700);
+  return {
+    url,
+    environment: {
+      ...process.env,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `remote.${url}.receivepack`,
+      GIT_CONFIG_VALUE_0: wrapper,
+    },
+  };
+}
+
+/**
+ * A remote that took the update and failed to report on it is unknown to the
+ * push and never a decline, which is what git's `[remote failure]` line says
+ * and why: the ref did move.
+ */
+test("a remote that failed to report on the ref is read as unknown and never as a decline", async (t) => {
+  const fixture = fixtureOpen(t);
+  const { url, environment } = fixtureMisreporting(fixture);
+  const said = spawnSync(
+    "git",
+    [
+      "-C",
+      fixture.seed,
+      "push",
+      "--porcelain",
+      "--atomic",
+      url,
+      `HEAD:${fixtureUnreported.sent}seed`,
+    ],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(said.status, 1, said.stderr);
+  assert.match(said.stdout, /^!\t\S+\t\[remote failure\]/mu);
+  assert.deepEqual(scratchPushFailed(said.stdout), { pushed: "Unknown" });
+
+  const binding = fixtureBinding(url);
+  const port = gitPromotion({
+    scratchDirectory: join(fixture.directory, "scratch"),
+    identity: { name: "chug", email: "chug@example.test" },
+    environment,
+    credentials: fixtureCredentials(fixtureGranted),
+  });
+  const base = await fixtureTarget(port, binding);
+  const target: ObservedTarget = {
+    ref: asGitRefName(`${fixtureUnreported.sent}candidate`),
+    commit: base.commit,
+    baseRef: base.ref,
+  };
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.deepEqual(
+    await port.promoteCandidate({
+      repository: binding,
+      permit: asCommitPermitId("permit-1"),
+      target,
+      candidate,
+    }),
+    { promoted: "Ambiguous", evidence: "RemoteUnreachable" },
+  );
+  assert.equal(fixtureGit(fixture.remote, "rev-parse", target.ref), candidate);
+});
+
 test("a remote reaches git as a path and never as an option", () => {
   assert.deepEqual(
     scratchRemoteArguments(asRepositoryId("-dash.git"), "HEAD"),
@@ -879,7 +940,7 @@ test("a remote reaches git as a path and never as an option", () => {
   );
 });
 
-test("an unreadable ref and an unreachable remote are each their own answer", async (t) => {
+test("a ref the remote does not hold and an unreachable remote are each their own answer", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -893,7 +954,7 @@ test("an unreadable ref and an unreachable remote are each their own answer", as
       ref: asGitRefName("refs/heads/absent"),
       candidate,
     }),
-    { proved: "Unreadable", evidence: "RefUnreadable" },
+    { proved: "Absent" },
   );
   rmSync(fixture.remote, { recursive: true, force: true });
   assert.deepEqual(
