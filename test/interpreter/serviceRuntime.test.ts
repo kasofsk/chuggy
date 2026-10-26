@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   journalLegalityPrecondition,
   runtimeMigrationPlan,
+  runtimePreconditionUndecided,
   schemaCompatibilityPrecondition,
   serviceRuntime,
 } from "../../src/interpreter/serviceRuntime.ts";
@@ -374,4 +375,29 @@ test("stop returns when an in-flight quantum exceeds its drain", async () => {
     ready: false,
     failure: "shutdown drain expired",
   });
+});
+
+test("a raise is undecided under its own message, and an aggregate raised with none under the messages it carries", () => {
+  assert.deepEqual(
+    runtimePreconditionUndecided(new Error("connect ECONNREFUSED ::1:5432")),
+    { met: "Undecided", why: "connect ECONNREFUSED ::1:5432" },
+  );
+  assert.deepEqual(
+    runtimePreconditionUndecided(
+      new AggregateError([
+        new Error("connect ECONNREFUSED ::1:5432"),
+        new Error("connect ECONNREFUSED 127.0.0.1:5432"),
+      ]),
+    ),
+    {
+      met: "Undecided",
+      why: "connect ECONNREFUSED ::1:5432; connect ECONNREFUSED 127.0.0.1:5432",
+    },
+  );
+  assert.deepEqual(
+    runtimePreconditionUndecided(
+      new AggregateError([new Error("inner")], "the aggregate's own"),
+    ),
+    { met: "Undecided", why: "the aggregate's own" },
+  );
 });
