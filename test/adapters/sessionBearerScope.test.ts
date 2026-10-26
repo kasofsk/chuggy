@@ -301,6 +301,22 @@ test("read_run_error's route reaches an attempt's error text under a lead's and 
   }
 });
 
+test("read_ticket_landings's route reaches a ticket's landings under a lead's and a thread's own bearer", async () => {
+  assert.equal(
+    chuggyToolRoutes.ticketLandings,
+    nativeHttpRoutes.ticketLandings,
+    "read_ticket_landings calls no route",
+  );
+  for (const kind of ["Lead", "Thread"] as const) {
+    const reached: string[] = [];
+    await using app = scopedApp(reached, undefined, kind);
+    await app.inject(
+      routeRequest(`GET ${chuggyToolRoutes.ticketLandings}`, own, sessionToken),
+    );
+    assert.deepEqual(reached, ["landings.read"], kind);
+  }
+});
+
 /** A project read that finds every project but one, recording each partition it was asked for. */
 function projectWeb(asked: string[]): ServedNativeWeb {
   return {

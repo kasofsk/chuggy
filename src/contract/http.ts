@@ -405,6 +405,9 @@ export const ticketLandingsAnsweredMax = 8;
  */
 export const ticketLandingConflictBytesMax = 2_048;
 
+/** The longest reference name a landing answers, which is the longest one its rows carry. */
+export const ticketLandingRefCharsMax = 256;
+
 /** How many of the entries under `.chug/` a configuration import read none of one answer names. */
 export const repositoryConfigurationIgnoredAnsweredMax = 10;
 
