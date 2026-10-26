@@ -13,8 +13,6 @@
 import type { AccessInviteLink } from "../../../../src/contract/accessPlane.ts";
 import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
 import type {
-  ExecutionOutcome,
-  ExecutionStatus,
   ForgeInstallationPermissionsName,
   SelectorAttention,
   SelectorMode,
@@ -113,45 +111,6 @@ export function ticketLandingTone(state: TicketLandingState): Tone {
     case "Proposed":
       return "pass";
     case "Invalidated":
-      return "retired";
-  }
-}
-
-/**
- * An execution's own hue, total over `executionStatuses` and
- * `executionOutcomes`: a stop's where the ledger draws one, the outcome's where
- * the execution reached one, since that is the more final of the two facts,
- * and the status' otherwise. The word this pairs with is
- * `projectTableExecutionPhrase`'s; this answers only the hue, so a roster the
- * wire grows stops compiling here rather than reaching a row as an untoned chip.
- */
-export function executionTone(
-  status: ExecutionStatus,
-  outcome: ExecutionOutcome | undefined,
-  stopped: boolean,
-): Tone {
-  if (stopped) return "retired";
-  if (outcome !== undefined) {
-    switch (outcome) {
-      case "Passed":
-        return "pass";
-      case "Failed":
-      case "ProcessFailed":
-        return "fail";
-      case "Blocked":
-        return "retired";
-    }
-  }
-  switch (status) {
-    case "Queued":
-      return "queued";
-    case "Admitted":
-    case "Launching":
-    case "Running":
-      return "live";
-    case "Terminal":
-      return "neutral";
-    case "Cancelled":
       return "retired";
   }
 }

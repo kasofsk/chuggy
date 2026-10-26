@@ -26,11 +26,7 @@ import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import type {
-  ExecutionOutcome,
-  ExecutionStatus,
-  TicketPhase,
-} from "../../../../src/contract/rosters.ts";
+import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import { capabilitiesShortened, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
@@ -39,7 +35,8 @@ import type {
   ProjectExecutionIndex,
   ProjectExecutionKnown,
 } from "./projectExecutionIndex.ts";
-import { executionStopped } from "./ticketLedger.ts";
+import { setVerdict } from "./ticketLedger.ts";
+import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
 import type { UpNextOpenDependency } from "./upNextOrder.ts";
 
@@ -60,11 +57,9 @@ export interface ProjectTableRow {
   readonly phase: TicketPhase;
   readonly badge: string | undefined;
   readonly executionRead: ProjectTableExecutionRead;
-  readonly executionStatus: ExecutionStatus | undefined;
-  readonly executionOutcome: ExecutionOutcome | undefined;
-  /** Whether the ticket's ledger draws the joined execution as a stop rather
-   * than a judgement, as it does an evaluator whose process failed. */
-  readonly executionStopped: boolean;
+  /** The joined execution as the ticket's ledger judges it, a set of one, so
+   * the row draws it in the word and hue the ticket page does. */
+  readonly executionVerdict: SetVerdict | undefined;
   readonly runsOn: Label | undefined;
   readonly activityAt: string;
   readonly openDependencies: readonly UpNextOpenDependency[];
@@ -128,9 +123,8 @@ export function projectTableRow(
     phase: ticket.phase,
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
     executionRead: read,
-    executionStatus: execution?.status,
-    executionOutcome: execution?.outcome,
-    executionStopped: execution !== undefined && executionStopped(execution),
+    executionVerdict:
+      execution === undefined ? undefined : setVerdict([execution]),
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     activityAt: laterActivityAt(
       ticket.changedAt,
@@ -139,34 +133,6 @@ export function projectTableRow(
     openDependencies: ticket.openDependencies,
     revokedDependencies: ticket.revokedDependencies,
   };
-}
-
-/** The one word an outcome is drawn as, the ledger's: a stop is Blocked, a
- * failed process otherwise Failed, and any other outcome its own spelling. */
-function executionOutcomeWord(
-  outcome: ExecutionOutcome,
-  stopped: boolean,
-): string {
-  if (stopped) return "Blocked";
-  return outcome === "ProcessFailed" ? "Failed" : outcome;
-}
-
-/** The one word a status is drawn as where no outcome refines it. A terminal
- * execution reaches an outcome, so `Finished` is drawn only for one whose
- * outcome did not arrive. */
-function executionStatusWord(status: ExecutionStatus): string {
-  return status === "Terminal" ? "Finished" : status;
-}
-
-/** The outcome where the execution has reached one, the status where it has
- * not, and nothing at all where no execution is joined to the row. */
-export function projectTableExecutionPhrase(
-  row: ProjectTableRow,
-): string | undefined {
-  if (row.executionStatus === undefined) return undefined;
-  return row.executionOutcome === undefined
-    ? executionStatusWord(row.executionStatus)
-    : executionOutcomeWord(row.executionOutcome, row.executionStopped);
 }
 
 export function projectTableRows(
