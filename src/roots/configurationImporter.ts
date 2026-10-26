@@ -129,7 +129,7 @@ function configurationImporterPorts(
     environment,
     credentials: composeConfigurationImporterCredentials(
       { sources: config.git.credentials },
-      composeForgeRepositoryMinting(pool, config.forge),
+      composeForgeRepositoryMinting(pool, config.forge, "Immediate"),
     ),
     ...(config.git.credentialUsername === undefined
       ? {}

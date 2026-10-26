@@ -109,7 +109,6 @@ import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
-  type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
 import {
   githubApps,
@@ -141,7 +140,6 @@ import {
   portalForgeApp,
   type ForgeApp,
   type ForgeAppKey,
-  type ForgeInstallationTokens,
 } from "../interpreter/forgeInstallation.ts";
 import type {
   RepositoryConfigurationSnapshotPort,
@@ -824,33 +822,24 @@ async function forgeKeyUnusable(
     : `${keyFileVariable}: ${verdict.why}`;
 }
 
-/** The onboarding half for one app, which reads as that app and mints only to enumerate. */
-function forgeAppHalf(
-  app: ForgeApp,
-  options: GithubInstallationTokensOptions,
-  tokens: ForgeInstallationTokens,
-): RepositoryOnboardingForgeApp {
+/**
+ * The onboarding half for one app, which reads as that app and mints only to
+ * enumerate. A listing mints for itself every time, so its token is answered at
+ * once rather than every listing waiting out a settling.
+ */
+function forgeAppHalf(pair: ForgeAppPair): RepositoryOnboardingForgeApp {
+  const options = githubInstallationTokensOptions(pair.key);
   return {
     forge: githubForgeId,
-    app,
+    app: pair.app,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({
       ...options,
-      tokens,
+      tokens: githubInstallationTokens(options),
       repositoriesMax: forgeRepositoriesMax(),
     }),
   };
-}
-
-/** The onboarding halves for every app but the portal's, each minting only to enumerate. */
-function otherForgeAppHalves(
-  pairs: readonly ForgeAppPair[],
-): readonly RepositoryOnboardingForgeApp[] {
-  return pairs.map((pair) => {
-    const options = githubInstallationTokensOptions(pair.key);
-    return forgeAppHalf(pair.app, options, githubInstallationTokens(options));
-  });
 }
 
 /**
@@ -960,15 +949,19 @@ async function nativeForge(
   const pairs = forgeAppPairs();
   await forgeKeysReady(pairs, pools);
   const portal = pairs.find((pair) => pair.app === portalForgeApp);
-  const others = otherForgeAppHalves(
-    pairs.filter((pair) => pair.app !== portalForgeApp),
-  );
+  const others = pairs
+    .filter((pair) => pair.app !== portalForgeApp)
+    .map(forgeAppHalf);
   const image = bootstrapWorkerImage();
   const publicOrigin = nativePublicOrigin();
-  const minting = composeForgeRepositoryMinting(pools.pool, portal?.key);
+  const minting = composeForgeRepositoryMinting(
+    pools.pool,
+    portal?.key,
+    "Settled",
+  );
   const credentials = nativeRepositoryCredentials(minting);
   const repositories = repositoryConfigurationSnapshots(credentials);
-  const half = nativePortalHalf(portal, minting);
+  const half = portal === undefined ? undefined : forgeAppHalf(portal);
   const authorization = await nativeForgeAuthorization(portal, half, pools);
   return {
     credentials,
@@ -1057,22 +1050,6 @@ async function nativeForgeAuthorization(
     default:
       return assertNever(secret);
   }
-}
-
-/**
- * The portal app's onboarding half, minting through this deployment's own
- * minting, and nothing where it holds no portal key.
- */
-function nativePortalHalf(
-  portal: ForgeAppPair | undefined,
-  minting: RepositoryCredentialMinting | undefined,
-): RepositoryOnboardingForgeApp | undefined {
-  if (portal === undefined || minting === undefined) return undefined;
-  return forgeAppHalf(
-    portalForgeApp,
-    githubInstallationTokensOptions(portal.key),
-    minting.installationTokens,
-  );
 }
 
 function streamNoteText(note: ProjectStreamNote): string {

@@ -47,7 +47,6 @@ import {
   asForgeId,
   asForgeInstallationId,
   asForgeInstallationToken,
-  type ForgeInstallationTokens,
   type ForgePermissionSet,
   type ForgeTokenRequest,
 } from "../../src/interpreter/forgeInstallation.ts";
@@ -95,15 +94,11 @@ const proposal: ChangeProposalCredentialRequest = {
   repository,
 };
 
-/** The app's own half, which a per-repository mint never reaches. */
-const unusedInstallationTokens = {} as ForgeInstallationTokens;
-
 /** What one deployment mints with, recording what each composition asked it for. */
 function recordingMinting(
   asked: ForgePermissionSet[],
 ): RepositoryCredentialMinting {
   return {
-    installationTokens: unusedInstallationTokens,
     tokens: {
       token: (_repository, _partition, permissions) => {
         asked.push(permissions);
@@ -314,7 +309,7 @@ test("the finalizer's push carries the pipeline definitions only where its proje
     await allowanceOf((tokens) =>
       composeFinalizerRepositoryCredentials(
         { sources: [] },
-        { installationTokens: unusedInstallationTokens, tokens },
+        { tokens },
       ).credential(binding),
     ),
     "write",
@@ -324,10 +319,9 @@ test("the finalizer's push carries the pipeline definitions only where its proje
 test("the finalizer's proposal carries the pipeline definitions only where its project's binding allows them", async () => {
   allowanceAsserted(
     await allowanceOf((tokens) =>
-      composeFinalizerForgeCredentials(
-        { bindings: [] },
-        { installationTokens: unusedInstallationTokens, tokens },
-      ).credential(proposal),
+      composeFinalizerForgeCredentials({ bindings: [] }, { tokens }).credential(
+        proposal,
+      ),
     ),
     "propose",
   );

@@ -1,7 +1,8 @@
 /**
  * The mint against a recording forge: what the app's own JWT claims, what one
- * request carries, what every way of not being answered comes to, and what a
- * second mint inside a token's life does not do.
+ * request carries, what every way of not being answered comes to, what a
+ * second mint inside a token's life does not do, and when a token the forge has
+ * just made is answered.
  *
  * THE JWT IS VERIFIED RATHER THAN INSPECTED. A suite that read the payload
  * would pass on a signature no forge accepts, so every case that is about the
@@ -29,6 +30,7 @@ import {
   githubInstallationTokens,
   githubInstallationTokensDefaults,
   githubInstallationTokensPrecondition,
+  githubInstallationTokensSettled,
 } from "../../src/adapters/forge/githubInstallationTokens.ts";
 import {
   allForgePermissionSets,
@@ -144,13 +146,15 @@ function fixtureMinted(
   );
 }
 
-/** The adapter over one recorder, reading a key in the encoding the case names. */
+/** The adapter over one recorder, reading a key in the encoding the case names and settling a new token as it names. */
 function fixtureAdapter(
   t: TestContext,
   recorder: ForgeRecorder,
   options: {
     readonly type?: "pkcs1" | "pkcs8";
     readonly currentTimeEpochMs?: () => number;
+    readonly tokenSettleMs?: number;
+    readonly tokenSettleWait?: (ms: number) => Promise<unknown>;
   } = {},
 ) {
   return githubInstallationTokens({
@@ -161,6 +165,12 @@ function fixtureAdapter(
     ...(options.currentTimeEpochMs === undefined
       ? {}
       : { currentTimeEpochMs: options.currentTimeEpochMs }),
+    ...(options.tokenSettleMs === undefined
+      ? {}
+      : { tokenSettleMs: options.tokenSettleMs }),
+    ...(options.tokenSettleWait === undefined
+      ? {}
+      : { tokenSettleWait: options.tokenSettleWait }),
   });
 }
 
@@ -707,6 +717,185 @@ test("an unheld mint is a request of its own, holds nothing and leaves what is h
     );
 });
 
+/**
+ * The settling a case composes with. It is named here rather than read from
+ * the adapter, so a window narrowed to nothing is a case that fails rather than
+ * a case that narrows with it.
+ */
+const fixtureSettleMs = 5_000;
+
+/** A settling this suite ends by hand, recording each wait asked of it, so a case can look at a mint while it waits. */
+function fixtureSettling(): {
+  readonly asked: number[];
+  readonly wait: (ms: number) => Promise<unknown>;
+  readonly reached: Promise<void>;
+  readonly end: () => void;
+} {
+  const asked: number[] = [];
+  const reached = Promise.withResolvers<void>();
+  const ended = Promise.withResolvers<void>();
+  return {
+    asked,
+    wait: (ms) => {
+      asked.push(ms);
+      reached.resolve();
+      return ended.promise;
+    },
+    reached: reached.promise,
+    end: () => {
+      ended.resolve();
+    },
+  };
+}
+
+/** One turn of the event loop, after which a mint no longer waiting on anything has been answered. */
+function fixtureTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
+
+test("a composition settling new tokens settles them for the forge's own window", () => {
+  assert.equal(
+    githubInstallationTokensSettled({
+      fetch,
+      appId: fixtureAppId,
+      privateKeyPath: "app.pem",
+    }).tokenSettleMs,
+    fixtureSettleMs,
+  );
+});
+
+test("a token the forge has just made is answered no earlier than its settling has run", async (t) => {
+  const settling = fixtureSettling();
+  const tokens = fixtureAdapter(t, fixtureForge([fixtureMinted()]), {
+    tokenSettleMs: fixtureSettleMs,
+    tokenSettleWait: settling.wait,
+  });
+  let answered = false;
+  const minting = tokens.mint(fixtureRequest()).then((minted) => {
+    answered = true;
+    return minted;
+  });
+  await Promise.race([settling.reached, minting]);
+  await fixtureTurn();
+  assert.equal(answered, false, "a token is answered while it settles");
+  assert.deepEqual(settling.asked, [fixtureSettleMs]);
+  settling.end();
+  assert.equal(fixtureTokenOf(await minting), fixtureToken);
+});
+
+test("a token is held only once it has settled, so a mint racing its settling sends its own", async (t) => {
+  const racing = "ghs-racing-z9x8c7";
+  const settling = fixtureSettling();
+  const recorder = fixtureForge([
+    fixtureMinted(),
+    fixtureMinted({ token: racing }),
+  ]);
+  const tokens = fixtureAdapter(t, recorder, {
+    tokenSettleMs: fixtureSettleMs,
+    tokenSettleWait: settling.wait,
+  });
+  const first = tokens.mint(fixtureRequest());
+  await Promise.race([settling.reached, first]);
+  const second = tokens.mint(fixtureRequest());
+  settling.end();
+  assert.deepEqual(
+    [fixtureTokenOf(await first), fixtureTokenOf(await second)],
+    [fixtureToken, racing],
+  );
+  assert.equal(recorder.calls.length, 2, "a settling token answers no mint");
+});
+
+test("an answer from what is held waits for no settling", async (t) => {
+  const settling = fixtureSettling();
+  settling.end();
+  const recorder = fixtureForge([fixtureMinted()]);
+  const tokens = fixtureAdapter(t, recorder, {
+    tokenSettleMs: fixtureSettleMs,
+    tokenSettleWait: settling.wait,
+  });
+  await tokens.mint(fixtureRequest());
+  assert.equal(
+    fixtureTokenOf(await tokens.mint(fixtureRequest())),
+    fixtureToken,
+  );
+  assert.equal(
+    recorder.calls.length,
+    1,
+    "the second mint is answered from what is held",
+  );
+  assert.deepEqual(
+    settling.asked,
+    [fixtureSettleMs],
+    "only the token just made settles",
+  );
+});
+
+test("a refusal and an outage are answered at once, settling nothing", async (t) => {
+  const settling = fixtureSettling();
+  settling.end();
+  const answered: string[] = [];
+  for (const answer of [
+    new Response("{}", { status: 401 }),
+    new Response("{}", { status: 404 }),
+    new Response("{}", { status: 503 }),
+    new Error("the forge could not be reached"),
+  ])
+    answered.push(
+      fixtureTokenOf(
+        await fixtureAdapter(t, fixtureForge([answer]), {
+          tokenSettleMs: fixtureSettleMs,
+          tokenSettleWait: settling.wait,
+        }).mint(fixtureRequest()),
+      ),
+    );
+  assert.deepEqual(answered, [
+    "Denied",
+    "Denied",
+    "Unavailable",
+    "Unavailable",
+  ]);
+  assert.deepEqual(settling.asked, [], "no refusal or outage waits");
+});
+
+test("an unheld mint is new every time, and settles every time", async (t) => {
+  const settling = fixtureSettling();
+  settling.end();
+  const tokens = fixtureAdapter(
+    t,
+    fixtureForge([fixtureMinted(), fixtureMinted()]),
+    {
+      tokenSettleMs: fixtureSettleMs,
+      tokenSettleWait: settling.wait,
+    },
+  );
+  for (let mint = 0; mint < 2; mint += 1)
+    await tokens.mint(fixtureRequest({ unheld: true }));
+  assert.deepEqual(settling.asked, [fixtureSettleMs, fixtureSettleMs]);
+});
+
+test("a composition naming no settling answers a token the forge has just made at once", async (t) => {
+  const settling = fixtureSettling();
+  settling.end();
+  const tokens = fixtureAdapter(
+    t,
+    fixtureForge([fixtureMinted(), fixtureMinted()]),
+    {
+      tokenSettleWait: settling.wait,
+    },
+  );
+  assert.equal(
+    fixtureTokenOf(await tokens.mint(fixtureRequest())),
+    fixtureToken,
+  );
+  assert.equal(
+    fixtureTokenOf(await tokens.mint(fixtureRequest({ unheld: true }))),
+    fixtureToken,
+  );
+  assert.deepEqual(settling.asked, [], "nothing waits");
+});
+
 test("a token held is keyed by everything it is good for", async (t) => {
   const recorder = fixtureForge([
     fixtureMinted(),
@@ -856,7 +1045,7 @@ test("the startup precondition refuses the key every mint would fail on", async 
   assert.equal(recorder.calls.length, 0, "no precondition reaches the forge");
 });
 
-test("an app, a key path and an API URL this adapter could not serve are refused at construction", (t) => {
+test("an app, a key path, an API URL and a settling this adapter could not serve are refused at construction", (t) => {
   const recorder = fixtureForge([]);
   const composed = {
     fetch: recorder.requestFetch,
@@ -887,5 +1076,9 @@ test("an app, a key path and an API URL this adapter could not serve are refused
   assert.throws(
     () => githubInstallationTokens({ ...composed, requestTimeoutMs: 0 }),
     /not a positive bound/u,
+  );
+  assert.throws(
+    () => githubInstallationTokens({ ...composed, tokenSettleMs: 0 }),
+    /token settling is not a positive bound/u,
   );
 });

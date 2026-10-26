@@ -27,6 +27,21 @@
  * Nothing tracks a request in flight, so mints racing on one key each send and
  * each get a valid token, the last of them being the one held.
  *
+ * A TOKEN THE FORGE HAS JUST MADE IS ANSWERED ONLY ONCE IT HAS SETTLED, WHERE
+ * THE COMPOSITION NAMES A SETTLING. GitHub replicates a new installation token
+ * behind its answer, and a request made under it before then is refused as
+ * unauthorized, which git over HTTPS reports as a repository not found. The
+ * forge's own SDK, `@octokit/auth-app`, asks such a request again for as long
+ * as the token is younger than its `FIVE_SECONDS_IN_MS`, and
+ * `githubInstallationTokenSettleMs` is that window, counted from when the
+ * forge's answer was read and so from no earlier than the token was made. A
+ * composition whose callers use a token at once and cannot ask again names it.
+ * A token is held only once it has settled, so an answer from what is held
+ * waits for nothing, and a mint racing one that is settling sends its own; an
+ * `unheld` mint is new every time and settles every time; a refusal and an
+ * outage are answered at once. A mint carries no signal, so a settling ends
+ * only when it has run, and a caller bounding its own wait races it.
+ *
  * A MINT ASKED FOR `unheld` IS NEITHER ANSWERED FROM WHAT IS HELD NOR HELD. It
  * is minted every time, and it leaves every held token as it found it. A
  * listing of what an installation grants asks for it, because a held token was
@@ -39,6 +54,8 @@
  * be sent as that same request by a caller that meant the opposite, so it is
  * refused here rather than widened silently.
  */
+
+import { setTimeout as githubInstallationTokensWait } from "node:timers/promises";
 
 import { z } from "zod";
 
@@ -69,10 +86,14 @@ import {
   type GithubAppState,
 } from "./githubAppRequest.ts";
 
-/** Everything the adapter is composed with: the app's own options, and the cache's. */
+/** Everything the adapter is composed with: the app's own options, the cache's, and how a new token settles. */
 export interface GithubInstallationTokensOptions extends GithubAppOptions {
   readonly tokenMarginMs?: number;
   readonly cachedTokensMax?: number;
+  /** How long a token the forge has just made stands before it is answered, absent where it is answered at once. */
+  readonly tokenSettleMs?: number;
+  /** How a settling is waited out, which a suite answers without sleeping. */
+  readonly tokenSettleWait?: (ms: number) => Promise<unknown>;
 }
 
 /** The forge and the bounds a deployment gets when it names none. */
@@ -81,6 +102,16 @@ export const githubInstallationTokensDefaults = {
   tokenMarginMs: 60_000,
   cachedTokensMax: 256,
 } as const;
+
+/** The settling a composition names where its callers cannot ask again: `@octokit/auth-app`'s own `FIVE_SECONDS_IN_MS`. */
+export const githubInstallationTokenSettleMs = 5_000;
+
+/** A composition's options with that settling named. */
+export function githubInstallationTokensSettled(
+  options: GithubInstallationTokensOptions,
+): GithubInstallationTokensOptions {
+  return { ...options, tokenSettleMs: githubInstallationTokenSettleMs };
+}
 
 /** The variables one process reads its app key and its forge from. */
 export type GithubInstallationTokensVariables = ForgeAppKeyVariables;
@@ -134,12 +165,14 @@ const githubInstallationGrantSchema = z.object({
   permissions: z.object({ workflows: z.string().optional() }),
 });
 
-/** What the adapter holds across mints: the app's own state, and its cache. */
+/** What the adapter holds across mints: the app's own state, its cache, and how a new token settles. */
 interface GithubInstallationTokensState {
   readonly app: GithubAppState;
   readonly tokenMarginMs: number;
   readonly cachedTokensMax: number;
   readonly cached: Map<string, GithubCachedToken>;
+  readonly tokenSettleMs?: number;
+  readonly tokenSettleWait: (ms: number) => Promise<unknown>;
 }
 
 interface GithubCachedToken {
@@ -302,6 +335,17 @@ async function githubInstallationTokensSend(
   };
 }
 
+/** One mint made for the request at hand, a token answered only once it has stood the settling this composition names. */
+async function githubInstallationTokensFresh(
+  own: GithubInstallationTokensState,
+  request: ForgeTokenRequest,
+): Promise<ForgeTokenMinted> {
+  const minted = await githubInstallationTokensSend(own, request);
+  if (minted.minted === "Token" && own.tokenSettleMs !== undefined)
+    await own.tokenSettleWait(own.tokenSettleMs);
+  return minted;
+}
+
 /** The cached token still worth handing out, every expired entry dropped as it is passed. */
 function githubInstallationTokensCached(
   own: GithubInstallationTokensState,
@@ -342,6 +386,15 @@ function githubInstallationTokensState(
       "the tokens held",
     ),
     cached: new Map(),
+    ...(options.tokenSettleMs === undefined
+      ? {}
+      : {
+          tokenSettleMs: githubAppBound(
+            options.tokenSettleMs,
+            "the token settling",
+          ),
+        }),
+    tokenSettleWait: options.tokenSettleWait ?? githubInstallationTokensWait,
   };
 }
 
@@ -358,7 +411,7 @@ export function githubInstallationTokens(
       )
         throw new RangeError("github tokens: a mint names no repository");
       if (request.unheld === true)
-        return githubInstallationTokensSend(own, request);
+        return githubInstallationTokensFresh(own, request);
       const key = githubInstallationTokensCacheKey(request);
       const held = githubInstallationTokensCached(own, key);
       if (held !== undefined)
@@ -367,7 +420,7 @@ export function githubInstallationTokens(
           token: held.token,
           expiresAtMs: held.expiresAtMs,
         };
-      const minted = await githubInstallationTokensSend(own, request);
+      const minted = await githubInstallationTokensFresh(own, request);
       if (minted.minted === "Token")
         githubInstallationTokensHold(own, key, {
           token: minted.token,

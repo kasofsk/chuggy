@@ -10,6 +10,7 @@ import {
   githubInstallationTokens,
   githubInstallationTokensPrecondition,
   githubInstallationTokensSettings,
+  githubInstallationTokensSettled,
   type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
 import { mintedRepositoryTokens } from "../adapters/forge/mintedCredentials.ts";
@@ -205,7 +206,9 @@ async function planeCredentials(
       app: workerPodForgeApp,
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
-      tokens: githubInstallationTokens(options),
+      tokens: githubInstallationTokens(
+        githubInstallationTokensSettled(options),
+      ),
       bindings,
     }),
     bindings,
