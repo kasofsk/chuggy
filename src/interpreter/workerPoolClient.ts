@@ -30,10 +30,16 @@
  * room on the poll and its own offers, a pool that names no session ceiling
  * asks for none, and one whose job ceiling is 0 asks for no job. This is
  * chuggy-common's `poolLoop.mjs` in TypeScript, and a change to one is a
- * change to both, except that of a job's ends only one its backend refused is
- * reported here, and every other is left to its lease, and that a runner's
- * backend may take no job while its disk is low, which a cluster leaves to
- * its kubelet.
+ * change to both, except that of a job's ends only one its backend refused or
+ * killed at its deadline is reported here, and every other is left to its
+ * lease, and that a runner's backend may take no job while its disk is low,
+ * which a cluster leaves to its kubelet.
+ *
+ * A JOB ITS BACKEND KILLED AT ITS DEADLINE IS ENDED TIMED OUT, on the job
+ * plane under its own bearer, as a harness that timed its own run out ends
+ * it, so it waits for a person rather than being lost and resumed. The plane
+ * refuses the end of an attempt that already reported, and that report
+ * stands.
  *
  * A JOB THE BACKEND REFUSED AFTER TAKING IT IS SETTLED REFUSED, naming the
  * fault of its image, so the attempt's execution is blocked rather than its
@@ -83,6 +89,24 @@ export interface WorkerPoolJobRefused {
   readonly fault: WorkerImageFault;
 }
 
+/**
+ * A job its backend killed at its deadline before its harness reported, with
+ * the error text it leaves in the backend's own words.
+ */
+export interface WorkerPoolJobEnd {
+  readonly kind: "Job";
+  readonly job: Pick<
+    WorkerPoolAssignment,
+    "assignment" | "callbackUrl" | "bearer"
+  >;
+  readonly text: string;
+  readonly killed: "Deadline";
+}
+
+/** Each kind of end a backend reports: a session's, a job it refused, and a job it killed. */
+export type WorkerPoolEnded =
+  WorkerPoolSessionEnd | WorkerPoolJobRefused | WorkerPoolJobEnd;
+
 /** What placing one assignment came to, which is the contract's outcome before it is posted. */
 export type WorkerPoolPlacement =
   | { readonly placed: "Placed" }
@@ -111,9 +135,10 @@ export interface WorkerPoolBackend {
   held(): Promise<readonly WorkerPoolHeld[]>;
   /**
    * Each session once, after `held` stopped naming it, and never one this
-   * pool stopped; and each job it refused, which `held` does not name.
+   * pool stopped; and each job it refused or killed at its deadline, which
+   * `held` does not name.
    */
-  ended(): Promise<readonly (WorkerPoolSessionEnd | WorkerPoolJobRefused)[]>;
+  ended(): Promise<readonly WorkerPoolEnded[]>;
 }
 
 /**
@@ -156,6 +181,11 @@ export interface WorkerPoolPlane {
 
 /** What reporting an end came to; `Refused` is an attempt no longer live, or one the plane refused to end. */
 export type WorkerPoolEndAnswer = "Ended" | "Refused" | "Unavailable";
+
+/** The job plane as a pool reaches it, under each job's own bearer. */
+export interface WorkerPoolJobPlane {
+  end(ended: WorkerPoolJobEnd): Promise<WorkerPoolEndAnswer>;
+}
 
 /** The session plane as a pool reaches it, under each session's own bearer. */
 export interface WorkerPoolSessionPlane {
@@ -210,6 +240,8 @@ export type WorkerPoolPass =
 export interface WorkerPoolClient {
   readonly tokens: WorkerPoolTokens;
   readonly plane: WorkerPoolPlane;
+  /** Where a job its backend killed is ended. */
+  readonly jobs: WorkerPoolJobPlane;
   /** Where a session's end is reported, which a pool with a session ceiling must have. */
   readonly sessions?: WorkerPoolSessionPlane;
   readonly backend: WorkerPoolBackend;
@@ -314,9 +346,9 @@ async function workerPoolClientRefused(
 }
 
 /**
- * Ends each session whose container ended unreported and settles each job its
- * backend refused, counting what the planes took. One not taken is left to its
- * lease.
+ * Ends each session whose container ended unreported and each job its backend
+ * killed, and settles each job it refused, counting what the planes took. One
+ * not taken is left to its lease.
  */
 async function workerPoolClientEnded(
   client: WorkerPoolClient,
@@ -326,7 +358,12 @@ async function workerPoolClientEnded(
   let taken = 0;
   for (const workload of await client.backend.ended()) {
     if (workload.kind === "Job") {
-      if (await workerPoolClientRefused(client, token, workload)) taken += 1;
+      if (
+        "killed" in workload
+          ? (await client.jobs.end(workload)) === "Ended"
+          : await workerPoolClientRefused(client, token, workload)
+      )
+        taken += 1;
       continue;
     }
     if (sessions === undefined)

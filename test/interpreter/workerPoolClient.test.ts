@@ -13,6 +13,7 @@ import {
   type WorkerPoolClientSettings,
   type WorkerPoolEndAnswer,
   type WorkerPoolHeld,
+  type WorkerPoolJobEnd,
   type WorkerPoolJobRefused,
   type WorkerPoolOffer,
   type WorkerPoolPlacement,
@@ -90,6 +91,9 @@ function client(
       invalidate: () => undefined,
     },
     plane: quiet,
+    jobs: {
+      end: () => Promise.reject(new Error("no job was killed in this case")),
+    },
     backend: idle,
     settings,
     ...parts,
@@ -788,6 +792,69 @@ test("a job its backend refused is settled refused under its fault before the po
     ]),
   );
   assert.deepEqual(tokens.invalidated, ["pool-token-1"]);
+  assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
+});
+
+test("a job its backend killed at its deadline is ended on the job plane before the poll, settling nothing, and only a taken end counts", async () => {
+  const order: string[] = [];
+  const told: WorkerPoolJobEnd[] = [];
+  const killed = (named: string): WorkerPoolJobEnd => ({
+    kind: "Job",
+    job: {
+      assignment: named,
+      callbackUrl: "https://plane.invalid/v1/ticket-execution",
+      bearer: `bearer-${named}`,
+    },
+    text: `${named} passed its deadline`,
+    killed: "Deadline",
+  });
+  const answers: Readonly<Record<string, WorkerPoolEndAnswer>> = {
+    taken: "Ended",
+    reported: "Refused",
+  };
+  const passed = await workerPoolClientPass(
+    client({
+      jobs: {
+        end: (ended) => {
+          order.push(`end:${ended.job.assignment}`);
+          told.push(ended);
+          return Promise.resolve(
+            answers[ended.job.assignment] ?? "Unavailable",
+          );
+        },
+      },
+      backend: {
+        ...idle,
+        ended: () =>
+          Promise.resolve([
+            killed("taken"),
+            killed("reported"),
+            killed("unreached"),
+          ]),
+      },
+      plane: {
+        poll: (...asked) => {
+          order.push("poll");
+          return quiet.poll(...asked);
+        },
+        settle: (_token, named) => {
+          order.push(`settle:${named}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(order, [
+    "end:taken",
+    "end:reported",
+    "end:unreached",
+    "poll",
+  ]);
+  assert.deepEqual(told, [
+    killed("taken"),
+    killed("reported"),
+    killed("unreached"),
+  ]);
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
 });
 

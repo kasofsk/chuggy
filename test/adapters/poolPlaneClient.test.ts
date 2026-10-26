@@ -540,6 +540,9 @@ function issuedPool(
     running: {
       tokens,
       plane,
+      jobs: {
+        end: () => Promise.reject(new Error("no job was killed in this case")),
+      },
       backend: idleBackend,
       settings: { concurrencyMax: 1, outageBackoffMs: 1, passesMax: 10 },
     },

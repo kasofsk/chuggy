@@ -34,6 +34,12 @@
  * site's fault in the runtime copy is no refusal, and its pod is held or
  * deleted as any other.
  *
+ * A POD THE CLUSTER STOPPED AT ITS DEADLINE IS ENDED, NOT HELD. `ended`
+ * answers it as a job this pool killed, carrying the attempt its envelope
+ * names and the text `workerFaults.ts` gives a pushed worker stopped the same
+ * way, and deletes the pod; a pod whose envelope could not be read is deleted
+ * all the same, and its attempt left to its lease.
+ *
  * A CAPABILITY IS A PLACEMENT CONSTRAINT AND NOTHING ELSE. A token the site
  * maps contributes a node selector and the tolerations that let a node kept for
  * it be tainted against everything else; a token it does not map contributes
@@ -58,8 +64,9 @@ import {
 } from "../../contract/workerTask.ts";
 import type {
   WorkerPoolBackend,
+  WorkerPoolEnded,
   WorkerPoolHeld,
-  WorkerPoolJobRefused,
+  WorkerPoolJobEnd,
   WorkerPoolPlacement,
   WorkerPoolStopped,
 } from "../../interpreter/workerPoolClient.ts";
@@ -97,6 +104,7 @@ import {
 } from "./sidecars.ts";
 import { kubernetesPodFault, type KubernetesPodFault } from "./podFaults.ts";
 import {
+  kubernetesDeadlineText,
   kubernetesImageFaultText,
   kubernetesWorkerErrorPosted,
 } from "./workerFaults.ts";
@@ -444,9 +452,10 @@ async function poolPlacementListed(
 
 /**
  * The assignments this pool's pods still carry, less any naming a fault of its
- * image, which is `ended`'s to refuse. A pod that has ended is deleted rather
- * than answered, so its assignment leaves the list the next poll renews, and a
- * delete the cluster did not take leaves the pod for the next pass to find.
+ * image or stopped at its deadline, which are `ended`'s. A pod that has ended
+ * otherwise is deleted rather than answered, so its assignment leaves the list
+ * the next poll renews, and a delete the cluster did not take leaves the pod
+ * for the next pass to find.
  */
 async function poolPlacementHeld(
   config: KubernetesPoolPlacementConfig,
@@ -455,7 +464,7 @@ async function poolPlacementHeld(
 ): Promise<readonly WorkerPoolHeld[]> {
   const held: WorkerPoolHeld[] = [];
   for (const pod of await poolPlacementListed(config, fetcher, nowEpochMs)) {
-    if (pod.fault.fault === "Image") continue;
+    if (pod.fault.fault === "Image" || pod.fault.fault === "Deadline") continue;
     if (pod.end === "Unended")
       held.push({ assignment: pod.value, kind: "Job" });
     else await kubernetesDeletePod(config, fetcher, pod.name);
@@ -463,18 +472,12 @@ async function poolPlacementHeld(
   return held;
 }
 
-/**
- * Uploads one refused pod's text where its harness would have, under the
- * bearer its envelope carries, read back from the Secret the pod owns. A text
- * that could not be uploaded leaves the refusal standing, which does not wait
- * on it.
- */
-async function poolPlacementErrorWritten(
+/** The envelope one pod was handed, read back from the Secret the pod owns, or nothing where it could not be. */
+async function poolPlacementEnvelopeRead(
   config: KubernetesPoolPlacementConfig,
   fetcher: typeof fetch,
   pod: string,
-  text: string,
-): Promise<void> {
+): Promise<PoolEnvelope | undefined> {
   const value = await kubernetesSecretValue(
     config,
     fetcher,
@@ -488,36 +491,84 @@ async function poolPlacementErrorWritten(
     envelope = undefined;
   }
   const parsed = poolEnvelopeSchema.safeParse(envelope);
-  const written = parsed.success
-    ? await kubernetesWorkerErrorPosted(
-        config,
-        fetcher,
-        { token: parsed.data.bearer, plane: parsed.data.callbackUrl },
-        text,
-      )
-    : {
-        written: "Unwritten",
-        why: `the envelope Secret ${pod} could not be read`,
-      };
+  return parsed.success ? parsed.data : undefined;
+}
+
+/**
+ * Uploads one refused pod's text where its harness would have, under the
+ * bearer its envelope carries. A text that could not be uploaded leaves the
+ * refusal standing, which does not wait on it.
+ */
+async function poolPlacementErrorWritten(
+  config: KubernetesPoolPlacementConfig,
+  fetcher: typeof fetch,
+  pod: string,
+  text: string,
+): Promise<void> {
+  const envelope = await poolPlacementEnvelopeRead(config, fetcher, pod);
+  const written =
+    envelope === undefined
+      ? {
+          written: "Unwritten",
+          why: `the envelope Secret ${pod} could not be read`,
+        }
+      : await kubernetesWorkerErrorPosted(
+          config,
+          fetcher,
+          { token: envelope.bearer, plane: envelope.callbackUrl },
+          text,
+        );
   if (written.written === "Unwritten")
     process.stderr.write(
       `pool placement: the error text of pod ${pod} was not stored: ${written.why}\n`,
     );
 }
 
+/** One pod the cluster stopped at its deadline as the job end its envelope names, or nothing where the envelope could not be read. */
+async function poolPlacementKilled(
+  config: KubernetesPoolPlacementConfig,
+  fetcher: typeof fetch,
+  pod: KubernetesListedPod,
+): Promise<WorkerPoolJobEnd | undefined> {
+  const envelope = await poolPlacementEnvelopeRead(config, fetcher, pod.name);
+  if (envelope === undefined) {
+    process.stderr.write(
+      `pool placement: pod ${pod.name} passed its deadline and its envelope Secret could not be read, so its attempt is left to its lease\n`,
+    );
+    return undefined;
+  }
+  return {
+    kind: "Job",
+    job: {
+      assignment: pod.value,
+      callbackUrl: envelope.callbackUrl,
+      bearer: envelope.bearer,
+    },
+    text: kubernetesDeadlineText,
+    killed: "Deadline",
+  };
+}
+
 /**
  * Each job this pool's pods say the image of could not run, refused under the
- * fault: its text uploaded, then its pod deleted. A delete the cluster did not
- * take leaves the pod for the next pass to refuse again, which the plane
- * answers as an attempt no longer held.
+ * fault with its text uploaded, and each the cluster stopped at its deadline,
+ * read as killed; either pod is then deleted. A delete the cluster did not take
+ * leaves the pod for the next pass to answer again, which the plane answers as
+ * an attempt no longer held or live.
  */
-async function poolPlacementRefused(
+async function poolPlacementEnded(
   config: KubernetesPoolPlacementConfig,
   fetcher: typeof fetch,
   nowEpochMs: number,
-): Promise<readonly WorkerPoolJobRefused[]> {
-  const refused: WorkerPoolJobRefused[] = [];
+): Promise<readonly WorkerPoolEnded[]> {
+  const ended: WorkerPoolEnded[] = [];
   for (const pod of await poolPlacementListed(config, fetcher, nowEpochMs)) {
+    if (pod.fault.fault === "Deadline") {
+      const killed = await poolPlacementKilled(config, fetcher, pod);
+      await kubernetesDeletePod(config, fetcher, pod.name);
+      if (killed !== undefined) ended.push(killed);
+      continue;
+    }
     if (pod.fault.fault !== "Image") continue;
     const evidence = kubernetesImageFaultText(
       pod.fault.image,
@@ -525,14 +576,14 @@ async function poolPlacementRefused(
     );
     await poolPlacementErrorWritten(config, fetcher, pod.name, evidence);
     await kubernetesDeletePod(config, fetcher, pod.name);
-    refused.push({
+    ended.push({
       kind: "Job",
       assignment: pod.value,
       evidence,
       fault: pod.fault.image,
     });
   }
-  return refused;
+  return ended;
 }
 
 /**
@@ -552,6 +603,6 @@ export function kubernetesPoolBackend(
         : { placed: "Refused", evidence: "this pool runs no session" },
     stop: (assignment) => poolPlacementStopped(config, fetcher, assignment),
     held: () => poolPlacementHeld(config, fetcher, currentTimeEpochMs()),
-    ended: () => poolPlacementRefused(config, fetcher, currentTimeEpochMs()),
+    ended: () => poolPlacementEnded(config, fetcher, currentTimeEpochMs()),
   };
 }

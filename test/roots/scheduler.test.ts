@@ -24,7 +24,10 @@ import { after, test } from "node:test";
 import { promisify } from "node:util";
 
 import { postgresLimitsDefault } from "../../src/adapters/postgres/pool.ts";
-import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
+import {
+  kubernetesDeadlineText,
+  kubernetesImageFaultTexts,
+} from "../../src/adapters/kubernetes/workerFaults.ts";
 import {
   kubernetesSessionBoundsDefaults,
   kubernetesSessionBudgetUsdMin,
@@ -1044,6 +1047,7 @@ function processExecutionFakes(observed: boolean): string {
       capability: { id: 'capability-one', secret: 'secret-one', manifest: 'manifest-one' },
     };
     const placed = [];
+    const ended = [];
     const store = {
       fenceOldEpochAttempts: async () => 0,
       claimRequests: async () => [],
@@ -1057,7 +1061,7 @@ function processExecutionFakes(observed: boolean): string {
       openAttempt: async () => ({ opened: 'Opened', attempt }),
       attemptInvoked: async () => true,
       attemptPlaced: async (_attempt, placement) => { placed.push(placement); return true; },
-      attemptEnded: async () => true,
+      attemptEnded: async (_attempt, loss, evidence) => { ended.push(loss + ':' + evidence); return true; },
       blockExecution: async () => ({ blocked: 'Blocked', operation: 'operation-one' }),
       runnerLostTickets: async () => [],
     };
@@ -1209,7 +1213,7 @@ function processProgram(
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
-      started, health, stopped, placed, sessionPlaced, sessionEnded, sessionTasks, asked, told,
+      started, health, stopped, placed, ended, sessionPlaced, sessionEnded, sessionTasks, asked, told,
     }));
   `;
 }
@@ -1224,6 +1228,7 @@ interface ProcessRan {
   readonly health: { readonly live?: boolean; readonly ready: boolean };
   readonly stopped?: unknown;
   readonly placed: readonly string[];
+  readonly ended: readonly string[];
   readonly sessionPlaced: readonly string[];
   readonly sessionEnded: readonly string[];
   readonly sessionTasks: readonly {
@@ -1394,7 +1399,32 @@ test("an image fault whose text the worker plane never takes still blocks, and s
   assert.deepEqual(
     found.told.filter((line) => line.startsWith("execution scheduler:")),
     [
-      `execution scheduler: tenant/project attempt attempt-one blocked ImageUnpullable, and its error text was not stored: the worker plane could not be reached: ${JSON.stringify(text)}\n`,
+      `execution scheduler: tenant/project attempt attempt-one ended ImageUnpullable, and its error text was not stored: the worker plane could not be reached: ${JSON.stringify(text)}\n`,
+    ],
+  );
+});
+
+test("a worker pod the cluster stopped at its deadline ends its attempt timed out, its text tried first and its pod deleted", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      processProgram(true, {}, false, processCapturedPod("deadline-exceeded")),
+    ),
+  ) as ProcessRan;
+  const read = found.asked.find(
+    (one) => one.startsWith("GET") && one.includes("/pods/chuggy-worker"),
+  );
+  const name = read?.split("/pods/")[1] ?? "";
+  assert.ok(name.length > 0);
+  const upload =
+    "PUT https://worker-plane.invalid/v1/artifacts/.chuggy/worker-error.txt";
+  const deleted = `DELETE ${namespaceUrl}/pods/${name}`;
+  assert.ok(found.asked.indexOf(upload) >= 0);
+  assert.ok(found.asked.indexOf(upload) < found.asked.indexOf(deleted));
+  assert.deepEqual(found.ended, ["Lost:RunTimedOut"]);
+  assert.deepEqual(
+    found.told.filter((line) => line.startsWith("execution scheduler:")),
+    [
+      `execution scheduler: tenant/project attempt attempt-one ended RunTimedOut, and its error text was not stored: the worker plane could not be reached: ${JSON.stringify(kubernetesDeadlineText)}\n`,
     ],
   );
 });

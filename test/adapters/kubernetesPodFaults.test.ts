@@ -1,6 +1,7 @@
 /**
- * What a job's pod status says of its image and of the site's runtime copy, at
- * the lowest tier that can say it: one pure reading of one document.
+ * What a job's pod status says of its image, of the site's runtime copy and of
+ * its deadline, at the lowest tier that can say it: one pure reading of one
+ * document.
  *
  * THE DOCUMENTS ARE A KUBELET'S. Each file under `test/fixtures/kubernetesPods/`
  * is a status a k3s kubelet, the version the rig runs, reported for the worker's
@@ -12,14 +13,16 @@
  * still running and a copy that failed must each be no image fault at all, the
  * copy's own failure must never be read as the job's, and a pull that failed
  * for a cause that can pass must be nothing until the pod has pulled for the
- * dwell.
+ * dwell. A pod that failed for any cause but its deadline must never be read
+ * as stopped at it.
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 
 import {
+  kubernetesDeadlineExceeded,
   kubernetesPodFault,
   kubernetesPodMessageCharsMax,
   kubernetesPullFailureDwellSecs,
@@ -255,6 +258,71 @@ test("a clean exit, a crash, a kill, a running job and a pending pod are no faul
   ]) {
     assert.deepEqual(readCaptured(name), { fault: "None" }, name);
   }
+});
+
+/** Every captured pod the cluster stopped at its deadline, by its fixture's name. */
+const deadlineCaptures = [
+  "deadline-exceeded",
+  "deadline-exceeded-copying",
+  "deadline-exceeded-pulling",
+];
+
+test("a pod its kubelet stopped at its deadline reads as that, whatever its containers ended in", () => {
+  for (const name of deadlineCaptures)
+    assert.deepEqual(readCaptured(name), { fault: "Deadline" }, name);
+});
+
+test("a copy the deadline cut short is the deadline's, though alone it reads as the site's", () => {
+  const pod = captured("deadline-exceeded-copying") as {
+    readonly status: Record<string, unknown>;
+  };
+  assert.equal(
+    kubernetesPodFault(
+      {
+        ...pod,
+        status: { ...pod.status, phase: undefined, reason: undefined },
+      },
+      containers,
+      0,
+    ).fault,
+    "Runtime",
+    "without its phase and reason this capture proves no precedence",
+  );
+  assert.deepEqual(kubernetesPodFault(pod, containers, 0), {
+    fault: "Deadline",
+  });
+});
+
+test("a pod that failed for any cause but its deadline is never read as stopped at it", () => {
+  const fixtures = readdirSync(
+    new URL("../fixtures/kubernetesPods/", import.meta.url),
+  )
+    .filter((file) => file.endsWith(".json"))
+    .map((file) => file.slice(0, -".json".length))
+    .filter((name) => !deadlineCaptures.includes(name));
+  assert.ok(fixtures.includes("oom-killed"));
+  for (const name of fixtures)
+    assert.notEqual(capturedFault(name).fault, "Deadline", name);
+  const stopped = captured("deadline-exceeded") as {
+    readonly status: Record<string, unknown>;
+  };
+  const unstated = { ...stopped.status, phase: undefined, reason: undefined };
+  for (const status of [
+    { phase: "Failed", reason: "Evicted" },
+    { phase: "Failed", reason: "UnexpectedAdmissionError" },
+    { phase: "Running", reason: kubernetesDeadlineExceeded },
+    { phase: "Succeeded", reason: kubernetesDeadlineExceeded },
+    { phase: "Failed" },
+  ])
+    assert.notEqual(
+      kubernetesPodFault(
+        { ...stopped, status: { ...unstated, ...status } },
+        containers,
+        0,
+      ).fault,
+      "Deadline",
+      JSON.stringify(status),
+    );
 });
 
 /** A pod whose two read containers are in the states a case names, created when it says if it says. */
