@@ -1290,7 +1290,11 @@ function contractedFor(memory: ProjectMemory, ticket: number): ProjectMemory {
  */
 test("a release past the project's unfinished tickets is refused TicketCapacityReached and journals nothing", async () => {
   const full = { config: { ...refinementInstance, nTickets: 1 } };
-  for (const [phase, memory] of unparkedMemories()) {
+  const memories = new Map([
+    ...unparkedMemories(),
+    ["Escalated", workWalledMemory()],
+  ]);
+  for (const [phase, memory] of memories) {
     const { offered } = await decidedWith(
       contractedFor(memory, 2),
       releaseInput(2),
