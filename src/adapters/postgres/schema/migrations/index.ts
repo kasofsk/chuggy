@@ -76,6 +76,7 @@ import { migration075 } from "./075-run-disk-low.ts";
 import { migration076 } from "./076-pipelines-writable.ts";
 import { migration077 } from "./077-tokens-carry-no-capabilities.ts";
 import { migration078 } from "./078-polls-name-capabilities.ts";
+import { migration079 } from "./079-lead-reads-ticket-landings.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -157,4 +158,5 @@ export const migrations: readonly Migration[] = [
   migration076,
   migration077,
   migration078,
+  migration079,
 ];

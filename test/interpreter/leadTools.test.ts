@@ -67,8 +67,13 @@ test("origination, revoking and updating are admitted for a thread's roster and 
   );
 });
 
-test("a lead and a thread both list the project's repositories, read its images and read a run's error text, and a lead's decision may report any of them", () => {
-  for (const tool of ["list_repositories", "fetch_image", "read_run_error"]) {
+test("a lead and a thread both list the project's repositories, read its images, a run's error text and a ticket's landings, and a lead's decision may report any of them", () => {
+  for (const tool of [
+    "list_repositories",
+    "fetch_image",
+    "read_run_error",
+    "read_ticket_landings",
+  ]) {
     const named = `${chuggyToolPrefix}${tool}`;
     assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named), tool);
     assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named), tool);

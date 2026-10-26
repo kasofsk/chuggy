@@ -39,13 +39,19 @@
  * deliberately absent.
  */
 
+import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
   jsonStringChars,
+  jsonTextBytes,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  proposalMergeStateCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
+  ticketLandingConflictBytesMax,
+  ticketLandingRefCharsMax,
+  ticketLandingsAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
 import type { SessionCapability } from "./rosters.ts";
@@ -70,6 +76,9 @@ export {
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
 } from "./http.ts";
+
+/** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
+export { ticketLandingsAnsweredMax } from "./http.ts";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -105,6 +114,38 @@ export const chuggyToolRunTranscriptResponseBytesMax =
   runTranscriptPageBatchesMax * jsonStringChars(runTranscriptBatchBytesMax) +
   nativeHttpBodyBytesMax;
 
+/**
+ * What one landing weighs beside its texts: its counts, codes, commits and
+ * instants, and the names and brackets around them all. It is a ceiling rather
+ * than a measurement, and the plane's suite is what holds the heaviest landing
+ * under it.
+ */
+const chuggyToolTicketLandingFieldsBytesMax = 1_280;
+
+/**
+ * What one landing `read_ticket_landings`'s route answers may weigh: its
+ * target's, head's and base's reference names and its merge state, each
+ * escaping every character; its link, visible ASCII that JSON escapes to at
+ * most two bytes a character; its conflict's paths, and the commas between
+ * them, fewer than the lightest paths its bound holds; and the rest of it.
+ */
+export const chuggyToolTicketLandingBytesMax =
+  3 * jsonStringChars(ticketLandingRefCharsMax) +
+  2 * (actionReportLinkCharsMax + 1) +
+  jsonStringChars(proposalMergeStateCharsMax) +
+  ticketLandingConflictBytesMax +
+  Math.floor(ticketLandingConflictBytesMax / jsonTextBytes("x")) +
+  chuggyToolTicketLandingFieldsBytesMax;
+
+/**
+ * What `read_ticket_landings`'s route may answer: as many landings as one read
+ * answers, each at its heaviest, and an ordinary answer's bound for the fields
+ * around them.
+ */
+export const chuggyToolTicketLandingsResponseBytesMax =
+  ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
+  nativeHttpBodyBytesMax;
+
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
 
@@ -131,6 +172,7 @@ const chuggyToolRoster = {
     "read_decision_log",
     "read_refusals",
     "read_ticket_refusals",
+    "read_ticket_landings",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
@@ -244,6 +286,7 @@ export const chuggyToolRoutes = {
   selectorHistory: nativeHttpRoutes.selectorHistory,
   agenticRefusals: nativeHttpRoutes.agenticRefusals,
   ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
+  ticketLandings: nativeHttpRoutes.ticketLandings,
   lead: nativeHttpRoutes.lead,
   leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,

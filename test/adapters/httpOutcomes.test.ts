@@ -33,14 +33,21 @@ import {
   runErrorResponse,
   runTranscriptResponse,
   submissionResponse,
+  ticketLandingsResponse,
 } from "../../src/adapters/http/outcomes.ts";
+import { actionReportLinkCharsMax } from "../../src/contract/actionReport.ts";
 import {
   projectArtifactUploadBytesMax,
+  proposalMergeStateCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTranscriptPageBatchesMax,
+  ticketLandingConflictBytesMax,
+  ticketLandingRefCharsMax,
+  ticketLandingsAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
+import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import {
   draftsResponseSchema,
   projectArtifactResponseSchema,
@@ -51,15 +58,42 @@ import {
   chuggyToolResponseBytesMax,
   chuggyToolRunErrorResponseBytesMax,
   chuggyToolRunTranscriptResponseBytesMax,
+  chuggyToolTicketLandingBytesMax,
+  chuggyToolTicketLandingsResponseBytesMax,
   imageMediaTypes,
   projectArtifactEncoding,
 } from "../../src/contract/sessionTools.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  allChangeProposalCreationsStored,
+  allChangeProposalMergeabilities,
+  allChangeProposalMergeAnswers,
+  allChangeProposalMergeWaits,
+  allChangeProposalStatuses,
+  allChangeProposalUnmergeableSettled,
+  asProposalMergeState,
+} from "../../src/interpreter/changeProposal.ts";
 import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
 import {
+  allFinalizationAttemptOutcomes,
+  allFinalizationFailureKinds,
+  asFinalizationAttemptId,
   asGitObjectId,
   asGitRefName,
   asRepositoryId,
+  gitRefNameCharsMax,
 } from "../../src/interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  conflictManifestText,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  ticketLandingReads,
+  type TicketLandingRecord,
+} from "../../src/interpreter/ticketLandings.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
@@ -832,4 +866,174 @@ test("a page of the largest transcript batches is answered within what read_run_
     assert.ok(weighed <= chuggyToolRunTranscriptResponseBytesMax, what);
     assert.ok(weighed > chuggyToolResponseBytesMax, what);
   }
+});
+
+/** The longest member of a roster, which is the heaviest code a field naming it carries. */
+function landingCodeHeaviest<T extends string>(roster: readonly T[]): T {
+  const [first, ...rest] = roster;
+  assert.ok(first !== undefined, "an empty roster names no code");
+  return rest.reduce(
+    (held, code) => (code.length > held.length ? code : held),
+    first,
+  );
+}
+
+const landingCommitHeaviest = asGitObjectId("f".repeat(64));
+const landingInstant = asPublicInstant("2026-10-25T12:00:00.000000Z");
+const landingCountHeaviest = Number.MAX_SAFE_INTEGER;
+
+/** A reference name of control characters at its bound, each of which JSON escapes to six bytes. */
+const landingRefHeaviest = "\u0001".repeat(ticketLandingRefCharsMax);
+
+/** A link a report could carry at its bound, of the visible character JSON escapes. */
+const landingLinkHeaviest = `https://h/${"\\".repeat(actionReportLinkCharsMax - "https://h/".length)}`;
+
+/** One request's rows as the heaviest of them hold it, in each state that carries a field of its own. */
+function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
+  const base = {
+    cycle: landingCountHeaviest,
+    generation: landingCountHeaviest,
+    attempts: landingCountHeaviest,
+    attempt: {
+      outcome: landingCodeHeaviest(allFinalizationAttemptOutcomes),
+      failureKind: landingCodeHeaviest(allFinalizationFailureKinds),
+      targetRef: landingRefHeaviest,
+      targetCommit: landingCommitHeaviest,
+      candidateCommit: landingCommitHeaviest,
+      preparedAt: landingInstant,
+    },
+    conflictManifest: asProjectArtifactId("manifest"),
+    approvalOpen: false,
+    proposal: {
+      url: landingLinkHeaviest,
+      headRef: landingRefHeaviest,
+      headCommit: landingCommitHeaviest,
+      baseRef: landingRefHeaviest,
+      creation: landingCodeHeaviest(allChangeProposalCreationsStored),
+      status: landingCodeHeaviest(allChangeProposalStatuses),
+      merge: landingCodeHeaviest(allChangeProposalMergeAnswers),
+      mergeReason: landingCodeHeaviest(allChangeProposalUnmergeableSettled),
+      mergeability: landingCodeHeaviest(allChangeProposalMergeabilities),
+      mergeState: asProposalMergeState(
+        "\u0001".repeat(proposalMergeStateCharsMax),
+      ),
+      mergeCommit: landingCommitHeaviest,
+      mergedHead: landingCommitHeaviest,
+    },
+  };
+  return [
+    {
+      ...base,
+      request: "Registered",
+      hold: {
+        kind: landingCodeHeaviest(finalizationUnavailableKinds),
+        passes: landingCountHeaviest,
+        since: landingInstant,
+      },
+    },
+    {
+      ...base,
+      request: "Registered",
+      wait: {
+        reason: landingCodeHeaviest(allChangeProposalMergeWaits),
+        checkedAt: landingInstant,
+      },
+    },
+    {
+      ...base,
+      request: "Fulfilled",
+      concluded: "Succeeded",
+      landedCommit: landingCommitHeaviest,
+    },
+  ];
+}
+
+/**
+ * A ticket's read over a store answering `record` as often as it is asked, and
+ * a manifest naming more paths of `character` than one landing's conflict
+ * holds.
+ */
+async function landingsReadHeaviest(
+  record: TicketLandingRecord,
+  character: string,
+) {
+  const manifest = new TextEncoder().encode(
+    conflictManifestText({
+      request: "request",
+      attempt: asFinalizationAttemptId("attempt"),
+      strategy: "Merge",
+      candidate: landingCommitHeaviest,
+      target: {
+        ref: asGitRefName("refs/heads/main"),
+        commit: landingCommitHeaviest,
+      },
+      conflict: {
+        paths: Array.from(
+          { length: ticketLandingConflictBytesMax },
+          () => character,
+        ),
+        truncated: false,
+      },
+    }),
+  );
+  const reads = ticketLandingReads({
+    access: {
+      authorize: (who) => Promise.resolve(memberAuthority(who)),
+      authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
+    },
+    store: {
+      landings: (_partition, _ticket, count) =>
+        Promise.resolve(Array.from({ length: count }, () => record)),
+    },
+    artifacts: {
+      readArtifact: () =>
+        Promise.resolve({ read: "Content" as const, content: manifest }),
+    },
+  });
+  const read = await reads.read(
+    asPrincipal("reader"),
+    partition,
+    asTicketId(7),
+  );
+  assert.ok(read !== undefined);
+  return read;
+}
+
+/** The characters a conflict's paths are weighed in: the most paths, the most escaped, and the widest. */
+const landingPathCharacters = ["a", "\u0001", "\u{1F600}"] as const;
+
+test("a landing's reference names are bounded as a stored row's are", () => {
+  assert.equal(ticketLandingRefCharsMax, gitRefNameCharsMax);
+});
+
+test("the heaviest landings a ticket's read answers are answered within what read_ticket_landings reads and past what an ordinary tool reads", async () => {
+  for (const record of landingRecordsHeaviest())
+    for (const character of landingPathCharacters) {
+      const read = await landingsReadHeaviest(record, character);
+      const [landing] = read.landings;
+      assert.equal(read.landings.length, ticketLandingsAnsweredMax);
+      assert.equal(
+        landing?.proposal?.url,
+        landingLinkHeaviest,
+        "the link was not answered",
+      );
+      assert.equal(
+        landing?.conflict?.truncated,
+        true,
+        "the paths were not cut at their bound",
+      );
+      const what = `${landing?.state ?? "none"} with paths of ${JSON.stringify(character)}`;
+      for (const answered of read.landings)
+        assert.ok(
+          Buffer.byteLength(JSON.stringify(answered)) <=
+            chuggyToolTicketLandingBytesMax,
+          what,
+        );
+      const weighed = Buffer.byteLength(
+        JSON.stringify(ticketLandingsResponse(read).body),
+      );
+      assert.ok(weighed <= chuggyToolTicketLandingsResponseBytesMax, what);
+      assert.ok(weighed > chuggyToolResponseBytesMax, what);
+    }
 });

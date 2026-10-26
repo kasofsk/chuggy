@@ -23,7 +23,7 @@ const readTool = "mcp__chuggy__read_run_error";
 const readAfter = "mcp__chuggy__read_run_transcript";
 
 /** 068's allowlist with `read_run_error` in its roster place. */
-function toolAllowlistAt072(): readonly string[] {
+export function toolAllowlistAt072(): readonly string[] {
   return toolAllowlistNamed(toolAllowlistAt068(), readTool, readAfter);
 }
 
