@@ -150,20 +150,6 @@ export function forgeAccountRows(
   return rows;
 }
 
-/**
- * The accounts a repository may be created under, which are the accounts whose
- * row says both apps. A create makes the repository through one app's
- * installation and leaves the work to the other's, so an account holding one of
- * them is an account a create would half-finish.
- */
-export function forgeCreatingAccounts(
-  installations: readonly ForgeInstallationResponse[],
-): readonly string[] {
-  return forgeAccountRows(installations)
-    .filter((row) => row.portal === "Installed" && row.worker === "Installed")
-    .map((row) => row.account);
-}
-
 /** The accounts lacking the worker app, in the order the listing answers. A row
  * is an account holding one of the two apps, so each of these holds the portal
  * app. */

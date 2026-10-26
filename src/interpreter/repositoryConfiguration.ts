@@ -167,9 +167,9 @@ export interface RepositoryConfigurationSnapshotPort {
 
 /**
  * What reading where a repository's own HEAD points came to. `Absent` is a
- * repository holding no commit under it, which is what a repository created and
- * not yet seeded is, and is not an outage: there is nothing there to read at
- * this commit or any other.
+ * repository holding no commit under it, which is what a repository created
+ * empty is, and is not an outage: there is nothing there to read at this commit
+ * or any other.
  */
 export type RepositoryDefaultBranchRead =
   | {

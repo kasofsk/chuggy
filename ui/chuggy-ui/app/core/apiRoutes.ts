@@ -41,7 +41,6 @@ import {
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
   projectRepositoryConfiguredSchema,
-  projectRepositoryCreatedSchema,
   projectRepositoryLandingWrittenSchema,
   projectRepositoryRetiredSchema,
   projectResponseSchema,
@@ -87,7 +86,6 @@ import type {
   ProjectRepositoryAlreadyBoundResponse,
   ProjectRepositoryBoundResponse,
   ProjectRepositoryConfiguredResponse,
-  ProjectRepositoryCreatedResponse,
   ProjectRepositoryResponse,
   ProjectResponse,
   SelectorHistoryResponse,
@@ -109,7 +107,6 @@ import type {
   projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
-  projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   RegistrationTokenRequest,
@@ -358,29 +355,6 @@ export function apiBindProjectRepository(
       idempotencyKey: operation,
     },
     (value) => projectRepositoryBindAnswerSchema.parse(value),
-  );
-}
-
-/**
- * One repository made on the forge and bound here, under the same operation
- * identity a bind is made under. The answer reports every step it took,
- * because a step that did not take leaves a repository that stands.
- */
-export function apiCreateProjectRepository(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  create: z.infer<typeof projectRepositoryCreateSchema>,
-  operation: string,
-): Promise<ApiResult<ProjectRepositoryCreatedResponse>> {
-  return apiRead(
-    ports,
-    {
-      method: "POST",
-      path: apiSegments(partition, "repositories", "new"),
-      body: create,
-      idempotencyKey: operation,
-    },
-    (value) => projectRepositoryCreatedSchema.parse(value),
   );
 }
 

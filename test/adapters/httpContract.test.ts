@@ -83,7 +83,6 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
   "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
   "/api/v1/tenants/:tenant/projects/:project/repositories",
-  "/api/v1/tenants/:tenant/projects/:project/repositories/new",
   "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
   "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
   "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",

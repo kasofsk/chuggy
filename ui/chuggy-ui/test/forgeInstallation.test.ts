@@ -15,7 +15,6 @@ import type {
 } from "../../../src/contract/responses.ts";
 import {
   forgeAccountRows,
-  forgeCreatingAccounts,
   forgeInstallBegin,
   forgeInstallLabel,
   forgeInstallOffered,
@@ -142,20 +141,6 @@ test("an account is one row saying which apps it holds", () => {
       worker: "Missing",
     },
   ]);
-});
-
-/** A create makes the repository through one app's installation and leaves the
- * work to the other's, so an account holding one of them is not offered. */
-test("only an account holding both apps may be created under", () => {
-  expect(
-    forgeCreatingAccounts([
-      claim({ app: "portal", account: "kasofsk", installationId: "1" }),
-      claim({ app: "worker", account: "kasofsk", installationId: "2" }),
-      claim({ app: "portal", account: "gdoteof", installationId: "3" }),
-      claim({ app: "worker", account: "vteng", installationId: "4" }),
-    ]),
-  ).toEqual(["kasofsk"]);
-  expect(forgeCreatingAccounts([])).toEqual([]);
 });
 
 test("an account lacks the worker app where it holds the portal app alone", () => {

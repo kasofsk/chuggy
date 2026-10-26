@@ -108,7 +108,6 @@ import type {
   ProjectRepositoriesResult,
   ProjectRepositoryBindResult,
   ProjectRepositoryConfigureResult,
-  ProjectRepositoryCreateResult,
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
@@ -1721,78 +1720,6 @@ export function projectRepositoryBindResponse(
       );
     case "EpochChanged":
       return retry(503, authorityRetryAfterSeconds, "RecoveryEpochChanged");
-    case "NotFound":
-      return notFound();
-    case "Unavailable":
-      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
-    default:
-      return assertNever(result);
-  }
-}
-
-/**
- * A creation. A repository the forge made and then refused something about is
- * the request's own fault and not a missing resource: the caller may see the
- * project and the account both, the refusal names how far it got so the bind
- * route can finish what this one started, and a name already taken is a
- * conflict pointing at that same route.
- */
-export function projectRepositoryCreateResponse(
-  partition: Partition,
-  result: ProjectRepositoryCreateResult,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "Created":
-      return response(
-        201,
-        {
-          repository: result.repository,
-          landing: result.landing,
-          created: result.created,
-          seeded: result.seeded,
-          ruleset: result.ruleset,
-          configurations: result.configurations,
-        },
-        {
-          location: resourcePath(partition, "repositories", result.repository),
-        },
-      );
-    case "InstallationMissing":
-      return response(
-        422,
-        nativeHttpError(
-          "InstallationMissing",
-          `This tenant has claimed no ${result.app} installation on the account.`,
-        ),
-      );
-    case "PersonalAccountCreatesOnGitHub":
-      return response(
-        422,
-        nativeHttpError(
-          "PersonalAccountCreatesOnGitHub",
-          "Create the repository on the forge and bind it here.",
-        ),
-      );
-    case "RepositoryExists":
-      return response(
-        409,
-        nativeHttpError(
-          "RepositoryExists",
-          "The account already has a repository of that name; bind it here instead.",
-        ),
-      );
-    case "ForgeRefused":
-      return response(
-        422,
-        nativeHttpError(
-          "ForgeRefused",
-          `The forge refused the ${result.step}: ${result.message}`,
-        ),
-      );
-    case "BindRefused":
-      return projectRepositoryBindResponse(partition, result.bind);
-    case "NotConfigured":
-      return forgeNotConfigured();
     case "NotFound":
       return notFound();
     case "Unavailable":

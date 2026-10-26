@@ -38,7 +38,6 @@ import {
   projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
-  projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
@@ -75,16 +74,13 @@ import type {
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
-  asForgeAccount,
   asForgeId,
   asForgeInstallationId,
-  asForgeRepositoryName,
   type ForgeInstallationId,
 } from "../../interpreter/forgeInstallation.ts";
 import type {
   ForgeAuthorizationRequest,
   ProjectRepositoryBindRequest,
-  ProjectRepositoryCreateRequest,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import type { ProjectCreationRequest } from "../../interpreter/projectCreation.ts";
@@ -301,20 +297,6 @@ export function parseProjectRepositoryConfigure(body: unknown): RepositoryId {
   return asRepositoryId(
     projectRepositoryConfigureSchema.parse(body).repository,
   );
-}
-
-/** One creation as the wire carries it, the identity coming from the header rather than the body. */
-export function parseProjectRepositoryCreate(
-  body: unknown,
-  operation: string,
-): ProjectRepositoryCreateRequest {
-  const parsed = projectRepositoryCreateSchema.parse(body);
-  return {
-    account: asForgeAccount(parsed.account),
-    name: asForgeRepositoryName(parsed.name),
-    visibility: parsed.visibility,
-    operation: asOperationId(operation),
-  };
 }
 
 export interface ParsedDraftCreation {

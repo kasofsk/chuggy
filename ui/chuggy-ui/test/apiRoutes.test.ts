@@ -19,7 +19,6 @@ import {
   apiForgeAuthorization,
   apiConfiguration,
   apiConfigureProjectRepository,
-  apiCreateProjectRepository,
   apiDeregisterMemberRunner,
   apiDeregisterPersonalRunner,
   apiDispatchView,
@@ -608,7 +607,7 @@ test("naming a thread posts one field to its own door", async () => {
   }
 });
 
-const madeRepository = "https://forge.test/kasofsk/scratch";
+const boundRepository = "https://forge.test/kasofsk/scratch";
 
 /**
  * One body per forge route, chosen by the request rather than by the path: a
@@ -616,16 +615,8 @@ const madeRepository = "https://forge.test/kasofsk/scratch";
  * answer different shapes.
  */
 function forgeBody(url: string, init: ApiFetchInit): unknown {
-  if (init.method === "POST" && url.endsWith("/repositories/new"))
-    return {
-      repository: madeRepository,
-      created: { account: "kasofsk", name: "scratch", url: madeRepository },
-      seeded: true,
-      ruleset: { result: "Skipped" },
-      configurations: { result: "Imported", count: 2 },
-    };
   if (init.method === "POST" && url.endsWith("/repositories"))
-    return { repository: madeRepository };
+    return { repository: boundRepository };
   if (init.method === "POST") return { accounts: [], truncated: false };
   if (url.endsWith("/forge/github")) return { apps: [] };
   if (url.includes("/forge-installations/"))
@@ -635,8 +626,8 @@ function forgeBody(url: string, init: ApiFetchInit): unknown {
   return { repositories: [] };
 }
 
-/** The seven forge routes asked for in turn, so the path each names is read
- * against the six others rather than on its own. */
+/** The forge routes asked for in turn, so the path each names is read against
+ * the others rather than on its own. */
 async function askForgeRoutes(ports: ApiPorts): Promise<void> {
   await apiForgeApps(ports);
   await apiForgeInstallations(ports, "acme");
@@ -651,23 +642,17 @@ async function askForgeRoutes(ports: ApiPorts): Promise<void> {
   await apiBindProjectRepository(
     ports,
     partition,
-    { repository: madeRepository },
+    { repository: boundRepository },
     "op-one",
-  );
-  await apiCreateProjectRepository(
-    ports,
-    partition,
-    { account: "kasofsk", name: "scratch", visibility: "private" },
-    "op-two",
   );
 }
 
 /**
  * A path naming the wrong tenant or the wrong segment reaches a route about
- * somebody else's account, and the two writes are refused outright without the
- * operation identity they spend.
+ * somebody else's account, and a bind is refused outright without the operation
+ * identity it spends.
  */
-test("each forge route is one path, and each write spends an identity", async () => {
+test("each forge route is one path, and a bind spends an identity", async () => {
   const held = recordingRequests(forgeBody);
   await askForgeRoutes(held.ports);
   expect(held.requests.map((request) => request.url)).toStrictEqual([
@@ -677,7 +662,6 @@ test("each forge route is one path, and each write spends an identity", async ()
     `${nativeHttpBasePath}/tenants/acme/forge-installations/42/repositories`,
     `${partitionPath}/repositories`,
     `${partitionPath}/repositories`,
-    `${partitionPath}/repositories/new`,
   ]);
   expect(held.requests.map((request) => request.init.method)).toStrictEqual([
     "GET",
@@ -685,7 +669,6 @@ test("each forge route is one path, and each write spends an identity", async ()
     "POST",
     "GET",
     "GET",
-    "POST",
     "POST",
   ]);
   expect(
@@ -697,7 +680,6 @@ test("each forge route is one path, and each write spends an identity", async ()
     undefined,
     undefined,
     "op-one",
-    "op-two",
   ]);
 });
 
@@ -753,7 +735,7 @@ test("a tenant that looks like a path stays one segment", async () => {
  */
 test("a landing is written by PUT at the bindings' own landing path", async () => {
   const row = {
-    repository: madeRepository,
+    repository: boundRepository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "PullRequest" },
     pipelinesWritable: false,
@@ -763,7 +745,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
     held.ports,
     partition,
     {
-      repository: madeRepository,
+      repository: boundRepository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
       pipelinesWritable: { expected: false, wanted: false },
@@ -779,19 +761,19 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
 /** The step is asked for again at its own address under the bindings, naming the repository by its address. */
 test("a configuration step is asked for again by PUT at the bindings' own configurations path", async () => {
   const configured = {
-    repository: madeRepository,
+    repository: boundRepository,
     configurations: { result: "Deferred", reason: "SnapshotUnavailable" },
   };
   const held = recordingRequests(() => configured);
   const answered = await apiConfigureProjectRepository(held.ports, partition, {
-    repository: madeRepository,
+    repository: boundRepository,
   });
   expect(held.requests.map((request) => request.url)).toStrictEqual([
     `${partitionPath}/repositories/configurations`,
   ]);
   expect(held.requests[0]?.init.method).toBe("PUT");
   expect(JSON.parse(String(held.requests[0]?.init.body))).toStrictEqual({
-    repository: madeRepository,
+    repository: boundRepository,
   });
   expect(answered).toStrictEqual({ outcome: "Ok", value: configured });
 });

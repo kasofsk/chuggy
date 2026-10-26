@@ -23,11 +23,6 @@
  * A PERSON'S TOKEN IS A SENTINEL, and every place it could leak is read for it:
  * the answer, the rows recorded, what the process wrote to its own streams, and
  * every forge request but the ones made to the API host under it.
- *
- * A CREATION IS THREE FORGE REQUESTS AND THE CASES ASSERT ALL OF THEM. Which
- * addresses were asked, in what order, is what tells a repository that was made
- * and seeded from one that was made and left empty — neither of which the
- * status says.
  */
 
 import assert from "node:assert/strict";
@@ -43,7 +38,6 @@ import {
 } from "../../src/adapters/forge/githubApp.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
 import { githubUserAuthorization } from "../../src/adapters/forge/githubUserAuthorization.ts";
-import { githubRepositoryCreation } from "../../src/adapters/forge/githubRepositoryCreation.ts";
 import {
   nativeHttpMediaType,
   type HttpErrorEnvelope,
@@ -94,7 +88,6 @@ import {
   repositoryOnboarding,
   type RepositoryConfigurationsHeld,
   type RepositoryConfigurationsPorts,
-  type RepositoryCreationPorts,
   type RepositoryOnboarding,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
@@ -252,17 +245,6 @@ function fixtureClaims(store: OnboardingStore): ForgeInstallationClaims {
           ? store.held.find((row) => row.installationId === askedInstallation)
           : undefined,
       ),
-    accountClaim: (query) =>
-      Promise.resolve(
-        query.tenant === tenant
-          ? store.held.find(
-              (row) =>
-                row.forge === query.forge &&
-                row.app === query.app &&
-                row.account === query.account,
-            )
-          : undefined,
-      ),
   };
 }
 
@@ -346,25 +328,9 @@ function fixtureServiceConfigurations(
   };
 }
 
-/** The half the create route makes repositories through, over the same fetch. */
-function fixtureServiceCreation(
-  recorder: ForgeRecorder,
-): RepositoryCreationPorts {
-  return {
-    forge,
-    repositories: githubRepositoryCreation({
-      fetch: recorder.requestFetch,
-      apiUrl: fixtureApiUrl,
-      appId: fixtureAppIds[app],
-      tokens: listingTokens,
-    }),
-  };
-}
-
 /** What a case composes beyond the durable side: which apps it holds, and which halves it adds. */
 interface FixtureComposition {
   readonly apps: readonly ForgeApp[];
-  readonly creating: boolean;
   readonly image: string | undefined;
   readonly authorizing: boolean;
 }
@@ -441,11 +407,6 @@ function fixtureService(
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
-    ...(composition.creating
-      ? {
-          creation: fixtureServiceCreation(recorder),
-        }
-      : {}),
     ...(composition.authorizing
       ? fixtureServiceAuthorization(t, recorder, halves)
       : {}),
@@ -556,7 +517,6 @@ function fixtureCase(
     readonly granted?: readonly ("AdministerTenant" | "Administer" | "Read")[];
     readonly store?: OnboardingStore;
     readonly apps?: readonly ForgeApp[];
-    readonly creating?: boolean;
     readonly image?: string;
     readonly authorizing?: boolean;
     readonly tenants?: readonly TenantId[];
@@ -580,7 +540,6 @@ function fixtureCase(
     unservedNativeWeb,
     fixtureService(t, store, recorder, access, {
       apps: given.apps ?? bothApps,
-      creating: given.creating ?? false,
       image: given.image,
       authorizing: given.authorizing ?? false,
     }),
@@ -1538,15 +1497,6 @@ const unauthenticatedRequests = [
     headers: { "content-type": nativeHttpMediaType },
     payload: { repository },
   },
-  {
-    method: "POST" as const,
-    url: `${repositoriesRoot}/new`,
-    headers: {
-      "content-type": nativeHttpMediaType,
-      "idempotency-key": "create-engine-1",
-    },
-    payload: { account: "acme", name: "engine", visibility: "private" },
-  },
 ];
 
 test("every route this slice adds answers an unauthenticated caller with 401", async (t) => {
@@ -1567,266 +1517,27 @@ test("every route this slice adds answers an unauthenticated caller with 401", a
   assert.equal(served.store.heldReads, 0);
 });
 
-const createRoot = `${repositoriesRoot}/new`;
 const bootstrapImage = `ghcr.io/acme/chuggy-worker@sha256:${"e".repeat(64)}`;
-const creationKeyed = { ...versioned, "idempotency-key": "create-engine-1" };
-const creating = { account: "acme", name: "engine", visibility: "private" };
 
-/** One claim of one app on the account a creation names, which `/new` needs two of. */
-function fixtureAccountClaim(held: ForgeApp): ForgeInstallationClaimed {
-  return {
-    forge,
-    app: held,
-    account: asForgeAccount("acme"),
-    accountKind: "Organization",
-    installationId: asForgeInstallationId(held === "portal" ? "8001" : "8002"),
-    claimedAt: claimed.claimedAt,
-  };
-}
-
-/** A store holding both claims, which is what every creation case but one starts from. */
-function fixtureCreationStore(
-  held: readonly ForgeApp[] = bothApps,
-): OnboardingStore {
-  const store = fixtureStore();
-  store.held.push(...held.map(fixtureAccountClaim));
-  return store;
-}
-
-/** The repository the forge says it made, which is what the seed and the bind name. */
-function madeAnswer(): Response {
-  return answer(201, { clone_url: repository, default_branch: "main" });
-}
-
-test("creating a repository is the project administrator's and nobody else's", async (t) => {
-  const reading = fixtureCase(t, {
-    granted: ["Read"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await reading.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(served.json<HttpErrorEnvelope>().error.code, "NotFound");
-  assert.deepEqual(reading.recorder.calls, []);
-});
-
-test("a creation with no idempotency key is refused before the forge is asked", async (t) => {
+test("no route makes a repository: a creation is answered as a path no route ever had, and the forge is not asked", async (t) => {
   const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: versioned,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 400);
-  assert.deepEqual(composed.recorder.calls, []);
-});
-
-test("a repository is made, seeded, reserved and bound, and the answer locates it", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      madeAnswer(),
-      answer(201, { content: {} }),
-      answer(201, { id: 1 }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
+    granted: ["AdministerTenant", "Administer", "Read"],
     image: bootstrapImage,
   });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 201);
-  const body = served.json<{
-    repository: string;
-    created: { account: string; name: string; url: string };
-    seeded: boolean;
-    ruleset: { result: string };
-  }>();
-  assert.equal(body.repository, repository);
-  assert.deepEqual(body.created, {
-    account: "acme",
-    name: "engine",
-    url: repository,
-  });
-  assert.equal(body.seeded, true);
-  assert.deepEqual(body.ruleset, { result: "Created" });
-  assert.equal(
-    served.headers["location"],
-    `${repositoriesRoot}/${encodeURIComponent(repository)}`,
-  );
-  assert.deepEqual(
-    composed.recorder.calls.map((call) => call.url),
-    [
-      `${fixtureApiUrl}/orgs/acme/repos`,
-      `${fixtureApiUrl}/repos/acme/engine/contents/.chug/configurations/bootstrap.json`,
-      `${fixtureApiUrl}/repos/acme/engine/rulesets`,
-    ],
-  );
-  assert.deepEqual(composed.store.bound, [
-    {
-      repository,
-      boundAt: "2026-09-11T01:00:00Z",
-      landing: { mode: "Push" },
-      pipelinesWritable: false,
-    },
-  ]);
-});
-
-test("a deployment naming no bootstrap image makes the repository unseeded", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [madeAnswer()],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 201);
-  const body = served.json<{ seeded: boolean; ruleset: { result: string } }>();
-  assert.equal(body.seeded, false);
-  assert.deepEqual(body.ruleset, { result: "Skipped" });
-  assert.deepEqual(
-    composed.recorder.calls.map((call) => call.url),
-    [`${fixtureApiUrl}/orgs/acme/repos`],
-  );
-});
-
-test("the identity a creation is decided under is the one the caller keyed it with", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [madeAnswer(), madeAnswer()],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  for (const key of ["create-engine-1", "create-engine-2"])
-    await composed.app.inject({
+  const sent = (path: string) =>
+    composed.app.inject({
       method: "POST",
-      url: createRoot,
-      headers: { ...versioned, "idempotency-key": key },
-      payload: creating,
+      url: `${repositoriesRoot}/${path}`,
+      headers: { ...versioned, "idempotency-key": "create-engine-1" },
+      payload: { account: "acme", name: "engine", visibility: "private" },
     });
-  assert.deepEqual(
-    composed.store.commands.map((command) => command.operation),
-    ["create-engine-1", "create-engine-2"],
-    "two requests for one repository are two operations and not one",
-  );
-});
-
-test("a tenant missing either claim on the account creates nothing", async (t) => {
-  const portalOnly = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore([app]),
-    creating: true,
-  });
-  const served = await portalOnly.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 422);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "InstallationMissing",
-  );
-  assert.deepEqual(portalOnly.recorder.calls, []);
-});
-
-test("a name the account already holds points at the bind route", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      answer(422, {
-        message: "Repository creation failed.",
-        errors: [{ message: "name already exists on this account" }],
-      }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 409);
-  assert.equal(served.json<HttpErrorEnvelope>().error.code, "RepositoryExists");
-  assert.deepEqual(composed.store.bound, []);
-});
-
-test("a forge that refused the create names the step and carries its words", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      answer(403, { message: "Resource not accessible by integration" }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 422);
-  const envelope = served.json<HttpErrorEnvelope>();
-  assert.equal(envelope.error.code, "ForgeRefused");
-  assert.ok(envelope.error.message.includes("create"));
-  assert.ok(envelope.error.message.includes("not accessible"));
-});
-
-test("a deployment composing no creation half answers that it names no such forge app", async (t) => {
-  const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "ForgeNotConfigured",
-  );
-});
-
-test("a body the creation schema does not name is refused", async (t) => {
-  const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: { ...creating, visibility: "secret" },
-  });
-  assert.equal(served.statusCode, 400);
+  const creation = await sent("new");
+  const unrouted = await sent("never-a-route");
+  assert.equal(creation.statusCode, 404);
+  assert.equal(creation.statusCode, unrouted.statusCode);
+  assert.equal(creation.body.replace("/new", "/never-a-route"), unrouted.body);
   assert.deepEqual(composed.recorder.calls, []);
+  assert.deepEqual(composed.store.commands, []);
 });
 
 /** The landing route, as the console sends a move of one repository's landing. */

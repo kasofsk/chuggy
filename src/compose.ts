@@ -70,7 +70,6 @@ import {
 import {
   repositoryOnboarding,
   type RepositoryConfigurationsPorts,
-  type RepositoryCreationPorts,
   type RepositoryOnboarding,
   type RepositoryOnboardingAuthorization,
   type RepositoryOnboardingForgeApp,
@@ -536,7 +535,6 @@ export interface RepositoryOnboardingComposition {
     RepositoryDefaultBranchPort;
   readonly bootstrapImage?: string;
   readonly publicOrigin?: string;
-  readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
@@ -594,9 +592,6 @@ export function composeRepositoryOnboarding(
             composition.repositories,
           ),
         }),
-    ...(composition.creation === undefined
-      ? {}
-      : { creation: composition.creation }),
     ...(composition.authorization === undefined
       ? {}
       : { authorization: composition.authorization }),

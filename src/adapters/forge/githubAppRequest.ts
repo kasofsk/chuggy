@@ -38,22 +38,14 @@
  * `Denied` and settled; a throttle, a fault, a timeout, a status the caller did
  * not ask for and an answer this side cannot read are `Unavailable` and may be
  * asked again.
- *
- * A REFUSAL CARRIES THE FORGE'S OWN ACCOUNT OF ITSELF AND NOTHING OF OURS. A
- * caller creating something has to tell an administrator why the forge would
- * not — a name already taken, a permission the app was never granted — and
- * neither is derivable from a status. It is read under the same bound as any
- * other body, reduced to printable text, and carries nothing this side sent:
- * the request's own body is never quoted back.
  */
 
 import { open } from "node:fs/promises";
 import { createPrivateKey, type KeyObject } from "node:crypto";
 
 import { SignJWT } from "jose";
-import { z } from "zod";
+import type { z } from "zod";
 
-import { forgeRefusalMessageCharsMax } from "../../contract/http.ts";
 import type { CredentialMintEvidence } from "../../interpreter/repositoryReadEvidence.ts";
 import { githubResponseTextOf } from "./githubResponse.ts";
 
@@ -240,7 +232,6 @@ export type GithubAppAnswered =
   | { readonly answered: "Answer"; readonly response: Response }
   | {
       readonly answered: "Denied";
-      readonly message: string;
       readonly evidence?: CredentialMintEvidence;
     }
   | {
@@ -251,40 +242,9 @@ export type GithubAppAnswered =
 /** One request as a caller spells it, including the one status it treats as an answer. */
 export interface GithubAppRequest {
   readonly url: URL;
-  readonly method: "GET" | "POST" | "PUT";
+  readonly method: "GET" | "POST";
   readonly okStatus: number;
   readonly body?: unknown;
-}
-
-/** The fields of a refusal this tree reads, the rest being the forge's own account of it. */
-const githubRefusalSchema = z.object({
-  message: z.string().optional(),
-  errors: z.array(z.object({ message: z.string().optional() })).optional(),
-});
-
-/** One printable line, so nothing a forge answers with reaches a response as control text. */
-function githubPrintableLine(value: string): string {
-  return [...value]
-    .filter((character) => {
-      const code = character.codePointAt(0) ?? 0;
-      return code >= 0x20 && (code < 0x7f || code > 0x9f);
-    })
-    .join("")
-    .slice(0, forgeRefusalMessageCharsMax);
-}
-
-/** Why the forge says it refused, or nothing where it said nothing this side can read. */
-async function githubRefusalMessage(
-  own: Pick<GithubRequestBounds, "responseBytesMax">,
-  response: Response,
-): Promise<string> {
-  const read = await githubAppRead(own, response, githubRefusalSchema);
-  if (read === undefined) return "";
-  return githubPrintableLine(
-    [read.message, ...(read.errors ?? []).map((error) => error.message)]
-      .filter((part) => part !== undefined && part.length > 0)
-      .join("; "),
-  );
 }
 
 /** What a request is answered in, and the bearer it presents where it presents one. */
@@ -324,9 +284,9 @@ async function githubSend(
   }
   if (response.status === request.okStatus)
     return { answered: "Answer", response };
+  await response.body?.cancel().catch(() => undefined);
   const throttled = githubThrottled(response);
-  if (!githubDeniedStatuses.includes(response.status) || throttled) {
-    await response.body?.cancel().catch(() => undefined);
+  if (!githubDeniedStatuses.includes(response.status) || throttled)
     return {
       answered: "Unavailable",
       evidence: {
@@ -334,10 +294,8 @@ async function githubSend(
         status: response.status,
       },
     };
-  }
   return {
     answered: "Denied",
-    message: await githubRefusalMessage(own, response),
     evidence: { mint: "Status", status: response.status },
   };
 }
