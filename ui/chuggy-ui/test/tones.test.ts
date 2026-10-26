@@ -12,8 +12,6 @@ import { expect, test } from "vitest";
 import { accessInviteLinkStates } from "../../../src/contract/accessPlane.ts";
 import { allActionReaches } from "../../../src/contract/actionReach.ts";
 import {
-  executionOutcomes,
-  executionStatuses,
   phaseRoster,
   threadStandings,
   ticketLandingStates,
@@ -21,7 +19,6 @@ import {
 import {
   actionReachArm,
   conversationStandingArm,
-  executionTone,
   inviteLinkStateTone,
   pillTones,
   phaseTone,
@@ -109,14 +106,6 @@ test("each arm a stage has without evaluators is its own word and its own tone",
       span: { from: undefined, to: undefined },
     }),
   ).toEqual({ word: "Failed", tone: "fail" });
-});
-
-test("every execution status and every outcome draws a tone the pill knows", () => {
-  for (const status of executionStatuses)
-    expect(pillTones).toContain(executionTone(status, undefined, false));
-  for (const outcome of executionOutcomes)
-    expect(pillTones).toContain(executionTone("Terminal", outcome, false));
-  expect(pillTones).toContain(executionTone("Terminal", "Blocked", true));
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {

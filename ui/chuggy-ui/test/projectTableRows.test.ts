@@ -9,19 +9,12 @@ import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
-import {
-  executionOutcomes,
-  executionStatuses,
-} from "../../../src/contract/rosters.ts";
 import type { ProjectExecutionKnown } from "../app/core/projectExecutionIndex.ts";
 import {
-  projectTableExecutionPhrase,
   projectTableRow,
   projectTableRows,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
-import { setVerdict } from "../app/core/ticketLedger.ts";
-import { executionTone, verdictTone } from "../app/core/tones.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const container: ExecutionSummary = {
@@ -76,9 +69,9 @@ const tickets: readonly TicketResponse[] = [
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },
 ];
 
-test("a running ticket's row carries its status and what it runs on", () => {
+test("a running ticket's row carries its verdict and what it runs on", () => {
   const row = projectTableRow(working, known(container), false);
-  expect(row.executionStatus).toBe("Running");
+  expect(row.executionVerdict).toBe("Running");
   expect(row.runsOn).toEqual({
     text: "worker:1",
     title: "registry/worker:1",
@@ -124,7 +117,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
     undefined,
     false,
   );
-  expect(row.executionStatus).toBeUndefined();
+  expect(row.executionVerdict).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
@@ -139,7 +132,7 @@ const failedOlder: ExecutionSummary = {
 test("a terminal execution older than the ticket's own last move reads as the ticket's", () => {
   const row = projectTableRow(working, known(failedOlder), false);
   expect(row.activityAt).toBe(ticketInstants.changedAt);
-  expect(row.executionOutcome).toBe("Failed");
+  expect(row.executionVerdict).toBe("Failed");
 });
 
 const failedNewer: ExecutionSummary = {
@@ -199,8 +192,7 @@ test("an execution a truncated walk left may be superseded, so the row is not jo
 
 test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
-  expect(row.executionOutcome).toBeUndefined();
-  expect(row.executionStatus).toBeUndefined();
+  expect(row.executionVerdict).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
@@ -259,61 +251,4 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
       },
     }),
   ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
-});
-
-test("the execution cell is the outcome where one exists, and the status where none does", () => {
-  const running = projectTableRow(working, known(container), false);
-  expect(projectTableExecutionPhrase(running)).toBe("Running");
-  const finished = { ...running, executionStatus: "Terminal" } as const;
-  expect(
-    projectTableExecutionPhrase({ ...finished, executionOutcome: "Passed" }),
-  ).toBe("Passed");
-  expect(
-    projectTableExecutionPhrase({
-      ...finished,
-      executionOutcome: "ProcessFailed",
-    }),
-  ).toBe("Failed");
-  expect(
-    projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
-  ).toBeUndefined();
-});
-
-/** Derived from the outcome roster, so an outcome the wire grows is a case
- * this asks about for both kinds of task. */
-test("a finished execution's cell draws the word and hue its ticket's ledger does", () => {
-  const evaluator: ExecutionSummary["identity"] = {
-    type: "EvaluationTask",
-    value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
-  };
-  for (const identity of [container.identity, evaluator])
-    for (const outcome of executionOutcomes) {
-      const execution = {
-        ...container,
-        identity,
-        status: "Terminal",
-        outcome,
-      } as const;
-      const row = projectTableRow(working, known(execution), false);
-      const verdict = setVerdict([execution]);
-      expect([
-        projectTableExecutionPhrase(row),
-        executionTone("Terminal", row.executionOutcome, row.executionStopped),
-      ]).toEqual([verdict, verdictTone(verdict)]);
-    }
-});
-
-/** Derived from both rosters, so a status or an outcome the wire grows is a
- * pair this case asks about. */
-test("no execution cell says Terminal", () => {
-  const running = projectTableRow(working, known(container), false);
-  for (const executionStatus of executionStatuses)
-    for (const executionOutcome of [undefined, ...executionOutcomes])
-      expect(
-        projectTableExecutionPhrase({
-          ...running,
-          executionStatus,
-          executionOutcome,
-        }),
-      ).not.toContain("Terminal");
 });

@@ -169,7 +169,7 @@ function taskSetOf(
  * An execution that answered nothing: a wall, or an evaluator whose process
  * died, which the machine treats as a stop to resume rather than a judgement.
  */
-export function executionStopped(row: ExecutionSummary): boolean {
+function executionStopped(row: ExecutionSummary): boolean {
   return (
     row.outcome === "Blocked" ||
     (row.outcome === "ProcessFailed" && row.identity.type === "EvaluationTask")

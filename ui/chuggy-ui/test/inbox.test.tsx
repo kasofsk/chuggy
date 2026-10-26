@@ -297,6 +297,26 @@ test("a row says how its last run ended, and never Terminal", async () => {
   expect(document.body.textContent).not.toContain("Terminal");
 });
 
+/** The escalated ticket's run admitted again and not yet begun, which its
+ * ticket page draws as Starting rather than as the status the wire sends. */
+const admittedRun = {
+  ...failedRun,
+  status: "Admitted",
+  outcome: undefined,
+  terminalAt: undefined,
+};
+
+test("a row draws a run still waiting for its worker as its ticket page does", async () => {
+  drawInbox((url) =>
+    url.includes("/executions")
+      ? answer({ executions: [admittedRun] })
+      : served(url),
+  );
+  await settled();
+  expect(screen.getByText("Starting").className).toBe("pill pill-queued");
+  expect(document.body.textContent).not.toContain("Admitted");
+});
+
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {
   drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
   await settled();

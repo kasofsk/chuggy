@@ -21,9 +21,8 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { agoFigure } from "../core/figures.ts";
-import { projectTableExecutionPhrase } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
-import { executionTone } from "../core/tones.ts";
+import { verdictTone } from "../core/tones.ts";
 import { Figure } from "./ui/Figure.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -100,31 +99,21 @@ export function ticketRowExecutionCell(
   return drawn ?? cellAbsent;
 }
 
-/** An execution column drawn as its own chip where a status is known, and as
- * plain dim text where nothing is joined or the index did not reach this row
- * — a chip would claim a standing the row does not have. */
+/** An execution column drawn as its own chip where an execution is joined, in
+ * the word and hue the ticket's ledger draws it in, and as plain dim text
+ * where nothing is joined or the index did not reach this row — a chip would
+ * claim a standing the row does not have. */
 export function TicketRowExecutionCell(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
-  const row = props.row;
-  const phrase = projectTableExecutionPhrase(row);
-  if (phrase === undefined || row.executionStatus === undefined)
+  const verdict = props.row.executionVerdict;
+  if (verdict === undefined)
     return (
       <span className="text-ink-3">
-        {ticketRowExecutionCell(row, undefined)}
+        {ticketRowExecutionCell(props.row, undefined)}
       </span>
     );
-  return (
-    <Pill
-      tone={executionTone(
-        row.executionStatus,
-        row.executionOutcome,
-        row.executionStopped,
-      )}
-    >
-      {phrase}
-    </Pill>
-  );
+  return <Pill tone={verdictTone(verdict)}>{verdict}</Pill>;
 }
 
 /** A ticket's last activity, wherever it is drawn: how long ago it was,
