@@ -56,6 +56,7 @@ import {
   asSessionStoreStream,
   asSessionTurnId,
   type SessionBearerSecret,
+  type SessionCapability,
   type SessionStoreStream,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
@@ -122,6 +123,7 @@ import {
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
+  workerContractTicketDispatch,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -1181,14 +1183,31 @@ function sessionSettled(
     : reply.code(204).send();
 }
 
+/**
+ * The capabilities a session's facts name to the pod asking: all of them, or
+ * all but `TicketDispatch` to a pod whose release predates it, which holds no
+ * tool it admits.
+ */
+function sessionFactsCapabilities(
+  request: FastifyRequest,
+  capabilities: readonly SessionCapability[],
+): readonly SessionCapability[] {
+  return contractVersionAccepted(
+    workerContractTicketDispatch,
+    workerContractOffered(request),
+  )
+    ? capabilities
+    : capabilities.filter((capability) => capability !== "TicketDispatch");
+}
+
 function sessionFactsRoute(register: SessionRegistrar): void {
-  register("facts", (_request, _reply, { identity }) =>
+  register("facts", (request, _reply, { identity }) =>
     Promise.resolve({
       tenant: identity.partition.tenant,
       project: identity.partition.project,
       session: identity.session,
       kind: identity.kind,
-      capabilities: identity.capabilities,
+      capabilities: sessionFactsCapabilities(request, identity.capabilities),
       credentialSlot: identity.credentialSlot,
       ...(identity.agentReference === undefined
         ? {}

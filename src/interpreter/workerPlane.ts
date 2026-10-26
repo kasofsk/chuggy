@@ -61,6 +61,12 @@ export const workerContractRunnerReleases: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a session's facts may name `TicketDispatch`, a capability a pod of an earlier one refuses its whole answer over. */
+export const workerContractTicketDispatch: WorkerContractRange = {
+  min: { major: 1, minor: 20 },
+  max: workerContractAccepted.max,
+};
+
 /** The versions in which a personal runner's job assignment may name its project, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerProjects: WorkerContractRange = {
   min: { major: 1, minor: 15 },

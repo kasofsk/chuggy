@@ -15,8 +15,8 @@
  * another project's routes 404 and a tenant's or the site's 403. A decision
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
- * fence, so the runtime remains the single writer of a dispatch and of the
- * refusal ledger.
+ * fence, so the runtime remains the single writer of a lead's dispatch and of
+ * the refusal ledger.
  *
  * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
  * by the agent runtime inside the pod, and the pod is the thing being
@@ -41,8 +41,10 @@
 
 import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
+  configurationCanonicalCharsMax,
   jsonStringChars,
   jsonTextBytes,
+  leadObservedCandidateFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
@@ -144,6 +146,20 @@ export const chuggyToolTicketLandingBytesMax =
  */
 export const chuggyToolTicketLandingsResponseBytesMax =
   ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
+  nativeHttpBodyBytesMax;
+
+/** What one character weighs in UTF-8, at its heaviest. */
+const chuggyToolCharBytesMax = 4;
+
+/**
+ * What `dispatch_ticket`'s read of the dispatch view may answer: a page of one
+ * candidate, its canonical configuration at its longest with every character
+ * at its heaviest, and an ordinary answer's bound for the page around it.
+ */
+export const chuggyToolDispatchViewResponseBytesMax =
+  leadObservedCandidateFixedCharsMax +
+  jsonStringChars(0) +
+  configurationCanonicalCharsMax * chuggyToolCharBytesMax +
   nativeHttpBodyBytesMax;
 
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
