@@ -27,8 +27,13 @@ function NeedsYouStep(props: {
   return (
     <span className="text-md text-ink-3">
       {" · "}
-      <Link to={navRoutes.runners} params={props.partition}>
-        Runners
+      <Link
+        to={
+          props.step === "Runners" ? navRoutes.runners : navRoutes.repositories
+        }
+        params={props.partition}
+      >
+        {props.step}
       </Link>
     </span>
   );

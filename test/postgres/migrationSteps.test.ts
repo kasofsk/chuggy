@@ -51,6 +51,7 @@ import {
 import { migration076 } from "../../src/adapters/postgres/schema/migrations/076-pipelines-writable.ts";
 import { migration077 } from "../../src/adapters/postgres/schema/migrations/077-tokens-carry-no-capabilities.ts";
 import { migration079 } from "../../src/adapters/postgres/schema/migrations/079-lead-reads-ticket-landings.ts";
+import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
 import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
@@ -2680,5 +2681,65 @@ test("077 drops the capabilities each registration token was minted with, and a 
       mintedBy: minter,
     });
     assert.equal(await member.consume(personal), undefined);
+  });
+});
+
+/** What request-5's reading and hold hold, as 081 is asked about them. */
+async function declinedRows081(subject: pg.Pool): Promise<unknown> {
+  return {
+    readings: (
+      await subject.query(
+        "SELECT verdict,declined FROM finalization_reconciliation",
+      )
+    ).rows,
+    holds: (await subject.query("SELECT hold_kind FROM finalization_request"))
+      .rows,
+  };
+}
+
+test("081 keeps every reading and hold that stood, and admits a decline beside not promoted and the two holds a decline waits at", async () => {
+  await migrationDatabase("promotion_declined", async (subject) => {
+    await installationBefore(subject, migration081.version);
+    await subject.query(`${deletionPartition}
+      ${renamedFinalization(renamedAttemptPrepared)};
+      INSERT INTO commit_permit
+        (tenant,project,permit,attempt,recovery_epoch,lifecycle_generation)
+      VALUES('tenant-5','project-5','permit-5','attempt-5','epoch-5',1);
+      INSERT INTO finalization_reconciliation
+        (tenant,project,permit,candidate_commit,target_ref,verdict,observed_commit)
+      VALUES('tenant-5','project-5','permit-5',repeat('c',40),'refs/heads/main',
+             'Unreadable',NULL);
+      UPDATE finalization_request
+         SET hold_kind='PreparationRestartsExhausted',hold_passes=1,held_since=now()`);
+    assert.ok((await postgresMigrate(subject)).includes(migration081.version));
+    assert.deepEqual(await declinedRows081(subject), {
+      readings: [{ verdict: "Unreadable", declined: null }],
+      holds: [{ hold_kind: "PreparationRestartsExhausted" }],
+    });
+    assert.equal(
+      (
+        await subject.query<{ granted: boolean }>(
+          "SELECT has_column_privilege($1,'finalization_reconciliation','declined','UPDATE') AS granted",
+          [finalizerRole],
+        )
+      ).rows[0]?.granted,
+      true,
+    );
+    await assert.rejects(
+      subject.query(
+        `UPDATE finalization_reconciliation
+            SET verdict='Promoted',observed_commit=repeat('c',40),declined='RemoteDeclined'`,
+      ),
+      /finalization_reconciliation_decline_is_known/u,
+    );
+    await subject.query(
+      `UPDATE finalization_reconciliation
+          SET verdict='NotPromoted',observed_commit=repeat('a',40),declined='WorkflowsRefused';
+       UPDATE finalization_request SET hold_kind='PromotionWorkflowsRefused'`,
+    );
+    assert.deepEqual(await declinedRows081(subject), {
+      readings: [{ verdict: "NotPromoted", declined: "WorkflowsRefused" }],
+      holds: [{ hold_kind: "PromotionWorkflowsRefused" }],
+    });
   });
 });

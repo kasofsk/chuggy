@@ -144,10 +144,15 @@ interface ScratchAsked {
   readonly no?: ScratchSaid;
 }
 
-/** What the one irreversible act came to, read off the porcelain flag rather than off prose. */
+/**
+ * What the one irreversible act came to, read off the porcelain flag and the
+ * summary beside it rather than off prose. `Declined` carries the reason the
+ * receiving repository gave, which is that repository's text and not ours.
+ */
 export type ScratchPushed =
   | { readonly pushed: "Advanced" }
   | { readonly pushed: "Refused" }
+  | { readonly pushed: "Declined"; readonly reason: string }
   | { readonly pushed: "TimedOut" }
   | { readonly pushed: "Unknown" };
 
@@ -156,6 +161,9 @@ const scratchNoMatchingRefCode = 2;
 
 /** The porcelain summary the receiving repository refuses a ref update with, which `[remote rejected]` and `[remote failure]` deliberately are not. */
 const scratchRefusedSummary = "[rejected]";
+
+/** The porcelain summary a receiving repository that declined the update answers with, its reason after it in parentheses. */
+const scratchDeclinedSummary = "[remote rejected]";
 
 /** The mode every entry this adapter writes takes, a handoff being a file and never a link or a program. */
 const scratchEntryMode = "100644";
@@ -755,24 +763,34 @@ export async function scratchMergeTree(
 }
 
 /**
- * The summary field of the line reporting the ref that did not move, which is
- * what tells a non-fast-forward apart from the receiving repository declining
- * the push or failing to apply it.
+ * What a push git ended unsuccessfully came to, read off the summary field of
+ * the line reporting the ref that did not move: a non-fast-forward is refused,
+ * a repository that would not take the update declined it for the reason after
+ * the summary, and one that failed to apply it or said nothing is unknown.
  */
-function scratchPushSummary(stdout: string): string | undefined {
-  for (const line of stdout.split("\n")) {
-    if (!line.startsWith("!\t")) continue;
-    return line.split("\t")[2];
-  }
-  return undefined;
+export function scratchPushFailed(stdout: string): ScratchPushed {
+  const summary = stdout
+    .split("\n")
+    .find((line) => line.startsWith("!\t"))
+    ?.split("\t")
+    .slice(2)
+    .join("\t");
+  if (summary?.startsWith(scratchRefusedSummary) === true)
+    return { pushed: "Refused" };
+  if (summary?.startsWith(scratchDeclinedSummary) !== true)
+    return { pushed: "Unknown" };
+  const reason = summary.slice(scratchDeclinedSummary.length).trim();
+  return {
+    pushed: "Declined",
+    reason: /^\((.*)\)$/su.exec(reason)?.[1] ?? reason,
+  };
 }
 
 /**
  * The one ref movement this adapter makes: a single-refspec push the receiving
- * repository applies atomically and refuses when it is not a fast-forward. The
- * porcelain flag says the update did not happen and the summary beside it says
- * whose refusal it was, and everything else that stopped the push is unknown
- * rather than refused.
+ * repository applies atomically and refuses when it is not a fast-forward. A
+ * push stopped at its deadline timed out and one stopped otherwise is unknown,
+ * and one git ended is read off its porcelain line.
  */
 export async function scratchPush(
   scratch: GitScratch,
@@ -798,8 +816,5 @@ export async function scratchPush(
       : { pushed: "Unknown" };
   }
   if (ran.code === 0) return { pushed: "Advanced" };
-  const summary = scratchPushSummary(ran.stdout);
-  return summary?.startsWith(scratchRefusedSummary) === true
-    ? { pushed: "Refused" }
-    : { pushed: "Unknown" };
+  return scratchPushFailed(ran.stdout);
 }

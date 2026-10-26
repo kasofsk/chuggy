@@ -15,6 +15,7 @@ import type {
 import {
   escalationDetail,
   escalationDetailLine,
+  escalationEvidenceLine,
   escalationStep,
   nativeActionKindLabel,
   revokedDependencyLine,
@@ -157,6 +158,7 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
           ? ((failed === undefined
               ? undefined
               : runStepLine(failed, reads.setupOverridable)) ??
+            escalationEvidenceLine(escalation.evidence) ??
             escalationDetailLine(escalation.kind, {
               lastSet:
                 reads.ledger === undefined

@@ -45,6 +45,7 @@ import {
   changeProposalMergeReasonLabel,
   escalationDetail,
   escalationEvidenceLabel,
+  escalationEvidenceLine,
   escalationKindLabel,
   escalationStep,
   finalizationAttemptOutcomeLabel,
@@ -209,7 +210,7 @@ test("the wall that is nothing to run the work says so in a reader's words", () 
 
 /** Every evidence of every roster is walked, so a wall added to one leads
  * nowhere until this says where. */
-test("only the wall that is nothing to run the work leads to Runners", () => {
+test("only nothing to run the work leads to Runners, and only refused workflow files to Repositories", () => {
   const evidences = [
     ...blockedReasons,
     ...gitEvidences,
@@ -223,7 +224,19 @@ test("only the wall that is nothing to run the work leads to Runners", () => {
         resumeAt: "ResumeWork",
       }) !== undefined,
   );
-  expect(leading).toStrictEqual(["RequiredCapabilityUnavailable"]);
+  expect(
+    leading.map((evidence) => [
+      evidence,
+      escalationStep({
+        kind: "FinalizationUnavailableEscalated",
+        evidence,
+        resumeAt: "ResumeFinalization",
+      }),
+    ]),
+  ).toStrictEqual([
+    ["RequiredCapabilityUnavailable", "Runners"],
+    ["PromotionWorkflowsRefused", "Repositories"],
+  ]);
   for (const kind of escalationKinds) {
     expect(escalationStep({ kind, resumeAt: "ResumeWork" })).toBeUndefined();
     expect(
@@ -375,6 +388,39 @@ test("the escalation's one line names the finalization wall where the read carri
       resumeAt: "ResumeFinalization",
     }),
   ).toBe("Finalization unavailable");
+});
+
+/**
+ * A push the repository declined clears only once something there changes, so
+ * its hold says what, and a workflow refusal names the settings the
+ * Repositories page holds; every other hold is said by its label alone.
+ */
+test("a declined push says what to change before a resume, and no other hold does", () => {
+  expect(finalizationUnavailableKindLabel("PromotionDeclined")).toBe(
+    "Push declined",
+  );
+  expect(finalizationUnavailableKindLabel("PromotionWorkflowsRefused")).toBe(
+    "Workflow files refused",
+  );
+  const said = [
+    ...blockedReasons,
+    ...gitEvidences,
+    ...finalizationUnavailableKinds,
+  ].flatMap((evidence) => {
+    const line = escalationEvidenceLine(evidence);
+    return line === undefined ? [] : [[evidence, line] as const];
+  });
+  expect(said).toStrictEqual([
+    ["PromotionDeclined", "Check the branch's rules and hooks, then Resume"],
+    [
+      "PromotionWorkflowsRefused",
+      "Turn on Workflow files and the App's Workflows, then Resume",
+    ],
+  ]);
+  for (const [, line] of said) {
+    expect(line.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(line).not.toMatch(/[.:;]/u);
+  }
 });
 
 test("a resume states what it re-runs", () => {
@@ -608,6 +654,8 @@ const labelOfGitEvidence: Readonly<Record<GitEvidenceLabel, string>> = {
   ObjectMissing: "Object missing",
   IntegrationFailed: "Integration failed",
   PromotionTimedOut: "Promotion timed out",
+  RemoteDeclined: "Remote declined",
+  WorkflowsRefused: "Workflows refused",
 };
 
 test.each(gitEvidences)(

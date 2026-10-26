@@ -114,6 +114,10 @@ export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
       return "Integration failed";
     case "PromotionTimedOut":
       return "Promotion timed out";
+    case "RemoteDeclined":
+      return "Remote declined";
+    case "WorkflowsRefused":
+      return "Workflows refused";
   }
 }
 
@@ -153,6 +157,10 @@ export function finalizationUnavailableKindLabel(
       return "Proposal creations exhausted";
     case "ProposalMergesExhausted":
       return "Proposal merges exhausted";
+    case "PromotionDeclined":
+      return "Push declined";
+    case "PromotionWorkflowsRefused":
+      return "Workflow files refused";
   }
 }
 
@@ -396,17 +404,34 @@ export function escalationDetail(escalation: TicketEscalation): string {
 }
 
 /** Where the way past an escalation is, for one whose line can name a page. */
-export type EscalationStep = "Runners";
+export type EscalationStep = "Runners" | "Repositories";
 
 /** The page an escalation's one line leads to: where the project's work runs,
- * for a wall that is nothing being there to run it or a pool that lost it. */
+ * for a wall that is nothing being there to run it or a pool that lost it, and
+ * where a repository's Workflow files are set, for a push refused for them. */
 export function escalationStep(
   escalation: TicketEscalation,
 ): EscalationStep | undefined {
-  return escalation.evidence === "RequiredCapabilityUnavailable" ||
+  if (
+    escalation.evidence === "RequiredCapabilityUnavailable" ||
     escalation.lost?.runner.kind === "Pool"
-    ? "Runners"
+  )
+    return "Runners";
+  return escalation.evidence === "PromotionWorkflowsRefused"
+    ? "Repositories"
     : undefined;
+}
+
+/** What has to change before a resume gets a declined push past, for an
+ * escalation whose evidence is one. */
+export function escalationEvidenceLine(
+  evidence: TicketEscalation["evidence"],
+): string | undefined {
+  if (evidence === "PromotionWorkflowsRefused")
+    return "Turn on Workflow files and the App's Workflows, then Resume";
+  if (evidence === "PromotionDeclined")
+    return "Check the branch's rules and hooks, then Resume";
+  return undefined;
 }
 
 /** What the page knows about the wall, which is what the second line can name. */

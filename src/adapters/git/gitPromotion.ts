@@ -10,6 +10,13 @@
  * have been sent, because collapsing it into a refusal would let a candidate be
  * promoted twice, and the repository is the only authority that can settle it.
  *
+ * A DECLINED PUSH IS AMBIGUOUS TOO, AND ITS EVIDENCE SAYS WHO DECLINED IT. A
+ * repository that would not take the update for a reason of its own answers
+ * `RemoteDeclined`, and GitHub refusing a credential that may not change a
+ * workflow file answers `WorkflowsRefused`, read off the reason GitHub gives.
+ * Neither is a refusal: a decline says nothing of the target, so neither is
+ * sent to the re-read that means it moved, and the reading proves where it is.
+ *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by
  * itself; forcing it, with or without a lease, would put the decision here,
@@ -235,6 +242,10 @@ async function gitPromotionIntegrate(
   return candidateIntegrate(own.scratch, authorized.credential, integration);
 }
 
+/** The reason GitHub declines a push with where the credential behind it may not create or update a workflow file. */
+const gitPromotionWorkflowsRefusal =
+  "refusing to allow a GitHub App to create or update workflow ";
+
 /** What the remote holds now, which is the read that turns a refusal into information. */
 async function gitPromotionRefusedBy(
   own: GitPromotionState,
@@ -283,6 +294,13 @@ async function gitPromotionPromote(
       return { promoted: "Advanced" };
     case "Refused":
       return gitPromotionRefusedBy(own, promotion, authorized.credential);
+    case "Declined":
+      return {
+        promoted: "Ambiguous",
+        evidence: pushed.reason.startsWith(gitPromotionWorkflowsRefusal)
+          ? "WorkflowsRefused"
+          : "RemoteDeclined",
+      };
     case "TimedOut":
       return { promoted: "Ambiguous", evidence: "PromotionTimedOut" };
     case "Unknown":

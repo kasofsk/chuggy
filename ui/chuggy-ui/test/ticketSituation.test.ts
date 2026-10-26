@@ -270,6 +270,43 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
   });
 });
 
+/**
+ * A landing whose push the repository declined parks at the finalization wall
+ * once its hold has waited, and the card says what has to change before Resume
+ * gets it past; a workflow refusal leads to where Workflow files is set.
+ */
+test("a landing whose push was declined says what to change, and a workflow refusal leads to Repositories", () => {
+  const parked = (
+    evidence: "PromotionDeclined" | "PromotionWorkflowsRefused",
+  ) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "FinalizationUnavailableEscalated",
+            evidence,
+            resumeAt: "ResumeFinalization",
+          },
+        }),
+      }),
+    );
+  expect(parked("PromotionWorkflowsRefused")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Workflow files refused",
+    step: "Repositories",
+    more: "Turn on Workflow files and the App's Workflows, then Resume",
+    reason: undefined,
+  });
+  expect(parked("PromotionDeclined")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Push declined",
+    step: undefined,
+    more: "Check the branch's rules and hooks, then Resume",
+    reason: undefined,
+  });
+});
+
 test("a ticket that needs you for anything else leads to no page", () => {
   const parked = ticketSlot(
     reads({

@@ -22,21 +22,30 @@
  */
 
 import assert from "node:assert/strict";
+import { chmodSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { after, before, test } from "node:test";
 
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { FinalizationClaim } from "../../src/interpreter/finalizer.ts";
+import {
+  finalizerDefaults,
+  type FinalizationClaim,
+} from "../../src/interpreter/finalizer.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   finalizerClaim,
   finalizerDrain,
+  finalizerExpireClaim,
+  finalizerPassOnce,
   finalizerPhase,
   finalizerProject,
   finalizerQuiesce,
+  finalizerRemotePort,
   finalizerRigOpen,
+  finalizerSubject,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
@@ -254,3 +263,83 @@ async function laterRequestHeldAt(
     ],
   );
 }
+
+/** What one project's finalization rows hold after a pass, read as the owner sees them. */
+async function declinedRows(project: FinalizerProject): Promise<unknown> {
+  const keys = [project.partition.tenant, project.partition.project];
+  return {
+    attempts: (
+      await rig.harness.query(
+        "SELECT count(*)::int AS made FROM finalization_attempt WHERE tenant=$1 AND project=$2",
+        keys,
+      )
+    )[0]?.["made"],
+    readings: await rig.harness.query(
+      `SELECT verdict, declined FROM finalization_reconciliation
+        WHERE tenant=$1 AND project=$2`,
+      keys,
+    ),
+    request: (
+      await rig.harness.query(
+        `SELECT state, hold_kind FROM finalization_request
+          WHERE tenant=$1 AND project=$2 AND request=$3`,
+        [...keys, project.request],
+      )
+    )[0],
+  };
+}
+
+/**
+ * A push the receiving repository declines over a real remote is prepared and
+ * pushed again until the restarts are spent: each reading keeps the decline,
+ * the request then holds under its own kind rather than as restarts spent, and
+ * after the dwell the ticket escalates with that kind as the evidence the desk
+ * reads.
+ */
+test("a declined push is pushed again until its restarts are spent, held under its own kind, and escalates with it", async () => {
+  const { project, remote } = await finalizerSubject(
+    rig,
+    "unavailable-declined",
+    [{ path: "one.txt", content: "one\n" }],
+  );
+  const hook = join(remote.origin, "hooks", "pre-receive");
+  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+  chmodSync(hook, 0o700);
+  const port = finalizerRemotePort(rig);
+  const attempts = finalizerDefaults.preparationRestartsMax + 1;
+  for (
+    let pass = 0;
+    pass < finalizerDefaults.holdPassesMax + 4 * attempts;
+    pass += 1
+  ) {
+    await finalizerPassOnce(rig, project, port, `declined-${String(pass)}`);
+    await finalizerExpireClaim(rig, project);
+  }
+  assert.deepEqual(await declinedRows(project), {
+    attempts,
+    readings: Array.from({ length: attempts }, () => ({
+      verdict: "NotPromoted",
+      declined: "RemoteDeclined",
+    })),
+    request: { state: "Registered", hold_kind: "PromotionDeclined" },
+  });
+  await finalizerDrain(rig.harness, project.partition, project.memory);
+  const asApi = postgresHarnessRolePool(apiRole);
+  try {
+    assert.deepEqual(
+      (
+        await postgresNativeReads(asApi).ticket(
+          project.partition,
+          asTicketId(project.ticket),
+        )
+      )?.escalation,
+      {
+        kind: "FinalizationUnavailableEscalated",
+        evidence: "PromotionDeclined",
+        resumeAt: "ResumeFinalization",
+      },
+    );
+  } finally {
+    await asApi.end();
+  }
+});
