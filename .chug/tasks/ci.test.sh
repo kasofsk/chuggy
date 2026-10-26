@@ -514,6 +514,56 @@ run_last_commit
 check "a change whose name holds a tab is run in full" 0 "$RC" "full run (a changed path's name cannot be read as a line)"
 refute "the full run reaches Quint" 0 "$RC" "check-model: SKIPPED"
 
+# A LISTING GIT REFUSES SELECTS: a declaration whose pathspec git will not read
+# selects its gate, and a change whose tree git cannot read is run in full.
+stub_repo 0
+mkdir -p "$R/notes/kept"
+printf 'a\n' > "$R/notes/kept/x"
+sed '/^	check-roster)$/,/;;/ s|^\(		ci_text .*\)$|\1 ":(nosuchmagic)x"|' \
+	"$R/.chug/tasks/_ci-select.sh" > "$WORK/.declared"
+cat "$WORK/.declared" > "$R/.chug/tasks/_ci-select.sh"
+commit_all baseline
+printf 'a\n' > "$R/notes/other.txt"
+commit_all unrelated
+run_last_commit
+check "a declaration git cannot list selects its gate" 0 "$RC" "stub check-roster"
+printf 'b\n' > "$R/notes/kept/x"
+commit_all unreadable
+tree="$(git -C "$R" rev-parse HEAD:notes/kept)"
+rm "$R/.git/objects/$(printf '%s' "$tree" | cut -c1-2)/$(printf '%s' "$tree" | cut -c3-)"
+run_last_commit
+check "a change git cannot list is run in full" 0 "$RC" "full run (the change since"
+
+# A WHOLE-TREE GATE IS SELECTED BY WHAT IT DECLARES: its key holds the tree,
+# so its pathspecs alone stand between a change and a skipped gate. Each path
+# alone selects every such gate that declares it.
+stub_repo 0
+commit_all baseline
+for case in \
+	"src/x.ts|check-source unit|check-boundaries" "test/x.ts|check-source unit|check-boundaries" \
+	"ui/x.ts|check-source unit|check-boundaries" "scripts/x.ts|check-source unit|check-boundaries" \
+	"images/x|check-source unit" "deploy/x.yaml|check-source unit" "model/x.qnt|check-source unit" \
+	".chug/configurations/x.json|check-source unit" ".chug/workloads/x.json|check-source unit" \
+	".chug/actions/x.json|check-source unit" "tsconfig.contract.json|check-source unit" \
+	"tsconfig.contract-pack.json|check-source unit" ".chug/tasks/check-source.sh|check-source unit" \
+	".chug/tasks/check-console-sheets.sh|check-source unit" \
+	"deploy/rig/images/README.md|check-source unit" ".chug/actions/README.md|check-source unit" \
+	".chug/prompts/x.md|check-source unit" ".chug/tasks/review-change.md|check-source unit" \
+	".dependency-cruiser.cjs|check-source unit|check-boundaries" \
+	".chug/tasks/check-boundaries.sh|check-boundaries" ".chug/tasks/check-roster.sh|check-roster" \
+	".claude/settings.json|check-roster"; do
+	path="${case%%|*}"
+	mkdir -p "$R/$(dirname "$path")"
+	printf '# changed\n' >> "$R/$path"
+	commit_all "$path"
+	run_last_commit
+	gates="${case#*|}|"
+	while [ -n "$gates" ]; do
+		refute "$path selects ${gates%%|*}" 0 "$RC" "${gates%%|*}: SKIPPED"
+		gates="${gates#*|}"
+	done
+done
+
 # A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites
 # read the roles file, the model's text and one gate's script; the database
 # and authority suites read the wipe and import helpers from all over the
@@ -811,6 +861,13 @@ printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/.githooks/pre-commit"
 commit_all hook
 run_last_commit 1
 check "the hook selects its suite" 0 "$RC" "  - .githooks/pre-commit.test.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/two words.test.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/two words.sh"
+commit_all spaced
+printf '# changed\n' >> "$R/.chug/tasks/two words.sh"
+commit_all spaced-script
+run_last_commit 1
+check "a script whose name holds a space selects its suite" 0 "$RC" "  - .chug/tasks/two words.test.sh"
 printf '#!/bin/sh\nexit 0\n# changed\n' > "$R/deploy/rig/drill.sh"
 commit_all script
 run_last_commit 1
@@ -819,6 +876,7 @@ printf '\n# changed\n' >> "$R/.chug/tasks/ci.sh"
 commit_all sequencer
 run_last_commit 1
 check "the sequencer selects its suite" 0 "$RC" "  - .chug/tasks/ci.test.sh"
+refute "the sequencer selects every gate" 0 "$RC" "SKIPPED (no relevant changes)"
 printf 'check:\n    true\n' > "$R/justfile"
 commit_all recipe
 run_last_commit 1
@@ -827,6 +885,11 @@ printf 'export default [{}];\n' > "$R/eslint.config.js"
 commit_all rules
 run_last_commit 1
 check "the lint rules select the suite that proves them" 0 "$RC" "  - .chug/tasks/check-source.test.sh"
+# The sequencer selects every gate, and so does its selection library alone.
+printf '\n# changed\n' >> "$R/.chug/tasks/_ci-select.sh"
+commit_all selection
+run_last_commit
+refute "the selection library selects every gate" 0 "$RC" "SKIPPED (no relevant changes)"
 
 # A PLACE A TOOL LOOKS IS AN INPUT WHILE IT HOLDS NOTHING. The console's
 # formatter, bundler, style pipeline, browser list and package manager each
@@ -871,8 +934,8 @@ check "a setting the console's tools read is no input of the model's gate" 0 "$R
 # THE MODEL'S GATE FOLLOWS QUINT: a lock that moves no package in quint's
 # closure leaves it out, and one that moves quint or a package quint depends on
 # brings it in, read past any colour or diff program git is configured with. A
-# lock that cannot be read at either end brings it in too. The manifest is not
-# one of its inputs.
+# lock that cannot be read at either end, or compared at all, brings it in
+# too. The manifest is not one of its inputs.
 stub_repo 0
 lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
 printf '{ "devDependencies": { "left-pad": "1.0.0" } }\n' > "$R/package.json"
@@ -883,6 +946,12 @@ commit_all other-package
 run_last_commit
 check "a lock change that leaves quint's closure alone skips Quint" 0 "$RC" "check-model: SKIPPED"
 check "a package change still reaches the model's generated API" 0 "$RC" "stub check-model-api"
+OUT="$WORK/.out"
+set +e
+(cd "$R" && TMPDIR="$WORK/absent-tmp" CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1
+RC=$?
+set -e
+refute "a lock compared where no scratch file can be made selects Quint" 0 "$RC" "check-model: SKIPPED"
 # What npm records of a copy beside what it is: the flags it derives from who
 # asked, and where it put the copy, which a lock moves with nothing installed
 # changing for quint.
@@ -1374,6 +1443,55 @@ check "a whole-tree gate whose verdict reads nothing else is keyed on nothing el
 	"plain $((gate_calls - narrowed - keyed))"
 printf 'with inputs %s\n' "$(grep -c '|--inputs|' "$TRLOG" || true)" >> "$OUT"
 check "no gate keyed on the whole tree passes inputs" 0 "$RC" "with inputs $narrowed"
+# Each narrowed gate holds exactly what it declares: the packages it runs or
+# the whole install, its pathspecs, text before code, as the scope of its
+# ignored files and as its inputs, and after `--` the places its tools look.
+pin_scope() { # <gate or suite> <what it holds of the install, or ""> <pathspec>... [-- <place>...]
+	pin_id="$1"
+	pin_held="${2:+--tool|$2|}"
+	shift 2
+	pin_specs=""
+	pin_inputs=""
+	pin_places=""
+	while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+		pin_specs="$pin_specs '$1'"
+		pin_inputs="$pin_inputs--inputs|$1|"
+		shift
+	done
+	[ "$#" -eq 0 ] || shift
+	for pin_place do pin_places="$pin_places '$pin_place'"; done
+	[ -z "$pin_places" ] || pin_places="--tool|$record_tool_probed$pin_places|"
+	grep "^run|--name|$pin_id|" "$TRLOG" > "$WORK/.line" || true
+	OUT="$WORK/.line"
+	check "$pin_id holds exactly the scope it declares" 0 "$RC" \
+		"run|--name|$pin_id|--tool|$record_tool_node|$pin_held--tool|$record_tool_ignored$pin_specs|$pin_places$pin_inputs--salt|$salt|"
+	OUT="$WORK/.log"
+}
+pin_scope check-model-api "$record_tool_installed '@informalsystems/quint' 'prettier'" \
+	':(glob)model/**/*.qnt' scripts/generate-model-api.ts src/generated src/domain/generated \
+	.chug/tasks/check-model-api.sh ':(glob)**/package.json' -- scripts/node_modules scripts/package.json
+pin_scope check-conformance "$record_tool_installed 'zod'" src/domain src/generated test/conformance \
+	test/domain test/itf test/golden model .chug/tasks/check-conformance.sh ':(glob)**/package.json' \
+	-- src/node_modules src/package.json
+pin_scope check-random "$record_tool_installed 'zod'" src/domain src/generated test/random \
+	test/conformance test/domain test/itf model .chug/tasks/check-random.sh ':(glob)**/package.json' \
+	-- src/node_modules src/package.json
+pin_scope check-console "$record_tool_install" ui src/contract test/fixtures/configurations \
+	.chug/configurations scripts/console-policy.ts scripts/check-console-policy.ts package-lock.json \
+	tsconfig.json .gitignore .prettierrc.json .prettierignore .chug/tasks/check-console.sh \
+	':(glob)**/package.json' -- .browserslistrc browserslist .editorconfig .npmrc .prettierrc \
+	package.yaml lerna.json pnpm-workspace.yaml ':(glob).postcssrc*' ':(glob)postcss.config.*' \
+	src/node_modules src/package.json src/tsconfig.json
+pin_scope check-postgres "$record_tool_install" src test deploy/rig/wipe-tickets.sql package.json \
+	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
+	-- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
+pin_scope check-queries "$record_tool_install" src test scripts ui package.json tsconfig.json \
+	eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh \
+	-- ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
+pin_scope check-keto "$record_tool_install" src test .chug/tasks/keto package.json \
+	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
+	.chug/tasks/check-keto.sh \
+	-- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 
 run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_URL=http://store.test TRACK_RECORD_NAMESPACE=elsewhere
 recorded_log
@@ -1389,6 +1507,20 @@ refute "a full run asks no gate for a pass on record" 0 "$RC" "FRESH=unset"
 run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_FRESH=1
 recorded_log
 refute "TRACK_RECORD_FRESH=1 reaches every gate" 0 "$RC" "FRESH=unset"
+
+# A gate the selection library does not name is keyed on the whole tree.
+stub_repo 0
+awk '{ print } /^run_selected_gate check-vendored / {
+	print "run_selected_gate undeclared \"undeclared\" ./.chug/tasks/undeclared.sh" }' \
+	"$R/.chug/tasks/ci.sh" > "$WORK/.undeclared"
+cat "$WORK/.undeclared" > "$R/.chug/tasks/ci.sh"
+printf '#!/bin/sh\necho stub undeclared\nexit 0\n' > "$R/.chug/tasks/undeclared.sh"
+chmod +x "$R/.chug/tasks/undeclared.sh"
+git -C "$R" add -A
+run_recorded TRACK_RECORD_TOKEN=t
+recorded_log
+check "a gate the selection library does not name is keyed on the whole tree" 0 "$RC" \
+	"run|--name|undeclared|$common--|./.chug/tasks/undeclared.sh|"
 
 # A reused pass is counted as a pass and as reused, from track-record's own
 # line for that gate or suite — check-model prints the line of check-model-api,
@@ -1409,6 +1541,81 @@ check "a reused suite says so" 0 "$RC" "    track-record: REUSED .chug/tasks/pas
 recorded_log
 check "a suite is wrapped on its inputs, keyed on the platform too" 0 "$RC" \
 	"run|--name|.chug/tasks/passing.test.sh|--tool|$record_tool_node|--tool|$record_tool_ignored '.chug/tasks/passing.test.sh' '.chug/tasks/passing.sh' '.chug/tasks/_suite.sh'|--inputs|.chug/tasks/passing.test.sh|--inputs|.chug/tasks/passing.sh|--inputs|.chug/tasks/_suite.sh|--salt|$salt|--platform|--|sh|.chug/tasks/passing.test.sh|"
+# A suite takes the salt the sequencer names, so a new one disowns its pass as
+# it does a gate's, and a suite whose name holds a space is one input.
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/two words.test.sh"
+printf '#!/bin/sh\nexit 0\n' > "$R/.chug/tasks/two words.sh"
+sed 's/^record_salt=.*/record_salt="another-salt"/' "$R/.chug/tasks/ci.sh" > "$WORK/.salted"
+cat "$WORK/.salted" > "$R/.chug/tasks/ci.sh"
+git -C "$R" add -A
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1
+recorded_log
+check "a suite is keyed on the salt the sequencer names" 0 "$RC" \
+	"|--salt|another-salt|--platform|--|sh|.chug/tasks/passing.test.sh|"
+check "a suite whose name holds a space is one input" 0 "$RC" \
+	"|--inputs|.chug/tasks/two words.test.sh|--inputs|.chug/tasks/two words.sh|--inputs|.chug/tasks/_suite.sh|"
+
+# Each suite holds exactly what it declares: itself, the script it proves, the
+# shared harness and what that script reads, or the whole tree for one that
+# proves a gate keyed on it.
+stub_repo 0
+commit_all baseline
+for suite in .chug/tasks/ci.test.sh .chug/tasks/check-source.test.sh \
+	.chug/tasks/check-boundaries.test.sh .chug/tasks/check-duplication.test.sh \
+	.chug/tasks/check-comments.test.sh .chug/tasks/check-conformance.test.sh \
+	.chug/tasks/check-model-api.test.sh .chug/tasks/check-shell-quoting.test.sh \
+	.chug/tasks/check-random.test.sh .chug/tasks/emit-goldens.test.sh .chug/tasks/check-keto.test.sh \
+	.chug/tasks/check-postgres.test.sh .chug/tasks/check-queries.test.sh .chug/tasks/other.test.sh \
+	.githooks/pre-commit.test.sh images/worker/core.test.sh deploy/rig/drill.test.sh; do
+	mkdir -p "$R/${suite%/*}"
+	printf '#!/bin/sh\nexit 0\n' > "$R/$suite"
+done
+git -C "$R" add -A
+run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=1
+recorded_log
+pin_scope .chug/tasks/ci.test.sh "" .chug/tasks/ci.test.sh .chug/tasks/ci.sh .chug/tasks/_ci-select.sh \
+	.chug/tasks/_ignored-inputs.sh .chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh \
+	.chug/tasks/_suite.sh justfile package.json
+pin_scope .chug/tasks/check-source.test.sh "$record_tool_install" .chug/tasks/check-source.test.sh \
+	.chug/tasks/check-source.sh .chug/tasks/_suite.sh tsconfig.json tsconfig.contract.json \
+	eslint.config.js .prettierrc.json .prettierignore package.json
+pin_scope .chug/tasks/check-boundaries.test.sh "$record_tool_install" \
+	.chug/tasks/check-boundaries.test.sh .chug/tasks/check-boundaries.sh .chug/tasks/_suite.sh \
+	tsconfig.json .dependency-cruiser.cjs package.json
+pin_scope .chug/tasks/check-duplication.test.sh "$record_tool_install" \
+	.chug/tasks/check-duplication.test.sh .chug/tasks/check-duplication.sh .chug/tasks/_suite.sh \
+	.jscpd.json package.json
+pin_scope .chug/tasks/check-comments.test.sh "$record_tool_install" .chug/tasks/check-comments.test.sh \
+	.chug/tasks/check-comments.sh .chug/tasks/_suite.sh package.json
+pin_scope .chug/tasks/check-conformance.test.sh "$record_tool_installed 'zod'" \
+	.chug/tasks/check-conformance.test.sh .chug/tasks/_suite.sh src/domain src/generated \
+	test/conformance test/domain test/itf test/golden model .chug/tasks/check-conformance.sh \
+	':(glob)**/package.json' -- src/node_modules src/package.json
+pin_scope .chug/tasks/check-model-api.test.sh "$record_tool_installed '@informalsystems/quint' 'prettier'" \
+	.chug/tasks/check-model-api.test.sh .chug/tasks/_suite.sh ':(glob)model/**/*.qnt' \
+	scripts/generate-model-api.ts src/generated src/domain/generated .chug/tasks/check-model-api.sh \
+	':(glob)**/package.json' -- scripts/node_modules scripts/package.json
+pin_scope .chug/tasks/check-shell-quoting.test.sh "$record_tool_install"
+pin_scope .chug/tasks/check-random.test.sh "$record_tool_installed 'zod'" \
+	.chug/tasks/check-random.test.sh .chug/tasks/_suite.sh src test .chug/tasks/check-conformance.sh \
+	src/domain src/generated test/random test/conformance test/domain test/itf model \
+	.chug/tasks/check-random.sh ':(glob)**/package.json' -- src/node_modules src/package.json
+pin_scope .chug/tasks/emit-goldens.test.sh "$record_tool_installed 'prettier' '@informalsystems/quint'" \
+	.chug/tasks/emit-goldens.test.sh .chug/tasks/emit-goldens.sh .chug/tasks/_suite.sh .gitignore \
+	.prettierignore ':(glob)model/**/*.qnt' .chug/tasks/check-model.sh
+pin_scope .chug/tasks/check-keto.test.sh "" .chug/tasks/check-keto.test.sh .chug/tasks/check-keto.sh \
+	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh \
+	.chug/tasks/keto
+for suite in check-postgres check-queries; do
+	pin_scope ".chug/tasks/$suite.test.sh" "" ".chug/tasks/$suite.test.sh" ".chug/tasks/$suite.sh" \
+		.chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh
+done
+pin_scope .chug/tasks/other.test.sh "" .chug/tasks/other.test.sh .chug/tasks/other.sh .chug/tasks/_suite.sh
+pin_scope .githooks/pre-commit.test.sh "" .githooks/pre-commit.test.sh .githooks/pre-commit \
+	.chug/tasks/_suite.sh
+pin_scope images/worker/core.test.sh "" images/worker/core.test.sh images/worker/core.sh \
+	.chug/tasks/_suite.sh package.json
+pin_scope deploy/rig/drill.test.sh "" deploy/rig/drill.test.sh deploy/rig/drill.sh .chug/tasks/_suite.sh
 
 # A REUSED line turns no failure into a pass and counts nothing then.
 stub_failing() { # <gate> <exit> — every named gate stubbed clean but that one
@@ -1527,6 +1734,14 @@ same_key sealed written
 check "what npm, a console's build and Claude Code write is the same key" 0 "$RC" "same key"
 OUT="$WORK/toolfails"
 refute "nothing in scope makes a tool fail" 0 0 "toolfail|"
+# An install npm kept no record of is one no key can hold, so the tool that
+# reads the record fails and leaves the gate unrecorded.
+mv "$R/node_modules/.package-lock.json" "$WORK/install-record"
+run_recorded TRACK_RECORD_TOKEN=t STUB_TR_DIGEST=1
+OUT="$TRLOG"
+check "an install with no record fails the tool that reads it" 0 "$RC" \
+	"toolfail|check-figures|$record_tool_install"
+mv "$WORK/install-record" "$R/node_modules/.package-lock.json"
 
 # The listing prints names and hashes on stdout alike, so a name is keyed even
 # where stderr cannot be opened; a listing that fails fails the tool rather
@@ -1700,8 +1915,8 @@ lock_json 0.33.0 1.1.0 4.0.0 1.0.1 > "$R/node_modules/.package-lock.json"
 # the package that asks for it before the one at the root, a workspace through
 # its link, and a dependency installed nowhere printed as absent. Each package
 # is printed by what it is and each one asked for by what the asker gets. A
-# record that holds no package named fails, and so does a call that names
-# none.
+# record that holds no package named fails, and so do a call that names none
+# and a record that holds no packages at all.
 closure_lock() { # <b's flags> <where a's copy of b is> <where w's copy of b is>
 	printf '{ "packages": {\n'
 	printf '  "": { "dependencies": { "a": "1" } },\n'
@@ -1751,6 +1966,20 @@ for closure in flags hoisted swapped; do
 	*) check "a lock that records b $closure is the same closure" 0 0 "same closure" ;;
 	esac
 done
+# Optional and peer dependencies are followed as plain ones are, and a link
+# whose target the record does not hold is the place it points at.
+printf '{ "packages": {
+  "node_modules/a": { "version": "1.0.0", "integrity": "sha512-a", "dependencies": { "l": "*" },
+    "optionalDependencies": { "o": "1" }, "peerDependencies": { "p": "1" } },
+  "node_modules/o": { "version": "3.0.0", "integrity": "sha512-o" },
+  "node_modules/p": { "version": "4.0.0", "integrity": "sha512-p" },
+  "node_modules/l": { "resolved": "../outside/l", "link": true }
+} }\n' > "$WORK/asked.json"
+closure_of "$WORK/asked.json" asked
+check "an optional dependency is followed" 0 "$RC" "a@1.0.0 sha512-a > o o@3.0.0 sha512-o"
+check "a peer dependency is followed" 0 "$RC" "a@1.0.0 sha512-a > p p@4.0.0 sha512-p"
+check "a link the record holds no target for is where it points" 0 "$RC" \
+	"a@1.0.0 sha512-a > l l link ../outside/l"
 OUT="$WORK/.closure"
 set +e
 sh "$INSTALLED" --lock "$WORK/lock.json" a nope > "$WORK/.closure" 2>&1
@@ -1762,10 +1991,17 @@ sh "$INSTALLED" --lock "$WORK/lock.json" > "$WORK/.closure" 2>&1
 RC=$?
 set -e
 check "a call naming no package could not run" 2 "$RC" "name a package"
+printf '{ "lockfileVersion": 3 }\n' > "$WORK/bare-lock.json"
+set +e
+sh "$INSTALLED" --lock "$WORK/bare-lock.json" a > "$WORK/.closure" 2>&1
+RC=$?
+set -e
+check "a record that holds no packages fails" 1 "$RC" "holds no packages"
 
 # A place a tool looks is described whatever git makes of what is there, a
 # file tracked, untracked or ignored each by its content, and a place that
-# holds nothing prints nothing. A call that names none could not run.
+# holds nothing prints nothing. A call that names none could not run, and a
+# listing git cannot make fails rather than reading as places holding nothing.
 stub_repo 0
 printf 'node_modules\n' > "$R/.gitignore"
 printf 'root = true\n' > "$R/.editorconfig"
@@ -1790,6 +2026,12 @@ set +e
 RC=$?
 set -e
 check "a call naming no place could not run" 2 "$RC" "name a path"
+echo garbage > "$R/.git/index"
+set +e
+(cd "$R" && sh .chug/tasks/_probed-inputs.sh .editorconfig) > "$WORK/.probed" 2>&1
+RC=$?
+set -e
+check "a listing of the places that fails fails the tool" 128 "$RC" "index file"
 
 # A wrapped suite still has its cap.
 stub_repo 0

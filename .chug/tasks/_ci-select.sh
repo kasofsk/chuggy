@@ -213,7 +213,7 @@ ci_declare() { # <gate id or suite path>
 		;;
 	check-roster)
 		ci_tree
-		ci_text CLAUDE.md .agents .codex .chug/tasks/check-roster.sh
+		ci_text .claude/settings.json CLAUDE.md .agents .codex .chug/tasks/check-roster.sh
 		;;
 	check-boundaries)
 		ci_tree
