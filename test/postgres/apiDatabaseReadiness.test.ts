@@ -95,7 +95,8 @@ test("each check answers yes over the migrated schema as its own role, and no as
 
 test("as a login role holding both group roles by grant, each check answers yes and a start refuses nothing", async () => {
   const admin = postgresPool(postgresHarnessUrl());
-  const login = `chuggy_readiness_${randomUUID().replaceAll("-", "")}`;
+  /** Named outside `chuggy`, so the suites that sweep the server's chuggy roles never meet it. */
+  const login = `readiness_login_${randomUUID().replaceAll("-", "")}`;
   const password = randomUUID();
   await admin.query(
     `CREATE ROLE ${login} WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD '${password}'`,
