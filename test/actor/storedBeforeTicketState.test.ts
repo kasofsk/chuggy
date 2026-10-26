@@ -176,7 +176,7 @@ for (const [name, journal] of Object.entries(pinned.result)) {
       const expected = journal.expected[at];
       assert.ok(expected, `${name} row ${String(at + 1)} has no pin`);
       const post = replayStep(held, entry.event);
-      const projection = projectionChanges(held.graph, post.graph);
+      const projection = projectionChanges(held.graph, post.graph, entry.event);
       for (const row of projection) versions.set(row.ticket, entry.seq);
       if (entry.event.type === "TicketCreated")
         contracts.set(entry.event.value.id, contract);

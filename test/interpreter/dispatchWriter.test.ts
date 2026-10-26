@@ -87,6 +87,7 @@ import type { TicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
+  journaledEventOf,
   plainDefinitionOf,
   plainPolicy,
   refinementInstance,
@@ -559,7 +560,11 @@ function twoReleasedMemory(): ProjectMemory {
       state,
       createTicketCommand(plainDefinitionOf(ticket)),
     );
-    for (const row of projectionChanges(before, memoryGraph(state)))
+    for (const row of projectionChanges(
+      before,
+      memoryGraph(state),
+      journaledEventOf(state),
+    ))
       ticketVersions.set(row.ticket, index + 1);
   }
   return {
@@ -1690,7 +1695,11 @@ function dependentMemory(): ProjectMemory {
   for (const [index, step] of steps.entries()) {
     const before = memoryGraph(state);
     state = stepped(refinementInstance, state, step);
-    for (const row of projectionChanges(before, memoryGraph(state)))
+    for (const row of projectionChanges(
+      before,
+      memoryGraph(state),
+      journaledEventOf(state),
+    ))
       ticketVersions.set(row.ticket, index + 1);
   }
   return {
