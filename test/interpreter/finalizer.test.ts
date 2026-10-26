@@ -677,6 +677,22 @@ test("a push the repository declined holds under its own kind, at once for a wor
     ),
     { decide: "Hold", hold: "PromotionDeclined" },
   );
+  for (const declined of allPromotionDeclines) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...concluded,
+          reconciliation: declinedOver(declined, moved),
+        }),
+      ),
+      { decide: "Prepare", target, restartsSpent: 0 },
+      declined,
+    );
+  }
+});
+
+test("a decline over a target that cannot be read waits for it, and one the reading proved unmoved is held however the target moved since", () => {
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,
@@ -701,19 +717,6 @@ test("a push the repository declined holds under its own kind, at once for a wor
     { decide: "Hold", hold: "PromotionWorkflowsRefused" },
     "a target observed to move after the reading is the attempt's to judge",
   );
-  for (const declined of allPromotionDeclines) {
-    assert.deepEqual(
-      finalizationNext(
-        finalizerDefaults,
-        viewWith({
-          ...concluded,
-          reconciliation: declinedOver(declined, moved),
-        }),
-      ),
-      { decide: "Prepare", target, restartsSpent: 0 },
-      declined,
-    );
-  }
 });
 
 test("a closing project aborts whatever the push met, and a decline beside a promotion is refused", () => {
