@@ -682,6 +682,18 @@ test("a push the repository declined holds under its own kind, at once for a wor
       finalizerDefaults,
       viewWith({
         ...concluded,
+        observedTarget: undefined,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "TargetUnreadable" },
+    "a decline over a target that cannot be read waits for the target",
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
         observedTarget: { ...target, commit: moved },
         reconciliation: declinedOver("WorkflowsRefused", target.commit),
       }),

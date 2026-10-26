@@ -21,8 +21,9 @@
  * would not take for a reason of its own — a rule, a hook, a protected branch,
  * a credential that may not change a workflow file — is as ambiguous as any
  * other, and where the ref then proves not to hold the candidate the reading
- * records the decline beside that verdict. The attempt holds there rather than
- * preparing again, because what it would build the same repository declines.
+ * records the decline beside that verdict. A workflow refusal holds there,
+ * since what preparing again builds the same repository refuses; any other
+ * decline is prepared again while restarts remain.
  *
  * A REFUSED UPDATE IS INFORMATION. The ref did not advance and the observed
  * value says what it holds instead, so the revision fence restarts preparation
