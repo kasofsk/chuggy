@@ -37,6 +37,7 @@ import { genesis, replayGraph, type Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type {
+  TicketEvent,
   TicketGraph,
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
@@ -52,6 +53,7 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import type { TicketProjection } from "../../src/interpreter/projectDecision.ts";
 import {
+  journaledEventOf,
   plainDefinitionOf,
   plainPolicy,
   refinementInstance,
@@ -78,13 +80,22 @@ const history: readonly TicketCommand[] = [
   }),
 ];
 
+/** The event one command takes at `graph`, decided under `policy`. */
+function eventOn(
+  graph: TicketGraph,
+  command: TicketCommand,
+  policy: EvaluationFailurePolicy = plainPolicy,
+): TicketEvent {
+  return acceptedOf(decide(graph, command, policy)).event;
+}
+
 /** The graph one command leaves, decided under `policy` and evolved by what it decided. */
 function decidedOn(
   graph: TicketGraph,
   command: TicketCommand,
   policy: EvaluationFailurePolicy = plainPolicy,
 ): TicketGraph {
-  return evolve(graph, acceptedOf(decide(graph, command, policy)).event);
+  return evolve(graph, eventOn(graph, command, policy));
 }
 
 /** The journal that history writes, which is what a rebuild reads. */
@@ -100,9 +111,10 @@ function journalOf(): readonly Entry[] {
 function folded(): ReadonlyMap<number, TicketProjection> {
   const table = new Map<number, TicketProjection>();
   let graph: TicketGraph = genesis;
-  for (const event of history) {
-    const post = decidedOn(graph, event);
-    for (const row of projectionChanges(graph, post)) {
+  for (const command of history) {
+    const event = eventOn(graph, command);
+    const post = evolve(graph, event);
+    for (const row of projectionChanges(graph, post, event)) {
       table.set(row.ticket, row);
     }
     graph = post;
@@ -132,7 +144,11 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     plainPolicy,
   );
   assert.deepEqual(
-    projectionChanges(released.view.post, dispatched.view.post),
+    projectionChanges(
+      released.view.post,
+      dispatched.view.post,
+      journaledEventOf(dispatched),
+    ),
     [
       {
         ticket: id(1),
@@ -144,7 +160,11 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     ],
   );
   assert.deepEqual(
-    projectionChanges(dispatched.view.post, dispatched.view.post),
+    projectionChanges(
+      dispatched.view.post,
+      dispatched.view.post,
+      journaledEventOf(dispatched),
+    ),
     [],
   );
   const completed = journalStep(
@@ -154,7 +174,11 @@ test("a decision reports exactly the tickets whose complete state changed", () =
     plainPolicy,
   );
   assert.deepEqual(
-    projectionChanges(dispatched.view.post, completed.view.post),
+    projectionChanges(
+      dispatched.view.post,
+      completed.view.post,
+      journaledEventOf(completed),
+    ),
     [
       {
         ticket: id(1),
@@ -175,15 +199,18 @@ test("a release is a change although it leaves no phase", () => {
     plainPolicy,
   );
   assert.equal(released.journal.at(-1)?.event.type, "TicketCreated");
-  assert.deepEqual(projectionChanges(genesis, released.view.post), [
-    {
-      ticket: id(1),
-      revision: 1,
-      phase: "Pending",
-      dependable: true,
-      escalation: "NoEscalation",
-    },
-  ]);
+  assert.deepEqual(
+    projectionChanges(genesis, released.view.post, journaledEventOf(released)),
+    [
+      {
+        ticket: id(1),
+        revision: 1,
+        phase: "Pending",
+        dependable: true,
+        escalation: "NoEscalation",
+      },
+    ],
+  );
 });
 
 /** The one task a single-width ticket owes, which is what a completion names. */

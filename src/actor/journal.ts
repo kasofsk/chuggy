@@ -9,6 +9,12 @@
  * than re-deciding it, and the journal is a sufficient basis for the state
  * because nothing else ever entered one.
  *
+ * A FOLD FROM GENESIS COSTS ITS ROWS, NOT ITS ROWS TIMES THE FLEET. An event
+ * reads and moves only the ticket it names (`src/domain/evolve.ts`), so each
+ * row is stepped over its `eventSlice` and written back into maps the fold
+ * owns. `replayStep` over the whole fleet copies both maps, which only a caller
+ * keeping the state before the row needs.
+ *
  * LEGALITY IS WHAT A ROW COULD NOT BE IF IT WAS DECIDED. Its seq is the next
  * one, its ticket stands (a release's must not) and is the one any report or
  * definition it carries names, a work failure names the work task the ticket
@@ -29,18 +35,16 @@
 
 import type {
   Entry,
+  Ticket,
   TicketEvent,
   TicketGraph,
+  TicketLedger,
 } from "../domain/generated/modelTypes.ts";
-import { eventTicket, evolve } from "../domain/evolve.ts";
+import { eventSlice, eventTicket, evolve } from "../domain/evolve.ts";
 import { graphEquals } from "../domain/equality.ts";
 import { reportTicket } from "../domain/ticket.ts";
 import { asTicketId } from "../domain/ids.ts";
-import {
-  evolveLedgers,
-  genesisLedgers,
-  type Ledgers,
-} from "../domain/ledger.ts";
+import { evolveLedgers, type Ledgers } from "../domain/ledger.ts";
 import { taskIdentityEquals, workTaskIdentity } from "../domain/task.ts";
 import { ticketAt } from "../domain/ticketGraph.ts";
 import {
@@ -83,12 +87,50 @@ export function replayStep(replayed: Replayed, event: TicketEvent): Replayed {
   };
 }
 
-/** Recovery: fold both over a stored history from `genesis`. */
-export function storedReplay(stored: readonly StoredEntry[]): Replayed {
-  return stored.reduce(
-    (replayed, row) => replayStep(replayed, row.entry.event),
-    { graph: genesis, ledgers: genesisLedgers },
-  );
+/**
+ * Writes a row's evolved slice back into the fleet a fold owns. The slice
+ * holds the ticket the row's event names or nothing, and anything else in it
+ * is an event that moved a ticket it does not name.
+ */
+function storedReplayWrite<Value>(
+  fleet: Map<number, Value>,
+  slice: ReadonlyMap<number, Value>,
+  event: TicketEvent,
+): void {
+  const named = eventTicket(event);
+  for (const [id, value] of slice) {
+    if (id !== named)
+      throw new Error(
+        `journal: a ${event.type} for ticket ${String(named)} moved ticket ${String(id)}`,
+      );
+    fleet.set(id, value);
+  }
+}
+
+/**
+ * Recovery: fold both over a stored history from `genesis`, each row stepping
+ * its event's slice and writing it back. `eachRow` is handed every row with
+ * its ticket's slice of the replay either side of it.
+ */
+export function storedReplay(
+  stored: readonly StoredEntry[],
+  eachRow: (entry: Entry, before: Replayed, after: Replayed) => void = () => {},
+): Replayed {
+  const tickets = new Map<number, Ticket>();
+  const ledgers = new Map<number, TicketLedger>();
+  for (const { entry } of stored) {
+    const ticket = eventTicket(entry.event);
+    const ledger = ledgers.get(ticket);
+    const before: Replayed = {
+      graph: eventSlice({ tickets }, entry.event),
+      ledgers: new Map(ledger === undefined ? [] : [[ticket, ledger]]),
+    };
+    const after = replayStep(before, entry.event);
+    storedReplayWrite(tickets, after.graph.tickets, entry.event);
+    storedReplayWrite(ledgers, after.ledgers, entry.event);
+    eachRow(entry, before, after);
+  }
+  return { graph: { tickets }, ledgers };
 }
 
 /** Recovery: fold both over the journal's events from `genesis`. */
@@ -173,11 +215,14 @@ export function failureTaskCurrent(
  * on every row, dense seqs, every event's ticket standing at its replayed
  * prefix and named by the report or definition it carries, every work
  * failure naming the current work task, and every event moving that prefix.
+ * Each check reads the row's ticket alone, so each is asked of the event's
+ * slice of the prefix, as `storedReplay` steps it.
  */
 export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
-  let replayed = genesis;
+  const tickets = new Map<number, Ticket>();
   let next = 1;
   for (const row of stored) {
+    const replayed = eventSlice({ tickets }, row.entry.event);
     if (
       row.semantics !== decisionSemanticsVersionCurrent ||
       row.entry.seq !== next ||
@@ -189,7 +234,7 @@ export function storedJournalLegalOn(stored: readonly StoredEntry[]): boolean {
     }
     const evolved = evolve(replayed, row.entry.event);
     if (graphEquals(evolved, replayed)) return false;
-    replayed = evolved;
+    storedReplayWrite(tickets, evolved.tickets, row.entry.event);
     next += 1;
   }
   return true;

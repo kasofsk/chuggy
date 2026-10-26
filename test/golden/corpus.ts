@@ -10,7 +10,10 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
-import type { LastDecision } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  Entry,
+  LastDecision,
+} from "../../src/domain/generated/modelTypes.ts";
 import { decodeTrace, stateValue } from "../itf/decode.ts";
 import { decodeLastDecision } from "../itf/vocabulary.ts";
 
@@ -51,6 +54,26 @@ function decisionsIn(row: ManifestRow): readonly Decision[] {
     const last = decodeLastDecision(stateValue(state, lastStepVar));
     return last === "NoDecision" ? [] : [last];
   });
+}
+
+/**
+ * The journal a trace's run wrote: each accepted decision's event, at the next
+ * seq. A stutter carries the decision before it and journals nothing.
+ */
+export function journalOf(row: ManifestRow): readonly Entry[] {
+  const trace = decodeTrace(row.trace);
+  const lastStepVar = trace.vars.find((v) => v.endsWith("::lastStep"));
+  if (lastStepVar === undefined) {
+    throw new Error(`corpus: ${row.name} has no lastStep variable`);
+  }
+  const entries: Entry[] = [];
+  trace.states.forEach((state, at) => {
+    if (at === 0 || stateValue(state, "mbt::actionTaken") === "settle") return;
+    const last = decodeLastDecision(stateValue(state, lastStepVar));
+    if (last !== "NoDecision" && last.type === "Decided")
+      entries.push({ seq: entries.length + 1, event: last.value.event });
+  });
+  return entries;
 }
 
 export interface Corpus {

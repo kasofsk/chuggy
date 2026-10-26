@@ -12,6 +12,11 @@
  * identity is what a journal's legality check reads: an event that does not
  * move the state it lands on is one nothing decided there.
  *
+ * EACH ARM READS AND MOVES ONE TICKET, the one `eventTicket` names, so an event
+ * takes its `eventSlice` to exactly what it leaves of that ticket in the whole
+ * graph. The journal's fold (`src/actor/journal.ts`) and the ledger's
+ * `ticketAfter` both read a ticket that way.
+ *
  * The two work-failure arms ask only that the ticket is in Work, not which
  * task failed; the journal's legality check holds a failure row to the
  * current work task instead (`src/actor/journal.ts`). Every arm but a
@@ -71,6 +76,16 @@ export function eventTicket(event: TicketEvent): TicketId {
     case "TicketFinalizationUnavailable":
       return asTicketId(event.value.ticket);
   }
+}
+
+/** The part of a graph an event reads and moves: the ticket it names, alone. */
+export function eventSlice(
+  graph: TicketGraph,
+  event: TicketEvent,
+): TicketGraph {
+  const id = eventTicket(event);
+  const ticket = graph.tickets.get(id);
+  return { tickets: new Map(ticket === undefined ? [] : [[id, ticket]]) };
 }
 
 /** The package's `enterWorkCycle`: the next cycle, in Work, over this input at this source. */
