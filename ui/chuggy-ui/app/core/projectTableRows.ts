@@ -141,14 +141,14 @@ export function projectTableRow(
   };
 }
 
-/** The one word an outcome is drawn as: the roster's own spelling, but a failed
- * process is a stop where the ledger draws one and a failure elsewhere. */
+/** The one word an outcome is drawn as, the ledger's: a stop is Blocked, a
+ * failed process otherwise Failed, and any other outcome its own spelling. */
 function executionOutcomeWord(
   outcome: ExecutionOutcome,
   stopped: boolean,
 ): string {
-  if (outcome !== "ProcessFailed") return outcome;
-  return stopped ? "Stopped" : "Failed";
+  if (stopped) return "Blocked";
+  return outcome === "ProcessFailed" ? "Failed" : outcome;
 }
 
 /** The one word a status is drawn as where no outcome refines it. A terminal

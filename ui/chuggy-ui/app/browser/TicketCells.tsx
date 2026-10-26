@@ -115,7 +115,13 @@ export function TicketRowExecutionCell(props: {
       </span>
     );
   return (
-    <Pill tone={executionTone(row.executionStatus, row.executionOutcome)}>
+    <Pill
+      tone={executionTone(
+        row.executionStatus,
+        row.executionOutcome,
+        row.executionStopped,
+      )}
+    >
       {phrase}
     </Pill>
   );

@@ -20,6 +20,8 @@ import {
   projectTableRows,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
+import { setVerdict } from "../app/core/ticketLedger.ts";
+import { executionTone, verdictTone } from "../app/core/tones.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const container: ExecutionSummary = {
@@ -259,7 +261,7 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
   ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
 });
 
-test("the execution cell is the outcome where one exists, a failed process a stop only where the ledger draws one, and the status where none does", () => {
+test("the execution cell is the outcome where one exists, and the status where none does", () => {
   const running = projectTableRow(working, known(container), false);
   expect(projectTableExecutionPhrase(running)).toBe("Running");
   const finished = { ...running, executionStatus: "Terminal" } as const;
@@ -272,29 +274,33 @@ test("the execution cell is the outcome where one exists, a failed process a sto
       executionOutcome: "ProcessFailed",
     }),
   ).toBe("Failed");
-  const evaluated = projectTableRow(
-    working,
-    known({
-      ...container,
-      identity: {
-        type: "EvaluationTask",
-        value: {
-          ticket: 1,
-          workCycle: 1,
-          stage: 1,
-          generation: 1,
-          evaluator: 1,
-        },
-      },
-      status: "Terminal",
-      outcome: "ProcessFailed",
-    }),
-    false,
-  );
-  expect(projectTableExecutionPhrase(evaluated)).toBe("Stopped");
   expect(
     projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
   ).toBeUndefined();
+});
+
+/** Derived from the outcome roster, so an outcome the wire grows is a case
+ * this asks about for both kinds of task. */
+test("a finished execution's cell draws the word and hue its ticket's ledger does", () => {
+  const evaluator: ExecutionSummary["identity"] = {
+    type: "EvaluationTask",
+    value: { ticket: 1, workCycle: 1, stage: 1, generation: 1, evaluator: 1 },
+  };
+  for (const identity of [container.identity, evaluator])
+    for (const outcome of executionOutcomes) {
+      const execution = {
+        ...container,
+        identity,
+        status: "Terminal",
+        outcome,
+      } as const;
+      const row = projectTableRow(working, known(execution), false);
+      const verdict = setVerdict([execution]);
+      expect([
+        projectTableExecutionPhrase(row),
+        executionTone("Terminal", row.executionOutcome, row.executionStopped),
+      ]).toEqual([verdict, verdictTone(verdict)]);
+    }
 });
 
 /** Derived from both rosters, so a status or an outcome the wire grows is a
