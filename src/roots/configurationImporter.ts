@@ -33,6 +33,7 @@
  * exit would be the only thing telling anyone otherwise.
  */
 
+import { githubInstallationTokensSettleMs } from "../adapters/forge/githubInstallationTokens.ts";
 import {
   gitRepositoryConfiguration,
   gitRepositoryConfigurationRemoteFailedWords,
@@ -76,11 +77,11 @@ const authority = {
   subject: asAuthoritySubject("configuration-mirror-importer"),
 };
 
-/** How long a remote read git died on waits before it is tried again. */
-const configurationImporterRetryPauseSecs = 2;
+/** How long a remote read git died on waits before it is tried again: the forge's settling, so a token minted just before the read has settled by the retry. */
+const configurationImporterRetryPauseMs = githubInstallationTokensSettleMs;
 
 /** The most one run's retries take together, pauses included, past which a read git died on is not tried again. */
-const configurationImporterRetrySecsMax = 30;
+const configurationImporterRetrySecsMax = 60;
 
 /** Prints one remote read that failed beside the binding it was for, where every failure a run reports is printed. */
 function configurationImporterRemoteFailed(
@@ -142,7 +143,7 @@ function configurationImporterPorts(
       : { remoteTimeoutSecsMax: config.git.remoteTimeoutSecsMax }),
     remoteFailed: configurationImporterRemoteFailed,
     remoteRetry: {
-      pauseMs: configurationImporterRetryPauseSecs * 1000,
+      pauseMs: configurationImporterRetryPauseMs,
       elapsedMsMax: configurationImporterRetrySecsMax * 1000,
     },
   });

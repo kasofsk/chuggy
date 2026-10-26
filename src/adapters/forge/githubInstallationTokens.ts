@@ -33,7 +33,7 @@
  * unauthorized, which git over HTTPS reports as a repository not found. The
  * forge's own SDK, `@octokit/auth-app`, asks such a request again for as long
  * as the token is younger than its `FIVE_SECONDS_IN_MS`, and
- * `githubInstallationTokenSettleMs` is that window, counted from when the
+ * `githubInstallationTokensSettleMs` is that window, counted from when the
  * forge's answer was read and so from no earlier than the token was made. A
  * composition whose callers use a token at once and cannot ask again names it.
  * A token is held only once it has settled, so an answer from what is held
@@ -104,13 +104,13 @@ export const githubInstallationTokensDefaults = {
 } as const;
 
 /** The settling a composition names where its callers cannot ask again: `@octokit/auth-app`'s own `FIVE_SECONDS_IN_MS`. */
-export const githubInstallationTokenSettleMs = 5_000;
+export const githubInstallationTokensSettleMs = 5_000;
 
 /** A composition's options with that settling named. */
 export function githubInstallationTokensSettled(
   options: GithubInstallationTokensOptions,
 ): GithubInstallationTokensOptions {
-  return { ...options, tokenSettleMs: githubInstallationTokenSettleMs };
+  return { ...options, tokenSettleMs: githubInstallationTokensSettleMs };
 }
 
 /** The variables one process reads its app key and its forge from. */
