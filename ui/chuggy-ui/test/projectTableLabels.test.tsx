@@ -300,6 +300,7 @@ test("a row whose index was truncated draws no chip for its execution", () => {
     executionRead: "IndexTruncated",
     executionStatus: undefined,
     executionOutcome: undefined,
+    executionStopped: false,
     runsOn: undefined,
     activityAt: "2026-08-26T00:00:00Z",
     openDependencies: [],

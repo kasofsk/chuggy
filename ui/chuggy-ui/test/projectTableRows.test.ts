@@ -259,7 +259,7 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
   ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
 });
 
-test("the execution cell is the outcome where one exists, and the status where none does", () => {
+test("the execution cell is the outcome where one exists, a failed process a stop only where the ledger draws one, and the status where none does", () => {
   const running = projectTableRow(working, known(container), false);
   expect(projectTableExecutionPhrase(running)).toBe("Running");
   const finished = { ...running, executionStatus: "Terminal" } as const;
@@ -271,7 +271,27 @@ test("the execution cell is the outcome where one exists, and the status where n
       ...finished,
       executionOutcome: "ProcessFailed",
     }),
-  ).toBe("Stopped");
+  ).toBe("Failed");
+  const evaluated = projectTableRow(
+    working,
+    known({
+      ...container,
+      identity: {
+        type: "EvaluationTask",
+        value: {
+          ticket: 1,
+          workCycle: 1,
+          stage: 1,
+          generation: 1,
+          evaluator: 1,
+        },
+      },
+      status: "Terminal",
+      outcome: "ProcessFailed",
+    }),
+    false,
+  );
+  expect(projectTableExecutionPhrase(evaluated)).toBe("Stopped");
   expect(
     projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
   ).toBeUndefined();

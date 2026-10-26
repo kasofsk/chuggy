@@ -39,6 +39,7 @@ import type {
   ProjectExecutionIndex,
   ProjectExecutionKnown,
 } from "./projectExecutionIndex.ts";
+import { executionStopped } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
 import type { UpNextOpenDependency } from "./upNextOrder.ts";
 
@@ -61,6 +62,9 @@ export interface ProjectTableRow {
   readonly executionRead: ProjectTableExecutionRead;
   readonly executionStatus: ExecutionStatus | undefined;
   readonly executionOutcome: ExecutionOutcome | undefined;
+  /** Whether the ticket's ledger draws the joined execution as a stop rather
+   * than a judgement, as it does an evaluator whose process failed. */
+  readonly executionStopped: boolean;
   readonly runsOn: Label | undefined;
   readonly activityAt: string;
   readonly openDependencies: readonly UpNextOpenDependency[];
@@ -126,6 +130,7 @@ export function projectTableRow(
     executionRead: read,
     executionStatus: execution?.status,
     executionOutcome: execution?.outcome,
+    executionStopped: execution !== undefined && executionStopped(execution),
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     activityAt: laterActivityAt(
       ticket.changedAt,
@@ -136,9 +141,14 @@ export function projectTableRow(
   };
 }
 
-/** The one word an outcome is drawn as; the roster's own spellings but one. */
-function executionOutcomeWord(outcome: ExecutionOutcome): string {
-  return outcome === "ProcessFailed" ? "Stopped" : outcome;
+/** The one word an outcome is drawn as: the roster's own spelling, but a failed
+ * process is a stop where the ledger draws one and a failure elsewhere. */
+function executionOutcomeWord(
+  outcome: ExecutionOutcome,
+  stopped: boolean,
+): string {
+  if (outcome !== "ProcessFailed") return outcome;
+  return stopped ? "Stopped" : "Failed";
 }
 
 /** The one word a status is drawn as where no outcome refines it. A terminal
@@ -156,7 +166,7 @@ export function projectTableExecutionPhrase(
   if (row.executionStatus === undefined) return undefined;
   return row.executionOutcome === undefined
     ? executionStatusWord(row.executionStatus)
-    : executionOutcomeWord(row.executionOutcome);
+    : executionOutcomeWord(row.executionOutcome, row.executionStopped);
 }
 
 export function projectTableRows(

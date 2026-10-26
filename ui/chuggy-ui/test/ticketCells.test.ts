@@ -27,6 +27,7 @@ function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
     executionRead,
     executionStatus: undefined,
     executionOutcome: undefined,
+    executionStopped: false,
     runsOn: undefined,
     activityAt: "2026-08-26T00:00:00Z",
     openDependencies: [],

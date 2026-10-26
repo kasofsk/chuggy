@@ -29,6 +29,7 @@ function row(
     executionRead: "NoneRegistered",
     executionStatus: undefined,
     executionOutcome: undefined,
+    executionStopped: false,
     runsOn: undefined,
     activityAt: "2026-08-27T11:00:00Z",
     openDependencies: [],
