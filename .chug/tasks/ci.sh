@@ -210,10 +210,10 @@ record_scope() { # <gate id or suite path>
 # program the unit suites run; and the history the paths gate reads deleted
 # paths from. Left out because none moves a verdict: the ports a server is
 # published on, the caps on a wait or a walk (an overrun exits 2, never
-# recorded), the cap on one test (it is there to end a test that never settles,
-# so a larger one admits only a test that does, which passes on any cap), worker
-# counts, colour, where a counterexample is written, and the CHUG_CI_*
-# selection, which picks gates and asks none of them anything.
+# recorded), the cap on one test (it ends a test that never settles and is no
+# bound on one that does, so a pass under a larger cap is a pass of the same
+# tests), worker counts, colour, where a counterexample is written, and the
+# CHUG_CI_* selection, which picks gates and asks none of them anything.
 #
 # Its stderr passes through as written and a copy is kept, from which
 # `record_reused` reads; sets $rc and $record_hit.
