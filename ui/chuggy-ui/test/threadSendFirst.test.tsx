@@ -32,7 +32,7 @@ interface Posted {
   readonly body: unknown;
 }
 
-/** The door as every case stubs it: runs granted, the thread placed in the
+/** The door both scripted doors share: runs granted, the thread placed in the
  * cluster, every post recorded, and the thread and message answers the case
  * supplies. */
 function doorStubbed(
