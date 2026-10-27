@@ -9,14 +9,15 @@
  * which is `owner_fallback` named; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
- * it is enabled and current; its capabilities run the requirement, and its
- * memory ceiling, where a poll named one, is above the execution's size, as a
- * pool's is, as is the room the poll named; and what that registration holds,
- * across every project it serves, is the slot, apart from what any other
- * runner of the owner's holds. The owner's fallback refuses a personal runner
- * nothing. Its permit was asked when its poll was admitted, and its owner's
- * `Read` of each project before the claim, which names only the projects that
- * answered.
+ * it is enabled and current; its capabilities run the requirement, and the
+ * execution's size is at or under its memory ceiling where a poll named one,
+ * as a pool's is; and what that registration holds, across every project it
+ * serves, is the slot, apart from what any other runner of the owner's holds.
+ * The owner's fallback refuses a personal runner nothing. Its permit was asked
+ * when its poll was admitted, and its owner's `Read` of each project before
+ * the claim, which names only the projects that answered. The claim takes no
+ * execution larger than the room the terms name, which chooses among what
+ * that allows as the order does rather than being a term of it.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
