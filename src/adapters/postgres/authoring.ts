@@ -649,7 +649,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")

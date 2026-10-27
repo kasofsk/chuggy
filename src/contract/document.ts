@@ -13,6 +13,7 @@ import {
   nativeHttpRoutes,
   nativeHttpVersion,
   personalRunnersMax,
+  threadsOpenDefault,
 } from "./http.ts";
 import {
   draftCreationSchema,
@@ -31,6 +32,7 @@ import {
   reservedTenantNames,
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
+  threadLimitSchema,
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
   registrationTokenRequestSchema,
@@ -85,6 +87,10 @@ function nativeHttpContractDocumentSchemas(): unknown {
     selectorProposalReview: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.reviewSelectorProposal.body,
     ),
+    threadOpen: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.openThread.body,
+    ),
+    threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
@@ -170,6 +176,7 @@ export function nativeHttpContractDocument(): unknown {
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     selectorProposals:
       "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
+    threadLimit: `a member holds at most their limit of open threads in a project, ${String(threadsOpenDefault)} until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing`,
     forgeInstallations:
       "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
     projectCreation: `a principal creates a project in a tenant it administers, or, where the site permits it to create a tenant, in a tenant no grant holds, which it then administers, and a caller the site does not permit is refused for such a tenant before anything is written; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named ${reservedTenantNames.join(", ")}, and its creator repeating the request, under any idempotency key, answers the same project`,

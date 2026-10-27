@@ -133,6 +133,7 @@ function scopedApp(
     recorded(reached, "landings"),
     recorded(reached, "personalRunners"),
     recorded(reached, "ownerFallback"),
+    recorded(reached, "threadLimits"),
   );
 }
 

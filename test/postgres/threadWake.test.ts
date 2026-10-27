@@ -50,7 +50,10 @@ import {
   threadWakeTurn,
   type ThreadWakeService,
 } from "../../src/interpreter/threadWake.ts";
-import { asSessionTurnId } from "../../src/interpreter/agentSession.ts";
+import {
+  asSessionTurnId,
+  type SessionId,
+} from "../../src/interpreter/agentSession.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresHarnessBrief,
@@ -64,10 +67,13 @@ import {
   sessionRigTurnRoutes,
 } from "./sessionHarness.ts";
 import {
+  threadRigKey,
   threadRigMember,
   threadRigOpen,
   threadRigProject,
+  threadRigPrompt,
   threadRigRevoke,
+  threadRigSlot,
   threadRigThread,
   threadRigTicketPhase,
   threadRigTurnId,
@@ -124,11 +130,12 @@ async function configuration(
   return revision;
 }
 
-/** One open draft the member authored, which is the revision the wake join follows. */
+/** One open draft the member authored from the thread named, which is the session the wake join follows. */
 async function draft(
   partition: Partition,
   revision: ConfigurationRevisionId,
   member: ThreadRigMember,
+  origin: SessionId | undefined,
 ): Promise<TicketId> {
   const { authoring } = rig.sessions.harness;
   const initialized = await authoring.initializeDraft(partition, revision, 100);
@@ -142,6 +149,7 @@ async function draft(
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
     brief: postgresHarnessBrief,
+    ...(origin === undefined ? {} : { originSession: origin }),
   });
   if (created.created !== "Created")
     throw new Error(`thread wake: the draft answered ${created.created}`);
@@ -168,7 +176,7 @@ test("a refusal against a member's own ticket becomes one Wake turn, once", asyn
   const member = threadRigMember(rig, partition, "wakepass");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
   await refuse(partition, "wakepass", ticket);
 
@@ -234,7 +242,7 @@ test("a ticket that moves twice wakes a thread with what each move was", async (
   const member = threadRigMember(rig, partition, "wakemoves");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
   await threadRigTicketPhase(rig, partition, ticket, "Escalated");
   await threadRigTicketPhase(rig, partition, ticket, "Done");
@@ -260,7 +268,7 @@ test("a pass whose cursor was not moved re-offers the same turn and is told so",
   const member = threadRigMember(rig, partition, "wakereplay");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   const started = await fromTheHead();
   await refuse(partition, "wakereplay", ticket);
 
@@ -302,7 +310,7 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
   const member = threadRigMember(rig, partition, "wakeclosed");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   await rig.sessions.sessions.close(partition, thread.session);
   const started = await fromTheHead();
   await refuse(partition, "wakeclosed", ticket);
@@ -323,13 +331,13 @@ test("a change for a closed thread is read by nobody and moves the cursor by its
 test("the wake door wakes a thread the project no longer admits its owner to", async () => {
   const partition = await threadRigProject(rig, "wakeorphan");
   const member = threadRigMember(rig, partition, "wakeorphan");
-  await threadRigThread(rig, partition, member);
+  const thread = await threadRigThread(rig, partition, member);
   threadRigRevoke(rig, partition, member);
 
   assert.deepEqual(
     await rig.wakes.wake({
       partition,
-      principal: member.principal,
+      session: thread.session,
       turn: asSessionTurnId(threadRigTurnId("wakeorphan")),
       input: threadWakeText(
         threadWakeDocument({
@@ -360,20 +368,26 @@ async function lift(
 }
 
 /**
- * The window this case runs over holds BOTH changes on the same ticket, and the
- * cursor is below both: what separates them is the log's position the thread
- * was opened after. A pass that read the earlier one would be the rig's finding
- * (kasofsk/chuggy#541) in miniature — a mailbox filled with what happened
- * before its owner had one.
+ * The window holds BOTH changes on one ticket and the cursor is below both, so
+ * what separates them is the log's position the thread was opened after — a
+ * pass that read the earlier one would be the rig's finding (kasofsk/chuggy#541)
+ * in miniature, a mailbox filled with what happened before its owner had one.
+ * A thread is younger than any draft filed through it, so the case gives the
+ * draft the origin 086's backfill gives one that stood before its thread.
  */
 test("a thread is woken by a change after it opened, and by none the log held before", async () => {
   const partition = await threadRigProject(rig, "wakestart");
   const member = threadRigMember(rig, partition, "wakestart");
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, undefined);
   const started = await fromTheHead();
   await refuse(partition, "wakestart", ticket);
   const thread = await threadRigThread(rig, partition, member);
+  await rig.sessions.harness.query(
+    `UPDATE draft SET origin_session=$4
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [partition.tenant, partition.project, Number(ticket), thread.session],
+  );
 
   const quiet = await threadWakePass(service(threadWakesPerPassMax));
   assert.deepEqual(
@@ -462,77 +476,79 @@ test("a thread cannot be opened after a sequence the log never held", async () =
 });
 
 /**
- * Reopens the member's thread against a close that holds their session row, and
- * appends one change before that close commits. Waiting for the opening to
- * stall is what puts the append after every read the door makes on its way in.
+ * Opens a member's thread against another open of theirs that holds the
+ * member's lock, and appends one change before that open commits. Waiting for
+ * the opening to stall is what puts the append after every read the door makes
+ * on its way in.
  */
-async function openingAgainstAClose(
+async function openingAgainstAnOpen(
   partition: Partition,
   member: ThreadRigMember,
-  standing: string,
 ): Promise<{ readonly session: string; readonly appended: number }> {
-  const closing = await rig.sessions.harness.begin();
+  const holding = await rig.sessions.harness.begin();
   let committed = false;
   try {
-    await closing.query("SELECT close_agent_session($1,$2,$3)", [
-      partition.tenant,
-      partition.project,
-      standing,
-    ]);
+    await holding.query(
+      "SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)",
+      [
+        partition.tenant,
+        partition.project,
+        member.principal,
+        `thread-holding-${partition.project}`,
+        threadRigKey(),
+        threadRigSlot,
+        threadRigPrompt,
+      ],
+    );
     let appended = 0;
-    const [reopened] = await Promise.all([
+    const [opened] = await Promise.all([
       threadRigThread(rig, partition, member),
       (async () => {
         await postgresHarnessStalled(rig.sessions.harness.pool, 1);
         appended = Number(
           (
-            await closing.query(
+            await holding.query(
               "SELECT append_project_change($1,$2,'Ticket','1')::text AS sequence",
               [partition.tenant, partition.project],
             )
           )[0]?.["sequence"],
         );
-        await closing.commit();
+        await holding.commit();
         committed = true;
       })(),
     ]);
-    return { session: reopened.session, appended };
+    return { session: opened.session, appended };
   } finally {
-    if (!committed) await closing.rollback();
+    if (!committed) await holding.rollback();
   }
 }
 
 /**
- * The position is the head at the moment the row is WRITTEN, and the door's
- * `FOR UPDATE` is what makes that a different fact from the head when the door
- * was called: a change appended before the close holding the member's session
- * row commits is sequenced above anything the opening read on its way in, and
- * still happened before the thread existed. A door drawing the head before it
- * waits would store the earlier one, and kasofsk/chuggy#541 would arrive again
- * through the flow 062 names — close, then reopen.
+ * The position is the head at the moment the row is WRITTEN, and the member's
+ * lock is what makes that a different fact from the head when the door was
+ * called: a change appended before another open holding that lock commits is
+ * sequenced above anything the opening read on its way in, and still happened
+ * before the thread existed. A door drawing the head before it waits would
+ * store the earlier one, and kasofsk/chuggy#541 would arrive again through two
+ * threads opened at once.
  */
 test("a change that commits while the door waits is a change the thread was opened after", async () => {
   const partition = await threadRigProject(rig, "wakerace");
   const member = threadRigMember(rig, partition, "wakerace");
-  const standing = await threadRigThread(rig, partition, member);
   const called = await fromTheHead();
 
-  const reopened = await openingAgainstAClose(
-    partition,
-    member,
-    standing.session,
-  );
+  const opened = await openingAgainstAnOpen(partition, member);
 
   assert.ok(
-    reopened.appended > called,
+    opened.appended > called,
     "the change landed while the door was waiting, or this case is not the race it names",
   );
   assert.deepEqual(
     await rig.sessions.harness.query(
       "SELECT opened_after_sequence::text AS opened FROM agent_session WHERE session=$1",
-      [reopened.session],
+      [opened.session],
     ),
-    [{ opened: String(reopened.appended) }],
+    [{ opened: String(opened.appended) }],
     "the thread was opened after the head the door read before it waited",
   );
 });
@@ -554,7 +570,7 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
   await sessionRigRouted(rig.sessions, partition, "Pool", "InCluster");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
   await refuse(partition, "wakeroute", ticket);
 
@@ -580,7 +596,7 @@ test("a wake on a thread routed to runners is skipped where its member has regis
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   await fromTheHead();
   await refuse(partition, "wakerunnerless", ticket);
 
@@ -606,7 +622,7 @@ test("the wake door stamps the route it is handed rather than the one the thread
 
   const woken = await rig.wakes.wake({
     partition,
-    principal: member.principal,
+    session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("wakestamp")),
     input: threadWakeText(
       threadWakeDocument({ wake: "TicketRefused", resource: "1", at: instant }),
@@ -631,7 +647,7 @@ test("a project's own standing rules reach the wake through the candidate", asyn
   const member = threadRigMember(rig, partition, "wakestanding");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);
-  const ticket = await draft(partition, revision, member);
+  const ticket = await draft(partition, revision, member, thread.session);
   const stated = "- You draft, and nothing else.";
   await rig.sessions.harness.query(
     `SELECT revision FROM update_selector_project_settings(

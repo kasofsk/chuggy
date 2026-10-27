@@ -220,6 +220,7 @@ import {
   type ThreadMailboxQuery,
   type ThreadMessageImagesChecked,
   type ThreadMessageSent,
+  type ThreadOpenKey,
   type ThreadOpening,
   type ThreadRead,
   type ThreadRecord,
@@ -797,6 +798,8 @@ export interface NativeWeb {
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
+      /** The session whose bearer carried the request, which the draft keeps as the thread its events wake. */
+      readonly originSession?: SessionId;
     },
   ): Promise<AuthorizedResult<NativeDraftCreated>>;
   initializeDraft(
@@ -872,6 +875,7 @@ export interface NativeWeb {
   openThread(
     principal: Principal,
     partition: Partition,
+    key: ThreadOpenKey,
   ): Promise<ThreadOpening>;
   sendThreadMessage(
     principal: Principal,
@@ -1977,18 +1981,18 @@ async function nativeInquiryEntries(
 }
 
 /**
- * Opening the caller's own thread, which is `Mutate` and takes no session: a
- * member has one thread per project, the definer is idempotent on that, and the
- * roster it is opened with is the definer's own. It is refused where its first
- * turn would be: in cluster without the tenant's hosted grant, and on a runner
- * with none of the member's registered.
+ * Opening a thread of the caller's own, which is `Mutate` and takes the key its
+ * client minted rather than a session: the definer is idempotent on the key,
+ * holds the member to their limit, and writes the roster itself. It is refused
+ * where its first turn would be: in cluster without the tenant's hosted grant,
+ * and on a runner with none of the member's registered.
  */
 function nativeOpenThreadMethod(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
 ): NativeWeb["openThread"] {
-  return async (principal, partition) => {
+  return async (principal, partition, key) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     const spend = await sessionSpendRoute(
@@ -2005,6 +2009,7 @@ function nativeOpenThreadMethod(
       partition,
       principal,
       session: ports.sessions.session(),
+      key,
       systemPrompt: threadSystemPrompt({
         partition,
         owner: authority.subject,
@@ -2015,6 +2020,8 @@ function nativeOpenThreadMethod(
       }),
       credentialSlot: ports.credentialSlot,
     });
+    if (opened.opened === "ThreadLimitReached")
+      return { result: opened.opened, threadsMax: opened.threadsMax };
     return {
       result: opened.opened,
       thread: threadEntry(opened.thread, principal, authority.subject),
@@ -2050,10 +2057,10 @@ function composedThreadArtifactStore(
 }
 
 /**
- * The message door, which is `Mutate` and reaches the caller's own mailbox
- * alone: the session the URL names is checked against the one the caller's
- * principal resolves to, so the page a member is reading and the mailbox their
- * message lands in cannot come apart. Each turn is stamped with the route it
+ * The message door, which is `Mutate` and reaches the caller's own threads
+ * alone: the session the URL names is the mailbox, and the durable door refuses
+ * it where it is another member's, so the page a member is reading and the
+ * mailbox their message lands in cannot come apart. Each turn is stamped with the route it
  * was admitted on and runs there, so the route and what it needs of the member
  * are asked at every send, not only when the thread opened, and an image the
  * message names is checked against this project's own artifacts only once the
@@ -2120,7 +2127,6 @@ function nativeSendThreadMessageMethod(
         input: turnInput,
         route: spend.route,
       }),
-      input.session,
       input.turn,
     );
   };
@@ -2180,8 +2186,8 @@ function nativeCloseThreadMethod(
 }
 
 /**
- * The gate rename and hide share: `Mutate`, the ports behind it, and the
- * caller's own mailbox — or the refusal that stands in for all three.
+ * The gate rename and hide share: `Mutate`, the ports behind it, and a thread
+ * of the caller's own — or the refusal that stands in for all three.
  */
 async function nativeOwnedThread(
   access: ProjectAccess,
@@ -2211,10 +2217,7 @@ async function nativeOwnedThread(
   return { owned: true, ports, authority };
 }
 
-/**
- * Renaming and hiding are each the owner's alone, resolved against the
- * caller's own mailbox as the message door resolves it.
- */
+/** Renaming and hiding are each the owner's alone, as the message door is. */
 function nativeThreadViewMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,

@@ -370,6 +370,25 @@ export const threadBacklogMax = 8;
 /** How many threads one listing answers with. */
 export const threadsAnsweredMax = 64;
 
+/** How many threads a member may hold open in one project where no administrator has set their limit. */
+export const threadsOpenDefault = 10;
+
+/**
+ * The highest limit an administrator may set on a member's open threads. It is
+ * one listing's worth, so every thread a member holds open is on the page that
+ * lists them.
+ */
+export const threadsOpenMax = threadsAnsweredMax;
+
+/**
+ * The longest key a client opens a thread under, which a UUID fits. Opening is
+ * idempotent on it, so a retried open answers the thread the first one opened.
+ */
+export const threadOpenKeyCharsMax = 64;
+
+/** The characters a thread's open key is spelled in, which every surface holds unescaped. */
+export const threadOpenKeyPattern = /^[A-Za-z0-9_-]+$/u;
+
 /** How many claimed installations one tenant's listing answers with, oldest first. */
 export const forgeInstallationsAnsweredMax = 64;
 
@@ -528,6 +547,7 @@ export const nativeHttpRoutes = {
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
   threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
+  threadLimit: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/thread-limits/:subject`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
   threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,

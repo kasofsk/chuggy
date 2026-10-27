@@ -38,6 +38,8 @@ import {
   threadHideFunction,
   threadRenameFunction,
   threadMessageEnqueueFunction,
+  threadLimitFunction,
+  threadLimitSetFunction,
   threadOpenFunction,
   threadStandingReadFunction,
   threadWakeCandidatesFunction,
@@ -59,6 +61,7 @@ import {
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
+  threadsOpenDefault,
   threadWakesPerPassMax,
 } from "../../src/contract/http.ts";
 import {
@@ -69,6 +72,7 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
+  type SessionId,
 } from "../../src/interpreter/agentSession.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
@@ -99,6 +103,8 @@ import {
 import { leadRigDecision } from "./leadHarness.ts";
 import { sessionRigProvision, sessionRigSession } from "./sessionHarness.ts";
 import {
+  threadRigKey,
+  threadRigLimit,
   threadRigMember,
   threadRigOpen,
   threadRigProject,
@@ -149,11 +155,12 @@ async function threadConfiguration(
   return revision;
 }
 
-/** One open draft authored by the member named, which is what the wake join follows. */
+/** One open draft authored by the member named and filed from the thread named, which is what the wake join follows. */
 async function threadDraft(
   partition: Partition,
   revision: ConfigurationRevisionId,
   member: ThreadRigMember,
+  origin: SessionId | undefined,
 ): Promise<TicketId> {
   const { authoring } = rig.sessions.harness;
   const initialized = await authoring.initializeDraft(partition, revision, 100);
@@ -167,6 +174,7 @@ async function threadDraft(
     expectedProjectSequence: initialized.projectSequence,
     authoring: plainAuthoring,
     brief: postgresHarnessBrief,
+    ...(origin === undefined ? {} : { originSession: origin }),
   });
   if (created.created !== "Created")
     throw new Error(`thread durable: the draft answered ${created.created}`);
@@ -218,20 +226,41 @@ async function waitForABlockedStatement(): Promise<void> {
   throw new Error("thread durable: nothing ever blocked on the thread index");
 }
 
-test("a member's thread opens once and answers the session it already has", async () => {
+test("a thread opens once per key and answers the session that key already has", async () => {
   const partition = await project("open");
   const one = threadRigMember(rig, partition, "one");
   const two = threadRigMember(rig, partition, "two");
+  const key = threadRigKey();
 
-  const first = await threadRigThread(rig, partition, one);
-  const again = await threadRigThread(rig, partition, one, "AlreadyOpen");
+  const first = await threadRigThread(rig, partition, one, "Opened", key);
+  const again = await threadRigThread(rig, partition, one, "AlreadyOpen", key);
   assert.equal(again.session, first.session);
   assert.equal(first.principal, one.principal);
   assert.equal(first.state, "Open");
   assert.equal(first.turns, 0);
 
-  const other = await threadRigThread(rig, partition, two);
+  const sibling = await threadRigThread(rig, partition, one);
+  assert.notEqual(sibling.session, first.session);
+  const other = await threadRigThread(rig, partition, two, "Opened", key);
   assert.notEqual(other.session, first.session);
+});
+
+test("a key answers its thread once it is closed, rather than opening another", async () => {
+  const partition = await project("keyclosed");
+  const member = threadRigMember(rig, partition, "keyclosed");
+  const key = threadRigKey();
+  const first = await threadRigThread(rig, partition, member, "Opened", key);
+  const closed = await rig.threads.close({ partition, session: first.session });
+  assert.equal(closed.closed, "Closed");
+  const again = await threadRigThread(
+    rig,
+    partition,
+    member,
+    "AlreadyOpen",
+    key,
+  );
+  assert.equal(again.session, first.session);
+  assert.equal(again.state, "Closed");
 });
 
 test("the roster a thread is opened with is the installation's own and no argument's", async () => {
@@ -265,48 +294,81 @@ test("the roster a thread is opened with is the installation's own and no argume
 });
 
 /**
- * The index the open door leans on, named where the door names it. 058 declares
- * it and 062's arms are written against it, so a case in 062's own suite is what
- * says the two agree: the pre-check and the `unique_violation` arm both answer
- * `AlreadyOpen`, and with the index gone neither is a control at all and a member
- * ends with two open threads.
+ * The limit is a count the open door takes under a lock rather than an index,
+ * so a case drives it from both ends: the limit allows exactly its number, a
+ * close frees a place, and a member nobody set a limit for holds the default.
  */
-test("one member has one open thread, and the index is what says so", async () => {
-  const partition = await project("oneopen");
-  const member = threadRigMember(rig, partition, "oneopen");
-  const thread = await threadRigThread(rig, partition, member);
+test("a member holds as many open threads as their limit, and a closed one frees its place", async () => {
+  const partition = await project("limit");
+  const member = threadRigMember(rig, partition, "limit");
+  const other = threadRigMember(rig, partition, "limitother");
+  await threadRigLimit(rig, partition, member, 2);
 
-  const held = await rig.sessions.harness.query(
-    `SELECT tenant,project,kind,principal,capabilities,credential_slot,
-            account,cluster,system_prompt
-       FROM agent_session WHERE session=$1`,
-    [thread.session],
+  const first = await threadRigThread(rig, partition, member);
+  await threadRigThread(rig, partition, member);
+  const refused = await rig.threads.open({
+    partition,
+    principal: member.principal,
+    session: rig.minting.session(),
+    key: threadRigKey(),
+    systemPrompt: threadRigPrompt,
+    credentialSlot: threadRigSlot,
+  });
+  assert.deepEqual(refused, { opened: "ThreadLimitReached", threadsMax: 2 });
+  await threadRigThread(rig, partition, other);
+
+  const closed = await rig.threads.close({ partition, session: first.session });
+  assert.equal(closed.closed, "Closed");
+  await threadRigThread(rig, partition, member);
+});
+
+test("a member nobody set a limit for holds the default, and the old index is gone", async () => {
+  const partition = await project("default");
+  const member = threadRigMember(rig, partition, "default");
+  assert.equal(
+    await rig.limits.limit(partition, member.principal),
+    threadsOpenDefault,
   );
-  const row = held[0];
-  assert.ok(row !== undefined);
-  await assert.rejects(
-    () =>
-      rig.sessions.harness.query(
-        `INSERT INTO agent_session
-           (tenant,project,session,kind,principal,capabilities,credential_slot,
-            account,cluster,system_prompt)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-        [
-          row["tenant"],
-          row["project"],
-          `${thread.session}-second`,
-          row["kind"],
-          row["principal"],
-          row["capabilities"],
-          row["credential_slot"],
-          row["account"],
-          row["cluster"],
-          row["system_prompt"],
-        ],
-      ),
-    /agent_session_one_thread_per_member/u,
-    "a second open thread for one member is refused by the index, not by a body",
+  for (let opened = 0; opened < threadsOpenDefault; opened += 1)
+    await threadRigThread(rig, partition, member);
+  const refused = await rig.threads.open({
+    partition,
+    principal: member.principal,
+    session: rig.minting.session(),
+    key: threadRigKey(),
+    systemPrompt: threadRigPrompt,
+    credentialSlot: threadRigSlot,
+  });
+  assert.equal(refused.opened, "ThreadLimitReached");
+
+  const indexes = await rig.sessions.harness.query(
+    `SELECT indexname FROM pg_indexes WHERE indexname=$1`,
+    ["agent_session_one_thread_per_member"],
   );
+  assert.deepEqual(indexes, []);
+});
+
+test("a lowered limit closes nothing and refuses the next open", async () => {
+  const partition = await project("lowered");
+  const member = threadRigMember(rig, partition, "lowered");
+  await threadRigThread(rig, partition, member);
+  await threadRigThread(rig, partition, member);
+  await threadRigLimit(rig, partition, member, 1);
+
+  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  assert.deepEqual(
+    listed.map((record) => record.state),
+    ["Open", "Open"],
+  );
+  const refused = await rig.threads.open({
+    partition,
+    principal: member.principal,
+    session: rig.minting.session(),
+    key: threadRigKey(),
+    systemPrompt: threadRigPrompt,
+    credentialSlot: threadRigSlot,
+  });
+  assert.deepEqual(refused, { opened: "ThreadLimitReached", threadsMax: 1 });
 });
 
 /**
@@ -920,7 +982,7 @@ test("a closed thread does not block a new one", async () => {
       input: "into the one that is open",
       route: "InCluster",
     }),
-    { enqueued: "Enqueued", session: second.session, ordinal: 1 },
+    { enqueued: "Enqueued", ordinal: 1 },
     "a member with an open thread and a closed one is heard by the open one",
   );
 });
@@ -932,22 +994,23 @@ test("a closed thread does not block a new one", async () => {
  * outgrew the column would refuse every open on the project that caused it.
  */
 /**
- * The exception arm of `open_member_thread`. The pre-check is the fast path and
- * the partial unique index 058 declared is what actually decides which open
- * wins; this drives the case where the pre-check finds nothing and the index
- * refuses anyway, which is the only path that reaches the arm and the only one
- * where the API would otherwise be handed an error to interpret.
+ * Two opens racing for a member's last place. The member's advisory lock is
+ * what serialises the count against the insert, so the loser waits for the
+ * winner's transaction and then counts the winner's thread; without the lock
+ * both would count the same number and the member would end past their limit.
  */
-test("an open that loses the race to the index answers the session that won it", async () => {
+test("two opens racing for the last place never take the member past their limit", async () => {
   const partition = await project("race");
   const member = threadRigMember(rig, partition, "race");
+  await threadRigLimit(rig, partition, member, 1);
   const winner = `thread-race-winner-${partition.project}`;
   const loser = `thread-race-loser-${partition.project}`;
-  const values = (session: string) => [
+  const values = (session: string, key: string) => [
     partition.tenant,
     partition.project,
     member.principal,
     session,
+    key,
     threadRigSlot,
     threadRigPrompt,
   ];
@@ -955,18 +1018,22 @@ test("an open that loses the race to the index answers the session that won it",
   const held = await rig.sessions.harness.begin();
   try {
     await held.query(
-      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6)`,
-      values(winner),
+      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      values(winner, threadRigKey()),
     );
-    const racing = rig.apiPool.query<{ opened: string; session: string }>(
-      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6)`,
-      values(loser),
+    const racing = rig.apiPool.query<{
+      opened: string;
+      threads_max: string;
+    }>(
+      `SELECT opened,threads_max::text AS threads_max
+         FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      values(loser, threadRigKey()),
     );
     await waitForABlockedStatement();
     await held.commit();
     const answered = await racing;
-    assert.equal(answered.rows[0]?.opened, "AlreadyOpen");
-    assert.equal(answered.rows[0]?.session, winner);
+    assert.equal(answered.rows[0]?.opened, "ThreadLimitReached");
+    assert.equal(answered.rows[0]?.threads_max, "1");
   } finally {
     await held.rollback().catch(() => undefined);
   }
@@ -979,6 +1046,41 @@ test("an open that loses the race to the index answers the session that won it",
   );
 });
 
+test("two opens racing under one key answer the one thread the winner opened", async () => {
+  const partition = await project("keyrace");
+  const member = threadRigMember(rig, partition, "keyrace");
+  const key = threadRigKey();
+  const winner = `thread-keyrace-winner-${partition.project}`;
+  const values = (session: string) => [
+    partition.tenant,
+    partition.project,
+    member.principal,
+    session,
+    key,
+    threadRigSlot,
+    threadRigPrompt,
+  ];
+
+  const held = await rig.sessions.harness.begin();
+  try {
+    await held.query(
+      `SELECT opened FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      values(winner),
+    );
+    const racing = rig.apiPool.query<{ opened: string; session: string }>(
+      `SELECT opened,session FROM open_member_thread($1,$2,$3,$4,$5,$6,$7)`,
+      values(`thread-keyrace-loser-${partition.project}`),
+    );
+    await waitForABlockedStatement();
+    await held.commit();
+    const answered = await racing;
+    assert.equal(answered.rows[0]?.opened, "AlreadyOpen");
+    assert.equal(answered.rows[0]?.session, winner);
+  } finally {
+    await held.rollback().catch(() => undefined);
+  }
+});
+
 test("the widest objectives a thread composes are objectives the column takes", async () => {
   const partition = await project("prompt");
   const wide = threadRigMember(rig, partition, "wide");
@@ -989,6 +1091,7 @@ test("the widest objectives a thread composes are objectives the column takes", 
     partition,
     principal: wide.principal,
     session: rig.minting.session(),
+    key: threadRigKey(),
     systemPrompt: "p".repeat(threadSystemPromptCharsMax),
     credentialSlot: threadRigSlot,
   });
@@ -1000,6 +1103,7 @@ test("the widest objectives a thread composes are objectives the column takes", 
         partition,
         principal: over.principal,
         session: rig.minting.session(),
+        key: threadRigKey(),
         systemPrompt: "p".repeat(agentSessionPromptCharsMax + 1),
         credentialSlot: threadRigSlot,
       }),
@@ -1043,12 +1147,10 @@ test("the same turn twice is the same ordinal, and one past the backlog is refus
   const first = await message(repeated, "the first thing");
   assert.deepEqual(first, {
     enqueued: "Enqueued",
-    session: thread.session,
     ordinal: 1,
   });
   assert.deepEqual(await message(repeated, "the first thing"), {
     enqueued: "AlreadyEnqueued",
-    session: thread.session,
     ordinal: 1,
   });
 
@@ -1073,14 +1175,13 @@ test("the same turn twice is the same ordinal, and one past the backlog is refus
 });
 
 /**
- * The durable half of "a thread is its owner's alone to write": the door
- * resolves the mailbox from the principal and refuses the session the caller
- * named where the two differ, so the route's comparison is the second check and
- * not the only one.
+ * The durable half of "a thread is its owner's alone to write": the door takes
+ * the session the caller named and refuses it where it is another member's, so
+ * no route's comparison is what keeps one member out of another's mailbox.
  *
- * THE STALE-LISTING CASE IS THE SAME REFUSAL: a member who read a listing
- * before their thread was closed and reopened names a session that is no longer
- * theirs, and gets `NotYourThread` rather than a first turn with no seeding.
+ * A STALE LISTING IS ANSWERED BY THE THREAD IT NAMES: a member who read a
+ * listing before their thread was closed names that closed thread, and gets
+ * `Closed` rather than a turn in the thread they opened since.
  */
 test("a message naming a session the caller does not own is refused by the door", async () => {
   const partition = await project("named");
@@ -1112,8 +1213,8 @@ test("a message naming a session the caller does not own is refused by the door"
       input: "into the one I read about",
       route: "InCluster",
     }),
-    { enqueued: "NotYourThread" },
-    "a stale listing must not enqueue a first turn into a thread that was reopened",
+    { enqueued: "Closed" },
+    "a stale listing must not enqueue a first turn into a thread opened since",
   );
 
   const standing = await rig.threads.standing({
@@ -1122,6 +1223,46 @@ test("a message naming a session the caller does not own is refused by the door"
     query: { limit: threadTurnsAnsweredMax },
   });
   assert.deepEqual(standing?.turns, []);
+});
+
+test("two open threads of one member each hold the messages sent to them", async () => {
+  const partition = await project("several");
+  const member = threadRigMember(rig, partition, "several");
+  const one = await threadRigThread(rig, partition, member);
+  const two = await threadRigThread(rig, partition, member);
+  const send = (session: SessionId, label: string) =>
+    rig.threads.enqueueMessage({
+      partition,
+      principal: member.principal,
+      session,
+      turn: asSessionTurnId(threadRigTurnId(label)),
+      input: label,
+      route: "InCluster",
+    });
+
+  assert.deepEqual(await send(one.session, "to-one"), {
+    enqueued: "Enqueued",
+    ordinal: 1,
+  });
+  assert.deepEqual(await send(two.session, "to-two"), {
+    enqueued: "Enqueued",
+    ordinal: 1,
+  });
+  assert.deepEqual(await send(two.session, "to-two-again"), {
+    enqueued: "Enqueued",
+    ordinal: 2,
+  });
+
+  const inputs = async (session: SessionId) =>
+    (
+      await rig.threads.standing({
+        partition,
+        session,
+        query: { limit: threadTurnsAnsweredMax },
+      })
+    )?.turns.map((turn) => turn.input);
+  assert.deepEqual(await inputs(one.session), ["to-one"]);
+  assert.deepEqual(await inputs(two.session), ["to-two", "to-two-again"]);
 });
 
 /**
@@ -1194,7 +1335,6 @@ test("a retried turn is already enqueued before it is backlogged", async () => {
 
   assert.deepEqual(await message(repeated), {
     enqueued: "AlreadyEnqueued",
-    session: thread.session,
     ordinal: 1,
   });
 });
@@ -1238,7 +1378,7 @@ test("a thread the project no longer admits its owner to is listed unchanged", a
       input: "am I still here",
       route: "InCluster",
     }),
-    { enqueued: "Enqueued", session: thread.session, ordinal: 1 },
+    { enqueued: "Enqueued", ordinal: 1 },
   );
 
   const listed = await rig.threads.threads(partition, threadsAnsweredMax);
@@ -1303,7 +1443,7 @@ test("the two mailbox doors write the two input kinds and no other", async () =>
   });
   const woken = await rig.wakes.wake({
     partition,
-    principal: member.principal,
+    session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("woken")),
     input: threadWakeText(
       threadWakeDocument({
@@ -1343,7 +1483,7 @@ test("a wake offered twice is the same ordinal and no second turn", async () => 
   const offering = () =>
     rig.wakes.wake({
       partition,
-      principal: member.principal,
+      session: thread.session,
       turn,
       input: document,
       route: "InCluster",
@@ -1475,7 +1615,7 @@ test("both reads answer the first member message, seeding shed and bounded", asy
 
   await rig.wakes.wake({
     partition,
-    principal: member.principal,
+    session: thread.session,
     turn: asSessionTurnId(threadRigTurnId("firstsaid-wake")),
     input: threadWakeText(
       threadWakeDocument({
@@ -1720,12 +1860,13 @@ async function wakeFixture(label: string): Promise<{
   });
   const revision = await threadConfiguration(partition);
 
-  const refused = await threadDraft(partition, revision, member);
-  const lifted = await threadDraft(partition, revision, member);
-  const deleted = await threadDraft(partition, revision, member);
-  const escalated = await threadDraft(partition, revision, member);
-  const done = await threadDraft(partition, revision, member);
-  const revoked = await threadDraft(partition, revision, member);
+  const filed = () => threadDraft(partition, revision, member, thread.session);
+  const refused = await filed();
+  const lifted = await filed();
+  const deleted = await filed();
+  const escalated = await filed();
+  const done = await filed();
+  const revoked = await filed();
 
   await wakeRefusals(partition, label, refused, lifted);
   const gone = await rig.sessions.harness.authoring.deleteDraft({
@@ -1797,9 +1938,9 @@ test("a ticket's earlier moves keep their own reasons after it is revoked", asyn
   const partition = await project("ticketreasons");
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, "ticketreasons");
-  await threadRigThread(rig, partition, member);
+  const thread = await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member);
+  const ticket = await threadDraft(partition, revision, member, thread.session);
 
   for (const phase of ["Escalated", "Done", "Revoked"])
     await wakeTicketPhase(partition, ticket, phase);
@@ -1818,9 +1959,9 @@ test("a deleted draft's earlier changes are not deletions", async () => {
   const partition = await project("draftreasons");
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, "draftreasons");
-  await threadRigThread(rig, partition, member);
+  const thread = await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member);
+  const ticket = await threadDraft(partition, revision, member, thread.session);
 
   const revised = await rig.sessions.harness.authoring.reviseDraft({
     partition,
@@ -1856,9 +1997,9 @@ test("a lift does not turn the refusal before it into a second lift", async () =
   const partition = await project("refusalreasons");
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, "refusalreasons");
-  await threadRigThread(rig, partition, member);
+  const thread = await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member);
+  const ticket = await threadDraft(partition, revision, member, thread.session);
 
   await rig.writes.record({
     partition,
@@ -1883,16 +2024,17 @@ test("a lift does not turn the refusal before it into a second lift", async () =
   );
 });
 
-test("a wake follows whoever wrote the ticket, once, and nobody else", async () => {
+test("a wake follows the thread the draft was filed from, once, and no other", async () => {
   const partition = await project("authorship");
   const after = await changeLogHead();
   const author = threadRigMember(rig, partition, "author");
   const bystander = threadRigMember(rig, partition, "bystander");
-  const authorThread = await threadRigThread(rig, partition, author);
-  await threadRigThread(rig, partition, bystander);
+  const origin = await threadRigThread(rig, partition, author);
+  const sibling = await threadRigThread(rig, partition, author);
+  const theirs = await threadRigThread(rig, partition, bystander);
   const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, author);
-  await threadDraft(partition, revision, bystander);
+  const ticket = await threadDraft(partition, revision, author, origin.session);
+  await threadDraft(partition, revision, bystander, theirs.session);
 
   const revised = await rig.sessions.harness.authoring.reviseDraft({
     partition,
@@ -1913,18 +2055,64 @@ test("a wake follows whoever wrote the ticket, once, and nobody else", async () 
   ).filter((candidate) => candidate.partition.project === partition.project);
   assert.deepEqual(
     mine.map((candidate) => [candidate.session, candidate.reason]),
-    [[authorThread.session, "TicketCompleted"]],
-    "two revisions by one member wake that member once, and a member who authored some other ticket none",
+    [[origin.session, "TicketCompleted"]],
+    "a ticket wakes the one thread it was filed from, and neither its author's other thread nor another member's",
   );
+  assert.ok(!mine.some((candidate) => candidate.session === sibling.session));
 });
 
-test("a closed thread is a thread nothing wakes", async () => {
+test("a draft created through no session wakes nobody", async () => {
+  const partition = await project("console");
+  const after = await changeLogHead();
+  const member = threadRigMember(rig, partition, "console");
+  await threadRigThread(rig, partition, member);
+  const revision = await threadConfiguration(partition);
+  const ticket = await threadDraft(partition, revision, member, undefined);
+  await wakeTicketPhase(partition, ticket, "Done");
+
+  const mine = (
+    await rig.wakes.candidates(after, threadWakesPerPassMax)
+  ).filter((candidate) => candidate.partition.project === partition.project);
+  assert.deepEqual(mine, []);
+});
+
+test("a revision made through another thread leaves the draft's origin where it was", async () => {
+  const partition = await project("originstays");
+  const member = threadRigMember(rig, partition, "originstays");
+  const origin = await threadRigThread(rig, partition, member);
+  const other = await threadRigThread(rig, partition, member);
+  const revision = await threadConfiguration(partition);
+  const ticket = await threadDraft(partition, revision, member, origin.session);
+
+  const revised = await rig.sessions.harness.authoring.reviseDraft({
+    partition,
+    authority: member.authority,
+    ticket,
+    expectedVersion: 1,
+    configurationRevision: revision,
+    authoring: plainAuthoring,
+    brief: postgresHarnessBrief,
+  });
+  if (revised.revised !== "Revised")
+    throw new Error(`thread durable: revising answered ${revised.revised}`);
+
+  const rows = await rig.sessions.harness.query(
+    `SELECT origin_session FROM draft
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [partition.tenant, partition.project, Number(ticket)],
+  );
+  assert.deepEqual(rows, [{ origin_session: origin.session }]);
+  assert.notEqual(other.session, origin.session);
+});
+
+test("a closed thread is a thread nothing wakes, nor any sibling in its place", async () => {
   const partition = await project("closedwake");
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, "closedwake");
   const thread = await threadRigThread(rig, partition, member);
+  await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
-  const ticket = await threadDraft(partition, revision, member);
+  const ticket = await threadDraft(partition, revision, member, thread.session);
   await wakeTicketPhase(partition, ticket, "Done");
 
   const before = (
@@ -1946,9 +2134,9 @@ test("a change whose resource is not a ticket number is no candidate and no erro
   const partition = await project("nonnumeric");
   const after = await changeLogHead();
   const member = threadRigMember(rig, partition, "nonnumeric");
-  await threadRigThread(rig, partition, member);
+  const thread = await threadRigThread(rig, partition, member);
   const revision = await threadConfiguration(partition);
-  await threadDraft(partition, revision, member);
+  await threadDraft(partition, revision, member, thread.session);
 
   await rig.sessions.harness.query(
     `SELECT append_project_change($1,$2,'Draft','not-a-ticket')`,
@@ -2082,6 +2270,24 @@ test("what a session was opened as is still what it is", async () => {
     );
 });
 
+test("a member's thread limit is read and written by the API's role alone", async () => {
+  const partition = await project("limitgrants");
+  const member = threadRigMember(rig, partition, "limitgrants");
+  const named = [partition.tenant, partition.project, member.principal]
+    .map((value) => `'${value}'`)
+    .join(",");
+  await onlyTheseRolesMay(
+    [apiRole],
+    threadLimitFunction,
+    `SELECT ${threadLimitFunction}(${named})`,
+  );
+  await onlyTheseRolesMay(
+    [apiRole],
+    threadLimitSetFunction,
+    `SELECT ${threadLimitSetFunction}(${named},3,'Member','grants')`,
+  );
+});
+
 test("each door 062 declares is the role's it was granted to and no other's", async () => {
   const partition = await project("grants");
   const member = threadRigMember(rig, partition, "grants");
@@ -2093,7 +2299,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
   await onlyTheseRolesMay(
     [apiRole],
     threadOpenFunction,
-    `SELECT ${threadOpenFunction}(${named},'session-grants','slot','prompt')`,
+    `SELECT ${threadOpenFunction}(${named},'session-grants','key-grants','slot','prompt')`,
   );
   await onlyTheseRolesMay(
     [apiRole],
@@ -2123,7 +2329,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
   await onlyTheseRolesMay(
     [selectorServiceRole],
     threadWakeFunction,
-    `SELECT ${threadWakeFunction}(${named},'turn-wake-grants','{}','InCluster')`,
+    `SELECT ${threadWakeFunction}('${partition.tenant}','${partition.project}','session-grants','turn-wake-grants','{}','InCluster')`,
   );
   await onlyTheseRolesMay(
     [selectorServiceRole],

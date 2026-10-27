@@ -795,7 +795,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
     await subject.query<{ result: string; ticket: string | null }>(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -806,7 +806,7 @@ async function createdUnboundDraft(subject: pg.Pool) {
     await subject.query<{ result: string }>(
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring)],
     )
   ).rows;
@@ -822,6 +822,21 @@ async function createdProposingDraftBefore039(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91','User','author')`,
+      [encodeDraftAuthoring(plainAuthoring), branch],
+    )
+  ).rows;
+}
+
+/** `createdProposingDraft`, called where the installation predates 086's origin session. */
+async function createdProposingDraftBefore086(
+  subject: pg.Pool,
+  branch: string | null,
+) {
+  return (
+    await subject.query<{ result: string; ticket: string | null }>(
+      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -892,7 +907,7 @@ test("a pull request may default its base but requires a distinct head", async (
 test("the draft doors are owned and granted to their callers", async () => {
   await migrationDatabaseAt("Migrated", "i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
   });
@@ -905,7 +920,7 @@ async function createdOverriddenDraft(subject: pg.Pool, overrides: string) {
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-         NULL,NULL,'bound-91',$2,NULL,'User','author')`,
+         NULL,NULL,'bound-91',$2,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring), overrides],
     )
   ).rows;
@@ -956,7 +971,7 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
@@ -2094,7 +2109,7 @@ test("an authoring that still names the deleted finalizer no longer decides the 
             `SELECT result FROM ${draftCreateFunction}(
              'tenant-91','project-91','revision-91','digest-91',0,$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
+             NULL,NULL,'bound-91',NULL,NULL,'User','author',NULL)`,
             [deletionFinalizerAuthoring()],
           )
         ).rows,
@@ -6162,6 +6177,7 @@ const wipeKept = [
   "forge_installation",
   "installation_authority",
   "invite_link",
+  "member_thread_limit",
   "personal_runner",
   "personal_runner_project",
   "personal_runner_registration_token",
@@ -8533,12 +8549,12 @@ test("a released draft reopens while its ticket is pending, at any dependencies"
   });
 });
 
-/** Draft 1 released and Pending beside draft 2, at the dependencies `plainAuthoring` names. */
+/** Draft 1 released and Pending beside draft 2, at the dependencies `plainAuthoring` names, where the installation predates 086. */
 async function pendingReleasedDraft(subject: pg.Pool): Promise<void> {
   await seedProposingBinding(subject);
   for (const ticket of ["1", "2"])
     assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      await createdProposingDraftBefore086(subject, "refs/heads/branch-91"),
       [{ result: "Created", ticket }],
     );
   assert.equal(

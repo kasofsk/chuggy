@@ -4,12 +4,13 @@
  * door that stops a turn, the door that closes one, what a first turn is
  * seeded from, and the bounded pass that wakes a thread.
  *
- * THIS FILE DECIDES NOTHING. `open_member_thread` takes no roster and
- * `enqueue_thread_message` takes no session, so neither the roster a thread
- * holds nor the mailbox a message lands in is this adapter's to choose; the
+ * THIS FILE DECIDES NOTHING. `open_member_thread` takes no roster and no
+ * limit, and `enqueue_thread_message` decides whether the session named is the
+ * caller's, so neither the roster a thread holds, how many a member may hold,
+ * nor whose mailbox a message may land in is this adapter's to choose; the
  * identity a thread is opened under arrives through `ThreadSessionMint` for the
- * same reason, because a name is a decision. An adapter that resolved the
- * session itself would be a second opinion racing the definer that decides it.
+ * same reason, because a name is a decision. An adapter that checked any of
+ * them itself would be a second opinion racing the definer that decides it.
  *
  * THE API AND THE SELECTOR REACH DIFFERENT DOORS, so they are different
  * factories over different pools. `postgresThreads` is the API's reads and
@@ -59,6 +60,7 @@ import type {
   ThreadClosed,
   ThreadHidden,
   ThreadMessageEnqueued,
+  ThreadOpenKey,
   ThreadOpened,
   ThreadRecord,
   ThreadRenamed,
@@ -241,11 +243,10 @@ async function threadReadBack(
   return standing.thread;
 }
 
-/** The verdict a mailbox door answered, with the ordinal and session each arm carries. */
+/** The verdict a mailbox door answered, with the ordinal each arm carries. */
 function threadMessageEnqueued(row: {
   readonly enqueued: string | null;
   readonly ordinal: string | null;
-  readonly session: string | null;
 }): ThreadMessageEnqueued {
   const { enqueued } = row;
   if (
@@ -261,7 +262,6 @@ function threadMessageEnqueued(row: {
   )
     return {
       enqueued,
-      session: asSessionId(sessionRowText(row.session, "thread session")),
       ordinal: projectRowCounter(row.ordinal, "thread turn ordinal"),
     };
   throw new Error(`postgres thread: the mailbox answered ${String(enqueued)}`);
@@ -291,11 +291,22 @@ async function threadListing(
   return found.rows.map((row) => threadRecordOf(row, row.state));
 }
 
-/** The verdict `open_member_thread` answered, and the session it names either way. */
+/** The verdict `open_member_thread` answered: the session the key names, or the limit the member is at. */
 function threadOpening(row: {
   readonly opened: string | null;
   readonly session: string | null;
-}): { readonly opened: "Opened" | "AlreadyOpen"; readonly session: SessionId } {
+  readonly threads_max: string | null;
+}):
+  | { readonly opened: "Opened" | "AlreadyOpen"; readonly session: SessionId }
+  | { readonly opened: "ThreadLimitReached"; readonly threadsMax: number } {
+  if (row.opened === "ThreadLimitReached")
+    return {
+      opened: row.opened,
+      threadsMax: projectRowCounter(
+        sessionRowText(row.threads_max, "thread limit"),
+        "thread limit",
+      ),
+    };
   if (row.opened !== "Opened" && row.opened !== "AlreadyOpen")
     throw new Error(`postgres thread: opening answered ${String(row.opened)}`);
   return {
@@ -311,6 +322,7 @@ async function threadOpen(
     readonly partition: Partition;
     readonly principal: Principal;
     readonly session: SessionId;
+    readonly key: ThreadOpenKey;
     readonly systemPrompt: string;
     readonly credentialSlot: string;
   },
@@ -318,23 +330,26 @@ async function threadOpen(
   const answered = await pool.query<{
     opened: string | null;
     session: string | null;
+    threads_max: string | null;
   }>(
-    sql`SELECT opened,session FROM open_member_thread(
-          ${input.partition.tenant},${input.partition.project},
-          ${input.principal},${input.session},
-          ${input.credentialSlot},${input.systemPrompt})`,
+    sql`SELECT opened,session,threads_max::text AS threads_max
+          FROM open_member_thread(
+            ${input.partition.tenant},${input.partition.project},
+            ${input.principal},${input.session},${input.key},
+            ${input.credentialSlot},${input.systemPrompt})`,
   );
   const row = answered.rows[0];
   if (row === undefined)
     throw new Error("postgres thread: opening returned no verdict");
-  const { opened, session } = threadOpening(row);
+  const opening = threadOpening(row);
+  if (opening.opened === "ThreadLimitReached") return opening;
   return {
-    opened,
+    opened: opening.opened,
     thread: await threadReadBack(
       pool,
       streamsMax,
       input.partition,
-      session,
+      opening.session,
       "opened",
     ),
   };
@@ -354,9 +369,8 @@ async function threadEnqueue(
   const answered = await pool.query<{
     enqueued: string | null;
     ordinal: string | null;
-    session: string | null;
   }>(
-    sql`SELECT enqueued,ordinal::text AS ordinal,session
+    sql`SELECT enqueued,ordinal::text AS ordinal
           FROM enqueue_thread_message(
             ${input.partition.tenant},${input.partition.project},
             ${input.principal},${input.session},
@@ -708,7 +722,7 @@ async function threadWake(
   pool: pg.Pool,
   input: {
     readonly partition: Partition;
-    readonly principal: Principal;
+    readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
     readonly route: PlacementRoute;
@@ -720,7 +734,7 @@ async function threadWake(
   }>(
     sql`SELECT enqueued,ordinal::text AS ordinal FROM wake_member_thread(
           ${input.partition.tenant},${input.partition.project},
-          ${input.principal},${input.turn},${input.input},${input.route})`,
+          ${input.session},${input.turn},${input.input},${input.route})`,
   );
   const row = answered.rows[0];
   if (row === undefined)

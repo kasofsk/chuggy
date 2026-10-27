@@ -37,10 +37,10 @@
  * its route, because no runner would take the turn.
  *
  * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS DECIDED WHOLE. One change row
- * wakes one thread per member who authored a revision of the ticket it names,
- * so a page that filled its bound may hold only part of the last sequence's
- * candidates — and a cursor moved past that sequence would drop the rest of
- * them permanently and silently. So a full page advances to the highest
+ * wakes at most the one thread its ticket's draft was filed from, but the pass
+ * does not rest on that read's shape: a page that filled its bound may hold
+ * only part of the last sequence's candidates — and a cursor moved past that
+ * sequence would drop the rest of them permanently and silently. So a full page advances to the highest
  * sequence BELOW its last, which the ordering makes complete, and its last
  * sequence is read again next pass, where what was already woken answers
  * `AlreadyWoken`. The one case with no complete sequence to move to is a page
@@ -85,7 +85,7 @@ import {
   type ThreadWakeReason,
 } from "./thread.ts";
 
-/** One change row the roster says wakes one member's thread. */
+/** One change row and the thread it wakes: the open thread its ticket's draft was filed from. */
 export interface ThreadWakeCandidate {
   readonly sequence: number;
   readonly partition: Partition;
@@ -127,7 +127,7 @@ export interface ThreadWakeStore {
   ): Promise<readonly ThreadWakeCandidate[]>;
   wake(input: {
     readonly partition: Partition;
-    readonly principal: Principal;
+    readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
     /** The route the wake was admitted on, which it keeps whatever the thread's route becomes. */
@@ -258,7 +258,7 @@ async function threadWakesOffered(
     if (!admitted) continue;
     const offered = await service.store.wake({
       partition: candidate.partition,
-      principal: candidate.principal,
+      session: candidate.session,
       turn: threadWakeTurn(candidate),
       route: candidate.route,
       input: threadWakeText(

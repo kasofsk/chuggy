@@ -116,6 +116,7 @@ export const sessionBearerRouteClasses = {
   draft: { GET: "Partition", PUT: "Partition", DELETE: "Partition" },
   dispatchView: partitionRead,
   threads: { GET: "Partition", POST: "Partition" },
+  threadLimit: { GET: "Partition", PUT: "Partition" },
   thread: partitionRead,
   threadTranscript: partitionRead,
   threadMessages: partitionWrite,

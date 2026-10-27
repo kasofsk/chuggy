@@ -44,6 +44,7 @@ import {
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
   projectOwnerFallbackSchema,
+  threadLimitSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -55,6 +56,10 @@ import {
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type { SessionRoutes } from "../../interpreter/sessionPlacement.ts";
 import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
+import {
+  asThreadOpenKey,
+  type ThreadOpenKey,
+} from "../../interpreter/threadRead.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
@@ -662,6 +667,16 @@ export function parseThreadMessage(body: unknown): {
     message: value.message,
     ...(value.images === undefined ? {} : { images: value.images }),
   };
+}
+
+/** How many threads one member may hold open, as an administrator writes it whole. */
+export function parseThreadLimit(body: unknown): number {
+  return threadLimitSchema.parse(body).threadsMax;
+}
+
+/** The key a member's client opens a thread under, which the door is idempotent on. */
+export function parseThreadOpen(body: unknown): ThreadOpenKey {
+  return asThreadOpenKey(nativeHttpEndpoints.openThread.body.parse(body).key);
 }
 
 /**

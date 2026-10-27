@@ -24,7 +24,10 @@ import {
   selectorSettingsTextCharsMax,
   threadMessageCharsMax,
   threadMessageImagesMax,
+  threadOpenKeyCharsMax,
+  threadOpenKeyPattern,
   threadTitleCharsMax,
+  threadsOpenMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -231,6 +234,11 @@ export const projectOwnerFallbackSchema = z.strictObject({
   fallback: z.enum(ownerFallbacks).optional(),
 });
 
+/** How many threads one member may hold open in the project, written whole by an administrator. */
+export const threadLimitSchema = z.strictObject({
+  threadsMax: z.number().int().min(1).max(threadsOpenMax),
+});
+
 /**
  * One binding retired. It carries the repository and nothing else: retirement
  * is one-way and names its own row, so there is no value for a second writer
@@ -335,6 +343,15 @@ export const threadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
   images: z.array(bodyIdentitySchema).max(threadMessageImagesMax).optional(),
+});
+
+/**
+ * What a member's client opens a thread under: a key it mints once per thread
+ * it means to open, so a retried open answers the thread the first one opened
+ * rather than a second one.
+ */
+export const threadOpenSchema = z.strictObject({
+  key: z.string().min(1).max(threadOpenKeyCharsMax).regex(threadOpenKeyPattern),
 });
 
 /** What a member calls their own thread, over the title derived from its

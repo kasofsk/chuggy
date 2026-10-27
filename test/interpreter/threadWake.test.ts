@@ -158,9 +158,7 @@ function referenceStore(options: ReferenceStoreOptions): ReferenceStore {
           new Error("reference store: the door was unreachable"),
         );
       }
-      const session =
-        options.log.find((candidate) => candidate.principal === input.principal)
-          ?.session ?? asSessionId("session-unknown");
+      const session = input.session;
       const held = standing(session);
       const answer = ((): ThreadWakeOffered => {
         if (held !== "Open") return { woken: held };
