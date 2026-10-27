@@ -1045,7 +1045,7 @@ test("a personal runner's poll naming this release is handed its job's project, 
   }
 });
 
-/** Every poll a replayed pool makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner it names where its release names one. */
+/** Every poll a replayed pool makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner and the memory room it names where its release names them. */
 const poolReplayPolls = [
   [
     "a pinned image",
@@ -1055,8 +1055,18 @@ const poolReplayPolls = [
     0,
     claims.pinned,
     undefined,
+    undefined,
   ],
-  ["a capability requirement", poolToken, [], 1, 0, claims.capable, undefined],
+  [
+    "a capability requirement",
+    poolToken,
+    [],
+    1,
+    0,
+    claims.capable,
+    undefined,
+    undefined,
+  ],
   [
     "an attempt that kept no runtime",
     poolToken,
@@ -1065,10 +1075,20 @@ const poolReplayPolls = [
     0,
     claims.unkept,
     undefined,
+    undefined,
   ],
-  ["no room", poolToken, ["live"], 0, 0, claims.pinned, undefined],
-  ["nothing to claim", poolToken, [], 1, 0, undefined, "chuggy-linux/0.14.0"],
-  ["room for a session", poolToken, [], 0, 1, undefined, undefined],
+  ["no room", poolToken, ["live"], 0, 0, claims.pinned, undefined, undefined],
+  [
+    "nothing to claim",
+    poolToken,
+    [],
+    1,
+    0,
+    undefined,
+    "chuggy-linux/0.14.0",
+    "4096",
+  ],
+  ["room for a session", poolToken, [], 0, 1, undefined, undefined, undefined],
   [
     "a personal runner's job",
     runnerToken,
@@ -1077,8 +1097,18 @@ const poolReplayPolls = [
     0,
     claims.personal,
     "chuggy-linux/0.18.0",
+    undefined,
   ],
-  ["a personal runner's session", runnerToken, [], 0, 1, undefined, undefined],
+  [
+    "a personal runner's session",
+    runnerToken,
+    [],
+    0,
+    1,
+    undefined,
+    undefined,
+    undefined,
+  ],
 ] as const;
 
 /**
@@ -1098,6 +1128,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       sessions,
       claimed,
       named,
+      room,
     ] of poolReplayPolls) {
       const recorded = calls();
       const ports = {
@@ -1126,6 +1157,9 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
           ...(older.runnerHeader === undefined || named === undefined
             ? {}
             : { [older.runnerHeader]: named }),
+          ...(older.memoryRoomHeader === undefined || room === undefined
+            ? {}
+            : { [older.memoryRoomHeader]: room }),
         },
       });
       assert.equal(answered.statusCode, 200, what);

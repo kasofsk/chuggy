@@ -108,5 +108,10 @@
     "release": "1.21.0",
     "wire": "e226ee4f736ceff89d3de0ff52af30feaec252a77905f649a9edf9314e227b35",
     "files": "96ddbaa8973de567db2be39c1fbae796ed27e9249bbcb760008ab2d6b4e6b5fc"
+  },
+  {
+    "release": "1.22.0",
+    "wire": "ba500a4b0cc9cbb52c4a2865355086e23f79813e23b0dd8a48cb88a46efefd52",
+    "files": "73df52ca15cdf00dee2f4390d752b851539db7483305d5008e3bd3e5f22bf315"
   }
 ]
