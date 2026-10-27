@@ -64,8 +64,8 @@ module registered_runner {
         c.capabilities.subseteq(i.executionCapabilities)
       }
   }
-  /// Whether a runner takes an execution of the placement's size: one under
-  /// its ceiling, or any where it names none.
+  /// Whether a runner takes an execution of the placement's size: one at or
+  /// under its ceiling, or any where it names none.
   pure def sizeFits(p: ExecutionPlacement, i: CapabilityInventory): bool = match i.memoryCeiling {
     | Unbounded => true
     | CeilingMib(m) => p.memoryMib <= m
