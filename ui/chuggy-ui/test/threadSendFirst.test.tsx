@@ -32,11 +32,14 @@ interface Posted {
   readonly body: unknown;
 }
 
-/** The door as the case scripts it: every open answers the same thread, and
- * each message is answered by the next status the case names. */
-function doorAnswering(messageStatuses: readonly number[]): Posted[] {
+/** The door both scripted doors share: runs granted, the thread placed in the
+ * cluster, every post recorded, and the thread and message answers the case
+ * supplies. */
+function doorStubbed(
+  onThread: () => Response,
+  onMessage: () => Response,
+): Posted[] {
   const posted: Posted[] = [];
-  const statuses = [...messageStatuses];
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     if (url.endsWith("/hosted-runs"))
       return Promise.resolve(answer({ granted: true }));
@@ -48,18 +51,24 @@ function doorAnswering(messageStatuses: readonly number[]): Posted[] {
       url,
       body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
     });
-    if (url.endsWith("/threads"))
-      return Promise.resolve(
-        answer(threadEntry({ session: "thread-1", mine: true }), 201),
-      );
-    const status = statuses.shift() ?? 202;
-    return Promise.resolve(
-      status === 202
-        ? answer({ turn: "t", ordinal: 1 }, 202)
-        : answer({ error: { code: "Invalid" } }, status),
-    );
+    return Promise.resolve(url.endsWith("/threads") ? onThread() : onMessage());
   });
   return posted;
+}
+
+/** The door as the case scripts it: every open answers the same thread, and
+ * each message is answered by the next status the case names. */
+function doorAnswering(messageStatuses: readonly number[]): Posted[] {
+  const statuses = [...messageStatuses];
+  return doorStubbed(
+    () => answer(threadEntry({ session: "thread-1", mine: true }), 201),
+    () => {
+      const status = statuses.shift() ?? 202;
+      return status === 202
+        ? answer({ turn: "t", ordinal: 1 }, 202)
+        : answer({ error: { code: "Invalid" } }, status);
+    },
+  );
 }
 
 function wrapper(props: { readonly children: ReactNode }): ReactNode {
@@ -109,26 +118,13 @@ test("a refused first message is sent again into the thread it opened", async ()
 /** The door as the case scripts it: each open is answered the next answer the
  * case names, then the thread, and every message is taken. */
 function doorOpening(openAnswers: readonly (() => Response)[]): Posted[] {
-  const posted: Posted[] = [];
   const answers = [...openAnswers];
   const opened = () =>
     answer(threadEntry({ session: "thread-1", mine: true }), 201);
-  vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
-    if (url.endsWith("/hosted-runs"))
-      return Promise.resolve(answer({ granted: true }));
-    if (url.endsWith("/session-placement"))
-      return Promise.resolve(
-        answer(sessionPlacementBody({ thread: "InCluster" })),
-      );
-    posted.push({
-      url,
-      body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
-    });
-    if (url.endsWith("/threads"))
-      return Promise.resolve((answers.shift() ?? opened)());
-    return Promise.resolve(answer({ turn: "t", ordinal: 1 }, 202));
-  });
-  return posted;
+  return doorStubbed(
+    () => (answers.shift() ?? opened)(),
+    () => answer({ turn: "t", ordinal: 1 }, 202),
+  );
 }
 
 /** The composer of a reader with no thread. */
