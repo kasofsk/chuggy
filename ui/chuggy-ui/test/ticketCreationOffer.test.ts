@@ -252,6 +252,22 @@ test("a project whose live bindings all declare nothing is offered the bootstrap
   expect(names(listing, [bootstrapped(scratch)])).toStrictEqual(["bootstrap"]);
 });
 
+/** A bootstrap releases only in the repository it was authored for, and the
+ * project's one from before each repository had its own in none, so neither
+ * is offered where no live binding holds it. */
+test("a project whose live bindings hold nothing is never offered a bootstrap", () => {
+  const legacy = [creationSummary("bootstrap", "Ready"), ...authored];
+  expect(names(legacy, [unheld(chuggy)])).toStrictEqual(["r9"]);
+  const another = [
+    creationSummary(creationBootstrapRevision(scratch), "Ready"),
+    ...authored,
+  ];
+  expect(revisions(another, [unheld(chuggy)])).toStrictEqual(["r9"]);
+  expect(
+    names([creationSummary("bootstrap", "Ready")], [unheld(chuggy)]),
+  ).toStrictEqual([]);
+});
+
 test("a project whose live bindings hold nothing is offered its newest ready revision", () => {
   expect(names(authored, [])).toStrictEqual(["r9"]);
   expect(names(authored, [unheld(chuggy)])).toStrictEqual(["r9"]);

@@ -396,18 +396,35 @@ test("a release under a bootstrap is refused for any repository but the one it w
     ).readiness,
     "Ready",
   );
-  assert.equal(
-    configurationRepositoryOf(
-      asConfigurationRevisionId("bootstrap"),
-      undefined,
-    ),
-    undefined,
-    "the one bootstrap a project held before each repository had its own is any binding's, as any authored revision is",
-  );
   assert.deepEqual(configurationRepositoryOf(revision, secondRepository), {
     from: "Imported",
     repository: secondRepository,
   });
+});
+
+test("the one bootstrap a project held before each repository had its own releases in no repository", () => {
+  const orphan = configurationRepositoryOf(
+    asConfigurationRevisionId("bootstrap"),
+    undefined,
+  );
+  for (const repository of [firstRepository, secondRepository])
+    assert.deepEqual(
+      draftReleaseReadiness(
+        readyConfiguration,
+        { checks: [], repository },
+        orphan,
+        undefined,
+      ),
+      { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
+    );
+  assert.equal(
+    configurationRepositoryOf(
+      asConfigurationRevisionId("repository:0a1b2c3:bootstrap"),
+      undefined,
+    ),
+    undefined,
+    "a revision that merely ends in the bootstrap's name is not one",
+  );
 });
 
 test("the configuration's own refusals are answered before the repository's", () => {

@@ -152,14 +152,18 @@ export type CreationAssembly =
   | { readonly assembled: "Faults"; readonly faults: readonly CreationFault[] };
 
 /**
- * The newest revision this project has ready. The list arrives newest first, so
- * the first ready one is the latest, and a project with none is a state to draw
- * rather than a choice to offer.
+ * The newest revision this project has ready that is no bootstrap, which
+ * releases only in the repository it was authored for. The list arrives newest
+ * first, so the first such is the latest, and a project with none is a state
+ * to draw rather than a choice to offer.
  */
 export function latestReadyConfiguration(
   configurations: readonly ConfigurationSummary[],
 ): ConfigurationSummary | undefined {
-  return configurations.find((summary) => summary.readiness === "Ready");
+  return configurations.find(
+    (summary) =>
+      summary.readiness === "Ready" && !creationBootstrapIs(summary.revision),
+  );
 }
 
 /**
@@ -299,8 +303,8 @@ function creationBootstrapName(
  * The configurations a new ticket may be drawn under, by name and in name
  * order: what the newest commit of each live binding that declares has ready,
  * and the bootstrap of each that declares nothing. A project whose live
- * bindings hold neither has its newest ready revision and nothing else,
- * whichever binding or author that came from.
+ * bindings hold neither has its newest ready revision that is no bootstrap
+ * and nothing else, whichever binding that came from.
  */
 export function creationConfigurationsOffered(
   configurations: readonly ConfigurationSummary[],
@@ -459,10 +463,17 @@ export function creationBootstrapLine(
     offer.listed === undefined
       ? offer.initialization.configuration.revision
       : creationConfigurationName(offer.listed);
-  return name === bootstrapConfigurationName ||
-    name.startsWith(bootstrapConfigurationRevisionPrefix)
+  return creationBootstrapIs(name)
     ? "First ticket · writes this repository's configuration"
     : undefined;
+}
+
+/** Whether a revision or a declared name is a bootstrap's. */
+function creationBootstrapIs(name: string): boolean {
+  return (
+    name === bootstrapConfigurationName ||
+    name.startsWith(bootstrapConfigurationRevisionPrefix)
+  );
 }
 
 /**

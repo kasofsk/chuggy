@@ -20,7 +20,10 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
-import { bootstrapConfigurationRevisionPrefix } from "../contract/responses.ts";
+import {
+  bootstrapConfigurationName,
+  bootstrapConfigurationRevisionPrefix,
+} from "../contract/responses.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
@@ -199,7 +202,8 @@ export function bootstrapConfigurationRevision(
 /**
  * The repository one configuration revision releases from alone, where there
  * is one: the repository it was imported from, or the one a bootstrap's
- * revision is named for.
+ * revision is named for. The project's one bootstrap from before each
+ * repository had its own is named for none, so it releases from none.
  */
 export type ConfigurationRepository =
   | { readonly from: "Imported"; readonly repository: RepositoryId }
@@ -211,7 +215,8 @@ export function configurationRepositoryOf(
   imported: RepositoryId | undefined,
 ): ConfigurationRepository | undefined {
   if (imported !== undefined) return { from: "Imported", repository: imported };
-  return revision.startsWith(bootstrapConfigurationRevisionPrefix)
+  return revision === bootstrapConfigurationName ||
+    revision.startsWith(bootstrapConfigurationRevisionPrefix)
     ? { from: "Bootstrap", revision }
     : undefined;
 }
