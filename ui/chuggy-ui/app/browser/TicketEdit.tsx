@@ -1,8 +1,8 @@
 /**
  * Editing a Pending ticket: the creation form, prefilled from the ticket's
- * draft, with its dependencies drawn and not offered. It opens on the
- * configuration the draft names, so a ticket is moved to another only by a
- * reader who chooses one.
+ * draft, offering the creation candidates and the dependencies the draft holds,
+ * less the ticket itself. It opens on the configuration the draft names, so a
+ * ticket is moved to another only by a reader who chooses one.
  *
  * One submit revises the draft and releases it as the ticket's update, written
  * against the revision the ticket read carries, and the navigation back to the
