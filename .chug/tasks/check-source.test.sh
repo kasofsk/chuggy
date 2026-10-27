@@ -246,6 +246,96 @@ run_in "$R" --unit
 check "a console's own suite is not this stage's, at any depth" 0 "$RC" "0 stage(s) failed"
 check "and the split counts it as another gate's" 0 "$RC" "unit ran 1 suite(s); 1 left to"
 
+# --- What a unit test may take, and where it runs ------------------------------
+#
+# A test that never settles holds an interval open as well, so the case proves
+# both halves of the cap: the test fails by name, and its suite's process ends
+# though the interval would have kept it alive.
+
+fixture
+clean_source
+{
+	printf '%s\n' 'import { test } from "node:test";'
+	printf '%s\n' ''
+	printf '%s\n' 'test("this one never settles", () => {'
+	printf '%s\n' '  setInterval(() => undefined, 1_000);'
+	printf '%s\n' '  return new Promise(() => undefined);'
+	printf '%s\n' '});'
+} > "$R/test/domain/hangs.test.ts"
+git -C "$R" add -A
+CHUG_TEST_TIMEOUT_MS=500
+export CHUG_TEST_TIMEOUT_MS
+run_in "$R" --unit
+check "a test that never settles is a finding once the cap passes" 1 "$RC" "timed out after 500ms"
+check "and the finding names the test" 1 "$RC" "this one never settles"
+
+CHUG_TEST_TIMEOUT_MS=0
+run_in "$R" --unit
+check "a cap of zero is no cap, and is a could-not-run" 2 "$RC" "no test can be capped"
+CHUG_TEST_TIMEOUT_MS=soon
+run_in "$R" --unit
+check "a cap that is not a count is a could-not-run" 2 "$RC" "no test can be capped"
+unset CHUG_TEST_TIMEOUT_MS
+
+# The kernel and docker are stood in for, so each case says which kernel the
+# gate runs on and what docker answers. The Linux suite fails wherever it is
+# run, which is what lets a passing gate prove it was not run on the host.
+FAKES="$WORK/fakes"
+mkdir -p "$FAKES"
+printf '#!/bin/sh\necho "$FAKE_KERNEL"\n' > "$FAKES/uname"
+{
+	printf '%s\n' '#!/bin/sh'
+	printf '%s\n' '[ "$1" != info ] || exit "$FAKE_DOCKER_INFO_RC"'
+	printf '%s\n' "printf '%s\\n' \"\$*\" >> \"$WORK/docker.log\""
+} > "$FAKES/docker"
+chmod +x "$FAKES/uname" "$FAKES/docker"
+HOST_PATH="$PATH"
+PATH="$FAKES:$PATH"
+FAKE_DOCKER_INFO_RC=0
+export FAKE_KERNEL FAKE_DOCKER_INFO_RC
+
+fixture
+clean_source
+failing_suite "$R/test/domain/kernel.linux.test.ts" "this one holds only on Linux"
+mkdir -p "$R/images/worker"
+printf '%s\n' 'FROM node:0-fixture AS base' > "$R/images/worker/Dockerfile"
+git -C "$R" add -A
+
+FAKE_KERNEL=Darwin
+rm -f "$WORK/docker.log"
+run_in "$R" --unit
+check "on another kernel a Linux suite is not the host's" 0 "$RC" "0 stage(s) failed, 2 run"
+check "and the clean line says where it ran" 0 "$RC" "unit ran 2 suite(s), 1 of them in node:0-fixture;"
+# The tree's path is the one git reports, which may be the temporary
+# directory's resolved through a link, so the mount is asserted to be one path
+# three times rather than to be $R.
+read -r mounted_from mounted_at worked_in <<EOF
+$(sed -n 's/^run --rm -v \([^ :]*\):\([^ :]*\):ro -w \([^ ]*\) .*/\1 \2 \3/p' "$WORK/docker.log")
+EOF
+if [ -n "$mounted_from" ] && [ "$mounted_from" = "$mounted_at" ] && [ "$mounted_at" = "$worked_in" ]; then
+	printf 'mounted read-only at its own path, and run there\n' >> "$WORK/docker.log"
+fi
+OUT="$WORK/docker.log"
+check "the tree is mounted read-only at its own path, and run there" 0 "$RC" \
+	"mounted read-only at its own path, and run there"
+check "in the worker image's node" 0 "$RC" " node:0-fixture node --test "
+check "and docker is handed that suite" 0 "$RC" "test/domain/kernel.linux.test.ts"
+refute "and only that suite" 0 "$RC" "test/domain/a.test.ts"
+OUT="$WORK/.out"
+
+FAKE_DOCKER_INFO_RC=1
+run_in "$R" --unit
+check "with no docker answering, a Linux suite is a could-not-run" 2 "$RC" "need a running docker on Darwin"
+FAKE_DOCKER_INFO_RC=0
+
+FAKE_KERNEL=Linux
+run_in "$R" --unit
+check "on Linux a Linux suite is the host's" 1 "$RC" "this one holds only on Linux"
+check "and runs in the one unit stage" 1 "$RC" "1 stage(s) failed, 1 run"
+
+PATH="$HOST_PATH"
+unset FAKE_KERNEL FAKE_DOCKER_INFO_RC
+
 # --- What the browser stage sees that the first typecheck does not ------------
 #
 # A platform import inside the contract typechecks against `tsconfig.json`,

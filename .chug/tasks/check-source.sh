@@ -38,6 +38,16 @@
 # matching nothing rather than a quiet pass. The clean line reports the split,
 # because a stage that narrowed its own scope has to say so.
 #
+# EVERY UNIT TEST IS CAPPED, by `.chug/tasks/_test-timeout.sh`, whose header
+# says why.
+#
+# A SUITE NAMED `*.linux.test.ts` STATES WHAT LINUX'S TCP DOES — a reset
+# discards what its reader had not yet read — which Darwin's kernel instead
+# delivers, or never reports to a reader that was paused. On any other kernel
+# such a suite runs in the node of the worker image, the image the platform's
+# jobs run in, so its claim is checked where it is true and nowhere it is
+# false. No docker there is a could-not-run.
+#
 # Local binaries win over anything on PATH: a verdict that depends on which
 # version happens to be installed is not a verdict. Each missing one is a
 # could-not-run, reported as itself.
@@ -47,9 +57,14 @@
 #   .chug/tasks/check-source.sh --static
 #   .chug/tasks/check-source.sh --unit
 #
+# Env: CHUG_TEST_TIMEOUT_MS — the cap on one unit test, read by
+# `.chug/tasks/_test-timeout.sh`.
+#
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
+
+here="$(cd "$(dirname "$0")" && pwd)"
 
 root="$(git rev-parse --show-toplevel 2>/dev/null || true)"
 if [ -z "$root" ]; then
@@ -154,16 +169,63 @@ if [ "$run_unit" -eq 1 ]; then
 	unit_count="$(printf '%s\n' "$unit_suites" | grep -c '' || true)"
 	owned_count="$(printf '%s\n' "$suites" | grep -Ec "$owned" || true)"
 
+	. "$here/_test-timeout.sh"
+	test_timeout_read "check-source"
+
+	kernel="$(uname -s)"
+	linux_suites=""
+	if [ "$kernel" != Linux ]; then
+		linux_suites="$(printf '%s\n' "$unit_suites" | grep -E '\.linux\.test\.ts$' || true)"
+	fi
+	host_suites="$(printf '%s\n' "$unit_suites" | grep -Ev '\.linux\.test\.ts$' || true)"
+	[ "$kernel" != Linux ] || host_suites="$unit_suites"
+
+	# The worker image's node, read from the file that pins it so there is one
+	# pin and not two, and checked before either unit stage starts.
+	if [ -n "$linux_suites" ]; then
+		linux_image="$(sed -n 's/^FROM \(node:[^ ]*\) AS base$/\1/p' images/worker/Dockerfile 2>/dev/null || true)"
+		if [ -z "$linux_image" ]; then
+			echo "check-source: LINTER ERROR — images/worker/Dockerfile pins no node base, so the Linux suites have no image to run in"
+			exit 2
+		fi
+		if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+			echo "check-source: LINTER ERROR — the Linux suites need a running docker on $kernel, and there is none"
+			exit 2
+		fi
+	fi
+
 	set -f
 	IFS='
 '
-	# shellcheck disable=SC2086 # the suite list is newline-separated by construction
-	set -- $unit_suites
+	# An empty list would send the runner back to whole-tree discovery, so a
+	# stage with nothing to run is not started.
+	if [ -n "$host_suites" ]; then
+		# shellcheck disable=SC2086 # the suite list is newline-separated by construction
+		set -- $host_suites
+		unset IFS
+		stage "  unit     " node --test --test-reporter=dot \
+			--test-timeout="$test_timeout_ms" --test-force-exit "$@"
+	fi
+	if [ -n "$linux_suites" ]; then
+		IFS='
+'
+		# shellcheck disable=SC2086 # the suite list is newline-separated by construction
+		set -- $linux_suites
+		unset IFS
+		# Mounted at its own path, read-only, so the suites resolve the same
+		# installed modules at the same paths they would on the host.
+		stage "  linux    " docker run --rm -v "$root:$root:ro" -w "$root" "$linux_image" \
+			node --test --test-reporter=dot \
+			--test-timeout="$test_timeout_ms" --test-force-exit "$@"
+	fi
 	unset IFS
 	set +f
 
-	stage "  unit     " node --test --test-reporter=dot "$@"
-	echo "check-source: unit ran $unit_count suite(s); $owned_count left to check-conformance, check-random, check-postgres, check-keto and check-console"
+	linux_note=""
+	if [ -n "$linux_suites" ]; then
+		linux_note=", $(printf '%s\n' "$linux_suites" | grep -c '') of them in $linux_image"
+	fi
+	echo "check-source: unit ran $unit_count suite(s)$linux_note; $owned_count left to check-conformance, check-random, check-postgres, check-keto and check-console"
 fi
 
 echo "check-source: $failed stage(s) failed, $ran run"

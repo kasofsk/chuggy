@@ -4,6 +4,10 @@
  *
  * The hub is the real one and only its lane is a double, so a case speaks as
  * the lane and reads what the socket carried.
+ *
+ * What a reset reader can still read is the kernel's to say, and these cases
+ * say what Linux's says, which is why the suite carries the name
+ * `check-source.sh` runs on Linux alone.
  */
 
 import assert from "node:assert/strict";

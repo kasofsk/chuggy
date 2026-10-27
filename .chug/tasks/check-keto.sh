@@ -37,7 +37,8 @@
 # Env: CHUG_KETO_READ_URL, CHUG_KETO_WRITE_URL, CHUG_KETO_IMAGE,
 # CHUG_KETO_READ_PORT, CHUG_KETO_WRITE_PORT, CHUG_KETO_READY_SECS — read by
 # `.chug/tasks/_keto.sh`; CHUG_PG_URL and the rest — by `.chug/tasks/_postgres.sh`,
-# as is the seam CHUG_PG_RUN_PID, the suite's alone.
+# as is the seam CHUG_PG_RUN_PID, the suite's alone; CHUG_TEST_TIMEOUT_MS — by
+# `.chug/tasks/_test-timeout.sh`.
 #
 # Usage: .chug/tasks/check-keto.sh
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
@@ -62,6 +63,8 @@ if [ -z "$suites" ]; then
 fi
 suite_count="$(printf '%s\n' "$suites" | grep -c '' || true)"
 
+. "$here/_test-timeout.sh"
+test_timeout_read "check-keto"
 . "$here/_keto.sh"
 . "$here/_postgres.sh"
 
@@ -110,7 +113,8 @@ set +f
 CHUG_PG_URL="$suite_url" \
 	CHUG_KETO_READ_URL="$keto_read_url" \
 	CHUG_KETO_WRITE_URL="$keto_write_url" \
-	node --test --test-concurrency=1 --test-reporter=dot "$@" || rc=1
+	node --test --test-concurrency=1 --test-reporter=dot \
+	--test-timeout="$test_timeout_ms" --test-force-exit "$@" || rc=1
 
 cleanup
 trap - EXIT INT TERM HUP
