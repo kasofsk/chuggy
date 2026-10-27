@@ -41,6 +41,7 @@ import {
   asSessionStoreStream,
 } from "../../src/interpreter/agentSession.ts";
 import {
+  asPrincipal,
   oidcPrincipal,
   oidcPrincipalSubject,
 } from "../../src/interpreter/principal.ts";
@@ -60,6 +61,9 @@ import {
   type ThreadRig,
   type ThreadRigMember,
 } from "./threadHarness.ts";
+
+/** A reader who holds no thread, so a page they read is ordered as the project's threads alone are. */
+const onlooker = asPrincipal("onlooker");
 
 let rig: ThreadRig;
 
@@ -172,7 +176,7 @@ test("an open past the member's limit is refused with the limit, and nothing is 
   const body = refused.json<HttpErrorEnvelope & { threadsMax: number }>();
   assert.equal(body.error.code, "ThreadLimitReached");
   assert.equal(body.threadsMax, 1);
-  assert.equal((await rig.threads.threads(partition, 64)).length, 1);
+  assert.equal((await rig.threads.threads(partition, onlooker, 64)).length, 1);
 });
 
 /** Where one member's limit is read and written, under the project the route names. */

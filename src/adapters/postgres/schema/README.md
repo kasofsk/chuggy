@@ -295,7 +295,8 @@ A member holds any number of open threads up to `member_thread_limit`, which
 is a count rather than an index: `open_member_thread` and `open_agent_session`
 each take an advisory lock on the member before counting, and a thread the API
 opens carries `open_key`, the key its client minted, unique per member, which
-makes the open idempotent.
+makes the open idempotent. `read_project_threads` takes its reader and lists
+their open threads first, so a page holds every thread they count against.
 Closing a thread is
 `close_member_thread`'s, the API's door, which admits a thread alone and
 performs that close. The objectives and the roster are the two columns a later

@@ -61,6 +61,7 @@ import {
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
+  threadsOpenMax,
   threadsOpenDefault,
   threadWakesPerPassMax,
 } from "../../src/contract/http.ts";
@@ -117,6 +118,9 @@ import {
   type ThreadRig,
   type ThreadRigMember,
 } from "./threadHarness.ts";
+
+/** A reader who holds no thread, so a page they read is ordered as the project's threads alone are. */
+const onlooker = asPrincipal("onlooker");
 
 let rig: ThreadRig;
 
@@ -355,7 +359,11 @@ test("a lowered limit closes nothing and refuses the next open", async () => {
   await threadRigThread(rig, partition, member);
   await threadRigLimit(rig, partition, member, 1);
 
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   assert.deepEqual(
     listed.map((record) => record.state),
     ["Open", "Open"],
@@ -515,16 +523,64 @@ test("a closed thread displaces no live one from the listing", async () => {
   const later = await threadRigThread(rig, partition, second);
   await rig.threads.close({ partition, session: later.session });
 
-  const smallest = await rig.threads.threads(partition, 1);
+  const smallest = await rig.threads.threads(partition, onlooker, 1);
   assert.deepEqual(
     smallest.map((record) => record.session),
     [live.session],
     "the page of one holds a closed thread over the live one",
   );
-  const whole = await rig.threads.threads(partition, threadsAnsweredMax);
+  const whole = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   assert.deepEqual(
     whole.map((record) => record.session),
     [live.session, later.session, ended.session],
+  );
+});
+
+/**
+ * The page is one listing's worth for a whole project, so another member's
+ * threads alone can fill it; the reader's own open threads lead it, which is
+ * what keeps every thread they hold — and their limit counts — on it.
+ */
+test("another member's open threads filling the page push none of the reader's own off it", async () => {
+  const partition = await project("listing-own");
+  const reader = threadRigMember(rig, partition, "listing-reader");
+  const busy = threadRigMember(rig, partition, "listing-busy");
+  const held = [
+    await threadRigThread(rig, partition, reader),
+    await threadRigThread(rig, partition, reader),
+  ].map((thread) => thread.session);
+  await threadRigLimit(rig, partition, busy, threadsOpenMax);
+  for (let opened = 0; opened < threadsAnsweredMax; opened += 1)
+    await threadRigThread(rig, partition, busy);
+
+  const seen = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
+  assert.equal(seen.length, threadsAnsweredMax);
+  assert.deepEqual(
+    seen.filter((record) => held.includes(record.session)),
+    [],
+    "the case did not fill the page past the reader's threads",
+  );
+  const own = await rig.threads.threads(
+    partition,
+    reader.principal,
+    threadsAnsweredMax,
+  );
+  assert.equal(own.length, threadsAnsweredMax);
+  assert.deepEqual(
+    own
+      .slice(0, held.length)
+      .map((record) => record.session)
+      .toSorted(),
+    held.toSorted(),
+    "the reader's own open threads fell off their page",
   );
 });
 
@@ -797,7 +853,7 @@ test("the listing orders open threads by when they last moved", async () => {
   const newer = await threadRigThread(rig, partition, second);
 
   assert.deepEqual(
-    (await rig.threads.threads(partition, threadsAnsweredMax)).map(
+    (await rig.threads.threads(partition, onlooker, threadsAnsweredMax)).map(
       (record) => record.session,
     ),
     [newer.session, older.session],
@@ -814,7 +870,7 @@ test("the listing orders open threads by when they last moved", async () => {
   });
 
   assert.deepEqual(
-    (await rig.threads.threads(partition, threadsAnsweredMax)).map(
+    (await rig.threads.threads(partition, onlooker, threadsAnsweredMax)).map(
       (record) => record.session,
     ),
     [older.session, newer.session],
@@ -823,7 +879,11 @@ test("the listing orders open threads by when they last moved", async () => {
 
 /** When this project's one thread last moved, as the listing answers it. */
 async function threadListedActivity(partition: Partition): Promise<number> {
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   return Date.parse(String(listed[0]?.lastActivityAt));
 }
 
@@ -869,7 +929,9 @@ test("a thread's activity is its opening, its turns and its close", async () => 
   const member = threadRigMember(rig, partition, "activity");
   const thread = await threadRigThread(rig, partition, member);
 
-  const listed = (await rig.threads.threads(partition, threadsAnsweredMax))[0];
+  const listed = (
+    await rig.threads.threads(partition, onlooker, threadsAnsweredMax)
+  )[0];
   assert.equal(listed?.lastActivityAt, listed?.openedAt);
   const opened = await threadListedActivity(partition);
   await threadListedActivityPassed(opened);
@@ -964,7 +1026,11 @@ test("a closed thread does not block a new one", async () => {
   const second = await threadRigThread(rig, partition, member);
   assert.notEqual(second.session, first.session);
 
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   assert.deepEqual(
     listed.map((record) => [record.session, record.state]).sort(),
     [
@@ -1038,7 +1104,11 @@ test("two opens racing for the last place never take the member past their limit
     await held.rollback().catch(() => undefined);
   }
 
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   assert.deepEqual(
     listed.map((record) => record.session),
     [winner],
@@ -1381,7 +1451,11 @@ test("a thread the project no longer admits its owner to is listed unchanged", a
     { enqueued: "Enqueued", ordinal: 1 },
   );
 
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   assert.equal(listed.length, 1);
   const only = listed[0];
   assert.ok(only !== undefined);
@@ -1404,7 +1478,11 @@ test("the three standings a listing can name are the roster's own", async () => 
   await threadRigThread(rig, partition, orphan);
   threadRigRevoke(rig, partition, orphan);
 
-  const listed = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listed = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   const owners = await memberAuthorities(
     rig.sessions.harness.access,
     partition,
@@ -1600,7 +1678,7 @@ test("both reads answer the first member message, seeding shed and bounded", asy
   const member = threadRigMember(rig, partition, "firstsaid");
   const thread = await threadRigThread(rig, partition, member);
   const listed = async () =>
-    (await rig.threads.threads(partition, threadsAnsweredMax)).find(
+    (await rig.threads.threads(partition, onlooker, threadsAnsweredMax)).find(
       (held) => held.session === thread.session,
     );
   const read = () =>
@@ -1695,7 +1773,11 @@ test("a first message is found after the older marker and after none", async () 
     route: "InCluster",
   });
 
-  const listing = await rig.threads.threads(partition, threadsAnsweredMax);
+  const listing = await rig.threads.threads(
+    partition,
+    onlooker,
+    threadsAnsweredMax,
+  );
   const named = (session: string) =>
     listing.find((held) => held.session === session)?.firstMessage;
   assert.equal(named(olderThread.session), said);
@@ -2309,7 +2391,7 @@ test("each door 062 declares is the role's it was granted to and no other's", as
   await onlyTheseRolesMay(
     [apiRole],
     projectThreadsReadFunction,
-    `SELECT ${projectThreadsReadFunction}('${partition.tenant}','${partition.project}',1)`,
+    `SELECT ${projectThreadsReadFunction}('${partition.tenant}','${partition.project}','onlooker',1)`,
   );
   await onlyTheseRolesMay(
     [apiRole],

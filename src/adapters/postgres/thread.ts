@@ -273,10 +273,12 @@ function threadMessageEnqueued(row: {
  * shape is one shape and a door that answered a second one would be a second
  * place a column is added to.
  */
-/** Every thread the project holds, each named by the principal it acts under. */
+/** One page of the project's threads, the reader's own open ones first, each
+ * named by the principal it acts under. */
 async function threadListing(
   pool: pg.Pool,
   partition: Partition,
+  reader: Principal,
   limit: number,
 ): Promise<readonly ThreadRecord[]> {
   const found = await pool.query<ThreadListingRow>(
@@ -286,7 +288,7 @@ async function threadListing(
                last_activity_at::text AS last_activity_at,
                hidden_at::text AS hidden_at
           FROM read_project_threads(
-                 ${partition.tenant},${partition.project},${limit})`,
+                 ${partition.tenant},${partition.project},${reader},${limit})`,
   );
   return found.rows.map((row) => threadRecordOf(row, row.state));
 }
@@ -520,7 +522,8 @@ export function postgresThreads(
   },
 ): ThreadStore {
   return {
-    threads: (partition, limit) => threadListing(pool, partition, limit),
+    threads: (partition, reader, limit) =>
+      threadListing(pool, partition, reader, limit),
     open: (input) => threadOpen(pool, bounds.streamsMax, input),
     standing: (input) =>
       threadStanding(

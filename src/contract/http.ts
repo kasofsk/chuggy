@@ -375,8 +375,8 @@ export const threadsOpenDefault = 10;
 
 /**
  * The highest limit an administrator may set on a member's open threads. It is
- * one listing's worth, so every thread a member holds open is on the page that
- * lists them.
+ * one listing's worth, and a listing leads with its reader's own open threads,
+ * so every thread a member holds open is on the page that lists them for them.
  */
 export const threadsOpenMax = threadsAnsweredMax;
 

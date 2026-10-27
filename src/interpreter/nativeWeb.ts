@@ -2060,11 +2060,11 @@ function composedThreadArtifactStore(
  * The message door, which is `Mutate` and reaches the caller's own threads
  * alone: the session the URL names is the mailbox, and the durable door refuses
  * it where it is another member's, so the page a member is reading and the
- * mailbox their message lands in cannot come apart. Each turn is stamped with the route it
- * was admitted on and runs there, so the route and what it needs of the member
- * are asked at every send, not only when the thread opened, and an image the
- * message names is checked against this project's own artifacts only once the
- * thread is confirmed open and the caller's own.
+ * mailbox their message lands in cannot come apart. Each turn is stamped with
+ * the route it was admitted on and runs there, so the route and what it needs
+ * of the member are asked at every send, not only when the thread opened, and
+ * an image the message names is checked against this project's own artifacts
+ * only once the thread is confirmed open and the caller's own.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
@@ -2283,6 +2283,7 @@ function nativeThreadReadMethods(
       const ports = composedThreadPorts(threads);
       const found = await ports.threads.threads(
         partition,
+        principal,
         checkedThreadsLimit(threadsAnsweredMax),
       );
       return {

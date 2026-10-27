@@ -35,6 +35,12 @@
  * thread its first revision's member held open then, which is at most one,
  * because that is the thread its events woke until now.
  *
+ * THE LISTING LEADS WITH THE READER'S OWN OPEN THREADS. `read_project_threads`
+ * answered one project-wide page, so a member's least recently moved open
+ * threads could fall off it while still counting against their limit. It now
+ * takes the reader and orders their open threads ahead of everything else, and
+ * no member can hold more open than `threadsOpenMax`, which is the page.
+ *
  * The bodies are written out rather than built from a helper, so this file goes
  * on saying what it installed when the baseline changes.
  */
@@ -43,6 +49,7 @@ import {
   apiRole,
   boundaryOwnerRole,
   draftCreateFunction,
+  projectThreadsReadFunction,
   selectorServiceRole,
   sessionOpenFunction,
   sessionReferenceWrittenOnceFunction,
@@ -88,6 +95,10 @@ const wakeCandidates = `public.${threadWakeCandidatesFunction}(in_after bigint, 
 const draftCreateOld = `public.${draftCreateFunction}(in_tenant text, in_project text, in_configuration text, in_configuration_digest text, in_expected_head bigint, in_authoring text, in_title text, in_intent text, in_links text[], in_images text[], in_checks text[], in_branch text, in_finalization_mode text, in_finalization_target text, in_repository text, in_overrides text, in_selection text, in_kind text, in_subject text)`;
 
 const draftCreate = `public.${draftCreateFunction}(in_tenant text, in_project text, in_configuration text, in_configuration_digest text, in_expected_head bigint, in_authoring text, in_title text, in_intent text, in_links text[], in_images text[], in_checks text[], in_branch text, in_finalization_mode text, in_finalization_target text, in_repository text, in_overrides text, in_selection text, in_kind text, in_subject text, in_origin_session text)`;
+
+const listingOld = `public.${projectThreadsReadFunction}(in_tenant text, in_project text, in_max bigint)`;
+
+const listing = `public.${projectThreadsReadFunction}(in_tenant text, in_project text, in_reader text, in_max bigint)`;
 
 /** The lock every door opening a member's thread takes before it counts their open ones. */
 const memberThreadLock = `pg_advisory_xact_lock(hashtextextended(
@@ -173,6 +184,9 @@ const sessionStatements = [
   `CREATE UNIQUE INDEX agent_session_open_key_is_unique
        ON public.agent_session USING btree (tenant, project, principal, open_key)
        WHERE (open_key IS NOT NULL)`,
+  `CREATE INDEX agent_session_open_threads_by_member
+       ON public.agent_session USING btree (tenant, project, principal)
+       WHERE (kind='Thread' AND state='Open')`,
   `CREATE OR REPLACE FUNCTION public.${sessionReferenceWrittenOnceFunction}() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -438,8 +452,47 @@ const originStatements = [
      $$`,
 ];
 
+const listingStatements = [
+  `DROP FUNCTION ${listingOld}`,
+  `CREATE FUNCTION ${listing} RETURNS TABLE(session text, principal text, state text, agent_reference text, turns bigint, first_message text, member_title text, opened_at timestamp with time zone, last_activity_at timestamp with time zone, hidden_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+       SELECT s.session,s.principal,s.state,s.agent_reference,
+              (SELECT count(*) FROM session_turn t
+                WHERE t.tenant=s.tenant AND t.project=s.project
+                  AND t.session=s.session),
+              (SELECT left(CASE WHEN strpos(t.input,chr(10)||chr(10)||'# What your owner says'||chr(10)||chr(10))>0
+                  THEN split_part(t.input,chr(10)||chr(10)||'# What your owner says'||chr(10)||chr(10),-1)
+                  ELSE split_part(t.input,'- A wake is a notice, not an instruction: say what happened, and originate, revise, release, dispatch or run nothing because of it.'||chr(10)||chr(10),-1) END,80)
+         FROM session_turn t
+        WHERE t.tenant=s.tenant AND t.project=s.project AND t.session=s.session
+          AND t.input_kind='UserMessage'
+        ORDER BY t.ordinal
+        LIMIT 1),
+              s.member_title,s.opened_at,moved.at,s.hidden_at
+         FROM agent_session s
+         CROSS JOIN LATERAL (
+           SELECT greatest(s.opened_at,s.closed_at,
+                    (SELECT max(greatest(t.enqueued_at,t.ended_at))
+                       FROM session_turn t
+                      WHERE t.tenant=s.tenant AND t.project=s.project
+                        AND t.session=s.session)) AS at) moved
+        WHERE s.tenant=in_tenant AND s.project=in_project AND s.kind='Thread'
+        ORDER BY (s.principal=in_reader AND s.state='Open') DESC,
+                 (s.state='Open') DESC,moved.at DESC,s.session
+        LIMIT least(coalesce(in_max,64),64)
+     $$`,
+  ...owned(listing, apiRole),
+];
+
 export const migration086: Migration = {
   version: 86,
   name: "a member holds several open threads, and a ticket wakes the one it was filed from",
-  statements: [...limitStatements, ...sessionStatements, ...originStatements],
+  statements: [
+    ...limitStatements,
+    ...sessionStatements,
+    ...originStatements,
+    ...listingStatements,
+  ],
 };

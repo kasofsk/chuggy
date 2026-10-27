@@ -182,8 +182,8 @@ function stopDouble(doubles: ThreadDoubles): ThreadStore["stopTurn"] {
 
 function threadStore(doubles: ThreadDoubles): ThreadStore {
   return {
-    threads: (_partition, limit) => {
-      doubles.calls.push(`threads:${String(limit)}`);
+    threads: (_partition, reader, limit) => {
+      doubles.calls.push(`threads:${reader}:${String(limit)}`);
       return Promise.resolve(doubles.threads);
     },
     open: openDouble(doubles),
@@ -374,7 +374,9 @@ test("every member reads every thread, and `mine` is the reader's own", async ()
     ],
   );
   assert.ok(held.calls.includes("authorize:Read"));
-  assert.ok(held.calls.includes(`threads:${String(threadsAnsweredMax)}`));
+  assert.ok(
+    held.calls.includes(`threads:${dana}:${String(threadsAnsweredMax)}`),
+  );
   assert.deepEqual(
     Object.keys(read.result === "Found" ? (read.threads[0] ?? {}) : {}).sort(),
     [

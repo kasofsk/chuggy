@@ -262,8 +262,11 @@ export type ThreadMessageEnqueued =
  * is not a thread.
  */
 export interface ThreadStore {
+  /** One page of the project's threads, the reader's own open ones first so
+   * none they hold falls off it. */
   threads(
     partition: Partition,
+    reader: Principal,
     limit: number,
   ): Promise<readonly ThreadRecord[]>;
   open(input: {
