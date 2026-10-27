@@ -111,6 +111,7 @@ import {
 } from "../../interpreter/workerPoolRegistrationToken.ts";
 import {
   personalExecutionClaimed,
+  personalExecutionWaiting,
   personalExecutionsAllowlisted,
   personalExecutionsPolled,
   postgresPersonalExecutionHolds,
@@ -420,11 +421,13 @@ export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
 
 /**
  * One opened-but-unplaced attempt whose invocation is recorded, taken for this
- * pool where `workerPoolCanAssign` would take it, bound to the assignment it
- * will be cancelled by and to the bearer its harness answers under. The epoch
- * is not moved: this process fences nothing, and an attempt whose epoch has
- * since moved is one the scheduler's own fence will end under this pool's
- * feet, which the renewal answers as a stop.
+ * pool where `workerPoolCanAssign` would take it and no larger than the room
+ * the terms name, which chooses among what that allows as the order does
+ * rather than being a term of it, bound to the assignment it will be cancelled
+ * by and to the bearer its harness answers under. The epoch is not moved:
+ * this process fences nothing, and an attempt whose epoch has since moved is
+ * one the scheduler's own fence will end under this pool's feet, which the
+ * renewal answers as a stop.
  */
 async function workerPoolClaimed(
   client: pg.PoolClient,
@@ -435,6 +438,7 @@ async function workerPoolClaimed(
   ownersRevoked: readonly Principal[],
 ): Promise<WorkerPoolClaimed | undefined> {
   const { partition } = identity;
+  const room = terms.memoryRoomMib ?? null;
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'worker-pool-claim:' || ${partition.tenant} || '/' || ${partition.project} || '/' || ${identity.pool}, 0))::text AS locked`,
@@ -469,6 +473,8 @@ async function workerPoolClaimed(
           AND worker_pool_inventory_matches(x.requirement_value,w.capabilities)
           AND (w.memory_ceiling_mib IS NULL
                OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=w.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.project=q.project AND h.pool=w.pool
                   AND NOT h.personal
@@ -493,7 +499,61 @@ async function workerPoolClaimed(
   return row === undefined ? undefined : workerPoolClaimedRow(row);
 }
 
-/** A claim's terms, each a positive whole number, checked before anything is locked. */
+/**
+ * Whether `workerPoolClaimed` on the same terms would take an attempt now: its
+ * choice of attempt, with no lock, no order and nothing taken. The predicate
+ * is written twice, here and there, and `test/postgres/workerPoolClaim.test.ts`
+ * holds the two to one answer over every case it asks the claim.
+ */
+async function workerPoolWaiting(
+  pool: pg.Pool,
+  identity: WorkerPoolIdentity,
+  terms: WorkerPoolClaimTerms,
+  ownersRevoked: readonly Principal[],
+): Promise<boolean> {
+  const { partition } = identity;
+  const room = terms.memoryRoomMib ?? null;
+  const found = await pool.query<{ waiting: boolean }>(
+    sql`SELECT EXISTS(
+        SELECT 1
+        FROM execution_attempt q
+        JOIN execution x
+          ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+        JOIN worker_pool w
+          ON w.tenant=q.tenant AND w.project=q.project
+        WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
+          AND w.pool=${identity.pool} AND w.principal=${identity.principal}
+          AND q.state='Placing' AND q.pool IS NULL AND q.invoked
+          AND x.placement='Pool' AND x.status='Launching'
+          AND q.recovery_epoch=(SELECT r.epoch FROM recovery_epoch r ORDER BY r.ordinal DESC LIMIT 1)
+          AND w.class<>'Personal'
+          AND worker_pool_inventory_matches(x.requirement_value,w.capabilities)
+          AND (w.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=w.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
+          AND (SELECT count(*) FROM execution_attempt h
+                WHERE h.tenant=q.tenant AND h.project=q.project AND h.pool=w.pool
+                  AND NOT h.personal
+                  AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
+          AND NOT EXISTS(SELECT 1 FROM personal_runner r
+            JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
+            WHERE x.owner_fallback IS NOT NULL
+              AND r.tenant=x.tenant AND r.owner=x.owner AND l.project=x.project
+              AND r.owner<>ALL(${[...ownersRevoked] as string[]}::text[])
+              AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+              AND (r.memory_ceiling_mib IS NULL
+                   OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+              AND (x.owner_fallback='Strict'
+                   OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
+          AND EXISTS(SELECT 1 FROM project p
+            WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+      ) AS waiting`,
+  );
+  return found.rows[0]?.waiting === true;
+}
+
+/** A claim's terms, each a positive whole number and its room a whole number, checked before anything is locked. */
 function workerPoolClaimTermsChecked(terms: WorkerPoolClaimTerms): void {
   if (!Number.isSafeInteger(terms.leaseSecs) || terms.leaseSecs < 1)
     throw new RangeError("invalid worker pool lease");
@@ -504,6 +564,11 @@ function workerPoolClaimTermsChecked(terms: WorkerPoolClaimTerms): void {
     terms.memoryMibDefault < 1
   )
     throw new RangeError("invalid worker pool memory default");
+  if (
+    terms.memoryRoomMib !== undefined &&
+    (!Number.isSafeInteger(terms.memoryRoomMib) || terms.memoryRoomMib < 0)
+  )
+    throw new RangeError("invalid worker pool memory room");
 }
 
 /** One assignment given back, ended through the function that keeps the pool's name on it. */
@@ -701,6 +766,14 @@ export function postgresWorkerPoolAssignments(
           projects,
         }),
       );
+    },
+    waiting: async (identity, terms, ownersRevoked) => {
+      workerPoolClaimTermsChecked(terms);
+      return workerPoolWaiting(pool, identity, terms, ownersRevoked);
+    },
+    waitingPersonal: async (identity, terms, projects) => {
+      workerPoolClaimTermsChecked(terms);
+      return personalExecutionWaiting(pool, identity, terms, projects);
     },
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
     polled: (identity) => personalExecutionsPolled(pool, identity),

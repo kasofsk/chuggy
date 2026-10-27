@@ -23,6 +23,8 @@ import {
   workerRunnerCapabilitiesHeader,
   workerRunnerHeader,
   workerRunnerMemoryCeilingHeader,
+  workerRunnerMemoryRoomHeader,
+  workerRunnerPollWaitHeader,
 } from "../../src/contract/workerPool.ts";
 import {
   asSessionAttemptId,
@@ -152,6 +154,8 @@ function calls(pinning: readonly string[] = []): {
       },
       ownersDeferredTo: () => Promise.resolve([]),
       claimPersonal: () => Promise.resolve(undefined),
+      waiting: () => Promise.resolve(false),
+      waitingPersonal: () => Promise.resolve(false),
       allowlisted: () => Promise.resolve([]),
       polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
@@ -606,6 +610,111 @@ test("a poll naming a memory ceiling this side cannot read is refused whole, wit
     assert.equal(answered.body, "", String(ceiling));
     assert.deepEqual(recorded.named, [], String(ceiling));
     assert.deepEqual(made.made, [], String(ceiling));
+  }
+});
+
+/** The plane `plane` builds, long-polling for `pollsMax` passes. */
+function planePolling(
+  ports: WorkerPoolAssignments,
+  pollsMax: number,
+): PoolPlaneService {
+  const built = plane(ports);
+  return { ...built, settings: { ...built.settings, pollsMax } };
+}
+
+test("a poll naming its memory room has every claim held to it and one naming none is claimed by count, and a poll naming its wait is answered within it", async () => {
+  for (const [why, headers, rooms] of [
+    [
+      "a room",
+      { ...speaking, [workerRunnerMemoryRoomHeader]: "4096" },
+      [4_096, 4_096, 4_096],
+    ],
+    [
+      "a wait of nothing",
+      { ...speaking, [workerRunnerPollWaitHeader]: "0" },
+      [undefined],
+    ],
+    ["neither", speaking, [undefined, undefined, undefined]],
+  ] as const) {
+    const claimed: unknown[] = [];
+    const answered = await createPoolPlaneApp(
+      planePolling(
+        {
+          ...calls().ports,
+          claim: (_identity, terms) =>
+            Promise.resolve(void claimed.push(terms.memoryRoomMib)),
+        },
+        3,
+      ),
+    ).inject({ method: "GET", url: polling([], 1), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(claimed, rooms, why);
+  }
+});
+
+test("a poll naming a memory room or a wait this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const header of [
+    workerRunnerMemoryRoomHeader,
+    workerRunnerPollWaitHeader,
+  ])
+    for (const count of [
+      "-1",
+      "4096 MiB",
+      "1.5",
+      "08",
+      "99999999999999999999",
+      ["4096", "4096"],
+    ]) {
+      const recorded = runnerCalls();
+      const made = calls();
+      const answered = await createPoolPlaneApp(
+        plane(made.ports, authority("Allow"), undefined, recorded.runners),
+      ).inject({
+        method: "GET",
+        url: polling(["live"], 1),
+        headers: { ...speaking, [header]: count },
+      });
+      const why = `${header} ${String(count)}`;
+      assert.equal(answered.statusCode, 400, why);
+      assert.equal(answered.body, "", why);
+      assert.deepEqual(recorded.named, [], why);
+      assert.deepEqual(made.made, [], why);
+    }
+});
+
+test("a poll of this release naming its room is told a job it fits is waiting, and one of 1.20.0 naming a room is not and reads its answer", async () => {
+  const earlier = await workerContractReleasePool("1.20.0");
+  for (const [why, headers, reconciliation, waiting] of [
+    [
+      "this release",
+      { ...speaking, [workerRunnerMemoryRoomHeader]: "4096" },
+      workerPoolReconciliationSchema,
+      true,
+    ],
+    [
+      "1.20.0",
+      {
+        ...speaking,
+        [workerContractHeader]: earlier.release,
+        [workerRunnerMemoryRoomHeader]: "4096",
+      },
+      earlier.reconciliation,
+      undefined,
+    ],
+  ] as const) {
+    const asked: unknown[] = [];
+    const answered = await createPoolPlaneApp(
+      plane({
+        ...calls().ports,
+        waiting: (_identity, terms) =>
+          Promise.resolve((asked.push(terms.memoryRoomMib), true)),
+      }),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    const body = answered.json<Record<string, unknown>>();
+    assert.deepEqual(reconciliation.parse(body), body, why);
+    assert.equal(body["jobsWaiting"], waiting, why);
+    assert.deepEqual(asked, waiting === undefined ? [] : [4_096], why);
   }
 });
 

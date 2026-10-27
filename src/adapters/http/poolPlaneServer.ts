@@ -34,8 +34,9 @@
  * claimed, so a poll whose set was dropped would go on claiming under the one
  * its owner meant to replace; a runner reads the 400 as final, and a set that
  * did not read once does not read on the next poll either. The memory ceiling
- * a poll may name steers what is claimed in the same way, and is refused in
- * the same way.
+ * and the memory room a poll may name steer what is claimed in the same way,
+ * and the wait it may name bounds when it is answered; each is refused in the
+ * same way.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
@@ -52,7 +53,9 @@ import {
   workerRunnerCountOf,
   workerRunnerHeader,
   workerRunnerMemoryCeilingHeader,
+  workerRunnerMemoryRoomHeader,
   workerRunnerOf,
+  workerRunnerPollWaitHeader,
   type AssignmentOutcome,
   type WorkerRunner,
   type WorkerRunnerCapabilitiesNamed,
@@ -278,6 +281,10 @@ function poolAssignmentsRoute(
       if (capabilities.named === "Unread") return reply.code(400).send();
       const ceiling = poolCountNamed(request, workerRunnerMemoryCeilingHeader);
       if (ceiling.named === "Unread") return reply.code(400).send();
+      const room = poolCountNamed(request, workerRunnerMemoryRoomHeader);
+      if (room.named === "Unread") return reply.code(400).send();
+      const wait = poolCountNamed(request, workerRunnerPollWaitHeader);
+      if (wait.named === "Unread") return reply.code(400).send();
       const runner = poolRunnerNamed(request);
       const contract = workerContractOffered(request);
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
@@ -296,6 +303,8 @@ function poolAssignmentsRoute(
             ...(ceiling.named === "Count"
               ? { memoryCeilingMib: ceiling.count }
               : {}),
+            ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
+            ...(wait.named === "Count" ? { pollWaitSecs: wait.count } : {}),
             ...(contract === undefined ? {} : { contract }),
           },
           service.settings,

@@ -46,6 +46,7 @@ import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import {
   kubernetesPoolBackend,
@@ -78,6 +79,7 @@ import {
   workerPoolReconcile,
   type DedicatedPoolIdentity,
   type PersonalRunnerIdentity,
+  type WorkerPoolClaimTerms,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -513,17 +515,40 @@ type PersonalPlaneIdentity = PersonalRunnerIdentity & {
 
 type PlantedIdentity = DedicatedPoolIdentity | PersonalPlaneIdentity;
 
-/** Whether a pool or runner claims the oldest placeable attempt it may, a runner in `home`, under `assignment`. */
+/** Whether the claim `takes` would make on these terms would take anything, asked of the probe that takes nothing. */
+async function waiting(
+  identity: PlantedIdentity,
+  terms: WorkerPoolClaimTerms,
+  home: Partition | undefined,
+  ownersRevoked: readonly Principal[] = [],
+): Promise<boolean> {
+  return identity.kind === "Dedicated"
+    ? assignments.waiting(identity, terms, ownersRevoked)
+    : assignments.waitingPersonal(
+        identity,
+        terms,
+        home === undefined ? [] : [home.project],
+      );
+}
+
+/**
+ * Whether a pool or runner claims the oldest placeable attempt it may, a
+ * runner in `home`, under `assignment` and within `memoryRoomMib` where it is
+ * named; the probe is asked first, and answers what the claim then does.
+ */
 async function takes(
   identity: PlantedIdentity,
   home?: Partition,
   assignment = `assignment-${randomUUID()}`,
+  memoryRoomMib?: number,
 ): Promise<boolean> {
-  const terms = {
+  const terms: WorkerPoolClaimTerms = {
     leaseSecs,
     heldMax: Number.MAX_SAFE_INTEGER,
     memoryMibDefault,
+    ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
   };
+  const asked = await waiting(identity, terms, home);
   const bearer = `bearer-${randomUUID()}`;
   const claimed =
     identity.kind === "Dedicated"
@@ -535,6 +560,7 @@ async function takes(
           bearer,
           home === undefined ? [] : [home.project],
         );
+  assert.equal(asked, claimed !== undefined, "the probe answers the claim");
   return claimed !== undefined;
 }
 
@@ -779,6 +805,12 @@ async function claimTook(
     );
   const home = named.project.partition;
   const identity = sessionIdentity(c, named, pools);
+  const asked = await waiting(
+    identity,
+    { leaseSecs, heldMax: session.heldMax, memoryMibDefault },
+    home,
+    pools.ownersRevoked,
+  );
   const claimed = await claimAsked(
     identity,
     session.heldMax,
@@ -797,6 +829,19 @@ async function claimTook(
     claimed !== undefined,
     took,
     "a claim answers what it bound, and binds what it answers",
+  );
+  assert.equal(
+    asked,
+    c.assignmentsBound.includes(runnerCaseAssignment)
+      ? workerPoolCanAssign(
+          c.placement,
+          { pool: c.pool, session },
+          [{ pool: c.pool, session }, ...c.others],
+          runnerCaseAssignment,
+          new Set(),
+        )
+      : took,
+    "the probe answers what the claim takes, an assignment's name aside",
   );
   return took;
 }
@@ -1157,6 +1202,117 @@ test("an execution naming no memory meets a ceiling at the plane's size for it, 
       fits,
       `a runner under ${String(ceiling)}`,
     );
+  }
+});
+
+test("a claim takes no job larger than the room its poll named, a job naming no memory at the plane's size, for a pool and for its owner's runner", async () => {
+  for (const [memoryMib, room, fits] of [
+    [4_096, 4_096, true],
+    [4_096, 4_095, false],
+    [4_096, undefined, true],
+    [undefined, memoryMibDefault, true],
+    [undefined, memoryMibDefault - 1, false],
+  ] as const) {
+    const label = `claim-room-${String(memoryMib)}-${String(room)}`;
+    const resources = memoryMib === undefined ? undefined : { memoryMib };
+    const pooled = await releasedUnder(`${label}-pool`, pinned, 1, resources);
+    const pool = await pollingPool(pooled, label, pinned);
+    await opened(pooled);
+    assert.equal(
+      await takes(pool, undefined, undefined, room),
+      fits,
+      `a pool: ${label}`,
+    );
+    const owned = await releasedUnder(`${label}-owned`, pinned, 1, resources);
+    const runner: PersonalPlaneIdentity = {
+      kind: "Personal",
+      tenant: owned.partition.tenant,
+      owner: asPrincipal(
+        `https://issuer.invalid#${label}-owner-${randomUUID()}`,
+      ),
+      principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+    };
+    await plantedRunnerRows(runner, declaringAll(pinned), 0, [
+      owned.partition.project,
+    ]);
+    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+    assert.equal(
+      await takes(runner, owned.partition, undefined, room),
+      fits,
+      `a runner: ${label}`,
+    );
+  }
+});
+
+test("a poll's claims together fit the room it named, and it is told whether one more it fits is waiting under its ceiling", async () => {
+  const label = "claim-room-poll";
+  const project = await releasedUnder(label, pinned, 3, { memoryMib: 3_000 });
+  const pool = await pollingPool(project, label, pinned);
+  for (let opening = 0; opening < 3; opening += 1) await opened(project);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const poll = (wanted: number, memoryRoomMib: number) =>
+    workerPoolReconcile(
+      polling(() => randomUUID()),
+      pool,
+      { jobs: [], sessions: [] },
+      {
+        wanted,
+        wantedSessions: 0,
+        memoryRoomMib,
+        contract: workerContractRelease,
+      },
+      { ...settings, heldMax: 4 },
+    );
+  const first = await poll(2, 4_096);
+  assert.deepEqual(
+    first.assignments.map((taken) => taken.memoryMib),
+    [3_000],
+  );
+  assert.equal(first.jobsWaiting, false, "the room the first claim left");
+  assert.equal((await poll(0, 3_000)).jobsWaiting, true, "a room it fits");
+  assert.equal((await poll(0, 2_999)).jobsWaiting, false, "a room too small");
+  await runners.named(pool, undefined, undefined, 2_048);
+  assert.equal((await poll(0, 8_192)).jobsWaiting, false, "a ceiling below");
+  await runners.named(pool, undefined, undefined, 3_000);
+  assert.equal((await poll(0, 8_192)).jobsWaiting, true, "a ceiling at");
+  const last = await poll(2, 6_000);
+  assert.deepEqual(
+    last.assignments.map((taken) => taken.memoryMib),
+    [3_000, 3_000],
+  );
+  assert.equal(last.jobsWaiting, false, "nothing left to claim");
+});
+
+test("a claim or a probe whose size is no positive count, or whose room is no count, is refused before anything is asked", async () => {
+  const partition = { tenant: "terms", project: "terms" } as Partition;
+  const pool: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    partition,
+    pool: "terms",
+    principal: asPrincipal("https://issuer.invalid#terms"),
+  };
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: partition.tenant,
+    owner: asPrincipal("https://issuer.invalid#terms-owner"),
+    principal: asPrincipal("https://issuer.invalid#terms-runner"),
+  };
+  for (const [over, refusal] of [
+    [{ memoryMibDefault: 0 }, /invalid worker pool memory default/u],
+    [{ memoryRoomMib: -1 }, /invalid worker pool memory room/u],
+    [{ memoryRoomMib: 1.5 }, /invalid worker pool memory room/u],
+  ] as const) {
+    const terms = { leaseSecs, heldMax: 1, memoryMibDefault, ...over };
+    for (const asked of [
+      () => assignments.claim(pool, terms, "terms", "terms", []),
+      () => assignments.waiting(pool, terms, []),
+      () =>
+        assignments.claimPersonal(runner, terms, "terms", "terms", [
+          partition.project,
+        ]),
+      () => assignments.waitingPersonal(runner, terms, [partition.project]),
+    ])
+      await assert.rejects(asked, refusal, JSON.stringify(over));
   }
 });
 

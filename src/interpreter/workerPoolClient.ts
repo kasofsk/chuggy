@@ -34,8 +34,9 @@
  * killed at its deadline is reported here, and every other is left to its
  * lease; that such an end the plane did not answer is reported again on every
  * pass, where `poolLoop.mjs` reports each end once and leaves it to its lease;
- * and that a runner's backend may take no job while its disk is low, which a
- * cluster leaves to its kubelet.
+ * that a runner's backend may take no job while its disk is low, which a
+ * cluster leaves to its kubelet; and that a runner's poll names the memory it
+ * has room for, which a cluster leaves to its scheduler.
  *
  * A JOB ITS BACKEND KILLED AT ITS DEADLINE IS ENDED TIMED OUT, on the job
  * plane under its own bearer, as a harness that timed its own run out ends

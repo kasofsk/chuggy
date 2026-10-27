@@ -1,4 +1,5 @@
 import {
+  workerContractMemoryRoom,
   workerContractRelease,
   workerContractUnnamed,
   workerContractVersionOf,
@@ -70,6 +71,12 @@ export const workerContractTicketDispatch: WorkerContractRange = {
 /** The versions in which a personal runner's job assignment may name its project, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerProjects: WorkerContractRange = {
   min: { major: 1, minor: 15 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a poll's answer may say whether a job its runner fits is waiting, a field a pool of an earlier one refuses its whole answer over. */
+export const workerContractRunnerJobsWaiting: WorkerContractRange = {
+  min: workerContractMemoryRoom,
   max: workerContractAccepted.max,
 };
 
