@@ -9,6 +9,7 @@ import {
 } from "./http.ts";
 import {
   threadMessageSchema,
+  threadOpenSchema,
   threadRenameRequestSchema,
   threadHideRequestSchema,
   leadInquirySchema,
@@ -157,7 +158,7 @@ export const nativeHttpEndpoints = {
   openThread: {
     method: "POST",
     path: nativeHttpRoutes.threads,
-    body: emptyBody,
+    body: threadOpenSchema,
     response: threadEntryResponseSchema,
   },
   sendThreadMessage: {

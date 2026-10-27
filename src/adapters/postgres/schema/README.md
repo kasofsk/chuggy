@@ -291,6 +291,12 @@ selector service's own door onto it. The selector closes a lead through
 `close_project_lead`, which closes only the project's open lead it names and
 refuses while a turn of it is in flight or an inquiry forked from it is open;
 `close_agent_session`, which abandons such turns, no runtime role may execute.
+A member holds any number of open threads up to `member_thread_limit`, which
+is a count rather than an index: `open_member_thread` and `open_agent_session`
+each take an advisory lock on the member before counting, and a thread the API
+opens carries `open_key`, the key its client minted, unique per member, which
+makes the open idempotent. `read_project_threads` takes its reader and lists
+their open threads first, so a page holds every thread they count against.
 Closing a thread is
 `close_member_thread`'s, the API's door, which admits a thread alone and
 performs that close. The objectives and the roster are the two columns a later
@@ -420,6 +426,16 @@ alone, which answers `Unchanged` where nothing moved; a row naming no fallback
 is a project that took them out. It has no unfinished work: the scheduler
 copies it onto an execution when it registers one, so a change moves only what
 registers after it, and a project with no row places as it did before.
+
+`member_thread_limit` — how many threads one member may hold open in one
+project, and who set it. Owned by the boundary owner, which is what
+`set_member_thread_limit` runs as; the API role writes it through that door
+alone and reads it through `member_thread_limit`, the function of the same name,
+which answers the default for a member with no row. Its key and identity are
+`(tenant, project, principal)` and it points at `project`. It is changed by that
+door alone, which answers `Unchanged` where nothing moved. It has no unfinished
+work: a limit lowered below what a member holds closes nothing, and refuses
+their next open until they are under it.
 
 `project_session_placement` — where one project's threads and its lead run,
 and who set it; an inquiry runs where the lead does. Owned by the boundary

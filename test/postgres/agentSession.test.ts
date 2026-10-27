@@ -72,7 +72,7 @@ test("the same identity offered different facts is a conflict and changes nothin
   );
 });
 
-test("a project holds one lead, and a member holds one open thread", async () => {
+test("a project holds one lead, and a member holds open threads up to their limit", async () => {
   const partition = await sessionRigProject(rig, "one-of-each");
   await sessionRigSession(rig, partition, "lead");
   assert.equal(
@@ -85,6 +85,10 @@ test("a project holds one lead, and a member holds one open thread", async () =>
       credentialSlot: "claude-code",
     }),
     "Conflict",
+  );
+  await rig.harness.query(
+    `SELECT set_member_thread_limit($1,$2,'member',1,'System','agent session suite')`,
+    [partition.tenant, partition.project],
   );
   const thread = await sessionRigSession(rig, partition, "thread", {
     kind: "Thread",
@@ -234,13 +238,33 @@ test("enqueuing for a session that was never opened is refused rather than absor
   );
 });
 
-test("the server itself admits one lead per project and one open thread per member", async () => {
+test("a member nobody set a limit for opens a second thread beside their first", async () => {
+  const partition = await sessionRigProject(rig, "several");
+  await sessionRigSession(rig, partition, "several-one", {
+    kind: "Thread",
+    principal: "member-several",
+  });
+  assert.equal(
+    await rig.sessions.open({
+      partition,
+      session: asSessionId(`session-several-two-${partition.project}`),
+      kind: "Thread",
+      principal: asPrincipal("member-several"),
+      capabilities: [],
+      credentialSlot: "claude-code",
+    }),
+    "Opened",
+  );
+});
+
+test("the server itself admits one lead per project and one thread per member's open key", async () => {
   const partition = await sessionRigProject(rig, "indexed");
   const lead = await sessionRigSession(rig, partition, "indexed-lead");
   const thread = await sessionRigSession(rig, partition, "indexed-thread", {
     kind: "Thread",
     principal: "member-indexed",
   });
+
   await assert.rejects(
     rig.harness.query(
       `INSERT INTO agent_session
@@ -257,13 +281,14 @@ test("the server itself admits one lead per project and one open thread per memb
     rig.harness.query(
       `INSERT INTO agent_session
          (tenant,project,session,kind,principal,capabilities,credential_slot,
-          account,cluster)
-       SELECT tenant,project,session||'-again',kind,principal,
-              capabilities,credential_slot,account,cluster
-         FROM agent_session WHERE session=$1`,
+          account,cluster,open_key)
+       SELECT tenant,project,session||'-'||key,kind,principal,
+              capabilities,credential_slot,account,cluster,'key-indexed'
+         FROM agent_session, unnest(ARRAY['one','two']) AS key
+        WHERE session=$1`,
       [thread],
     ),
-    /agent_session_one_thread_per_member/u,
+    /agent_session_open_key_is_unique/u,
   );
 });
 

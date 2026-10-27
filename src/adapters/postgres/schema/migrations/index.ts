@@ -83,6 +83,7 @@ import { migration082 } from "./082-decline-kept-unread.ts";
 import { migration083 } from "./083-attempt-base-ref.ts";
 import { migration084 } from "./084-thread-dispatch.ts";
 import { migration085 } from "./085-dependencies-change.ts";
+import { migration086 } from "./086-several-threads.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -171,4 +172,5 @@ export const migrations: readonly Migration[] = [
   migration083,
   migration084,
   migration085,
+  migration086,
 ];

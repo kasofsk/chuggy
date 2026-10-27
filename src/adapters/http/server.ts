@@ -100,6 +100,7 @@ import {
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parseProjectOwnerFallback,
+  parseThreadLimit,
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
@@ -115,6 +116,7 @@ import {
   parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
+  parseThreadOpen,
   parseThreadRename,
   parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
@@ -204,6 +206,7 @@ import {
   personalRunnerTokenResponse,
   executionPlacementBody,
   ownerFallbackBody,
+  threadLimitBody,
   placementReadResponse,
   placementWriteResponse,
   sessionPlacementBody,
@@ -221,6 +224,7 @@ import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegi
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
+import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
 import { sessionBearerAdmission } from "./sessionBearerScope.ts";
@@ -1486,6 +1490,50 @@ function registerPlacement<Routes, View>(
   );
 }
 
+/**
+ * How many threads one member may hold open in a project: read under `Read`
+ * and written whole under `Administer`, the member named by their subject.
+ */
+function registerThreadLimits(
+  app: FastifyInstance,
+  limits: ThreadLimitAdministration,
+): void {
+  const subjectOf = (request: FastifyRequest) =>
+    textField(record(request.params), "subject");
+  app.get(nativeHttpRoutes.threadLimit, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await limits.read(
+          principalOf(request),
+          partitionOf(request),
+          subjectOf(request),
+        ),
+        threadLimitBody,
+      ),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.threadLimit,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const threadsMax = parseThreadLimit(request.body);
+      nativeHttpSend(
+        reply,
+        placementWriteResponse(
+          await limits.write(
+            principalOf(request),
+            partitionOf(request),
+            subjectOf(request),
+            threadsMax,
+          ),
+          threadLimitBody,
+        ),
+      );
+    },
+  );
+}
+
 function tenantOf(request: FastifyRequest): TenantId {
   return asTenantId(textField(record(request.params), "tenant"));
 }
@@ -1928,9 +1976,11 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
     root,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
+      const session = request.viaSession;
       const result = await web.createDraft(principalOf(request), {
         partition: partitionOf(request),
         ...parseDraftCreation(request.body),
+        ...(session === undefined ? {} : { originSession: session }),
       });
       nativeHttpSend(reply, draftCreationResponse(result));
     },
@@ -2105,10 +2155,8 @@ function registerThreadWrites(
   registerEndpoint(
     app,
     nativeHttpEndpoints.openThread,
-    (request, principal, partition) => {
-      nativeHttpEndpoints.openThread.body.parse(request.body);
-      return web.openThread(principal, partition);
-    },
+    (request, principal, partition) =>
+      web.openThread(principal, partition, parseThreadOpen(request.body)),
     (result, partition) => openThreadResponse(partition, result),
   );
   registerEndpoint(
@@ -2472,6 +2520,7 @@ export function createNativeHttpApp(
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
   ownerFallback?: ProjectOwnerFallbackAdministration,
+  threadLimits?: ThreadLimitAdministration,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2505,6 +2554,7 @@ export function createNativeHttpApp(
   registerThreadReads(app, web);
   if (threadLive !== undefined) registerThreadLive(app, web, threadLive);
   registerThreadWrites(app, web);
+  if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);

@@ -225,7 +225,7 @@ export async function provisionSessionRun(input: {
     const opened = await input.store.open(opening);
     if (opened === "Conflict")
       throw new Error(
-        `Conflict: ${opening.partition.tenant}/${opening.partition.project} already holds a session this one would contradict`,
+        `Conflict: ${opening.partition.tenant}/${opening.partition.project} already holds a session this one would contradict, or its principal holds as many open threads there as their limit allows`,
       );
     return `${opened}: ${opening.kind} session ${opening.session} for ${opening.principal}`;
   }

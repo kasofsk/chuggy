@@ -53,6 +53,7 @@ import {
   composeNativeWeb,
   composeExecutionPlacement,
   composeProjectOwnerFallback,
+  composeThreadLimits,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -1469,8 +1470,7 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
-  const { artifacts, uploadBytesMax: artifactUploadBytesMax } =
-    nativeArtifacts();
+  const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const web = composeNativeWeb(
     pool,
@@ -1495,7 +1495,7 @@ async function main(): Promise<void> {
     postgresInstallationAuthority(pool),
     {
       ...nativeHttpLimitsDefault,
-      projectArtifactUploadBytesMax: artifactUploadBytesMax,
+      projectArtifactUploadBytesMax: uploadBytesMax,
     },
     hub,
     composeSelectorProjectSettings(pool, access),
@@ -1518,6 +1518,7 @@ async function main(): Promise<void> {
     nativeTicketLandings(pools, access, artifacts),
     nativePersonalRunners(pool, access),
     composeProjectOwnerFallback(pool, access),
+    composeThreadLimits(pool, access, authenticationConfig.issuer),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await app.listen({

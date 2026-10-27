@@ -1,5 +1,5 @@
 /**
- * What the thread pages draw, derived: where a thread stands, which one is the
+ * What the thread pages draw, derived: where a thread stands, which are the
  * reader's own, what a turn is waiting for, what a wake is about, and what one
  * press of `Send` ended as.
  *
@@ -34,20 +34,16 @@
  *
  * EVERY CODE THIS CONSOLE NAMES IS THE DOOR'S OWN ROSTER MEMBER.
  * `threadMessageRefusalCodes` is every code the message door emits, and both
- * things this module does with one go through it: the settlement narrows
- * `NotYourThread` rather than comparing a literal, and the words are a switch
- * total over the roster. So a door that renamed a code stops this module
- * compiling instead of leaving a member told their message was refused for a
- * turn the mailbox already holds. A code the roster does not carry is drawn as
- * itself, which is what the fallback is for.
+ * things this module does with one go through it: the refusals drawn in their
+ * own word are narrowed rather than compared with a literal, and the words are
+ * a switch total over the roster. So a door that renamed a code stops this
+ * module compiling instead of drawing it under a word it no longer means. A
+ * code the roster does not carry is drawn as itself, which is what the
+ * fallback is for.
  *
- * A `NotYourThread` IS NOT PROOF THE MESSAGE DID NOT LAND. The door resolves
- * the mailbox from the caller's own principal and compares the URL's session
- * afterwards, so in the close-and-reopen race the refusal can arrive after the
- * turn was enqueued in the mailbox that resolved. It is therefore `Unsettled`
- * rather than `Refused`: the turn identity is kept, the mailbox is asked, and
- * only a mailbox that does not hold the turn is sent to again — under the same
- * identity, which is what makes that second send safe.
+ * AN OPEN IS IDEMPOTENT ON A KEY THE CONSOLE MINTS, so a press sent again
+ * reaches the thread the first one opened rather than a second; and a member
+ * at their limit on open threads is told so in a word of its own.
  *
  * A WAIT IS NOT A REFUSAL AND A `Retryable` IS NOT ALWAYS A BACKLOG. `classify`
  * answers `Retryable` for 429 AND 503, so an outage would draw as a mailbox
@@ -85,6 +81,7 @@ import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   projectArtifactUploadRefusalCodes,
+  threadLimitReachedCode,
   threadMessageRefusalCodes,
 } from "../../../../src/contract/rosters.ts";
 import type {
@@ -227,25 +224,6 @@ export function threadsByStanding(
   );
 }
 
-/** The reader's own thread that still stands, where the listing carried one:
- * a closed thread of theirs is one they open another beside, so it is not the
- * one an `Open` is withheld for or a message is settled against. */
-export function threadMine(
-  threads: readonly ThreadEntryResponse[],
-): ThreadEntryResponse | undefined {
-  return threads.find((thread) => thread.mine && thread.state !== "Closed");
-}
-
-/** Whether a thread has a turn the mailbox has not settled, which is what
- * makes closing it a real abandonment rather than a formality. */
-export function threadAnswering(
-  thread: Pick<ThreadResponse, "turns">,
-): boolean {
-  return thread.turns.some(
-    (turn) => turn.state === "Queued" || turn.state === "Claimed",
-  );
-}
-
 /** Whether the thread's newest turn is one the mailbox has not settled, which
  * is the only time its session is writing anything a reader could hear. */
 export function threadWriting(thread: Pick<ThreadResponse, "turns">): boolean {
@@ -306,6 +284,27 @@ export const threadTurnIdBytesCount = 16;
 export function threadTurnMinted(bytes: Uint8Array): string {
   return `thread-turn-${base64urlFromBytes(bytes)}`;
 }
+
+/** How much entropy a thread's open key is drawn with, which is what a
+ * retried open is answered the same thread by. */
+export const threadOpenKeyBytesCount = 16;
+
+/** One minted open key, prefixed as a turn identity is and spelled in the
+ * characters the door takes a key in. */
+export function threadOpenKeyMinted(bytes: Uint8Array): string {
+  return `thread-open-${base64urlFromBytes(bytes)}`;
+}
+
+/** Whether an open was refused because the reader holds as many open threads
+ * in the project as their limit allows. */
+export function threadOpenAtLimit(result: ApiResult<unknown>): boolean {
+  return (
+    result.outcome === "Conflict" && result.code === threadLimitReachedCode
+  );
+}
+
+/** The word an open refused at the reader's limit is drawn as. */
+export const threadLimitWord = "Thread limit reached";
 
 /** What a press sent: the text, and the images attached to it. */
 export interface ThreadPressed {
@@ -491,7 +490,6 @@ export type ThreadSend =
   | { readonly send: "Sent"; readonly ordinal: number }
   | { readonly send: "Waiting"; readonly why: string }
   | { readonly send: "Ended"; readonly why: string }
-  | { readonly send: "Unsettled"; readonly why: string }
   /** The tenant does not grant the reader hosted runs, so this thread takes
    * nothing from them; a refusal counts the placement reads before it. */
   | { readonly send: "Unhosted"; readonly readsAt?: number }
@@ -537,16 +535,6 @@ export function threadTurnsWait(door: ThreadDoor): boolean {
   return threadDoorRunnerShort(door) !== undefined;
 }
 
-/** Whether the mailbox tail a read answered already holds this turn, which is
- * the only thing that settles a refusal the door may have raised after
- * enqueuing. */
-export function threadHeldTurn(
-  thread: Pick<ThreadResponse, "turns">,
-  turn: string,
-): ThreadTurnResponse | undefined {
-  return thread.turns.find((held) => held.turn === turn);
-}
-
 /**
  * The refusal the door's own roster carries, and nothing where a code came back
  * that it does not — a code this console reports rather than acts on or names.
@@ -579,6 +567,13 @@ function threadRosterWord(code: ThreadMessageRefusalCode): string {
 export function threadRefusalWord(code: string): string {
   const known = threadRefusalCode(code);
   return known === undefined ? code : threadRosterWord(known);
+}
+
+/** Whether a rejected send is drawn in its code's word: another member's
+ * thread, and an image the project does not hold. */
+function threadRefusalSaid(code: string): boolean {
+  const known = threadRefusalCode(code);
+  return known === "NotYourThread" || known === "ThreadImageUnknown";
 }
 
 /** A send a door refused, with the word for its cause where there is one. */
@@ -655,9 +650,7 @@ export function threadSendFrom(
     case "Rejected":
       if (threadUnhosted(result)) return { send: "Unhosted" };
       if (sessionRefusedNoRunner(result)) return { send: "NoRunner" };
-      if (threadRefusalCode(result.code) === "NotYourThread")
-        return { send: "Unsettled", why: threadRefusalWord(result.code) };
-      return threadRefusalCode(result.code) === "ThreadImageUnknown"
+      return threadRefusalSaid(result.code)
         ? threadSendRefused(threadRefusalWord(result.code))
         : threadSendRefused(threadRefusalCause(result));
     case "Absent":

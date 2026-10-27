@@ -133,6 +133,7 @@ function scopedApp(
     recorded(reached, "landings"),
     recorded(reached, "personalRunners"),
     recorded(reached, "ownerFallback"),
+    recorded(reached, "threadLimits"),
   );
 }
 
@@ -551,6 +552,20 @@ test("a thread's bearer revoking in another project is answered as a member who 
     );
   }
   assert.deepEqual(accepted, []);
+});
+
+/** Setting a member's limit is provisioning sessions, so a session may read
+ * the cap on its own partition's threads and never move it. */
+test("a session bearer reads a member's thread limit in its own partition and never sets one", () => {
+  const params = { tenant: own.tenant, project: own.project, subject: "ada" };
+  assert.equal(
+    sessionBearerAdmission(own, "GET", nativeHttpRoutes.threadLimit, params),
+    "Admitted",
+  );
+  assert.equal(
+    sessionBearerAdmission(own, "PUT", nativeHttpRoutes.threadLimit, params),
+    "Refused",
+  );
 });
 
 test("the admission reads the matched route, folds HEAD into GET and refuses what it cannot place", () => {

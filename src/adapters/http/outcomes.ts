@@ -77,6 +77,7 @@ import {
   noRunnerCode,
   programSkipsPlannedEvaluationsCode,
   selectorProposalNotHeldCode,
+  threadLimitReachedCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -168,6 +169,7 @@ import type {
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
+import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
   ExecutionPlacementResponse,
@@ -175,6 +177,7 @@ import type {
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
   ProjectOwnerFallbackResponse,
+  ThreadLimitResponse,
   RunnerListedResponse,
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
@@ -1256,6 +1259,10 @@ export function personalRunnerPermitResponse(
   granted: boolean,
 ): NativeHttpResponse {
   return response(200, { granted } satisfies PersonalRunnerPermitResponse);
+}
+
+export function threadLimitBody(view: ThreadLimitView): ThreadLimitResponse {
+  return { threadsMax: view.threadsMax, administers: view.administers };
 }
 
 export function ownerFallbackBody(
@@ -2391,6 +2398,14 @@ export function openThreadResponse(
     return response(404, nativeHttpError("NotFound", "Resource not found."));
   if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
   if (result.result === "NoRunner") return noRunnerRefused();
+  if (result.result === "ThreadLimitReached")
+    return response(409, {
+      ...nativeHttpError(
+        threadLimitReachedCode,
+        "You hold as many open threads in this project as your limit allows.",
+      ),
+      threadsMax: result.threadsMax,
+    });
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
   });

@@ -107,6 +107,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
   "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
   "/api/v1/tenants/:tenant/projects/:project/threads",
+  "/api/v1/tenants/:tenant/projects/:project/thread-limits/:subject",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",

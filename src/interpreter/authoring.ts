@@ -20,6 +20,7 @@ import {
 } from "../contract/http.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
+import type { SessionId } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Lifecycle, Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
@@ -1076,6 +1077,8 @@ export interface AuthoringStore {
     readonly brief: DraftBrief;
     readonly overrides?: ConfigurationOverrides;
     readonly selection?: ConfigurationSelection;
+    /** The session the draft was created through, absent where no session's bearer carried it; no revision moves it. */
+    readonly originSession?: SessionId;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
     readonly partition: Partition;

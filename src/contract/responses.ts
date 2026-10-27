@@ -1565,7 +1565,7 @@ export type SelectorProposalReviewResponse = z.infer<
  * member acts under and absent where the project no longer admits them — a
  * thread its owner must still see and close rather than one to hide. `mine` is
  * computed against the request's own principal, which is what lets a browser
- * name "my thread" without ever decoding a token.
+ * name a thread as its reader's own without ever decoding a token.
  */
 export const threadEntryResponseSchema = z.object({
   session: identitySchema,
@@ -2065,6 +2065,13 @@ export const projectOwnerFallbackResponseSchema = z.strictObject({
 export type ProjectOwnerFallbackResponse = z.infer<
   typeof projectOwnerFallbackResponseSchema
 >;
+
+/** How many threads one member may hold open in the project, and whether this caller may change it. */
+export const threadLimitResponseSchema = z.strictObject({
+  threadsMax: z.number().int().min(1),
+  administers: z.boolean(),
+});
+export type ThreadLimitResponse = z.infer<typeof threadLimitResponseSchema>;
 
 /** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({

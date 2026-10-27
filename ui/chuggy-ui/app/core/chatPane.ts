@@ -32,10 +32,8 @@
  * width changes, and another side, a full screen or a thread's own page then
  * lays it at its default again.
  *
- * What the pane holds is derived from the reader's own thread listing, and a
- * listing that has not answered holds nothing and offers nothing — an offer to
- * open a thread before the listing says whether one stands would race the door
- * that answers idempotently on it.
+ * What the pane holds is derived from the reader's thread listing, and a
+ * listing that has not answered holds nothing the reader did not name.
  */
 
 import { z } from "zod";
@@ -47,8 +45,8 @@ import type { SessionRunnerShort } from "./sessionRunners.ts";
 import {
   threadDoorRunnerShort,
   threadDoorUnhosted,
-  threadMine,
   threadSendStanding,
+  threadsByStanding,
   threadTakesMessages,
 } from "./threads.ts";
 import type { ThreadDoor, ThreadSend } from "./threads.ts";
@@ -120,8 +118,8 @@ export function chatPaneContentDrawn(state: ChatPaneState): boolean {
 /**
  * The pane the frame draws at a route, which is none on a thread's own page,
  * the one route that names a session: the thread is the page there, and a pane
- * beside it would draw the reader's own open thread twice, each with a
- * composer. What the reader stored is untouched.
+ * beside it could draw the same thread twice, each with a composer. What the
+ * reader stored is untouched.
  */
 export function chatPaneOnPage(
   state: ChatPaneState,
@@ -641,56 +639,26 @@ export function chatPaneChosenIn(
   return same ? chosen.session : undefined;
 }
 
-export type ChatPaneStart =
-  | { readonly start: "Unknown" }
-  | { readonly start: "Offered"; readonly closes: string | undefined }
-  | { readonly start: "Answering" };
-
-export interface ChatPaneHolding {
-  /** The thread the pane draws: the one the reader picked out of the history,
-   * else their own open one, and absent while the listing has not answered and
-   * while they have neither. */
-  readonly session: string | undefined;
-  readonly start: ChatPaneStart;
-}
-
-/** What the offer to start another says, which is about the reader's own
- * thread and never about the one they happen to be reading. */
-function chatPaneStarts(
-  mine: ThreadEntryResponse | undefined,
-  answering: boolean,
-): ChatPaneStart {
-  if (mine === undefined) return { start: "Offered", closes: undefined };
-  if (answering) return { start: "Answering" };
-  return { start: "Offered", closes: mine.session };
-}
-
 /**
- * Which thread the pane draws and what starting another would do.
+ * The thread the pane draws: the one the reader named, else the open thread of
+ * their own that moved last, and none while the listing has not answered and
+ * where they hold none.
  *
  * A THREAD THE READER NAMED WINS OVER THE LISTING — they name one by picking it
  * out of the history and by starting one, and a thread just started is not in
  * the listing yet, so a pick held only where the listing already agreed would
  * draw an empty pane over the thread the reader is waiting to type in, the read
- * of the thread itself being what says whether it is there; a thread with a
- * turn the mailbox has not settled is not closed out from under itself, so the
- * offer says it is answering instead.
+ * of the thread itself being what says whether it is there.
  */
 export function chatPaneHolding(
   threads: readonly ThreadEntryResponse[] | undefined,
-  answering: boolean,
   chosen: string | undefined,
-): ChatPaneHolding {
-  if (threads === undefined && chosen === undefined)
-    return { session: undefined, start: { start: "Unknown" } };
-  const mine = threads === undefined ? undefined : threadMine(threads);
-  return {
-    session: chosen ?? mine?.session,
-    start:
-      threads === undefined
-        ? { start: "Unknown" }
-        : chatPaneStarts(mine, answering),
-  };
+): string | undefined {
+  if (chosen !== undefined || threads === undefined) return chosen;
+  const mine = threads.filter(
+    (thread) => thread.mine && thread.state !== "Closed",
+  );
+  return threadsByStanding(mine)[0]?.session;
 }
 
 /** What the header says of the reader's thread door: whether it would refuse

@@ -1880,7 +1880,7 @@ function composerDrawn(): HTMLTextAreaElement {
 }
 
 /** A server holding the reader's own thread with a turn the mailbox has not
- * settled, which is what withholds New and renames it Answering. */
+ * settled. */
 function answeringThreadServed(): typeof fetch {
   return ((url: string) => {
     if (url.includes(`/threads/${threadMineSession}/transcript`))
@@ -1910,15 +1910,13 @@ function answeringThreadServed(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-/** New is withheld and renamed Answering while the reader's own thread has not
- * settled, which is exactly where a reader most needs its tooltip: the control
- * cannot be pressed to learn what it does, so the tooltip has to open on focus
- * regardless. */
-test("Answering's tooltip still opens on focus while New is disabled", async () => {
+/** New closes nothing, so a thread still answering is no reason to withhold
+ * it. */
+test("New is offered beside a thread of the reader's own that is still answering", async () => {
   await mounted(viewportDeskEm, answeringThreadServed());
-  const button = screen.getByRole("button", { name: "Answering" });
-  expect(button.hasAttribute("disabled")).toBe(true);
-  await tooltipNamed("Answering");
+  const button = screen.getByRole("button", { name: "New" });
+  expect(button.hasAttribute("disabled")).toBe(false);
+  await tooltipNamed("New");
   styleless();
 });
 
@@ -2151,40 +2149,94 @@ function postsNamed(posts: readonly string[]): readonly string[] {
 }
 
 /** A server holding the reader's own idle thread, recording every thread post
- * and answering an open as `open` names. */
+ * and the key each open was asked under, and answering an open as `open`
+ * names. */
 function heldThreadServed(
   posts: string[],
   open: () => Promise<unknown>,
+  keys: string[] = [],
 ): typeof fetch {
   const served = threadServed([
     threadEntry({ session: openedSession, owner: "geoff", mine: true }),
   ]);
-  return ((url: string, init?: { readonly method?: string }) => {
+  return ((
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ) => {
     if (init?.method !== "POST") return served(url, init);
     posts.push(url);
-    return url.endsWith("/threads") ? open() : served(url, init);
+    if (!url.endsWith("/threads")) return served(url, init);
+    const asked = JSON.parse(init.body ?? "null") as { readonly key: string };
+    keys.push(asked.key);
+    return open();
   }) as unknown as typeof fetch;
 }
 
-test("New with a thread the grant allows closes it and opens another", async () => {
+/** An open the door answers with another thread of the reader's own. */
+function anotherOpened(): Promise<unknown> {
+  return Promise.resolve(
+    answer(threadEntry({ session: openedSession, owner: "geoff", mine: true })),
+  );
+}
+
+test("New beside a thread of the reader's own opens another and closes none", async () => {
+  const posts: string[] = [];
+  await mounted(viewportDeskEm, heldThreadServed(posts, anotherOpened));
+  await pressed("New");
+  expect(postsNamed(posts)).toStrictEqual(["open"]);
+  styleless();
+});
+
+/** A press after one the door did not answer may be reaching the thread that
+ * one opened, so it asks under the same key; one after an open that answered
+ * is a thread of its own. */
+test("New pressed again after a failed open asks under the same key, and after an opened one under another", async () => {
+  const posts: string[] = [];
+  const keys: string[] = [];
+  const answers = [
+    () => Promise.resolve(answer({ error: { code: "Unavailable" } }, 500)),
+    anotherOpened,
+    anotherOpened,
+  ];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(
+      posts,
+      () => (answers[keys.length - 1] ?? anotherOpened)(),
+      keys,
+    ),
+  );
+  await pressed("New");
+  await pressed("New");
+  await pressed("New");
+  expect(keys).toHaveLength(3);
+  expect(keys[1], "a retried open minted a fresh key").toBe(keys[0]);
+  expect(keys[2], "a start after an opened one reused its key").not.toBe(
+    keys[1],
+  );
+  styleless();
+});
+
+/** The limit is the reader's to act on, by closing a thread, so it is said in
+ * words of its own rather than as the conflict it arrives as. */
+test("New the door refuses at the reader's thread limit says so", async () => {
   const posts: string[] = [];
   await mounted(
     viewportDeskEm,
     heldThreadServed(posts, () =>
       Promise.resolve(
-        answer(
-          threadEntry({ session: openedSession, owner: "geoff", mine: true }),
-        ),
+        answer({ error: { code: "ThreadLimitReached" }, threadsMax: 2 }, 409),
       ),
     ),
   );
   await pressed("New");
-  expect(postsNamed(posts)).toStrictEqual(["open", "close", "open"]);
+  expect(postsNamed(posts)).toStrictEqual(["open"]);
+  expect(screen.getByText("Refused · Thread limit reached")).toBeTruthy();
   styleless();
 });
 
-/** The open is asked before the close, so a reader the hosted grant refuses
- * keeps the thread they had rather than losing it to one that cannot open. */
+/** A reader the hosted grant refuses keeps the thread they hold, and is told
+ * what New met. */
 test("New the hosted grant refuses closes nothing, and the refusal is drawn", async () => {
   const posts: string[] = [];
   await mounted(
@@ -2194,10 +2246,7 @@ test("New the hosted grant refuses closes nothing, and the refusal is drawn", as
     ),
   );
   await pressed("New");
-  expect(
-    postsNamed(posts),
-    "a thread was closed for one that could not open",
-  ).toStrictEqual(["open"]);
+  expect(postsNamed(posts)).toStrictEqual(["open"]);
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
   styleless();
 });
@@ -2550,9 +2599,8 @@ test("a message the door refuses for no runner stays in the box, which still tak
   styleless();
 });
 
-/** The open is asked before the close, so a reader whose runner went since
- * the pane read it keeps the thread they had, and the box under it says what
- * New met. */
+/** A reader whose runner went since the pane read it keeps the thread they
+ * hold, and the box under it says what New met. */
 test("New the door refuses for no runner closes nothing, and the box says so", async () => {
   const posts: string[] = [];
   let mine: "Live" | "Unregistered" = "Live";

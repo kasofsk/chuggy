@@ -311,8 +311,12 @@ function fakeDrafts(
   | "drafts"
 > {
   return {
-    createDraft: () => {
-      calls.push("createDraft");
+    createDraft: (_principal, input) => {
+      calls.push(
+        input.originSession === undefined
+          ? "createDraft"
+          : `createDraft:via:${String(input.originSession)}`,
+      );
       return Promise.resolve({ result: "NotFound" });
     },
     initializeDraft: () => {
@@ -2018,6 +2022,35 @@ test("a session bearer submits as its principal, and the record says which sessi
   assert.deepEqual(calls, [
     "session-authority",
     `submit:Decide:via:${String(liveSession)}`,
+  ]);
+});
+
+/** A draft creation, offered under whichever bearer a case is about. */
+function draftUnder(token: string) {
+  const creation = draftCreationOf("intent");
+  return {
+    ...creation,
+    headers: { ...creation.headers, authorization: `Bearer ${token}` },
+  };
+}
+
+test("a draft created under an OIDC bearer has no origin session", async () => {
+  const calls: string[] = [];
+  await using app = twoBearerAppOf(calls, new Set());
+  await app.inject(draftUnder("valid"));
+  assert.deepEqual(calls, ["oidc:valid", "createDraft"]);
+});
+
+/** The origin is the thread a ticket's events wake, so it is the session whose
+ * bearer carried the request and never one the body names. */
+test("a draft created under a session bearer has that session as its origin", async () => {
+  const calls: string[] = [];
+  const secret = sessionSecret();
+  await using app = twoBearerAppOf(calls, new Set([secret]));
+  await app.inject(draftUnder(secret));
+  assert.deepEqual(calls, [
+    "session-authority",
+    `createDraft:via:${String(liveSession)}`,
   ]);
 });
 

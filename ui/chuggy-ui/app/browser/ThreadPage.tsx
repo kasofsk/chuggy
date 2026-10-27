@@ -2,7 +2,7 @@
  * One thread's own page: its conversation as a column to read, under a bar
  * that names it and offers on it what the chat pane offers.
  *
- * The frame draws no chat pane here, so the reader's own open thread is never
+ * The frame draws no chat pane here, so a thread of the reader's own is never
  * drawn twice with two composers. Whose thread it is, is the read's own
  * `mine`, so another member's is drawn with no composer.
  */

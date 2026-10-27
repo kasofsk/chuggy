@@ -1072,13 +1072,12 @@ export const apiThreads = apiProjectEndpoint(
   (partition) => ({ parameters: partition }),
 );
 
-/** The caller's own thread, opened where they have none and answered where they
- * have: the route is idempotent, so this is safe to press twice. The body is
- * an empty object rather than nothing, because the door takes only versioned
- * JSON and a request with no body carries no media type to be versioned. */
+/** A thread of the caller's own, opened under a key they minted for it: the
+ * route is idempotent on the key, so a press sent again answers the thread the
+ * first one opened rather than a second. */
 export const apiOpenThread = apiProjectEndpoint(
   nativeHttpEndpoints.openThread,
-  (partition) => ({ parameters: partition, body: {} }),
+  (partition, key: string) => ({ parameters: partition, body: { key } }),
 );
 
 /**

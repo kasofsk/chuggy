@@ -12,9 +12,10 @@
  * `Refused` route never admits one: everything not addressed to one partition,
  * and inside one the registration-token mint, because enrolling a machine is
  * provisioning rather than work — which is also why every personal runner
- * route is refused, its allowlist among them — and the answer to a lead's
- * held proposal, because the hold is there for a person to answer and the
- * lead's session holds a bearer. A `Public` route is one the authentication
+ * route is refused, its allowlist among them, and why a member's thread limit
+ * is read but never set, a session widening the cap on sessions — and the
+ * answer to a lead's held proposal, because the hold is there for a person to
+ * answer and the lead's session holds a bearer. A `Public` route is one the authentication
  * hook passes over, so no session bearer is read on it; what such a route is
  * presented, it verifies itself.
  *
@@ -116,6 +117,7 @@ export const sessionBearerRouteClasses = {
   draft: { GET: "Partition", PUT: "Partition", DELETE: "Partition" },
   dispatchView: partitionRead,
   threads: { GET: "Partition", POST: "Partition" },
+  threadLimit: { GET: "Partition", PUT: "Refused" },
   thread: partitionRead,
   threadTranscript: partitionRead,
   threadMessages: partitionWrite,

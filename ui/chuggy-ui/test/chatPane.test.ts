@@ -597,71 +597,68 @@ test("a pick is held in the project it was made in and in no other", () => {
   expect(chatPaneChosenIn(undefined, atlas)).toBe(undefined);
 });
 
-test("a listing that has not answered holds nothing and offers nothing", () => {
-  expect(chatPaneHolding(undefined, false, undefined)).toStrictEqual({
-    session: undefined,
-    start: { start: "Unknown" },
-  });
+test("a listing that has not answered holds nothing", () => {
+  expect(chatPaneHolding(undefined, undefined)).toBeUndefined();
 });
 
-test("a reader with no thread of their own is offered one to open", () => {
-  const holding = chatPaneHolding(
-    [threadEntry({ session: "other", mine: false })],
-    false,
-    undefined,
-  );
-  expect(holding.session).toBeUndefined();
-  expect(holding.start).toStrictEqual({ start: "Offered", closes: undefined });
+test("a reader with no thread of their own holds none", () => {
+  expect(
+    chatPaneHolding(
+      [threadEntry({ session: "other", mine: false })],
+      undefined,
+    ),
+  ).toBeUndefined();
 });
 
-test("the reader's own open thread is what the pane holds, and starting another closes it", () => {
+test("of the reader's own open threads, the pane holds the one that moved last", () => {
   const holding = chatPaneHolding(
     [
       threadEntry({ session: "other", mine: false }),
-      threadEntry({ session: "mine", mine: true }),
+      threadEntry({ session: "earlier", mine: true }),
+      threadEntry({
+        session: "later",
+        mine: true,
+        lastActivityAt: "2026-09-02T11:00:00Z",
+      }),
     ],
-    false,
     undefined,
   );
-  expect(holding.session).toBe("mine");
-  expect(holding.start).toStrictEqual({ start: "Offered", closes: "mine" });
-});
-
-test("a thread the mailbox has not settled is not closed out from under itself", () => {
-  const holding = chatPaneHolding(
-    [threadEntry({ session: "mine", mine: true })],
-    true,
-    undefined,
-  );
-  expect(holding.session).toBe("mine");
-  expect(holding.start).toStrictEqual({ start: "Answering" });
+  expect(holding).toBe("later");
 });
 
 test("a closed thread of the reader's own is not the one the pane holds", () => {
-  const holding = chatPaneHolding(
-    [threadEntry({ session: "mine", mine: true, state: "Closed" })],
-    false,
-    undefined,
-  );
-  expect(holding.session).toBeUndefined();
-  expect(holding.start).toStrictEqual({ start: "Offered", closes: undefined });
+  expect(
+    chatPaneHolding(
+      [
+        threadEntry({
+          session: "old",
+          mine: true,
+          state: "Closed",
+          lastActivityAt: "2026-09-02T11:00:00Z",
+        }),
+        threadEntry({ session: "mine", mine: true }),
+      ],
+      undefined,
+    ),
+  ).toBe("mine");
+  expect(
+    chatPaneHolding(
+      [threadEntry({ session: "old", mine: true, state: "Closed" })],
+      undefined,
+    ),
+  ).toBeUndefined();
 });
 
 /** The history reaches every thread the listing carries, so a reader can read
- * one that is closed or another member's — and the offer to start their own is
- * unchanged by which one they are looking at. */
+ * one that is closed or another member's. */
 test("a thread picked out of the history is the one the pane holds", () => {
   const threads = [
     threadEntry({ session: "other", mine: false }),
     threadEntry({ session: "mine", mine: true }),
     threadEntry({ session: "old", mine: true, state: "Closed" }),
   ];
-  expect(chatPaneHolding(threads, false, "other").session).toBe("other");
-  expect(chatPaneHolding(threads, false, "old").session).toBe("old");
-  expect(chatPaneHolding(threads, false, "other").start).toStrictEqual({
-    start: "Offered",
-    closes: "mine",
-  });
+  expect(chatPaneHolding(threads, "other")).toBe("other");
+  expect(chatPaneHolding(threads, "old")).toBe("old");
 });
 
 /** A thread just started is not in the listing yet — the frame that stales it
@@ -671,14 +668,10 @@ test("a thread the reader named is held before the listing carries it", () => {
   expect(
     chatPaneHolding(
       [threadEntry({ session: "mine", mine: true })],
-      false,
       "just-opened",
-    ).session,
+    ),
   ).toBe("just-opened");
-  expect(chatPaneHolding(undefined, false, "just-opened")).toStrictEqual({
-    session: "just-opened",
-    start: { start: "Unknown" },
-  });
+  expect(chatPaneHolding(undefined, "just-opened")).toBe("just-opened");
 });
 
 function unhostedSaid(

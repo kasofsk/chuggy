@@ -17,6 +17,7 @@
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
@@ -124,7 +125,7 @@ async function opening(
     method: "POST",
     url: threadsOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key: randomUUID() },
   });
   return { status: opened.statusCode, body: opened.json() };
 }

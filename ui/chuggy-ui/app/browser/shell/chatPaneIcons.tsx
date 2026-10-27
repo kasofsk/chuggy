@@ -155,8 +155,8 @@ export function ChatPaneIcon(props: {
  * read twice: as the hidden label that stays its accessible name, and as the
  * tooltip a pointer or a keyboard focus reveals. The tooltip wraps the button
  * rather than sitting on it, so it still opens on focus even where the button
- * itself is disabled and so cannot take focus directly — New, while the
- * reader's own thread is answering.
+ * itself is disabled and so cannot take focus directly — New, while the open
+ * it asked is out.
  */
 export function ChatPaneIconButton(props: {
   readonly glyph: ChatPaneGlyphName;

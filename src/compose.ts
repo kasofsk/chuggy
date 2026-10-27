@@ -89,6 +89,11 @@ import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
 import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import { postgresThreadLimits } from "./adapters/postgres/threadLimit.ts";
+import {
+  threadLimitAdministration,
+  type ThreadLimitAdministration,
+} from "./interpreter/threadLimit.ts";
 import {
   projectOwnerFallbackAdministration,
   type ProjectOwnerFallbackAdministration,
@@ -312,6 +317,19 @@ export function composeProjectOwnerFallback(
   return projectOwnerFallbackAdministration(
     access,
     postgresProjectOwnerFallback(apiPool),
+  );
+}
+
+/** Wires how many threads each member may hold open to API-role credentials and the access that gates setting it. */
+export function composeThreadLimits(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  issuer: string,
+): ThreadLimitAdministration {
+  return threadLimitAdministration(
+    access,
+    postgresThreadLimits(apiPool),
+    issuer,
   );
 }
 

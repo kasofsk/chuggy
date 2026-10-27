@@ -55,6 +55,7 @@ import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
+import { migration086 } from "../../src/adapters/postgres/schema/migrations/086-several-threads.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
@@ -2934,7 +2935,7 @@ test("084 leaves an open thread's roster as it stood, and a thread opened after 
       INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-84','project-84','Active');
       SELECT * FROM open_member_thread('tenant-84','project-84','principal-a',
         'session-84-a','slot-84','objectives-84')`);
-    assert.ok((await postgresMigrate(subject)).includes(migration084.version));
+    await installationAt(subject, migration084.version);
     await subject.query(
       `SELECT * FROM open_member_thread('tenant-84','project-84','principal-b',
          'session-84-b','slot-84','objectives-84')`,
@@ -2964,5 +2965,93 @@ test("084 leaves an open thread's roster as it stood, and a thread opened after 
       ),
       /agent_session_capabilities_are_known/u,
     );
+  });
+});
+
+/** Each draft 086 found, and the origin it gave it. */
+async function draftOrigins086(subject: pg.Pool): Promise<readonly unknown[]> {
+  return (
+    await subject.query<{ ticket: number; origin: string | null }>(
+      `SELECT ticket::int AS ticket,origin_session AS origin FROM draft
+        ORDER BY ticket`,
+    )
+  ).rows;
+}
+
+/** What `open_member_thread` answers a member opening under a key once 086 stands. */
+async function opened086(
+  subject: pg.Pool,
+  session: string,
+  key: string,
+): Promise<unknown> {
+  return (
+    await subject.query<{ opened: string; session: string | null }>(
+      `SELECT opened,session FROM open_member_thread('tenant-86','project-86',
+         'principal-a',$1,$2,'slot-86','objectives-86')`,
+      [session, key],
+    )
+  ).rows[0];
+}
+
+test("086 gives a draft that stood the thread its first author held open, and lets a member open several", async () => {
+  await migrationDatabase("several_threads", async (subject) => {
+    await installationBefore(subject, migration086.version);
+    await subject.query(`${tenantSeed("tenant-86")}
+      INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-86','project-86','Active');
+      INSERT INTO configuration_revision
+        (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+      VALUES('tenant-86','project-86','revision-86','{}','digest-86','Agent','subject-86');
+      SELECT * FROM open_member_thread('tenant-86','project-86','principal-a',
+        'session-86-a','slot-86','objectives-86');
+      SELECT * FROM open_member_thread('tenant-86','project-86','principal-b',
+        'session-86-b','slot-86','objectives-86');
+      SELECT close_agent_session('tenant-86','project-86','session-86-b');
+      INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+      VALUES('tenant-86','project-86',1,2,'Draft','revision-86'),
+            ('tenant-86','project-86',2,1,'Draft','revision-86'),
+            ('tenant-86','project-86',3,1,'Draft','revision-86'),
+            ('tenant-86','project-86',4,1,'Draft','revision-86');
+      INSERT INTO draft_revision
+        (tenant,project,ticket,authoring_version,configuration_revision,
+         authoring,authority_kind,authority_subject)
+      VALUES('tenant-86','project-86',1,1,'revision-86','{}','Member','principal-a'),
+            ('tenant-86','project-86',1,2,'revision-86','{}','Member','principal-c'),
+            ('tenant-86','project-86',2,1,'revision-86','{}','Member','principal-b'),
+            ('tenant-86','project-86',3,1,'revision-86','{}','Test','principal-a'),
+            ('tenant-86','project-86',4,1,'revision-86','{}','Member','principal-c')`);
+    assert.ok((await postgresMigrate(subject)).includes(migration086.version));
+
+    assert.deepEqual(await draftOrigins086(subject), [
+      { ticket: 1, origin: "session-86-a" },
+      { ticket: 2, origin: null },
+      { ticket: 3, origin: null },
+      { ticket: 4, origin: null },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT indexname FROM pg_indexes
+            WHERE indexname='agent_session_one_thread_per_member'`,
+        )
+      ).rows,
+      [],
+    );
+
+    assert.deepEqual(await opened086(subject, "session-86-c", "key-c"), {
+      opened: "Opened",
+      session: "session-86-c",
+    });
+    assert.deepEqual(await opened086(subject, "session-86-d", "key-c"), {
+      opened: "AlreadyOpen",
+      session: "session-86-c",
+    });
+    await subject.query(
+      `SELECT set_member_thread_limit('tenant-86','project-86','principal-a',2,
+         'Test','migration suite')`,
+    );
+    assert.deepEqual(await opened086(subject, "session-86-e", "key-e"), {
+      opened: "ThreadLimitReached",
+      session: null,
+    });
   });
 });
