@@ -118,7 +118,8 @@ export function chatPaneContentDrawn(state: ChatPaneState): boolean {
 /**
  * The pane the frame draws at a route, which is none on a thread's own page,
  * the one route that names a session: the thread is the page there, and a pane
- * beside it could draw the same thread twice, each with a composer. What the reader stored is untouched.
+ * beside it could draw the same thread twice, each with a composer. What the
+ * reader stored is untouched.
  */
 export function chatPaneOnPage(
   state: ChatPaneState,

@@ -3,8 +3,9 @@
  * rather than on one.
  *
  * The pane holds the reader's own open thread that moved last by default, and
- * its history is how any other is reached, their own open ones among them. Each thread also has a page of its own, which the
- * pane links to and which draws no pane, so no thread is drawn twice.
+ * its history is how any other is reached, their own open ones among them.
+ * Each thread also has a page of its own, which the pane links to and which
+ * draws no pane, so no thread is drawn twice.
  * Collapsing it leaves the strip its own control expands, rather than nothing —
  * a pane that vanished would leave the reader hunting the bar for where it went.
  *

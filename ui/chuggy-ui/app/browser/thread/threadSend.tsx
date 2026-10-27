@@ -32,9 +32,10 @@
  * in the box.
  *
  * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
- * sends to it, under one key the composer holds until an open answers, so a
- * press after a failed open reaches the thread that one may have opened and a
- * press after a failed send reaches the thread its press opened.
+ * sends to it, under one key the composer holds for as long as it is mounted,
+ * so a press after a failed open reaches the thread that one may have opened;
+ * once an open answers, a press after a failed send reaches the thread it
+ * opened without opening again.
  *
  * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. On runners the door
  * asks for a runner of the reader's own instead, so the box takes a message

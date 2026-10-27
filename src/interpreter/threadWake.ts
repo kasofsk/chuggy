@@ -40,13 +40,14 @@
  * wakes at most the one thread its ticket's draft was filed from, but the pass
  * does not rest on that read's shape: a page that filled its bound may hold
  * only part of the last sequence's candidates — and a cursor moved past that
- * sequence would drop the rest of them permanently and silently. So a full page advances to the highest
- * sequence BELOW its last, which the ordering makes complete, and its last
- * sequence is read again next pass, where what was already woken answers
- * `AlreadyWoken`. The one case with no complete sequence to move to is a page
- * entirely of one sequence: there the pass moves past it anyway and says so in
- * `truncatedAt`, because the alternative is a cursor that can never move again
- * for any project and no bound a deployment can set would free it.
+ * sequence would drop the rest of them permanently and silently. So a full
+ * page advances to the highest sequence BELOW its last, which the ordering
+ * makes complete, and its last sequence is read again next pass, where what
+ * was already woken answers `AlreadyWoken`. The one case with no complete
+ * sequence to move to is a page entirely of one sequence: there the pass moves
+ * past it anyway and says so in `truncatedAt`, because the alternative is a
+ * cursor that can never move again for any project and no bound a deployment
+ * can set would free it.
  *
  * THE PASS TRUSTS THE PAGE'S ORDER AND CHECKS IT. The reasoning above holds
  * only where a page is a PREFIX of the window after the cursor, so a page that
