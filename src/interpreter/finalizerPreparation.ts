@@ -617,7 +617,11 @@ export function canonicalChangeProposalRequest(
   ]);
 }
 
-/** The exact bytes one attempt's digest is taken over, binding it to the request it answers. */
+/**
+ * The exact bytes one attempt's digest is taken over, binding it to the request
+ * it answers. The base ref an unheld target was read from is a last part only
+ * where there is one, so every attempt without one keeps the bytes it had.
+ */
 export function canonicalFinalizationAttempt(
   record: Omit<AttemptRecord, "attemptDigest">,
 ): CanonicalFinalization {
@@ -643,6 +647,7 @@ export function canonicalFinalizationAttempt(
     record.failureKind ?? "",
     record.conflictManifest ?? "",
     record.conflictDigest ?? "",
+    ...(record.target.baseRef === undefined ? [] : [record.target.baseRef]),
   ]);
 }
 

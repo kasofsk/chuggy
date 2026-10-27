@@ -623,7 +623,7 @@ async function finalizerDurableView(
         ON z.tenant = q.tenant AND z.project = q.project AND z.permit = q.permit
      WHERE q.tenant = f.tenant AND q.project = f.project AND q.state = 'Granted'
        AND z.verdict = 'Unreadable' AND y.ticket = f.ticket
-       AND y.request <> f.request
+       AND y.request <> f.request AND q.recovery_epoch = ${claim.recoveryEpoch}
      ORDER BY q.permit LIMIT 1) h ON true
       WHERE f.tenant = ${claim.partition.tenant} AND f.project = ${claim.partition.project}
         AND f.request = ${claim.request}`,

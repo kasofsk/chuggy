@@ -304,13 +304,22 @@ export function finalizerRemoteOpen(
   return remote;
 }
 
-/** The real git adapter over one remote, with a credential no filesystem remote asks for and any push bound a case names. */
+/** What a case changes about the real git adapter: the bound its pushes stop at, and a scratch of its own where it stands for a restarted finalizer. */
+export interface FinalizerRemotePortOptions {
+  readonly promotionTimeoutSecsMax?: number;
+  readonly scratch?: string;
+}
+
+/** The real git adapter over one remote, with a credential no filesystem remote asks for. */
 export function finalizerRemotePort(
   rig: FinalizerRig,
-  promotionTimeoutSecsMax?: number,
+  {
+    promotionTimeoutSecsMax,
+    scratch = "adapter",
+  }: FinalizerRemotePortOptions = {},
 ): GitPromotionPort {
   return gitPromotion({
-    scratchDirectory: join(rig.gitRoot, "adapter"),
+    scratchDirectory: join(rig.gitRoot, scratch),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
     ...(promotionTimeoutSecsMax === undefined

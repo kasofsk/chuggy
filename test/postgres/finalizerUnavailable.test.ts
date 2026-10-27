@@ -37,7 +37,10 @@ import {
   type FinalizationClaim,
   type GitPromotionPort,
 } from "../../src/interpreter/finalizer.ts";
-import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
+import {
+  asRecoveryEpoch,
+  type RecoveryEpoch,
+} from "../../src/interpreter/projectStore.ts";
 import {
   gitDeclineByProcReceive,
   gitDeclineWorkflowsReason,
@@ -552,7 +555,11 @@ test("an undecided push onto a branch nobody created is prepared again until its
     );
     await dwellPasses(
       project,
-      port(finalizerRemotePort(rig, undecidedPushSecs)),
+      port(
+        finalizerRemotePort(rig, {
+          promotionTimeoutSecsMax: undecidedPushSecs,
+        }),
+      ),
       label,
     );
     assert.deepEqual(
@@ -669,7 +676,7 @@ async function heldBranchSubject(
 /** A port under which somebody deletes the held branch just before each push, which the hook then outlasts. */
 function deletedBeforePush(origin: string): GitPromotionPort {
   return finalizerRacingPort(
-    finalizerRemotePort(rig, undecidedPushSecs),
+    finalizerRemotePort(rig, { promotionTimeoutSecsMax: undecidedPushSecs }),
     () => {
       finalizerGitVerb(origin, "update-ref", "-d", heldBranch);
       undecideByPreReceive(origin);
@@ -717,31 +724,31 @@ test("an undecided push onto a branch deleted after preparation is held unread a
 });
 
 /**
- * The permit a later request for `ticket` is gathered beside, which is an
- * earlier request's of the same ticket still held unread. The request is
- * minted after the project's latest decision and read before any pass claims it.
+ * The permit a later request for `ticket` is gathered beside under `epoch`,
+ * which is an earlier request's of the same ticket still held unread. The
+ * request is minted after the project's latest decision, read before any pass
+ * claims it, and removed again.
  */
 async function heldPermitBeside(
   project: FinalizerProject,
   ticket: number,
   label: string,
+  epoch: RecoveryEpoch = asRecoveryEpoch(project.epoch),
 ): Promise<string | undefined> {
   const request = `${project.request}-${label}`;
   const minted = (await rig.harness.query(
-    `INSERT INTO finalization_request
+    `WITH s AS (SELECT max(seq) AS seq FROM journal_entry
+                 WHERE tenant=$1 AND project=$2)
+     INSERT INTO finalization_request
        (tenant,project,request,authorizing_seq,effect_position,ticket,
         ticket_version,request_generation,kind,work_cycle,finalization_generation)
-     SELECT tenant,project,$3,max(seq),$5,$4,max(seq),1,'RunFinalizer',1,1
-       FROM journal_entry WHERE tenant=$1 AND project=$2
-      GROUP BY tenant,project
+     SELECT $1,$2,$3,s.seq,
+            (SELECT coalesce(max(r.effect_position),-1)+1 FROM finalization_request r
+              WHERE r.tenant=$1 AND r.project=$2 AND r.authorizing_seq=s.seq),
+            $4,s.seq,1,'RunFinalizer',1,1
+       FROM s
      RETURNING authorizing_seq::int AS seq`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      request,
-      ticket,
-      ticket - project.ticket + 1,
-    ],
+    [project.partition.tenant, project.partition.project, request, ticket],
   )) as readonly { seq: number }[];
   const view = await postgresFinalizer(rig.pool).durableView({
     partition: project.partition,
@@ -752,9 +759,13 @@ async function heldPermitBeside(
     claimGeneration: 0,
     state: "Open",
     kind: "RunFinalizer",
-    recoveryEpoch: asRecoveryEpoch(project.epoch),
+    recoveryEpoch: epoch,
     owner: asFinalizerOwnerId(`owner-${label}`),
   });
+  await rig.harness.query(
+    "DELETE FROM finalization_request WHERE tenant=$1 AND project=$2 AND request=$3",
+    [project.partition.tenant, project.partition.project, request],
+  );
   return view?.heldPermit;
 }
 
@@ -762,7 +773,8 @@ async function heldPermitBeside(
  * A resume pressed while the deleted branch is still gone is held under the
  * earlier request's unread reading and escalates again, rather than waiting on
  * a permit it is refused. Once the branch is restored the reading concludes,
- * and a resume then lands the ticket.
+ * by a finalizer restarted with a scratch that never held the candidate, and a
+ * resume then lands the ticket.
  */
 test("a resume while a deleted branch is still gone escalates again as unreadable, and one after it is restored lands", async () => {
   const { project, origin } = await heldBranchSubject("resume-deleted");
@@ -773,7 +785,10 @@ test("a resume while a deleted branch is still gone escalates again as unreadabl
     project.memory,
   );
   assert.equal(await escalationRead(project), "ReconciliationUnreadable");
-  const resumed = async (label: string): Promise<void> => {
+  const resumed = async (
+    label: string,
+    port: GitPromotionPort,
+  ): Promise<void> => {
     assert.equal(
       await postgresHarnessResume(
         rig.harness,
@@ -785,10 +800,10 @@ test("a resume while a deleted branch is still gone escalates again as unreadabl
     );
     ({ memory } = await finalizerDrain(rig.harness, project.partition, memory));
     assert.equal(await finalizerPhase(rig, project.partition), "Finalization");
-    await dwellPasses(project, finalizerRemotePort(rig), label);
+    await dwellPasses(project, port, label);
     ({ memory } = await finalizerDrain(rig.harness, project.partition, memory));
   };
-  await resumed("resume-early");
+  await resumed("resume-early", finalizerRemotePort(rig));
   assert.equal(await finalizerPhase(rig, project.partition), "Escalated");
   assert.equal(await escalationRead(project), "ReconciliationUnreadable");
   assert.equal(
@@ -798,10 +813,106 @@ test("a resume while a deleted branch is still gone escalates again as unreadabl
   );
   finalizerGitVerb(origin, "update-ref", heldBranch, "refs/heads/main");
   rmSync(join(origin, "hooks", "pre-receive"));
-  await resumed("resume-restored");
+  await resumed(
+    "resume-restored",
+    finalizerRemotePort(rig, { scratch: "adapter-resume-restored" }),
+  );
   assert.equal(await finalizerPhase(rig, project.partition), "Done");
   assert.equal(
     finalizerGitVerb(origin, "show", `${heldBranch}:one.txt`),
     "one",
+  );
+});
+
+/**
+ * A finalizer restarted between preparing a landing onto a branch the remote
+ * holds and promoting it begins with a scratch that never held the candidate:
+ * nothing is pushed, the tip's history proves it not promoted, and the landing
+ * is prepared again and lands.
+ */
+test("a landing onto a held branch whose finalizer restarted after preparing it is prepared again and lands", async () => {
+  const { project, origin } = await heldBranchSubject("restart-prepared");
+  const before = finalizerRemotePort(rig, {
+    scratch: "adapter-before-restart",
+  });
+  const prepared = async (): Promise<{
+    attempts: number;
+    readings: readonly unknown[];
+  }> =>
+    (await landingRows(project)) as {
+      attempts: number;
+      readings: readonly unknown[];
+    };
+  for (let pass = 0; (await prepared()).attempts === 0 && pass < 8; pass += 1) {
+    await finalizerPassOnce(rig, project, before, `restart-${String(pass)}`);
+    await finalizerExpireClaim(rig, project);
+  }
+  assert.equal((await prepared()).attempts, 1);
+  assert.deepEqual((await prepared()).readings, [], "nothing was promoted yet");
+  await dwellPasses(
+    project,
+    finalizerRemotePort(rig, { scratch: "adapter-after-restart" }),
+    "restart-prepared",
+  );
+  assert.deepEqual(await landingRows(project), {
+    attempts: 2,
+    readings: [
+      {
+        verdict: "NotPromoted",
+        unobserved: false,
+        declined: null,
+        permit: "Concluded",
+      },
+      {
+        verdict: "Promoted",
+        unobserved: false,
+        declined: null,
+        permit: "Concluded",
+      },
+    ],
+    request: { state: "Registered", hold_kind: null },
+  });
+  assert.equal(
+    finalizerGitVerb(origin, "show", `${heldBranch}:one.txt`),
+    "one",
+  );
+  await finalizerDrain(rig.harness, project.partition, project.memory);
+  assert.equal(await finalizerPhase(rig, project.partition), "Done");
+});
+
+/**
+ * A restore establishes a new epoch, and the held re-read of that epoch never
+ * reads a permit granted under the old one, so a later request of the ticket
+ * is not held under that permit's reading. It establishes an epoch for the
+ * whole database, so it is the suite's last case.
+ */
+test("a permit a restore superseded holds no later request of its ticket", async () => {
+  const { project, origin } = await heldBranchSubject("superseded-held");
+  await dwellPasses(project, deletedBeforePush(origin), "superseded-held");
+  assert.equal(await escalationEvidence(project), "ReconciliationUnreadable");
+  const [held] = (await rig.harness.query(
+    `SELECT permit FROM commit_permit
+      WHERE tenant=$1 AND project=$2 AND state='Granted'`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly { permit: string }[];
+  assert.ok(held !== undefined);
+  assert.equal(
+    await heldPermitBeside(project, project.ticket, "before-restore"),
+    held.permit,
+  );
+  const restored = await rig.harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`epoch-restored-${project.partition.project}`),
+  );
+  const store = postgresFinalizer(rig.pool);
+  assert.deepEqual(
+    (await store.heldPermits(restored, 32)).filter(
+      (each) => each.permit === held.permit,
+    ),
+    [],
+    "the held re-read of the new epoch does not read it",
+  );
+  assert.equal(
+    await heldPermitBeside(project, project.ticket, "after-restore", restored),
+    undefined,
   );
 });

@@ -395,6 +395,26 @@ test("an attempt's canonical bytes bind it to the request and to the bundle it p
   assert.equal(bytes, canonicalFinalizationAttempt({ ...record }));
 });
 
+/**
+ * An attempt over a target the remote did not hold binds the base ref it was
+ * read from, and one with none keeps the bytes every stored attempt was
+ * digested over.
+ */
+test("an attempt's canonical bytes bind the base ref of an unheld target, and are unchanged without one", () => {
+  const bytes = canonicalFinalizationAttempt(record);
+  assert.equal(
+    bytes,
+    `22:chuggy:finalization:v17:attempt14:tenant-prepare15:project-prepare9:request-a1:19:attempt-112:repository-a8:bundle-164:${digestOf("c")}15:refs/heads/main40:${commitOf("a")}5:Merge10:revision-a64:${digestOf("a")}5:false8:Prepared40:${commitOf("b")}0:0:0:`,
+  );
+  assert.equal(
+    canonicalFinalizationAttempt({
+      ...record,
+      target: { ...record.target, baseRef: asGitRefName("refs/heads/base") },
+    }),
+    `${bytes}15:refs/heads/base`,
+  );
+});
+
 test("no opaque value can spell out a boundary in a bundle's canonical bytes", () => {
   const spelling = canonicalInputBundle(partition, asInputBundleId("b"), [
     { kind: "Repository", reference: "one:two" },

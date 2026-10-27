@@ -626,7 +626,7 @@ export interface FinalizationView {
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
-  /** A permit an earlier request of this ticket still holds under a reading that could not settle, which no later promotion of the ticket is granted beside. */
+  /** A permit an earlier request of this ticket holds under a reading the held re-read of this epoch settles, which no later promotion of the ticket is granted beside. */
   readonly heldPermit?: CommitPermitId;
   readonly attemptsMade: number;
 }
