@@ -32,8 +32,9 @@
  * in the box.
  *
  * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
- * sends to it, and a press after a failed send reaches the thread that press
- * opened rather than opening another.
+ * sends to it, under one key the composer holds until an open answers, so a
+ * press after a failed open reaches the thread that one may have opened and a
+ * press after a failed send reaches the thread its press opened.
  *
  * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. On runners the door
  * asks for a runner of the reader's own instead, so the box takes a message
@@ -75,6 +76,10 @@ import type { ConversationAttachment } from "../../core/conversationAttachments.
 import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadLimitWord,
+  threadOpenAtLimit,
+  threadOpenKeyBytesCount,
+  threadOpenKeyMinted,
   threadRefusalCause,
   threadRefusalLine,
   threadSendingWith,
@@ -241,7 +246,6 @@ function ThreadSendNote(props: {
       );
     case "Waiting":
     case "Ended":
-    case "Unsettled":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
       return <Notice tone="danger" inline detail={threadRefusalLine(send)} />;
@@ -264,13 +268,15 @@ async function threadSendOpened(
   ports: ReturnType<typeof useApiPorts>,
   partition: PartitionIdentity,
   door: ReturnType<typeof useThreadDoor>,
+  key: string,
 ): Promise<{ readonly session: string } | ThreadSend> {
-  const open = await apiOpenThread(ports, partition);
+  const open = await apiOpenThread(ports, partition, key);
   if (threadUnhosted(open)) {
     door.learnt(false);
     return door.refused();
   }
   if (sessionRefusedNoRunner(open)) return { send: "NoRunner" };
+  if (threadOpenAtLimit(open)) return threadSendRefused(threadLimitWord);
   if (open.outcome !== "Ok") return threadSendRefused(threadRefusalCause(open));
   return { session: open.value.session };
 }
@@ -445,6 +451,9 @@ function useThreadSendPressed(
   const ports = useApiPorts();
   const { partition } = input;
   const [opened, setOpened] = useState<string | undefined>(undefined);
+  const [key] = useState(() =>
+    threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount)),
+  );
   const uploaded = useRef<ThreadUploaded>(new WeakMap());
   const pressed = async (sent: ThreadHeld): Promise<string | undefined> => {
     const said = (send: ThreadSend): void => {
@@ -464,7 +473,7 @@ function useThreadSendPressed(
     }
     let session = input.session ?? opened;
     if (session === undefined) {
-      const open = await threadSendOpened(ports, partition, door);
+      const open = await threadSendOpened(ports, partition, door, key);
       if ("send" in open) {
         set.setSend(open);
         return undefined;

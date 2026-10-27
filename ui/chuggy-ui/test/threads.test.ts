@@ -13,19 +13,24 @@ import { describe, expect, test } from "vitest";
 import {
   sessionTurnInputKinds,
   sessionTurnStates,
+  threadLimitReachedCode,
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
-import { threadBacklogMax } from "../../../src/contract/http.ts";
+import {
+  threadBacklogMax,
+  threadOpenKeyCharsMax,
+  threadOpenKeyPattern,
+} from "../../../src/contract/http.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
 import {
   threadActions,
-  threadAnswering,
-  threadHeldTurn,
   threadKeptClosed,
   threadKeptWith,
   threadKeptWithout,
-  threadMine,
+  threadOpenAtLimit,
+  threadOpenKeyBytesCount,
+  threadOpenKeyMinted,
   threadUnhosted,
   threadRefusalCode,
   threadRefusalLine,
@@ -153,25 +158,6 @@ describe("the listing's order", () => {
 
   test("threads that tie keep the order the server gave", () => {
     expect(threadsByStanding(listed)).toEqual(listed);
-  });
-
-  test("a listing with none of mine has no thread of mine", () => {
-    const others = listed.filter((thread) => !thread.mine);
-    expect(threadMine(others)).toBeUndefined();
-  });
-
-  /** A closed thread is readable and still mine, but it is not the thread an
-   * Open is withheld for: the member's next thread is a new session. */
-  test("a closed thread of mine is not the one I hold", () => {
-    const ended = threadEntry({
-      session: "thread-geoff-old",
-      mine: true,
-      state: "Closed",
-    });
-    expect(threadMine([ended, ...listed.filter((t) => !t.mine)])).toBe(
-      undefined,
-    );
-    expect(threadMine([ended, ...listed])?.session).toBe("thread-geoff");
   });
 });
 
@@ -427,7 +413,7 @@ describe("what a press ended as", () => {
         status: 403,
         body: undefined,
       }),
-    ).toStrictEqual({ send: "Unsettled", why: "Elsewhere" });
+    ).toStrictEqual({ send: "Refused", what: "Send", cause: "Elsewhere" });
   });
 
   test("a code the console has no word for is drawn as the code", () => {
@@ -435,37 +421,41 @@ describe("what a press ended as", () => {
   });
 });
 
-describe("a door whose answer does not say what happened", () => {
-  /**
-   * The door resolves the mailbox from the caller's principal and compares the
-   * URL afterwards, so a 403 can arrive after the turn was enqueued. Reporting
-   * it as a refusal would drop a message the thread already holds.
-   */
-  test("a NotYourThread is unsettled rather than refused", () => {
-    expect(
-      threadSendFrom({
-        outcome: "Rejected",
-        code: "NotYourThread",
-        status: 403,
-        body: undefined,
-      }),
-      "a refusal the door may have raised after enqueuing was treated as final",
-    ).toStrictEqual({ send: "Unsettled", why: "Elsewhere" });
+describe("an open the door answers", () => {
+  /** The key is what a retried open is answered the same thread by, so it is
+   * spelled in the characters the door takes one in and fits its bound. */
+  test("a minted key is one the door takes", () => {
+    const key = threadOpenKeyMinted(new Uint8Array(threadOpenKeyBytesCount));
+    expect(threadOpenKeyPattern.test(key)).toBe(true);
+    expect(key.length).toBeLessThanOrEqual(threadOpenKeyCharsMax);
+    expect(key).not.toBe(
+      threadOpenKeyMinted(new Uint8Array(threadOpenKeyBytesCount).fill(1)),
+    );
   });
 
-  /**
-   * THE SPELLING THIS CONSOLE ACTS ON IS THE CONTRACT'S AND NOT ITS OWN. A door
-   * that renamed the code while this compared the old one would tell a member
-   * their message was refused for a turn the mailbox already holds — so the
-   * literal the settlement turns on is asserted to be a member of the roster,
-   * and the roster is what the door reads too.
-   */
-  test("the code the settlement turns on is the roster's own member", () => {
+  test("an open refused at the reader's limit is told apart from any other conflict", () => {
     expect(
-      threadMessageRefusalCodes as readonly string[],
-      "the console settles on a code the contract's roster does not carry",
-    ).toContain("NotYourThread");
-    expect(threadRefusalCode("NotYourThread")).toBe("NotYourThread");
+      threadOpenAtLimit({
+        outcome: "Conflict",
+        code: threadLimitReachedCode,
+        body: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      threadOpenAtLimit({
+        outcome: "Conflict",
+        code: "Conflict",
+        body: undefined,
+      }),
+    ).toBe(false);
+    expect(
+      threadOpenAtLimit({
+        outcome: "Rejected",
+        code: threadLimitReachedCode,
+        status: 400,
+        body: undefined,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -533,13 +523,6 @@ describe("the door's own vocabulary", () => {
       threadSendFrom({ outcome: "Unreachable", reason: "offline" }),
     ).toStrictEqual({ send: "Refused", what: "Send", cause: "Unreachable" });
   });
-
-  /** The mailbox tail is the only thing that says whether the turn landed. */
-  test("a mailbox holding the turn is what settles it", () => {
-    const turn = turnOf({ turn: "thread-turn-a", ordinal: 7 });
-    expect(threadHeldTurn({ turns: [turn] }, "thread-turn-a")?.ordinal).toBe(7);
-    expect(threadHeldTurn({ turns: [turn] }, "thread-turn-b")).toBeUndefined();
-  });
 });
 
 describe("an image as the reason a send is refused", () => {
@@ -588,21 +571,6 @@ describe("an image as the reason a send is refused", () => {
     expect(
       threadUploadRefused({ outcome: "Unreachable", reason: "offline" }).cause,
     ).toBe("Unreachable");
-  });
-});
-
-describe("whether a thread is still answering", () => {
-  test("a queued or a claimed turn is answering, and a settled one is not", () => {
-    expect(threadAnswering({ turns: [turnOf({ state: "Queued" })] })).toBe(
-      true,
-    );
-    expect(threadAnswering({ turns: [turnOf({ state: "Claimed" })] })).toBe(
-      true,
-    );
-    expect(threadAnswering({ turns: [turnOf({ state: "Answered" })] })).toBe(
-      false,
-    );
-    expect(threadAnswering({ turns: [] })).toBe(false);
   });
 });
 

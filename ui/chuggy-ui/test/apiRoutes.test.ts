@@ -559,13 +559,13 @@ test("opening a thread posts the versioned empty object", async () => {
     lastActivityAt: "2026-09-02T10:00:00Z",
     hidden: false,
   }));
-  const opened = await apiOpenThread(held.ports, partition);
+  const opened = await apiOpenThread(held.ports, partition, "thread-open-a");
   expect(opened.outcome).toBe("Ok");
   expect(held.requests).toHaveLength(1);
   const request = held.requests[0];
   expect(request?.url).toBe(`${partitionPath}/threads`);
   expect(request?.init.method).toBe("POST");
-  expect(request?.init.body).toBe("{}");
+  expect(request?.init.body).toBe('{"key":"thread-open-a"}');
   expect(
     (request?.init.headers as Record<string, string>)["content-type"],
   ).toBe(nativeHttpMediaType);
