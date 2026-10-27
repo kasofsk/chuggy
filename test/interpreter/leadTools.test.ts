@@ -75,12 +75,13 @@ test("origination, revoking, updating and dispatching are admitted for a thread'
   );
 });
 
-test("a lead and a thread both list the project's repositories, read its images, a run's error text and a ticket's landings, and a lead's decision may report any of them", () => {
+test("a lead and a thread both list the project's repositories, read its images, a run's error text, a ticket's landings and the docs, and a lead's decision may report any of them", () => {
   for (const tool of [
     "list_repositories",
     "fetch_image",
     "read_run_error",
     "read_ticket_landings",
+    "read_docs",
   ]) {
     const named = `${chuggyToolPrefix}${tool}`;
     assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named), tool);

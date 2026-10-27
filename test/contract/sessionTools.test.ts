@@ -23,7 +23,9 @@ import {
   allDependentRelations,
   builtInToolCapabilities,
   chuggyToolCapabilities,
+  chuggyDocsIndex,
   chuggyToolDispatchViewResponseBytesMax,
+  chuggyToolDocsResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
@@ -57,6 +59,7 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
@@ -127,6 +130,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",
@@ -218,6 +222,14 @@ test("every bound a tool call is held to is named, an unnamed one being unbounde
   assert.equal(chuggyToolResponseBytesMax, nativeHttpBodyBytesMax);
   assert.equal(chuggyToolTimeoutMs, 30_000);
   assert.equal(chuggyToolPagesMax, 1);
+  assert.equal(chuggyToolDocsResponseBytesMax, 65_536);
+});
+
+test("read_docs reads the public docs' own index, which a bootstrap worker is pointed at too", () => {
+  assert.equal(
+    chuggyDocsIndex,
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt",
+  );
 });
 
 test("a dependent may be a follow-up and may not be a prerequisite", () => {
