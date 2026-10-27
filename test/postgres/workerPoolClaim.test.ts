@@ -376,11 +376,12 @@ interface Owned {
 
 const unowned: Owned = { owner: null, fallback: null };
 
-/** The next execution admitted and opened as an invoked attempt, marked for a pool unless `inCluster`, and owned as `owned` says. */
+/** The next execution admitted and opened as an attempt, invoked unless `invoked` is false, marked for a pool unless `inCluster`, and owned as `owned` says. */
 async function opened(
   project: SchedulerProject,
   inCluster = false,
   owned: Owned = unowned,
+  invoked = true,
 ): Promise<{ execution: string; attempt: string }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
@@ -408,7 +409,10 @@ async function opened(
   });
   if (attempt.opened !== "Opened")
     throw new Error("worker pool claim suite: no attempt was opened");
-  if (!(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation)))
+  if (
+    invoked &&
+    !(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation))
+  )
     throw new Error("worker pool claim suite: no invocation was recorded");
   return { execution: admitted.execution, attempt: attempt.attempt.attempt };
 }
@@ -1350,6 +1354,177 @@ test("a claim and its probe take nothing of a project that is not Active, nor an
     false,
     "a runner under a superseded epoch",
   );
+});
+
+/** Ends an attempt as a lapse ends one no runner claimed: withdrawn, holding no lease. */
+async function withdrawnUnclaimed(attempt: string): Promise<void> {
+  await rig.harness.query(
+    `UPDATE execution_attempt SET state='Withdrawn', evidence='PlacementUnavailable',
+        ended_at=now(), lease_owner=NULL, lease_expires_at=NULL
+      WHERE attempt=$1`,
+    [attempt],
+  );
+}
+
+test("a pool's claim and its probe take nothing of an attempt withdrawn unclaimed or not yet invoked, and take a job whose owner is not the owner of the live runner beside it", async () => {
+  const label = "probe-pool";
+  const withdrawn = await releasedUnder(`${label}-withdrawn`, pinned, 1);
+  const withdrawing = await pollingPool(withdrawn, `${label}-w`, pinned);
+  await withdrawnUnclaimed((await opened(withdrawn)).attempt);
+  assert.equal(await takes(withdrawing), false, "withdrawn unclaimed");
+  const uninvoked = await releasedUnder(`${label}-uninvoked`, pinned, 1);
+  const waiting = await pollingPool(uninvoked, `${label}-u`, pinned);
+  await opened(uninvoked, false, unowned, false);
+  assert.equal(await takes(waiting), false, "not yet invoked");
+  const beside = await releasedUnder(`${label}-beside`, pinned, 1);
+  const deferring = await pollingPool(beside, `${label}-b`, pinned);
+  await ownersRunner(beside, `${label}-beside`);
+  await opened(beside, false, {
+    owner: `https://issuer.invalid#${label}-owner-${randomUUID()}`,
+    fallback: "Strict",
+  });
+  assert.equal(await takes(deferring), true, "another owner's runner beside");
+});
+
+/** A case's project, its owner's runner in it, and the ownership its jobs are opened under. */
+interface RunnerPlanted {
+  readonly project: SchedulerProject;
+  readonly runner: PersonalPlaneIdentity;
+  readonly owned: Owned;
+}
+
+/** Asks the claim as the case's runner, of the case's project. */
+function runnerAsked({ runner, project }: RunnerPlanted): Promise<boolean> {
+  return takes(runner, project.partition);
+}
+
+/** Opens the case project's next job as its runner's owner's. */
+function runnerOpened({
+  project,
+  owned,
+}: RunnerPlanted): Promise<{ execution: string; attempt: string }> {
+  return opened(project, false, owned);
+}
+
+/** Each way an owner's runner is asked for a job it may not take: a label, what its project is released under, and how its job is opened and the claim asked. */
+const runnerTakesNothing: readonly (readonly [
+  string,
+  ExecutionRequirement,
+  (planted: RunnerPlanted) => Promise<boolean>,
+])[] = [
+  [
+    "unlike",
+    { ...pinned, architecture: "Arm64" },
+    async (planted) => {
+      await runnerOpened(planted);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "in-cluster",
+    pinned,
+    async (planted) => {
+      const { project, owned } = planted;
+      const target = await opened(project);
+      await rig.harness.query(
+        `UPDATE execution SET placement='InCluster',owner=$4,owner_fallback=$5
+          WHERE tenant=$1 AND project=$2 AND execution=$3`,
+        [
+          project.partition.tenant,
+          project.partition.project,
+          target.execution,
+          owned.owner,
+          owned.fallback,
+        ],
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "admitted",
+    pinned,
+    async (planted) => {
+      const target = await runnerOpened(planted);
+      await statusPlanted(
+        planted.project.partition,
+        target.execution,
+        "Admitted",
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "withdrawn",
+    pinned,
+    async (planted) => {
+      await withdrawnUnclaimed((await runnerOpened(planted)).attempt);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "claimed",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      await claimedBy(
+        planted.runner,
+        `claimed-${randomUUID()}`,
+        planted.project.partition,
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "uninvoked",
+    pinned,
+    async (planted) => {
+      await opened(planted.project, false, planted.owned, false);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "another-owner",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(
+        {
+          ...planted.runner,
+          owner: asPrincipal(`https://issuer.invalid#other-${randomUUID()}`),
+        },
+        planted.project.partition,
+      );
+    },
+  ],
+  [
+    "another-tenant",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(
+        { ...planted.runner, tenant: asTenantId(`other-${randomUUID()}`) },
+        planted.project.partition,
+      );
+    },
+  ],
+  [
+    "no-project",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(planted.runner);
+    },
+  ],
+];
+
+test("an owner's runner's claim and its probe take nothing it cannot run, routed in the cluster, not launching, withdrawn, claimed or not yet invoked, nor for a runner named under another owner or tenant or asking of no project", async () => {
+  const label = "probe-runner";
+  for (const [why, requirement, arranged] of runnerTakesNothing) {
+    const project = await releasedUnder(`${label}-${why}`, requirement, 2);
+    const runner = await ownersRunner(project, `${label}-${why}`);
+    const owned = { owner: runner.owner, fallback: "Strict" };
+    assert.equal(await arranged({ project, runner, owned }), false, why);
+  }
 });
 
 test("a container's pod runs the image its requirement pinned, claimed out of the database", async () => {
