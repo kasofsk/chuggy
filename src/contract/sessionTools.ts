@@ -32,11 +32,10 @@
  * dependent is filed against a parent that already exists, and a roster holding
  * only it cannot originate work. `create_draft` is admitted by `DraftOriginate`
  * alone, so whether a session may originate work is decided by the
- * capabilities it is opened with rather than by a sentence in a description. No
- * capability admits a tool that re-authors a released ticket — merge, split,
- * supersede, re-point a dependency — because a released ticket's dependencies
- * are immutable in `model/domain.qnt`, which names re-authoring machinery as
- * deliberately absent.
+ * capabilities it is opened with rather than by a sentence in a description.
+ * A released ticket is re-authored only by `update_ticket`, which
+ * `DraftOriginate` alone admits and which the machine refuses once the ticket
+ * is past Pending.
  */
 
 import { actionReportLinkCharsMax } from "./actionReport.ts";
@@ -292,9 +291,9 @@ export const builtInToolCapabilities: Readonly<
 /**
  * The relation a filed dependent may carry, and the one it may not. A follow-up
  * points from the new draft to the existing ticket and changes nothing already
- * released; a prerequisite points the other way, which would re-author a
- * released ticket's dependencies, so it is admitted by the schema only so that
- * its refusal can name the reason.
+ * released; a prerequisite points the other way, which would update the
+ * existing ticket, so it is admitted by the schema only so that its refusal can
+ * name the reason.
  */
 export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];

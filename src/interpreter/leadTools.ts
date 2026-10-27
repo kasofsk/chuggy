@@ -91,8 +91,8 @@ const leadStandingInstructions = `# How you act on this project
   by.
 - A released ticket cannot be re-authored. A follow-up points from the new
   draft at the ticket it derives from and rewrites nothing; a prerequisite
-  would point from an existing ticket at the new one, which rewrites
-  dependencies that are immutable once released. A prerequisite of a draft is
+  would point from an existing ticket at the new one, which is an update of
+  that ticket, and no tool here updates one. A prerequisite of a draft is
   a revision of that draft's own dependencies.
 - \`release_draft\` answers an accepted operation rather than an outcome. Read
   the operation to learn what happened.
