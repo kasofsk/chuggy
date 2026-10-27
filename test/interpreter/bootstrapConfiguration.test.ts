@@ -26,6 +26,7 @@ import {
   configurationImageGlibcVersionMin,
 } from "../../src/contract/configurationDocument.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
+import { chuggyDocsIndex } from "../../src/contract/sessionTools.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
 import {
   asCanonicalConfiguration,
@@ -781,10 +782,7 @@ test("the worker is told where chuggy's docs on jobs start, for an agent to fetc
       (line) =>
         line.includes(
           "chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage",
-        ) &&
-        line.includes(
-          "start at https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt",
-        ),
+        ) && line.includes(`start at ${chuggyDocsIndex}`),
     ),
   );
 });

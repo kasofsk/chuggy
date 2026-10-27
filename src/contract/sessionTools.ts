@@ -165,6 +165,23 @@ export const chuggyToolDispatchViewResponseBytesMax =
   configurationCanonicalCharsMax * chuggyToolCharBytesMax +
   nativeHttpBodyBytesMax;
 
+/**
+ * The public index that lists each page of chuggy's docs as its Markdown, which
+ * `read_docs` called with no argument answers verbatim, sending no bearer
+ * because the docs are public. Called with `page`, one page's URL as the index
+ * lists it, it answers that page's Markdown verbatim, and it refuses a URL
+ * outside the index's own directory.
+ */
+export const chuggyDocsIndex =
+  "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt";
+
+/**
+ * What one `read_docs` answer may weigh. A page is written to be read whole,
+ * so the bound holds the heaviest page the docs have published several times
+ * over and is still an answer an agent takes in one read rather than pages.
+ */
+export const chuggyToolDocsResponseBytesMax = 65_536;
+
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
 
@@ -204,6 +221,7 @@ const chuggyToolRoster = {
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
   ],
   DraftAuthor: [
     "initialize_draft",

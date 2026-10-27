@@ -23,7 +23,7 @@ const readTool = "mcp__chuggy__read_ticket_landings";
 const readAfter = "mcp__chuggy__read_ticket_refusals";
 
 /** 072's allowlist with `read_ticket_landings` in its roster place. */
-function toolAllowlistAt079(): readonly string[] {
+export function toolAllowlistAt079(): readonly string[] {
   return toolAllowlistNamed(toolAllowlistAt072(), readTool, readAfter);
 }
 
