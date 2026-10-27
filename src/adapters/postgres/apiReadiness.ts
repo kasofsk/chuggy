@@ -9,7 +9,7 @@ import {
 import { apiRole, projectThreadsReadFunction } from "./schema.ts";
 
 /** The routine whose grant stands for the API role's, in the form `to_regprocedure` resolves. */
-const apiReadinessRoutine = `${projectThreadsReadFunction}(text,text,bigint)`;
+const apiReadinessRoutine = `${projectThreadsReadFunction}(text,text,text,bigint)`;
 
 /**
  * Whether the API pool connects as its role, may execute the thread read, and
