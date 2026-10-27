@@ -552,7 +552,8 @@ export interface CommitPermit {
  * What the target ref proved about the candidate, recorded per permit and never
  * absent for a hold. `declined` is kept from the first reading of a push the
  * repository declined, on every verdict but `Promoted`, and `observed` is absent
- * on `NotPromoted` only where that decline left the ref absent.
+ * on `NotPromoted` only where the ref was absent after that decline or onto a
+ * target the attempt found unheld.
  */
 export interface FinalizationReconciliation {
   readonly permit: CommitPermitId;
@@ -625,6 +626,8 @@ export interface FinalizationView {
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
+  /** A permit an earlier request of this ticket still holds under a reading that could not settle, which no later promotion of the ticket is granted beside. */
+  readonly heldPermit?: CommitPermitId;
   readonly attemptsMade: number;
 }
 
@@ -721,7 +724,7 @@ export type FinalizationDecision =
 
 /** Refuses a view whose durable rows contradict each other, which no later branch then has to re-ask. */
 function finalizationNextAssertView(view: FinalizationView): void {
-  const { attempt, permit, reconciliation, attemptsMade } = view;
+  const { attempt, permit, attemptsMade } = view;
   if (!Number.isSafeInteger(attemptsMade) || attemptsMade < 0) {
     throw new RangeError("finalization view: attemptsMade is not a count");
   }
@@ -758,6 +761,12 @@ function finalizationNextAssertView(view: FinalizationView): void {
   ) {
     throw new RangeError("finalization view: the permit names another attempt");
   }
+  finalizationNextAssertReading(view);
+}
+
+/** Refuses a view whose reading contradicts its permit or its attempt, or whose held permit is its own. */
+function finalizationNextAssertReading(view: FinalizationView): void {
+  const { attempt, permit, reconciliation } = view;
   if (permit === undefined && reconciliation !== undefined) {
     throw new RangeError(
       "finalization view: a reconciliation is present with no permit to conclude",
@@ -783,10 +792,16 @@ function finalizationNextAssertView(view: FinalizationView): void {
   if (
     reconciliation?.verdict === "NotPromoted" &&
     reconciliation.observed === undefined &&
-    reconciliation.declined === undefined
+    reconciliation.declined === undefined &&
+    attempt?.target.baseRef === undefined
   ) {
     throw new RangeError(
-      "finalization view: a ref read as absent concludes with no decline beside it",
+      "finalization view: a ref read as absent concludes with no decline beside it over a target that was held",
+    );
+  }
+  if (view.heldPermit !== undefined && view.heldPermit === permit?.permit) {
+    throw new RangeError(
+      "finalization view: the permit an earlier request holds is this request's own",
     );
   }
 }
@@ -896,10 +911,9 @@ function finalizationNextUnderPermit(
 
 /**
  * What a finalization that has obtained no permit may do next, the revision
- * fence and the closure abort included. A failure already recorded is concluded
- * before anything is read of the remote, because the evidence is the rows, and
- * a proposal with nothing to open between is held before the branch it would
- * be opened from is built or pushed.
+ * fence and the closure abort included. A recorded failure concludes, an
+ * earlier request's unsettled reading holds this one under it, and a proposal
+ * with nothing to open between is held before anything is built or pushed.
  */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
@@ -920,6 +934,9 @@ function finalizationNextBeforePermit(
     return aborting === undefined
       ? { decide: "Hold", hold: "TargetUnreadable" }
       : { decide: "Abort", target: aborting };
+  }
+  if (view.heldPermit !== undefined) {
+    return { decide: "Hold", hold: "ReconciliationUnreadable" };
   }
   const base = view.proposalBase;
   if (base !== undefined) {
@@ -1265,6 +1282,8 @@ export interface HeldPermit {
   readonly permit: CommitPermitId;
   readonly repository: RepositoryBinding;
   readonly target: GitRefName;
+  /** The ref the attempt's target commit was read from, present only where the remote did not hold the target at preparation. */
+  readonly baseRef?: GitRefName;
   readonly candidate: GitObjectId;
   readonly declined?: PromotionDecline;
 }

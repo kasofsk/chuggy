@@ -427,9 +427,14 @@ export async function finalizerFence(
   return stale + lapsed;
 }
 
-/** What one ancestry proof says the reconciliation records, beside the decline the push met wherever the ref holds no candidate. */
+/**
+ * What one ancestry proof says the reconciliation records, beside the decline
+ * the push met wherever the ref holds no candidate. An absent ref is not
+ * promoted beside a decline or where `baseRef` says the attempt found it unheld.
+ */
 function finalizerReadingOf(
   proved: AncestryProved,
+  baseRef: GitRefName | undefined,
   declined?: PromotionDecline,
 ): FinalizerReading {
   const kept = declined === undefined ? {} : { declined };
@@ -439,9 +444,9 @@ function finalizerReadingOf(
     case "NotAncestor":
       return { verdict: "NotPromoted", observed: proved.observed, ...kept };
     case "Absent":
-      return declined === undefined
+      return declined === undefined && baseRef === undefined
         ? { verdict: "Unreadable" }
-        : { verdict: "NotPromoted", declined };
+        : { verdict: "NotPromoted", ...kept };
     case "Unreadable":
       return { verdict: "Unreadable", ...kept };
     default:
@@ -501,7 +506,7 @@ async function finalizerReadHolds(
         candidate: permit.candidate,
         target: permit.target,
       },
-      finalizerReadingOf(proved, permit.declined),
+      finalizerReadingOf(proved, permit.baseRef, permit.declined),
       tally,
     );
   }
@@ -703,7 +708,7 @@ async function finalizerProve(
   await finalizerRecordReading(
     service,
     finalizerSubjectOf(view, permit),
-    finalizerReadingOf(proved, declined),
+    finalizerReadingOf(proved, pinned.target.baseRef, declined),
     tally,
   );
 }

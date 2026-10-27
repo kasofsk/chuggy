@@ -830,6 +830,120 @@ test("a push declined onto a branch the remote does not hold holds as one declin
   );
 });
 
+/** A prepared attempt whose target the remote did not hold, its commit read from the binding's own branch. */
+const preparedUnheld: FinalizationAttempt = {
+  ...prepared,
+  target: {
+    ref: asGitRefName("refs/heads/chuggy/unheld"),
+    commit: base,
+    baseRef: target.ref,
+  },
+};
+
+/**
+ * A ref read absent beside no decline, onto a target the attempt found unheld,
+ * goes where any reading that is not promoted and kept no decline goes: the
+ * revision fence, a restart while restarts remain, then the restarts held.
+ */
+test("a ref still absent onto a target nobody held at preparation is prepared again, then held once restarts are spent", () => {
+  const unheld = {
+    ...concluded,
+    attempt: preparedUnheld,
+    observedTarget: preparedUnheld.target,
+  };
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ ...unheld, reconciliation: readAbsent() }),
+    ),
+    { decide: "Prepare", target: preparedUnheld.target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...unheld,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: readAbsent(),
+      }),
+    ),
+    { decide: "Hold", hold: "PreparationRestartsExhausted" },
+  );
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...unheld, lifecycle, reconciliation: readAbsent() }),
+      ),
+      { decide: "Abort", target: preparedUnheld.target },
+      lifecycle,
+    );
+  }
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...unheld,
+        reconciliation: readAbsent("RemoteDeclined"),
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+});
+
+/**
+ * A request whose ticket's earlier permit is held under an unread reading holds
+ * as that reading does, before anything is built or a permit asked for, while a
+ * recorded failure and a closing project still decide first.
+ */
+test("a request beside its ticket's unsettled permit holds as the reading does and is never promoted", () => {
+  const heldPermit = asCommitPermitId("permit-earlier");
+  for (const varied of [
+    {},
+    { attempt: prepared, attemptsMade: 1 },
+    { attempt: prepared, attemptsMade: 1, approval: "Granted" as const },
+  ]) {
+    assert.deepEqual(
+      finalizationNext(finalizerDefaults, viewWith({ ...varied, heldPermit })),
+      { decide: "Hold", hold: "ReconciliationUnreadable" },
+      JSON.stringify(varied),
+    );
+  }
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ lifecycle: "Deleting", heldPermit }),
+    ),
+    { decide: "Abort", target },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        attempt: attemptFailed("MergeConflict"),
+        attemptsMade: 1,
+        heldPermit,
+      }),
+    ),
+    {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationNeedsWork", kind: "MergeConflict" },
+    },
+  );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...concluded, heldPermit: permitId }),
+      ),
+    /the permit an earlier request holds is this request's own/u,
+  );
+});
+
 test("a decline kept beside a ref that could not be read waits on the reading under its permit", () => {
   for (const declined of populated(
     allPromotionDeclines,

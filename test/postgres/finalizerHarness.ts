@@ -304,12 +304,18 @@ export function finalizerRemoteOpen(
   return remote;
 }
 
-/** The real git adapter over one remote, with a credential no filesystem remote asks for. */
-export function finalizerRemotePort(rig: FinalizerRig): GitPromotionPort {
+/** The real git adapter over one remote, with a credential no filesystem remote asks for and any push bound a case names. */
+export function finalizerRemotePort(
+  rig: FinalizerRig,
+  promotionTimeoutSecsMax?: number,
+): GitPromotionPort {
   return gitPromotion({
     scratchDirectory: join(rig.gitRoot, "adapter"),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
+    ...(promotionTimeoutSecsMax === undefined
+      ? {}
+      : { promotionTimeoutSecsMax }),
     credentials: {
       credential: () =>
         Promise.resolve({
@@ -1421,15 +1427,15 @@ export async function finalizerLifecycle(
   );
 }
 
-/** Puts one claim's lease in the past, which is what a crashed holder leaves behind. */
+/** Puts the lease of every claimed request of the project in the past, which is what a crashed holder leaves behind. */
 export async function finalizerExpireClaim(
   rig: FinalizerRig,
   project: FinalizerProject,
 ): Promise<void> {
   await rig.as(
     `UPDATE finalization_request SET claim_expires_at = now() - interval '1 hour'
-      WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
+      WHERE tenant=$1 AND project=$2 AND claim_owner IS NOT NULL`,
+    [project.partition.tenant, project.partition.project],
   );
 }
 

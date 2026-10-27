@@ -53,6 +53,7 @@ import { migration077 } from "../../src/adapters/postgres/schema/migrations/077-
 import { migration079 } from "../../src/adapters/postgres/schema/migrations/079-lead-reads-ticket-landings.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
+import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import { postgresPersonalRunnerRegistrationTokens } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistrationTokens } from "../../src/adapters/postgres/workerPool.ts";
@@ -2795,7 +2796,7 @@ const readingsBefore082 = `${deletionPartition}
 
 /** The readings 082 still refuses, each an assignment to the held one and the constraint that refuses it. */
 const refusedAfter082 = [
-  ["verdict='NotPromoted',declined=NULL", "reading_is_whole"],
+  ["verdict='Promoted',declined=NULL", "reading_is_whole"],
   ["verdict='Unreadable',observed_commit=repeat('c',40)", "reading_is_whole"],
   ["verdict='Promoted',observed_commit=repeat('c',40)", "decline_is_known"],
 ] as const;
@@ -2847,6 +2848,72 @@ test("082 keeps every reading that stood, and admits a decline beside an unread 
       verdict: "NotPromoted",
       unobserved: true,
       declined: "WorkflowsRefused",
+    });
+  });
+});
+
+/** An attempt over a target the remote did not hold, its commit read from the binding's own branch. */
+const unheldAttempt083 = `INSERT INTO finalization_attempt
+    (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
+     target_ref,target_commit,target_base_ref,strategy,configuration_revision,
+     configuration_digest,attempt_digest,approval_required,outcome,candidate_commit,
+     failure_kind)
+  VALUES('tenant-5','project-5','attempt-5b','request-5',1,'repository-5','bundle-5',
+         repeat('b',64),'refs/heads/chuggy/unheld',repeat('c',40),$1,'Merge',
+         'revision-5','digest-5',repeat('e',64),false,'Prepared',repeat('a',40),NULL)`;
+
+/** The readings 083 still refuses, each an assignment to the held one and the constraint that refuses it. */
+const refusedAfter083 = [
+  ["verdict='Unreadable',observed_commit=repeat('c',40)", "reading_is_whole"],
+  ["verdict='Promoted'", "reading_is_whole"],
+] as const;
+
+test("083 reads every attempt that stood as over a held target, keeps a bounded base ref, and admits a reading not promoted over an absent ref with no decline", async () => {
+  await migrationDatabase("attempt_base_ref", async (subject) => {
+    await installationBefore(subject, migration083.version);
+    await subject.query(readingsBefore082);
+    assert.ok((await postgresMigrate(subject)).includes(migration083.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          "SELECT attempt,target_base_ref FROM finalization_attempt ORDER BY attempt",
+        )
+      ).rows,
+      [
+        { attempt: "attempt-5", target_base_ref: null },
+        { attempt: "attempt-5a", target_base_ref: null },
+      ],
+    );
+    const held = await postgresFinalizer(subject).heldPermits(
+      asRecoveryEpoch("epoch-5"),
+      8,
+    );
+    assert.deepEqual(
+      held.map((each) => [each.permit, each.baseRef]),
+      [["permit-5", undefined]],
+    );
+    await assert.rejects(
+      subject.query(unheldAttempt083, [""]),
+      /finalization_attempt_target_base_ref_is_bounded/u,
+    );
+    await subject.query(unheldAttempt083, ["refs/heads/main"]);
+    for (const [assignment, constraint] of refusedAfter083) {
+      await assert.rejects(
+        subject.query(
+          `UPDATE finalization_reconciliation SET ${assignment} WHERE permit='permit-5'`,
+        ),
+        new RegExp(`finalization_reconciliation_${constraint}`, "u"),
+        assignment,
+      );
+    }
+    await subject.query(
+      "UPDATE finalization_reconciliation SET verdict='NotPromoted' WHERE permit='permit-5'",
+    );
+    assert.deepEqual((await readings082(subject))[0], {
+      permit: "permit-5",
+      verdict: "NotPromoted",
+      unobserved: true,
+      declined: null,
     });
   });
 });

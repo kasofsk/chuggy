@@ -631,6 +631,35 @@ export function postgresHarnessSubmission(
   };
 }
 
+/** Answers one ticket's open escalation with a resume, the way a person holding the capability does, and says what acceptance said. */
+export async function postgresHarnessResume(
+  harness: PostgresHarness,
+  partition: Partition,
+  ticket: number,
+  label: string,
+): Promise<string> {
+  const [desk] = (await harness.query(
+    `SELECT action, authorizing_seq::int AS seq FROM native_action
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+    [partition.tenant, partition.project, ticket],
+  )) as readonly { action: string; seq: number }[];
+  if (desk === undefined)
+    throw new Error(
+      `postgres harness: ticket ${String(ticket)} has no open escalation`,
+    );
+  const accepted = await harness.inbox.accept({
+    ...postgresHarnessSubmission(partition, label),
+    command: {
+      version: 1,
+      command: "ResolveNativeAction",
+      action: desk.action,
+      authorizingSeq: desk.seq,
+      resolution: "Resume",
+    },
+  });
+  return accepted.accepted;
+}
+
 /**
  * One completion written the way `submit_task_completion` writes it: under the
  * scheduler's own authority, at the project's next ingress ordinal, with the

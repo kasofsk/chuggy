@@ -161,6 +161,7 @@ interface ViewRow {
   readonly attempt: string | null;
   readonly target_ref: string | null;
   readonly target_commit: string | null;
+  readonly target_base_ref: string | null;
   readonly strategy: string | null;
   readonly configuration_revision: string | null;
   readonly configuration_digest: string | null;
@@ -181,6 +182,7 @@ interface ViewRow {
   readonly approval_state: string | null;
   readonly approval_resolution: string | null;
   readonly attempts_made: string | null;
+  readonly held_permit: string | null;
 }
 
 function finalizerRowRepository(
@@ -215,6 +217,9 @@ function finalizerViewOf(
     ...(attempt === undefined ? {} : { attempt }),
     approval: finalizerRowApproval(row),
     ...finalizerRowPermit(row),
+    ...(row.held_permit === null
+      ? {}
+      : { heldPermit: asCommitPermitId(row.held_permit) }),
     attemptsMade: projectRowCounter(
       finalizerRowPresent(row.attempts_made, "attempts made"),
       "attempts made",
@@ -446,6 +451,9 @@ function finalizerRowAttempt(
     target: {
       ref: asGitRefName(row.target_ref),
       commit: asGitObjectId(row.target_commit),
+      ...(row.target_base_ref === null
+        ? {}
+        : { baseRef: asGitRefName(row.target_base_ref) }),
     },
     strategy: finalizerRowValue(
       allIntegrationStrategies,
@@ -575,7 +583,7 @@ async function finalizerDurableView(
   const found = await client.query<ViewRow>(
     sql`SELECT
   f.state, j.lifecycle, b.repository, b.recovery_epoch AS binding_epoch,
-  a.attempt, a.target_ref, a.target_commit, a.strategy,
+  a.attempt, a.target_ref, a.target_commit, a.target_base_ref, a.strategy,
   a.configuration_revision, a.configuration_digest, a.approval_required,
   a.outcome, a.candidate_commit, a.failure_kind, a.attempt_digest,
   p.permit, p.recovery_epoch AS permit_epoch,
@@ -583,7 +591,7 @@ async function finalizerDurableView(
   r.verdict, r.candidate_commit AS reconciled_candidate,
   r.target_ref AS reconciled_ref, r.observed_commit, r.declined,
   n.state AS approval_state, n.resolution AS approval_resolution,
-  c.made::text AS attempts_made
+  c.made::text AS attempts_made, h.permit AS held_permit
       FROM finalization_request f
   JOIN project j ON j.tenant = f.tenant AND j.project = f.project
   LEFT JOIN ticket_definition w
@@ -607,6 +615,16 @@ async function finalizerDurableView(
     SELECT count(*) AS made FROM finalization_attempt y
      WHERE y.tenant = f.tenant AND y.project = f.project AND y.request = f.request) c
     ON true
+  LEFT JOIN LATERAL (
+    SELECT q.permit FROM commit_permit q
+      JOIN finalization_attempt y
+        ON y.tenant = q.tenant AND y.project = q.project AND y.attempt = q.attempt
+      JOIN finalization_reconciliation z
+        ON z.tenant = q.tenant AND z.project = q.project AND z.permit = q.permit
+     WHERE q.tenant = f.tenant AND q.project = f.project AND q.state = 'Granted'
+       AND z.verdict = 'Unreadable' AND y.ticket = f.ticket
+       AND y.request <> f.request
+     ORDER BY q.permit LIMIT 1) h ON true
       WHERE f.tenant = ${claim.partition.tenant} AND f.project = ${claim.partition.project}
         AND f.request = ${claim.request}`,
   );

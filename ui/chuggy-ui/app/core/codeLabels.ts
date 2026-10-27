@@ -422,8 +422,8 @@ export function escalationStep(
     : undefined;
 }
 
-/** What has to change before a resume gets a declined push past, for an
- * escalation whose evidence is one. */
+/** What has to change before a resume gets a push past, for an escalation
+ * whose evidence is a declined push or a push whose branch would not read. */
 export function escalationEvidenceLine(
   evidence: TicketEscalation["evidence"],
 ): string | undefined {
@@ -431,6 +431,8 @@ export function escalationEvidenceLine(
     return "Turn on Workflow files and the App's Workflows, then Resume";
   if (evidence === "PromotionDeclined")
     return "Check the branch's rules and hooks, then Resume";
+  if (evidence === "ReconciliationUnreadable")
+    return "Restore the branch or the App's access, then Resume";
   return undefined;
 }
 

@@ -63,6 +63,7 @@ function attemptRow(
   strategy = "Merge",
   digest = finalizerDigest(),
   conflictDigest: string | null = null,
+  baseRef: string | null = null,
 ): Promise<string> {
   return rig.refusal(
     `INSERT INTO finalization_attempt
@@ -70,8 +71,9 @@ function attemptRow(
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind,
-        conflict_manifest, conflict_manifest_digest, attempt_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,$10,$11,$12,false,$13,$14,$15,$16,$17,$18)`,
+        conflict_manifest, conflict_manifest_digest, attempt_digest,
+        target_base_ref)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,$10,$11,$12,false,$13,$14,$15,$16,$17,$18,$19)`,
     keys(
       identity,
       project.request,
@@ -89,6 +91,7 @@ function attemptRow(
       conflict,
       conflictDigest,
       digest,
+      baseRef,
     ),
   );
 }
@@ -214,6 +217,26 @@ test("an attempt's commits are object identities and its digest is one too", asy
     ),
     /finalization_attempt_digest_is_hex/u,
   );
+});
+
+test("an attempt keeps the ref its target was read from only as a bounded name", async () => {
+  for (const baseRef of ["", "r".repeat(257)]) {
+    assert.match(
+      await attemptRow(
+        finalizerIdentity("baseref"),
+        "Prepared",
+        finalizerCommit(),
+        null,
+        null,
+        "Merge",
+        finalizerDigest(),
+        null,
+        baseRef,
+      ),
+      /finalization_attempt_target_base_ref_is_bounded/u,
+      String(baseRef.length),
+    );
+  }
 });
 
 test("an attempt names a request, a repository and a configuration that were retained", async () => {
@@ -381,7 +404,6 @@ test("a reconciliation's verdict is a closed set and its reading is whole", asyn
     ],
     ["Unreadable", finalizerCommit(), "reconciliation_reading_is_whole"],
     ["Promoted", null, "reconciliation_reading_is_whole"],
-    ["NotPromoted", null, "reconciliation_reading_is_whole"],
     ["Promoted", "not-a-commit", "reconciliation_commits_are_object_ids"],
   ] as readonly (readonly [string, string | null, string])[]) {
     assert.match(
@@ -416,7 +438,7 @@ async function readingAdmitted(values: readonly unknown[]): Promise<void> {
   }
 }
 
-test("a reconciliation keeps a decline on any verdict but promoted, only one the finalizer names, and observes nothing only beside one", async () => {
+test("a reconciliation keeps a decline on any verdict but promoted, only one the finalizer names, and is not promoted over an absent ref with or without one", async () => {
   const definition = await rig.pool.query<{ definition: string }>(
     `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
       WHERE conname = 'finalization_reconciliation_decline_is_known'`,
@@ -433,6 +455,7 @@ test("a reconciliation keeps a decline on any verdict but promoted, only one the
     ["Unreadable", null, "WorkflowsRefused"],
     ["NotPromoted", finalizerCommit(), "RemoteDeclined"],
     ["NotPromoted", null, "RemoteDeclined"],
+    ["NotPromoted", null, null],
   ] as const) {
     await readingAdmitted(
       keys(permit, finalizerCommit(), verdict, observed, declined),

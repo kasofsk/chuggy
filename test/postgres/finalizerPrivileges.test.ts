@@ -318,7 +318,7 @@ const writeSurface = [
     table_name: "finalization_attempt",
     privilege_type: "INSERT",
     columns:
-      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
+      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
   },
   {
     table_name: "finalization_change_proposal",

@@ -80,6 +80,7 @@ import { migration079 } from "./079-lead-reads-ticket-landings.ts";
 import { migration080 } from "./080-program-skips-brief-checks.ts";
 import { migration081 } from "./081-promotion-declined.ts";
 import { migration082 } from "./082-decline-kept-unread.ts";
+import { migration083 } from "./083-attempt-base-ref.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -165,4 +166,5 @@ export const migrations: readonly Migration[] = [
   migration080,
   migration081,
   migration082,
+  migration083,
 ];
