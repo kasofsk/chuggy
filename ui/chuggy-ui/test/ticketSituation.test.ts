@@ -271,13 +271,17 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
 });
 
 /**
- * A landing whose push the repository declined parks at the finalization wall
- * once its hold has waited, and the card says what has to change before Resume
- * gets it past; a workflow refusal leads to where Workflow files is set.
+ * A landing whose push the repository declined, or whose pushed branch would
+ * not read, parks at the finalization wall once its hold has waited, and the
+ * card says what has to change before Resume gets it past; a workflow refusal
+ * leads to where Workflow files is set.
  */
-test("a landing whose push was declined says what to change, and a workflow refusal leads to Repositories", () => {
+test("a landing whose push was declined or would not read says what to change, and a workflow refusal leads to Repositories", () => {
   const parked = (
-    evidence: "PromotionDeclined" | "PromotionWorkflowsRefused",
+    evidence:
+      | "PromotionDeclined"
+      | "PromotionWorkflowsRefused"
+      | "ReconciliationUnreadable",
   ) =>
     ticketSlot(
       reads({
@@ -303,6 +307,13 @@ test("a landing whose push was declined says what to change, and a workflow refu
     detail: "Push declined",
     step: undefined,
     more: "Check the branch's rules and hooks, then Resume",
+    reason: undefined,
+  });
+  expect(parked("ReconciliationUnreadable")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Reconciliation unreadable",
+    step: undefined,
+    more: "Restore the branch or the App's access, then Resume",
     reason: undefined,
   });
 });

@@ -18,6 +18,11 @@
  * Neither is a refusal: a decline says nothing of the target, so neither is
  * sent to the re-read that means it moved, and the reading proves where it is.
  *
+ * A CANDIDATE THE SCRATCH DOES NOT HOLD IS PROVED FROM THE TIP'S HISTORY. A
+ * scratch may not outlive its process, so a candidate it lacks is proved from
+ * that history: one still missing once every commit of it has been read is not
+ * in it.
+ *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by
  * itself; forcing it, with or without a lease, would put the decision here,
@@ -44,10 +49,12 @@ import type {
   CandidatePromoted,
   CandidatePromotion,
   GitEvidence,
+  GitObjectId,
   GitPromotionPort,
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
+  RepositoryId,
   TargetObserved,
 } from "../../interpreter/finalizer.ts";
 import { candidateIntegrate, candidatePrepare } from "./gitCandidate.ts";
@@ -55,10 +62,12 @@ import {
   scratchFetchRef,
   scratchHasCommit,
   scratchIsAncestor,
+  scratchNamesCommit,
   scratchObserveHead,
   scratchPush,
   scratchReadRef,
   scratchOpen,
+  scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
 } from "./gitScratch.ts";
@@ -311,6 +320,35 @@ async function gitPromotionPromote(
   }
 }
 
+/**
+ * What a fetched tip proves about a candidate the scratch did not hold, and
+ * `undefined` where reading the tip's history brought it. Nothing is proved
+ * until every commit of that history has been read.
+ */
+async function gitPromotionProveMissing(
+  own: GitPromotionState,
+  repository: RepositoryId,
+  candidate: GitObjectId,
+  observed: GitObjectId,
+): Promise<AncestryProved | undefined> {
+  if (
+    (await scratchWalksHistory(own.scratch, repository, observed)) !== "Yes"
+  ) {
+    return { proved: "Unreadable", evidence: "ObjectMissing" };
+  }
+  const named = await scratchNamesCommit(own.scratch, repository, candidate);
+  switch (named) {
+    case "No":
+      return { proved: "NotAncestor", observed };
+    case "Yes":
+      return undefined;
+    case "Unread":
+      return { proved: "Unreadable", evidence: "ObjectMissing" };
+    default:
+      return assertNever(named);
+  }
+}
+
 /** Reads what the target ref proves about the immutable candidate identity. */
 async function gitPromotionProve(
   own: GitPromotionState,
@@ -338,10 +376,18 @@ async function gitPromotionProve(
   ) {
     return { proved: "Unreadable", evidence: "RemoteUnreachable" };
   }
-  const held =
-    (await scratchHasCommit(own.scratch, repository, observed)) &&
-    (await scratchHasCommit(own.scratch, repository, proof.candidate));
-  if (!held) return { proved: "Unreadable", evidence: "ObjectMissing" };
+  if (!(await scratchHasCommit(own.scratch, repository, observed))) {
+    return { proved: "Unreadable", evidence: "ObjectMissing" };
+  }
+  if (!(await scratchHasCommit(own.scratch, repository, proof.candidate))) {
+    const missing = await gitPromotionProveMissing(
+      own,
+      repository,
+      proof.candidate,
+      observed,
+    );
+    if (missing !== undefined) return missing;
+  }
   const ancestor = await scratchIsAncestor(
     own.scratch,
     repository,

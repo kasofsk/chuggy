@@ -395,7 +395,7 @@ test("the escalation's one line names the finalization wall where the read carri
  * its hold says what, and a workflow refusal names the settings the
  * Repositories page holds; every other hold is said by its label alone.
  */
-test("a declined push says what to change before a resume, and no other hold does", () => {
+test("a declined push and an unread one say what to change before a resume, and no other hold does", () => {
   expect(finalizationUnavailableKindLabel("PromotionDeclined")).toBe(
     "Push declined",
   );
@@ -411,6 +411,10 @@ test("a declined push says what to change before a resume, and no other hold doe
     return line === undefined ? [] : [[evidence, line] as const];
   });
   expect(said).toStrictEqual([
+    [
+      "ReconciliationUnreadable",
+      "Restore the branch or the App's access, then Resume",
+    ],
     ["PromotionDeclined", "Check the branch's rules and hooks, then Resume"],
     [
       "PromotionWorkflowsRefused",

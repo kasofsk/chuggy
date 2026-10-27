@@ -138,9 +138,10 @@ const fixtureGranted: CredentialResolved = {
 function fixturePort(
   fixture: Fixture,
   resolved: CredentialResolved = fixtureGranted,
+  scratch = "scratch",
 ): GitPromotionPort {
   return gitPromotion({
-    scratchDirectory: join(fixture.directory, "scratch"),
+    scratchDirectory: join(fixture.directory, scratch),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
     credentials: fixtureCredentials(resolved),
@@ -148,8 +149,8 @@ function fixturePort(
 }
 
 /** Where the adapter's own bare repository for one remote is, so a suite can read what it wrote. */
-function fixtureScratch(fixture: Fixture): string {
-  return join(fixture.directory, "scratch", scratchDigestOf(fixture.remote));
+function fixtureScratch(fixture: Fixture, scratch = "scratch"): string {
+  return join(fixture.directory, scratch, scratchDigestOf(fixture.remote));
 }
 
 function fixtureBinding(remote: string): RepositoryBinding {
@@ -715,6 +716,52 @@ test("what the ref proves about a candidate is read back from the remote", async
     proved: "Ancestor",
     observed: candidate,
   });
+});
+
+/**
+ * A scratch begun afresh holds no candidate, so the tip's history read whole
+ * proves one the remote never took not promoted and one it took promoted. A
+ * history the scratch cannot walk to its end proves nothing.
+ */
+test("a candidate the scratch never held is proved from the tip's history alone", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  const proof = { repository: binding, ref: target.ref, candidate };
+  const fresh = fixturePort(fixture, fixtureGranted, "fresh");
+  assert.deepEqual(await fresh.proveCandidateAncestry(proof), {
+    proved: "NotAncestor",
+    observed: target.commit,
+  });
+  const parent = fixtureGit(fixture.remote, "rev-parse", `${target.commit}^`);
+  rmSync(
+    join(
+      fixtureScratch(fixture, "fresh"),
+      "objects",
+      parent.slice(0, 2),
+      parent.slice(2),
+    ),
+  );
+  assert.deepEqual(await fresh.proveCandidateAncestry(proof), {
+    proved: "Unreadable",
+    evidence: "ObjectMissing",
+  });
+  await port.promoteCandidate({
+    repository: binding,
+    permit: asCommitPermitId("permit-1"),
+    target,
+    candidate,
+  });
+  assert.deepEqual(
+    await fixturePort(fixture, fixtureGranted, "after").proveCandidateAncestry(
+      proof,
+    ),
+    { proved: "Ancestor", observed: candidate },
+  );
 });
 
 test("a ref another ref's tail repeats is read as itself and never as the shadow", async (t) => {

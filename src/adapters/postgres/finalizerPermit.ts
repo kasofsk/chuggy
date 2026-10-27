@@ -129,6 +129,7 @@ interface HeldPermitRow {
   readonly repository: string;
   readonly binding_epoch: string;
   readonly target_ref: string;
+  readonly target_base_ref: string | null;
   readonly candidate_commit: string;
   readonly declined: string | null;
 }
@@ -369,7 +370,7 @@ export async function finalizerPermitHolds(
   const found = await client.query<HeldPermitRow>(
     sql`SELECT p.tenant, p.project, p.permit, b.repository,
             b.recovery_epoch AS binding_epoch,
-            r.target_ref, r.candidate_commit, r.declined
+            r.target_ref, a.target_base_ref, r.candidate_commit, r.declined
        FROM commit_permit p
        JOIN finalization_attempt a
          ON a.tenant=p.tenant AND a.project=p.project AND a.attempt=p.attempt
@@ -396,6 +397,9 @@ export async function finalizerPermitHolds(
         recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
       },
       target: asGitRefName(row.target_ref),
+      ...(row.target_base_ref === null
+        ? {}
+        : { baseRef: asGitRefName(row.target_base_ref) }),
       candidate: asGitObjectId(row.candidate_commit),
       ...finalizerRowDeclined(row.declined),
     };

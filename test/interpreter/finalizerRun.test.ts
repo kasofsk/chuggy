@@ -1249,6 +1249,75 @@ test("a held reading is re-read beside the decline it kept", async () => {
   ]);
 });
 
+/** The binding's own branch an unheld target's commit was read from. */
+const unheldBase = asGitRefName("refs/heads/main");
+
+/** A target the remote did not hold at preparation, its commit read from the binding's own branch. */
+const unheldTarget = {
+  ref: asGitRefName("refs/heads/chuggy/unheld"),
+  commit: asGitObjectId(commitOf("a")),
+  baseRef: unheldBase,
+};
+
+/** One view ready to promote onto a target the remote did not hold at preparation. */
+function promotableUnheld(request: string): FinalizationView {
+  const view = promotableView(request);
+  return { ...view, attempt: { ...attemptOf(request), target: unheldTarget } };
+}
+
+/** What a proof beside no decline is recorded as onto a target the attempt found unheld. */
+const unheldVerdicts = {
+  ...undeclinedVerdicts,
+  Absent: "NotPromoted",
+} as const;
+
+/**
+ * A ref proved absent onto a target the attempt found unheld is not promoted,
+ * with nothing observed, on the first reading and on a held re-read alike;
+ * every other proof reads as it does over a target the remote held.
+ */
+test("an absent ref onto a target nobody held at preparation reads as not promoted, first read or re-read", async () => {
+  for (const proved of everyProof) {
+    for (const evidence of [
+      "PromotionTimedOut",
+      "RemoteUnreachable",
+    ] as const) {
+      const store = recordingStore([promotableUnheld("request-one")]);
+      const git = gitWithoutBranch(unheldTarget.ref);
+      git.promoted = { promoted: "Ambiguous", evidence };
+      git.proved = proved;
+      await passOver({
+        ...serviceOf(store, git),
+        ticketBriefs: briefsOf(unheldTarget.ref),
+      });
+      assert.equal(git.promotions.length, 1, evidence);
+      const reading = store.readings[0]?.reconciliation;
+      assert.equal(reading?.verdict, unheldVerdicts[proved.proved], evidence);
+      assert.equal(reading.declined, undefined);
+      if (proved.proved === "Absent") assert.equal(reading.observed, undefined);
+    }
+    const store = recordingStore(
+      [],
+      [
+        {
+          partition,
+          permit: asCommitPermitId("permit-held"),
+          repository: binding,
+          target: unheldTarget.ref,
+          baseRef: unheldBase,
+          candidate: asGitObjectId(commitOf("c")),
+        },
+      ],
+    );
+    const git = recordingGit();
+    git.proved = proved;
+    await passOver(serviceOf(store, git));
+    const reading = store.readings[0]?.reconciliation;
+    assert.equal(reading?.verdict, unheldVerdicts[proved.proved], "re-read");
+    assert.equal(reading.declined, undefined);
+  }
+});
+
 test("a candidate awaiting approval opens the ask and reaches neither the remote nor the permit", async () => {
   const waiting = promotableView("request-one");
   const store = recordingStore([
@@ -1407,6 +1476,11 @@ test("a brief branch the remote does not hold is prepared over the binding's own
   assert.equal(store.attempts[0]?.outcome, "Prepared");
   assert.equal(store.attempts[0]?.target.ref, briefBranch);
   assert.equal(store.attempts[0]?.target.commit, commitOf("a"));
+  assert.equal(
+    store.attempts[0]?.target.baseRef,
+    "refs/heads/main",
+    "the attempt keeps the ref its commit was read from",
+  );
 });
 
 /** The branch a case's finalization lands on, which is neither the work's nor anyone's default. */

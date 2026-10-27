@@ -56,8 +56,8 @@ import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   postgresHarnessDrain,
+  postgresHarnessResume,
   postgresHarnessRolePool,
-  postgresHarnessSubmission,
 } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
@@ -310,23 +310,10 @@ async function resumedByScheduler(routed: Routed): Promise<number> {
 /** A member answers the ticket's open escalation with a resume, and the writer decides it. */
 async function resumedByPerson(routed: Routed, label: string): Promise<void> {
   const { partition, ticket } = routed.project;
-  const [desk] = (await rig.harness.query(
-    `SELECT action, authorizing_seq::int AS seq FROM native_action
-      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
-    [partition.tenant, partition.project, ticket],
-  )) as readonly { action: string; seq: number }[];
-  assert.ok(desk !== undefined);
-  const accepted = await rig.harness.inbox.accept({
-    ...postgresHarnessSubmission(partition, label),
-    command: {
-      version: 1,
-      command: "ResolveNativeAction",
-      action: desk.action,
-      authorizingSeq: desk.seq,
-      resolution: "Resume",
-    },
-  });
-  assert.equal(accepted.accepted, "Accepted");
+  assert.equal(
+    await postgresHarnessResume(rig.harness, partition, ticket, label),
+    "Accepted",
+  );
   await drained(routed);
 }
 
