@@ -75,6 +75,7 @@ test("the default roster is capabilities the tree knows, and holds neither of th
   assert.ok(!held.includes("LeadDecision"));
   assert.ok(!held.includes("RepositoryWrite"));
   assert.ok(held.includes("DraftOriginate"));
+  assert.ok(held.includes("TicketDispatch"));
 });
 
 /**
@@ -299,14 +300,14 @@ test("the purpose says the draft is the job and the checkout is for reading", ()
 });
 
 /**
- * Revoking ends a ticket for good, and the roster cannot say when: the tool is
- * held on a wake as on a message. What can be checked is that the purpose says
- * whose word it takes.
+ * Dispatching starts work and revoking ends a ticket for good, and the roster
+ * cannot say when: each tool is held on a wake as on a message. What can be
+ * checked is that the purpose says whose word they take.
  */
-test("the purpose lets a thread revoke a ticket on its owner's word and on nothing else", () => {
+test("the purpose lets a thread dispatch or revoke a ticket on its owner's word and on nothing else", () => {
   assert.match(
     threadPurposeStanding,
-    /You revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
+    /You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets\./u,
   );
 });
 

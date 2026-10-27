@@ -49,7 +49,8 @@
 #
 # Env: CHUG_PG_URL, CHUG_PG_IMAGE, CHUG_PG_PORT, CHUG_PG_READY_SECS — read by
 # `.chug/tasks/_postgres.sh`, as is the seam CHUG_PG_RUN_PID, the suite's alone;
-# CHUG_PG_WORKERS — worker count from 1 through 16.
+# CHUG_PG_WORKERS — worker count from 1 through 16; CHUG_TEST_TIMEOUT_MS — the
+# cap on one test, read by `.chug/tasks/_test-timeout.sh`.
 # The role in CHUG_PG_URL must be able to create and drop sibling databases.
 #
 # Usage: .chug/tasks/check-postgres.sh
@@ -87,6 +88,8 @@ if [ "$workers" -gt 16 ]; then
 fi
 if [ "$workers" -gt "$suite_count" ]; then workers="$suite_count"; fi
 
+. "$here/_test-timeout.sh"
+test_timeout_read "check-postgres"
 . "$here/_postgres.sh"
 postgres_acquire "check-postgres"
 
@@ -183,7 +186,8 @@ while [ "$worker" -le "$workers" ]; do
 				exit 2
 			fi
 			suite_url="$(node -e 'const u=new URL(process.argv[1]);u.pathname=`/${process.argv[2]}`;process.stdout.write(u.toString())' "$base_url" "$database")"
-			CHUG_PG_URL="$suite_url" node --test --test-concurrency=1 --test-reporter=dot "$suite" || worker_rc=1
+			CHUG_PG_URL="$suite_url" node --test --test-concurrency=1 --test-reporter=dot \
+				--test-timeout="$test_timeout_ms" --test-force-exit "$suite" || worker_rc=1
 			: >"$work/ran.$position"
 			# The run's own cleanup drops it again if this misses; what this
 			# buys is one live database per worker rather than all of them.

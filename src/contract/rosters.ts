@@ -628,6 +628,7 @@ export const sessionCapabilities = [
   "ProjectRead",
   "DraftAuthor",
   "DraftOriginate",
+  "TicketDispatch",
   "LeadDecision",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];

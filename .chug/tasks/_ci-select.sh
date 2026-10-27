@@ -224,7 +224,7 @@ ci_declare() { # <gate id or suite path>
 		ci_tree
 		ci_code src test ui images scripts deploy model .chug/configurations \
 			.chug/workloads .chug/actions tsconfig.contract.json tsconfig.contract-pack.json \
-			.chug/tasks/check-source.sh .chug/tasks/check-console-sheets.sh
+			.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/check-console-sheets.sh
 		ci_text deploy/rig/images/README.md .chug/actions/README.md .chug/prompts \
 			.chug/tasks/review-change.md
 		ci_toolchain
@@ -257,7 +257,7 @@ ci_declare() { # <gate id or suite path>
 		;;
 	check-postgres)
 		ci_code src test deploy/rig/wipe-tickets.sql package.json .chug/tasks/_postgres.sh \
-			.chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh
+			.chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh .chug/tasks/_test-timeout.sh
 		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
@@ -269,7 +269,8 @@ ci_declare() { # <gate id or suite path>
 		;;
 	check-keto)
 		ci_code src test .chug/tasks/keto package.json .chug/tasks/_keto.sh \
-			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh
+			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-keto.sh \
+			.chug/tasks/_test-timeout.sh
 		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
@@ -290,8 +291,9 @@ ci_declare() { # <gate id or suite path>
 			justfile package.json
 		;;
 	.chug/tasks/check-source.test.sh)
-		ci_code "$1" .chug/tasks/check-source.sh .chug/tasks/_suite.sh tsconfig.json \
-			tsconfig.contract.json eslint.config.js .prettierrc.json .prettierignore package.json
+		ci_code "$1" .chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh \
+			tsconfig.json tsconfig.contract.json eslint.config.js .prettierrc.json .prettierignore \
+			package.json
 		ci_install
 		;;
 	.chug/tasks/check-boundaries.test.sh)
@@ -324,9 +326,13 @@ ci_declare() { # <gate id or suite path>
 		;;
 	.chug/tasks/check-keto.test.sh)
 		ci_code "$1" .chug/tasks/check-keto.sh .chug/tasks/_keto.sh .chug/tasks/_postgres.sh \
-			.chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh .chug/tasks/keto
+			.chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh .chug/tasks/keto .chug/tasks/_test-timeout.sh
 		;;
-	.chug/tasks/check-postgres.test.sh | .chug/tasks/check-queries.test.sh)
+	.chug/tasks/check-postgres.test.sh)
+		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
+			.chug/tasks/_suite.sh .chug/tasks/_test-timeout.sh
+		;;
+	.chug/tasks/check-queries.test.sh)
 		ci_code "$1" "${1%.test.sh}.sh" .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
 			.chug/tasks/_suite.sh
 		;;

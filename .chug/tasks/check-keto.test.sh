@@ -435,6 +435,29 @@ check "a red suite is a finding" 1 "$RC" "a suite went red against the server CH
 OUT="$CHUG_PG_HELPER_LOG"
 check "a red run still removes its database" 0 0 "drop chuggy_keto_"
 
+# --- Each test is capped -----------------------------------------------------
+#
+# The suite settles on its own, later than the cap: uncapped it would pass, so
+# a red suite here is the cap and nothing else.
+
+fixture
+cat >"$R/test/keto/slow.test.ts" <<'TS'
+import { test } from "node:test";
+test("a fixture case that settles after the cap", async () => {
+  await new Promise((resolve) => setTimeout(resolve, 5_000));
+});
+TS
+git -C "$R" add -A
+keto_double Project Tenant Site
+run_gate "$R" "CHUG_KETO_READ_URL=$KETO_ANSWERS" "CHUG_KETO_WRITE_URL=$KETO_ANSWERS" \
+	"CHUG_PG_URL=$ANSWERS" "CHUG_PG_HELPER_LOG=$CHUG_PG_HELPER_LOG" CHUG_TEST_TIMEOUT_MS=500
+keto_double_stop
+check "a test past the cap turns its suite red" 1 "$RC" "timed out after 500ms"
+run_gate "$R" "CHUG_KETO_READ_URL=http://127.0.0.1:1/" "CHUG_KETO_WRITE_URL=http://127.0.0.1:1/" \
+	CHUG_TEST_TIMEOUT_MS=0
+check "a cap that is no cap is a could-not-run, before any server is asked" 2 "$RC" \
+	"no test can be capped"
+
 # --- A green run is clean, and says what it consumed -------------------------
 
 fixture

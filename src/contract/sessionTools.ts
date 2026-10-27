@@ -15,8 +15,8 @@
  * another project's routes 404 and a tenant's or the site's 403. A decision
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
- * fence, so the runtime remains the single writer of a dispatch and of the
- * refusal ledger.
+ * fence, so the runtime remains the single writer of a lead's dispatch and of
+ * the refusal ledger.
  *
  * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
  * by the agent runtime inside the pod, and the pod is the thing being
@@ -41,8 +41,10 @@
 
 import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
+  configurationCanonicalCharsMax,
   jsonStringChars,
   jsonTextBytes,
+  leadObservedCandidateFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
@@ -146,6 +148,24 @@ export const chuggyToolTicketLandingsResponseBytesMax =
   ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
   nativeHttpBodyBytesMax;
 
+/**
+ * What one UTF-16 code unit of an embedded canonical may weigh in UTF-8,
+ * escaping included: a code point's heaviest encoding, which no single code
+ * unit and no escaped character reaches.
+ */
+const chuggyToolCharBytesMax = 4;
+
+/**
+ * What `dispatch_ticket`'s read of the dispatch view may answer: a page of one
+ * candidate, its canonical configuration at its longest with every character
+ * at its heaviest, and an ordinary answer's bound for the page around it.
+ */
+export const chuggyToolDispatchViewResponseBytesMax =
+  leadObservedCandidateFixedCharsMax +
+  jsonStringChars(0) +
+  configurationCanonicalCharsMax * chuggyToolCharBytesMax +
+  nativeHttpBodyBytesMax;
+
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
 
@@ -203,6 +223,12 @@ const chuggyToolRoster = {
    * holds this capability and a lead does not.
    */
   DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
+  /**
+   * Dispatching one released ticket on the member's own word, as the member's
+   * `ManualDispatch`: the API authorizes it as that member's dispatch, so a
+   * session holding this may dispatch exactly what its owner may.
+   */
+  TicketDispatch: ["dispatch_ticket"],
   LeadDecision: [
     "dispatch",
     "refuse",
@@ -221,6 +247,7 @@ export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
+  ...chuggyToolRoster.TicketDispatch,
   ...chuggyToolRoster.LeadDecision,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
@@ -258,6 +285,7 @@ export const builtInToolCapabilities: Readonly<
   ProjectRead: [],
   DraftAuthor: [],
   DraftOriginate: [],
+  TicketDispatch: [],
   LeadDecision: [],
 };
 
@@ -281,6 +309,7 @@ export const chuggyToolRoutes = {
   ticket: nativeHttpRoutes.ticket,
   draft: nativeHttpRoutes.draft,
   drafts: nativeHttpRoutes.drafts,
+  dispatchView: nativeHttpRoutes.dispatchView,
   configurations: nativeHttpRoutes.configurations,
   configuration: nativeHttpRoutes.configuration,
   selectorHistory: nativeHttpRoutes.selectorHistory,

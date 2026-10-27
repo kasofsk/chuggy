@@ -12,13 +12,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nativeHttpBodyBytesMax } from "../../src/contract/http.ts";
+import {
+  configurationCanonicalCharsMax,
+  dispatchViewSchemaVersion,
+  nativeHttpBodyBytesMax,
+} from "../../src/contract/http.ts";
 import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import {
   allChuggyTools,
   allDependentRelations,
   builtInToolCapabilities,
   chuggyToolCapabilities,
+  chuggyToolDispatchViewResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
@@ -60,6 +65,7 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "dispatch_ticket",
     "dispatch",
     "refuse",
     "lift",
@@ -134,6 +140,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "revoke_ticket",
     "update_ticket",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
     "dispatch",
     "refuse",
@@ -152,6 +159,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     ProjectRead: [],
     DraftAuthor: [],
     DraftOriginate: [],
+    TicketDispatch: [],
     LeadDecision: [],
   });
 });
@@ -215,4 +223,40 @@ test("every bound a tool call is held to is named, an unnamed one being unbounde
 test("a dependent may be a follow-up and may not be a prerequisite", () => {
   assert.deepEqual(allDependentRelations, ["FollowUp", "Prerequisite"]);
   assert.deepEqual(dependentRelationsAdmitted, ["FollowUp"]);
+});
+
+/**
+ * A candidate pinned to the longest canonical configuration, each of its code
+ * units the heaviest one UTF-8 encodes alone, is past an ordinary answer's
+ * bound, so
+ * `dispatch_ticket` reading its page under that bound could never dispatch it.
+ */
+test("a dispatch view page of the heaviest candidate is under the bound dispatch_ticket reads it with", () => {
+  const page = JSON.stringify({
+    result: "Page",
+    token: {
+      tenant: "t".repeat(64),
+      project: "p".repeat(64),
+      recoveryEpoch: "e".repeat(64),
+      schemaVersion: dispatchViewSchemaVersion,
+      watermark: Number.MAX_SAFE_INTEGER,
+      digest: "d".repeat(64),
+    },
+    candidates: [
+      {
+        ticket: Number.MAX_SAFE_INTEGER,
+        ticketVersion: Number.MAX_SAFE_INTEGER,
+        dependencies: [],
+        program: [],
+        configurationRevision: "r".repeat(64),
+        configurationDigest: "c".repeat(64),
+        configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
+      },
+    ],
+    nextAfter: Number.MAX_SAFE_INTEGER,
+    notificationCursor: Number.MAX_SAFE_INTEGER,
+  });
+  const bytes = Buffer.byteLength(page);
+  assert.ok(bytes > nativeHttpBodyBytesMax);
+  assert.ok(bytes <= chuggyToolDispatchViewResponseBytesMax);
 });

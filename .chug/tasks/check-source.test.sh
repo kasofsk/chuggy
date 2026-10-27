@@ -246,6 +246,143 @@ run_in "$R" --unit
 check "a console's own suite is not this stage's, at any depth" 0 "$RC" "0 stage(s) failed"
 check "and the split counts it as another gate's" 0 "$RC" "unit ran 1 suite(s); 1 left to"
 
+# --- What a unit test may take, and where it runs ------------------------------
+#
+# A test that never settles holds an interval open as well, so the case proves
+# both halves of the cap: the test fails by name, and its suite's process ends
+# though the interval would have kept it alive.
+
+fixture
+clean_source
+{
+	printf '%s\n' 'import { test } from "node:test";'
+	printf '%s\n' ''
+	printf '%s\n' 'test("this one never settles", () => {'
+	printf '%s\n' '  setInterval(() => undefined, 1_000);'
+	printf '%s\n' '  return new Promise(() => undefined);'
+	printf '%s\n' '});'
+} > "$R/test/domain/hangs.test.ts"
+git -C "$R" add -A
+CHUG_TEST_TIMEOUT_MS=500
+export CHUG_TEST_TIMEOUT_MS
+run_in "$R" --unit
+check "a test that never settles is a finding once the cap passes" 1 "$RC" "timed out after 500ms"
+check "and the finding names the test" 1 "$RC" "this one never settles"
+
+CHUG_TEST_TIMEOUT_MS=0
+run_in "$R" --unit
+check "a cap of zero is no cap, and is a could-not-run" 2 "$RC" "no test can be capped"
+CHUG_TEST_TIMEOUT_MS=soon
+run_in "$R" --unit
+check "a cap that is not a count is a could-not-run" 2 "$RC" "no test can be capped"
+unset CHUG_TEST_TIMEOUT_MS
+
+# The kernel and docker are stood in for, so each case says which kernel the
+# gate runs on and what docker answers to each thing it is asked: whether it
+# runs, whether it holds or can pull the image, and whether the tree is visible
+# inside it. Only a run of suites is logged. The Linux suite fails wherever it
+# is run, which is what lets a passing gate prove it was not run on the host.
+FAKES="$WORK/fakes"
+mkdir -p "$FAKES"
+printf '#!/bin/sh\necho "$FAKE_KERNEL"\n' > "$FAKES/uname"
+{
+	printf '%s\n' '#!/bin/sh'
+	printf '%s\n' 'case "$1 ${2:-}" in'
+	printf '%s\n' '"info "*) exit "$FAKE_DOCKER_INFO_RC" ;;'
+	printf '%s\n' '"image inspect") exit "$FAKE_DOCKER_IMAGE_RC" ;;'
+	printf '%s\n' '"pull "*) exit "$FAKE_DOCKER_PULL_RC" ;;'
+	printf '%s\n' 'esac'
+	printf '%s\n' 'case "$*" in *" test -r "*) exit "$FAKE_DOCKER_MOUNT_RC" ;; esac'
+	printf '%s\n' "printf '%s\\n' \"\$*\" >> \"\$FAKE_DOCKER_LOG\""
+} > "$FAKES/docker"
+chmod +x "$FAKES/uname" "$FAKES/docker"
+HOST_PATH="$PATH"
+PATH="$FAKES:$PATH"
+FAKE_DOCKER_LOG="$WORK/docker.log"
+FAKE_DOCKER_INFO_RC=0
+FAKE_DOCKER_IMAGE_RC=0
+FAKE_DOCKER_PULL_RC=0
+FAKE_DOCKER_MOUNT_RC=0
+export FAKE_KERNEL FAKE_DOCKER_LOG FAKE_DOCKER_INFO_RC FAKE_DOCKER_IMAGE_RC FAKE_DOCKER_PULL_RC \
+	FAKE_DOCKER_MOUNT_RC
+
+fixture
+clean_source
+failing_suite "$R/test/domain/kernel.linux.test.ts" "this one holds only on Linux"
+mkdir -p "$R/images/worker"
+printf '%s\n' 'FROM node:0-fixture AS base' > "$R/images/worker/Dockerfile"
+git -C "$R" add -A
+
+FAKE_KERNEL=Darwin
+rm -f "$FAKE_DOCKER_LOG"
+run_in "$R" --unit
+check "on another kernel a Linux suite is not the host's" 0 "$RC" "0 stage(s) failed, 2 run"
+check "and the clean line says where it ran" 0 "$RC" "unit ran 2 suite(s), 1 of them in node:0-fixture;"
+# The tree's path is the one git reports, which may be the temporary
+# directory's resolved through a link, so the mount is asserted to be one path
+# three times rather than to be $R.
+read -r mounted_from mounted_at worked_in <<EOF
+$(sed -n 's/^run --rm --init -v \([^ :]*\):\([^ :]*\):ro -w \([^ ]*\) .*/\1 \2 \3/p' "$FAKE_DOCKER_LOG")
+EOF
+if [ -n "$mounted_from" ] && [ "$mounted_from" = "$mounted_at" ] && [ "$mounted_at" = "$worked_in" ]; then
+	printf 'mounted read-only at its own path, and run there\n' >> "$FAKE_DOCKER_LOG"
+fi
+OUT="$FAKE_DOCKER_LOG"
+check "the tree is mounted read-only at its own path, and run there" 0 "$RC" \
+	"mounted read-only at its own path, and run there"
+check "in the worker image's node" 0 "$RC" " node:0-fixture node --test "
+check "and docker is handed that suite" 0 "$RC" "test/domain/kernel.linux.test.ts"
+refute "and only that suite" 0 "$RC" "test/domain/a.test.ts"
+OUT="$WORK/.out"
+
+FAKE_DOCKER_INFO_RC=1
+run_in "$R" --unit
+check "with no docker answering, a Linux suite is a could-not-run" 2 "$RC" "need a running docker on Darwin"
+FAKE_DOCKER_INFO_RC=0
+
+FAKE_DOCKER_IMAGE_RC=1
+run_in "$R" --unit
+check "an image docker does not hold is pulled" 0 "$RC" "0 stage(s) failed, 2 run"
+FAKE_DOCKER_PULL_RC=1
+run_in "$R" --unit
+check "an image neither held nor to be pulled is a could-not-run" 2 "$RC" \
+	"node:0-fixture is neither held nor to be pulled"
+FAKE_DOCKER_IMAGE_RC=0
+FAKE_DOCKER_PULL_RC=0
+
+FAKE_DOCKER_MOUNT_RC=1
+run_in "$R" --unit
+check "a tree docker cannot see at its own path is a could-not-run" 2 "$RC" "docker does not see"
+FAKE_DOCKER_MOUNT_RC=0
+
+FAKE_KERNEL=Linux
+run_in "$R" --unit
+check "on Linux a Linux suite is the host's" 1 "$RC" "this one holds only on Linux"
+check "and runs in the one unit stage" 1 "$RC" "1 stage(s) failed, 1 run"
+
+# With every unit suite a Linux one the host stage is not started: started
+# with no suite, the runner would discover the whole tree on its own, and the
+# untracked suite here is what it would find.
+FAKE_KERNEL=Darwin
+rm "$R/test/domain/a.test.ts"
+git -C "$R" add -A
+failing_suite "$R/test/domain/stray.test.ts" "the host runner discovered this on its own"
+rm -f "$FAKE_DOCKER_LOG"
+run_in "$R" --unit
+check "with only Linux suites, only the Linux stage runs" 0 "$RC" "0 stage(s) failed, 1 run"
+refute "and the host runner discovers nothing of its own" 0 "$RC" "discovered this on its own"
+OUT="$FAKE_DOCKER_LOG"
+check "the Linux stage is handed the one suite" 0 "$RC" "test/domain/kernel.linux.test.ts"
+OUT="$WORK/.out"
+
+printf '%s\n' 'FROM scratch AS base' > "$R/images/worker/Dockerfile"
+run_in "$R" --unit
+check "a worker image pinning no node is a could-not-run" 2 "$RC" "pins no node base"
+
+PATH="$HOST_PATH"
+unset FAKE_KERNEL FAKE_DOCKER_LOG FAKE_DOCKER_INFO_RC FAKE_DOCKER_IMAGE_RC FAKE_DOCKER_PULL_RC \
+	FAKE_DOCKER_MOUNT_RC
+
 # --- What the browser stage sees that the first typecheck does not ------------
 #
 # A platform import inside the contract typechecks against `tsconfig.json`,

@@ -547,6 +547,7 @@ for case in \
 	".chug/actions/x.json|check-source unit" "tsconfig.contract.json|check-source unit" \
 	"tsconfig.contract-pack.json|check-source unit" ".chug/tasks/check-source.sh|check-source unit" \
 	".chug/tasks/check-console-sheets.sh|check-source unit" \
+	".chug/tasks/_test-timeout.sh|check-source unit" \
 	"deploy/rig/images/README.md|check-source unit" ".chug/actions/README.md|check-source unit" \
 	".chug/prompts/x.md|check-source unit" ".chug/tasks/review-change.md|check-source unit" \
 	".dependency-cruiser.cjs|check-source unit|check-boundaries" \
@@ -1484,13 +1485,13 @@ pin_scope check-console "$record_tool_install" ui src/contract test/fixtures/con
 	src/node_modules src/package.json src/tsconfig.json
 pin_scope check-postgres "$record_tool_install" src test deploy/rig/wipe-tickets.sql package.json \
 	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
-	-- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
+	.chug/tasks/_test-timeout.sh -- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 pin_scope check-queries "$record_tool_install" src test scripts ui package.json tsconfig.json \
 	eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh \
 	-- ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
 pin_scope check-keto "$record_tool_install" src test .chug/tasks/keto package.json \
 	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
-	.chug/tasks/check-keto.sh \
+	.chug/tasks/check-keto.sh .chug/tasks/_test-timeout.sh \
 	-- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 
 run_recorded TRACK_RECORD_TOKEN=t TRACK_RECORD_URL=http://store.test TRACK_RECORD_NAMESPACE=elsewhere
@@ -1577,7 +1578,7 @@ pin_scope .chug/tasks/ci.test.sh "" .chug/tasks/ci.test.sh .chug/tasks/ci.sh .ch
 	.chug/tasks/_ignored-inputs.sh .chug/tasks/_installed-inputs.sh .chug/tasks/_probed-inputs.sh \
 	.chug/tasks/_suite.sh justfile package.json
 pin_scope .chug/tasks/check-source.test.sh "$record_tool_install" .chug/tasks/check-source.test.sh \
-	.chug/tasks/check-source.sh .chug/tasks/_suite.sh tsconfig.json tsconfig.contract.json \
+	.chug/tasks/check-source.sh .chug/tasks/_test-timeout.sh .chug/tasks/_suite.sh tsconfig.json tsconfig.contract.json \
 	eslint.config.js .prettierrc.json .prettierignore package.json
 pin_scope .chug/tasks/check-boundaries.test.sh "$record_tool_install" \
 	.chug/tasks/check-boundaries.test.sh .chug/tasks/check-boundaries.sh .chug/tasks/_suite.sh \
@@ -1605,11 +1606,13 @@ pin_scope .chug/tasks/emit-goldens.test.sh "$record_tool_installed 'prettier' '@
 	.prettierignore ':(glob)model/**/*.qnt' .chug/tasks/check-model.sh
 pin_scope .chug/tasks/check-keto.test.sh "" .chug/tasks/check-keto.test.sh .chug/tasks/check-keto.sh \
 	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh \
-	.chug/tasks/keto
-for suite in check-postgres check-queries; do
-	pin_scope ".chug/tasks/$suite.test.sh" "" ".chug/tasks/$suite.test.sh" ".chug/tasks/$suite.sh" \
-		.chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh .chug/tasks/_suite.sh
-done
+	.chug/tasks/keto .chug/tasks/_test-timeout.sh
+pin_scope .chug/tasks/check-postgres.test.sh "" .chug/tasks/check-postgres.test.sh \
+	.chug/tasks/check-postgres.sh .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
+	.chug/tasks/_suite.sh .chug/tasks/_test-timeout.sh
+pin_scope .chug/tasks/check-queries.test.sh "" .chug/tasks/check-queries.test.sh \
+	.chug/tasks/check-queries.sh .chug/tasks/_postgres.sh .chug/tasks/_gate-fixture.sh \
+	.chug/tasks/_suite.sh
 pin_scope .chug/tasks/other.test.sh "" .chug/tasks/other.test.sh .chug/tasks/other.sh .chug/tasks/_suite.sh
 pin_scope .githooks/pre-commit.test.sh "" .githooks/pre-commit.test.sh .githooks/pre-commit \
 	.chug/tasks/_suite.sh

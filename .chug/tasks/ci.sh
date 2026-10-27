@@ -210,7 +210,9 @@ record_scope() { # <gate id or suite path>
 # program the unit suites run; and the history the paths gate reads deleted
 # paths from. Left out because none moves a verdict: the ports a server is
 # published on, the caps on a wait or a walk (an overrun exits 2, never
-# recorded), worker counts, colour, where a counterexample is written, and the
+# recorded), the cap on one test (it ends a test that never settles and is no
+# bound on one that does, so a pass under a larger cap is a pass of the same
+# tests), worker counts, colour, where a counterexample is written, and the
 # CHUG_CI_* selection, which picks gates and asks none of them anything.
 #
 # Its stderr passes through as written and a copy is kept, from which

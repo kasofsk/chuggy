@@ -194,6 +194,42 @@ test("a session pod is told what its own session is, and nothing it has not got"
   await told.close();
 });
 
+test("a thread's dispatch is named to a pod whose release reads it, and left out for one before it", async () => {
+  const app = sessionPlane({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({
+          ...identity,
+          kind: "Thread",
+          capabilities: ["ProjectRead", "TicketDispatch", "DraftOriginate"],
+        }),
+    },
+  });
+  const named = async (release: string | undefined) =>
+    (
+      await app.inject({
+        method: "GET",
+        url: "/v1/session",
+        headers: {
+          ...held,
+          ...(release === undefined ? {} : { [workerContractHeader]: release }),
+        },
+      })
+    ).json<{ capabilities: string[] }>().capabilities;
+  assert.deepEqual(await named("1.20.0"), [
+    "ProjectRead",
+    "TicketDispatch",
+    "DraftOriginate",
+  ]);
+  for (const release of ["1.19.0", "1.0.0", undefined])
+    assert.deepEqual(
+      await named(release),
+      ["ProjectRead", "DraftOriginate"],
+      String(release),
+    );
+  await app.close();
+});
+
 test("a session told what it forks from is told the reference the plane resolved", async () => {
   const forking = sessionPlane({
     authority: {
