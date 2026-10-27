@@ -25,11 +25,13 @@ import {
   forgeInstallationsAnsweredMax,
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
+import { bootstrapConfigurationRevisionPrefix } from "../../src/contract/responses.ts";
 import {
   asGitObjectId,
   asGitRefName,
   asRepositoryCredential,
   asRepositoryId,
+  finalizerIdentityCharsMax,
   type CredentialResolved,
   type GitRefName,
   type RepositoryBinding,
@@ -102,6 +104,7 @@ import {
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
+  bootstrapConfigurationRevision,
   canonicalConfigurationOf,
   draftReleaseReadiness,
   type CanonicalConfiguration,
@@ -129,6 +132,8 @@ const app = asForgeApp("portal");
 const worker = asForgeApp("worker");
 const installationId = asForgeInstallationId("4242");
 const repository = asRepositoryId("https://github.com/kasofsk/chuggy.git");
+/** The revision the step authors this repository's bootstrap at. */
+const bootstrapRevision = bootstrapConfigurationRevision(repository);
 const operation = asOperationId("bind-chuggy-1");
 const epoch = asRecoveryEpoch("epoch-1");
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -464,7 +469,7 @@ function fixturePortsHeld(
     held: (query) => {
       wrote.heldQueries.push(query);
       return Promise.resolve(
-        given.stepHeld ?? { declared: new Map(), bootstrap: undefined },
+        given.stepHeld ?? { declared: new Map(), bootstraps: new Map() },
       );
     },
   };
@@ -1494,9 +1499,9 @@ test("a repository declaring no configurations is authored the bootstrap", async
     result: "Bound",
     repository,
     landing: { mode: "Push" },
-    configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    configurations: { result: "Bootstrapped", revision: bootstrapRevision },
   });
-  assert.deepEqual(wrote.authored, ["bootstrap"]);
+  assert.deepEqual(wrote.authored, [bootstrapRevision]);
 });
 
 const ignoredAtHead: RepositoryConfigurationIgnored = {
@@ -1525,7 +1530,7 @@ test("a bind that authored the bootstrap says what under `.chug/` the head held 
     landing: { mode: "Push" },
     configurations: {
       result: "Bootstrapped",
-      revision: "bootstrap",
+      revision: bootstrapRevision,
       ignored: ignoredAtHead,
     },
   });
@@ -1583,7 +1588,7 @@ test("a port that raises inside the step is a deferral and not a failed bind", a
   assert.deepEqual(wrote.authored, []);
 });
 
-test("a project already holding a different bootstrap is told so and stays bound", async () => {
+test("a repository the project holds a different bootstrap for is told so and stays bound", async () => {
   const { bound } = await fixtureBound({
     configurations: {
       head: branchHead,
@@ -1610,7 +1615,7 @@ test("the same bootstrap authored twice is the revision it already is", async ()
         created: "AlreadyExists",
         revision: {
           partition,
-          revision: asConfigurationRevisionId("bootstrap"),
+          revision: bootstrapRevision,
           canonical: asCanonicalConfiguration("{}"),
           digest: "sha256:bootstrap",
         },
@@ -1621,7 +1626,7 @@ test("the same bootstrap authored twice is the revision it already is", async ()
     result: "Bound",
     repository,
     landing: { mode: "Push" },
-    configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    configurations: { result: "Bootstrapped", revision: bootstrapRevision },
   });
 });
 
@@ -1940,29 +1945,35 @@ test("a step that deferred at the bind bootstraps when asked again once the forg
     {
       result: "Configurations",
       repository,
-      configurations: { result: "Bootstrapped", revision: "bootstrap" },
+      configurations: { result: "Bootstrapped", revision: bootstrapRevision },
     },
   );
-  assert.deepEqual(composed.wrote.authored, ["bootstrap"]);
+  assert.deepEqual(composed.wrote.authored, [bootstrapRevision]);
   assert.deepEqual(composed.wrote.heads.at(-1), {
     partition,
     repository,
     recoveryEpoch: epoch,
   });
   assert.deepEqual(composed.wrote.heldQueries, [
-    { partition, repositories: [repository], bootstrap: "bootstrap" },
+    { partition, repositories: [repository], bootstraps: [bootstrapRevision] },
   ]);
 });
 
 test("a repository the project already holds configurations for answers them and reads nothing", async () => {
   const cases: readonly (readonly [RepositoryConfigurationsHeld, unknown])[] = [
     [
-      { declared: new Map([[repository, 2]]), bootstrap: readyBootstrap },
+      {
+        declared: new Map([[repository, 2]]),
+        bootstraps: new Map([[bootstrapRevision, readyBootstrap]]),
+      },
       { result: "Imported", count: 2 },
     ],
     [
-      { declared: new Map(), bootstrap: readyBootstrap },
-      { result: "Bootstrapped", revision: "bootstrap" },
+      {
+        declared: new Map(),
+        bootstraps: new Map([[bootstrapRevision, readyBootstrap]]),
+      },
+      { result: "Bootstrapped", revision: bootstrapRevision },
     ],
   ];
   for (const [stepHeld, configurations] of cases) {
@@ -1984,14 +1995,14 @@ test("names another repository declared are not this repository's configurations
   const elsewhere = asRepositoryId("https://github.com/kasofsk/other.git");
   const { configured, wrote } = await fixtureConfigured(["Administer"], {
     configurations: undeclared,
-    stepHeld: { declared: new Map([[elsewhere, 3]]), bootstrap: undefined },
+    stepHeld: { declared: new Map([[elsewhere, 3]]), bootstraps: new Map() },
   });
   assert.deepEqual(configured, {
     result: "Configurations",
     repository,
-    configurations: { result: "Bootstrapped", revision: "bootstrap" },
+    configurations: { result: "Bootstrapped", revision: bootstrapRevision },
   });
-  assert.deepEqual(wrote.authored, ["bootstrap"]);
+  assert.deepEqual(wrote.authored, [bootstrapRevision]);
 });
 
 test("a binding that is not there, or is retired, runs no step", async () => {
@@ -2053,10 +2064,15 @@ function fixtureRevisions(
     held: (query) =>
       Promise.resolve({
         declared: new Map(),
-        bootstrap: revisions.get(query.bootstrap),
+        bootstraps: new Map(
+          query.bootstraps.flatMap((revision) => {
+            const canonical = revisions.get(revision);
+            return canonical === undefined ? [] : [[revision, canonical]];
+          }),
+        ),
       }),
   };
-  return { created, authoring, held };
+  return { created, revisions, authoring, held };
 }
 
 /** The service over one revision store, its permits granted and its repository declaring nothing. */
@@ -2091,29 +2107,44 @@ test("two requests racing to configure one repository author its bootstrap once"
     service.configureRepository(principal, partition, repository);
   const raced = await Promise.all([configure(), configure()]);
   assert.equal(wrote.heads.length, 2, "both requests ran the step");
-  assert.deepEqual(revisions.created, ["bootstrap"]);
+  assert.deepEqual(revisions.created, [bootstrapRevision]);
   for (const answered of raced)
     assert.deepEqual(answered, {
       result: "Configurations",
       repository,
-      configurations: { result: "Bootstrapped", revision: "bootstrap" },
+      configurations: { result: "Bootstrapped", revision: bootstrapRevision },
     });
   await configure();
   assert.equal(wrote.heads.length, 2, "a third request read nothing");
-  assert.deepEqual(revisions.created, ["bootstrap"]);
+  assert.deepEqual(revisions.created, [bootstrapRevision]);
 });
 
 /** A repository that declared names is never read as bootstrapped, whatever bootstrap the project also holds. */
 test("the listing answers what the project holds for each binding, and marks it by that", async () => {
   const imported = { result: "Imported", count: 2 };
-  const bootstrapped = { result: "Bootstrapped", revision: "bootstrap" };
+  const bootstrapped = { result: "Bootstrapped", revision: bootstrapRevision };
   const declared = new Map([[repository, 2]]);
   const cases: readonly (readonly [RepositoryConfigurationsHeld, unknown])[] = [
-    [{ declared: new Map(), bootstrap: undefined }, undefined],
-    [{ declared, bootstrap: undefined }, imported],
-    [{ declared, bootstrap: readyBootstrap }, imported],
-    [{ declared: new Map(), bootstrap: readyBootstrap }, bootstrapped],
-    [{ declared: new Map(), bootstrap: unreadyBootstrap }, undefined],
+    [{ declared: new Map(), bootstraps: new Map() }, undefined],
+    [{ declared, bootstraps: new Map() }, imported],
+    [
+      { declared, bootstraps: new Map([[bootstrapRevision, readyBootstrap]]) },
+      imported,
+    ],
+    [
+      {
+        declared: new Map(),
+        bootstraps: new Map([[bootstrapRevision, readyBootstrap]]),
+      },
+      bootstrapped,
+    ],
+    [
+      {
+        declared: new Map(),
+        bootstraps: new Map([[bootstrapRevision, unreadyBootstrap]]),
+      },
+      undefined,
+    ],
   ];
   for (const [stepHeld, configurationsHeld] of cases) {
     const { service, wrote } = fixtureService(["Read"], { stepHeld });
@@ -2130,7 +2161,11 @@ test("the listing answers what the project holds for each binding, and marks it 
         : { ...binding, configured: true, configurationsHeld },
     ]);
     assert.deepEqual(wrote.heldQueries, [
-      { partition, repositories: [repository], bootstrap: "bootstrap" },
+      {
+        partition,
+        repositories: [repository],
+        bootstraps: [bootstrapRevision],
+      },
     ]);
   }
 });
@@ -2171,7 +2206,7 @@ test("the listing answers the last import attempted of each binding, and none of
  */
 test("a bootstrap that no longer releases is not held, and the step meets it rather than replacing it", async () => {
   const revisions = fixtureRevisions(
-    new Map([["bootstrap", unreadyBootstrap]]),
+    new Map([[bootstrapRevision, unreadyBootstrap]]),
   );
   const { service, wrote } = fixtureRevisionsService(revisions, [
     "Administer",
@@ -2248,13 +2283,13 @@ const earlierBootstrap = canonicalConfigurationOf({
 
 test("a bootstrap of an earlier text is still held, and its repository's configuration is answered without a read", async () => {
   const revisions = fixtureRevisions(
-    new Map([["bootstrap", earlierBootstrap]]),
+    new Map([[bootstrapRevision, earlierBootstrap]]),
   );
   const { service, wrote } = fixtureRevisionsService(revisions, [
     "Administer",
     "Read",
   ]);
-  const held = { result: "Bootstrapped", revision: "bootstrap" };
+  const held = { result: "Bootstrapped", revision: bootstrapRevision };
   const listed = await service.projectRepositories(principal, partition);
   assert.deepEqual(
     listed.result === "Repositories" &&
@@ -2271,11 +2306,22 @@ test("a bootstrap of an earlier text is still held, and its repository's configu
   assert.deepEqual(revisions.created, [], "nothing was authored over it");
 });
 
-test("a bind meeting a bootstrap of an earlier text is told it differs, for the repository it was authored for as for any other", async () => {
+test("a bind meeting its own bootstrap of an earlier text is told it differs, and a repository bound beside it is authored its own", async () => {
   const elsewhere = asRepositoryId("https://github.com/kasofsk/other.git");
-  for (const bound of [repository, elsewhere]) {
+  const cases = [
+    [repository, { result: "Deferred", reason: "BootstrapDiffers" }, []],
+    [
+      elsewhere,
+      {
+        result: "Bootstrapped",
+        revision: bootstrapConfigurationRevision(elsewhere),
+      },
+      [bootstrapConfigurationRevision(elsewhere)],
+    ],
+  ] as const;
+  for (const [bound, configurations, created] of cases) {
     const revisions = fixtureRevisions(
-      new Map([["bootstrap", earlierBootstrap]]),
+      new Map([[bootstrapRevision, earlierBootstrap]]),
     );
     const { service } = fixtureRevisionsService(revisions, ["Administer"], {
       resolved: credentialProved,
@@ -2289,12 +2335,187 @@ test("a bind meeting a bootstrap of an earlier text is told it differs, for the 
         result: "Bound",
         repository: bound,
         landing: { mode: "Push" },
-        configurations: { result: "Deferred", reason: "BootstrapDiffers" },
+        configurations,
       },
       bound,
     );
-    assert.deepEqual(revisions.created, [], bound);
+    assert.deepEqual(revisions.created, created, bound);
   }
+});
+
+/** A second repository bound to the project, declaring nothing either. */
+const besideRepository = asRepositoryId(
+  "https://github.com/kasofsk/chuggy-common.git",
+);
+
+/** The service over one revision store, binding each repository named and holding what each declared. */
+function fixtureBareService(
+  revisions: ReturnType<typeof fixtureRevisions>,
+  bound: readonly RepositoryId[],
+  declared: ReadonlyMap<RepositoryId, number> = new Map(),
+) {
+  const { ports } = fixturePorts(fixtureAccess(["Administer", "Read"]).access, {
+    configurations: undeclared,
+    resolved: credentialProved,
+  });
+  assert.ok(ports.configurations !== undefined);
+  const service = repositoryOnboarding({
+    ...ports,
+    bindings: {
+      bindings: () =>
+        Promise.resolve(
+          bound.map((one) => ({ ...fixtureBinding({}), repository: one })),
+        ),
+    },
+    configurationsHeld: {
+      held: async (query) => ({
+        ...(await revisions.held.held(query)),
+        declared,
+      }),
+    },
+    configurations: { ...ports.configurations, authoring: revisions.authoring },
+  });
+  const held = async () => {
+    const read = await service.projectRepositories(principal, partition);
+    assert.equal(read.result, "Repositories");
+    return read.result === "Repositories"
+      ? read.repositories.map((row) => [
+          row.repository,
+          row.configured ? row.configurationsHeld : undefined,
+        ])
+      : [];
+  };
+  return { service, held };
+}
+
+test("two bare repositories bound to one project each hold their own bootstrap, and each is listed under its own", async () => {
+  const revisions = fixtureRevisions();
+  const { service, held } = fixtureBareService(revisions, [
+    repository,
+    besideRepository,
+  ]);
+  const own = (bound: RepositoryId) => ({
+    result: "Bootstrapped",
+    revision: bootstrapConfigurationRevision(bound),
+  });
+  for (const bound of [repository, besideRepository])
+    assert.deepEqual(
+      await service.bindRepository(principal, partition, {
+        repository: bound,
+        operation,
+      }),
+      {
+        result: "Bound",
+        repository: bound,
+        landing: { mode: "Push" },
+        configurations: own(bound),
+      },
+      bound,
+    );
+  assert.notEqual(bootstrapRevision, own(besideRepository).revision);
+  assert.deepEqual(revisions.created, [
+    bootstrapRevision,
+    own(besideRepository).revision,
+  ]);
+  for (const bound of [repository, besideRepository])
+    assert.ok(
+      revisions.revisions.get(own(bound).revision)?.includes(bound),
+      "each bootstrap is briefed for the repository it was authored for",
+    );
+  assert.deepEqual(await held(), [
+    [repository, own(repository)],
+    [besideRepository, own(besideRepository)],
+  ]);
+});
+
+test("a repository bound after another is never listed under the first's bootstrap", async () => {
+  const revisions = fixtureRevisions(
+    new Map([[bootstrapRevision, readyBootstrap]]),
+  );
+  const { held } = fixtureBareService(revisions, [
+    repository,
+    besideRepository,
+  ]);
+  assert.deepEqual(await held(), [
+    [repository, { result: "Bootstrapped", revision: bootstrapRevision }],
+    [besideRepository, undefined],
+  ]);
+});
+
+test("a repository that later declares configurations is listed as imported, and its bootstrap is no longer held", async () => {
+  const revisions = fixtureRevisions(
+    new Map([[bootstrapRevision, readyBootstrap]]),
+  );
+  const { held } = fixtureBareService(
+    revisions,
+    [repository],
+    new Map([[repository, 2]]),
+  );
+  assert.deepEqual(await held(), [
+    [repository, { result: "Imported", count: 2 }],
+  ]);
+});
+
+/**
+ * The bootstrap a project was authored before each repository had its own,
+ * at the revision that was its name. It stays a revision any ticket released
+ * under it reads, and is no repository's.
+ */
+const projectBootstrapRevision = asConfigurationRevisionId("bootstrap");
+
+test("a project's bootstrap from before each repository had its own is held for none, and asking again authors a bare repository its own", async () => {
+  const revisions = fixtureRevisions(
+    new Map([[projectBootstrapRevision, readyBootstrap]]),
+  );
+  const { service, held } = fixtureBareService(revisions, [
+    repository,
+    besideRepository,
+  ]);
+  assert.deepEqual(await held(), [
+    [repository, undefined],
+    [besideRepository, undefined],
+  ]);
+  for (const bound of [repository, besideRepository])
+    assert.deepEqual(
+      await service.configureRepository(principal, partition, bound),
+      {
+        result: "Configurations",
+        repository: bound,
+        configurations: {
+          result: "Bootstrapped",
+          revision: bootstrapConfigurationRevision(bound),
+        },
+      },
+      bound,
+    );
+  assert.deepEqual(await held(), [
+    [repository, { result: "Bootstrapped", revision: bootstrapRevision }],
+    [
+      besideRepository,
+      {
+        result: "Bootstrapped",
+        revision: bootstrapConfigurationRevision(besideRepository),
+      },
+    ],
+  ]);
+  assert.equal(
+    revisions.revisions.get(projectBootstrapRevision),
+    readyBootstrap,
+    "the project's bootstrap is left as it was",
+  );
+});
+
+test("a repository's bootstrap revision is named for it, and fits a revision however long the repository is", () => {
+  const longest = asRepositoryId("r".repeat(finalizerIdentityCharsMax));
+  assert.notEqual(
+    bootstrapConfigurationRevision(repository),
+    bootstrapConfigurationRevision(besideRepository),
+  );
+  assert.ok(
+    bootstrapConfigurationRevision(longest).startsWith(
+      bootstrapConfigurationRevisionPrefix,
+    ),
+  );
 });
 
 test("a ticket still releases against a bootstrap of an earlier text, under the criterion it was authored with", () => {

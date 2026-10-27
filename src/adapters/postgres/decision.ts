@@ -72,6 +72,8 @@ import { eventTicket } from "../../domain/evolve.ts";
 import type { ExecutionTaskKind } from "../../interpreter/executionScheduler.ts";
 import {
   asCanonicalConfiguration,
+  asConfigurationRevisionId,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   draftReleaseRefusalCode,
   parseDraftAuthoring,
@@ -669,9 +671,12 @@ async function decisionReleaseOutcome(
   const readiness = draftReleaseReadiness(
     canonical,
     fence.brief,
-    revision.repository === null
-      ? undefined
-      : asRepositoryId(revision.repository),
+    configurationRepositoryOf(
+      asConfigurationRevisionId(fence.configurationRevision),
+      revision.repository === null
+        ? undefined
+        : asRepositoryId(revision.repository),
+    ),
     fence.overrides,
     fence.selection,
     fence.program,
@@ -731,6 +736,7 @@ async function overridesChangeTicket(
   readonly held: ConfigurationOverrides | undefined;
 }> {
   const found = await client.query<{
+    revision: string;
     canonical: string;
     digest: string;
     repository: string | null;
@@ -739,7 +745,7 @@ async function overridesChangeTicket(
     selection: string | null;
     authoring: string;
   }>(
-    sql`SELECT c.canonical,c.digest,p.repository,d.brief::text AS brief,
+    sql`SELECT c.revision,c.canonical,c.digest,p.repository,d.brief::text AS brief,
             d.overrides::text AS overrides,d.selection::text AS selection,r.authoring
       FROM ticket_projection t
       JOIN configuration_revision c
@@ -770,8 +776,10 @@ async function overridesChangeTicket(
   return {
     resolution: {
       configuration: asCanonicalConfiguration(row.canonical),
-      configurationRepository:
+      configurationRepository: configurationRepositoryOf(
+        asConfigurationRevisionId(row.revision),
         row.repository === null ? undefined : asRepositoryId(row.repository),
+      ),
       authoring: parseDraftAuthoring(row.authoring),
       brief,
       selection: storedSelectionOf(row.selection),

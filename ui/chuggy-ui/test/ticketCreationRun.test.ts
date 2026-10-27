@@ -25,6 +25,7 @@ import {
 import {
   creationBinding,
   creationBody,
+  creationBootstrapRevision,
   creationDeclared,
   creationDraft,
   creationInitialization,
@@ -305,43 +306,64 @@ function declaringProject(
   return answering((_method, path) => {
     if (path.endsWith("/repositories")) return bindings(...bound);
     if (path.includes("/configurations")) return ok(page);
-    return path.endsWith("/bootstrap") && bootstrap !== undefined
+    return path.endsWith(bootstrapPath(scratch)) && bootstrap !== undefined
       ? bootstrap
       : initialization(path);
   });
 }
 
-const firstPageAndOffers = [
-  `GET ${partitionBase}/repositories`,
-  `GET ${partitionBase}/configurations`,
-  `GET ${partitionBase}/draft-initializations/bootstrap`,
-  `GET ${partitionBase}/draft-initializations/n-development`,
-  `GET ${partitionBase}/draft-initializations/n-sonnet`,
-];
+/** The path one repository's bootstrap initialization is read at. */
+function bootstrapPath(repository: string): string {
+  return `/draft-initializations/${encodeURIComponent(creationBootstrapRevision(repository))}`;
+}
+
+/** The walk's one page, and then each offer read in name order. */
+function firstPageAndOffers(...bootstraps: readonly string[]) {
+  return [
+    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/configurations`,
+    ...bootstraps.map(
+      (repository) => `GET ${partitionBase}${bootstrapPath(repository)}`,
+    ),
+    `GET ${partitionBase}/draft-initializations/n-development`,
+    `GET ${partitionBase}/draft-initializations/n-sonnet`,
+  ];
+}
 
 /**
  * One repository declaring, one bound declaring nothing long before any row
  * the first page holds, and three bound today. None that declares nothing is
- * waited on, so the walk is one page, and the bootstrap they share is read once.
+ * waited on, so the walk is one page, and each one's own bootstrap is read.
  */
-test("bindings that declare nothing, however old, cost the walk nothing and are offered the bootstrap", async () => {
+test("bindings that declare nothing, however old, cost the walk nothing and are offered their bootstraps", async () => {
   const today = "2026-10-07 08:00:00.5+00";
+  const common = "https://forge.test/kasofsk/chuggy-common";
+  const linux = "https://forge.test/kasofsk/chuggy-linux";
   const held = declaringProject(
     [
       imported(chuggy),
       bootstrapped(fabric, "2026-09-10 00:00:00+00"),
       bootstrapped(scratch, today),
-      bootstrapped("https://forge.test/kasofsk/chuggy-common", today),
-      bootstrapped("https://forge.test/kasofsk/chuggy-linux", today),
+      bootstrapped(common, today),
+      bootstrapped(linux, today),
     ],
     "2026-10-07 09:00:00.123456+00",
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(offeredOf(read)).toStrictEqual([
     false,
-    ["bootstrap", "development", "development-sonnet"],
+    [
+      "bootstrap · gdoteof/chuggy-fabric",
+      "bootstrap · gdoteof/scratch",
+      "bootstrap · kasofsk/chuggy-common",
+      "bootstrap · kasofsk/chuggy-linux",
+      "development",
+      "development-sonnet",
+    ],
   ]);
-  expect(held.calls).toStrictEqual(firstPageAndOffers);
+  expect(held.calls).toStrictEqual(
+    firstPageAndOffers(fabric, scratch, common, linux),
+  );
 });
 
 /**
@@ -363,7 +385,7 @@ test("a bootstrap older than everything the walk reads is still what a later bin
     false,
     ["bootstrap", "development", "development-sonnet"],
   ]);
-  expect(held.calls).toStrictEqual(firstPageAndOffers);
+  expect(held.calls).toStrictEqual(firstPageAndOffers(scratch));
 });
 
 /** Every offer is a request, so a repository declaring more than one read

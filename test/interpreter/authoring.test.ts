@@ -9,6 +9,8 @@ import {
   configurationRevisionSummary,
   draftPageLimitDefault,
   draftInitializationPolicy,
+  bootstrapConfigurationRevision,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   draftReleaseRefusalCode,
   encodeDraftAuthoring,
@@ -343,7 +345,7 @@ test("a release refuses a configuration imported from another repository", () =>
     draftReleaseReadiness(
       readyConfiguration,
       { checks: [], repository: firstRepository },
-      secondRepository,
+      { from: "Imported", repository: secondRepository },
       undefined,
     ),
     { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
@@ -353,7 +355,7 @@ test("a release refuses a configuration imported from another repository", () =>
       draftReleaseReadiness(
         readyConfiguration,
         { checks: [], repository },
-        repository,
+        { from: "Imported", repository },
         undefined,
       ).readiness,
       "Ready",
@@ -370,6 +372,42 @@ test("a release refuses a configuration imported from another repository", () =>
       "and an authored one releases from either binding, privileging neither",
     );
   }
+});
+
+test("a release under a bootstrap is refused for any repository but the one it was authored for", () => {
+  const revision = bootstrapConfigurationRevision(firstRepository);
+  const bootstrap = configurationRepositoryOf(revision, undefined);
+  assert.deepEqual(bootstrap, { from: "Bootstrap", revision });
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: secondRepository },
+      bootstrap,
+      undefined,
+    ),
+    { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
+  );
+  assert.equal(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: firstRepository },
+      bootstrap,
+      undefined,
+    ).readiness,
+    "Ready",
+  );
+  assert.equal(
+    configurationRepositoryOf(
+      asConfigurationRevisionId("bootstrap"),
+      undefined,
+    ),
+    undefined,
+    "the one bootstrap a project held before each repository had its own is any binding's, as any authored revision is",
+  );
+  assert.deepEqual(configurationRepositoryOf(revision, secondRepository), {
+    from: "Imported",
+    repository: secondRepository,
+  });
 });
 
 test("the configuration's own refusals are answered before the repository's", () => {
@@ -394,7 +432,7 @@ test("the configuration's own refusals are answered before the repository's", ()
         checks: [asBriefCheckLine("npm test", 0)],
         repository: firstRepository,
       },
-      secondRepository,
+      { from: "Imported", repository: secondRepository },
       undefined,
     ),
     uncommanded,

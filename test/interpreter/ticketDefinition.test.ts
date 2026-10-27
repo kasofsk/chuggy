@@ -533,7 +533,13 @@ test("a parked ticket whose brief and configuration do not pair is refused under
       "BriefNamesNoRepository",
     ],
     [
-      { ...paired, configurationRepository: asRepositoryId("repository-two") },
+      {
+        ...paired,
+        configurationRepository: {
+          from: "Imported",
+          repository: asRepositoryId("repository-two"),
+        },
+      },
       "ConfigurationFromAnotherRepository",
     ],
   ] as const;

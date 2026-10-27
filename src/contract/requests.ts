@@ -251,7 +251,7 @@ export const projectRepositoryRetirementSchema = z.strictObject({
 /**
  * One binding's configuration step asked for again. It carries the repository
  * and nothing else: the step reads the repository at its own head, and what it
- * may author is the project's one bootstrap.
+ * may author is that repository's own bootstrap.
  */
 export const projectRepositoryConfigureSchema = z.strictObject({
   repository: bodyIdentitySchema,

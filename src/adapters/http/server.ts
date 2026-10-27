@@ -1727,7 +1727,8 @@ function registerProjectRepositoryRetirement(
 /**
  * One binding's configuration step asked for again. It is a PUT for the reason
  * retirement is: a caller repeating it is answered what the first one left,
- * and the bootstrap it may author is one revision however many ask.
+ * and the bootstrap it may author is the repository's one revision however
+ * many ask.
  */
 function registerProjectRepositoryConfigurations(
   app: FastifyInstance,

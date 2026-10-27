@@ -42,9 +42,13 @@ import {
   latestReadyConfiguration,
   creationReleaseMutation,
 } from "../app/core/ticketCreation.ts";
-import type { TicketCreationForm } from "../app/core/ticketCreation.ts";
+import type {
+  CreationOffer,
+  TicketCreationForm,
+} from "../app/core/ticketCreation.ts";
 import {
   creationBinding,
+  creationBootstrapRevision,
   creationDigest,
   creationDraft,
   creationForm,
@@ -140,11 +144,33 @@ test("an offer the listing no longer holds is drawn without a commit", () => {
 });
 
 /**
- * The bootstrap arrives authored at the revision its name is, or imported from
- * a repository holding it under that name. Either way the form says what
- * its ticket is for, and under any other name it says nothing — an offer with
- * no row in the listing being known by the name it is offered under.
+ * The bootstrap arrives authored at a revision named for its repository or, a
+ * project's from before each repository had its own, at the revision its name
+ * is, or imported from a repository holding it under that name. Each way the
+ * form says what its ticket is for, and under any other name it says nothing —
+ * an offer with no row in the listing being known by its revision.
  */
+/** One repository's bootstrap as the form is offered it, beside another's. */
+const repositoryBootstrap: CreationOffer = {
+  ...creationOffer(
+    creationSummary(
+      creationBootstrapRevision("https://forge.test/kasofsk/chuggy-common"),
+      "Ready",
+    ),
+  ),
+  name: "bootstrap · kasofsk/chuggy-common",
+  listed: undefined,
+};
+
+test("a repository's bootstrap is drawn by the name it is offered under, its revision on hover", () => {
+  expect(creationConfigurationLabel(repositoryBootstrap)).toEqual({
+    text: "Configuration · bootstrap · kasofsk/chuggy-common",
+    title: creationBootstrapRevision(
+      "https://forge.test/kasofsk/chuggy-common",
+    ),
+  });
+});
+
 test("a form on the bootstrap says what its ticket is for, and no other does", () => {
   const line = "First ticket · writes this repository's configuration";
   const authored = creationOffer(creationSummary("bootstrap", "Ready"));
@@ -165,6 +191,7 @@ test("a form on the bootstrap says what its ticket is for, and no other does", (
     ),
   ).toBe(line);
   expect(creationBootstrapLine({ ...authored, listed: undefined })).toBe(line);
+  expect(creationBootstrapLine(repositoryBootstrap)).toBe(line);
   expect(creationBootstrapLine(creationOffer())).toBe(undefined);
   expect(creationBootstrapLine({ ...creationOffer(), listed: undefined })).toBe(
     undefined,

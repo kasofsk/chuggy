@@ -59,7 +59,7 @@ NOT READY at the pod's door.
 
 A repository is read the moment a project binds it: the API resolves where the
 repository's own HEAD points, imports the configurations it declares there, and
-where it declares none authors a **bootstrap** configuration for the project —
+where it declares none authors a **bootstrap** configuration for that repository —
 a catalog whose only evaluation is a review, and whose brief is to write the
 repository's own catalog in `.chug/configurations` beside whatever the first
 ticket asks for. The worker

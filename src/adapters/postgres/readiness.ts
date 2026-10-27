@@ -74,8 +74,11 @@ import {
 import { ticketCommandOf } from "../../interpreter/commandMap.ts";
 import {
   asCanonicalConfiguration,
+  asConfigurationRevisionId,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   parseDraftAuthoring,
+  type ConfigurationRepository,
 } from "../../interpreter/authoring.ts";
 import { ticketDefinitionMaterial } from "../../interpreter/ticketDefinition.ts";
 import {
@@ -217,6 +220,19 @@ async function releaseDraftRow(
   return found;
 }
 
+/** The repository the revision one release names releases from alone, where there is one. */
+function releaseDraftRepository(
+  command: DraftReleaseCommand,
+  found: ReleaseDraftRow,
+): ConfigurationRepository | undefined {
+  return configurationRepositoryOf(
+    asConfigurationRevisionId(command.configurationRevision),
+    found.provenance_repository === null
+      ? undefined
+      : asRepositoryId(found.provenance_repository),
+  );
+}
+
 /**
  * The release's own resolution, from the draft's authoring, the configuration
  * revision the command pinned with the overrides that revision names, the
@@ -243,9 +259,7 @@ async function releaseDraftSource(
   const readiness = draftReleaseReadiness(
     asCanonicalConfiguration(found.canonical),
     brief,
-    found.provenance_repository === null
-      ? undefined
-      : asRepositoryId(found.provenance_repository),
+    releaseDraftRepository(command, found),
     overrides,
     selection,
     authoring.prog,
