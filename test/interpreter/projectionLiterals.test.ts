@@ -2,14 +2,16 @@
  * Every literal the projection and the desk write for a reachable ticket is
  * the one the image before the ticket state wrote, over every golden's states.
  *
- * THE OLD LITERALS ARE PINNED, NOT RECOMPUTED. `projection-before-ticket-state.json`
- * was written by the image at f8998a22 from its own goldens: for every state,
- * each ticket's projected phase and escalation, the resume its escalation
- * offered, and the finalization generation its record held. This image's
- * goldens decide the same steps, so state `i` of each is the same ticket
- * history, and the table compares them row for row. The record kept its last
- * generation after an attempt ended where the state keeps none, so the
- * generation is compared wherever the state holds an attempt.
+ * THE OLD LITERALS ARE PINNED, NOT RECOMPUTED.
+ * `projection-before-ticket-state.json` was written by the image at f8998a22
+ * from its own goldens: for every state, each ticket's projected phase and
+ * escalation, the resume its escalation offered, and the finalization
+ * generation its record held. The goldens in
+ * `test/fixtures/corpus-before-dependency-change/` decide the same steps, so
+ * state `i` of each is the same ticket history, and the table compares them row
+ * for row. The record kept its last generation after an attempt ended where the
+ * state keeps none, so the generation is compared wherever the state holds an
+ * attempt.
  */
 
 import assert from "node:assert/strict";
@@ -40,7 +42,12 @@ const pinned = JSON.parse(
   ),
 ) as Readonly<Record<string, readonly (readonly OldRow[])[]>>;
 
-const goldenDir = join(import.meta.dirname, "..", "golden");
+const goldenDir = join(
+  import.meta.dirname,
+  "..",
+  "fixtures",
+  "corpus-before-dependency-change",
+);
 const names = (
   JSON.parse(readFileSync(join(goldenDir, "manifest.json"), "utf8")) as {
     goldens: readonly { name: string }[];

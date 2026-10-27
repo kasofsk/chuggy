@@ -38,7 +38,6 @@ const context: TicketYamlContext = {
   base: creationForm({ intent: "" }),
   offers: creationOffers,
   repositories: [],
-  dependenciesLocked: false,
   images: [],
 };
 
@@ -135,16 +134,12 @@ test("a key left out is empty, except landing, program and dependencies", () => 
   expect(read.form?.program).toStrictEqual(base.program);
 });
 
-test("a released ticket's dependencies may be written but not changed", () => {
+test("dependencies changed in the text read back as written, whatever the form held", () => {
   const base = creationForm({ dependencies: [7] });
-  const locked = { base, dependenciesLocked: true };
-  const text = ticketYamlOf(base, { ...context, ...locked });
-  expect(text).toContain("# fixed once the ticket was released");
-  expect(readForm(text, locked).form?.dependencies).toStrictEqual([7]);
-  expect(
-    readForm(text.replace("  - 7\n", "  - 7\n  - 8\n"), locked).problems[0]
-      ?.message,
-  ).toMatch(/cannot change/u);
+  const text = ticketYamlOf(base, { ...context, base });
+  const read = readForm(text.replace("  - 7\n", "  - 8\n  - 3\n"), { base });
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form?.dependencies).toStrictEqual([8, 3]);
 });
 
 /** The parser refuses a repeated key itself, so no reading of one is kept. */
@@ -240,7 +235,6 @@ const several: TicketYamlContext = {
   base: creationFormFrom([development, sonnet], []),
   offers: [development, sonnet],
   repositories: [],
-  dependenciesLocked: false,
   images: [],
 };
 

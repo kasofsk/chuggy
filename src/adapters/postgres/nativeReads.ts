@@ -58,6 +58,7 @@ import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import {
   asConfigurationRevisionId,
   parseDraftAuthoring,
+  type ReleaseAuthoring,
 } from "../../interpreter/authoring.ts";
 import {
   configurationVersionOf,
@@ -113,20 +114,18 @@ interface TicketProjectionRow {
   readonly released_at: string | null;
   readonly changed_at: string | null;
   /**
-   * The dependencies a Pending ticket's release event named that are
-   * themselves Revoked, ascending; a ticket in any other phase waits on
-   * nothing and names none. The release entry is the only place the edges are
-   * written down — no relation holds them — so it is read back through the
-   * same join the release instant comes from, and a release nobody can parse
-   * names none.
+   * The dependencies a Pending ticket's last update named, or else its
+   * release, that are themselves Revoked, ascending; a ticket in any other
+   * phase names none. The journal is the only place the edges are written
+   * down — no relation holds them — so they are read off those entries.
    */
   readonly revoked_dependencies: string[] | null;
   /**
-   * The same release's dependencies that are neither Done nor Revoked, as a
-   * JSON array of each one's ticket and phase, ascending: the wait that can
-   * still end beside `revoked_dependencies`, the wait that cannot. A Pending
-   * ticket alone names any, because a ticket in any other phase had every
-   * dependency Done before it was dispatched.
+   * The same dependencies that are neither Done nor Revoked, as a JSON array
+   * of each one's ticket and phase, ascending: the wait that can still end
+   * beside `revoked_dependencies`, the wait that cannot. A Pending ticket alone
+   * names any, because a ticket in any other phase had every dependency Done
+   * before it was dispatched.
    */
   readonly open_dependencies: string | null;
 }
@@ -621,14 +620,14 @@ async function readTicketsByActivity(
                     FROM ticket_projection d
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase='Revoked'
-                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                     AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                    AS revoked_dependencies,
                  (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                   ORDER BY d.ticket)
                     FROM ticket_projection d
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase NOT IN ('Done','Revoked')
-                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                     AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                    AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
@@ -650,6 +649,7 @@ async function readTicketsByActivity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
           LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
@@ -680,14 +680,14 @@ async function readTicketsByIdentity(
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies,
                (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                 ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase NOT IN ('Done','Revoked')
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                  AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
@@ -709,6 +709,7 @@ async function readTicketsByIdentity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
           LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
@@ -737,20 +738,19 @@ async function readTicketRow(
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
-               r.committed_at::text AS released_at,
-               c.committed_at::text AS changed_at,
+               r.committed_at::text AS released_at,c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies,
                (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                 ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase NOT IN ('Done','Revoked')
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                  AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN journal_entry c
@@ -767,6 +767,7 @@ async function readTicketRow(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN draft_revision m
@@ -789,6 +790,18 @@ async function readTicketRow(
            AND t.ticket=${ticket}`,
   );
   return found.rows[0];
+}
+
+/** The program and the dependencies a ticket's last release or update was resolved from. */
+function ticketReleasedAuthoring(
+  authoring: ReleaseAuthoring,
+): Pick<TicketResource, "program" | "dependencies"> {
+  return {
+    program: authoring.prog,
+    dependencies: [...authoring.deps]
+      .sort((left, right) => left - right)
+      .map((dependency) => asTicketId(dependency)),
+  };
 }
 
 /** One ticket with its brief and its run totals, which a project's page carries neither of. */
@@ -819,7 +832,7 @@ async function readTicket(
     ...(selection === undefined ? {} : { selection }),
     ...(row.released_authoring === null
       ? {}
-      : { program: parseDraftAuthoring(row.released_authoring).prog }),
+      : ticketReleasedAuthoring(parseDraftAuthoring(row.released_authoring))),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }

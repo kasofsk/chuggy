@@ -112,7 +112,7 @@ module ticket_domain {
     | ReportTaskTerminal(TaskTerminalReport)
     | ReportFinalizationResult(FinalizationResultReport)
 
-  type IncompleteDependencies = {
+  type RefusedDependencies = {
     ticket: int,
     dependencies: Set[int]
   }
@@ -136,14 +136,15 @@ module ticket_domain {
 
   type TicketRefusal =
     TicketAlreadyExists(int)
-    | DependenciesNotFound(IncompleteDependencies)
+    | DependenciesNotFound(RefusedDependencies)
+    | DependenciesRevoked(RefusedDependencies)
+    | DependencyCycle(RefusedDependencies)
     | SelfDependency(int)
     | TicketNotFound(int)
     | TicketNotPending(int)
     | TicketIdentityMismatch(int)
     | TicketRevisionStale(StaleRevision)
-    | TicketDependenciesChanged(int)
-    | DependenciesIncomplete(IncompleteDependencies)
+    | DependenciesIncomplete(RefusedDependencies)
     | TicketNotRevocable(int)
     | TicketNotResumable(int)
     | TaskNotCurrent(CurrentTaskRefusal)
@@ -475,23 +476,43 @@ module ticket_domain {
         task: task,
       })))
 
+  pure def decideDependencies(
+    graph: TicketGraph,
+    ticketId: int,
+    added: Set[int],
+    accepted: TicketDecision,
+  ): TicketDecision =
+    if (added.contains(ticketId)) refused(SelfDependency(ticketId))
+    else {
+      val missing = added.filter(dependency =>
+        not(graph.tickets.keys().contains(dependency)))
+      val revoked = added.filter(dependency =>
+        not(missing.contains(dependency))
+        and graph.tickets.get(dependency).state == Revoked)
+      val cyclic = added.filter(dependency =>
+        not(missing.contains(dependency))
+        and dependencyClosure(graph, dependency).contains(ticketId))
+      if (missing != Set())
+        refused(DependenciesNotFound({ ticket: ticketId, dependencies: missing }))
+      else if (revoked != Set())
+        refused(DependenciesRevoked({ ticket: ticketId, dependencies: revoked }))
+      else if (cyclic != Set())
+        refused(DependencyCycle({ ticket: ticketId, dependencies: cyclic }))
+      else accepted
+    }
+
   pure def decideCreate(
     graph: TicketGraph,
     definition: ReleasedTicket,
   ): TicketDecision =
     if (graph.tickets.keys().contains(definition.id))
       refused(TicketAlreadyExists(definition.id))
-    else if (definition.dependencies.contains(definition.id))
-      refused(SelfDependency(definition.id))
-    else {
-      val missing = definition.dependencies.filter(dependency =>
-        not(graph.tickets.keys().contains(dependency)))
-      if (missing != Set()) refused(DependenciesNotFound({
-        ticket: definition.id,
-        dependencies: missing,
-      }))
-      else decided(TicketCreated(definition), [])
-    }
+    else decideDependencies(
+      graph,
+      definition.id,
+      definition.dependencies,
+      decided(TicketCreated(definition), []),
+    )
 
   pure def decideUpdate(
     graph: TicketGraph,
@@ -515,13 +536,16 @@ module ticket_domain {
           expected: update.expectedRevision,
           current: ticket.revision,
         }))
-      else if (update.definition.dependencies != ticket.definition.dependencies)
-        refused(TicketDependenciesChanged(ticketId))
-      else decided(TicketUpdated({
-        ticket: ticketId,
-        revision: ticket.revision + 1,
-        definition: update.definition,
-      }), [])
+      else decideDependencies(
+        graph,
+        ticketId,
+        update.definition.dependencies.exclude(ticket.definition.dependencies),
+        decided(TicketUpdated({
+          ticket: ticketId,
+          revision: ticket.revision + 1,
+          definition: update.definition,
+        }), []),
+      )
     }
   }
 

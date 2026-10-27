@@ -530,8 +530,10 @@ module chuggy_refinement {
   action actorUpdateTicket = all {
     revisableTickets.size() > 0,
     nondet j = revisableTickets.oneOf()
+    nondet dependencies_ = redependableIn(graph, j).powerset().oneOf()
     nondet stages = validPlans.oneOf()
-    journalStep(updateOf(graph.tickets.get(j), stages), unaskedDisposition)
+    journalStep(updateOf(graph.tickets.get(j), dependencies_, stages),
+      unaskedDisposition)
   }
   action actorRevoke = all {
     revocableTickets.size() > 0,

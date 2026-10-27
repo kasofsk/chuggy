@@ -141,6 +141,14 @@ export const ticketRefusals: Readonly<
     type: "DependenciesNotFound",
     value: { ticket: 3, dependencies: new Set([7, 5]) },
   },
+  DependenciesRevoked: {
+    type: "DependenciesRevoked",
+    value: { ticket: 3, dependencies: new Set([6]) },
+  },
+  DependencyCycle: {
+    type: "DependencyCycle",
+    value: { ticket: 3, dependencies: new Set([4, 8]) },
+  },
   SelfDependency: { type: "SelfDependency", value: 3 },
   TicketNotFound: { type: "TicketNotFound", value: 3 },
   TicketNotPending: { type: "TicketNotPending", value: 3 },
@@ -149,7 +157,6 @@ export const ticketRefusals: Readonly<
     type: "TicketRevisionStale",
     value: { ticket: 3, expected: 2, current: 4 },
   },
-  TicketDependenciesChanged: { type: "TicketDependenciesChanged", value: 3 },
   DependenciesIncomplete: {
     type: "DependenciesIncomplete",
     value: { ticket: 3, dependencies: new Set([2]) },

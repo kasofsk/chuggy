@@ -200,7 +200,6 @@ function Program(
 export function TicketCreationAdvanced(
   props: FormEdit & {
     readonly initialization: DraftInitializationResponse;
-    readonly dependenciesLocked?: boolean;
     /** Whether the reader may draw a program that runs less than its plan; absent, they may. */
     readonly maySkipPlanned?: boolean;
   },
@@ -209,14 +208,12 @@ export function TicketCreationAdvanced(
   return (
     <Panel title="Advanced" collapsible={{ open: false }}>
       <div className="grid gap-2">
-        {props.dependenciesLocked === true ? null : (
-          <Dependencies
-            form={form}
-            onChange={onChange}
-            candidates={initialization.dependencyCandidates}
-            truncated={initialization.dependencyCandidatesTruncated}
-          />
-        )}
+        <Dependencies
+          form={form}
+          onChange={onChange}
+          candidates={initialization.dependencyCandidates}
+          truncated={initialization.dependencyCandidatesTruncated}
+        />
         <Program
           form={form}
           onChange={onChange}

@@ -2359,20 +2359,22 @@ test("an update naming a draft revision its author has since moved past is refus
   );
 });
 
-test("a released draft's dependencies are locked at the door", async () => {
+test("a released draft's dependencies are revised at the door like the rest of it", async () => {
   const fixture = await draftFixture();
-  await releaseFixtureDraft(fixture, "dependencies-locked");
+  await releaseFixtureDraft(fixture, "dependencies-revised");
+  const revised = await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: fixture.revision,
+    authoring: { ...plainAuthoring, deps: new Set([7]) },
+    brief: postgresHarnessBriefIn(fixture.repository),
+  });
+  assert.equal(revised.revised, "Revised");
   assert.deepEqual(
-    await fixture.store.reviseDraft({
-      partition: fixture.partition,
-      authority,
-      ticket: fixture.draft.ticket,
-      expectedVersion: 1,
-      configurationRevision: fixture.revision,
-      authoring: { ...plainAuthoring, deps: new Set([7]) },
-      brief: postgresHarnessBriefIn(fixture.repository),
-    }),
-    { revised: "DependenciesLocked" },
+    revised.revised === "Revised" ? revised.draft.authoring.deps : undefined,
+    new Set([7]),
   );
 });
 

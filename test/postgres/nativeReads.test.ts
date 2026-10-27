@@ -839,6 +839,85 @@ test("revoked dependencies are ascending in the detail read and in both pages", 
   }
 });
 
+/** An update of `ticket` to its second revision, journalled at `seq` and naming `deps`. */
+function seededUpdate(
+  seq: number,
+  ticket: number,
+  revision: number,
+  deps: readonly number[],
+): string {
+  const written = JSON.parse(
+    encodeEntry({
+      seq,
+      event: {
+        type: "TicketUpdated",
+        value: { ticket, revision, definition: plainDefinitionOf(ticket) },
+      },
+    }),
+  ) as { event: { value: { definition: { dependencies: number[] } } } };
+  written.event.value.definition.dependencies = [...deps];
+  return JSON.stringify(written);
+}
+
+/** Every read of ticket 4's waits: the detail read and both pages, which must agree. */
+async function waitsOfFour(partition: Partition): Promise<readonly unknown[]> {
+  const reads = postgresNativeReads(subject.pool);
+  const detail = await reads.ticket(partition, id(4));
+  const pages = await Promise.all(
+    (["Identity", "RecentActivity"] as const).map(async (order) => {
+      const page = await reads.project(partition, { limit: 8, order });
+      return page.result === "Found"
+        ? page.project.tickets.find((each) => each.ticket === 4)
+        : undefined;
+    }),
+  );
+  return [detail, ...pages].map((each) => ({
+    revoked: each?.revokedDependencies,
+    open: each?.openDependencies,
+  }));
+}
+
+test("a Pending ticket's waits follow its last update, not its release", async () => {
+  const partition = await seedRevokedDependencies("native-updated-waits");
+  const released = (
+    await postgresNativeReads(subject.pool).ticket(partition, id(4))
+  )?.releasedAt;
+  const waits = async (
+    seq: number,
+    deps: readonly number[],
+  ): Promise<readonly unknown[]> => {
+    await subject.harness.query(
+      "UPDATE project SET head=$3 WHERE tenant=$1 AND project=$2",
+      [partition.tenant, partition.project, seq],
+    );
+    await seedEntry(
+      partition,
+      `native-updated-waits-${String(seq)}`,
+      seq,
+      seededUpdate(seq, 4, seq - 5, deps),
+    );
+    return waitsOfFour(partition);
+  };
+  const each = (revoked: readonly number[], open: readonly unknown[]) =>
+    [0, 1, 2].map(() => ({ revoked, open }));
+  assert.deepEqual(
+    await waits(7, [3]),
+    each([], [{ ticket: 3, phase: "Work" }]),
+    "the update drops both revoked dependencies for the Work one",
+  );
+  assert.deepEqual(
+    await waits(8, [5, 1]),
+    each([1], []),
+    "the later update is the one read, keeping a revoked one beside a Done one",
+  );
+  assert.equal(
+    (await postgresNativeReads(subject.pool).ticket(partition, id(4)))
+      ?.releasedAt,
+    released,
+    "the release instant is still the release's",
+  );
+});
+
 /**
  * Ticket 6 stays Pending on one dependency in each phase, named descending so
  * an answer in release order is told apart from the ascending one the read

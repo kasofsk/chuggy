@@ -359,8 +359,8 @@ export const ticketResponseSchema = z.object({
   /**
    * Which of this ticket's dependencies their own authors revoked, ascending.
    * It is empty for every ticket but a Pending one waiting on such a
-   * dependency: nothing ever completes that dependency, so the wait is over
-   * and the only exit is revoking this ticket too.
+   * dependency: nothing ever completes that dependency, so the wait ends only
+   * when an update drops it or this ticket is revoked too.
    */
   revokedDependencies: page(ticketNumberSchema),
   /**
@@ -398,6 +398,12 @@ export const ticketResponseSchema = z.object({
    * own read carries it, and only where a draft revision records it.
    */
   program: authoringResponseSchema.shape.program.optional(),
+  /**
+   * The dependencies that same release or update named, ascending, which its
+   * draft may since have been revised past. Only the ticket's own read carries
+   * it, and only where a draft revision records it.
+   */
+  dependencies: page(ticketNumberSchema).optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
@@ -876,6 +882,14 @@ const ticketRefusalValueSchemas = {
     ticket: ticketNumberSchema,
     dependencies: page(ticketNumberSchema).min(1),
   }),
+  DependenciesRevoked: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
+  DependencyCycle: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
   SelfDependency: ticketNumberSchema,
   TicketNotFound: ticketNumberSchema,
   TicketNotPending: ticketNumberSchema,
@@ -885,7 +899,6 @@ const ticketRefusalValueSchemas = {
     expected: ticketNumberSchema,
     current: ticketNumberSchema,
   }),
-  TicketDependenciesChanged: ticketNumberSchema,
   DependenciesIncomplete: z.strictObject({
     ticket: ticketNumberSchema,
     dependencies: page(ticketNumberSchema).min(1),
@@ -932,12 +945,13 @@ function operationTicketRefusedSchema<Code extends OperationTicketRefusalCode>(
 const operationRefusedResponseSchema = z.discriminatedUnion("code", [
   operationTicketRefusedSchema("TicketAlreadyExists"),
   operationTicketRefusedSchema("DependenciesNotFound"),
+  operationTicketRefusedSchema("DependenciesRevoked"),
+  operationTicketRefusedSchema("DependencyCycle"),
   operationTicketRefusedSchema("SelfDependency"),
   operationTicketRefusedSchema("TicketNotFound"),
   operationTicketRefusedSchema("TicketNotPending"),
   operationTicketRefusedSchema("TicketIdentityMismatch"),
   operationTicketRefusedSchema("TicketRevisionStale"),
-  operationTicketRefusedSchema("TicketDependenciesChanged"),
   operationTicketRefusedSchema("DependenciesIncomplete"),
   operationTicketRefusedSchema("TicketNotRevocable"),
   operationTicketRefusedSchema("TicketNotResumable"),

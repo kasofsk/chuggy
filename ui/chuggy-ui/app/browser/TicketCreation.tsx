@@ -614,33 +614,12 @@ export function useMounted(): { readonly current: boolean } {
   return mounted;
 }
 
-/** A released ticket's dependencies, drawn and not offered, because an update
- * that moved them would be refused. */
-function LockedDependencies(props: {
-  readonly dependencies: readonly number[];
-}): ReactNode {
-  return (
-    <div className="creation-row">
-      <span>Dependencies</span>
-      <p>
-        {props.dependencies.length === 0
-          ? "None"
-          : props.dependencies.map((held) => `#${String(held)}`).join(", ")}
-      </p>
-      <span className="creation-hint text-ink-3 text-xs">
-        Fixed once released
-      </span>
-    </div>
-  );
-}
-
 interface CreationFieldsProps extends FormEdit {
   readonly faults: readonly CreationFault[];
   readonly offers: readonly CreationOffer[];
   /** Whether some offer may be missing from the ones given. */
   readonly partial?: boolean;
   readonly repositories: readonly ProjectRepositoryResponse[];
-  readonly dependenciesLocked?: boolean;
   /** The branch a screen that proposes one sends for a box left empty. */
   readonly branchProposed?: string | undefined;
   readonly api: CreationImagesApi;
@@ -689,15 +668,11 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
           <Fault field="target" faults={faults} />
         </>
       )}
-      {props.dependenciesLocked === true ? (
-        <LockedDependencies dependencies={form.dependencies} />
-      ) : null}
       {drawn === undefined ? null : (
         <TicketCreationAdvanced
           form={form}
           onChange={onChange}
           initialization={drawn.initialization}
-          dependenciesLocked={props.dependenciesLocked === true}
           maySkipPlanned={props.standing?.maySkipPlanned !== false}
         />
       )}
@@ -968,7 +943,6 @@ export function CreationForm(props: CreationFormProps): ReactNode {
         onForm={held.changed}
         offers={offers}
         repositories={repositories}
-        dependenciesLocked={false}
         assemble={creationAssembler(offers, repositories, standing)}
         proposed={creationFormProposed}
         storeKey={storeKey}

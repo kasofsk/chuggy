@@ -412,6 +412,15 @@ const toDependent: readonly TicketCommand[] = [
   ...toPending,
   createTicketCommand(plainDefinitionOf(2, new Set([1]))),
 ];
+const toRevoked: readonly TicketCommand[] = [
+  ...toPending,
+  revokeTicketCommand(id(1)),
+];
+const toStranded: readonly TicketCommand[] = [
+  ...toDependent,
+  createTicketCommand(plainDefinitionOf(3)),
+  revokeTicketCommand(id(3)),
+];
 
 const pending = graphAfter(toPending);
 const working = graphAfter(toWorking);
@@ -419,6 +428,8 @@ const finalizing = graphAfter(toFinalizing);
 const done = graphAfter(toDone);
 const escalated = graphAfter(toEscalated);
 const dependent = graphAfter(toDependent);
+const revoked = graphAfter(toRevoked);
+const stranded = graphAfter(toStranded);
 
 interface Answer {
   readonly check: string;
@@ -454,6 +465,12 @@ const answers: readonly Answer[] = [
     at: pending,
     command: createTicketCommand(plainDefinitionOf(2, new Set([3]))),
     answer: "DependenciesNotFound",
+  },
+  {
+    check: "CreateTicket/revoked",
+    at: revoked,
+    command: createTicketCommand(plainDefinitionOf(2, new Set([1]))),
+    answer: "DependenciesRevoked",
   },
   {
     check: "RevokeTicket/found",
@@ -498,10 +515,32 @@ const answers: readonly Answer[] = [
     answer: "TicketRevisionStale",
   },
   {
+    check: "UpdateTicket/self",
+    at: pending,
+    command: updateTicketCommand(id(1), 1, plainDefinitionOf(1, new Set([1]))),
+    answer: "SelfDependency",
+  },
+  {
     check: "UpdateTicket/dependencies",
+    at: pending,
+    command: updateTicketCommand(id(1), 1, plainDefinitionOf(1, new Set([2]))),
+    answer: "DependenciesNotFound",
+  },
+  {
+    check: "UpdateTicket/revoked",
+    at: stranded,
+    command: updateTicketCommand(
+      id(2),
+      1,
+      plainDefinitionOf(2, new Set([1, 3])),
+    ),
+    answer: "DependenciesRevoked",
+  },
+  {
+    check: "UpdateTicket/cycle",
     at: dependent,
-    command: updateTicketCommand(id(2), 1, plainDefinitionOf(2)),
-    answer: "TicketDependenciesChanged",
+    command: updateTicketCommand(id(1), 1, plainDefinitionOf(1, new Set([2]))),
+    answer: "DependencyCycle",
   },
   {
     check: "DispatchTicket/commandValid/source",
@@ -641,6 +680,20 @@ test("an update at the revision held, keeping its dependencies, is accepted", ()
   assert.equal(
     answerAt(
       dependent,
+      updateTicketCommand(id(2), 1, plainDefinitionOf(2, new Set([1]))),
+    ),
+    "Accepted",
+  );
+});
+
+test("an update dropping a dependency, or keeping a revoked one, is accepted", () => {
+  assert.equal(
+    answerAt(dependent, updateTicketCommand(id(2), 1, plainDefinitionOf(2))),
+    "Accepted",
+  );
+  assert.equal(
+    answerAt(
+      graphAfter([...toDependent, revokeTicketCommand(id(1))]),
       updateTicketCommand(id(2), 1, plainDefinitionOf(2, new Set([1]))),
     ),
     "Accepted",

@@ -104,6 +104,23 @@ export function decodeLastDecision(value: ItfValue): LastDecision {
   return decodeLastDecisionValue(itfToWire(value));
 }
 
+/** A step's decided event and obligations, or none for a step that decided nothing; a refusal is passed over undecoded, so one under a retired code reads too. */
+export function decodeDecidedStep(
+  value: ItfValue,
+): Extract<LastDecision, { readonly type: "Decided" }>["value"] | undefined {
+  if (
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    value.kind === "variant" &&
+    value.tag === "Refused"
+  )
+    return undefined;
+  const last = decodeLastDecision(value);
+  return last !== "NoDecision" && last.type === "Decided"
+    ? last.value
+    : undefined;
+}
+
 /** A drawn ticket id, branded at the boundary it enters through. */
 export function decodeTicketId(value: ItfValue): TicketId {
   return asTicketId(Number(itfToWire(value)));
@@ -322,7 +339,7 @@ export function encodeTicketCommand(command: TicketCommand): ItfValue {
   }
 }
 
-/** A refusal, whichever of the thirteen arms it is, with its payload. */
+/** A refusal, whichever arm it is, with its payload. */
 export function encodeTicketRefusal(refusal: TicketRefusal): ItfValue {
   switch (refusal.type) {
     case "TicketAlreadyExists":
@@ -330,11 +347,12 @@ export function encodeTicketRefusal(refusal: TicketRefusal): ItfValue {
     case "TicketNotFound":
     case "TicketNotPending":
     case "TicketIdentityMismatch":
-    case "TicketDependenciesChanged":
     case "TicketNotRevocable":
     case "TicketNotResumable":
       return encodeVariant(refusal.type, encodeInt(refusal.value));
     case "DependenciesNotFound":
+    case "DependenciesRevoked":
+    case "DependencyCycle":
     case "DependenciesIncomplete":
       return encodeVariant(
         refusal.type,

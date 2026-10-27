@@ -454,13 +454,67 @@ module ticket_tests {
         expected: 9,
         current: 1,
       }))))
-      .then(submit(updateTo(2, 1, revised(2, Set()))))
-      .then(check(lastDecision == TicketRefused(TicketDependenciesChanged(2))))
+      .then(submit(updateTo(2, 1, revised(2, Set(1, 2)))))
+      .then(check(lastDecision == TicketRefused(SelfDependency(2))))
       .then(check(ticketRevision(2, 1) and ticketDefinition(2, released(2, Set(1)))))
       .then(submit(dispatch(1)))
       .then(submit(updateTo(1, 1, revised(1, Set()))))
       .then(check(lastDecision == TicketRefused(TicketNotPending(1))))
       .then(check(ticketDefinition(1, released(1, Set()))))
+  }
+
+  run dependencyChangeTest = {
+    init
+      .then(submit(CreateTicket(released(1, Set()))))
+      .then(submit(CreateTicket(released(2, Set(1)))))
+      .then(submit(CreateTicket(released(3, Set()))))
+      .then(submit(updateTo(2, 1, revised(2, Set(3)))))
+      .then(check(ticketRevision(2, 2) and ticketDefinition(2, revised(2, Set(3)))))
+      .then(submit(updateTo(3, 1, revised(3, Set(2)))))
+      .then(check(lastDecision == TicketRefused(DependencyCycle({
+        ticket: 3,
+        dependencies: Set(2),
+      }))))
+      .then(submit(CreateTicket(released(4, Set(2)))))
+      .then(submit(updateTo(2, 2, released(2, Set(3, 4)))))
+      .then(check(lastDecision == TicketRefused(DependencyCycle({
+        ticket: 2,
+        dependencies: Set(4),
+      }))))
+      .then(submit(updateTo(2, 2, released(2, Set(3, 9)))))
+      .then(check(lastDecision == TicketRefused(DependenciesNotFound({
+        ticket: 2,
+        dependencies: Set(9),
+      }))))
+      .then(check(ticketRevision(2, 2) and ticketDefinition(2, revised(2, Set(3)))))
+      .then(submit(CreateTicket(released(5, Set()))))
+      .then(submit(updateTo(3, 1, revised(3, Set(5)))))
+      .then(check(ticketRevision(3, 2) and ticketDefinition(3, revised(3, Set(5)))))
+  }
+
+  run revokedDependencyTest = {
+    init
+      .then(submit(CreateTicket(released(1, Set()))))
+      .then(submit(CreateTicket(released(2, Set(1)))))
+      .then(submit(CreateTicket(released(3, Set()))))
+      .then(submit(RevokeTicket(1)))
+      .then(submit(CreateTicket(released(4, Set(1)))))
+      .then(check(lastDecision == TicketRefused(DependenciesRevoked({
+        ticket: 4,
+        dependencies: Set(1),
+      }))))
+      .then(submit(updateTo(3, 1, revised(3, Set(1)))))
+      .then(check(lastDecision == TicketRefused(DependenciesRevoked({
+        ticket: 3,
+        dependencies: Set(1),
+      }))))
+      .then(submit(updateTo(2, 1, revised(2, Set(1)))))
+      .then(check(ticketRevision(2, 2) and ticketDefinition(2, revised(2, Set(1)))))
+      .then(check(not(isReady(graph, 2))))
+      .then(submit(updateTo(2, 2, released(2, Set()))))
+      .then(check(ticketRevision(2, 3) and isReady(graph, 2)))
+      .then(submit(dispatch(2)))
+      .then(check(ticketWorkCycle(2, 1)))
   }
 
   run dispatchUsesTheRevisedDefinitionTest = {
@@ -904,6 +958,21 @@ module ticket_tests {
     submit(updateTo(1, expected, revised(1, Set())))
   }
 
+  action updateOneOnTwo = {
+    val expected =
+      if (graph.tickets.keys().contains(1)) graph.tickets.get(1).revision else 1
+    submit(updateTo(1, expected, revised(1, Set(2))))
+  }
+
+  action updateTwo(dependencies: Set[int]): bool = {
+    val expected =
+      if (graph.tickets.keys().contains(2)) graph.tickets.get(2).revision else 1
+    submit(updateTo(2, expected, revised(2, dependencies)))
+  }
+
+  action updateTwoFree = updateTwo(Set())
+  action updateTwoOnOne = updateTwo(Set(1))
+
   action dispatchOne = submit(dispatch(1))
   action dispatchTwo = submit(dispatch(2))
   action revokeOne = submit(RevokeTicket(1))
@@ -926,6 +995,9 @@ module ticket_tests {
     createOne,
     createTwo,
     updateOne,
+    updateOneOnTwo,
+    updateTwoFree,
+    updateTwoOnOne,
     dispatchOne,
     dispatchTwo,
     revokeOne,

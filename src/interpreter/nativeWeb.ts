@@ -428,6 +428,8 @@ export interface TicketResource {
    * from, which is what its evaluation runs; its draft may since hold another.
    */
   readonly program?: ReleaseAuthoringProgram;
+  /** The dependencies that same release or update named, ascending; its draft may since name others. */
+  readonly dependencies?: readonly TicketId[];
   readonly runTotals?: RunTotals;
 }
 

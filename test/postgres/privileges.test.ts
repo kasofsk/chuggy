@@ -26,6 +26,7 @@ import {
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
+  ticketUpdatedDependenciesFunction,
   ticketRunnerLossFunction,
   ticketRunStepFailureFunction,
   ticketServiceRole,
@@ -943,6 +944,15 @@ test("only the API reads the failed run step an escalated ticket stopped at", as
   assert.deepEqual(
     await changeLogExecutors(
       `${ticketRunStepFailureFunction}(text,text,bigint)`,
+    ),
+    [apiRole],
+  );
+});
+
+test("only the API reads the dependencies a ticket's last update named", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${ticketUpdatedDependenciesFunction}(text,text,bigint)`,
     ),
     [apiRole],
   );

@@ -108,7 +108,6 @@ export interface TicketYamlContext {
   readonly base: TicketCreationForm;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
-  readonly dependenciesLocked: boolean;
   /** The project images this screen knows exist, which are the only ones the
    * text may name. */
   readonly images: readonly string[];
@@ -136,8 +135,6 @@ export interface TicketYamlReading {
   readonly problems: readonly TicketYamlProblem[];
   readonly keys: ReadonlyMap<string, TicketYamlSpan>;
 }
-
-const ticketYamlLockedNote = " fixed once the ticket was released";
 
 /** What the named configuration draws the form under, as it reads under the
  * form's selection, a name nothing offers drawing it under nothing. */
@@ -290,13 +287,6 @@ export function ticketYamlOf(
       if (isMap(pair.value))
         pair.value.comment =
           ticketYamlWorkloadUnset(pair.value.toJSON()) ?? null;
-  if (context.dependenciesLocked && isMap(document.contents)) {
-    const pair = document.contents.items.find(
-      (item) => isScalar(item.key) && item.key.value === "dependencies",
-    );
-    if (pair !== undefined && isScalar(pair.key))
-      pair.key.commentBefore = ticketYamlLockedNote;
-  }
   return document.toString({ lineWidth: 0, nullStr: "" });
 }
 
@@ -621,13 +611,6 @@ function ticketYamlWorkloadsOf(
   return ticketYamlTook(held);
 }
 
-function ticketYamlSameNumbers(
-  a: readonly number[],
-  b: readonly number[],
-): boolean {
-  return a.length === b.length && a.every((value, index) => value === b[index]);
-}
-
 type TicketYamlApplied = TicketYamlTook<TicketCreationForm>;
 
 function ticketYamlInto<T>(
@@ -676,16 +659,10 @@ function ticketYamlConfiguredApplied(
       ...form,
       overrides,
     }));
-  const read = ticketYamlDependenciesOf(value);
-  if (
-    read.took === "Value" &&
-    context.dependenciesLocked &&
-    !ticketYamlSameNumbers(read.value, context.base.dependencies)
-  )
-    return ticketYamlRefused(
-      "a released ticket's dependencies cannot change; put back what it had",
-    );
-  return ticketYamlInto(read, (dependencies) => ({ ...form, dependencies }));
+  return ticketYamlInto(ticketYamlDependenciesOf(value), (dependencies) => ({
+    ...form,
+    dependencies,
+  }));
 }
 
 /** Each key's reading, applied to the form it is building. The configuration
@@ -970,22 +947,17 @@ type TicketYamlDescribed = Omit<TicketYamlKey, "key">;
 
 /** What the keys a configuration decides mean under the one the form names. */
 function ticketYamlConfiguredDescribed(
-  context: TicketYamlContext,
   drawn: DraftInitializationResponse | undefined,
 ): Readonly<Record<string, TicketYamlDescribed>> {
   if (drawn === undefined) return {};
   return {
     checks: { hint: creationFaultSentence("checks"), values: [] },
     dependencies: {
-      hint: context.dependenciesLocked
-        ? `the tickets this one waits for,${ticketYamlLockedNote}`
-        : "the tickets this one waits for, by number",
-      values: context.dependenciesLocked
-        ? []
-        : drawn.dependencyCandidates.map((candidate) => ({
-            label: String(candidate),
-            detail: `ticket ${String(candidate)}`,
-          })),
+      hint: "the tickets this one waits for, by number",
+      values: drawn.dependencyCandidates.map((candidate) => ({
+        label: String(candidate),
+        detail: `ticket ${String(candidate)}`,
+      })),
     },
     program: {
       hint: `the evaluation program: at most ${String(drawn.choices.programStagesMax)} stages, each judged by the evaluators it counts`,
@@ -1062,7 +1034,7 @@ function ticketYamlDescribed(
       })),
     },
     target: { hint: creationTargetBranchHint(form.landingMode), values: [] },
-    ...ticketYamlConfiguredDescribed(context, drawn),
+    ...ticketYamlConfiguredDescribed(drawn),
   };
 }
 

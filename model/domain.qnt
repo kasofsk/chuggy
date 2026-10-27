@@ -378,12 +378,13 @@ module chuggy_domain {
   pure def refusalName(reason: TicketRefusal): str = match reason {
     | TicketAlreadyExists(_) => "TicketAlreadyExists"
     | DependenciesNotFound(_) => "DependenciesNotFound"
+    | DependenciesRevoked(_) => "DependenciesRevoked"
+    | DependencyCycle(_) => "DependencyCycle"
     | SelfDependency(_) => "SelfDependency"
     | TicketNotFound(_) => "TicketNotFound"
     | TicketNotPending(_) => "TicketNotPending"
     | TicketIdentityMismatch(_) => "TicketIdentityMismatch"
     | TicketRevisionStale(_) => "TicketRevisionStale"
-    | TicketDependenciesChanged(_) => "TicketDependenciesChanged"
     | DependenciesIncomplete(_) => "DependenciesIncomplete"
     | TicketNotRevocable(_) => "TicketNotRevocable"
     | TicketNotResumable(_) => "TicketNotResumable"
@@ -520,25 +521,39 @@ module chuggy_domain {
     not(c.tickets.keys().contains(j))
   }
 
-  /// Tickets a release draws its dependencies from: anything but a tombstone.
-  /// decideCreate refuses no dependency that exists, but a Revoked ticket
-  /// never becomes Done, so the author the machine models never writes a
-  /// ticket that can never run.
+  /// Tickets a release draws its dependencies from: anything but a
+  /// tombstone, which decideCreate refuses (DependenciesRevoked).
   pure def dependableIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(k => c.tickets.get(k).state != Revoked)
+
+  /// The tombstones: the dependencies no create or update may add.
+  pure def revokedIn(c: TicketGraph): Set[int] =
+    c.tickets.keys().filter(k => c.tickets.get(k).state == Revoked)
 
   /// Tickets an update may be drawn for: the Pending ones (decideUpdate).
   pure def revisablesIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(j => isPending(c.tickets.get(j).state))
 
+  /// Tickets an update of j draws its dependencies from: those it has, a
+  /// tombstone among them, and any other it may add. One that reaches j is
+  /// among them, and decideUpdate refuses it (DependencyCycle).
+  pure def redependableIn(c: TicketGraph, j: int): Set[int] =
+    c.tickets.get(j).definition.dependencies
+      .union(dependableIn(c).exclude(Set(j)))
+
+  /// The tickets that reach j: adding any of them to j closes a cycle.
+  pure def dependentsIn(c: TicketGraph, j: int): Set[int] =
+    c.tickets.keys().filter(k => dependencyClosure(c, k).contains(j))
+
   /// THE UPDATE AN AUTHOR SENDS for a ticket: its next revision, written
-  /// against the revision it holds, keeping its dependencies, over the plan
-  /// the author drew.
-  pure def updateOf(jb: Ticket, stages: List[StageDefinition]): TicketCommand =
+  /// against the revision it holds, over the dependencies and the plan the
+  /// author drew.
+  pure def updateOf(
+      jb: Ticket, dependencies_: Set[int],
+      stages: List[StageDefinition]): TicketCommand =
     val j = jb.definition.id
     UpdateTicket({ ticket: j, expectedRevision: jb.revision,
-      definition: revisedTicketOf(j, jb.revision + 1,
-        jb.definition.dependencies, stages) })
+      definition: revisedTicketOf(j, jb.revision + 1, dependencies_, stages) })
 
   /// Every non-terminal short of Finalization may be revoked.
   pure def revocablesIn(c: TicketGraph): Set[int] =
@@ -617,10 +632,11 @@ module chuggy_domain {
 
   /// THE UPDATES AN ENVIRONMENT MAY SEND OUT OF TURN for ticket j: one at a
   /// revision the ticket is not at (the one before it where there is one),
-  /// one whose definition names another ticket, and one that changes the
-  /// dependencies — each wrong in that one way only, so a Pending ticket
-  /// refuses each for its own reason — and, for an id not released, the
-  /// first revision.
+  /// one whose definition names another ticket, one that adds every
+  /// tombstone it lacks and one that adds every live ticket reaching it —
+  /// each wrong in that one way only where it is wrong at all, so a Pending
+  /// ticket refuses each for its own reason — and, for an id not released,
+  /// the first revision.
   pure def updateProbesIn(c: TicketGraph, j: int): Set[TicketCommand] =
     if (not(c.tickets.keys().contains(j)))
       Set(UpdateTicket({ ticket: j, expectedRevision: 1,
@@ -638,13 +654,17 @@ module chuggy_domain {
             defaultPlan) }),
         UpdateTicket({ ticket: j, expectedRevision: jb.revision,
           definition: revisedTicketOf(j, nextRevision,
-            if (dependencies_ == Set()) Set(otherIdOf(j)) else Set(),
+            dependencies_.union(revokedIn(c)), defaultPlan) }),
+        UpdateTicket({ ticket: j, expectedRevision: jb.revision,
+          definition: revisedTicketOf(j, nextRevision,
+            dependencies_.union(dependableIn(c).intersect(dependentsIn(c, j))),
             defaultPlan) }))
     }
 
   /// THE COMMANDS AN ENVIRONMENT MAY SEND OUT OF TURN, over a TicketGraph
   /// and its ledgers: for every id the instance can name, a create that
-  /// collides, names itself or names what does not exist, the updates
+  /// collides, names itself, names what does not exist or names every
+  /// tombstone, the updates
   /// updateProbesIn names, and a dispatch, a revoke and a resume; a failure
   /// for every task a ticket has ever been owed, and for the first work task
   /// of an id not released; and a finalizer's result for the attempt a
@@ -659,6 +679,7 @@ module chuggy_domain {
       CreateTicket(releasedTicketOf(j, Set(), defaultPlan)),
       CreateTicket(releasedTicketOf(j, Set(j), defaultPlan)),
       CreateTicket(releasedTicketOf(j, absent.exclude(Set(j)), defaultPlan)),
+      CreateTicket(releasedTicketOf(j, revokedIn(c), defaultPlan)),
       DispatchTicket({ ticket: j, source: aDispatchSource }),
       RevokeTicket(j),
       ResumeTicket(j)).union(updateProbesIn(c, j))).flatten()
@@ -870,12 +891,14 @@ module chuggy_domain {
   }
 
   /// The author replaces a Pending ticket's definition with its next
-  /// revision, over any well-formed plan (decideUpdate).
+  /// revision, over any dependencies it may draw (redependableIn) and any
+  /// well-formed plan (decideUpdate).
   action updateDefinition = all {
     revisableTickets.size() > 0,
     nondet j = revisableTickets.oneOf()
+    nondet dependencies_ = redependableIn(graph, j).powerset().oneOf()
     nondet stages = validPlans.oneOf()
-    take(updateOf(tickets.get(j), stages), unaskedDisposition)
+    take(updateOf(tickets.get(j), dependencies_, stages), unaskedDisposition)
   }
 
   /// Author revokes any non-terminal ticket, and that ticket alone
@@ -1098,8 +1121,7 @@ module chuggy_domain {
   /// A DEFINITION MOVES ONLY WITH ITS REVISION: against the tickets the last
   /// decision found (ghost prevTickets), a ticket holds the definition and
   /// the revision it held, or it was Pending, still is, and holds the next
-  /// revision under the same dependencies; a ticket the decision released
-  /// is at the first.
+  /// revision; a ticket the decision released is at the first.
   val revisionsAccounted: bool = liveTickets.forall(j =>
     val jb = tickets.get(j)
     if (not(prevTickets.keys().contains(j))) jb.revision == 1
@@ -1110,8 +1132,7 @@ module chuggy_domain {
         and {
           isPending(before.state),
           isPending(jb.state),
-          jb.revision == before.revision + 1,
-          jb.definition.dependencies == before.definition.dependencies
+          jb.revision == before.revision + 1
         }
       }
     })

@@ -44,6 +44,7 @@ import {
   taskRefOf,
 } from "./ticket.ts";
 import { decide, unaskedDisposition } from "./deciders.ts";
+import { dependencyClosure } from "./decisionValid.ts";
 import type { TicketId } from "./ids.ts";
 import { isPending, isTerminal, phaseOf, revocationAllowed } from "./phase.ts";
 import { workTaskIdentity } from "./task.ts";
@@ -105,14 +106,14 @@ export function canReleaseIn(
   );
 }
 
-/**
- * What a release draws its dependencies from: anything not revoked.
- * `decideCreate` refuses no dependency that exists, but a revoked ticket
- * never reaches Done, so the author the machine models never writes a ticket
- * that can never run.
- */
+/** What a release draws its dependencies from: anything not revoked, which `decideCreate` refuses. */
 export function dependableIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((k) => ticketAt(graph, k).state !== "Revoked");
+}
+
+/** The tombstones: the dependencies no create or update may add. */
+export function revokedIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter((k) => ticketAt(graph, k).state === "Revoked");
 }
 
 /** Tickets an update may be drawn for: the Pending ones. */
@@ -121,12 +122,35 @@ export function revisablesIn(graph: TicketGraph): readonly TicketId[] {
 }
 
 /**
+ * What an update of `id` draws its dependencies from, ascending: those it has,
+ * a tombstone among them, and any other it may add. One that reaches `id` is
+ * among them, and `decideUpdate` refuses it.
+ */
+export function redependableIn(
+  graph: TicketGraph,
+  id: TicketId,
+): readonly TicketId[] {
+  const held = ticketAt(graph, id).definition.dependencies;
+  return ticketIds(graph).filter(
+    (k) => held.has(k) || (k !== id && dependableIn(graph).includes(k)),
+  );
+}
+
+/** The tickets that reach `id`: adding any of them to it closes a cycle. */
+export function dependentsIn(
+  graph: TicketGraph,
+  id: TicketId,
+): readonly TicketId[] {
+  return ticketIds(graph).filter((k) => dependencyClosure(graph, k).has(id));
+}
+
+/**
  * The update an author sends for a ticket: its next revision, written against
- * the revision it holds, keeping its dependencies, over the plan the author
- * drew.
+ * the revision it holds, over the dependencies and the plan the author drew.
  */
 export function updateOf(
   ticket: Ticket,
+  dependencies: ReadonlySet<number>,
   stages: readonly StageDefinition[],
 ): TicketCommand {
   const id = ticket.definition.id;
@@ -138,7 +162,7 @@ export function updateOf(
       definition: revisedTicketOf(
         id,
         ticket.revision + 1,
-        ticket.definition.dependencies,
+        dependencies,
         stages,
       ),
     },
@@ -272,10 +296,10 @@ export function otherIdOf(id: number): number {
 
 /**
  * The updates an environment may send out of turn for ticket `id` (the
- * model's `updateProbesIn`): one at a revision the ticket is not at (the one
- * before it where there is one), one whose definition names another ticket,
- * and one that changes the dependencies — each wrong in that one way only —
- * and, for an id not released, the first revision.
+ * model's `updateProbesIn`): one at a revision the ticket is not at, one whose
+ * definition names another ticket, one adding every tombstone and one adding
+ * every live ticket reaching it, each wrong in that one way only where it is
+ * wrong at all; and, for an id not released, the first revision.
  */
 export function updateProbesIn(
   config: Config,
@@ -296,8 +320,9 @@ export function updateProbesIn(
   const dependencies = ticket.definition.dependencies;
   const next = ticket.revision + 1;
   const stale = ticket.revision > 1 ? ticket.revision - 1 : next;
-  const changed: ReadonlySet<number> =
-    dependencies.size === 0 ? new Set([otherIdOf(id)]) : new Set();
+  const reaching = dependentsIn(graph, id).filter((k) =>
+    dependableIn(graph).includes(k),
+  );
   const update = (
     expectedRevision: number,
     definition: ReleasedTicket,
@@ -311,19 +336,32 @@ export function updateProbesIn(
       ticket.revision,
       revisedTicketOf(otherIdOf(id), next, dependencies, plan),
     ),
-    update(ticket.revision, revisedTicketOf(id, next, changed, plan)),
+    update(
+      ticket.revision,
+      revisedTicketOf(
+        id,
+        next,
+        new Set([...dependencies, ...revokedIn(graph)]),
+        plan,
+      ),
+    ),
+    update(
+      ticket.revision,
+      revisedTicketOf(id, next, new Set([...dependencies, ...reaching]), plan),
+    ),
   ];
 }
 
 /**
  * The commands an environment may send out of turn (the model's
  * `commandProbesIn`, in its order): for every id the instance can name, a
- * create that collides, names itself or names what does not exist, the
- * updates `updateProbesIn` names, and a dispatch, a revoke and a resume; a failure for every task a ticket has ever
- * been owed, and for the first work task of an id not released; and a
- * finalizer's result for the attempt a ticket is on, the generation before it
- * and the cycle before it. Every one is well-formed, so which of them `decide`
- * refuses is the ticket's state and nothing else.
+ * create that collides, names itself, names what does not exist or names every
+ * tombstone, the updates `updateProbesIn` names, and a dispatch, a revoke and a
+ * resume; a failure for every task a ticket has ever been owed, and for the
+ * first work task of an id not released; and a finalizer's result for the
+ * attempt a ticket is on, the generation before it and the cycle before it.
+ * Every one is well-formed, so which of them `decide` refuses is the ticket's
+ * state and nothing else.
  */
 export function commandProbesIn(
   config: Config,
@@ -340,6 +378,10 @@ export function commandProbesIn(
     {
       type: "CreateTicket",
       value: releasedTicketOf(j, new Set(absent.filter((k) => k !== j)), plan),
+    },
+    {
+      type: "CreateTicket",
+      value: releasedTicketOf(j, new Set(revokedIn(graph)), plan),
     },
     { type: "DispatchTicket", value: { ticket: j, source: aDispatchSource } },
     { type: "RevokeTicket", value: j },

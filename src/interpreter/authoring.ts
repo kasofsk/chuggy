@@ -978,9 +978,7 @@ export function ticketCommandedCheckStageNote(
 /**
  * `RepositoryNotBound`, `ArtifactNotBound`, `Unavailable` and `LandingUnbranched`
  * are the refusals `DraftCreated` documents. A released draft is revisable
- * while its ticket is Pending — past it `NotDraft` — and one moving its
- * dependencies is `DependenciesLocked`, because the update releasing it would
- * be refused `TicketDependenciesChanged`.
+ * while its ticket is Pending, and past it `NotDraft`.
  */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
@@ -990,7 +988,6 @@ export type DraftRevised =
       readonly revised: "NotDraft";
       readonly state: Exclude<DraftState, "Draft">;
     }
-  | { readonly revised: "DependenciesLocked" }
   | { readonly revised: "ConfigurationNotFound" }
   | { readonly revised: "RepositoryNotBound" }
   | { readonly revised: "ArtifactNotBound" }

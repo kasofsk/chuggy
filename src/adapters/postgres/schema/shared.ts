@@ -250,6 +250,8 @@ export const runnerLostTicketsFunction = "runner_lost_tickets";
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
 /** The failed run step an escalated ticket's work or evaluation stopped at. */
 export const ticketRunStepFailureFunction = "ticket_run_step_failure";
+/** The dependencies a ticket's last update named. */
+export const ticketUpdatedDependenciesFunction = "ticket_updated_dependencies";
 export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";

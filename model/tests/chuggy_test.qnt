@@ -418,10 +418,22 @@ module chuggy_test {
       definition: D::revisedTicketOf(1, 2, Set(3), D::defaultPlan) })
       == TicketRefused(TicketRevisionStale({ ticket: 1, expected: 5,
         current: 1 })),
+    named(updateAt(c0, 1, 1, D::revisedTicketOf(1, 2, Set(1, 3, 4),
+      D::defaultPlan))) == "SelfDependency",
+    named(updateAt(c0, 1, 1, D::revisedTicketOf(1, 2, Set(3, 4),
+      D::defaultPlan))) == "DependenciesNotFound",
     named(updateAt(c0, 1, 1, D::revisedTicketOf(1, 2, Set(3),
-      D::defaultPlan))) == "TicketDependenciesChanged",
-    named(updateAt(c0, 3, 1, D::revisedTicketOf(3, 2, Set(), D::defaultPlan)))
-      == "TicketDependenciesChanged"
+      D::defaultPlan))) == "DependencyCycle"
+  })
+
+  /// AN UPDATE THAT DROPS A DEPENDENCY IS NOT REFUSED FOR IT, and the
+  /// ticket then waits on what its new revision names.
+  pure val dDropDependency =
+    updateAt(c0, 3, 1, D::revisedTicketOf(3, 2, Set(), D::defaultPlan))
+  run updateDropsDependencyTest = assert(and {
+    named(dDropDependency) == "TicketUpdated",
+    not(isReady(graphOf(c0), 3)),
+    isReady(graphOf(dDropDependency.post), 3)
   })
 
   /// AN UPDATE A STATE DOES NOT OWE IS THE IDENTITY: one landing on a
@@ -1161,17 +1173,25 @@ module chuggy_test {
   })
 
   /// A ticket behind a revoked dependency STAYS PENDING and stays its
-  /// author's: it is never Ready (a dep that is not Done blocks, and
-  /// Revoked never becomes Done), revoke is still offered on it, and no
-  /// release may point a new ticket at the tombstone.
+  /// author's: it is never Ready while it names the tombstone (a dep that is
+  /// not Done blocks, and Revoked never becomes Done), revoke is still
+  /// offered on it, an update that drops the tombstone lands it Ready, and
+  /// no release may point a new ticket at the tombstone.
+  pure val dStrandedRepointed = stepped(cStranded, decideUpdate(
+    graphOf(cStranded), { ticket: 2, expectedRevision: 1,
+      definition: D::revisedTicketOf(2, 2, Set(), planU2) }))
   run strandedDependentWaitsForItsAuthorTest = assert(and {
     cStranded.tickets.get(2).state == Pending,
     D::isBlockedIn(graphOf(cStranded), 2),
     not(isReady(graphOf(cStranded), 2)),
     D::revocableIn(graphOf(cStranded), 2),
     D::revocableIn(graphOf(cStranded), 3),
+    named(dStrandedRepointed) == "TicketUpdated",
+    isReady(graphOf(dStrandedRepointed.post), 2),
     not(D::dependableIn(graphOf(cStranded)).contains(1)),
-    D::dependableIn(graphOf(cStranded)).contains(2)
+    D::dependableIn(graphOf(cStranded)).contains(2),
+    named(stepped(cStranded, decideCreate(graphOf(cStranded),
+      D::releasedTicketOf(4, Set(1), planU2)))) == "DependenciesRevoked"
   })
 
   // === Finalization is not a TicketGraph lease protocol ===================

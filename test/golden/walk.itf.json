@@ -598,7 +598,7 @@
                 }
               },
               "ticket": {
-                "#bigint": "4"
+                "#bigint": "5"
               },
               "workCycle": {
                 "#bigint": "1"
@@ -660,7 +660,7 @@
         "value": {
           "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "5"
           }
         }
       },
@@ -3244,14 +3244,9 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "DispatchTicket",
+            "tag": "RevokeTicket",
             "value": {
-              "source": {
-                "#bigint": "9"
-              },
-              "ticket": {
-                "#bigint": "2"
-              }
+              "#bigint": "6"
             }
           }
         },
@@ -3309,7 +3304,7 @@
         "value": {
           "tag": "TicketNotFound",
           "value": {
-            "#bigint": "2"
+            "#bigint": "6"
           }
         }
       },
@@ -8785,12 +8780,18 @@
             "value": {
               "definition": {
                 "content": {
-                  "#bigint": "1061"
+                  "#bigint": "1021"
                 },
                 "dependencies": {
                   "#set": [
                     {
                       "#bigint": "1"
+                    },
+                    {
+                      "#bigint": "3"
+                    },
+                    {
+                      "#bigint": "4"
                     }
                   ]
                 },
@@ -8844,23 +8845,23 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "1066"
+                  "#bigint": "1026"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "1"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "1064"
+                    "#bigint": "1024"
                   },
                   "inputs": {
-                    "#bigint": "1063"
+                    "#bigint": "1023"
                   },
                   "resultContract": {
-                    "#bigint": "1065"
+                    "#bigint": "1025"
                   },
                   "workload": {
-                    "#bigint": "1062"
+                    "#bigint": "1022"
                   }
                 }
               },
@@ -8868,7 +8869,7 @@
                 "#bigint": "1"
               },
               "ticket": {
-                "#bigint": "3"
+                "#bigint": "1"
               }
             }
           }
@@ -8927,7 +8928,7 @@
         "value": {
           "tag": "TicketNotPending",
           "value": {
-            "#bigint": "3"
+            "#bigint": "1"
           }
         }
       },
@@ -9846,7 +9847,7 @@
         "value": {
           "tag": "TicketNotPending",
           "value": {
-            "#bigint": "3"
+            "#bigint": "1"
           }
         }
       },
@@ -10765,7 +10766,7 @@
         "value": {
           "tag": "TicketNotPending",
           "value": {
-            "#bigint": "3"
+            "#bigint": "1"
           }
         }
       },
@@ -11684,7 +11685,7 @@
         "value": {
           "tag": "TicketNotPending",
           "value": {
-            "#bigint": "3"
+            "#bigint": "1"
           }
         }
       },
@@ -12546,9 +12547,23 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "RevokeTicket",
+            "tag": "ReportFinalizationResult",
             "value": {
-              "#bigint": "4"
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
+                }
+              },
+              "ticket": {
+                "#bigint": "2"
+              },
+              "workCycle": {
+                "#bigint": "1"
+              }
             }
           }
         },
@@ -12604,9 +12619,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotRevocable",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "2"
           }
         }
       },
@@ -13523,9 +13538,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotRevocable",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "2"
           }
         }
       },
@@ -14387,9 +14402,23 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "ResumeTicket",
+            "tag": "ReportFinalizationResult",
             "value": {
-              "#bigint": "3"
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
+                }
+              },
+              "ticket": {
+                "#bigint": "6"
+              },
+              "workCycle": {
+                "#bigint": "1"
+              }
             }
           }
         },
@@ -14445,9 +14474,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotResumable",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "3"
+            "#bigint": "6"
           }
         }
       },
@@ -15309,85 +15338,34 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "CreateTicket",
+            "tag": "ReportTaskTerminal",
             "value": {
-              "content": {
-                "#bigint": "81"
-              },
-              "dependencies": {
-                "#set": [
-                  {
-                    "#bigint": "4"
-                  }
-                ]
-              },
-              "evaluationPlan": {
-                "stages": [
-                  {
-                    "evaluators": [
-                      {
-                        "key": {
-                          "#bigint": "1"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "3"
-                          },
-                          "inputs": {
-                            "#bigint": "2"
-                          },
-                          "resultContract": {
-                            "#bigint": "4"
-                          },
-                          "workload": {
-                            "#bigint": "1"
-                          }
-                        }
+              "tag": "TerminalFailureReport",
+              "value": {
+                "failure": {
+                  "evidence": {
+                    "#bigint": "1"
+                  },
+                  "task": {
+                    "tag": "WorkTask",
+                    "value": {
+                      "cycle": {
+                        "#bigint": "1"
                       },
-                      {
-                        "key": {
-                          "#bigint": "2"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "7"
-                          },
-                          "inputs": {
-                            "#bigint": "6"
-                          },
-                          "resultContract": {
-                            "#bigint": "8"
-                          },
-                          "workload": {
-                            "#bigint": "5"
-                          }
-                        }
+                      "ticket": {
+                        "#bigint": "2"
                       }
-                    ],
-                    "key": {
-                      "#bigint": "1"
                     }
                   }
-                ]
-              },
-              "finalizationConfiguration": {
-                "#bigint": "86"
-              },
-              "id": {
-                "#bigint": "4"
-              },
-              "workConfiguration": {
-                "executionRequirements": {
-                  "#bigint": "84"
                 },
-                "inputs": {
-                  "#bigint": "83"
+                "kind": {
+                  "tag": "ProcessFailure",
+                  "value": {
+                    "#tup": []
+                  }
                 },
-                "resultContract": {
-                  "#bigint": "85"
-                },
-                "workload": {
-                  "#bigint": "82"
+                "ticket": {
+                  "#bigint": "2"
                 }
               }
             }
@@ -15445,9 +15423,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketAlreadyExists",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "2"
           }
         }
       },
@@ -16364,9 +16342,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketAlreadyExists",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "2"
           }
         }
       },
@@ -17228,94 +17206,22 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "UpdateTicket",
+            "tag": "ReportFinalizationResult",
             "value": {
-              "definition": {
-                "content": {
-                  "#bigint": "1081"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "1086"
-                },
-                "id": {
-                  "#bigint": "4"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "1084"
-                  },
-                  "inputs": {
-                    "#bigint": "1083"
-                  },
-                  "resultContract": {
-                    "#bigint": "1085"
-                  },
-                  "workload": {
-                    "#bigint": "1082"
-                  }
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
                 }
               },
-              "expectedRevision": {
-                "#bigint": "2"
-              },
               "ticket": {
-                "#bigint": "4"
+                "#bigint": "6"
+              },
+              "workCycle": {
+                "#bigint": "1"
               }
             }
           }
@@ -17372,9 +17278,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "6"
           }
         }
       },
@@ -18291,9 +18197,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "6"
           }
         }
       },
@@ -19155,94 +19061,86 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "UpdateTicket",
+            "tag": "CreateTicket",
             "value": {
-              "definition": {
-                "content": {
-                  "#bigint": "1061"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
+              "content": {
+                "#bigint": "41"
+              },
+              "dependencies": {
+                "#set": [
+                  {
+                    "#bigint": "2"
+                  }
+                ]
+              },
+              "evaluationPlan": {
+                "stages": [
+                  {
+                    "evaluators": [
+                      {
+                        "key": {
+                          "#bigint": "1"
                         },
-                        {
-                          "key": {
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "3"
+                          },
+                          "inputs": {
                             "#bigint": "2"
                           },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
+                          "resultContract": {
+                            "#bigint": "4"
+                          },
+                          "workload": {
+                            "#bigint": "1"
                           }
                         }
-                      ],
-                      "key": {
-                        "#bigint": "1"
+                      },
+                      {
+                        "key": {
+                          "#bigint": "2"
+                        },
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "7"
+                          },
+                          "inputs": {
+                            "#bigint": "6"
+                          },
+                          "resultContract": {
+                            "#bigint": "8"
+                          },
+                          "workload": {
+                            "#bigint": "5"
+                          }
+                        }
                       }
+                    ],
+                    "key": {
+                      "#bigint": "1"
                     }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "1066"
-                },
-                "id": {
-                  "#bigint": "3"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "1064"
-                  },
-                  "inputs": {
-                    "#bigint": "1063"
-                  },
-                  "resultContract": {
-                    "#bigint": "1065"
-                  },
-                  "workload": {
-                    "#bigint": "1062"
                   }
+                ]
+              },
+              "finalizationConfiguration": {
+                "#bigint": "46"
+              },
+              "id": {
+                "#bigint": "2"
+              },
+              "workConfiguration": {
+                "executionRequirements": {
+                  "#bigint": "44"
+                },
+                "inputs": {
+                  "#bigint": "43"
+                },
+                "resultContract": {
+                  "#bigint": "45"
+                },
+                "workload": {
+                  "#bigint": "42"
                 }
-              },
-              "expectedRevision": {
-                "#bigint": "1"
-              },
-              "ticket": {
-                "#bigint": "3"
               }
             }
           }
@@ -19299,9 +19197,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "SelfDependency",
           "value": {
-            "#bigint": "3"
+            "#bigint": "2"
           }
         }
       },
@@ -20218,9 +20116,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "SelfDependency",
           "value": {
-            "#bigint": "3"
+            "#bigint": "2"
           }
         }
       },
@@ -21137,9 +21035,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "SelfDependency",
           "value": {
-            "#bigint": "3"
+            "#bigint": "2"
           }
         }
       },
@@ -22001,90 +21899,9 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "CreateTicket",
+            "tag": "RevokeTicket",
             "value": {
-              "content": {
-                "#bigint": "41"
-              },
-              "dependencies": {
-                "#set": [
-                  {
-                    "#bigint": "5"
-                  },
-                  {
-                    "#bigint": "6"
-                  }
-                ]
-              },
-              "evaluationPlan": {
-                "stages": [
-                  {
-                    "evaluators": [
-                      {
-                        "key": {
-                          "#bigint": "1"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "3"
-                          },
-                          "inputs": {
-                            "#bigint": "2"
-                          },
-                          "resultContract": {
-                            "#bigint": "4"
-                          },
-                          "workload": {
-                            "#bigint": "1"
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "#bigint": "2"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "7"
-                          },
-                          "inputs": {
-                            "#bigint": "6"
-                          },
-                          "resultContract": {
-                            "#bigint": "8"
-                          },
-                          "workload": {
-                            "#bigint": "5"
-                          }
-                        }
-                      }
-                    ],
-                    "key": {
-                      "#bigint": "1"
-                    }
-                  }
-                ]
-              },
-              "finalizationConfiguration": {
-                "#bigint": "46"
-              },
-              "id": {
-                "#bigint": "2"
-              },
-              "workConfiguration": {
-                "executionRequirements": {
-                  "#bigint": "44"
-                },
-                "inputs": {
-                  "#bigint": "43"
-                },
-                "resultContract": {
-                  "#bigint": "45"
-                },
-                "workload": {
-                  "#bigint": "42"
-                }
-              }
+              "#bigint": "1"
             }
           }
         },
@@ -22140,21 +21957,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "DependenciesNotFound",
+          "tag": "TicketNotRevocable",
           "value": {
-            "dependencies": {
-              "#set": [
-                {
-                  "#bigint": "5"
-                },
-                {
-                  "#bigint": "6"
-                }
-              ]
-            },
-            "ticket": {
-              "#bigint": "2"
-            }
+            "#bigint": "1"
           }
         }
       },
@@ -23016,93 +22821,9 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "CreateTicket",
+            "tag": "RevokeTicket",
             "value": {
-              "content": {
-                "#bigint": "21"
-              },
-              "dependencies": {
-                "#set": [
-                  {
-                    "#bigint": "2"
-                  },
-                  {
-                    "#bigint": "5"
-                  },
-                  {
-                    "#bigint": "6"
-                  }
-                ]
-              },
-              "evaluationPlan": {
-                "stages": [
-                  {
-                    "evaluators": [
-                      {
-                        "key": {
-                          "#bigint": "1"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "3"
-                          },
-                          "inputs": {
-                            "#bigint": "2"
-                          },
-                          "resultContract": {
-                            "#bigint": "4"
-                          },
-                          "workload": {
-                            "#bigint": "1"
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "#bigint": "2"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "7"
-                          },
-                          "inputs": {
-                            "#bigint": "6"
-                          },
-                          "resultContract": {
-                            "#bigint": "8"
-                          },
-                          "workload": {
-                            "#bigint": "5"
-                          }
-                        }
-                      }
-                    ],
-                    "key": {
-                      "#bigint": "1"
-                    }
-                  }
-                ]
-              },
-              "finalizationConfiguration": {
-                "#bigint": "26"
-              },
-              "id": {
-                "#bigint": "1"
-              },
-              "workConfiguration": {
-                "executionRequirements": {
-                  "#bigint": "24"
-                },
-                "inputs": {
-                  "#bigint": "23"
-                },
-                "resultContract": {
-                  "#bigint": "25"
-                },
-                "workload": {
-                  "#bigint": "22"
-                }
-              }
+              "#bigint": "3"
             }
           }
         },
@@ -23158,9 +22879,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketAlreadyExists",
+          "tag": "TicketNotRevocable",
           "value": {
-            "#bigint": "1"
+            "#bigint": "3"
           }
         }
       },
@@ -24077,9 +23798,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketAlreadyExists",
+          "tag": "TicketNotRevocable",
           "value": {
-            "#bigint": "1"
+            "#bigint": "3"
           }
         }
       },
@@ -24941,94 +24662,22 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "UpdateTicket",
+            "tag": "ReportFinalizationResult",
             "value": {
-              "definition": {
-                "content": {
-                  "#bigint": "1081"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "1086"
-                },
-                "id": {
-                  "#bigint": "4"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "1084"
-                  },
-                  "inputs": {
-                    "#bigint": "1083"
-                  },
-                  "resultContract": {
-                    "#bigint": "1085"
-                  },
-                  "workload": {
-                    "#bigint": "1082"
-                  }
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
                 }
               },
-              "expectedRevision": {
-                "#bigint": "2"
-              },
               "ticket": {
-                "#bigint": "4"
+                "#bigint": "6"
+              },
+              "workCycle": {
+                "#bigint": "1"
               }
             }
           }
@@ -25085,9 +24734,9 @@
       "mc_chuggy::chuggy_domain::lastStep": {
         "tag": "Refused",
         "value": {
-          "tag": "TicketNotPending",
+          "tag": "TicketNotFound",
           "value": {
-            "#bigint": "4"
+            "#bigint": "6"
           }
         }
       },
