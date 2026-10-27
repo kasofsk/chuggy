@@ -21,7 +21,9 @@ import {
 import { parkedOverridesVerdict } from "../../src/interpreter/parkedOverrides.ts";
 import type { ReleasedTicket } from "../../src/domain/generated/modelTypes.ts";
 import {
+  asConfigurationRevisionId,
   canonicalConfigurationOf,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   releaseConfigurationReadiness,
   type ReleaseAuthoring,
@@ -533,7 +535,13 @@ test("a parked ticket whose brief and configuration do not pair is refused under
       "BriefNamesNoRepository",
     ],
     [
-      { ...paired, configurationRepository: asRepositoryId("repository-two") },
+      {
+        ...paired,
+        configurationRepository: {
+          from: "Imported",
+          repository: asRepositoryId("repository-two"),
+        },
+      },
       "ConfigurationFromAnotherRepository",
     ],
   ] as const;
@@ -547,6 +555,27 @@ test("a parked ticket whose brief and configuration do not pair is refused under
   assert.deepEqual(parkedOverridesVerdict(paired, undefined, {}), {
     verdict: "Admitted",
   });
+});
+
+test("a parked ticket released under the project's one bootstrap from before each repository had its own still takes overrides", () => {
+  const ticket = {
+    configuration: canonicalConfigurationOf(document),
+    configurationRepository: configurationRepositoryOf(
+      asConfigurationRevisionId("bootstrap"),
+      undefined,
+    ),
+    authoring,
+    brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+  };
+  assert.deepEqual(parkedOverridesVerdict(ticket, undefined, {}), {
+    verdict: "Admitted",
+  });
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, undefined, {
+      work: { instructions: ["Do the other work."] },
+    }),
+    { verdict: "Refused", code: "OverridesMoveDefinition" },
+  );
 });
 
 test("an agent named where the requirement is a container capability moves the definition, though the contract offers the mode", () => {

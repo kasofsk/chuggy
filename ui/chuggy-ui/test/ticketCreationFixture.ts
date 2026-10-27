@@ -6,7 +6,7 @@
  * here rather than in one suite that happened to be updated.
  */
 
-import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
+import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   DraftInitializationResponse,
@@ -131,6 +131,14 @@ export function creationBinding(
 }
 
 /**
+ * A stand-in for the revision a repository's bootstrap is authored at, which
+ * the server names for the repository and the console reads as given.
+ */
+export function creationBootstrapRevision(repository: string): string {
+  return `${bootstrapConfigurationRevisionPrefix}${repository}`;
+}
+
+/**
  * One binding beside what the project holds for its repository, as the
  * listing answers it: the names it declared, the bootstrap, or nothing.
  */
@@ -145,7 +153,10 @@ export function creationListed(
     configurationsHeld:
       held === "Imported"
         ? { result: "Imported", count: 2 }
-        : { result: "Bootstrapped", revision: bootstrapConfigurationName },
+        : {
+            result: "Bootstrapped",
+            revision: creationBootstrapRevision(binding.repository),
+          },
   };
 }
 

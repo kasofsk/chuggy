@@ -1842,13 +1842,15 @@ export type ForgeInstallationPermissionsResponse = z.infer<
   typeof forgeInstallationPermissionsResponseSchema
 >;
 
-/**
- * The name a bootstrap configuration is declared under. It is also the revision
- * an authored one is created at: a project authors one bootstrap per revision
- * identity, and a second repository that needs one is authored under a revision
- * its author chooses.
- */
+/** The name a bootstrap configuration is declared under. */
 export const bootstrapConfigurationName = "bootstrap";
+
+/**
+ * What the revision of every bootstrap authored for a repository begins with.
+ * The rest is the hex SHA-256 of the repository it was authored for, so each
+ * repository's bootstrap is its own revision.
+ */
+export const bootstrapConfigurationRevisionPrefix = `${bootstrapConfigurationName}:`;
 
 const projectRepositoryImportedSchema = z.object({
   result: z.literal("Imported"),

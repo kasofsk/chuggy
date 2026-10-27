@@ -12,9 +12,11 @@ import {
   encodeDraftAuthoring,
   parseDraftAuthoring,
   type AuthoringStore,
+  type CanonicalConfiguration,
   type ConfigurationPage,
   type ConfigurationPageQuery,
   type ConfigurationCreated,
+  type ConfigurationRevisionId,
   type ConfigurationRevisionResource,
   type DraftCreated,
   type DraftDeleted,
@@ -799,7 +801,7 @@ type HeldConfigurationsQuery = Parameters<
 
 /**
  * How many names each repository asked about declared into the project, and
- * the bootstrap revision's text where the project holds one. Both are the
+ * the text of each bootstrap revision asked about that it holds. Both are the
  * tables the configurations listing already reads, so this is that listing's
  * question asked of one project's rows rather than of every page of them.
  */
@@ -814,12 +816,11 @@ async function readConfigurationsHeld(
            AND p.repository=ANY(${[...query.repositories]}::text[])
          GROUP BY p.repository`,
   );
-  const bootstrap = await pool.query<{ canonical: string }>(
-    sql`SELECT c.canonical FROM configuration_revision c
+  const bootstraps = await pool.query<{ revision: string; canonical: string }>(
+    sql`SELECT c.revision,c.canonical FROM configuration_revision c
           WHERE c.tenant=${query.partition.tenant} AND c.project=${query.partition.project}
-            AND c.revision=${query.bootstrap}`,
+            AND c.revision=ANY(${[...query.bootstraps]}::text[])`,
   );
-  const canonical = bootstrap.rows[0]?.canonical;
   return {
     declared: new Map<RepositoryId, number>(
       declared.rows.map((row) => [
@@ -827,8 +828,12 @@ async function readConfigurationsHeld(
         projectRowCounter(row.names, "declared configuration names"),
       ]),
     ),
-    bootstrap:
-      canonical === undefined ? undefined : asCanonicalConfiguration(canonical),
+    bootstraps: new Map<ConfigurationRevisionId, CanonicalConfiguration>(
+      bootstraps.rows.map((row) => [
+        asConfigurationRevisionId(row.revision),
+        asCanonicalConfiguration(row.canonical),
+      ]),
+    ),
   };
 }
 

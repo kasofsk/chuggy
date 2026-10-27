@@ -32,6 +32,7 @@ import {
   type ConfigurationRevisionId,
   type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
+import { bootstrapConfigurationRevision } from "../../src/interpreter/authoring.ts";
 import {
   asGitObjectId,
   asRepositoryId,
@@ -2942,6 +2943,7 @@ test("a released ticket that lands nothing still hands release a brief", async (
 async function configurationsHeldNeighbours(
   partition: Partition,
   repository: RepositoryId,
+  revision: ConfigurationRevisionId,
 ): Promise<void> {
   const neighbours: readonly Partition[] = [
     { ...partition, project: asProjectId(`project-held-${randomUUID()}`) },
@@ -2952,20 +2954,21 @@ async function configurationsHeldNeighbours(
     await harness.authoring.createConfiguration({
       partition: neighbour,
       authority,
-      revision: asConfigurationRevisionId("bootstrap"),
+      revision,
       canonical: postgresHarnessConfiguration,
     });
     await harness.query(
       `INSERT INTO repository_configuration_provenance
          (tenant,project,revision,digest,repository,repository_commit,path,name)
        SELECT tenant,project,revision,digest,$3,$4,$5,'older'
-         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision='bootstrap'`,
+         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision=$6`,
       [
         neighbour.tenant,
         neighbour.project,
         repository,
         "c".repeat(40),
         [".chug", "configurations", "older.json"].join("/"),
+        revision,
       ],
     );
   }
@@ -2981,15 +2984,13 @@ test("what a project holds from the configuration step is read per repository an
   const asApi = postgresHarnessRolePool(apiRole);
   t.after(() => asApi.end());
   const held = postgresRepositoryConfigurationsHeld(asApi);
-  const bootstrap = asConfigurationRevisionId("bootstrap");
-  const query = {
-    partition,
-    repositories: [declaring.repository, silent.repository],
-    bootstrap,
-  };
+  const repositories = [declaring.repository, silent.repository];
+  const bootstraps = repositories.map(bootstrapConfigurationRevision);
+  const bootstrap = bootstrapConfigurationRevision(silent.repository);
+  const query = { partition, repositories, bootstraps };
   assert.deepEqual(await held.held(query), {
     declared: new Map(),
-    bootstrap: undefined,
+    bootstraps: new Map(),
   });
   for (const commit of ["a", "b"])
     await harness.authoring.importRepositoryConfigurations({
@@ -3001,14 +3002,24 @@ test("what a project holds from the configuration step is read per repository an
         "review",
       ]),
     });
-  await configurationsHeldNeighbours(partition, declaring.repository);
+  await configurationsHeldNeighbours(
+    partition,
+    declaring.repository,
+    bootstrap,
+  );
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision: asConfigurationRevisionId("bootstrap"),
+    canonical: postgresHarnessConfiguration,
+  });
   assert.deepEqual(await held.held(query), {
     declared: new Map([[declaring.repository, 2]]),
-    bootstrap: undefined,
+    bootstraps: new Map(),
   });
   assert.deepEqual(
     await held.held({ ...query, repositories: [silent.repository] }),
-    { declared: new Map(), bootstrap: undefined },
+    { declared: new Map(), bootstraps: new Map() },
   );
   const authoringAsApi = postgresAuthoring(asApi);
   const raced = await Promise.all(
@@ -3025,9 +3036,9 @@ test("what a project holds from the configuration step is read per repository an
     "AlreadyExists",
     "Created",
   ]);
-  assert.equal(
-    (await held.held(query)).bootstrap,
-    postgresHarnessConfiguration,
+  assert.deepEqual(
+    (await held.held(query)).bootstraps,
+    new Map([[bootstrap, postgresHarnessConfiguration]]),
   );
 });
 

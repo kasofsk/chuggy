@@ -51,26 +51,24 @@
  * the configuration route, which runs it for a repository the project holds
  * nothing for and answers what the project holds for any other.
  *
- * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
- * one row: the second meets the first's revision as the one it already is. A
+ * A BOOTSTRAP IS ONE REPOSITORY'S, AT A REVISION NAMED FOR IT, so two steps
+ * racing to author it author one row and two repositories' bootstraps are two:
+ * the second step meets the first's revision as the one it already is. A
  * revision is never rewritten, so a stored bootstrap whose text differs, being
- * another repository's, one the generator words otherwise or one the release
- * rule has since outgrown, is met as `BootstrapDiffers` rather than replaced,
- * and only counts as held while it still releases.
+ * one the generator words otherwise or one the release rule has since
+ * outgrown, is met as `BootstrapDiffers` rather than replaced, and only counts
+ * as held for its own repository and while it still releases.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
 import {
-  asConfigurationRevisionId,
+  bootstrapConfigurationRevision,
   releaseConfigurationReadiness,
   type AuthoringStore,
   type CanonicalConfiguration,
   type ConfigurationRevisionId,
 } from "./authoring.ts";
-import {
-  bootstrapConfiguration,
-  bootstrapConfigurationName,
-} from "./bootstrapConfiguration.ts";
+import { bootstrapConfiguration } from "./bootstrapConfiguration.ts";
 import type {
   GitRefName,
   RepositoryBinding,
@@ -379,21 +377,25 @@ export interface RepositoryOnboardingAuthorization {
 /**
  * What a project already holds from the configuration step: how many names
  * each repository asked about declared into it, a repository that declared none
- * absent, and the bootstrap revision's text where the project holds one. The
- * text rather than a flag, because whether a stored revision still releases is
- * the release rule's answer today and not the one it gave when authored.
+ * absent, and the text of each bootstrap revision asked about that the project
+ * holds, one it does not absent. The text rather than a flag, because whether a
+ * stored revision still releases is the release rule's answer today and not the
+ * one it gave when authored.
  */
 export interface RepositoryConfigurationsHeld {
   readonly declared: ReadonlyMap<RepositoryId, number>;
-  readonly bootstrap: CanonicalConfiguration | undefined;
+  readonly bootstraps: ReadonlyMap<
+    ConfigurationRevisionId,
+    CanonicalConfiguration
+  >;
 }
 
-/** Reads what a project holds from the configuration step, for the repositories it binds. */
+/** Reads what a project holds from the configuration step, for the repositories it binds and their bootstraps' revisions. */
 export interface RepositoryConfigurationsHeldRead {
   held(query: {
     readonly partition: Partition;
     readonly repositories: readonly RepositoryId[];
-    readonly bootstrap: ConfigurationRevisionId;
+    readonly bootstraps: readonly ConfigurationRevisionId[];
   }): Promise<RepositoryConfigurationsHeld>;
 }
 
@@ -734,18 +736,12 @@ async function installationPermissions(
   }
 }
 
-/** The one revision a project's bootstrap is authored at, which is its name. */
-const bootstrapConfigurationRevision = asConfigurationRevisionId(
-  bootstrapConfigurationName,
-);
-
 /**
- * The bootstrap configuration authored as this project's own, at the revision
- * the name itself is. Identical text is that revision and any other is
- * `BootstrapDiffers`, whether it is another repository's, was authored under
- * another image, origin or branch or in other words than the generator's, or no
- * longer releases, and in each case the repository declaring its own
- * configurations is what clears it.
+ * The bootstrap configuration authored as this repository's own, at the
+ * revision named for it. Identical text is that revision and any other is
+ * `BootstrapDiffers`, whether it was authored under another image, origin or
+ * branch or in other words than the generator's, or no longer releases, and in
+ * each case the repository declaring its own configurations is what clears it.
  */
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,
@@ -761,7 +757,7 @@ async function bindRepositoryBootstrapped(
   const created = await configurations.authoring.createConfiguration({
     partition: binding.partition,
     authority,
-    revision: bootstrapConfigurationRevision,
+    revision: bootstrapConfigurationRevision(binding.repository),
     canonical: bootstrapConfiguration({
       repository: binding.repository,
       defaultBranch: head.branch,
@@ -1037,15 +1033,14 @@ function heldConfigurations(
   return ports.configurationsHeld.held({
     partition,
     repositories,
-    bootstrap: bootstrapConfigurationRevision,
+    bootstraps: repositories.map(bootstrapConfigurationRevision),
   });
 }
 
 /**
  * What the step has already left one repository, or nothing: the names it
- * declared where it declared any, and otherwise the project's bootstrap while it
- * still releases, which a repository declaring none releases its tickets under
- * whichever repository it was authored for.
+ * declared where it declared any, and otherwise the bootstrap authored for it
+ * while that still releases.
  */
 function heldRepositoryConfigurations(
   held: RepositoryConfigurationsHeld,
@@ -1053,11 +1048,13 @@ function heldRepositoryConfigurations(
 ): ProjectRepositoryConfigurationsHeld | undefined {
   const declared = held.declared.get(repository) ?? 0;
   if (declared > 0) return { result: "Imported", count: declared };
+  const revision = bootstrapConfigurationRevision(repository);
+  const bootstrap = held.bootstraps.get(revision);
   if (
-    held.bootstrap !== undefined &&
-    releaseConfigurationReadiness(held.bootstrap).readiness === "Ready"
+    bootstrap !== undefined &&
+    releaseConfigurationReadiness(bootstrap).readiness === "Ready"
   )
-    return { result: "Bootstrapped", revision: bootstrapConfigurationRevision };
+    return { result: "Bootstrapped", revision };
   return undefined;
 }
 

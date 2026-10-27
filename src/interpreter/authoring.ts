@@ -1,5 +1,7 @@
 /** Versioned native authoring state, outside the journaled ticket core. */
 
+import { createHash } from "node:crypto";
+
 import {
   authoringSchema,
   type ReleaseAuthoringBody,
@@ -18,6 +20,11 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
+import {
+  bootstrapConfigurationName,
+  bootstrapConfigurationRevisionPrefix,
+} from "../contract/responses.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
 import type { SessionId } from "./agentSession.ts";
@@ -175,6 +182,71 @@ export function asConfigurationRevisionId(
     "configuration revision",
     256,
   ) as ConfigurationRevisionId;
+}
+
+/**
+ * The one revision a repository's bootstrap is authored at. A digest rather
+ * than the repository itself, because a repository may be as long as a
+ * revision is.
+ */
+export function bootstrapConfigurationRevision(
+  repository: RepositoryId,
+): ConfigurationRevisionId {
+  return asConfigurationRevisionId(
+    bootstrapConfigurationRevisionPrefix.concat(
+      createHash("sha256").update(repository).digest("hex"),
+    ),
+  );
+}
+
+/**
+ * The repository one configuration revision releases from alone, where there
+ * is one: the repository it was imported from, or the one a bootstrap's
+ * revision is named for.
+ */
+export type ConfigurationRepository =
+  | { readonly from: "Imported"; readonly repository: RepositoryId }
+  | { readonly from: "Bootstrap"; readonly revision: ConfigurationRevisionId };
+
+/** The repository a revision releases from alone, from what was imported of it and the revision itself. */
+export function configurationRepositoryOf(
+  revision: ConfigurationRevisionId,
+  imported: RepositoryId | undefined,
+): ConfigurationRepository | undefined {
+  if (imported !== undefined) return { from: "Imported", repository: imported };
+  return revision.startsWith(bootstrapConfigurationRevisionPrefix)
+    ? { from: "Bootstrap", revision }
+    : undefined;
+}
+
+/**
+ * The repository a new release under a revision releases from alone. The
+ * project's one bootstrap from before each repository had its own is named for
+ * none, so nothing new releases under it, while a ticket already released
+ * under it is still judged as under any authored revision.
+ */
+export function releaseConfigurationRepositoryOf(
+  revision: ConfigurationRevisionId,
+  imported: RepositoryId | undefined,
+): ConfigurationRepository | undefined {
+  return imported === undefined && revision === bootstrapConfigurationName
+    ? { from: "Bootstrap", revision }
+    : configurationRepositoryOf(revision, imported);
+}
+
+/** Whether a ticket in one repository releases under a revision scoped to one repository. */
+function configurationRepositoryReleases(
+  scoped: ConfigurationRepository,
+  repository: RepositoryId,
+): boolean {
+  switch (scoped.from) {
+    case "Imported":
+      return scoped.repository === repository;
+    case "Bootstrap":
+      return scoped.revision === bootstrapConfigurationRevision(repository);
+    default:
+      return assertNever(scoped);
+  }
 }
 
 /** Accepts already-canonical configuration bytes after the transport's schema validation. */
@@ -449,15 +521,14 @@ function ticketProgramRunsBriefChecks(
 /**
  * The release-time minimum for one draft: the configuration's own readiness
  * with what the draft asks of it applied, plus the repository the brief and the
- * configuration have to agree on. Only an imported revision was read out of a
- * repository, so a configuration carrying no provenance repository releases
- * under any binding and one carrying a provenance repository releases from
- * that binding alone.
+ * configuration have to agree on. An imported revision was read out of a
+ * repository and a bootstrap was authored for one, so each releases from that
+ * binding alone, and any other configuration releases under any binding.
  */
 export function draftReleaseReadiness(
   configuration: CanonicalConfiguration,
   brief: ReleaseBrief | undefined,
-  configurationRepository: RepositoryId | undefined,
+  configurationRepository: ConfigurationRepository | undefined,
   overrides: ConfigurationOverrides | undefined,
   selection?: ConfigurationSelection,
   program?: ReleaseAuthoringProgram,
@@ -483,7 +554,7 @@ export function draftReleaseReadiness(
     return { readiness: "Incomplete", fault: "BriefNamesNoRepository" };
   if (
     configurationRepository !== undefined &&
-    configurationRepository !== repository
+    !configurationRepositoryReleases(configurationRepository, repository)
   )
     return {
       readiness: "Incomplete",

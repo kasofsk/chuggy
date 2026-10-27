@@ -242,6 +242,43 @@ test("a change that moves the work stage's instructions is refused and stores no
   ]);
 });
 
+/**
+ * The project's one bootstrap from before each repository had its own is
+ * refused to every new release, so a ticket stands under it only by having
+ * been released before; re-pointing a parked ticket at a copy of its revision
+ * under that name is that history.
+ */
+test("a ticket released under the project's one old bootstrap takes a change as under any authored revision", async () => {
+  const parked = await parkedTicket("parked-old-bootstrap");
+  const { tenant, project } = parked.project.partition;
+  await rig.harness.query(
+    `INSERT INTO configuration_revision
+       (tenant, project, revision, canonical, digest, authority_kind, authority_subject)
+     SELECT c.tenant, c.project, 'bootstrap', c.canonical, c.digest,
+            c.authority_kind, c.authority_subject
+       FROM configuration_revision c
+       JOIN ticket_projection t
+         ON t.tenant=c.tenant AND t.project=c.project
+        AND t.configuration_revision=c.revision
+      WHERE t.tenant=$1 AND t.project=$2 AND t.ticket=$3`,
+    [tenant, project, parked.project.ticket],
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET configuration_revision='bootstrap'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [tenant, project, parked.project.ticket],
+  );
+  const before = await standing(parked);
+  assert.equal(await offered(parked, "old-bootstrap", sonnet), "Accepted");
+  const drained = await postgresHarnessDrain(
+    rig.harness,
+    parked.project.partition,
+    parked.memory,
+  );
+  assert.deepEqual(drained.decided, ["Answered"]);
+  assert.deepEqual(await standing(parked), { ...before, overrides: sonnet });
+});
+
 test("a change whose configuration is not ready is refused ConfigurationInvalid", async () => {
   const parked = await parkedTicket("parked-unready");
   const before = await standing(parked);

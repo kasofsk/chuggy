@@ -68,6 +68,7 @@ import type {
   ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
+import { bootstrapConfigurationRevision } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
@@ -221,7 +222,7 @@ function fixtureStore(): OnboardingStore {
     outcome: "Bound",
     landingUnavailable: false,
     retirementUnavailable: false,
-    stepHeld: { declared: new Map(), bootstrap: undefined },
+    stepHeld: { declared: new Map(), bootstraps: new Map() },
     heldReads: 0,
     attempted: new Map(),
     resolved: {
@@ -1982,15 +1983,23 @@ test("a binding the project holds a bootstrap for is answered it and listed as h
   const landed = await fixtureLanded(t, undefined, bootstrapImage);
   landed.store.stepHeld = {
     declared: new Map(),
-    bootstrap: bootstrapConfiguration({
-      repository,
-      defaultBranch: asGitRefName("refs/heads/main"),
-      image: bootstrapImage,
-    }),
+    bootstraps: new Map([
+      [
+        bootstrapConfigurationRevision(repository),
+        bootstrapConfiguration({
+          repository,
+          defaultBranch: asGitRefName("refs/heads/main"),
+          image: bootstrapImage,
+        }),
+      ],
+    ]),
   };
   const served = await landed.app.inject(configureRequest({ repository }));
   assert.equal(served.statusCode, 200);
-  const bootstrapped = { result: "Bootstrapped", revision: "bootstrap" };
+  const bootstrapped = {
+    result: "Bootstrapped",
+    revision: bootstrapConfigurationRevision(repository),
+  };
   assert.deepEqual(served.json(), { repository, configurations: bootstrapped });
   assert.deepEqual(await listedHeld(landed), [[true, bootstrapped]]);
   landed.store.stepHeld = {
