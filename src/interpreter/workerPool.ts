@@ -58,9 +58,8 @@
  * also told whether a job it would be given is still waiting, which ends at
  * once such a poll that wants no job, so a runner holding back learns there is
  * work it fits. A poll naming no room is never told, so a pool that wants no
- * job because it is full waits out its poll as before. A poll may name how
- * long it waits for an answer with nothing in it, up to the plane's own
- * longest wait.
+ * job because it is full waits out its whole poll. A poll may name how long it
+ * waits for an answer with nothing in it, up to the plane's own longest wait.
  *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
@@ -824,9 +823,9 @@ async function workerPoolHoldingRead(
  * caller's last of each kind of work it could take: a session, with room for
  * one or holding one from a plane that names the API a session reaches, and,
  * for a personal runner, an execution, with room for one, holding one, or
- * naming its memory room, which a runner holding back from claiming still
- * names while it would take what fits. That is what a pool's claim reads a
- * personal runner as live by.
+ * naming a memory room above nothing, which a runner holding back from
+ * claiming names while it would take what fits and a runner taking nothing
+ * names as 0. That is what a pool's claim reads a personal runner as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -850,7 +849,7 @@ async function workerPoolPollRecorded(
     identity.kind === "Personal" &&
     (asked.wanted > 0 ||
       holding.jobs.length > 0 ||
-      asked.memoryRoomMib !== undefined)
+      (asked.memoryRoomMib ?? 0) > 0)
   )
     await ports.assignments.polled(identity);
 }

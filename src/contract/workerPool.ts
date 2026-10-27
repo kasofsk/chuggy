@@ -292,7 +292,7 @@ export const workerRunnerMemoryCeilingHeader = "chuggy-memory-ceiling";
  * The header a runner names, in MiB, the memory it has room for now in on its
  * poll: each job the poll claims fits what the claims before it left of that
  * room, a job naming no memory read at the plane's own size. A poll without it
- * is claimed by count alone, as a runner's polls always were.
+ * is claimed by count alone.
  */
 export const workerRunnerMemoryRoomHeader = "chuggy-memory-room";
 

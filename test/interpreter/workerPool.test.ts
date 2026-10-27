@@ -1489,11 +1489,12 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names its memory room, apart from its sessions, and a pool's is not", async () => {
+test("a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names a memory room above nothing, apart from its sessions, and a pool's is not", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
-    [runner, { memoryRoomMib: 0 }, ["executions"]],
+    [runner, { memoryRoomMib: 1 }, ["executions"]],
+    [runner, { memoryRoomMib: 0 }, []],
     [identity, { memoryRoomMib: 4_096 }, []],
     [runner, {}, []],
     [runner, { wantedSessions: 1 }, ["sessions"]],

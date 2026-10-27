@@ -433,7 +433,7 @@ function schedulerPositive(
   name: string,
   fallback: number,
 ): number {
-  return environmentPositive(
+  return schedulerEnvironmentPositive(
     environment,
     `${schedulerVariablePrefix}${name}`,
     fallback,
@@ -441,7 +441,7 @@ function schedulerPositive(
 }
 
 /** One variable, named whole, as a positive integer, falling back where a deployment named none. */
-function environmentPositive(
+function schedulerEnvironmentPositive(
   environment: SchedulerEnvironment,
   variable: string,
   fallback: number,
@@ -943,7 +943,7 @@ export function schedulerCommandConfig(
     ),
     ...schedulerSessionPolicy(environment),
     access: schedulerAccess(environment),
-    poolMemoryMib: environmentPositive(
+    poolMemoryMib: schedulerEnvironmentPositive(
       environment,
       poolPlaneMemoryVariable,
       workerPoolMemoryMibDefault,
