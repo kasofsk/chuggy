@@ -18,10 +18,10 @@
  * Neither is a refusal: a decline says nothing of the target, so neither is
  * sent to the re-read that means it moved, and the reading proves where it is.
  *
- * A CANDIDATE THE SCRATCH DOES NOT HOLD IS PROVED FROM THE TIP'S HISTORY. The
- * scratch does not outlive its process, and the fetch of the tip is neither
- * shallow nor filtered, so a candidate still missing once every commit of that
- * history has been read is not in it.
+ * A CANDIDATE THE SCRATCH DOES NOT HOLD IS PROVED FROM THE TIP'S HISTORY. A
+ * scratch may not outlive its process, so a candidate it lacks is proved from
+ * that history: one still missing once every commit of it has been read is not
+ * in it.
  *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by
