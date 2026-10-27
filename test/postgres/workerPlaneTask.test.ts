@@ -59,7 +59,10 @@ import {
   taskInvocationBytesMax,
 } from "../../src/interpreter/taskBriefing.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
-import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
+import {
+  workerPoolMemoryMibDefault,
+  type WorkerPoolIdentity,
+} from "../../src/interpreter/workerPool.ts";
 import {
   inertWorkerPlane,
   taskFetched,
@@ -267,6 +270,7 @@ function launching(
     },
     practices: blessedPracticeCatalog,
     workerRuntime: schedulerRuntime,
+    poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
     finalizer: finalizerDefaults,
@@ -553,7 +557,7 @@ test("a pool's bearer fetches the task the scheduler recorded, and the bearer it
     assert.notEqual(
       await postgresWorkerPoolAssignments(poolPlanePool).claim(
         identity,
-        { leaseSecs, heldMax: 1 },
+        { leaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
         `assignment-${randomUUID()}`,
         bearer,
         [],
@@ -603,7 +607,7 @@ test("a personal runner's bearer fetches the task of the execution it claimed, a
     assert.notEqual(
       await postgresWorkerPoolAssignments(poolPlanePool).claimPersonal(
         { ...key, principal },
-        { leaseSecs, heldMax: 1 },
+        { leaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
         `assignment-${randomUUID()}`,
         bearer,
         [project.partition.project],

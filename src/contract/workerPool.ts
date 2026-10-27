@@ -280,6 +280,47 @@ export function workerRunnerCapabilitiesOf(
     : { named: "Unread" };
 }
 
+/**
+ * The header a runner names, in MiB, the most memory it takes one job of in on
+ * its poll, which replaces the ceiling its registration or an earlier poll
+ * recorded. A poll without it leaves the recorded ceiling as it is, and a
+ * caller none of whose polls named one is offered a job of any size.
+ */
+export const workerRunnerMemoryCeilingHeader = "chuggy-memory-ceiling";
+
+/**
+ * The header a runner names, in MiB, the memory it has room for now in on its
+ * poll: each job the poll claims fits what the claims before it left of that
+ * room, a job naming no memory read at the plane's own size. A poll without it
+ * is claimed by count alone.
+ */
+export const workerRunnerMemoryRoomHeader = "chuggy-memory-room";
+
+/**
+ * The header a runner names, in seconds, the longest it will wait for an
+ * answer with nothing in it in on its poll. The plane waits no longer than
+ * that or its own longest wait, whichever is shorter, and where it is zero
+ * answers after one look; a poll without it waits as long as the plane does.
+ */
+export const workerRunnerPollWaitHeader = "chuggy-poll-wait-secs";
+
+/** What a poll's count header names: nothing where it is absent, a count, or something a count does not read as. */
+export type WorkerRunnerCountNamed =
+  | { readonly named: "None" }
+  | { readonly named: "Count"; readonly count: number }
+  | { readonly named: "Unread" };
+
+/** The count `header` names, written as the poll's query writes one. */
+export function workerRunnerCountOf(
+  header: string | undefined,
+): WorkerRunnerCountNamed {
+  if (header === undefined) return { named: "None" };
+  const read = workerPoolQueryCountSchema.safeParse(header);
+  return read.success
+    ? { named: "Count", count: read.data }
+    : { named: "Unread" };
+}
+
 /** The longest address a runner's release is fetched from. */
 export const workerRunnerReleaseUrlCharsMax = 2_048;
 
@@ -309,6 +350,14 @@ export const workerPoolReconciliationSchema = z.strictObject({
    * It is absent where the poll named no runner or none is pinned for its package.
    */
   release: workerRunnerReleaseSchema.optional(),
+  /**
+   * Whether a job the poll's runner would be given, within the room and the
+   * ceiling it named, is still waiting once this answer's claims are made. It
+   * is named only to a poll naming its room whose release reads it, and such a
+   * poll that wants no job and finds one waiting is answered at once, so a
+   * runner with no slot free names a room of 0 or none.
+   */
+  jobsWaiting: z.boolean().optional(),
 });
 
 export const workerPoolRegistrationSchema = z.strictObject({

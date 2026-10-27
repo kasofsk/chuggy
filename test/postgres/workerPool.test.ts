@@ -26,6 +26,7 @@ import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRoster,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
@@ -86,7 +87,11 @@ const assignments = postgresWorkerPoolAssignments(planePool);
 const leaseSecs = 300;
 
 /** A claim's terms, holding more than any pool here holds. */
-const terms: WorkerPoolClaimTerms = { leaseSecs, heldMax: 4 };
+const terms: WorkerPoolClaimTerms = {
+  leaseSecs,
+  heldMax: 4,
+  memoryMibDefault: 4_096,
+};
 
 /** The platform every configuration here requires, as a pool declares it. */
 const platform = "Platform:Linux:Amd64";
@@ -655,8 +660,8 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
- * liveness and the runner and capabilities its poll named are all of its row
- * the plane writes.
+ * liveness and the runner, capabilities and memory ceiling its poll named are
+ * all of its row the plane writes.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -688,12 +693,12 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "personal_runner",
         "SELECT",
-        "capabilities,executions_polled_at,owner,principal,runner_package,runner_version,tenant",
+        "capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
       ],
       [
         "personal_runner",
         "UPDATE",
-        "capabilities,executions_polled_at,last_polled_at,runner_package,runner_version",
+        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
       ],
       ["personal_runner_project", "SELECT", "owner,project,tenant"],
       ["project", "SELECT", "lifecycle,project,tenant"],
@@ -707,12 +712,12 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "worker_pool",
         "SELECT",
-        "capabilities,class,pool,principal,project,runner_package,runner_version,tenant",
+        "capabilities,class,memory_ceiling_mib,pool,principal,project,runner_package,runner_version,tenant",
       ],
       [
         "worker_pool",
         "UPDATE",
-        "capabilities,last_polled_at,runner_package,runner_version",
+        "capabilities,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
       ],
     ].map(([table_name, privilege_type, columns]) => ({
       table_name,
@@ -903,6 +908,33 @@ test("a pool's poll naming capabilities replaces what its registration declared,
     undefined,
     "a pool claims what the set its poll named runs",
   );
+});
+
+test("a pool's poll naming a memory ceiling keeps it for the scheduler to read, writes nothing where it names the same, and a poll naming none leaves it", async () => {
+  const { partition } = await poolProject("pool-ceiling");
+  const pool = "ceiling";
+  const identity = await registered(partition, pool, [platform]);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const ceilings = async () =>
+    (await postgresWorkerPoolRoster(rig.pool).registered(partition)).pools.map(
+      (registered) => registered.memoryCeilingMib,
+    );
+  assert.deepEqual(await ceilings(), [undefined]);
+  await runners.named(identity, undefined, undefined, 8_192);
+  assert.deepEqual(await ceilings(), [8_192]);
+  const named = await poolCapabilitiesRow(partition, pool);
+  await runners.named(identity, undefined, undefined, 8_192);
+  await runners.named(identity, undefined, undefined, undefined);
+  assert.deepEqual(
+    await poolCapabilitiesRow(partition, pool),
+    named,
+    "the same ceiling again, or none, writes nothing",
+  );
+  assert.deepEqual(await ceilings(), [8_192]);
+  await runners.named(identity, undefined, undefined, 0);
+  assert.deepEqual(await ceilings(), [0]);
+  await runners.named(identity, undefined, undefined, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(await ceilings(), [Number.MAX_SAFE_INTEGER]);
 });
 
 test("a pool's poll naming a set that no longer runs what it holds keeps what it holds", async () => {

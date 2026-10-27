@@ -1199,36 +1199,46 @@ test("an image fault blocks its execution as incompatible, keeps its label and s
  * the execution the completion settled and puts it on the projection.
  */
 test("a blocked ticket escalates at the one wall and records what it hit", async () => {
-  const project = await schedulerProject(rig, "wall-read", { tasks: 1 });
-  await registerAll(project, "wall-read");
-  const attempt = await placedAttempt(project, "wall-read");
-  await rig.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
-  const blocked = await rig.store.blockExecution(
-    project.partition,
-    attempt.execution,
+  for (const wall of [
     "RuntimeVersionUnsupported",
-  );
-  assert.ok(blocked.blocked === "Blocked");
-  const drained = await postgresHarnessDrain(
-    rig.harness,
-    project.partition,
-    project.memory,
-  );
-  assert.deepEqual(drained.decided, ["Committed"]);
-  const asApi = postgresHarnessRolePool(apiRole);
-  try {
-    const read = await postgresNativeReads(asApi).ticket(
+    "RequiredMemoryUnavailable",
+  ] as const) {
+    const label = `wall-read-${wall}`;
+    const project = await schedulerProject(rig, label, { tasks: 1 });
+    await registerAll(project, label);
+    const attempt = await placedAttempt(project, label);
+    await rig.store.attemptEnded(attempt, "Withdrawn", "PlacementDenied");
+    const blocked = await rig.store.blockExecution(
       project.partition,
-      asTicketId(project.ticket),
+      attempt.execution,
+      wall,
     );
-    assert.equal(read?.phase, "Escalated");
-    assert.deepEqual(read?.escalation, {
-      kind: "WorkExecutionUnavailableEscalated",
-      evidence: "RuntimeVersionUnsupported",
-      resumeAt: "ResumeWork",
-    });
-  } finally {
-    await asApi.end();
+    assert.ok(blocked.blocked === "Blocked", wall);
+    const drained = await postgresHarnessDrain(
+      rig.harness,
+      project.partition,
+      project.memory,
+    );
+    assert.deepEqual(drained.decided, ["Committed"], wall);
+    const asApi = postgresHarnessRolePool(apiRole);
+    try {
+      const read = await postgresNativeReads(asApi).ticket(
+        project.partition,
+        asTicketId(project.ticket),
+      );
+      assert.equal(read?.phase, "Escalated", wall);
+      assert.deepEqual(
+        read?.escalation,
+        {
+          kind: "WorkExecutionUnavailableEscalated",
+          evidence: wall,
+          resumeAt: "ResumeWork",
+        },
+        wall,
+      );
+    } finally {
+      await asApi.end();
+    }
   }
 });
 

@@ -21,6 +21,7 @@ module registered_runner_test {
       { operatingSystem: Linux, architecture: Arm64 }),
     executionCapabilities: Set(
       "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
+    memoryCeiling: Unbounded,
     revision: 1
   }
   pure val runner: Runner = {
@@ -40,7 +41,7 @@ module registered_runner_test {
   pure def placement(id: int, requirement: ExecutionRequirement): ExecutionPlacement = {
     execution: id, attemptGeneration: 1, requirement: requirement,
     profile: personalProfile, requirementIdentity: id, requirementDigest: 101,
-    phase: Waiting
+    memoryMib: 4096, phase: Waiting
   }
   pure val initial: RunnerState = {
     runners: Map(1 -> runner), sessions: Map(1 -> session),
@@ -347,6 +348,45 @@ module registered_runner_test {
       not(canAssign(draining, 1, 1, 10)),
       canAssign(draining, 1, 2, 10),
       placementOutcome(draining, 1) == Placeable
+    })
+
+  /// The owner's runner 1 advertising a ceiling of `mib`, and the image-pinned
+  /// execution of `initial` against it.
+  pure def ceiling(mib: int): RunnerState =
+    val bounded = { ...inventory, memoryCeiling: CeilingMib(mib) }
+    { ...initial,
+      runners: Map(1 -> { ...runner, retainedInventory: bounded }),
+      sessions: Map(1 -> { ...session, inventory: bounded }),
+      placements: Map(1 -> placement(1, containerRequirement)) }
+
+  run executionAboveTheCeilingIsDefinitivelyIncompatibleTest =
+    val under = ceiling(4095)
+    assert(and {
+      inventoryMatches(containerRequirement, under.sessions.get(1).inventory),
+      not(sizeFits(under.placements.get(1), under.sessions.get(1).inventory)),
+      not(canAssign(under, 1, 1, 10)),
+      placementOutcome(under, 1) == DefinitiveIncompatibility,
+      canAssign(ceiling(4096), 1, 1, 10),
+      placementOutcome(ceiling(4096), 1) == Placeable
+    })
+
+  run runnerNamingNoCeilingTakesAnySizeTest =
+    val large = { ...initial, placements: Map(1 -> { ...placement(1, containerRequirement), memoryMib: 262144 }) }
+    assert(and {
+      sizeFits(large.placements.get(1), inventory),
+      canAssign(large, 1, 1, 10),
+      placementOutcome(large, 1) == Placeable
+    })
+
+  run strictFallbackOwnerRunnerTooSmallLeavesDedicatedRouteTest =
+    val state = fallback(Strict)
+    val small = { ...runner, retainedInventory: { ...inventory, memoryCeiling: CeilingMib(2048) } }
+    val smaller = { ...state, runners: state.runners.set(1, small),
+      sessions: state.sessions.set(1, { ...session, inventory: small.retainedInventory }) }
+    assert(and {
+      not(canAssign(smaller, 1, 1, 10)),
+      canAssign(smaller, 1, 2, 10),
+      placementOutcome(smaller, 1) == Placeable
     })
 
   run ownerWithoutConfiguredRunnerFollowsDedicatedRouteTest =

@@ -9,12 +9,15 @@
  * which is `owner_fallback` named; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
- * it is enabled and current; its capabilities run the requirement; and what
- * that registration holds, across every project it serves, is the slot, apart
- * from what any other runner of the owner's holds. The owner's fallback
- * refuses a personal runner nothing. Its permit was asked when its poll was
- * admitted, and its owner's `Read` of each project before the claim, which
- * names only the projects that answered.
+ * it is enabled and current; its capabilities run the requirement, and the
+ * execution's size is at or under its memory ceiling where a poll named one,
+ * as a pool's is; and what that registration holds, across every project it
+ * serves, is the slot, apart from what any other runner of the owner's holds.
+ * The owner's fallback refuses a personal runner nothing. Its permit was asked
+ * when its poll was admitted, and its owner's `Read` of each project before
+ * the claim, which names only the projects that answered. The claim takes no
+ * execution larger than the room the terms name, which chooses among what
+ * that allows as the order does rather than being a term of it.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
@@ -49,6 +52,7 @@ export async function personalExecutionClaimed(
   terms: WorkerPoolClaimTerms,
   claim: PersonalExecutionClaim,
 ): Promise<WorkerPoolPersonalClaimed | undefined> {
+  const room = terms.memoryRoomMib ?? null;
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
@@ -84,6 +88,10 @@ export async function personalExecutionClaimed(
           AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND (r.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
                   AND h.pool_principal=r.principal
@@ -98,6 +106,52 @@ export async function personalExecutionClaimed(
   return row === undefined
     ? undefined
     : { ...workerPoolClaimedRow(row), project: asProjectId(row.project) };
+}
+
+/**
+ * Whether `personalExecutionClaimed` on the same terms would take an attempt
+ * now: its choice of attempt, with no lock, no order and nothing taken. The
+ * predicate is written twice, here and there, and
+ * `test/postgres/workerPoolClaim.test.ts` holds the two to one answer over
+ * every case it asks the claim.
+ */
+export async function personalExecutionWaiting(
+  pool: pg.Pool,
+  identity: PersonalRunnerIdentity,
+  terms: WorkerPoolClaimTerms,
+  projects: readonly ProjectId[],
+): Promise<boolean> {
+  const room = terms.memoryRoomMib ?? null;
+  const found = await pool.query<{ waiting: boolean }>(
+    sql`SELECT EXISTS(
+        SELECT 1
+        FROM execution_attempt q
+        JOIN execution x
+          ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+        JOIN personal_runner r ON r.tenant=q.tenant
+        JOIN personal_runner_project l
+          ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
+        WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
+          AND r.principal=${identity.principal}
+          AND q.project=ANY(${[...projects] as string[]}::text[])
+          AND q.state='Placing' AND q.pool IS NULL AND q.invoked
+          AND x.placement='Pool' AND x.status='Launching'
+          AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
+          AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
+          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND (r.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
+          AND (SELECT count(*) FROM execution_attempt h
+                WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
+                  AND h.pool_principal=r.principal
+                  AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
+          AND EXISTS(SELECT 1 FROM project p
+            WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+      ) AS waiting`,
+  );
+  return found.rows[0]?.waiting === true;
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */

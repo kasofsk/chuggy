@@ -25,6 +25,7 @@ import {
   workerPoolTokenCharsMax,
   workerRunnerCapabilitiesOf,
   workerRunnerCapabilitiesSchema,
+  workerRunnerCountOf,
   workerRunnerOf,
   workerRunnerReleaseSchema,
   workerRunnerReleaseUrlCharsMax,
@@ -357,6 +358,34 @@ test("a poll's capabilities header naming a token outside the grammar, one twice
       .success,
     false,
   );
+});
+
+test("a poll's count header is a count as its query writes one, an absent header names none, and anything else is unread", () => {
+  assert.deepEqual(workerRunnerCountOf(undefined), { named: "None" });
+  for (const [header, count] of [
+    ["0", 0],
+    ["4096", 4_096],
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+  ] as const)
+    assert.deepEqual(
+      workerRunnerCountOf(header),
+      { named: "Count", count },
+      header,
+    );
+  for (const header of [
+    "",
+    "-1",
+    "+1",
+    "01",
+    "1.5",
+    "1e3",
+    "0x10",
+    "4096 MiB",
+    " 4096",
+    "4096, 4096",
+    String(Number.MAX_SAFE_INTEGER + 2),
+  ])
+    assert.deepEqual(workerRunnerCountOf(header), { named: "Unread" }, header);
 });
 
 test("a pool of a release the runner-release range accepts reads an answer naming a release, and one of any earlier refuses it", async () => {

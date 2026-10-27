@@ -45,11 +45,21 @@
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
- * A POLL MAY NAME WHAT ITS CALLER CAN RUN, and the set it names replaces the
- * one recorded before anything is claimed, so its own claims match it; a poll
- * naming none leaves the record as it is. What the caller already holds was
- * claimed under the set recorded then, and is renewed and settled as before,
- * since nothing after a claim reads a set.
+ * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
+ * memory it takes one job of, each replace the one recorded before anything
+ * is claimed, so its own claims match them; a poll naming neither leaves the
+ * record as it is. What the caller already holds was claimed under what was
+ * recorded then, and is renewed and settled as before, since nothing after a
+ * claim reads either.
+ *
+ * A POLL MAY NAME ITS ROOM, the memory it can give jobs now, and each job it
+ * claims fits what the claims before it left of that room; a poll naming none
+ * is claimed by count alone. A poll naming its room whose release reads it is
+ * also told whether a job it would be given is still waiting, which ends at
+ * once such a poll that wants no job, so a runner holding back learns there is
+ * work it fits. A poll naming no room is never told, so a pool that wants no
+ * job because it is full waits out its whole poll. A poll may name how long it
+ * waits for an answer with nothing in it, up to the plane's own longest wait.
  *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
@@ -85,6 +95,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunnerJobsWaiting,
   workerContractRunnerProjects,
   type WorkerContractRange,
 } from "./workerPlane.ts";
@@ -118,15 +129,21 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly runner?: WorkerRunner;
   readonly capabilities?: readonly string[];
+  readonly memoryCeilingMib?: number;
+  readonly memoryRoomMib?: number;
+  readonly pollWaitSecs?: number;
   readonly contract?: string;
 }
+
+/** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
+export const workerPoolMemoryMibDefault = 4_096;
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
 export interface WorkerPoolRegistration {
@@ -162,9 +179,10 @@ export interface WorkerPoolRegistry {
   identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
-/** One registered pool as the scheduler reads it: its identity, what it declared, and its class. */
+/** One registered pool as the scheduler reads it: its identity, what it declared, the memory ceiling its polls named where they named one, and its class. */
 export interface WorkerPoolRegistered extends WorkerPoolIdentity {
   readonly capabilities: readonly string[];
+  readonly memoryCeilingMib: number | undefined;
   readonly class: WorkerPoolClass;
 }
 
@@ -202,11 +220,12 @@ export interface WorkerPoolRoster {
   ): Promise<readonly PersonalRunnerRegistered[]>;
 }
 
-/** One of a member's personal runners as the scheduler reads it: who it is, what it declared, and the projects its owner's allowlist names. */
+/** One of a member's personal runners as the scheduler reads it: who it is, what it declared, the memory ceiling its polls named where they named one, and the projects its owner's allowlist names. */
 export interface PersonalRunnerRegistered {
   readonly owner: Principal;
   readonly principal: Principal;
   readonly capabilities: readonly string[];
+  readonly memoryCeilingMib: number | undefined;
   readonly allowlist: readonly Partition[];
 }
 
@@ -294,10 +313,12 @@ export interface WorkerPoolPersonalClaimed extends WorkerPoolClaimed {
   readonly project: ProjectId;
 }
 
-/** What a claim is held to: how long the lease it takes runs, and how many live attempts the pool may hold with it. */
+/** What a claim is held to: how long the lease it takes runs, how many live attempts the pool may hold with it, the memory, in MiB, an execution naming none is sized at, and the most memory the execution it takes may have where its poll named its room. */
 export interface WorkerPoolClaimTerms {
   readonly leaseSecs: number;
   readonly heldMax: number;
+  readonly memoryMibDefault: number;
+  readonly memoryRoomMib?: number;
 }
 
 /**
@@ -356,6 +377,18 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
     bearer: string,
     projects: readonly ProjectId[],
   ): Promise<WorkerPoolPersonalClaimed | undefined>;
+  /** Whether `claim` on the same terms would take an attempt now, taking none. */
+  waiting(
+    identity: WorkerPoolIdentity,
+    terms: WorkerPoolClaimTerms,
+    ownersRevoked: readonly Principal[],
+  ): Promise<boolean>;
+  /** Whether `claimPersonal` on the same terms would take an attempt now, taking none. */
+  waitingPersonal(
+    identity: PersonalRunnerIdentity,
+    terms: WorkerPoolClaimTerms,
+    projects: readonly ProjectId[],
+  ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
   /** Records a personal runner's poll as one that could take an execution, under its current registration alone. */
@@ -386,14 +419,15 @@ export interface WorkerPoolPollSettings {
  * Where what a caller's newest poll named is kept, under its current
  * registration alone: the runner, which a poll naming none keeps none of, so a
  * machine moved back to a runner too old to name itself is not shown as the
- * version it left; and the capabilities, which a poll naming none leaves as
- * they were recorded.
+ * version it left; and the capabilities and the memory ceiling, which a poll
+ * naming none leaves as they were recorded.
  */
 export interface WorkerPoolRunners {
   named(
     identity: PoolPlaneIdentity,
     runner: WorkerRunner | undefined,
     capabilities: readonly string[] | undefined,
+    memoryCeilingMib?: number,
   ): Promise<void>;
 }
 
@@ -507,11 +541,15 @@ export async function workerPoolOwnerStands(
   );
 }
 
-/** One claim's binding, decided for whichever caller the plane admitted with what the authority answered first. */
-type WorkerPoolClaimMade = (
-  assignment: string,
-  bearer: string,
-) => Promise<WorkerPoolClaimed | WorkerPoolPersonalClaimed | undefined>;
+/** How one caller claims, decided for whichever caller the plane admitted with what the authority answered first: each claim held to the room it is given, and whether a claim in a room would take anything. */
+interface WorkerPoolClaimer {
+  claim(
+    assignment: string,
+    bearer: string,
+    memoryRoomMib: number | undefined,
+  ): Promise<WorkerPoolClaimed | WorkerPoolPersonalClaimed | undefined>;
+  waiting(memoryRoomMib: number | undefined): Promise<boolean>;
+}
 
 /**
  * How this caller claims: a pool deferring to no revoked owner's runners, and a
@@ -522,8 +560,14 @@ async function workerPoolClaimMade(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-): Promise<WorkerPoolClaimMade> {
+): Promise<WorkerPoolClaimer> {
   const { access, assignments } = ports;
+  const held = (memoryRoomMib: number | undefined): WorkerPoolClaimTerms => ({
+    leaseSecs: settings.leaseSecs,
+    heldMax: settings.heldMax,
+    memoryMibDefault: settings.memoryMib,
+    ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
+  });
   switch (identity.kind) {
     case "Dedicated": {
       const owners = await assignments.ownersDeferredTo(
@@ -535,8 +579,11 @@ async function workerPoolClaimMade(
       for (const owner of owners)
         if (!(await workerPoolOwnerStands(access, owner, identity.partition)))
           revoked.push(owner);
-      return (assignment, bearer) =>
-        assignments.claim(identity, settings, assignment, bearer, revoked);
+      return {
+        claim: (assignment, bearer, room) =>
+          assignments.claim(identity, held(room), assignment, bearer, revoked),
+        waiting: (room) => assignments.waiting(identity, held(room), revoked),
+      };
     }
     case "Personal": {
       const projects: ProjectId[] = [];
@@ -549,16 +596,23 @@ async function workerPoolClaimMade(
           )) !== undefined
         )
           projects.push(project);
-      return (assignment, bearer) =>
-        projects.length === 0
-          ? Promise.resolve(undefined)
-          : assignments.claimPersonal(
-              identity,
-              settings,
-              assignment,
-              bearer,
-              projects,
-            );
+      if (projects.length === 0)
+        return {
+          claim: () => Promise.resolve(undefined),
+          waiting: () => Promise.resolve(false),
+        };
+      return {
+        claim: (assignment, bearer, room) =>
+          assignments.claimPersonal(
+            identity,
+            held(room),
+            assignment,
+            bearer,
+            projects,
+          ),
+        waiting: (room) =>
+          assignments.waitingPersonal(identity, held(room), projects),
+      };
     }
   }
 }
@@ -587,40 +641,75 @@ function workerPoolClaimedRuntime(
     : {};
 }
 
+/** What a poll's room is left at once a job of `memoryMib` is claimed in it, which a claim never takes past. */
+function workerPoolRoomLeft(
+  memoryRoomMib: number | undefined,
+  memoryMib: number,
+): number | undefined {
+  if (memoryRoomMib === undefined) return undefined;
+  if (memoryMib > memoryRoomMib)
+    throw new Error("a worker pool claim took a job larger than its room");
+  return memoryRoomMib - memoryMib;
+}
+
 /**
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
- * in the same statement. A caller with no room asks for none and none is
- * claimed, so a full pool's poll costs no row a pool with room could take and
- * no question of the authority.
+ * in the same statement and each fitting the room the claims before it left,
+ * and, for a poll naming its room whose release reads it, whether one more is
+ * waiting, which a claim that took nothing answers without asking, as does a
+ * room of nothing that wants none, since no job fits it. Any other caller that
+ * wants no job asks for none and none is claimed, so a full pool's or runner's
+ * poll costs no row a pool with room could take and no question of the
+ * authority.
  */
 async function workerPoolClaims(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  asked: { readonly wanted: number; readonly contract?: string },
-): Promise<WorkerPoolAssignment[]> {
+  asked: {
+    readonly wanted: number;
+    readonly memoryRoomMib?: number;
+    readonly contract?: string;
+  },
+): Promise<Pick<WorkerPoolReconciliation, "assignments" | "jobsWaiting">> {
   const { wanted } = asked;
-  const claimed: WorkerPoolAssignment[] = [];
-  if (wanted <= 0) return claimed;
-  const claim = await workerPoolClaimMade(ports, identity, settings);
+  const answersWaiting =
+    asked.memoryRoomMib !== undefined &&
+    contractVersionAccepted(workerContractRunnerJobsWaiting, asked.contract);
+  const assignments: WorkerPoolAssignment[] = [];
+  if (wanted <= 0 && !answersWaiting) return { assignments };
+  if (wanted <= 0 && asked.memoryRoomMib === 0)
+    return { assignments, jobsWaiting: false };
+  const claimer = await workerPoolClaimMade(ports, identity, settings);
+  let room = asked.memoryRoomMib;
+  let exhausted = false;
   for (let taken = 0; taken < wanted; taken += 1) {
     const assignment = ports.mint();
     const bearer = ports.mint();
-    const row = await claim(assignment, bearer);
-    if (row === undefined) break;
-    claimed.push({
+    const row = await claimer.claim(assignment, bearer, room);
+    if (row === undefined) {
+      exhausted = true;
+      break;
+    }
+    const memoryMib = row.resources?.memoryMib ?? settings.memoryMib;
+    room = workerPoolRoomLeft(room, memoryMib);
+    assignments.push({
       assignment,
       ...workerPoolClaimedPlacement(row.requirement, settings.imageHosts),
       ...workerPoolClaimedRuntime(row, settings.imageHosts),
       ...workerPoolClaimedProject(row, asked.contract),
       cpuMillis: row.resources?.cpuMillis ?? settings.cpuMillis,
-      memoryMib: row.resources?.memoryMib ?? settings.memoryMib,
+      memoryMib,
       deadlineSecs: settings.deadlineSecs,
       callbackUrl: settings.callbackUrl,
       bearer,
     });
   }
-  return claimed;
+  if (!answersWaiting) return { assignments };
+  return {
+    assignments,
+    jobsWaiting: !exhausted && (await claimer.waiting(room)),
+  };
 }
 
 /** The sessions one pass claims, which is none on a plane that names no API for a session to reach. */
@@ -660,7 +749,10 @@ export async function workerPoolReconcile(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   holding: WorkerPoolHolding,
-  asked: Pick<WorkerPoolAsked, "wanted" | "wantedSessions" | "contract">,
+  asked: Pick<
+    WorkerPoolAsked,
+    "wanted" | "wantedSessions" | "memoryRoomMib" | "contract"
+  >,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
   const stop = [
@@ -677,15 +769,22 @@ export async function workerPoolReconcile(
       settings.leaseSecs,
     )),
   ];
+  const claimed = await workerPoolClaims(ports, identity, settings, {
+    wanted: Math.min(
+      asked.wanted,
+      settings.assignmentsPerPollMax,
+      settings.heldMax - holding.jobs.length,
+    ),
+    ...(asked.memoryRoomMib === undefined
+      ? {}
+      : { memoryRoomMib: asked.memoryRoomMib }),
+    ...(asked.contract === undefined ? {} : { contract: asked.contract }),
+  });
   return {
-    assignments: await workerPoolClaims(ports, identity, settings, {
-      wanted: Math.min(
-        asked.wanted,
-        settings.assignmentsPerPollMax,
-        settings.heldMax - holding.jobs.length,
-      ),
-      ...(asked.contract === undefined ? {} : { contract: asked.contract }),
-    }),
+    assignments: claimed.assignments,
+    ...(claimed.jobsWaiting === undefined
+      ? {}
+      : { jobsWaiting: claimed.jobsWaiting }),
     sessions: await workerPoolSessionsClaimed(
       ports,
       identity,
@@ -722,11 +821,14 @@ async function workerPoolHoldingRead(
 }
 
 /**
- * Records the runner this poll named and the capabilities it has where it named
- * them, and the poll as the caller's last of each kind of work it could take: a
- * session, with room for one or holding one from a plane that names the API a
- * session reaches, and, for a personal runner, an execution, with room for one
- * or holding one, which is what a pool's claim reads it as live by.
+ * Records the runner this poll named, and the capabilities it has and the
+ * memory ceiling it takes jobs under where it named them, and the poll as the
+ * caller's last of each kind of work it could take: a session, with room for
+ * one or holding one from a plane that names the API a session reaches, and,
+ * for a personal runner, an execution, with room for one, holding one, or
+ * naming a memory room above nothing, which a runner holding back from
+ * claiming names while it would take what fits and a runner taking nothing
+ * names as 0. That is what a pool's claim reads a personal runner as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -735,7 +837,12 @@ async function workerPoolPollRecorded(
   holding: WorkerPoolHolding,
   settings: WorkerPoolPollSettings,
 ): Promise<void> {
-  await ports.runners.named(identity, asked.runner, asked.capabilities);
+  await ports.runners.named(
+    identity,
+    asked.runner,
+    asked.capabilities,
+    asked.memoryCeilingMib,
+  );
   if (
     settings.sessionApiUrl !== undefined &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)
@@ -743,16 +850,32 @@ async function workerPoolPollRecorded(
     await ports.sessions.store.polled(identity);
   if (
     identity.kind === "Personal" &&
-    (asked.wanted > 0 || holding.jobs.length > 0)
+    (asked.wanted > 0 ||
+      holding.jobs.length > 0 ||
+      (asked.memoryRoomMib ?? 0) > 0)
   )
     await ports.assignments.polled(identity);
 }
 
+/** How many passes a poll makes at most: the plane's own, or no more than the wait its poll named lets follow the first. */
+function workerPoolPollPasses(
+  settings: WorkerPoolPollSettings,
+  pollWaitSecs: number | undefined,
+): number {
+  return pollWaitSecs === undefined
+    ? settings.pollsMax
+    : Math.min(
+        settings.pollsMax,
+        1 + Math.floor((pollWaitSecs * 1_000) / settings.pollIntervalMs),
+      );
+}
+
 /**
- * The long poll: reconciliation until it has something to say or until the
- * bounded wait runs out, where an empty answer is correct and the pool asks
- * again. A held list longer than a kind's bound is refused whole, since a cut
- * one reads as a pool that let go of work it still runs.
+ * The long poll: reconciliation until it has something to say, or a job its
+ * caller would be given is waiting, or the bounded wait runs out, where an
+ * empty answer is correct and the pool asks again. A held list longer than a
+ * kind's bound is refused whole, since a cut one reads as a pool that let go
+ * of work it still runs.
  */
 export async function workerPoolPoll(
   ports: WorkerPoolPorts,
@@ -761,11 +884,14 @@ export async function workerPoolPoll(
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolPolled> {
   workerPoolCheckedSettings(settings);
-  for (const [name, room] of [
+  for (const [name, count] of [
     ["wanted", asked.wanted],
     ["wantedSessions", asked.wantedSessions],
+    ["memoryCeilingMib", asked.memoryCeilingMib ?? 0],
+    ["memoryRoomMib", asked.memoryRoomMib ?? 0],
+    ["pollWaitSecs", asked.pollWaitSecs ?? 0],
   ] as const)
-    if (!Number.isSafeInteger(room) || room < 0)
+    if (!Number.isSafeInteger(count) || count < 0)
       throw new RangeError(
         `worker pool ${name} must be a non-negative integer`,
       );
@@ -783,12 +909,14 @@ export async function workerPoolPoll(
     asked,
     settings,
   );
+  const passes = workerPoolPollPasses(settings, asked.pollWaitSecs);
   for (
     let polled = 1;
-    polled < settings.pollsMax &&
+    polled < passes &&
     answer.assignments.length === 0 &&
     answer.sessions.length === 0 &&
-    answer.stop.length === 0;
+    answer.stop.length === 0 &&
+    answer.jobsWaiting !== true;
     polled += 1
   ) {
     await delay(settings.pollIntervalMs);

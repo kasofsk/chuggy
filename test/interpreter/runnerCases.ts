@@ -1,7 +1,8 @@
 /**
  * The cases a worker pool's assignment guard is held to, restated from
  * `model/tests/runner_test.qnt` for a pool: every run there that exercises
- * `canAssign`, `placementOutcome`, `inventoryMatches` or `policyAllows`, and
+ * `canAssign`, `placementOutcome`, `inventoryMatches`, `sizeFits` or
+ * `policyAllows`, and
  * for each term those guards conjoin a case in which that term refuses the
  * assignment.
  *
@@ -93,6 +94,7 @@ export const runnerTerm = {
     "CapabilityRequirement: i.platforms.contains({ operatingSystem: c.operatingSystem, architecture: c.architecture })",
   capabilitySubset:
     "CapabilityRequirement: c.capabilities.subseteq(i.executionCapabilities)",
+  size: "CeilingMib: p.memoryMib <= m",
 } as const;
 
 const partition: Partition = {
@@ -121,6 +123,7 @@ const placement: WorkerPoolPlacement = {
   requirement: container,
   route: "Pool",
   demand: workerPoolDemandRouted,
+  memoryMib: 4_096,
 };
 
 const pool: WorkerPoolRunner = {
@@ -131,6 +134,7 @@ const pool: WorkerPoolRunner = {
   revoked: false,
   ...workerPoolPolicyRegistered,
   capabilities: ["Platform:Linux:Amd64", "Agent:Claude", "Agent:Codex"],
+  memoryCeilingMib: undefined,
 };
 
 const session: WorkerPoolSession = {
@@ -255,6 +259,18 @@ const assigned: readonly RunnerCase[] = [
   },
   {
     ...assignable,
+    name: "an execution at a pool's memory ceiling is assigned to it",
+    model: "executionAboveTheCeilingIsDefinitivelyIncompatibleTest",
+    pool: { ...pool, memoryCeilingMib: placement.memoryMib },
+  },
+  {
+    ...assignable,
+    name: "a pool naming no memory ceiling is assigned an execution of any size",
+    model: "runnerNamingNoCeilingTakesAnySizeTest",
+    placement: { ...placement, memoryMib: 262_144 },
+  },
+  {
+    ...assignable,
     name: "a personal pool is assigned its owner's execution in a partition it allowlists",
     model: "personalRunnerTakesItsOwnersAllowlistedExecutionTest",
     pool: personal,
@@ -349,6 +365,13 @@ const assigned: readonly RunnerCase[] = [
     name: "a dedicated pool is assigned a strict owner's execution that the owner's polling personal pool cannot run",
     model: "strictFallbackOwnerRunnerUnableLeavesDedicatedRouteTest",
     others: [ownersPoolRegistered({ capabilities: ["Platform:Linux:Arm64"] })],
+    placement: ownedStrict,
+  },
+  {
+    ...assignable,
+    name: "a dedicated pool is assigned a strict owner's execution that the owner's polling personal pool is too small for",
+    model: "strictFallbackOwnerRunnerTooSmallLeavesDedicatedRouteTest",
+    others: [ownersPoolRegistered({ memoryCeilingMib: 2_048 })],
     placement: ownedStrict,
   },
   {
@@ -711,6 +734,24 @@ const refusedByInventory: readonly RunnerCase[] = [
         ...pool,
         capabilities: ["Platform:MacOS:Arm64", "Tool:Xcode"],
       },
+    },
+  ),
+  refused(
+    "an execution above every pool's memory ceiling is definitively incompatible",
+    [runnerTerm.size],
+    "DefinitiveIncompatibility",
+    {
+      model: "executionAboveTheCeilingIsDefinitivelyIncompatibleTest",
+      pool: { ...pool, memoryCeilingMib: placement.memoryMib - 1 },
+    },
+  ),
+  refused(
+    "a personal pool is assigned nothing of its owner's above its memory ceiling",
+    [runnerTerm.size],
+    "DefinitiveIncompatibility",
+    {
+      pool: { ...personal, memoryCeilingMib: 2_048 },
+      placement: owned,
     },
   ),
   refused(

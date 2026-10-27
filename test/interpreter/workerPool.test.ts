@@ -106,6 +106,8 @@ const idle: WorkerPoolAssignments = {
   claim: () => Promise.resolve(undefined),
   ownersDeferredTo: () => Promise.resolve([]),
   claimPersonal: () => Promise.resolve(undefined),
+  waiting: () => Promise.resolve(false),
+  waitingPersonal: () => Promise.resolve(false),
   allowlisted: () => Promise.resolve([]),
   polled: () => Promise.resolve(),
   renew: () => Promise.resolve(true),
@@ -442,11 +444,14 @@ test("capabilities a project named for itself reach the pool as it named them", 
   assert.equal("image" in assignment, false);
 });
 
-test("a room that is not a whole count refuses the poll", async () => {
+test("a room, a memory ceiling, a memory room or a wait that is not a whole count refuses the poll", async () => {
   for (const room of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
     for (const [over, refusal] of [
       [{ wanted: room }, /wanted must/u],
       [{ wantedSessions: room }, /wantedSessions must/u],
+      [{ memoryCeilingMib: room }, /memoryCeilingMib must/u],
+      [{ memoryRoomMib: room }, /memoryRoomMib must/u],
+      [{ pollWaitSecs: room }, /pollWaitSecs must/u],
     ] as const)
       await assert.rejects(
         () => workerPoolPoll(ports(), identity, asked(over), settings),
@@ -847,6 +852,334 @@ test("a poll naming capabilities keeps them before anything is claimed, once how
   }
 });
 
+test("a poll naming a memory ceiling keeps it before anything is claimed, and every claim is held to the plane's terms and its size for an execution naming none", async () => {
+  for (const [over, kept] of [
+    [{ memoryCeilingMib: 8_192 }, 8_192],
+    [{ memoryCeilingMib: 0 }, 0],
+    [{}, undefined],
+  ] as const) {
+    const made: unknown[] = [];
+    await workerPoolPoll(
+      ports(
+        {
+          ...idle,
+          claim: (_identity, terms) => {
+            made.push(["claim", terms]);
+            return Promise.resolve(undefined);
+          },
+        },
+        noSessions,
+        undefined,
+        undefined,
+        {
+          named: (_identity, _runner, _capabilities, ceiling) => {
+            made.push(["named", ceiling]);
+            return Promise.resolve();
+          },
+        },
+      ),
+      identity,
+      asked({ wanted: 1, ...over }),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(
+      made,
+      [
+        ["named", kept],
+        [
+          "claim",
+          {
+            leaseSecs: settings.leaseSecs,
+            heldMax: settings.heldMax,
+            memoryMibDefault: settings.memoryMib,
+          },
+        ],
+      ],
+      JSON.stringify(over),
+    );
+  }
+});
+
+/** A durable side holding jobs of `sizes` in MiB, or naming none, each claimed oldest first by a pool or by a runner in its one project where it fits the room the claim is given; and what it was asked. */
+function sized(sizes: readonly (number | undefined)[]): {
+  readonly reached: unknown[];
+  readonly assignments: WorkerPoolAssignments;
+} {
+  const reached: unknown[] = [];
+  const queue = [...sizes];
+  const fits = (size: number | undefined, room: number | undefined) =>
+    room === undefined || (size ?? settings.memoryMib) <= room;
+  const claimed = ({ memoryRoomMib }: WorkerPoolClaimTerms) => {
+    reached.push(["claim", memoryRoomMib]);
+    const at = queue.findIndex((size) => fits(size, memoryRoomMib));
+    if (at < 0) return undefined;
+    const [size] = queue.splice(at, 1);
+    return {
+      requirement: container,
+      ...(size === undefined ? {} : { resources: { memoryMib: size } }),
+    };
+  };
+  const waiting = ({ memoryRoomMib }: WorkerPoolClaimTerms) => {
+    reached.push(["waiting", memoryRoomMib]);
+    return Promise.resolve(queue.some((size) => fits(size, memoryRoomMib)));
+  };
+  return {
+    reached,
+    assignments: {
+      ...idle,
+      claim: (_identity, terms) => Promise.resolve(claimed(terms)),
+      waiting: (_identity, terms) => waiting(terms),
+      allowlisted: () => Promise.resolve([asProjectId("project")]),
+      claimPersonal: (_identity, terms) => {
+        const row = claimed(terms);
+        return Promise.resolve(
+          row === undefined
+            ? undefined
+            : { ...row, project: asProjectId("project") },
+        );
+      },
+      waitingPersonal: (_identity, terms) => waiting(terms),
+    },
+  };
+}
+
+/** The size an execution naming no memory is claimed at. */
+const unsized = settings.memoryMib;
+
+/** Jobs of each size, a room, and the sizes claimed, the claims and probe asked and the answer whether one more is waiting, for a poll wanting two. */
+const roomCases = [
+  [
+    [3_000, 3_000],
+    4_096,
+    [3_000],
+    [
+      ["claim", 4_096],
+      ["claim", 1_096],
+    ],
+    false,
+  ],
+  [
+    [3_000, 3_000],
+    6_000,
+    [3_000, 3_000],
+    [
+      ["claim", 6_000],
+      ["claim", 3_000],
+      ["waiting", 0],
+    ],
+    false,
+  ],
+  [
+    [3_000, 3_000, 3_000],
+    9_000,
+    [3_000, 3_000],
+    [
+      ["claim", 9_000],
+      ["claim", 6_000],
+      ["waiting", 3_000],
+    ],
+    true,
+  ],
+  [
+    [undefined, undefined],
+    2 * unsized - 1,
+    [unsized],
+    [
+      ["claim", 2 * unsized - 1],
+      ["claim", unsized - 1],
+    ],
+    false,
+  ],
+  [
+    [3_000, 3_000],
+    undefined,
+    [3_000, 3_000],
+    [
+      ["claim", undefined],
+      ["claim", undefined],
+    ],
+    undefined,
+  ],
+] as const;
+
+test("each job a poll claims fits what the claims before it left of the room it named, a job naming no memory at the plane's size, and one naming no room is claimed by count, for a pool and for a personal runner", async () => {
+  const callers: readonly PoolPlaneIdentity[] = [identity, runner];
+  for (const [sizes, room, claimed, reached, waiting] of roomCases)
+    for (const caller of callers) {
+      const durable = sized(sizes);
+      const answered = await workerPoolReconcile(
+        ports(durable.assignments),
+        caller,
+        nothingHeld,
+        {
+          wanted: 2,
+          wantedSessions: 0,
+          ...(room === undefined ? {} : { memoryRoomMib: room }),
+          contract: workerContractRelease,
+        },
+        settings,
+      );
+      const label = `${caller.kind} ${JSON.stringify(sizes)} in ${String(room)}`;
+      assert.deepEqual(
+        answered.assignments.map((taken) => taken.memoryMib),
+        claimed,
+        label,
+      );
+      assert.deepEqual(durable.reached, reached, label);
+      assert.equal(answered.jobsWaiting, waiting, label);
+    }
+});
+
+test("a claim that took a job larger than the room its poll named fails the poll rather than answering it", async () => {
+  await assert.rejects(
+    workerPoolReconcile(
+      ports({
+        ...idle,
+        claim: () =>
+          Promise.resolve({
+            requirement: container,
+            resources: { memoryMib: 4_097 },
+          }),
+      }),
+      identity,
+      nothingHeld,
+      {
+        wanted: 1,
+        wantedSessions: 0,
+        memoryRoomMib: 4_096,
+        contract: workerContractRelease,
+      },
+      settings,
+    ),
+    /a worker pool claim took a job larger than its room/u,
+  );
+});
+
+test("a poll wanting no job in a room of nothing is told none is waiting without a claim, a probe or a question of the authority, renews what it holds and waits out its poll, for a pool and for a personal runner", async () => {
+  for (const caller of [identity, runner]) {
+    const reached: string[] = [];
+    let renewed = 0;
+    const record =
+      (step: string) =>
+      <T>(value: T) =>
+        Promise.resolve((reached.push(step), value));
+    const answered = await workerPoolPoll(
+      ports(
+        {
+          ...idle,
+          ownersDeferredTo: () => record("owners")([asPrincipal("member")]),
+          allowlisted: () => record("allowlisted")([asProjectId("project")]),
+          claim: () => record("claim")(undefined),
+          claimPersonal: () => record("claimPersonal")(undefined),
+          waiting: () => record("waiting")(true),
+          waitingPersonal: () => record("waitingPersonal")(true),
+          renew: () => Promise.resolve((renewed += 1) > 0),
+        },
+        noSessions,
+        () => "minted",
+        {
+          ...reading,
+          authorize: () => record("authorize")(undefined),
+          authorizeTenant: () => record("authorizeTenant")(undefined),
+        },
+      ),
+      caller,
+      asked({
+        held: ["held-one"],
+        memoryRoomMib: 0,
+        contract: workerContractRelease,
+      }),
+      settings,
+    );
+    assert.deepEqual(
+      answered,
+      {
+        polled: "Answered",
+        answer: { assignments: [], jobsWaiting: false, sessions: [], stop: [] },
+      },
+      caller.kind,
+    );
+    assert.deepEqual(reached, [], caller.kind);
+    assert.equal(renewed, settings.pollsMax, caller.kind);
+  }
+});
+
+test("a poll naming its room whose release reads it is told whether a job it fits is waiting, a claim that took nothing answering no without asking, and any other poll is neither told nor asked", async () => {
+  for (const [sizes, over, reached, waiting] of [
+    [[3_000], { memoryRoomMib: 4_096 }, [["waiting", 4_096]], true],
+    [[3_000], { memoryRoomMib: 2_048 }, [["waiting", 2_048]], false],
+    [[3_000], {}, [], undefined],
+    [[3_000], { memoryRoomMib: 4_096, contract: "1.20.0" }, [], undefined],
+    [
+      [3_000],
+      { wanted: 1, memoryRoomMib: 4_096, contract: "1.20.0" },
+      [["claim", 4_096]],
+      undefined,
+    ],
+    [[5_000], { wanted: 1, memoryRoomMib: 4_096 }, [["claim", 4_096]], false],
+  ] as const) {
+    const durable = sized(sizes);
+    const answered = await workerPoolReconcile(
+      ports(durable.assignments),
+      identity,
+      nothingHeld,
+      {
+        wanted: 0,
+        wantedSessions: 0,
+        contract: workerContractRelease,
+        ...over,
+      },
+      settings,
+    );
+    const label = JSON.stringify(over);
+    assert.deepEqual(durable.reached, reached, label);
+    assert.equal(answered.jobsWaiting, waiting, label);
+    assert.equal("jobsWaiting" in answered, waiting !== undefined, label);
+  }
+});
+
+test("a poll wanting no job is answered at once when one it fits is waiting, and waits out its bound when none is", async () => {
+  for (const [room, passes, waiting] of [
+    [4_096, 1, true],
+    [2_048, settings.pollsMax, false],
+  ] as const) {
+    const durable = sized([3_000]);
+    const answered = await workerPoolPoll(
+      ports(durable.assignments),
+      identity,
+      asked({ memoryRoomMib: room, contract: workerContractRelease }),
+      settings,
+    );
+    assert.deepEqual(answered, {
+      polled: "Answered",
+      answer: { assignments: [], jobsWaiting: waiting, sessions: [], stop: [] },
+    });
+    assert.equal(durable.reached.length, passes, String(room));
+  }
+});
+
+test("a poll's wait bounds its passes: one where it is 0, those it leaves time for, and never more than the plane's own", async () => {
+  const paced = { ...settings, pollIntervalMs: 400, pollsMax: 4 };
+  for (const [over, polled, passes] of [
+    [{ pollWaitSecs: 0 }, settings, 1],
+    [{}, settings, settings.pollsMax],
+    [{ pollWaitSecs: 1 }, settings, settings.pollsMax],
+    [{ pollWaitSecs: 1 }, paced, 3],
+  ] as const) {
+    let claimed = 0;
+    await workerPoolPoll(
+      ports({
+        ...idle,
+        claim: () => Promise.resolve(void (claimed += 1)),
+      }),
+      identity,
+      asked({ wanted: 1, ...over }),
+      polled,
+    );
+    assert.equal(claimed, passes, JSON.stringify(over));
+  }
+});
+
 test("a settlement is made against the kind its assignment is", async () => {
   const calls: string[] = [];
   const recording = (kind: string) => {
@@ -1051,35 +1384,47 @@ test("a personal runner's job names its own attempt's project to a poll whose re
   ]);
 });
 
-test("a personal runner whose owner may read nothing it allowlists claims nothing", async () => {
-  let claimed = 0;
-  const answered = await workerPoolReconcile(
-    ports(
-      {
-        ...idle,
-        allowlisted: () => Promise.resolve([asProjectId("project")]),
-        claimPersonal: () => {
-          claimed += 1;
-          return Promise.resolve({
-            requirement: container,
-            project: asProjectId("project"),
-          });
+test("a personal runner whose owner may read nothing it allowlists claims nothing, and is told nothing is waiting without asking", async () => {
+  for (const wanted of [1, 0]) {
+    const reached: string[] = [];
+    const answered = await workerPoolReconcile(
+      ports(
+        {
+          ...idle,
+          allowlisted: () => Promise.resolve([asProjectId("project")]),
+          claimPersonal: () => {
+            reached.push("claim");
+            return Promise.resolve({
+              requirement: container,
+              project: asProjectId("project"),
+            });
+          },
+          waitingPersonal: () => {
+            reached.push("waiting");
+            return Promise.resolve(true);
+          },
         },
+        noSessions,
+        () => "minted",
+        { ...reading, authorize: () => Promise.resolve(undefined) },
+      ),
+      runner,
+      nothingHeld,
+      {
+        wanted,
+        wantedSessions: 0,
+        memoryRoomMib: 4_096,
+        contract: workerContractRelease,
       },
-      noSessions,
-      () => "minted",
-      { ...reading, authorize: () => Promise.resolve(undefined) },
-    ),
-    runner,
-    nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
-    settings,
-  );
-  assert.deepEqual(answered.assignments, []);
-  assert.equal(claimed, 0);
+      settings,
+    );
+    assert.deepEqual(answered.assignments, [], String(wanted));
+    assert.equal(answered.jobsWaiting, false, String(wanted));
+    assert.deepEqual(reached, [], String(wanted));
+  }
 });
 
-test("a pool's claim names revoked each owner it would defer to who lost their permit or their Read, and asks of no more owners than its bound", async () => {
+test("a pool's claim and its probe name revoked each owner it would defer to who lost their permit or their Read, and ask of no more owners than its bound", async () => {
   const kept = asPrincipal("member-kept");
   const unpermitted = asPrincipal("member-unpermitted");
   const unreading = asPrincipal("member-unreading");
@@ -1094,7 +1439,11 @@ test("a pool's claim names revoked each owner it would defer to who lost their p
         },
         claim: (_identity, _terms, _assignment, _bearer, revoked) => {
           asked.push(revoked);
-          return Promise.resolve(undefined);
+          return Promise.resolve({ requirement: container });
+        },
+        waiting: (_identity, _terms, revoked) => {
+          asked.push(revoked);
+          return Promise.resolve(false);
         },
       },
       noSessions,
@@ -1117,10 +1466,19 @@ test("a pool's claim names revoked each owner it would defer to who lost their p
     ),
     identity,
     nothingHeld,
-    { wanted: 1, wantedSessions: 0 },
+    {
+      wanted: 1,
+      wantedSessions: 0,
+      memoryRoomMib: 4_096,
+      contract: workerContractRelease,
+    },
     settings,
   );
-  assert.deepEqual(asked, [workerPoolOwnersAskedMax, [unpermitted, unreading]]);
+  assert.deepEqual(asked, [
+    workerPoolOwnersAskedMax,
+    [unpermitted, unreading],
+    [unpermitted, unreading],
+  ]);
 });
 
 test("each poll asks the owners' window under a rotation it draws afresh, so a revoked owner outside one poll's window is named revoked by a later one", async () => {
@@ -1242,10 +1600,13 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a personal runner's poll is recorded as one that could take an execution where it has room for one or holds one, apart from its sessions, and a pool's is not", async () => {
+test("a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names a memory room above nothing, apart from its sessions, and a pool's is not", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
+    [runner, { memoryRoomMib: 1 }, ["executions"]],
+    [runner, { memoryRoomMib: 0 }, []],
+    [identity, { memoryRoomMib: 4_096 }, []],
     [runner, {}, []],
     [runner, { wantedSessions: 1 }, ["sessions"]],
     [runner, { wanted: 1, wantedSessions: 1 }, ["sessions", "executions"]],

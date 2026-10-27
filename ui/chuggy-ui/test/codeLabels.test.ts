@@ -208,9 +208,22 @@ test("the wall that is nothing to run the work says so in a reader's words", () 
     ).toBe("Nowhere to run this work");
 });
 
+test("the wall that is work too large for every runner says so in a reader's words", () => {
+  expect(blockedReasonLabel("RequiredMemoryUnavailable")).toBe(
+    "Too large for every runner",
+  );
+  expect(
+    escalationDetail({
+      kind: "WorkExecutionUnavailableEscalated",
+      evidence: "RequiredMemoryUnavailable",
+      resumeAt: "ResumeWork",
+    }),
+  ).toBe("Too large for every runner");
+});
+
 /** Every evidence of every roster is walked, so a wall added to one leads
  * nowhere until this says where. */
-test("only nothing to run the work leads to Runners, and only refused workflow files to Repositories", () => {
+test("only nothing to run the work, or nothing large enough, leads to Runners, and only refused workflow files to Repositories", () => {
   const evidences = [
     ...blockedReasons,
     ...gitEvidences,
@@ -235,6 +248,7 @@ test("only nothing to run the work leads to Runners, and only refused workflow f
     ]),
   ).toStrictEqual([
     ["RequiredCapabilityUnavailable", "Runners"],
+    ["RequiredMemoryUnavailable", "Runners"],
     ["PromotionWorkflowsRefused", "Repositories"],
   ]);
   for (const kind of escalationKinds) {

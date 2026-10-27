@@ -743,7 +743,7 @@ export type Blocked =
 
 /**
  * A definitive inability to run the immutable contract. The domain has one
- * reason for all five, because no decider ever read which it was; which
+ * reason for all of them, because no decider ever read which it was; which
  * refusal it was is evidence this layer records beside the execution, so the
  * roster is its own rather than a slice of the model's.
  */
@@ -752,7 +752,8 @@ export type BlockedReason =
   | "TicketConfigIncompatible"
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable";
+  | "RequiredCapabilityUnavailable"
+  | "RequiredMemoryUnavailable";
 
 /** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
@@ -761,6 +762,7 @@ export const allBlockedReasons: readonly BlockedReason[] = [
   "ExecutionProfileUnavailable",
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
+  "RequiredMemoryUnavailable",
 ];
 
 /**

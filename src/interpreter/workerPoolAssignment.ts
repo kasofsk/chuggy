@@ -25,16 +25,17 @@
  * ONE INVENTORY, WHICH A POLL PUBLISHES BEFORE IT CLAIMS. What a pool runs is
  * the capability tokens kept for it: platforms, and whatever else its owner
  * declared, as its registration recorded them or a later poll naming a set
- * replaced them. The model matches a session's observed inventory in
- * `canAssign` and a retained one in `placementOutcome`, and here both are that
- * one set, since a poll writes what it names before its claims read it, which
- * is `inventoryObservationSafe` holding by there being one copy. So a
- * configured pool's inventory is already its poll's, and `placementOutcome`
- * does not match it again for a pool it would place. The model sets an
- * inventory only at `takeOver`, which moves the generation too; here a poll
- * replaces it under the same registration, so what that registration holds
- * stays current, and nothing the model proves ties an assignment to the
- * inventory it was bound under.
+ * replaced them; and the memory ceiling its newest poll naming one named,
+ * which is none until a poll names one. The model matches a session's
+ * observed inventory in `canAssign` and a retained one in `placementOutcome`,
+ * and here both are that one set, since a poll writes what it names before
+ * its claims read it, which is `inventoryObservationSafe` holding by there
+ * being one copy. So a configured pool's inventory is already its poll's, and
+ * `placementOutcome` does not match it again for a pool it would place. The
+ * model sets an inventory only at `takeOver`, which moves the generation too;
+ * here a poll replaces it under the same registration, so what that
+ * registration holds stays current, and nothing the model proves ties an
+ * assignment to the inventory it was bound under.
  *
  * THE POLICY THE REGISTRY HAS NO COLUMN FOR IS DATA, NOT AN OMISSION. Class,
  * drain, trust, the allowance of secrets and source, an owner and an allowlist are
@@ -62,6 +63,7 @@
  */
 
 import type {
+  BlockedReason,
   ExecutionRoute,
   ExecutionStatus,
   LogicalExecution,
@@ -176,6 +178,8 @@ export interface WorkerPoolRunner extends WorkerPoolPolicy {
   readonly enabled: boolean;
   readonly revoked: boolean;
   readonly capabilities: readonly string[];
+  /** The most memory, in MiB, it takes one execution of: the model's `CeilingMib`, or undefined where it is `Unbounded`. */
+  readonly memoryCeilingMib: number | undefined;
 }
 
 /** One poll as the model's `RunnerSession`: the pool it resolved to, the principal it authenticated as, whether its token is live, and its slots. */
@@ -188,7 +192,7 @@ export interface WorkerPoolSession {
   readonly heldMax: number;
 }
 
-/** An execution as the guard reads it: its logical status, the phase of its placement, and the requirement, route and demand it was pinned with. */
+/** An execution as the guard reads it: its logical status, the phase of its placement, the requirement, route and demand it was pinned with, and the memory, in MiB, it runs with. */
 export interface WorkerPoolPlacement {
   readonly partition: Partition;
   readonly status: ExecutionStatus;
@@ -196,6 +200,7 @@ export interface WorkerPoolPlacement {
   readonly requirement: ExecutionRequirement;
   readonly route: ExecutionRoute;
   readonly demand: WorkerPoolDemand;
+  readonly memoryMib: number;
 }
 
 /** A registered pool beside the poll it is making, if it is making one. */
@@ -229,6 +234,17 @@ export function workerPoolInventoryMatches(
         )
       );
   }
+}
+
+/** Whether the pool takes an execution of the placement's size, which is the model's `sizeFits`: one at or under its ceiling, or any where it names none. */
+export function workerPoolSizeFits(
+  placement: WorkerPoolPlacement,
+  pool: WorkerPoolRunner,
+): boolean {
+  return (
+    pool.memoryCeilingMib === undefined ||
+    placement.memoryMib <= pool.memoryCeilingMib
+  );
 }
 
 /**
@@ -294,7 +310,7 @@ export function workerPoolSessionHasSlot(session: WorkerPoolSession): boolean {
   return session.held < session.heldMax;
 }
 
-/** The owner's personal pools configured for the execution, which is the model's `ownerRunners`: configured as `workerPoolPlacementOutcome` configures a pool, so able to run its requirement. */
+/** The owner's personal pools configured for the execution, which is the model's `ownerRunners`: configured as `workerPoolPlacementOutcome` configures a pool, so able to run its requirement at its size. */
 export function workerPoolOwnerPools(
   placement: WorkerPoolPlacement,
   registry: readonly WorkerPoolEnrolment[],
@@ -303,7 +319,8 @@ export function workerPoolOwnerPools(
     ({ pool }) =>
       pool.class === "Personal" &&
       workerPoolPolicyConfigures(pool, placement) &&
-      workerPoolInventoryMatches(placement.requirement, pool),
+      workerPoolInventoryMatches(placement.requirement, pool) &&
+      workerPoolSizeFits(placement, pool),
   );
 }
 
@@ -361,7 +378,8 @@ export function workerPoolCanAssign(
     workerPoolOwnerFallbackAllows(pool, placement, registry) &&
     workerPoolSessionIsCurrent(pool, session) &&
     workerPoolSessionHasSlot(session) &&
-    workerPoolInventoryMatches(placement.requirement, pool)
+    workerPoolInventoryMatches(placement.requirement, pool) &&
+    workerPoolSizeFits(placement, pool)
   );
 }
 
@@ -379,7 +397,8 @@ export function workerPoolPlacementOutcome(
   const configured = enrolments.filter(
     ({ pool }) =>
       workerPoolPolicyConfigures(pool, placement) &&
-      workerPoolInventoryMatches(placement.requirement, pool),
+      workerPoolInventoryMatches(placement.requirement, pool) &&
+      workerPoolSizeFits(placement, pool),
   );
   if (
     configured.some(
@@ -402,6 +421,7 @@ export type WorkerPoolAnswered = Pick<
   | "pool"
   | "principal"
   | "capabilities"
+  | "memoryCeilingMib"
   | "class"
   | "dedicatedOwner"
   | "allowlist"
@@ -423,13 +443,19 @@ function workerPoolOutcomeRegisteredRunner(
     enabled: true,
     revoked: registered.revoked,
     capabilities: registered.capabilities,
+    memoryCeilingMib: registered.memoryCeilingMib,
   };
 }
 
-/** What `workerPoolPlacementOutcome` says of an execution no pool has taken, asked of its project's registered pools and its owner's personal pool. */
+/**
+ * What `workerPoolPlacementOutcome` says of an execution no pool has taken,
+ * asked of its project's registered pools and its owner's personal pools, an
+ * execution naming no memory sized at `memoryMibDefault`.
+ */
 export function workerPoolOutcomeRegistered(
   execution: LogicalExecution,
   registered: readonly WorkerPoolAnswered[],
+  memoryMibDefault: number,
 ): WorkerPoolPlacementOutcome {
   return workerPoolPlacementOutcome(
     {
@@ -439,10 +465,34 @@ export function workerPoolOutcomeRegistered(
       requirement: execution.requirement,
       route: execution.route,
       demand: workerPoolDemandOf(execution),
+      memoryMib: execution.resources?.memoryMib ?? memoryMibDefault,
     },
     registered.map((pool) => ({
       pool: workerPoolOutcomeRegisteredRunner(pool),
       session: undefined,
     })),
   );
+}
+
+/**
+ * Why an execution `workerPoolOutcomeRegistered` finds definitively
+ * incompatible is blocked: for its memory where a pool would be configured for
+ * it but for the ceiling that pool names, and for a capability otherwise.
+ */
+export function workerPoolIncompatibility(
+  execution: LogicalExecution,
+  registered: readonly WorkerPoolAnswered[],
+  memoryMibDefault: number,
+): Extract<
+  BlockedReason,
+  "RequiredCapabilityUnavailable" | "RequiredMemoryUnavailable"
+> {
+  const unbounded = registered.map((pool) => ({
+    ...pool,
+    memoryCeilingMib: undefined,
+  }));
+  return workerPoolOutcomeRegistered(execution, unbounded, memoryMibDefault) ===
+    "DefinitiveIncompatibility"
+    ? "RequiredCapabilityUnavailable"
+    : "RequiredMemoryUnavailable";
 }

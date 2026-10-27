@@ -235,7 +235,7 @@ async function claimed(
   const bearer = `bearer-${randomUUID()}`;
   const claim = await assignments.claim(
     identity,
-    { leaseSecs: claimLeaseSecs, heldMax: 1 },
+    { leaseSecs: claimLeaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
     `assignment-${randomUUID()}`,
     bearer,
     [],

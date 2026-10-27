@@ -247,7 +247,11 @@ function runnerConjuncts(body: string): readonly string[] {
     : runnerTopLevel(body, " and ");
 }
 
-/** A term, or the terms of the predicate it calls, each arm's qualified by the constructor it matches. */
+/**
+ * A term, or the terms of the predicate it calls, each arm's qualified by the
+ * constructor it matches. An arm that is `true` conjoins nothing, so it names
+ * no term a case could make false.
+ */
 function runnerExpanded(term: string): readonly string[] {
   const call = /^([a-z]\w*)\(/.exec(term)?.[1];
   if (call === undefined || !runnerSource().includes(`pure def ${call}(`))
@@ -257,8 +261,14 @@ function runnerExpanded(term: string): readonly string[] {
   return runnerTopLevel(runnerBracketed(body, body.indexOf("{")), "|").flatMap(
     (arm) => {
       const at = arm.indexOf("=>");
-      const constructor = arm.slice(0, arm.indexOf("(")).trim();
-      return runnerConjuncts(arm.slice(at + 2).trim()).map(
+      const constructor = /^\w+/.exec(arm)?.[0];
+      assert.ok(
+        constructor,
+        `model/runner.qnt: ${call} has an arm with no constructor`,
+      );
+      const conjoined = arm.slice(at + 2).trim();
+      if (conjoined === "true") return [];
+      return runnerConjuncts(conjoined).map(
         (conjunct) => `${constructor}: ${conjunct}`,
       );
     },
@@ -281,6 +291,7 @@ const runnerGuards = [
   "canAssign",
   "placementOutcome",
   "inventoryMatches",
+  "sizeFits",
   "policyAllows",
   "policyConfigures",
   "sessionIsCurrent",
@@ -306,6 +317,7 @@ const runnerOutcome = {
   configured: [
     "policyConfigures(s.runners.get(rid), e, p.profile)",
     "inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory)",
+    "sizeFits(p, s.runners.get(rid).retainedInventory)",
   ],
   placeable: [
     "policyAllows(s.runners.get(rid), e, p.profile)",
@@ -313,6 +325,7 @@ const runnerOutcome = {
     "sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid))",
     "sessionHasSlot(s.sessions.get(rid))",
     "inventoryMatches(p.requirement, s.sessions.get(rid).inventory)",
+    "sizeFits(p, s.sessions.get(rid).inventory)",
   ],
 };
 
@@ -490,7 +503,7 @@ test("policyConfigures is policyAllows without drain, which is posture and not i
 test("the owner's runners are the Personal ones configured for the placement, and live is a current session not draining", () => {
   assert.equal(
     runnerDefinition("ownerRunners"),
-    "s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory) })",
+    "s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory), sizeFits(p, s.runners.get(rid).retainedInventory) })",
   );
   assert.equal(
     runnerDefinition("runnerIsLive"),
