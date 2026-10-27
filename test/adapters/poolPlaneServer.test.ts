@@ -588,29 +588,35 @@ test("a poll naming its memory ceiling has it kept, and a poll naming none keeps
   }
 });
 
-test("a poll naming a memory ceiling this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
-  for (const ceiling of [
-    "-1",
-    "4096 MiB",
-    "1.5",
-    "08",
-    "99999999999999999999",
-    ["4096", "4096"],
-  ]) {
-    const recorded = runnerCalls();
-    const made = calls();
-    const answered = await createPoolPlaneApp(
-      plane(made.ports, authority("Allow"), undefined, recorded.runners),
-    ).inject({
-      method: "GET",
-      url: polling(["live"], 1),
-      headers: { ...speaking, [workerRunnerMemoryCeilingHeader]: ceiling },
-    });
-    assert.equal(answered.statusCode, 400, String(ceiling));
-    assert.equal(answered.body, "", String(ceiling));
-    assert.deepEqual(recorded.named, [], String(ceiling));
-    assert.deepEqual(made.made, [], String(ceiling));
-  }
+test("a poll naming a memory ceiling, a memory room or a wait this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const header of [
+    workerRunnerMemoryCeilingHeader,
+    workerRunnerMemoryRoomHeader,
+    workerRunnerPollWaitHeader,
+  ])
+    for (const count of [
+      "-1",
+      "4096 MiB",
+      "1.5",
+      "08",
+      "99999999999999999999",
+      ["4096", "4096"],
+    ]) {
+      const recorded = runnerCalls();
+      const made = calls();
+      const answered = await createPoolPlaneApp(
+        plane(made.ports, authority("Allow"), undefined, recorded.runners),
+      ).inject({
+        method: "GET",
+        url: polling(["live"], 1),
+        headers: { ...speaking, [header]: count },
+      });
+      const why = `${header} ${String(count)}`;
+      assert.equal(answered.statusCode, 400, why);
+      assert.equal(answered.body, "", why);
+      assert.deepEqual(recorded.named, [], why);
+      assert.deepEqual(made.made, [], why);
+    }
 });
 
 /** The plane `plane` builds, long-polling for `pollsMax` passes. */
@@ -650,36 +656,6 @@ test("a poll naming its memory room has every claim held to it and one naming no
     assert.equal(answered.statusCode, 200, why);
     assert.deepEqual(claimed, rooms, why);
   }
-});
-
-test("a poll naming a memory room or a wait this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
-  for (const header of [
-    workerRunnerMemoryRoomHeader,
-    workerRunnerPollWaitHeader,
-  ])
-    for (const count of [
-      "-1",
-      "4096 MiB",
-      "1.5",
-      "08",
-      "99999999999999999999",
-      ["4096", "4096"],
-    ]) {
-      const recorded = runnerCalls();
-      const made = calls();
-      const answered = await createPoolPlaneApp(
-        plane(made.ports, authority("Allow"), undefined, recorded.runners),
-      ).inject({
-        method: "GET",
-        url: polling(["live"], 1),
-        headers: { ...speaking, [header]: count },
-      });
-      const why = `${header} ${String(count)}`;
-      assert.equal(answered.statusCode, 400, why);
-      assert.equal(answered.body, "", why);
-      assert.deepEqual(recorded.named, [], why);
-      assert.deepEqual(made.made, [], why);
-    }
 });
 
 test("a poll of this release naming its room is told a job it fits is waiting, and one of 1.20.0 naming a room is not and reads its answer", async () => {
