@@ -16,6 +16,7 @@ import {
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
+  releaseConfigurationRepositoryOf,
   releasePairingFaults,
   ticketConfigurationReadiness,
   ticketProgramShort,
@@ -403,20 +404,32 @@ test("a release under a bootstrap is refused for any repository but the one it w
 });
 
 test("the one bootstrap a project held before each repository had its own releases in no repository", () => {
-  const orphan = configurationRepositoryOf(
-    asConfigurationRevisionId("bootstrap"),
-    undefined,
-  );
+  const orphan = asConfigurationRevisionId("bootstrap");
   for (const repository of [firstRepository, secondRepository])
     assert.deepEqual(
       draftReleaseReadiness(
         readyConfiguration,
         { checks: [], repository },
-        orphan,
+        releaseConfigurationRepositoryOf(orphan, undefined),
         undefined,
       ),
       { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
     );
+  assert.equal(
+    configurationRepositoryOf(orphan, undefined),
+    undefined,
+    "a ticket already released under it is judged as under any authored revision",
+  );
+  assert.deepEqual(
+    releaseConfigurationRepositoryOf(orphan, secondRepository),
+    { from: "Imported", repository: secondRepository },
+    "a revision imported under the name is scoped by its repository",
+  );
+  const revision = bootstrapConfigurationRevision(firstRepository);
+  assert.deepEqual(
+    releaseConfigurationRepositoryOf(revision, undefined),
+    configurationRepositoryOf(revision, undefined),
+  );
   assert.equal(
     configurationRepositoryOf(
       asConfigurationRevisionId("repository:0a1b2c3:bootstrap"),

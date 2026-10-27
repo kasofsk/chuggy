@@ -75,9 +75,9 @@ import { ticketCommandOf } from "../../interpreter/commandMap.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
-  configurationRepositoryOf,
   draftReleaseReadiness,
   parseDraftAuthoring,
+  releaseConfigurationRepositoryOf,
   type ConfigurationRepository,
 } from "../../interpreter/authoring.ts";
 import { ticketDefinitionMaterial } from "../../interpreter/ticketDefinition.ts";
@@ -225,7 +225,7 @@ function releaseDraftRepository(
   command: DraftReleaseCommand,
   found: ReleaseDraftRow,
 ): ConfigurationRepository | undefined {
-  return configurationRepositoryOf(
+  return releaseConfigurationRepositoryOf(
     asConfigurationRevisionId(command.configurationRevision),
     found.provenance_repository === null
       ? undefined

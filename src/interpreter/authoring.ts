@@ -202,8 +202,7 @@ export function bootstrapConfigurationRevision(
 /**
  * The repository one configuration revision releases from alone, where there
  * is one: the repository it was imported from, or the one a bootstrap's
- * revision is named for. The project's one bootstrap from before each
- * repository had its own is named for none, so it releases from none.
+ * revision is named for.
  */
 export type ConfigurationRepository =
   | { readonly from: "Imported"; readonly repository: RepositoryId }
@@ -215,10 +214,24 @@ export function configurationRepositoryOf(
   imported: RepositoryId | undefined,
 ): ConfigurationRepository | undefined {
   if (imported !== undefined) return { from: "Imported", repository: imported };
-  return revision === bootstrapConfigurationName ||
-    revision.startsWith(bootstrapConfigurationRevisionPrefix)
+  return revision.startsWith(bootstrapConfigurationRevisionPrefix)
     ? { from: "Bootstrap", revision }
     : undefined;
+}
+
+/**
+ * The repository a new release under a revision releases from alone. The
+ * project's one bootstrap from before each repository had its own is named for
+ * none, so nothing new releases under it, while a ticket already released
+ * under it is still judged as under any authored revision.
+ */
+export function releaseConfigurationRepositoryOf(
+  revision: ConfigurationRevisionId,
+  imported: RepositoryId | undefined,
+): ConfigurationRepository | undefined {
+  return imported === undefined && revision === bootstrapConfigurationName
+    ? { from: "Bootstrap", revision }
+    : configurationRepositoryOf(revision, imported);
 }
 
 /** Whether a ticket in one repository releases under a revision scoped to one repository. */

@@ -77,6 +77,7 @@ import {
   draftReleaseReadiness,
   draftReleaseRefusalCode,
   parseDraftAuthoring,
+  releaseConfigurationRepositoryOf,
   type CanonicalConfiguration,
 } from "../../interpreter/authoring.ts";
 import {
@@ -671,7 +672,7 @@ async function decisionReleaseOutcome(
   const readiness = draftReleaseReadiness(
     canonical,
     fence.brief,
-    configurationRepositoryOf(
+    releaseConfigurationRepositoryOf(
       asConfigurationRevisionId(fence.configurationRevision),
       revision.repository === null
         ? undefined
