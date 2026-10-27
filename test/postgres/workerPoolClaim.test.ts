@@ -9,9 +9,10 @@
  * project, and a partition it names beside it is the same one with the
  * other's tenant or project name appended; its principals and assignment carry
  * a suffix of the case's own, since both are unique across the installation.
- * The pool is the registry row, the session is the identity the claim is asked
- * under, and the placement is an execution released with the case's
- * requirement, opened and invoked. A slot a session holds is an attempt its
+ * The pool is the registry row, its memory ceiling written as a poll naming one
+ * writes it, the session is the identity the claim is asked under, and the
+ * placement is an execution released with the case's requirement and size,
+ * opened and invoked. A slot a session holds is an attempt its
  * pool claimed first, and a bound identity or an assigned phase is an attempt
  * another pool claimed first.
  *
@@ -152,6 +153,9 @@ await rig.harness.query(
 
 /** How long a claim's lease runs for, past the duration of any case here. */
 const leaseSecs = 300;
+
+/** The size a claim reads an execution naming no memory as, which no case's size is. */
+const memoryMibDefault = 256;
 
 /** Whether a pool is planted as a member's runner rather than a registry row. */
 function runnerOwned(pool: WorkerPoolRunner): boolean {
@@ -445,7 +449,7 @@ async function registeredPool(
   return clientId;
 }
 
-/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise. */
+/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise, under the ceiling it names. */
 async function plantedRunner(
   named: Planted,
   pool: WorkerPoolRunner,
@@ -468,21 +472,23 @@ async function plantedRunner(
     pool.capabilities,
     live ? polledSecsAgo : undefined,
     allowed.map((project) => project.project),
+    pool.memoryCeilingMib,
   );
   return identity;
 }
 
-/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise. */
+/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise, under `memoryCeilingMib` where that is named. */
 async function plantedRunnerRows(
   identity: PersonalPlaneIdentity,
   capabilities: readonly string[],
   polledSecsAgo: number | undefined,
   allowlist: readonly ProjectId[],
+  memoryCeilingMib?: number,
 ): Promise<void> {
   await rig.harness.query(
-    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
+    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at,memory_ceiling_mib)
       VALUES($1,$2,$3,$4,$5,
-        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END)`,
+        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END,$8)`,
     [
       identity.tenant,
       identity.owner,
@@ -491,6 +497,7 @@ async function plantedRunnerRows(
       `chuggy-personal-${randomUUID()}`,
       polledSecsAgo !== undefined,
       polledSecsAgo ?? 0,
+      memoryCeilingMib ?? null,
     ],
   );
   for (const project of allowlist)
@@ -506,13 +513,17 @@ type PersonalPlaneIdentity = PersonalRunnerIdentity & {
 
 type PlantedIdentity = DedicatedPoolIdentity | PersonalPlaneIdentity;
 
-/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
-async function claimedBy(
+/** Whether a pool or runner claims the oldest placeable attempt it may, a runner in `home`, under `assignment`. */
+async function takes(
   identity: PlantedIdentity,
-  assignment: string,
   home?: Partition,
-) {
-  const terms = { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER };
+  assignment = `assignment-${randomUUID()}`,
+): Promise<boolean> {
+  const terms = {
+    leaseSecs,
+    heldMax: Number.MAX_SAFE_INTEGER,
+    memoryMibDefault,
+  };
   const bearer = `bearer-${randomUUID()}`;
   const claimed =
     identity.kind === "Dedicated"
@@ -524,7 +535,16 @@ async function claimedBy(
           bearer,
           home === undefined ? [] : [home.project],
         );
-  if (claimed === undefined)
+  return claimed !== undefined;
+}
+
+/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
+async function claimedBy(
+  identity: PlantedIdentity,
+  assignment: string,
+  home?: Partition,
+) {
+  if (!(await takes(identity, home, assignment)))
     throw new Error("worker pool claim suite: a planted claim took nothing");
 }
 
@@ -578,6 +598,13 @@ async function plantedPool(
     pool,
     named.project.partition,
   );
+  if (pool.memoryCeilingMib !== undefined)
+    await postgresWorkerPoolRunners(planePool).named(
+      identity,
+      undefined,
+      undefined,
+      pool.memoryCeilingMib,
+    );
   return { identity, clientId };
 }
 
@@ -684,7 +711,7 @@ async function claimAsked(
   pools: PlantedPools,
   home: Partition,
 ): Promise<unknown> {
-  const terms = { leaseSecs, heldMax };
+  const terms = { leaseSecs, heldMax, memoryMibDefault };
   const bearer = `bearer-${randomUUID()}`;
   try {
     return identity.kind === "Dedicated"
@@ -735,7 +762,9 @@ async function claimTook(
     session.held + (c.assignmentsBound.includes(runnerCaseAssignment) ? 1 : 0);
   const named = planted(
     c,
-    await releasedUnder(label, c.placement.requirement, bystanders + 1),
+    await releasedUnder(label, c.placement.requirement, bystanders + 1, {
+      memoryMib: c.placement.memoryMib,
+    }),
   );
   const pools = await plantedPools(c, named, polledSecsAgo);
   const target = await plantedTarget(c, session.held, named, pools);
@@ -913,7 +942,7 @@ test("a claim made while the same pool's last is still open waits for it and cou
   const pool = await pollingPool(project, "racing", pinned);
   await opened(project);
   await opened(project);
-  const terms = { leaseSecs, heldMax: 1 };
+  const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
   let reach = (): void => undefined;
   const reached = new Promise<void>((resolve) => (reach = resolve));
   let open = (): void => undefined;
@@ -954,7 +983,7 @@ test("a registration made while an older one's claim is still open waits for it 
     postgresHarnessHeldAtCommit(planePool, reach, gate),
   ).claim(
     older,
-    { leaseSecs, heldMax: 1 },
+    { leaseSecs, heldMax: 1, memoryMibDefault },
     `fenced-${randomUUID()}`,
     `bearer-${randomUUID()}`,
     [],
@@ -1081,6 +1110,55 @@ async function handedOut(
   if (assignment === undefined) throw new Error(`${label} was handed nothing`);
   return assignment;
 }
+
+test("an execution naming no memory meets a ceiling at the plane's size for it, for a pool, for its owner's runner and for a pool deferring to that runner", async () => {
+  for (const [ceiling, fits] of [
+    [memoryMibDefault, true],
+    [memoryMibDefault - 1, false],
+  ] as const) {
+    const label = `claim-unsized-${String(ceiling)}`;
+    const pooled = await releasedUnder(`${label}-pool`, pinned, 1);
+    const pool = await pollingPool(pooled, label, pinned);
+    await postgresWorkerPoolRunners(planePool).named(
+      pool,
+      undefined,
+      undefined,
+      ceiling,
+    );
+    await opened(pooled);
+    assert.equal(await takes(pool), fits, `a pool under ${String(ceiling)}`);
+    const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+    const runner: PersonalPlaneIdentity = {
+      kind: "Personal",
+      tenant: owned.partition.tenant,
+      owner: asPrincipal(
+        `https://issuer.invalid#${label}-owner-${randomUUID()}`,
+      ),
+      principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+    };
+    await plantedRunnerRows(
+      runner,
+      declaringAll(pinned),
+      0,
+      [owned.partition.project],
+      ceiling,
+    );
+    const strict = { owner: runner.owner, fallback: "Strict" };
+    await opened(owned, false, strict);
+    await opened(owned, false, strict);
+    const unbounded = await pollingPool(owned, `${label}-unbounded`, pinned);
+    assert.equal(
+      await takes(unbounded),
+      !fits,
+      `a pool deferring to a runner under ${String(ceiling)}`,
+    );
+    assert.equal(
+      await takes(runner, owned.partition),
+      fits,
+      `a runner under ${String(ceiling)}`,
+    );
+  }
+});
 
 test("a container's pod runs the image its requirement pinned, claimed out of the database", async () => {
   const assignment = await handedOut("claim-pinned-image", pinned);

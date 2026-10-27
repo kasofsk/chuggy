@@ -28,7 +28,10 @@ import {
   checkedProjectAccessSettings,
   projectAccessTimeoutMsDefault,
 } from "../interpreter/projectAccess.ts";
-import type { WorkerPoolPollSettings } from "../interpreter/workerPool.ts";
+import {
+  workerPoolMemoryMibDefault,
+  type WorkerPoolPollSettings,
+} from "../interpreter/workerPool.ts";
 import {
   workerPoolImageHostsRead,
   type WorkerPoolImageHosts,
@@ -123,7 +126,10 @@ function poolPlaneSettings(
       3_600,
     ),
     cpuMillis: planeEnvironmentPositive("CHUG_POOL_PLANE_CPU_MILLIS", 2_000),
-    memoryMib: planeEnvironmentPositive("CHUG_POOL_PLANE_MEMORY_MIB", 4_096),
+    memoryMib: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_MEMORY_MIB",
+      workerPoolMemoryMibDefault,
+    ),
     callbackUrl: planeEnvironmentRequired(callbackUrlVariable),
     ...poolPlaneSessionApiUrl(),
     pollIntervalMs: planeEnvironmentPositive(

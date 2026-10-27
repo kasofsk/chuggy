@@ -45,11 +45,12 @@
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
- * A POLL MAY NAME WHAT ITS CALLER CAN RUN, and the set it names replaces the
- * one recorded before anything is claimed, so its own claims match it; a poll
- * naming none leaves the record as it is. What the caller already holds was
- * claimed under the set recorded then, and is renewed and settled as before,
- * since nothing after a claim reads a set.
+ * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
+ * memory it takes one job of, each replace the one recorded before anything
+ * is claimed, so its own claims match them; a poll naming neither leaves the
+ * record as it is. What the caller already holds was claimed under what was
+ * recorded then, and is renewed and settled as before, since nothing after a
+ * claim reads either.
  *
  * A POOL'S CLAIM DEFERS TO AN OWNER'S PERSONAL RUNNERS as the owner's fallback
  * says, and a runner the authority revoked is none of the owner's, as the
@@ -118,15 +119,19 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the most memory, in MiB, it takes one job of and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
   readonly wantedSessions: number;
   readonly runner?: WorkerRunner;
   readonly capabilities?: readonly string[];
+  readonly memoryCeilingMib?: number;
   readonly contract?: string;
 }
+
+/** The memory, in MiB, an execution naming none runs with on a pool, where the plane names no size of its own. */
+export const workerPoolMemoryMibDefault = 4_096;
 
 /** What registering one pool records: who it is at the issuer, what it declared, and its class. */
 export interface WorkerPoolRegistration {
@@ -162,9 +167,10 @@ export interface WorkerPoolRegistry {
   identify(principal: Principal): Promise<WorkerPoolIdentity | undefined>;
 }
 
-/** One registered pool as the scheduler reads it: its identity, what it declared, and its class. */
+/** One registered pool as the scheduler reads it: its identity, what it declared, the memory ceiling its polls named where they named one, and its class. */
 export interface WorkerPoolRegistered extends WorkerPoolIdentity {
   readonly capabilities: readonly string[];
+  readonly memoryCeilingMib: number | undefined;
   readonly class: WorkerPoolClass;
 }
 
@@ -202,11 +208,12 @@ export interface WorkerPoolRoster {
   ): Promise<readonly PersonalRunnerRegistered[]>;
 }
 
-/** One of a member's personal runners as the scheduler reads it: who it is, what it declared, and the projects its owner's allowlist names. */
+/** One of a member's personal runners as the scheduler reads it: who it is, what it declared, the memory ceiling its polls named where they named one, and the projects its owner's allowlist names. */
 export interface PersonalRunnerRegistered {
   readonly owner: Principal;
   readonly principal: Principal;
   readonly capabilities: readonly string[];
+  readonly memoryCeilingMib: number | undefined;
   readonly allowlist: readonly Partition[];
 }
 
@@ -294,10 +301,11 @@ export interface WorkerPoolPersonalClaimed extends WorkerPoolClaimed {
   readonly project: ProjectId;
 }
 
-/** What a claim is held to: how long the lease it takes runs, and how many live attempts the pool may hold with it. */
+/** What a claim is held to: how long the lease it takes runs, how many live attempts the pool may hold with it, and the memory, in MiB, an execution naming none is sized at. */
 export interface WorkerPoolClaimTerms {
   readonly leaseSecs: number;
   readonly heldMax: number;
+  readonly memoryMibDefault: number;
 }
 
 /**
@@ -386,14 +394,15 @@ export interface WorkerPoolPollSettings {
  * Where what a caller's newest poll named is kept, under its current
  * registration alone: the runner, which a poll naming none keeps none of, so a
  * machine moved back to a runner too old to name itself is not shown as the
- * version it left; and the capabilities, which a poll naming none leaves as
- * they were recorded.
+ * version it left; and the capabilities and the memory ceiling, which a poll
+ * naming none leaves as they were recorded.
  */
 export interface WorkerPoolRunners {
   named(
     identity: PoolPlaneIdentity,
     runner: WorkerRunner | undefined,
     capabilities: readonly string[] | undefined,
+    memoryCeilingMib?: number,
   ): Promise<void>;
 }
 
@@ -524,6 +533,11 @@ async function workerPoolClaimMade(
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolClaimMade> {
   const { access, assignments } = ports;
+  const terms: WorkerPoolClaimTerms = {
+    leaseSecs: settings.leaseSecs,
+    heldMax: settings.heldMax,
+    memoryMibDefault: settings.memoryMib,
+  };
   switch (identity.kind) {
     case "Dedicated": {
       const owners = await assignments.ownersDeferredTo(
@@ -536,7 +550,7 @@ async function workerPoolClaimMade(
         if (!(await workerPoolOwnerStands(access, owner, identity.partition)))
           revoked.push(owner);
       return (assignment, bearer) =>
-        assignments.claim(identity, settings, assignment, bearer, revoked);
+        assignments.claim(identity, terms, assignment, bearer, revoked);
     }
     case "Personal": {
       const projects: ProjectId[] = [];
@@ -554,7 +568,7 @@ async function workerPoolClaimMade(
           ? Promise.resolve(undefined)
           : assignments.claimPersonal(
               identity,
-              settings,
+              terms,
               assignment,
               bearer,
               projects,
@@ -722,11 +736,12 @@ async function workerPoolHoldingRead(
 }
 
 /**
- * Records the runner this poll named and the capabilities it has where it named
- * them, and the poll as the caller's last of each kind of work it could take: a
- * session, with room for one or holding one from a plane that names the API a
- * session reaches, and, for a personal runner, an execution, with room for one
- * or holding one, which is what a pool's claim reads it as live by.
+ * Records the runner this poll named, and the capabilities it has and the
+ * memory ceiling it takes jobs under where it named them, and the poll as the
+ * caller's last of each kind of work it could take: a session, with room for
+ * one or holding one from a plane that names the API a session reaches, and,
+ * for a personal runner, an execution, with room for one or holding one, which
+ * is what a pool's claim reads it as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -735,7 +750,12 @@ async function workerPoolPollRecorded(
   holding: WorkerPoolHolding,
   settings: WorkerPoolPollSettings,
 ): Promise<void> {
-  await ports.runners.named(identity, asked.runner, asked.capabilities);
+  await ports.runners.named(
+    identity,
+    asked.runner,
+    asked.capabilities,
+    asked.memoryCeilingMib,
+  );
   if (
     settings.sessionApiUrl !== undefined &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)
@@ -761,11 +781,12 @@ export async function workerPoolPoll(
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolPolled> {
   workerPoolCheckedSettings(settings);
-  for (const [name, room] of [
+  for (const [name, count] of [
     ["wanted", asked.wanted],
     ["wantedSessions", asked.wantedSessions],
+    ["memoryCeilingMib", asked.memoryCeilingMib ?? 0],
   ] as const)
-    if (!Number.isSafeInteger(room) || room < 0)
+    if (!Number.isSafeInteger(count) || count < 0)
       throw new RangeError(
         `worker pool ${name} must be a non-negative integer`,
       );

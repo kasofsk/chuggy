@@ -97,10 +97,11 @@ import {
   ProjectAccessUnavailable,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
-import type {
-  PersonalRunnerRegistered,
-  WorkerPoolRegistered,
-  WorkerPoolRosterPage,
+import {
+  workerPoolMemoryMibDefault,
+  type PersonalRunnerRegistered,
+  type WorkerPoolRegistered,
+  type WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -344,6 +345,7 @@ function serviceWith(
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     workerRuntime,
+    poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
     finalizer: finalizerDefaults,
@@ -1805,6 +1807,7 @@ function registeredPool(
     partition: { ...partition, project },
     pool: "pool-one",
     capabilities,
+    memoryCeilingMib: undefined,
     class: "Dedicated",
     principal: asPrincipal("principal-one"),
   };
@@ -1968,6 +1971,7 @@ const memberRunner: PersonalRunnerRegistered = {
   owner: member,
   principal: asPrincipal("chuggy-personal-one"),
   capabilities: ["Platform:Linux:Amd64"],
+  memoryCeilingMib: undefined,
   allowlist: [partition],
 };
 

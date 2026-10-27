@@ -42,6 +42,7 @@ import {
   finalizerIdentityCharsMax,
 } from "../../src/interpreter/finalizer.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
+import { workerPoolMemoryMibDefault } from "../../src/interpreter/workerPool.ts";
 import {
   offeredImagesMax,
   workerImageCharsMax,
@@ -276,6 +277,7 @@ const parsed = {
     readUrl: "http://keto-read.invalid:4466/",
     requestTimeoutMs: projectAccessTimeoutMsDefault,
   },
+  poolMemoryMib: workerPoolMemoryMibDefault,
 };
 
 test("a complete environment parses into the plain data the process root takes", async () => {
@@ -946,6 +948,29 @@ test("a stated project authority timeout is taken", async () => {
     readUrl: "http://keto-read.invalid:4466/",
     requestTimeoutMs: 250,
   });
+});
+
+test("the pool plane's size for an execution naming none is read under the plane's own name, and refused by it when it is not a positive count", async () => {
+  const found = JSON.parse(
+    await schedulerProgram(
+      parseProgram({ ...environment, CHUG_POOL_PLANE_MEMORY_MIB: "8192" }),
+    ),
+  ) as { readonly parsed: { readonly poolMemoryMib: unknown } };
+  assert.equal(found.parsed.poolMemoryMib, 8_192);
+  for (const [value, refused] of [
+    ["0", "CHUG_POOL_PLANE_MEMORY_MIB must be a positive integer"],
+    ["4 GiB", "CHUG_POOL_PLANE_MEMORY_MIB must be a positive integer"],
+    ["99999999999999999999", "CHUG_POOL_PLANE_MEMORY_MIB is too large"],
+  ] as const)
+    assert.deepEqual(
+      JSON.parse(
+        await schedulerProgram(
+          parseProgram({ ...environment, CHUG_POOL_PLANE_MEMORY_MIB: value }),
+        ),
+      ),
+      { refused },
+      value,
+    );
 });
 
 /**

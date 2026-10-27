@@ -442,11 +442,12 @@ test("capabilities a project named for itself reach the pool as it named them", 
   assert.equal("image" in assignment, false);
 });
 
-test("a room that is not a whole count refuses the poll", async () => {
+test("a room or a memory ceiling that is not a whole count refuses the poll", async () => {
   for (const room of [-1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])
     for (const [over, refusal] of [
       [{ wanted: room }, /wanted must/u],
       [{ wantedSessions: room }, /wantedSessions must/u],
+      [{ memoryCeilingMib: room }, /memoryCeilingMib must/u],
     ] as const)
       await assert.rejects(
         () => workerPoolPoll(ports(), identity, asked(over), settings),
@@ -842,6 +843,54 @@ test("a poll naming capabilities keeps them before anything is claimed, once how
     assert.deepEqual(
       made,
       [["named", kept], "claim", "claim", "claim"],
+      JSON.stringify(over),
+    );
+  }
+});
+
+test("a poll naming a memory ceiling keeps it before anything is claimed, and every claim is held to the plane's terms and its size for an execution naming none", async () => {
+  for (const [over, kept] of [
+    [{ memoryCeilingMib: 8_192 }, 8_192],
+    [{ memoryCeilingMib: 0 }, 0],
+    [{}, undefined],
+  ] as const) {
+    const made: unknown[] = [];
+    await workerPoolPoll(
+      ports(
+        {
+          ...idle,
+          claim: (_identity, terms) => {
+            made.push(["claim", terms]);
+            return Promise.resolve(undefined);
+          },
+        },
+        noSessions,
+        undefined,
+        undefined,
+        {
+          named: (_identity, _runner, _capabilities, ceiling) => {
+            made.push(["named", ceiling]);
+            return Promise.resolve();
+          },
+        },
+      ),
+      identity,
+      asked({ wanted: 1, ...over }),
+      { ...settings, pollsMax: 1 },
+    );
+    assert.deepEqual(
+      made,
+      [
+        ["named", kept],
+        [
+          "claim",
+          {
+            leaseSecs: settings.leaseSecs,
+            heldMax: settings.heldMax,
+            memoryMibDefault: settings.memoryMib,
+          },
+        ],
+      ],
       JSON.stringify(over),
     );
   }

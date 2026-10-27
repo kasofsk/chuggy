@@ -22,6 +22,7 @@ import {
   workerPoolSettlementPath,
   workerRunnerCapabilitiesHeader,
   workerRunnerHeader,
+  workerRunnerMemoryCeilingHeader,
 } from "../../src/contract/workerPool.ts";
 import {
   asSessionAttemptId,
@@ -297,17 +298,21 @@ const linuxPin = {
 function runnerCalls(): {
   readonly named: unknown[];
   readonly advertised: unknown[];
+  readonly ceilings: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
   const advertised: unknown[] = [];
+  const ceilings: unknown[] = [];
   return {
     named,
     advertised,
+    ceilings,
     runners: {
-      named: (caller: PoolPlaneIdentity, runner, capabilities) => {
+      named: (caller: PoolPlaneIdentity, runner, capabilities, ceiling) => {
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
+        ceilings.push([caller.kind, ceiling]);
         return Promise.resolve();
       },
     },
@@ -548,6 +553,59 @@ test("a poll naming capabilities this side cannot read is refused whole, with no
     assert.equal(answered.body, "", String(capabilities));
     assert.deepEqual(recorded.named, [], String(capabilities));
     assert.deepEqual(made.made, [], String(capabilities));
+  }
+});
+
+test("a poll naming its memory ceiling has it kept, and a poll naming none keeps none", async () => {
+  for (const [why, headers, kept] of [
+    [
+      "a ceiling",
+      { ...speaking, [workerRunnerMemoryCeilingHeader]: "8192" },
+      ["Dedicated", 8_192],
+    ],
+    [
+      "a ceiling of nothing",
+      { ...speaking, [workerRunnerMemoryCeilingHeader]: "0" },
+      ["Dedicated", 0],
+    ],
+    ["no ceiling", speaking, ["Dedicated", undefined]],
+    [
+      "a personal runner",
+      { ...runnerSpeaking, [workerRunnerMemoryCeilingHeader]: "16384" },
+      ["Personal", 16_384],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.ceilings, [kept], why);
+  }
+});
+
+test("a poll naming a memory ceiling this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const ceiling of [
+    "-1",
+    "4096 MiB",
+    "1.5",
+    "08",
+    "99999999999999999999",
+    ["4096", "4096"],
+  ]) {
+    const recorded = runnerCalls();
+    const made = calls();
+    const answered = await createPoolPlaneApp(
+      plane(made.ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({
+      method: "GET",
+      url: polling(["live"], 1),
+      headers: { ...speaking, [workerRunnerMemoryCeilingHeader]: ceiling },
+    });
+    assert.equal(answered.statusCode, 400, String(ceiling));
+    assert.equal(answered.body, "", String(ceiling));
+    assert.deepEqual(recorded.named, [], String(ceiling));
+    assert.deepEqual(made.made, [], String(ceiling));
   }
 });
 

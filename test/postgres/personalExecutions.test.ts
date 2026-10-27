@@ -64,6 +64,8 @@ const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
 const fallbacks = postgresProjectOwnerFallback(apiPool);
 
 const leaseSecs = 300;
+/** The size a claim reads an execution naming no memory as. */
+const memoryMibDefault = 4_096;
 const platform = "Platform:Linux:Amd64";
 
 type Runner = PersonalRunnerIdentity & { readonly kind: "Personal" };
@@ -234,7 +236,7 @@ async function claimed(
   const assignment = `assignment-${randomUUID()}`;
   const taken = await assignments.claimPersonal(
     runner,
-    { leaseSecs, heldMax },
+    { leaseSecs, heldMax, memoryMibDefault },
     assignment,
     `bearer-${randomUUID()}`,
     projects.map((project) => project.project),
@@ -361,7 +363,7 @@ test("a runner's claim returns the runtime its attempt was opened under", async 
   const runner = await runnerOf(project.partition, member);
   const taken = await assignments.claimPersonal(
     runner,
-    { leaseSecs, heldMax: 4 },
+    { leaseSecs, heldMax: 4, memoryMibDefault },
     `assignment-${randomUUID()}`,
     `bearer-${randomUUID()}`,
     [project.partition.project],
@@ -387,7 +389,7 @@ test("a runner's claim returns the project of the attempt it took, across every 
     const assignment = `assignment-${randomUUID()}`;
     const taken = await assignments.claimPersonal(
       runner,
-      { leaseSecs, heldMax: 4 },
+      { leaseSecs, heldMax: 4, memoryMibDefault },
       assignment,
       `bearer-${randomUUID()}`,
       [first.partition.project, second.partition.project],
@@ -606,7 +608,7 @@ test("a pool's claim is held back while any one of the owner's runners could tak
     const poolClaimed = async () =>
       (await assignments.claim(
         pool,
-        { leaseSecs, heldMax: 4 },
+        { leaseSecs, heldMax: 4, memoryMibDefault },
         `assignment-${randomUUID()}`,
         `bearer-${randomUUID()}`,
         [],
@@ -657,7 +659,7 @@ test("a runner's poll naming capabilities replaces what it registered with, so w
   assert.notEqual(
     await assignments.claim(
       pool,
-      { leaseSecs, heldMax: 4 },
+      { leaseSecs, heldMax: 4, memoryMibDefault },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
       [],

@@ -38,6 +38,7 @@ import {
   postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
   asAttemptCapabilitySecret,
@@ -112,11 +113,12 @@ async function routedAttempt(routed: PoolRouted) {
   return opened.attempt;
 }
 
-/** Registers one pool under the API's role, declaring what the case wants it to, and grants it `Execute`. */
+/** Registers one pool under the API's role, declaring what the case wants it to and polling under `memoryCeilingMib` where the case names one, and grants it `Execute`. */
 async function poolRegistered(
   partition: Partition,
   pool: string,
   capabilities: readonly string[],
+  memoryCeilingMib?: number,
 ): Promise<void> {
   const principal = asPrincipal(
     `https://issuer.invalid#${pool}-${randomUUID()}`,
@@ -131,6 +133,12 @@ async function poolRegistered(
       principal,
     }),
     true,
+  );
+  await postgresWorkerPoolRunners(planePool).named(
+    { kind: "Dedicated", partition, pool, principal },
+    undefined,
+    undefined,
+    memoryCeilingMib,
   );
   access.grant({ partition, principal, access: new Set(["Execute"]) });
 }
@@ -183,7 +191,11 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
   assert.notEqual(
     await assignments.claim(
       pool,
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
       [],
@@ -211,9 +223,12 @@ test("an attempt a pool held is lost when its lease runs out, and spends the bud
 
 test("an execution routed to pools none of its project's is configured to run is blocked, and never placed", async () => {
   const routed = await poolRoutedExecution(rig, "pools-incompatible");
-  await poolRegistered(routed.project.partition, "arm", [
-    "Platform:Linux:Arm64",
-  ]);
+  await poolRegistered(
+    routed.project.partition,
+    "arm",
+    ["Platform:Linux:Arm64"],
+    1,
+  );
   await poolRegistered(
     await postgresHarnessProject(rig.harness.store, "pools-elsewhere"),
     "elsewhere",
@@ -232,6 +247,57 @@ test("an execution routed to pools none of its project's is configured to run is
       { state: "Withdrawn", evidence: "PlacementIncompatible", pool: null },
     ],
   });
+});
+
+test("an execution routed to pools whose every one configured to run it is too small for it is blocked as too large, and one fitting it at its ceiling waits", async () => {
+  for (const [ceiling, standing] of [
+    [
+      service.poolMemoryMib - 1,
+      {
+        execution: {
+          status: "Terminal",
+          outcome: "Blocked",
+          blocked_reason: "RequiredMemoryUnavailable",
+          retries_spent: 0,
+          backed_off: true,
+        },
+        attempts: [
+          { state: "Withdrawn", evidence: "PlacementIncompatible", pool: null },
+        ],
+      },
+    ],
+    [
+      service.poolMemoryMib,
+      {
+        execution: {
+          status: "Launching",
+          ...poolRoutedUnsettled,
+          backed_off: false,
+        },
+        attempts: [{ state: "Placing", evidence: null, pool: null }],
+      },
+    ],
+  ] as const) {
+    const routed = await poolRoutedExecution(
+      rig,
+      `pools-ceiling-${String(ceiling)}`,
+    );
+    await poolRegistered(
+      routed.project.partition,
+      "amd",
+      ["Platform:Linux:Amd64"],
+      ceiling,
+    );
+    await poolRegistered(routed.project.partition, "arm", [
+      "Platform:Linux:Arm64",
+    ]);
+    await executionSchedulerLaunch(service, routed.project.epoch);
+    assert.deepEqual(
+      await poolRoutedStanding(rig, routed),
+      standing,
+      String(ceiling),
+    );
+  }
 });
 
 test("an execution routed to pools one of its project's is configured to run waits on its attempt, neither placed nor blocked", async () => {
@@ -371,7 +437,11 @@ async function poolClaimed(routed: PoolRouted, name: string) {
   assert.notEqual(
     await assignments.claim(
       pool,
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       assignment,
       bearer,
       [],
@@ -503,7 +573,11 @@ async function poolConcludedStays(
   assert.equal(
     await assignments.claim(
       pool,
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       `bearer-${randomUUID()}`,
       [],

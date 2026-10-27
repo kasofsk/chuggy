@@ -204,6 +204,7 @@ import {
   type WorkerPoolRoster,
 } from "./workerPool.ts";
 import {
+  workerPoolIncompatibility,
   workerPoolOutcomeRegistered,
   type WorkerPoolAnswered,
 } from "./workerPoolAssignment.ts";
@@ -227,6 +228,8 @@ export interface ExecutionSchedulerService {
   readonly practices: PracticeCatalog;
   /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
   readonly workerRuntime: string;
+  /** The memory, in MiB, a pool runs an execution naming none with, which is the size a pass reads one routed to pools as. */
+  readonly poolMemoryMib: number;
   readonly config: ExecutionSchedulerConfig;
   readonly ticketService: TicketServiceConfig;
   readonly finalizer: FinalizerConfig;
@@ -907,6 +910,7 @@ async function schedulerOwnerRunnersAnswered(
     pool: owner,
     principal: runner.principal,
     capabilities: runner.capabilities,
+    memoryCeilingMib: runner.memoryCeilingMib,
     class: "Personal",
     dedicatedOwner: owner,
     allowlist: runner.allowlist,
@@ -952,9 +956,10 @@ async function schedulerPoolsAnswered(
 /**
  * Asks what can be said of an execution routed to pools against the pools its
  * project registered and its owner's personal runners, blocks the one no
- * runner is configured to run, and answers whether its attempt may be offered.
- * A page the registry cut short never blocks, since a pool past it may be, and
- * an undecided authority holds.
+ * runner is configured to run, for its size where that is all that stops one,
+ * and answers whether its attempt may be offered. A page the registry cut
+ * short never blocks, since a pool past it may be, and an undecided authority
+ * holds.
  */
 async function schedulerOfferable(
   service: ExecutionSchedulerService,
@@ -969,7 +974,11 @@ async function schedulerOfferable(
     await schedulerOwnerRunners(service, execution),
   );
   if (answered === undefined) return false;
-  const outcome = workerPoolOutcomeRegistered(execution, answered);
+  const outcome = workerPoolOutcomeRegistered(
+    execution,
+    answered,
+    service.poolMemoryMib,
+  );
   switch (outcome) {
     case "DefinitiveIncompatibility":
       if (registered.truncated) return true;
@@ -977,7 +986,7 @@ async function schedulerOfferable(
         service,
         attempt,
         "PlacementIncompatible",
-        "RequiredCapabilityUnavailable",
+        workerPoolIncompatibility(execution, answered, service.poolMemoryMib),
       );
       return false;
     case "Placeable":

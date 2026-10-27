@@ -99,6 +99,7 @@ import {
   type OfferedWorker,
 } from "../interpreter/workerCatalog.ts";
 import type { FilesystemAccess } from "../interpreter/taskAuthority.ts";
+import { workerPoolMemoryMibDefault } from "../interpreter/workerPool.ts";
 import { workerPoolImagePinned } from "../interpreter/workerPoolImagePull.ts";
 import {
   ticketServiceDefaults,
@@ -127,10 +128,20 @@ export interface SchedulerCommandConfig {
   readonly sessionPolicy: SessionPolicy;
   readonly sessionRouting: SessionRouting;
   readonly access: ProjectAccessSettings;
+  /** The memory, in MiB, the pool plane runs an execution naming none with. */
+  readonly poolMemoryMib: number;
 }
 
-/** The one prefix every variable this command reads is spelled with. */
+/** The prefix every variable this command reads is spelled with, but the pool plane's own it reads. */
 const schedulerVariablePrefix = "CHUG_SCHEDULER_";
+
+/**
+ * The pool plane's size for an execution naming none, read under the plane's
+ * own name so one setting sizes both. A plane given its own value and a
+ * scheduler not given it read two sizes, and the scheduler's verdict on which
+ * runner an execution fits is then the default's rather than the plane's.
+ */
+const poolPlaneMemoryVariable = "CHUG_POOL_PLANE_MEMORY_MIB";
 
 /** The operational values a deployment gets when it names none of them. */
 const schedulerCommandDefaults = {
@@ -422,15 +433,26 @@ function schedulerPositive(
   name: string,
   fallback: number,
 ): number {
-  const value = schedulerOptional(environment, name);
-  if (value === undefined) return fallback;
+  return environmentPositive(
+    environment,
+    `${schedulerVariablePrefix}${name}`,
+    fallback,
+  );
+}
+
+/** One variable, named whole, as a positive integer, falling back where a deployment named none. */
+function environmentPositive(
+  environment: SchedulerEnvironment,
+  variable: string,
+  fallback: number,
+): number {
+  const value = environment[variable];
+  if (value === undefined || value.length === 0) return fallback;
   if (!/^[1-9][0-9]*$/u.test(value))
-    throw new RangeError(
-      `${schedulerVariablePrefix}${name} must be a positive integer`,
-    );
+    throw new RangeError(`${variable} must be a positive integer`);
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed))
-    throw new RangeError(`${schedulerVariablePrefix}${name} is too large`);
+    throw new RangeError(`${variable} is too large`);
   return parsed;
 }
 
@@ -845,6 +867,20 @@ function schedulerDatabase(
   };
 }
 
+/** Where the project authority is read, and how long one read of it may take. */
+function schedulerAccess(
+  environment: SchedulerEnvironment,
+): ProjectAccessSettings {
+  return checkedProjectAccessSettings({
+    readUrl: schedulerRequired(environment, "KETO_READ_URL"),
+    requestTimeoutMs: schedulerPositive(
+      environment,
+      "KETO_TIMEOUT_MS",
+      projectAccessTimeoutMsDefault,
+    ),
+  });
+}
+
 /** The whole scheduler command configuration, parsed out of one environment record. */
 export function schedulerCommandConfig(
   environment: SchedulerEnvironment,
@@ -906,13 +942,11 @@ export function schedulerCommandConfig(
       sessionSchedulerDefaults,
     ),
     ...schedulerSessionPolicy(environment),
-    access: checkedProjectAccessSettings({
-      readUrl: schedulerRequired(environment, "KETO_READ_URL"),
-      requestTimeoutMs: schedulerPositive(
-        environment,
-        "KETO_TIMEOUT_MS",
-        projectAccessTimeoutMsDefault,
-      ),
-    }),
+    access: schedulerAccess(environment),
+    poolMemoryMib: environmentPositive(
+      environment,
+      poolPlaneMemoryVariable,
+      workerPoolMemoryMibDefault,
+    ),
   };
 }

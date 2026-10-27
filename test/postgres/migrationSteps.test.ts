@@ -416,12 +416,15 @@ async function schedulerPoolColumns(
 test("021 lets the scheduler read a registered pool's project, name, declaration, principal and class, and no other column", async () => {
   await migrationDatabaseAt(
     migration021.version - 1,
-    "scheduler_pools",
+    "scheduler_pools_before",
     async (subject) => {
       assert.deepEqual(await schedulerPoolColumns(subject), []);
-      assert.ok(
-        (await postgresMigrate(subject)).includes(migration021.version),
-      );
+    },
+  );
+  await migrationDatabaseAt(
+    migration021.version,
+    "scheduler_pools",
+    async (subject) => {
       assert.deepEqual(await schedulerPoolColumns(subject), [
         "tenant",
         "project",

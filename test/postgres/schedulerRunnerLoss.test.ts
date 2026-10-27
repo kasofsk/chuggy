@@ -225,7 +225,11 @@ async function claimed(
   assert.notEqual(
     await assignments.claim(
       pool,
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       bearer,
       [],
@@ -571,7 +575,11 @@ test("a ticket read names the member whose own runner a job was lost on", async 
   assert.notEqual(
     await assignments.claimPersonal(
       { ...key, principal },
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       bearer,
       [partition.project],

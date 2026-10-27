@@ -9,8 +9,9 @@
  * which is `owner_fallback` named; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
- * it is enabled and current; its capabilities run the requirement; and what
- * that registration holds, across every project it serves, is the slot, apart
+ * it is enabled and current; its capabilities run the requirement, and its
+ * memory ceiling, where a poll named one, is above the execution's size, as a
+ * pool's is; and what that registration holds, across every project it serves, is the slot, apart
  * from what any other runner of the owner's holds. The owner's fallback
  * refuses a personal runner nothing. Its permit was asked when its poll was
  * admitted, and its owner's `Read` of each project before the claim, which
@@ -84,6 +85,8 @@ export async function personalExecutionClaimed(
           AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND (r.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
                   AND h.pool_principal=r.principal

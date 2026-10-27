@@ -280,6 +280,31 @@ export function workerRunnerCapabilitiesOf(
     : { named: "Unread" };
 }
 
+/**
+ * The header a runner names, in MiB, the most memory it takes one job of in on
+ * its poll, which replaces the ceiling its registration or an earlier poll
+ * recorded. A poll without it leaves the recorded ceiling as it is, and a
+ * caller none of whose polls named one is offered a job of any size.
+ */
+export const workerRunnerMemoryCeilingHeader = "chuggy-memory-ceiling";
+
+/** What a poll's count header names: nothing where it is absent, a count, or something a count does not read as. */
+export type WorkerRunnerCountNamed =
+  | { readonly named: "None" }
+  | { readonly named: "Count"; readonly count: number }
+  | { readonly named: "Unread" };
+
+/** The count `header` names, written as the poll's query writes one. */
+export function workerRunnerCountOf(
+  header: string | undefined,
+): WorkerRunnerCountNamed {
+  if (header === undefined) return { named: "None" };
+  const read = workerPoolQueryCountSchema.safeParse(header);
+  return read.success
+    ? { named: "Count", count: read.data }
+    : { named: "Unread" };
+}
+
 /** The longest address a runner's release is fetched from. */
 export const workerRunnerReleaseUrlCharsMax = 2_048;
 

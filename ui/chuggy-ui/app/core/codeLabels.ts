@@ -92,6 +92,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
       return "Runtime version unsupported";
     case "RequiredCapabilityUnavailable":
       return "Nowhere to run this work";
+    case "RequiredMemoryUnavailable":
+      return "Too large for every runner";
   }
 }
 
@@ -407,13 +409,15 @@ export function escalationDetail(escalation: TicketEscalation): string {
 export type EscalationStep = "Runners" | "Repositories";
 
 /** The page an escalation's one line leads to: where the project's work runs,
- * for a wall that is nothing being there to run it or a pool that lost it, and
- * where a repository's Workflow files are set, for a push refused for them. */
+ * for a wall that is nothing being there to run it or nothing large enough, or
+ * a pool that lost it, and where a repository's Workflow files are set, for a
+ * push refused for them. */
 export function escalationStep(
   escalation: TicketEscalation,
 ): EscalationStep | undefined {
   if (
     escalation.evidence === "RequiredCapabilityUnavailable" ||
+    escalation.evidence === "RequiredMemoryUnavailable" ||
     escalation.lost?.runner.kind === "Pool"
   )
     return "Runners";

@@ -176,8 +176,43 @@ test("the scheduler reads every runner of a member's in the tenant, each with ev
       owner: member,
       principal: registered.principal,
       capabilities: registered.capabilities,
+      memoryCeilingMib: undefined,
       allowlist: [partition],
     })),
+  );
+});
+
+test("each runner is read by the scheduler with the memory ceiling its own newest poll naming one named", async () => {
+  const partition = await project("runner-ceiling");
+  const runners = postgresPersonalRunnerRegistry(api);
+  const stamps = postgresWorkerPoolRunners(plane);
+  const roster = postgresWorkerPoolRoster(scheduler);
+  const key = { tenant: partition.tenant, owner: member };
+  const first = registration(key, clientNumbered(partition.tenant, 1));
+  const second = registration(key, clientNumbered(partition.tenant, 2));
+  await runners.register(first);
+  await runners.register(second);
+  await runners.allow(key, partition.project);
+  const ceilings = async () =>
+    (await roster.personal(partition, member)).map(
+      (runner) => runner.memoryCeilingMib,
+    );
+  await stamps.named(
+    { kind: "Personal", ...key, principal: first.principal },
+    undefined,
+    undefined,
+    2_048,
+  );
+  assert.deepEqual(await ceilings(), [2_048, undefined]);
+  await stamps.named(
+    { kind: "Personal", ...key, principal: first.principal },
+    undefined,
+    undefined,
+  );
+  assert.deepEqual(
+    await ceilings(),
+    [2_048, undefined],
+    "a poll naming none keeps it",
   );
 });
 
