@@ -41,12 +41,12 @@
 # EVERY UNIT TEST IS CAPPED, by `.chug/tasks/_test-timeout.sh`, whose header
 # says why.
 #
-# A SUITE NAMED `*.linux.test.ts` STATES WHAT LINUX'S TCP DOES — a reset
-# discards what its reader had not yet read — which Darwin's kernel instead
-# delivers, or never reports to a reader that was paused. On any other kernel
-# such a suite runs in the node of the worker image, the image the platform's
-# jobs run in, so its claim is checked where it is true and nowhere it is
-# false. No docker there is a could-not-run.
+# A SUITE NAMED `*.linux.test.ts` STATES WHAT LINUX DOES, and says in its own
+# header what that is. On any other kernel such a suite runs in the node of the
+# worker image, the image the platform's jobs run in, so its claim is checked
+# where it is true and nowhere it is false. A docker that cannot run it there —
+# none running, the image not to be had, the tree not visible inside it at its
+# own path — is a could-not-run, never a finding against the tree.
 #
 # Local binaries win over anything on PATH: a verdict that depends on which
 # version happens to be installed is not a verdict. Each missing one is a
@@ -192,6 +192,19 @@ if [ "$run_unit" -eq 1 ]; then
 			echo "check-source: LINTER ERROR — the Linux suites need a running docker on $kernel, and there is none"
 			exit 2
 		fi
+		if ! docker image inspect "$linux_image" >/dev/null 2>&1 &&
+			! docker pull -q "$linux_image" >/dev/null 2>&1; then
+			echo "check-source: LINTER ERROR — $linux_image is neither held nor to be pulled, so the Linux suites have no image to run in"
+			exit 2
+		fi
+		# The installed modules are probed as well as the tree, because a
+		# checkout without its own resolves them from a directory the mount
+		# does not carry.
+		if ! docker run --rm -v "$root:$root:ro" "$linux_image" \
+			test -r "$root/package.json" -a -d "$root/node_modules" >/dev/null 2>&1; then
+			echo "check-source: LINTER ERROR — docker does not see $root and its node_modules at their own path, so the Linux suites cannot be read there"
+			exit 2
+		fi
 	fi
 
 	set -f
@@ -213,8 +226,9 @@ if [ "$run_unit" -eq 1 ]; then
 		set -- $linux_suites
 		unset IFS
 		# Mounted at its own path, read-only, so the suites resolve the same
-		# installed modules at the same paths they would on the host.
-		stage "  linux    " docker run --rm -v "$root:$root:ro" -w "$root" "$linux_image" \
+		# installed modules at the same paths they would on the host; `--init`
+		# so an interrupt reaches the runner rather than a PID 1 that drops it.
+		stage "  linux    " docker run --rm --init -v "$root:$root:ro" -w "$root" "$linux_image" \
 			node --test --test-reporter=dot \
 			--test-timeout="$test_timeout_ms" --test-force-exit "$@"
 	fi

@@ -278,21 +278,33 @@ check "a cap that is not a count is a could-not-run" 2 "$RC" "no test can be cap
 unset CHUG_TEST_TIMEOUT_MS
 
 # The kernel and docker are stood in for, so each case says which kernel the
-# gate runs on and what docker answers. The Linux suite fails wherever it is
-# run, which is what lets a passing gate prove it was not run on the host.
+# gate runs on and what docker answers to each thing it is asked: whether it
+# runs, whether it holds or can pull the image, and whether the tree is visible
+# inside it. Only a run of suites is logged. The Linux suite fails wherever it
+# is run, which is what lets a passing gate prove it was not run on the host.
 FAKES="$WORK/fakes"
 mkdir -p "$FAKES"
 printf '#!/bin/sh\necho "$FAKE_KERNEL"\n' > "$FAKES/uname"
 {
 	printf '%s\n' '#!/bin/sh'
-	printf '%s\n' '[ "$1" != info ] || exit "$FAKE_DOCKER_INFO_RC"'
-	printf '%s\n' "printf '%s\\n' \"\$*\" >> \"$WORK/docker.log\""
+	printf '%s\n' 'case "$1 ${2:-}" in'
+	printf '%s\n' '"info "*) exit "$FAKE_DOCKER_INFO_RC" ;;'
+	printf '%s\n' '"image inspect") exit "$FAKE_DOCKER_IMAGE_RC" ;;'
+	printf '%s\n' '"pull "*) exit "$FAKE_DOCKER_PULL_RC" ;;'
+	printf '%s\n' 'esac'
+	printf '%s\n' 'case "$*" in *" test -r "*) exit "$FAKE_DOCKER_MOUNT_RC" ;; esac'
+	printf '%s\n' "printf '%s\\n' \"\$*\" >> \"\$FAKE_DOCKER_LOG\""
 } > "$FAKES/docker"
 chmod +x "$FAKES/uname" "$FAKES/docker"
 HOST_PATH="$PATH"
 PATH="$FAKES:$PATH"
+FAKE_DOCKER_LOG="$WORK/docker.log"
 FAKE_DOCKER_INFO_RC=0
-export FAKE_KERNEL FAKE_DOCKER_INFO_RC
+FAKE_DOCKER_IMAGE_RC=0
+FAKE_DOCKER_PULL_RC=0
+FAKE_DOCKER_MOUNT_RC=0
+export FAKE_KERNEL FAKE_DOCKER_LOG FAKE_DOCKER_INFO_RC FAKE_DOCKER_IMAGE_RC FAKE_DOCKER_PULL_RC \
+	FAKE_DOCKER_MOUNT_RC
 
 fixture
 clean_source
@@ -302,7 +314,7 @@ printf '%s\n' 'FROM node:0-fixture AS base' > "$R/images/worker/Dockerfile"
 git -C "$R" add -A
 
 FAKE_KERNEL=Darwin
-rm -f "$WORK/docker.log"
+rm -f "$FAKE_DOCKER_LOG"
 run_in "$R" --unit
 check "on another kernel a Linux suite is not the host's" 0 "$RC" "0 stage(s) failed, 2 run"
 check "and the clean line says where it ran" 0 "$RC" "unit ran 2 suite(s), 1 of them in node:0-fixture;"
@@ -310,12 +322,12 @@ check "and the clean line says where it ran" 0 "$RC" "unit ran 2 suite(s), 1 of 
 # directory's resolved through a link, so the mount is asserted to be one path
 # three times rather than to be $R.
 read -r mounted_from mounted_at worked_in <<EOF
-$(sed -n 's/^run --rm -v \([^ :]*\):\([^ :]*\):ro -w \([^ ]*\) .*/\1 \2 \3/p' "$WORK/docker.log")
+$(sed -n 's/^run --rm --init -v \([^ :]*\):\([^ :]*\):ro -w \([^ ]*\) .*/\1 \2 \3/p' "$FAKE_DOCKER_LOG")
 EOF
 if [ -n "$mounted_from" ] && [ "$mounted_from" = "$mounted_at" ] && [ "$mounted_at" = "$worked_in" ]; then
-	printf 'mounted read-only at its own path, and run there\n' >> "$WORK/docker.log"
+	printf 'mounted read-only at its own path, and run there\n' >> "$FAKE_DOCKER_LOG"
 fi
-OUT="$WORK/docker.log"
+OUT="$FAKE_DOCKER_LOG"
 check "the tree is mounted read-only at its own path, and run there" 0 "$RC" \
 	"mounted read-only at its own path, and run there"
 check "in the worker image's node" 0 "$RC" " node:0-fixture node --test "
@@ -328,13 +340,48 @@ run_in "$R" --unit
 check "with no docker answering, a Linux suite is a could-not-run" 2 "$RC" "need a running docker on Darwin"
 FAKE_DOCKER_INFO_RC=0
 
+FAKE_DOCKER_IMAGE_RC=1
+run_in "$R" --unit
+check "an image docker does not hold is pulled" 0 "$RC" "0 stage(s) failed, 2 run"
+FAKE_DOCKER_PULL_RC=1
+run_in "$R" --unit
+check "an image neither held nor to be pulled is a could-not-run" 2 "$RC" \
+	"node:0-fixture is neither held nor to be pulled"
+FAKE_DOCKER_IMAGE_RC=0
+FAKE_DOCKER_PULL_RC=0
+
+FAKE_DOCKER_MOUNT_RC=1
+run_in "$R" --unit
+check "a tree docker cannot see at its own path is a could-not-run" 2 "$RC" "docker does not see"
+FAKE_DOCKER_MOUNT_RC=0
+
 FAKE_KERNEL=Linux
 run_in "$R" --unit
 check "on Linux a Linux suite is the host's" 1 "$RC" "this one holds only on Linux"
 check "and runs in the one unit stage" 1 "$RC" "1 stage(s) failed, 1 run"
 
+# With every unit suite a Linux one the host stage is not started: started
+# with no suite, the runner would discover the whole tree on its own, and the
+# untracked suite here is what it would find.
+FAKE_KERNEL=Darwin
+rm "$R/test/domain/a.test.ts"
+git -C "$R" add -A
+failing_suite "$R/test/domain/stray.test.ts" "the host runner discovered this on its own"
+rm -f "$FAKE_DOCKER_LOG"
+run_in "$R" --unit
+check "with only Linux suites, only the Linux stage runs" 0 "$RC" "0 stage(s) failed, 1 run"
+refute "and the host runner discovers nothing of its own" 0 "$RC" "discovered this on its own"
+OUT="$FAKE_DOCKER_LOG"
+check "the Linux stage is handed the one suite" 0 "$RC" "test/domain/kernel.linux.test.ts"
+OUT="$WORK/.out"
+
+printf '%s\n' 'FROM scratch AS base' > "$R/images/worker/Dockerfile"
+run_in "$R" --unit
+check "a worker image pinning no node is a could-not-run" 2 "$RC" "pins no node base"
+
 PATH="$HOST_PATH"
-unset FAKE_KERNEL FAKE_DOCKER_INFO_RC
+unset FAKE_KERNEL FAKE_DOCKER_LOG FAKE_DOCKER_INFO_RC FAKE_DOCKER_IMAGE_RC FAKE_DOCKER_PULL_RC \
+	FAKE_DOCKER_MOUNT_RC
 
 # --- What the browser stage sees that the first typecheck does not ------------
 #

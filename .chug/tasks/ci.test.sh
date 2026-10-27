@@ -547,6 +547,7 @@ for case in \
 	".chug/actions/x.json|check-source unit" "tsconfig.contract.json|check-source unit" \
 	"tsconfig.contract-pack.json|check-source unit" ".chug/tasks/check-source.sh|check-source unit" \
 	".chug/tasks/check-console-sheets.sh|check-source unit" \
+	".chug/tasks/_test-timeout.sh|check-source unit" \
 	"deploy/rig/images/README.md|check-source unit" ".chug/actions/README.md|check-source unit" \
 	".chug/prompts/x.md|check-source unit" ".chug/tasks/review-change.md|check-source unit" \
 	".dependency-cruiser.cjs|check-source unit|check-boundaries" \

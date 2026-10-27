@@ -232,6 +232,19 @@ check "a red worker is a finding" 1 "$RC" "a worker went red against the server 
 OUT="$HELPER_LOG"
 check "a red worker still removes every database" 0 0 "drop ignored_"
 
+# --- Each test is capped ----------------------------------------------------
+#
+# The blocking suite settles on its own, later than the cap: uncapped it would
+# pass, so a red worker here is the cap and nothing else.
+
+fixture
+blocking_suite "$R/test/postgres/slow.test.ts"
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" CHUG_TEST_TIMEOUT_MS=500
+check "a test past the cap turns its worker red" 1 "$RC" "timed out after 500ms"
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" CHUG_TEST_TIMEOUT_MS=0
+check "a cap that is no cap is a could-not-run" 2 "$RC" "no test can be capped"
+
 # --- Preparation failure is could-not-run and still cleans up ---------------
 
 fixture
