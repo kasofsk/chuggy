@@ -656,8 +656,9 @@ function workerPoolRoomLeft(
  * The claims one poll makes, each one a row taken and bound to a fresh bearer
  * in the same statement and each fitting the room the claims before it left,
  * and, for a poll naming its room whose release reads it, whether one more is
- * waiting, which a claim that took nothing answers without asking. Any other
- * caller that wants no job asks for none and none is claimed, so a full pool's
+ * waiting, which a claim that took nothing answers without asking, as does a
+ * room of nothing that wants none, since no job fits it. Any other caller that
+ * wants no job asks for none and none is claimed, so a full pool's or runner's
  * poll costs no row a pool with room could take and no question of the
  * authority.
  */
@@ -677,6 +678,8 @@ async function workerPoolClaims(
     contractVersionAccepted(workerContractRunnerJobsWaiting, asked.contract);
   const assignments: WorkerPoolAssignment[] = [];
   if (wanted <= 0 && !answersWaiting) return { assignments };
+  if (wanted <= 0 && asked.memoryRoomMib === 0)
+    return { assignments, jobsWaiting: false };
   const claimer = await workerPoolClaimMade(ports, identity, settings);
   let room = asked.memoryRoomMib;
   let exhausted = false;
