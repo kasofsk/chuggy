@@ -68,6 +68,7 @@ import {
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
+  asRecoveryEpoch,
   asTenantId,
   type Partition,
   type ProjectId,
@@ -947,6 +948,28 @@ const pinned: ExecutionRequirement = {
   image: pinnedImage,
 };
 
+/** An owner's runner for `project` alone, live and declaring all `pinned` asks, under `memoryCeilingMib` where it is named. */
+async function ownersRunner(
+  project: SchedulerProject,
+  label: string,
+  memoryCeilingMib?: number,
+): Promise<PersonalPlaneIdentity> {
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(
+    runner,
+    declaringAll(pinned),
+    0,
+    [project.partition.project],
+    memoryCeilingMib,
+  );
+  return runner;
+}
+
 test("a pool that reports holding nothing is held to what the database says it holds", async () => {
   const project = await releasedUnder("claim-under-report", pinned, 2);
   const pool = await pollingPool(project, "under-report", pinned);
@@ -1173,21 +1196,7 @@ test("an execution naming no memory meets a ceiling at the plane's size for it, 
     await opened(pooled);
     assert.equal(await takes(pool), fits, `a pool under ${String(ceiling)}`);
     const owned = await releasedUnder(`${label}-owned`, pinned, 2);
-    const runner: PersonalPlaneIdentity = {
-      kind: "Personal",
-      tenant: owned.partition.tenant,
-      owner: asPrincipal(
-        `https://issuer.invalid#${label}-owner-${randomUUID()}`,
-      ),
-      principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
-    };
-    await plantedRunnerRows(
-      runner,
-      declaringAll(pinned),
-      0,
-      [owned.partition.project],
-      ceiling,
-    );
+    const runner = await ownersRunner(owned, label, ceiling);
     const strict = { owner: runner.owner, fallback: "Strict" };
     await opened(owned, false, strict);
     await opened(owned, false, strict);
@@ -1224,17 +1233,7 @@ test("a claim takes no job larger than the room its poll named, a job naming no 
       `a pool: ${label}`,
     );
     const owned = await releasedUnder(`${label}-owned`, pinned, 1, resources);
-    const runner: PersonalPlaneIdentity = {
-      kind: "Personal",
-      tenant: owned.partition.tenant,
-      owner: asPrincipal(
-        `https://issuer.invalid#${label}-owner-${randomUUID()}`,
-      ),
-      principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
-    };
-    await plantedRunnerRows(runner, declaringAll(pinned), 0, [
-      owned.partition.project,
-    ]);
+    const runner = await ownersRunner(owned, label);
     await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
     assert.equal(
       await takes(runner, owned.partition, undefined, room),
@@ -1314,6 +1313,43 @@ test("a claim or a probe whose size is no positive count, or whose room is no co
     ])
       await assert.rejects(asked, refusal, JSON.stringify(over));
   }
+});
+
+test("a claim and its probe take nothing of a project that is not Active, nor an attempt a newer recovery epoch superseded, for a pool and for its owner's runner", async () => {
+  const label = "claim-fenced";
+  const pooled = await releasedUnder(`${label}-pool`, pinned, 2);
+  const pool = await pollingPool(pooled, label, pinned);
+  const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+  const runner = await ownersRunner(owned, label);
+  for (let opening = 0; opening < 2; opening += 1) {
+    await opened(pooled);
+    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+  }
+  for (const [who, project, taking] of [
+    ["a pool", pooled, () => takes(pool)],
+    ["a runner", owned, () => takes(runner, owned.partition)],
+  ] as const) {
+    for (const [lifecycle, taken] of [
+      ["Suspended", false],
+      ["Active", true],
+    ] as const) {
+      await rig.harness.query(
+        `UPDATE project SET lifecycle=$3, lifecycle_generation=lifecycle_generation+1
+          WHERE tenant=$1 AND project=$2`,
+        [project.partition.tenant, project.partition.project, lifecycle],
+      );
+      assert.equal(await taking(), taken, `${who} of a project ${lifecycle}`);
+    }
+  }
+  await rig.harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`epoch-${label}-${randomUUID()}`),
+  );
+  assert.equal(await takes(pool), false, "a pool under a superseded epoch");
+  assert.equal(
+    await takes(runner, owned.partition),
+    false,
+    "a runner under a superseded epoch",
+  );
 });
 
 test("a container's pod runs the image its requirement pinned, claimed out of the database", async () => {

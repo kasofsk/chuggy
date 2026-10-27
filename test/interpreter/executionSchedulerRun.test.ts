@@ -103,6 +103,10 @@ import {
   type WorkerPoolRegistered,
   type WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
+import {
+  workerPoolIncompatibility,
+  type WorkerPoolAnswered,
+} from "../../src/interpreter/workerPoolAssignment.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -2083,6 +2087,108 @@ test("an owner's execution is blocked where the runner that alone could run it i
     const calls: string[] = [];
     await ownedLaunch(calls, "Strict", [runner], access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
+  }
+});
+
+test("an owner's execution is held where the owner's runner takes its size, and blocked for its memory where only that runner's ceiling stops it", async () => {
+  const small = workerPoolMemoryMibDefault - 1;
+  for (const [why, runner, called] of [
+    [
+      "at the ceiling",
+      { ...memberRunner, memoryCeilingMib: workerPoolMemoryMibDefault },
+      ["personal:member-one"],
+    ],
+    [
+      "over the ceiling",
+      { ...memberRunner, memoryCeilingMib: small },
+      [
+        "personal:member-one",
+        "ended:Withdrawn:PlacementIncompatible",
+        "blocked:RequiredMemoryUnavailable",
+      ],
+    ],
+    [
+      "over the ceiling and the inventory",
+      {
+        ...memberRunner,
+        capabilities: ["Platform:Linux:Arm64"],
+        memoryCeilingMib: small,
+      },
+      ["personal:member-one", ...blocked],
+    ],
+  ] as const) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, "Strict", [runner], ownerAccess(true, true));
+    assert.deepEqual(calls, called, why);
+  }
+});
+
+test("an incompatible execution is blocked for its memory exactly where some runner, personal or the project's, would be configured for it but for its ceiling", () => {
+  const owned: LogicalExecution = {
+    ...execution,
+    route: "Pool",
+    owner: member,
+    ownerFallback: "Strict",
+  };
+  const small = workerPoolMemoryMibDefault - 1;
+  const arm = ["Platform:Linux:Arm64"];
+  const personal = (
+    capabilities: readonly string[],
+    memoryCeilingMib: number,
+  ): WorkerPoolAnswered => ({
+    partition,
+    pool: member,
+    principal: memberRunner.principal,
+    capabilities,
+    memoryCeilingMib,
+    class: "Personal",
+    dedicatedOwner: member,
+    allowlist: memberRunner.allowlist,
+    revoked: false,
+  });
+  const dedicated = (
+    capabilities: readonly string[],
+    memoryCeilingMib: number,
+  ): WorkerPoolAnswered => ({
+    ...registeredPool(capabilities),
+    memoryCeilingMib,
+    dedicatedOwner: undefined,
+    allowlist: [],
+    revoked: false,
+  });
+  for (const [why, answered, reason] of [
+    [
+      "a personal runner too small",
+      [personal(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    [
+      "a personal runner too small and unlike",
+      [personal(arm, small)],
+      "RequiredCapabilityUnavailable",
+    ],
+    [
+      "a pool too small",
+      [dedicated(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    [
+      "a pool too small and unlike",
+      [dedicated(arm, small)],
+      "RequiredCapabilityUnavailable",
+    ],
+    [
+      "an unlike pool beside a personal runner too small",
+      [dedicated(arm, small), personal(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    ["no runner", [], "RequiredCapabilityUnavailable"],
+  ] as const) {
+    assert.equal(
+      workerPoolIncompatibility(owned, answered, workerPoolMemoryMibDefault),
+      reason,
+      why,
+    );
   }
 });
 
