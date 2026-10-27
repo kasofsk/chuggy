@@ -2126,14 +2126,6 @@ function draftRevised(value: NativeDraftRevised): NativeHttpResponse {
         ...nativeHttpError("DraftNotEditable", "The draft is not editable."),
         state: value.state,
       });
-    case "DependenciesLocked":
-      return response(
-        409,
-        nativeHttpError(
-          "DependenciesLocked",
-          "A released ticket's dependencies cannot change.",
-        ),
-      );
   }
 }
 

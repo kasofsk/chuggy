@@ -713,8 +713,6 @@ async function reviseDraft(
     return { revised: "RepositoryNotBound" };
   if (row.result === "LandingUnbranched")
     return { revised: "LandingUnbranched" };
-  if (row.result === "DependenciesLocked")
-    return { revised: "DependenciesLocked" };
   if (row.result === "Stale") {
     if (row.authoring_version === null)
       throw new Error("draft revision returned Stale with no current version");

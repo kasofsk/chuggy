@@ -213,7 +213,6 @@ export function EditForm(props: EditFormProps): ReactNode {
         onForm={setEdited}
         offers={offers}
         repositories={repositories}
-        dependenciesLocked
         assemble={(held) =>
           editRevisionFrom(draft, offers, held, repositories, standing)
         }
@@ -232,7 +231,6 @@ export function EditForm(props: EditFormProps): ReactNode {
             offers={offers}
             partial={props.partial === true}
             repositories={repositories}
-            dependenciesLocked
             standing={standing}
             api={props}
           />

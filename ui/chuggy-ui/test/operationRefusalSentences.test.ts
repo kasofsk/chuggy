@@ -37,6 +37,14 @@ const samples: {
     type: "DependenciesNotFound",
     value: { ticket: 41, dependencies: [17, 23] },
   },
+  DependenciesRevoked: {
+    type: "DependenciesRevoked",
+    value: { ticket: 41, dependencies: [17, 23] },
+  },
+  DependencyCycle: {
+    type: "DependencyCycle",
+    value: { ticket: 41, dependencies: [17] },
+  },
   SelfDependency: ticketRefused("SelfDependency", 41),
   TicketNotFound: ticketRefused("TicketNotFound", 41),
   TicketNotPending: ticketRefused("TicketNotPending", 41),
@@ -45,7 +53,6 @@ const samples: {
     type: "TicketRevisionStale",
     value: { ticket: 41, expected: 2, current: 5 },
   },
-  TicketDependenciesChanged: ticketRefused("TicketDependenciesChanged", 41),
   DependenciesIncomplete: {
     type: "DependenciesIncomplete",
     value: { ticket: 41, dependencies: [17, 23, 29] },
@@ -126,6 +133,23 @@ test("a refusal over dependencies names the ticket and each dependency", () => {
   ).toBe("#41 waits on #17, which is not done yet");
 });
 
+test("a dependency refused for what it is says what to depend on instead", () => {
+  expect(operationRefusalSentence(samples.DependenciesRevoked)).toBe(
+    "#41 cannot come to depend on #17 and #23, which were revoked and will never be done; depend on a ticket that is still open",
+  );
+  expect(operationRefusalSentence(samples.DependencyCycle)).toBe(
+    "#41 cannot depend on #17, which already waits on it, so neither could ever start",
+  );
+  expect(
+    operationRefusalSentence({
+      type: "DependencyCycle",
+      value: { ticket: 41, dependencies: [17, 23] },
+    }),
+  ).toBe(
+    "#41 cannot depend on #17 and #23, which already wait on it, so none of them could ever start",
+  );
+});
+
 test("a stale revision names the one written against and the one held", () => {
   const sentence = operationRefusalSentence(samples.TicketRevisionStale);
   expect(sentence).toContain("#41");
@@ -176,13 +200,9 @@ test("a release refused for its pairing names the brief, and one refused for its
     expect(operationRefusalSentence(samples[code])).toContain("brief");
 });
 
-/** The three only an update reaches promise no edit the ticket page does not offer. */
+/** The two only an update reaches promise no edit the ticket page does not offer. */
 test("a refusal only an update reaches offers no edit", () => {
-  for (const code of [
-    "TicketIdentityMismatch",
-    "TicketRevisionStale",
-    "TicketDependenciesChanged",
-  ] as const)
+  for (const code of ["TicketIdentityMismatch", "TicketRevisionStale"] as const)
     expect(operationRefusalSentence(samples[code])).not.toMatch(
       /\b(edit|revise|update)\b/iu,
     );

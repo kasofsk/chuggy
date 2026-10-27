@@ -127,7 +127,7 @@ import {
   assertDoorsStandOwned,
   commandsBoundaryRefusals,
   commandsRefusal,
-  commandsRefusals,
+  commandsRefusalsBefore085,
   commandsRefuse,
   deletionJournalRow,
   deletionPartition,
@@ -1448,7 +1448,7 @@ test("053 settles a release under the pairing fault it was refused for, and keep
           /decision_input_outcome_is_known/u,
           code,
         );
-      for (const [code, value] of commandsRefusals)
+      for (const [code, value] of commandsRefusalsBefore085)
         assert.equal(
           await commandsRefuse(
             subject,
@@ -1468,9 +1468,7 @@ test("053 settles a release under the pairing fault it was refused for, and keep
           null,
           code,
         );
-      assert.ok(
-        (await postgresMigrate(subject)).includes(migration053.version),
-      );
+      await installationAt(subject, migration053.version);
       for (const code of pairingRefusals053)
         assert.equal(
           await commandsRefuse(subject, ++ordinal, code, null),

@@ -58,10 +58,9 @@ function tracks(template: string): readonly string[] {
   return [...found, current].filter((track) => track !== "");
 }
 
-/** The form with every row it can draw: a repository, a link and a check, the
- * locked dependencies an edit draws, and the Advanced section open on two
- * stages. */
-function drawEveryRow(dependenciesLocked: boolean): HTMLElement {
+/** The form with every row it can draw: a repository, a link and a check, and
+ * the Advanced section open on two stages. */
+function drawEveryRow(): HTMLElement {
   const binding = creationBinding("https://forge.test/acme/atlas.git");
   const form = creationForm(
     {
@@ -80,7 +79,6 @@ function drawEveryRow(dependenciesLocked: boolean): HTMLElement {
           faults={[]}
           offers={[creationOffer(undefined, { commandedCheckStage: 1 })]}
           repositories={[binding]}
-          dependenciesLocked={dependenciesLocked}
           api={{
             ports: answeringApi(() => ({ status: 404, body: {} })).ports,
             partition: creationPartition,
@@ -93,28 +91,25 @@ function drawEveryRow(dependenciesLocked: boolean): HTMLElement {
   return container;
 }
 
-test.each([false, true])(
-  "every grid the sheet lays the form out in can narrow to its pane (an edit: %s)",
-  (dependenciesLocked) => {
-    const container = drawEveryRow(dependenciesLocked);
-    const gridded = Array.from(container.querySelectorAll("*")).filter(
-      (element) => narrowDeclared(element, "grid-template-columns") !== "",
-    );
-    const title = screen.getByRole("textbox", { name: "Title" });
-    const link = screen.getByRole("textbox", { name: "Link 1" });
-    const stage = screen.getAllByRole("combobox")[0];
-    for (const field of [title, link, stage])
-      expect(gridded).toContain(field?.parentElement);
-    for (const element of gridded)
-      for (const track of tracks(
-        narrowDeclared(element, "grid-template-columns"),
-      ))
-        expect(tracksShrinkable, element.className).toContain(track);
-  },
-);
+test("every grid the sheet lays the form out in can narrow to its pane", () => {
+  const container = drawEveryRow();
+  const gridded = Array.from(container.querySelectorAll("*")).filter(
+    (element) => narrowDeclared(element, "grid-template-columns") !== "",
+  );
+  const title = screen.getByRole("textbox", { name: "Title" });
+  const link = screen.getByRole("textbox", { name: "Link 1" });
+  const stage = screen.getAllByRole("combobox")[0];
+  for (const field of [title, link, stage])
+    expect(gridded).toContain(field?.parentElement);
+  for (const element of gridded)
+    for (const track of tracks(
+      narrowDeclared(element, "grid-template-columns"),
+    ))
+      expect(tracksShrinkable, element.className).toContain(track);
+});
 
 test("every field, and every fieldset of fields, may be narrower than its own default", () => {
-  const container = drawEveryRow(false);
+  const container = drawEveryRow();
   const fields = Array.from(
     container.querySelectorAll(
       "input:not([type=checkbox]), select, textarea, fieldset",
@@ -127,18 +122,15 @@ test("every field, and every fieldset of fields, may be narrower than its own de
     expect(narrowDeclared(field, "min-width"), field.outerHTML).toBe("0px");
 });
 
-test.each([false, true])(
-  "a hint stands in the one column a narrow row keeps (an edit: %s)",
-  (dependenciesLocked) => {
-    const container = drawEveryRow(dependenciesLocked);
-    const hints = Array.from(container.querySelectorAll(".creation-hint"));
-    expect(hints.length).toBeGreaterThan(0);
-    for (const hint of hints)
-      expect(narrowDeclared(hint, "grid-column"), hint.textContent).toBe(
-        "1 / -1",
-      );
-  },
-);
+test("a hint stands in the one column a narrow row keeps", () => {
+  const container = drawEveryRow();
+  const hints = Array.from(container.querySelectorAll(".creation-hint"));
+  expect(hints.length).toBeGreaterThan(0);
+  for (const hint of hints)
+    expect(narrowDeclared(hint, "grid-column"), hint.textContent).toBe(
+      "1 / -1",
+    );
+});
 
 test.each([
   { width: "wide", rules: rulesWide },
@@ -146,7 +138,7 @@ test.each([
 ])(
   "a link or a check is its box and its Remove alone ($width)",
   ({ rules }) => {
-    drawEveryRow(false);
+    drawEveryRow();
     for (const name of ["Link 1", "Check 1"]) {
       const line = screen.getByRole("textbox", { name }).parentElement;
       expect(line).not.toBeNull();

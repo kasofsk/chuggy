@@ -30,6 +30,7 @@ import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-
 import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
 import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
 import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
+import { migration085 } from "../../src/adapters/postgres/schema/migrations/085-dependencies-change.ts";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
@@ -99,12 +100,16 @@ import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 import { allRefusalCodes } from "../../src/interpreter/refusal.ts";
+import { parseStoredRefusal } from "../../src/interpreter/wire.ts";
 import {
   assertDoorsStandOwned,
   commandsBoundaryRefusals,
   commandsRefusal,
   commandsRefusals,
+  commandsRefusals085,
+  commandsRefusalsBefore085,
   commandsRefuse,
+  commandsRetired085,
   deletionJournalRow,
   deletionPartition,
   identityExecution,
@@ -7788,6 +7793,24 @@ const commandsRefused: readonly (readonly [
     commandsRefusal("FinalizationNotCurrent", { workCycle: 2, generation: 1 }),
     commandsCarried,
   ],
+  [
+    "revoked dependencies naming none",
+    "DependenciesRevoked",
+    commandsRefusal("DependenciesRevoked", { ticket: 1, dependencies: [] }),
+    commandsCarried,
+  ],
+  [
+    "a cycle about no ticket",
+    "DependencyCycle",
+    commandsRefusal("DependencyCycle", { dependencies: [2] }),
+    commandsCarried,
+  ],
+  [
+    "the code an update moving the dependencies was refused under",
+    "TicketDependenciesChanged",
+    commandsRefusal("TicketDependenciesChanged", 1),
+    commandsKnown,
+  ],
 ];
 
 test("a refused input keeps the refusal the machine decided and none for the boundary's own", async () => {
@@ -8457,7 +8480,7 @@ async function updateReleasedAt(subject: pg.Pool): Promise<unknown> {
   ).rows[0];
 }
 
-test("a released draft reopens while its ticket is pending, at the dependencies it was released with", async () => {
+test("a released draft reopens while its ticket is pending, at any dependencies", async () => {
   await migrationDatabaseAt("Migrated", "update_draft", async (subject) => {
     await seedProposingBinding(subject);
     for (const ticket of ["1", "2"])
@@ -8491,18 +8514,8 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
     );
     assert.deepEqual(
       await updateRevised(subject, 1, moved),
-      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
-      "a revision that moves the dependencies",
-    );
-    assert.deepEqual(
-      await updateRevised(subject, 1, "not json"),
-      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
-      "a revision naming no dependencies",
-    );
-    assert.deepEqual(
-      await updateRevised(subject, 1, same),
       [{ result: "Revised", version: 2, state: "Released" }],
-      "a revision at the dependencies it was released with",
+      "a revision that moves the dependencies",
     );
     assert.deepEqual(await updateRevised(subject, 1, same), [
       { result: "Stale", version: 2, state: "Released" },
@@ -8516,6 +8529,157 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
       await updateRevised(subject, 2, same),
       [{ result: "NotDraft", version: 2, state: "Released" }],
       "a released draft whose ticket has left Pending",
+    );
+  });
+});
+
+/** Draft 1 released and Pending beside draft 2, at the dependencies `plainAuthoring` names. */
+async function pendingReleasedDraft(subject: pg.Pool): Promise<void> {
+  await seedProposingBinding(subject);
+  for (const ticket of ["1", "2"])
+    assert.deepEqual(
+      await createdProposingDraft(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket }],
+    );
+  assert.equal(
+    await updateFenced(subject, draftReleaseFunction, 1, true),
+    true,
+  );
+  await subject.query(
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+     VALUES('tenant-91','project-91',1,'Pending',1)`,
+  );
+}
+
+/** Each stored refusal read back through this image's reader: its code, or why the reader refused it. */
+async function refusalsRead085(subject: pg.Pool): Promise<readonly string[]> {
+  const rows = (
+    await subject.query<{ outcome_code: string; refusal: string | null }>(
+      `SELECT outcome_code,refusal FROM decision_input
+        WHERE tenant='tenant-5' AND state='Refused' ORDER BY ordinal`,
+    )
+  ).rows;
+  return rows.map(({ outcome_code, refusal }) => {
+    const read = parseStoredRefusal(outcome_code, refusal);
+    return read.parsed === "Ok" ? read.value.type : read.why;
+  });
+}
+
+/** Stores every refusal that stood before 085 under 084's constraints and holds the two 085 admits refused there, answering the codes stored in order. */
+async function refusalsStoredBefore085(
+  subject: pg.Pool,
+): Promise<readonly string[]> {
+  const stood = [
+    ...commandsRefusalsBefore085.filter(
+      ([code]) => code !== commandsRetired085[0],
+    ),
+    ...commandsBoundaryRefusals.map((code) => [code, undefined] as const),
+  ];
+  let ordinal = 0;
+  for (const [code, value] of stood)
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        ++ordinal,
+        code,
+        value === undefined ? null : commandsRefusal(code, value),
+      ),
+      null,
+      code,
+    );
+  for (const [code, value] of commandsRefusals085)
+    assert.match(
+      String(
+        await commandsRefuse(subject, 99, code, commandsRefusal(code, value)),
+      ),
+      /decision_input_outcome_is_known/u,
+      code,
+    );
+  return stood.map(([code]) => code);
+}
+
+/** Stores the two refusals 085 admits past the `stored` rows before them, and holds the one it retires refused. */
+async function refusalsStoredAfter085(
+  subject: pg.Pool,
+  stored: number,
+): Promise<void> {
+  let ordinal = stored;
+  for (const [code, value] of commandsRefusals085)
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        ++ordinal,
+        code,
+        commandsRefusal(code, value),
+      ),
+      null,
+      code,
+    );
+  const [retired, payload] = commandsRetired085;
+  assert.match(
+    String(
+      await commandsRefuse(
+        subject,
+        ordinal + 1,
+        retired,
+        commandsRefusal(retired, payload),
+      ),
+    ),
+    /decision_input_outcome_is_known/u,
+  );
+}
+
+test("085 keeps every refusal that stood readable, admits the dependency refusals, retires the changed one and lets a pending draft's dependencies move", async () => {
+  await migrationDatabase("dependencies_change", async (subject) => {
+    await installationBefore(subject, migration085.version);
+    await subject.query(deletionPartition);
+    const moved = encodeDraftAuthoring({
+      ...plainAuthoring,
+      deps: new Set([2]),
+    });
+    await pendingReleasedDraft(subject);
+    assert.deepEqual(
+      await updateRevised(subject, 1, moved),
+      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
+      "084 locks a released draft's dependencies",
+    );
+    const stood = await refusalsStoredBefore085(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration085.version));
+    assert.deepEqual(await refusalsRead085(subject), stood);
+    await refusalsStoredAfter085(subject, stood.length);
+    assert.deepEqual(
+      await updateRevised(subject, 1, moved),
+      [{ result: "Revised", version: 2, state: "Released" }],
+      "a released draft's dependencies move while its ticket is Pending",
+    );
+  });
+});
+
+test("085 refuses a store holding a refusal under the retired code, and leaves it at 084", async () => {
+  await migrationDatabase("dependencies_change_retired", async (subject) => {
+    await installationBefore(subject, migration085.version);
+    await subject.query(deletionPartition);
+    const [retired, payload] = commandsRetired085;
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        1,
+        retired,
+        commandsRefusal(retired, payload),
+      ),
+      null,
+    );
+    await assert.rejects(
+      postgresMigrate(subject),
+      /decision_input_outcome_is_known/u,
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      ).at(-1)?.version,
+      migration085.version - 1,
     );
   });
 });

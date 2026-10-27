@@ -385,21 +385,44 @@ export function commandsRefusal(type: string, value: unknown): string {
   return JSON.stringify({ type, value });
 }
 
+/** The refusals 085 admits, which every constraint before it refused. */
+export const commandsRefusals085: readonly (readonly [string, unknown])[] = [
+  ["DependenciesRevoked", { ticket: 1, dependencies: [2] }],
+  ["DependencyCycle", { ticket: 1, dependencies: [2, 3] }],
+];
+
+/** The refusal 085 retires, which every constraint before it admitted. */
+export const commandsRetired085: readonly [string, unknown] = [
+  "TicketDependenciesChanged",
+  1,
+];
+
 /** One payload each machine refusal is admitted with. */
 export const commandsRefusals: readonly (readonly [string, unknown])[] = [
   ["TicketAlreadyExists", 1],
   ["DependenciesNotFound", { ticket: 1, dependencies: [2, 3] }],
+  ...commandsRefusals085,
   ["SelfDependency", 1],
   ["TicketNotFound", 1],
   ["TicketNotPending", 1],
   ["TicketIdentityMismatch", 1],
   ["TicketRevisionStale", { ticket: 1, expected: 2, current: 3 }],
-  ["TicketDependenciesChanged", 1],
   ["DependenciesIncomplete", { ticket: 1, dependencies: [2] }],
   ["TicketNotRevocable", 1],
   ["TicketNotResumable", 1],
   ["TaskNotCurrent", { ticket: 1, task: releasedTask }],
   ["FinalizationNotCurrent", { ticket: 1, workCycle: 2, generation: 1 }],
+];
+
+/** The payloads every constraint before 085 admitted. */
+export const commandsRefusalsBefore085: readonly (readonly [
+  string,
+  unknown,
+])[] = [
+  ...commandsRefusals.filter(([code]) =>
+    commandsRefusals085.every(([admitted]) => admitted !== code),
+  ),
+  commandsRetired085,
 ];
 
 /** The boundary's own refusals, which carry none. */

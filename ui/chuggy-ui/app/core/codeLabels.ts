@@ -515,9 +515,9 @@ export function nativeActionKindLabel(kind: NativeActionKind): string {
 
 /**
  * The one line a Pending ticket names when a dependency it waits on was
- * revoked: nothing will ever complete that dependency, so the wait is over and
- * the only exit is revoking this ticket too. Absent for every ticket the read
- * lists none for.
+ * revoked: nothing will ever complete that dependency, so the wait ends only
+ * when an edit drops it or this ticket is revoked too. Absent for every ticket
+ * the read lists none for.
  */
 export function revokedDependencyLine(
   revokedDependencies: readonly number[],
@@ -738,6 +738,10 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Ticket already exists";
     case "DependenciesNotFound":
       return "Dependencies not found";
+    case "DependenciesRevoked":
+      return "Dependencies revoked";
+    case "DependencyCycle":
+      return "Dependency cycle";
     case "SelfDependency":
       return "Depends on itself";
     case "TicketNotFound":
@@ -748,8 +752,6 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Different ticket";
     case "TicketRevisionStale":
       return "Revision out of date";
-    case "TicketDependenciesChanged":
-      return "Dependencies changed";
     case "DependenciesIncomplete":
       return "Dependencies not done";
     case "TicketNotRevocable":

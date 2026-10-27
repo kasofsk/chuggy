@@ -11,9 +11,8 @@
  * changes.
  *
  * A configuration is named where the wire names it and drawn as its revision
- * where it is not. Dependencies cannot change once a ticket is released, so
- * the summary reads them off the draft even where a Pending ticket's draft has
- * moved past its release in every other way.
+ * where it is not. The summary's dependencies are the live revision's, which
+ * a Pending ticket's draft may have been revised past.
  */
 
 import { useState } from "react";
@@ -262,7 +261,7 @@ function ProvenanceSummary(props: {
   readonly nowMs: number;
 }): ReactNode {
   const ticket = props.ticket;
-  const dependencies = props.draft.authoring.dependencies;
+  const dependencies = ticket?.dependencies;
   const finalization = ticket?.brief?.finalization;
   const branch = ticket?.brief?.branch;
   return (
@@ -289,7 +288,13 @@ function ProvenanceSummary(props: {
       />
       <SummaryCell
         name="Dependencies"
-        value={dependencies.length === 0 ? "None" : dependencies.join(", ")}
+        value={
+          dependencies === undefined
+            ? absentMark
+            : dependencies.length === 0
+              ? "None"
+              : dependencies.join(", ")
+        }
       />
       <SummaryCell
         name="Lands"

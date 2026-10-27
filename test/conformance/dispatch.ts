@@ -179,7 +179,11 @@ function commandOf(
       });
     case "updateDefinition":
       return unasked(
-        updateOf(ticketAt(pre, j()), drawnStages(need(picks.stages, "stages"))),
+        updateOf(
+          ticketAt(pre, j()),
+          new Set(drawnIds(need(picks.dependencies, "dependencies_"))),
+          drawnStages(need(picks.stages, "stages")),
+        ),
       );
     case "revoke":
       return unasked({ type: "RevokeTicket", value: j() });

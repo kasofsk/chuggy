@@ -43,11 +43,7 @@ import {
   graphInvariant,
 } from "./decisionValid.ts";
 import { evolve } from "./evolve.ts";
-import {
-  dependenciesEqual,
-  graphEquals,
-  releasedTicketEquals,
-} from "./equality.ts";
+import { graphEquals, releasedTicketEquals } from "./equality.ts";
 import { isPending, isTerminal } from "./phase.ts";
 import { ledgerAt, type Ledgers } from "./ledger.ts";
 
@@ -201,8 +197,8 @@ export const definitionsWellFormed: Invariant = (config, view) =>
 /**
  * A definition moves only with its revision: against the state the last
  * decision found, a ticket holds the definition and the revision it held, or
- * it was Pending, still is, and holds the next revision under the same
- * dependencies; a ticket the decision released is at the first.
+ * it was Pending, still is, and holds the next revision; a ticket the decision
+ * released is at the first.
  */
 export const revisionsAccounted: Invariant = (_config, view) =>
   everyLiveTicket(view.post, (t, id) => {
@@ -214,11 +210,7 @@ export const revisionsAccounted: Invariant = (_config, view) =>
     const updated =
       isPending(before.state) &&
       isPending(t.state) &&
-      t.revision === before.revision + 1 &&
-      dependenciesEqual(
-        t.definition.dependencies,
-        before.definition.dependencies,
-      );
+      t.revision === before.revision + 1;
     return kept || updated;
   });
 

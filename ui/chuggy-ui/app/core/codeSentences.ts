@@ -112,6 +112,12 @@ function operationRefusalTicketSentence(
       return `${operationRefusalTicket(refused.value)} already exists, so there is nothing left to release`;
     case "DependenciesNotFound":
       return `${operationRefusalTicket(refused.value.ticket)} depends on ${operationRefusalTickets(refused.value.dependencies)}, which the project has no ticket for`;
+    case "DependenciesRevoked":
+      return `${operationRefusalTicket(refused.value.ticket)} cannot come to depend on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "was" : "were"} revoked and will never be done; depend on a ticket that is still open`;
+    case "DependencyCycle":
+      return refused.value.dependencies.length === 1
+        ? `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already waits on it, so neither could ever start`
+        : `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already wait on it, so none of them could ever start`;
     case "SelfDependency":
       return `${operationRefusalTicket(refused.value)} names itself as a dependency; revise it to depend only on other tickets`;
     case "TicketNotFound":
@@ -122,8 +128,6 @@ function operationRefusalTicketSentence(
       return `what was submitted describes a different ticket from ${operationRefusalTicket(refused.value)}`;
     case "TicketRevisionStale":
       return `this was written against revision ${String(refused.value.expected)} of ${operationRefusalTicket(refused.value.ticket)}, which is at revision ${String(refused.value.current)} now`;
-    case "TicketDependenciesChanged":
-      return `what ${operationRefusalTicket(refused.value)} depends on cannot change once it is released`;
     case "DependenciesIncomplete":
       return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "is" : "are"} not done yet`;
     case "TicketNotRevocable":
@@ -213,14 +217,11 @@ export function mutationRefusalSentence(code: MutationRefusalCode): string {
 
 /**
  * The conflicts the draft door answers a revision with. `DraftChanged` is the
- * version fence and `DraftNotEditable` a draft whose ticket has left Pending;
- * `DependenciesLocked` is a revision of a released draft that moves what its
- * ticket depends on, which the update it would release is refused for anyway.
+ * version fence and `DraftNotEditable` a draft whose ticket has left Pending.
  */
 export const draftRevisionRefusalCodes = [
   "DraftChanged",
   "DraftNotEditable",
-  "DependenciesLocked",
 ] as const;
 export type DraftRevisionRefusalCode =
   (typeof draftRevisionRefusalCodes)[number];
@@ -233,8 +234,6 @@ export function draftRevisionRefusalSentence(
       return "the draft changed while this form was open — it has been read again, so submitting now revises the current one";
     case "DraftNotEditable":
       return "the draft is closed to revision: only a pending ticket's draft can be revised";
-    case "DependenciesLocked":
-      return "what this ticket depends on cannot change once it is released";
   }
 }
 

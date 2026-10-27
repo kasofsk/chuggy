@@ -150,7 +150,6 @@ const context: TicketYamlContext = {
   base: { ...creationFormFrom(offers, bound), intent: "" },
   offers,
   repositories: bound,
-  dependenciesLocked: false,
   images: [],
 };
 

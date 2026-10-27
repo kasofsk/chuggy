@@ -66,7 +66,7 @@ import {
   type Config,
 } from "./config.ts";
 import { isPending, revocationAllowed } from "./phase.ts";
-import { dependenciesEqual } from "./equality.ts";
+import { dependencyClosure } from "./decisionValid.ts";
 import {
   taskIdentityEquals,
   taskObligationEquals,
@@ -217,9 +217,47 @@ export function commandTaken(config: Config, command: TicketCommand): boolean {
 }
 
 /**
- * Release: refused if the id is taken, if the ticket names itself, or if it
- * names a dependency that does not exist — in that order — and never for a
- * dependency that exists, whatever its state.
+ * The dependencies a create or update adds: refused if one is the ticket
+ * itself, and then, naming every such one, if any does not exist, is Revoked,
+ * or already reaches the ticket; otherwise the decision it was handed.
+ */
+export function decideDependencies(
+  graph: TicketGraph,
+  ticketId: number,
+  added: ReadonlySet<number>,
+  accepted: TicketDecision,
+): TicketDecision {
+  if (added.has(ticketId))
+    return refused({ type: "SelfDependency", value: ticketId });
+  const present = [...added].filter((d) => graph.tickets.has(d));
+  const missing = new Set([...added].filter((d) => !graph.tickets.has(d)));
+  const revoked = new Set(
+    present.filter((d) => ticketAt(graph, asTicketId(d)).state === "Revoked"),
+  );
+  const cyclic = new Set(
+    present.filter((d) => dependencyClosure(graph, d).has(ticketId)),
+  );
+  if (missing.size > 0)
+    return refused({
+      type: "DependenciesNotFound",
+      value: { ticket: ticketId, dependencies: missing },
+    });
+  if (revoked.size > 0)
+    return refused({
+      type: "DependenciesRevoked",
+      value: { ticket: ticketId, dependencies: revoked },
+    });
+  if (cyclic.size > 0)
+    return refused({
+      type: "DependencyCycle",
+      value: { ticket: ticketId, dependencies: cyclic },
+    });
+  return accepted;
+}
+
+/**
+ * Release: refused if the id is taken, and otherwise for any dependency it
+ * names as `decideDependencies` refuses one.
  */
 export function decideCreate(
   graph: TicketGraph,
@@ -227,17 +265,12 @@ export function decideCreate(
 ): TicketDecision {
   if (graph.tickets.has(definition.id))
     return refused({ type: "TicketAlreadyExists", value: definition.id });
-  if (definition.dependencies.has(definition.id))
-    return refused({ type: "SelfDependency", value: definition.id });
-  const missing = new Set(
-    [...definition.dependencies].filter((d) => !graph.tickets.has(d)),
+  return decideDependencies(
+    graph,
+    definition.id,
+    definition.dependencies,
+    decided({ type: "TicketCreated", value: definition }, []),
   );
-  if (missing.size > 0)
-    return refused({
-      type: "DependenciesNotFound",
-      value: { ticket: definition.id, dependencies: missing },
-    });
-  return decided({ type: "TicketCreated", value: definition }, []);
 }
 
 /** What an update carries: the ticket, the revision its author read, and the definition that replaces it. */
@@ -249,8 +282,9 @@ export type TicketUpdateRequest = Extract<
 /**
  * Update: the author replaces a Pending ticket's definition as its next
  * revision, owing nothing. Refused, in this order, if the ticket does not
- * exist, is no longer Pending, is not the one the definition names, is at
- * another revision than the one expected, or would change its dependencies.
+ * exist, is no longer Pending, is not the one the definition names, or is at
+ * another revision than the one expected, and then for a dependency the
+ * revision adds as `decideDependencies` refuses one.
  */
 export function decideUpdate(
   graph: TicketGraph,
@@ -273,23 +307,22 @@ export function decideUpdate(
         current: ticket.revision,
       },
     });
-  if (
-    !dependenciesEqual(
-      update.definition.dependencies,
-      ticket.definition.dependencies,
-    )
-  )
-    return refused({ type: "TicketDependenciesChanged", value: id });
-  return decided(
-    {
-      type: "TicketUpdated",
-      value: {
-        ticket: id,
-        revision: ticket.revision + 1,
-        definition: update.definition,
+  const kept = ticket.definition.dependencies;
+  return decideDependencies(
+    graph,
+    id,
+    new Set([...update.definition.dependencies].filter((d) => !kept.has(d))),
+    decided(
+      {
+        type: "TicketUpdated",
+        value: {
+          ticket: id,
+          revision: ticket.revision + 1,
+          definition: update.definition,
+        },
       },
-    },
-    [],
+      [],
+    ),
   );
 }
 

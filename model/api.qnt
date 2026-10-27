@@ -71,7 +71,7 @@ module chuggy_api {
   type ApiObligation = Obligation
   type ApiSuccessfulTicketDecision = SuccessfulTicketDecision
   type ApiTicketCommand = TicketCommand
-  type ApiIncompleteDependencies = IncompleteDependencies
+  type ApiRefusedDependencies = RefusedDependencies
   type ApiCurrentTaskRefusal = CurrentTaskRefusal
   type ApiCurrentFinalizationRefusal = CurrentFinalizationRefusal
   type ApiStaleRevision = StaleRevision

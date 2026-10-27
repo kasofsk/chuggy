@@ -6,7 +6,7 @@
  *
  * The revision is round-tripped through `draftRevisionSchema` by the assembler
  * itself, so what is checked here is its content: the version it is written
- * against and the dependencies it carries whatever the form holds.
+ * against and the dependencies the form holds.
  */
 
 import { expect, test } from "vitest";
@@ -236,9 +236,7 @@ test("a draft already holding a program shorter than its plan revises only to th
   );
 });
 
-/** The screen draws no dependency picker, and the revision does not trust that
- * it did not: a form holding other dependencies still sends the draft's. */
-test("the revision carries the draft's own dependencies whatever the form holds", () => {
+test("the revision carries the dependencies the form holds", () => {
   const form = {
     ...editFormFrom(released, [creationBinding(repository)], "r3"),
     dependencies: [8],
@@ -248,7 +246,24 @@ test("the revision carries the draft's own dependencies whatever the form holds"
   ]);
   expect(
     assembled.assembled === "Body" && assembled.body.authoring.dependencies,
-  ).toStrictEqual([7]);
+  ).toStrictEqual([8]);
+});
+
+/** Ticket 3 is held though the project no longer offers it, which is what a
+ * revoked dependency looks like, and ticket 12 is the one being edited. */
+test("an edit offers what creation does less the ticket itself, and every dependency its draft holds", () => {
+  const holding = {
+    ...released,
+    authoring: { ...released.authoring, dependencies: [3, 7] },
+  };
+  const offered = creationOffer(undefined, {
+    dependencyCandidates: [7, 8, 12],
+  });
+  const edit = editOffersFrom(holding, [offered], undefined);
+  expect(
+    edit.offers.map((offer) => offer.initialization.dependencyCandidates),
+  ).toStrictEqual([[3, 7, 8]]);
+  expect(offered.initialization.dependencyCandidates).toStrictEqual([7, 8, 12]);
 });
 
 test("a form fault stops the revision, named as creation names it", () => {

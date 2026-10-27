@@ -732,7 +732,6 @@ test("draft revision and deletion map every closed result", () => {
       status: 503,
     },
     { value: { revised: "LandingUnbranched" }, status: 422 },
-    { value: { revised: "DependenciesLocked" }, status: 409 },
   ] as const;
   for (const each of populated(revisions, "draft revision outcomes")) {
     assert.equal(
@@ -752,21 +751,6 @@ test("draft revision and deletion map every closed result", () => {
       each.status,
     );
   }
-});
-
-test("a released draft's dependencies are refused by their own code", () => {
-  assert.deepEqual(
-    draftRevisionResponse({
-      result: "Authorized",
-      value: { revised: "DependenciesLocked" },
-    }).body,
-    {
-      error: {
-        code: "DependenciesLocked",
-        message: "A released ticket's dependencies cannot change.",
-      },
-    },
-  );
 });
 
 test("a reopened draft is read beside the version its ticket was last released at", () => {

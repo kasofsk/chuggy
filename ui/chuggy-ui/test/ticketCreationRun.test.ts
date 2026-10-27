@@ -549,6 +549,34 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
   expect(created).toStrictEqual({ created: "Created", ticket: 12 });
 });
 
+test("a release onto a revoked ticket says so, and what to depend on instead", async () => {
+  const held = answering(
+    creationAnswers(() =>
+      ok({
+        operation: "op-1",
+        acceptedAt: "2026-08-26T00:00:00Z",
+        state: "Refused",
+        code: "DependenciesRevoked",
+        refusedHead: 41,
+        refusedLifecycleGeneration: 1,
+        refusal: {
+          type: "DependenciesRevoked",
+          value: { ticket: 12, dependencies: [7] },
+        },
+      }),
+    ),
+  );
+  const created = await createAndReleaseTicket(
+    held.ports,
+    creationPartition,
+    releaseSubmission,
+    () => undefined,
+  );
+  expect(created.created === "Refused" && created.reason).toContain(
+    "#12 cannot come to depend on #7, which was revoked and will never be done; depend on a ticket that is still open",
+  );
+});
+
 /** What a draft left held is, and what the submit after it does, is
  * `ticketCreationHeld.test.ts`. */
 test("a follow that never settles ends in a reason, not in a navigation", async () => {
@@ -653,13 +681,13 @@ test("an edit revises the draft, then releases it against the revision read", as
   ]);
 });
 
-test("a revision that moves the dependencies is refused at the door, and nothing is released", async () => {
+test("a revision the door refuses is refused, and nothing is released", async () => {
   const held = answering(() => ({
     status: 409,
     body: {
       error: {
-        code: "DependenciesLocked",
-        message: "A released ticket's dependencies cannot change.",
+        code: "DraftNotEditable",
+        message: "The draft is not editable.",
       },
     },
   }));
@@ -671,7 +699,8 @@ test("a revision that moves the dependencies is refused at the door, and nothing
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason: "what this ticket depends on cannot change once it is released",
+    reason:
+      "the draft is closed to revision: only a pending ticket's draft can be revised",
     held: undefined,
   });
   expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
@@ -708,6 +737,35 @@ test("an update nobody saw settle says so, holding the revised draft", async () 
   expect(updated).toStrictEqual({
     created: "Refused",
     reason: "the operation is still pending after the attempt budget",
+    held: { draft: revisedDraft },
+  });
+});
+
+test("an update onto a ticket that waits on this one says it would never start", async () => {
+  const held = answering(
+    updateAnswers({
+      operation: "op-3",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Refused",
+      code: "DependencyCycle",
+      refusedHead: 43,
+      refusedLifecycleGeneration: 1,
+      refusal: {
+        type: "DependencyCycle",
+        value: { ticket: 12, dependencies: [14] },
+      },
+    }),
+  );
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({
+    created: "Refused",
+    reason:
+      "#12 cannot depend on #14, which already waits on it, so neither could ever start",
     held: { draft: revisedDraft },
   });
 });
