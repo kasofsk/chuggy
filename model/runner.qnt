@@ -33,8 +33,11 @@ module registered_runner {
   /// whose owner has no such runner takes the route it would without one.
   type OwnerFallback = Strict | Preferred
   type ExecutionProfile = { route: ExecutionRoute, personalRunnerAllowed: bool, minimumTrust: int, secretsRequired: bool, sourceRequired: bool, dedicatedOwnerRequired: int, ownerOf: int, ownerFallback: OwnerFallback }
+  /// The most memory a runner takes one execution of, in MiB, which its owner
+  /// configures and it advertises; a runner naming none bounds no size.
+  type MemoryCeiling = Unbounded | CeilingMib(int)
   type CapabilityInventory = {
-    platforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], revision: int
+    platforms: Set[Platform], executionCapabilities: Set[ExecutionCapability], memoryCeiling: MemoryCeiling, revision: int
   }
   /// All authority here is administrator-owned, never advertised inventory.
   /// A Personal runner's `dedicatedOwner` is the member it serves and its
@@ -43,7 +46,8 @@ module registered_runner {
   type Runner = { id: int, account: int, class: RunnerClass, enabled: bool, draining: bool, revoked: bool, trust: int, secretsAllowed: bool, sourceAllowed: bool, dedicatedOwner: int, allowlist: Set[int], sessionGeneration: int, retainedInventory: CapabilityInventory }
   type RunnerSession = { runner: int, generation: int, leaseOpen: bool, slotsOffered: int, slotsUsed: int, inventory: CapabilityInventory }
   type PlacementPhase = Waiting | Assigned | ResultPending | PlacementCancelled
-  type ExecutionPlacement = { execution: int, attemptGeneration: int, requirement: ExecutionRequirement, profile: ExecutionProfile, requirementIdentity: int, requirementDigest: int, phase: PlacementPhase }
+  /// `memoryMib` is the size the execution runs at, pinned with it.
+  type ExecutionPlacement = { execution: int, attemptGeneration: int, requirement: ExecutionRequirement, profile: ExecutionProfile, requirementIdentity: int, requirementDigest: int, memoryMib: int, phase: PlacementPhase }
   type AssignmentStatus = Offered | Reported | Verified | AssignmentCancelled
   type Assignment = { id: int, execution: int, attemptGeneration: int, runner: int, sessionGeneration: int, status: AssignmentStatus, manifest: int }
   type PlacementOutcome = NotApplicable | Placeable | Unavailable | DefinitiveIncompatibility
@@ -59,6 +63,12 @@ module registered_runner {
           operatingSystem: c.operatingSystem, architecture: c.architecture }),
         c.capabilities.subseteq(i.executionCapabilities)
       }
+  }
+  /// Whether a runner takes an execution of the placement's size: one under
+  /// its ceiling, or any where it names none.
+  pure def sizeFits(p: ExecutionPlacement, i: CapabilityInventory): bool = match i.memoryCeiling {
+    | Unbounded => true
+    | CeilingMib(m) => p.memoryMib <= m
   }
   pure def policyAllows(r: Runner, e: Execution, p: ExecutionProfile): bool = and {
     p.route == RegisteredRunner, r.class == Personal or r.account == e.account, r.enabled, not(r.draining), not(r.revoked),
@@ -82,8 +92,8 @@ module registered_runner {
   pure def sessionHasSlot(s: RunnerSession): bool = s.slotsUsed < s.slotsOffered
   /// The owner's runners for an execution: the Personal runners configured
   /// for its placement as `placementOutcome` configures one, which are the
-  /// owner's, allowlist its account and can run its requirement.
-  pure def ownerRunners(s: RunnerState, e: Execution, p: ExecutionPlacement): Set[int] = s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory) })
+  /// owner's, allowlist its account and can run its requirement at its size.
+  pure def ownerRunners(s: RunnerState, e: Execution, p: ExecutionPlacement): Set[int] = s.runners.keys().filter(rid => and { s.runners.get(rid).class == Personal, policyConfigures(s.runners.get(rid), e, p.profile), inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory), sizeFits(p, s.runners.get(rid).retainedInventory) })
   /// A live runner takes new work under a current session, so a draining one
   /// is not live.
   pure def runnerIsLive(s: RunnerState, rid: int): bool = if (s.sessions.keys().contains(rid)) and { not(s.runners.get(rid).draining), sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)) } else false
@@ -99,7 +109,8 @@ module registered_runner {
     val p = s.placements.get(id)
     val configured = s.runners.keys().filter(rid => and {
       policyConfigures(s.runners.get(rid), e, p.profile),
-      inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory)
+      inventoryMatches(p.requirement, s.runners.get(rid).retainedInventory),
+      sizeFits(p, s.runners.get(rid).retainedInventory)
     })
     if (p.profile.route != RegisteredRunner) NotApplicable
     else if (configured.exists(rid => if (s.sessions.keys().contains(rid)) and {
@@ -107,7 +118,8 @@ module registered_runner {
       ownerFallbackAllows(s, s.runners.get(rid), e, p),
       sessionIsCurrent(s.runners.get(rid), s.sessions.get(rid)),
       sessionHasSlot(s.sessions.get(rid)),
-      inventoryMatches(p.requirement, s.sessions.get(rid).inventory)
+      inventoryMatches(p.requirement, s.sessions.get(rid).inventory),
+      sizeFits(p, s.sessions.get(rid).inventory)
     } else false)) Placeable
     else if (configured.size() > 0) Unavailable
     else DefinitiveIncompatibility
@@ -117,7 +129,7 @@ module registered_runner {
     val p = s.placements.get(id)
     val r = s.runners.get(rid)
     val session = s.sessions.get(rid)
-    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), ownerFallbackAllows(s, r, e, p), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory) }
+    and { e.status == Launching, p.phase == Waiting, not(s.assignments.keys().contains(aid)), policyAllows(r, e, p.profile), ownerFallbackAllows(s, r, e, p), sessionIsCurrent(r, session), sessionHasSlot(session), inventoryMatches(p.requirement, session.inventory), sizeFits(p, session.inventory) }
     else false
   pure def bindAssignment(s: RunnerState, aid: int, id: int, rid: int): RunnerState =
     val p = s.placements.get(id)
@@ -177,7 +189,7 @@ module registered_runner {
     s.placements.keys().forall(id => val p = s.placements.get(id) p.phase != Assigned or s.assignments.keys().map(aid => s.assignments.get(aid)).filter(a => a.execution == id and a.attemptGeneration == p.attemptGeneration and a.status == Offered).size() == 1)
   }
   pure def completionAuthoritySafe(s: RunnerState): bool = executionSet(s).filter(e => e.status == Terminal).forall(e => s.assignments.keys().map(aid => s.assignments.get(aid)).exists(a => a.execution == e.id and a.status == Verified and a.attemptGeneration == s.placements.get(e.id).attemptGeneration))
-  pure def pinnedRequirementsUnchanged(initial: RunnerState, s: RunnerState): bool = initial.placements.keys().forall(id => and { s.placements.get(id).requirement == initial.placements.get(id).requirement, s.placements.get(id).profile == initial.placements.get(id).profile, s.placements.get(id).requirementIdentity == initial.placements.get(id).requirementIdentity, s.placements.get(id).requirementDigest == initial.placements.get(id).requirementDigest })
+  pure def pinnedRequirementsUnchanged(initial: RunnerState, s: RunnerState): bool = initial.placements.keys().forall(id => and { s.placements.get(id).requirement == initial.placements.get(id).requirement, s.placements.get(id).profile == initial.placements.get(id).profile, s.placements.get(id).requirementIdentity == initial.placements.get(id).requirementIdentity, s.placements.get(id).requirementDigest == initial.placements.get(id).requirementDigest, s.placements.get(id).memoryMib == initial.placements.get(id).memoryMib })
   /// A Personal runner is assigned only its owner's execution, in an account
   /// it allowlists.
   pure def personalAssignmentSafe(s: RunnerState): bool = s.assignments.keys().forall(aid =>
