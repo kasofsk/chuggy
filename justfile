@@ -1,5 +1,5 @@
 # Thin wrappers. `.chug/tasks/ci.sh` is the real logic — the sequencing has one
-# definition, and it is the one the platform will run as a job evaluator later.
+# definition, and it is the one the platform runs as a job evaluator (the `ci` workload).
 
 # Gates whose dependency cone intersects the current change.
 check:
