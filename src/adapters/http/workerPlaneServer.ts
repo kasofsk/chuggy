@@ -108,6 +108,7 @@ import {
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
+  WorkerPlaneCredentialUncovered,
 } from "../../interpreter/workerPlaneCredentials.ts";
 import {
   artifactPathRejection,
@@ -1010,6 +1011,22 @@ const workerCredentialNotMinted: WorkerCredentialAbsent = {
   reason: "NotMinted",
 };
 
+/** A refusal the forge's installations made, naming the installation a person would change. */
+function workerCredentialUncovered(
+  uncovered: WorkerPlaneCredentialUncovered,
+): WorkerCredentialAbsent {
+  return {
+    ...workerCredentialNotMinted,
+    uncovered: {
+      repository: uncovered.repository,
+      app: uncovered.app,
+      ...(uncovered.installationId === undefined
+        ? {}
+        : { installation: uncovered.installationId }),
+    },
+  };
+}
+
 /**
  * One minted credential, or a refusal. A not-found carries no `action`, unlike
  * every other refusal here: the pod neither stops nor retries on it, but uses
@@ -1024,7 +1041,13 @@ function workerCredentialAnswered(
     case "Credential":
       return reply.code(200).send(minted.value);
     case "NotFound":
-      return reply.code(404).send(workerCredentialNotMinted);
+      return reply
+        .code(404)
+        .send(
+          minted.uncovered === undefined
+            ? workerCredentialNotMinted
+            : workerCredentialUncovered(minted.uncovered),
+        );
     case "Unavailable":
       return workerPlaneRefused(reply, {
         status: 503,

@@ -13,7 +13,9 @@
  * deployment's forge does not hold, or whose owner this tenant has not claimed,
  * is `Denied`, because that answer is settled for as long as the claim is
  * absent; a forge that could not be reached is `Unavailable`, and so is a store
- * that raised, because a read that failed established nothing.
+ * that raised, because a read that failed established nothing. A denial past
+ * the address names the installation it went through, or that this tenant
+ * claims none on the owner, so a caller can say which one to change.
  *
  * A TOKEN IS SCOPED TO ONE REPOSITORY AND TO ONE PERMISSION SET, and the set is
  * the composition's rather than the caller's: a source composed for reading a
@@ -118,14 +120,18 @@ export function mintedRepositoryTokens(
         })
         .catch(mintedRaisedMarked("StoreRaised"));
       if (installation === undefined)
-        return { minted: "Denied", evidence: { mint: "NoInstallation" } };
+        return {
+          minted: "Denied",
+          evidence: { mint: "NoInstallation" },
+          installation: { app: options.app },
+        };
       const pipelinesAllowed = await mintedRepositoryTokensPipelinesAllowed(
         options,
         repository,
         partition,
         permissions,
       );
-      return options.tokens
+      const minted = await options.tokens
         .mint({
           installation,
           repositories: [asForgeRepositoryName(address.name)],
@@ -133,6 +139,15 @@ export function mintedRepositoryTokens(
           ...(pipelinesAllowed ? { pipelinesAllowed: true } : {}),
         })
         .catch(mintedRaisedMarked("MintRaised"));
+      return minted.minted === "Denied"
+        ? {
+            ...minted,
+            installation: {
+              app: options.app,
+              installationId: installation.installationId,
+            },
+          }
+        : minted;
     },
   };
 }
