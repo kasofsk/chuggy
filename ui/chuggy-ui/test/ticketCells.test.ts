@@ -21,6 +21,7 @@ function row(executionRead: ProjectTableRow["executionRead"]): ProjectTableRow {
   return {
     ticket: 4,
     title: undefined,
+    repository: undefined,
     creator: undefined,
     phase: "Escalated",
     badge: "work failed",

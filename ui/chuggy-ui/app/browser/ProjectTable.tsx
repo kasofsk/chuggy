@@ -37,6 +37,7 @@ import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
+import { repositoryLabel } from "../core/projectRepositories.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
@@ -240,6 +241,21 @@ function TicketListExecution(props: {
   );
 }
 
+/** The repository the ticket works in, by owner and name, with its whole address on hover. */
+function TicketListRepository(props: {
+  readonly row: ProjectTableRow;
+}): ReactNode {
+  const repository = props.row.repository;
+  if (repository === undefined) return null;
+  return (
+    <Tooltip text={repository}>
+      <span className="ticket-list-repository">
+        {repositoryLabel(repository)}
+      </span>
+    </Tooltip>
+  );
+}
+
 function TicketListDependencies(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
@@ -293,6 +309,7 @@ function TicketListRow(props: {
                 />
               </span>
               <TicketListExecution row={row} />
+              <TicketListRepository row={row} />
               {row.creator === undefined ? null : (
                 <span className="ticket-list-creator">
                   <Identity

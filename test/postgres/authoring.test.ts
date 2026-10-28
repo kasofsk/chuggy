@@ -2412,6 +2412,44 @@ test("a brief's title is what the listing and the ticket's own read call it", as
   );
 });
 
+/** The repository each list order and the ticket's own read carry for the fixture's one ticket. */
+async function readRepositories(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<readonly (string | undefined)[]> {
+  const reads = postgresNativeReads(pool);
+  const listed = await Promise.all(
+    (["Identity", "RecentActivity"] as const).map(async (order) => {
+      const found = await reads.project(fixture.partition, { limit: 2, order });
+      assert.equal(found.result, "Found");
+      return found.result === "Found"
+        ? found.project.tickets[0]?.repository
+        : undefined;
+    }),
+  );
+  const read = await reads.ticket(fixture.partition, fixture.draft.ticket);
+  return [...listed, read?.repository];
+}
+
+test("the listing and the ticket's own read carry the repository its released brief names", async () => {
+  const fixture = await draftFixture();
+  await releaseFixtureDraft(fixture, "brief-repository");
+  assert.deepEqual(await readRepositories(fixture), [
+    fixture.repository,
+    fixture.repository,
+    fixture.repository,
+  ]);
+  await pool.query(
+    `UPDATE ticket_definition SET brief=brief-'repository'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+  assert.deepEqual(
+    await readRepositories(fixture),
+    [undefined, undefined, undefined],
+    "a released brief naming no repository reads it absent",
+  );
+});
+
 test("a brief that names no title is called by the first line of its intent", async () => {
   const fixture = await draftFixture(
     postgresHarnessConfiguration,

@@ -69,6 +69,7 @@ import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import {
   briefFinalizationResponseSchema,
+  briefRepositorySchema,
   briefResponseSchema,
   briefTitleCharsMax,
 } from "./brief.ts";
@@ -320,10 +321,11 @@ export const configurationVersionSchema = z.strictObject({
 });
 
 /**
- * A ticket as the project table and its own read both carry it. The title is
- * the one field of the brief the table carries, because a table of documents
- * needs a heading; the rest of the brief is the ticket's own read alone, an
- * intent being a paragraph and a page of them a page of documents.
+ * A ticket as the project table and its own read both carry it. The table
+ * carries the brief's title, because a table of documents needs a heading, and
+ * its repository, because a project spans several; the rest of the brief is
+ * the ticket's own read alone, an intent being a paragraph and a page of them
+ * a page of documents.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
@@ -332,6 +334,8 @@ export const ticketResponseSchema = z.object({
    * of its intent where the brief named none.
    */
   title: z.string().max(briefTitleCharsMax).optional(),
+  /** The repository the released brief names, absent where that brief names none. */
+  repository: briefRepositorySchema.optional(),
   /** Which revision of its definition the ticket is at, which an update names as the one it expects. */
   revision: ticketNumberSchema,
   /**
