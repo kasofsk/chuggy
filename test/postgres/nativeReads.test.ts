@@ -149,7 +149,7 @@ async function seedFilterProjection(partition: Partition) {
 test("public operations omit commands, authority, and storage coordination", () => {
   const resource = publicOperation({
     operation: "operation",
-    accepted_at: "2026-01-01 00:00:00.123456+00",
+    accepted_at: "2026-01-01T00:00:00.123456Z",
     state: "Journaled",
     decided_seq: "7",
     outcome_code: null,
@@ -159,7 +159,7 @@ test("public operations omit commands, authority, and storage coordination", () 
   });
   assert.deepEqual(resource, {
     operation: "operation",
-    acceptedAt: "2026-01-01T00:00:00.123456+00:00",
+    acceptedAt: "2026-01-01T00:00:00.123456Z",
     state: "Succeeded",
     decidedSequence: 7,
   });
@@ -172,7 +172,7 @@ test("public operations expose an authoring-fence refusal", () => {
   assert.deepEqual(
     publicOperation({
       operation: "release-race",
-      accepted_at: "2026-01-01 00:00:00+00",
+      accepted_at: "2026-01-01T00:00:00.000000Z",
       state: "Refused",
       decided_seq: null,
       outcome_code: "AuthoringChanged",
@@ -182,7 +182,7 @@ test("public operations expose an authoring-fence refusal", () => {
     }),
     {
       operation: "release-race",
-      acceptedAt: "2026-01-01T00:00:00+00:00",
+      acceptedAt: "2026-01-01T00:00:00.000000Z",
       state: "Refused",
       refusal: { type: "AuthoringChanged" },
       refusedHead: 3,

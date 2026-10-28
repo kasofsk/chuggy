@@ -61,7 +61,7 @@ import {
   nativeHttpPageItemsMax,
   workerErrorPath,
 } from "../../contract/http.ts";
-import { projectRowCounter } from "./rows.ts";
+import { projectRowCounter, projectRowInstant } from "./rows.ts";
 import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 import {
@@ -106,7 +106,7 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly outcome: string | null;
   readonly retries_spent: string;
   readonly relaunches: string;
-  readonly registered_at: string;
+  readonly registered_at: string | null;
   readonly started_at: string | null;
   readonly run_started_at: string | null;
   readonly terminal_at: string | null;
@@ -120,7 +120,7 @@ interface AttemptViewRow {
   readonly attempt_number: string;
   readonly generation: string;
   readonly state: string;
-  readonly opened_at: string;
+  readonly opened_at: string | null;
   readonly ended_at: string | null;
   readonly evidence: string | null;
   readonly error_bytes: string | null;
@@ -133,7 +133,7 @@ interface ResultViewRow {
   readonly schema_version: number;
   readonly digest: string;
   readonly verdict: string;
-  readonly recorded_at: string;
+  readonly recorded_at: string | null;
   readonly report: string | null;
 }
 
@@ -280,7 +280,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
         }),
     retriesSpent: projectRowCounter(row.retries_spent, "execution retries"),
     relaunches: projectRowCounter(row.relaunches, "execution relaunches"),
-    registeredAt: asPublicInstant(row.registered_at),
+    registeredAt: projectRowInstant(row.registered_at, "registration time"),
     ...(row.started_at === null
       ? {}
       : { startedAt: asPublicInstant(row.started_at) }),
@@ -309,7 +309,7 @@ function attemptResource(
     number: projectRowCounter(row.attempt_number, "attempt number"),
     generation: projectRowCounter(row.generation, "attempt generation"),
     state: known(row.state, allAttemptStates, "attempt state"),
-    openedAt: asPublicInstant(row.opened_at),
+    openedAt: projectRowInstant(row.opened_at, "opening time"),
     ...(row.ended_at === null
       ? {}
       : { endedAt: asPublicInstant(row.ended_at) }),
@@ -403,12 +403,12 @@ async function executionRows(
                                   AND b.execution=a.execution
                                   AND b.attempt_number>a.attempt_number))::text
                  AS relaunches,
-               e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               (SELECT a.opened_at::text FROM execution_attempt a
+               to_char(e.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS registered_at,to_char(e.terminal_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS terminal_at,
+               (SELECT to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT r.started_at::text FROM execution_attempt a
+               (SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                   LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
                    AND r.execution=a.execution AND r.attempt=a.attempt
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -502,12 +502,12 @@ async function oneExecution(
                                   AND b.execution=a.execution
                                   AND b.attempt_number>a.attempt_number))::text
                  AS relaunches,
-               e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               (SELECT a.opened_at::text FROM execution_attempt a
+               to_char(e.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS registered_at,to_char(e.terminal_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS terminal_at,
+               (SELECT to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT r.started_at::text FROM execution_attempt a
+               (SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                   LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
                    AND r.execution=a.execution AND r.attempt=a.attempt
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -542,8 +542,8 @@ async function attempts(
 ): Promise<readonly ExecutionAttemptResource[]> {
   const found = await pool.query<AttemptViewRow>(
     sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
-               n.generation::text AS generation,n.state,n.opened_at::text AS opened_at,
-               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
+               n.generation::text AS generation,n.state,to_char(n.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(n.ended_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
                n.pool_refusal
           FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
                        a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
@@ -569,7 +569,7 @@ async function resultResource(
 ): Promise<ExecutionResultResource | undefined> {
   const found = await pool.query<ResultViewRow>(
     sql`SELECT r.manifest,r.attempt,r.schema_version,r.digest,r.verdict,
-               r.recorded_at::text AS recorded_at,p.report
+               to_char(r.recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at,p.report
           FROM execution_result r
           LEFT JOIN execution_result_report p
             ON p.tenant=r.tenant AND p.project=r.project AND p.manifest=r.manifest
@@ -592,7 +592,7 @@ async function resultResource(
     schemaVersion: row.schema_version,
     digest: asArtifactDigest(row.digest),
     verdict: resultVerdict(row.verdict),
-    recordedAt: asPublicInstant(row.recorded_at),
+    recordedAt: projectRowInstant(row.recorded_at, "recording time"),
     artifacts: artifacts.rows
       .slice(0, 256)
       .map((artifact) => artifactResource(artifact, outputs)),
@@ -638,7 +638,7 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
   return {
     status: async (partition) => {
       const found = await pool.query<StatusViewRow>(
-        sql`SELECT transaction_timestamp()::text AS observed_at,
+        sql`SELECT to_char(transaction_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS observed_at,
                    queued::text,admitted::text,launching::text,running::text,
                    cluster_slots_max::text,cluster_active::text,
                    account_maximum::text,account_active::text,account_deficit::text

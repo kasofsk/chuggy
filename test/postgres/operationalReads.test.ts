@@ -727,8 +727,8 @@ test("an execution counts a relaunch where another attempt followed a lost one, 
   });
 });
 
-/** What both reads say of one execution's start, held to agree with each other. */
-async function operationalRunStart(
+/** One execution as its ticket's listing and its own read each answer it. */
+async function operationalReadsBoth(
   project: SchedulerProject,
   execution: ExecutionId,
 ) {
@@ -741,6 +741,15 @@ async function operationalRunStart(
     )
   ).executions.find((each) => each.execution === execution);
   const detail = await reads.execution(project.partition, execution, reader);
+  return { listed, detail };
+}
+
+/** What both reads say of one execution's start, held to agree with each other. */
+async function operationalRunStart(
+  project: SchedulerProject,
+  execution: ExecutionId,
+) {
+  const { listed, detail } = await operationalReadsBoth(project, execution);
   assert.equal(listed?.runStartedAt, detail?.runStartedAt);
   return {
     status: detail?.status,
@@ -819,6 +828,58 @@ test("a summary says when the open attempt's run started, and not before or afte
   });
   await operationalReopened(project, admitted.execution);
   assert.deepEqual(await read(), { status: "Running", ...unstarted });
+});
+
+/** UTC ISO 8601, the form every instant a read answers takes. */
+const operationalInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
+
+/** Every instant one execution's listing row and read answer, by field. */
+async function operationalInstants(
+  project: SchedulerProject,
+  execution: ExecutionId,
+) {
+  const { listed, detail } = await operationalReadsBoth(project, execution);
+  const attempt = detail?.attempts.at(-1);
+  return {
+    listedRegisteredAt: listed?.registeredAt,
+    listedStartedAt: listed?.startedAt,
+    listedRunStartedAt: listed?.runStartedAt,
+    listedTerminalAt: listed?.terminalAt,
+    registeredAt: detail?.registeredAt,
+    startedAt: detail?.startedAt,
+    runStartedAt: detail?.runStartedAt,
+    terminalAt: detail?.terminalAt,
+    openedAt: attempt?.openedAt,
+    endedAt: attempt?.endedAt,
+    observedAt: (
+      await postgresOperationalReads(ingress).status(project.partition)
+    ).observedAt,
+  };
+}
+
+test("every instant an execution read answers is UTC ISO 8601", async () => {
+  const label = "operational-instant-form";
+  const project = await schedulerProject(rig, label);
+  await operationalRegistered(project, project.request, label);
+  const placed = await schedulerPlacedAttempt(rig, project, label);
+  await operationalRunRecorded(placed.attempt);
+  const running = await operationalInstants(project, placed.execution);
+  assert.equal(
+    (await rig.store.terminalize(schedulerReport(placed.attempt, "Pass")))
+      .terminalized,
+    "Terminalized",
+  );
+  const settled = await operationalInstants(project, placed.execution);
+  const answered = {
+    ...settled,
+    listedRunStartedAt: running.listedRunStartedAt,
+    runStartedAt: running.runStartedAt,
+  };
+  for (const [field, value] of Object.entries(answered)) {
+    assert.ok(value !== undefined, `${field} is answered`);
+    assert.match(value, operationalInstantForm, field);
+  }
 });
 
 /**

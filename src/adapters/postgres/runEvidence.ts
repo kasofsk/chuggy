@@ -52,7 +52,7 @@ import type {
   AttemptId,
   ExecutionId,
 } from "../../interpreter/schedulerIdentity.ts";
-import { projectRowCounter } from "./rows.ts";
+import { projectRowCounter, projectRowInstant } from "./rows.ts";
 
 /** The most attempts one execution read carries, which is the page bound it shares. */
 const runAttemptsPageMax = nativeHttpPageItemsMax;
@@ -264,7 +264,7 @@ export async function postgresTicketRunTotals(
 
 interface RunAttemptRow extends RunTotalRow {
   readonly attempt: string;
-  readonly started_at: string;
+  readonly started_at: string | null;
   readonly turns: string;
   readonly configuration_digest: string | null;
   readonly configuration_bytes: string | null;
@@ -294,7 +294,7 @@ function runResource(
 ): ExecutionRunResource {
   const batches = runCount(row.transcript_batches, "run transcript batches");
   return {
-    startedAt: asPublicInstant(row.started_at),
+    startedAt: projectRowInstant(row.started_at, "run start"),
     ...(row.configuration_digest === null ||
     row.configuration_bytes === null ||
     row.configuration_recorded_at === null
@@ -359,14 +359,14 @@ export async function postgresAttemptRuns(
   execution: ExecutionId,
 ): Promise<ReadonlyMap<string, ExecutionRunResource>> {
   const found = await pool.query<RunAttemptRow>(
-    sql`SELECT r.attempt,r.started_at::text AS started_at,
+    sql`SELECT r.attempt,to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS started_at,
                r.configuration_digest,
                r.configuration_bytes::text AS configuration_bytes,
-               r.configuration_recorded_at::text AS configuration_recorded_at,
+               to_char(r.configuration_recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS configuration_recorded_at,
                b.batches::text AS transcript_batches,
                b.bytes::text AS transcript_bytes,
                b.high_water::text AS transcript_high_water,
-               b.observed_at::text AS transcript_observed_at,
+               to_char(b.observed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS transcript_observed_at,
                n.turns::text AS turns_recorded,
                t.turns::text AS turns,t.duration_ms::text AS duration_ms,
                t.duration_api_ms::text AS duration_api_ms,
@@ -407,7 +407,7 @@ export async function postgresAttemptRuns(
 
 interface RunAttemptStandingRow {
   readonly state: string;
-  readonly opened_at: string;
+  readonly opened_at: string | null;
   readonly observed_at: string | null;
 }
 
@@ -419,8 +419,8 @@ async function runAttemptStanding(
   attempt: AttemptId,
 ): Promise<RunAttemptStandingRow | undefined> {
   const found = await pool.query<RunAttemptStandingRow>(
-    sql`SELECT a.state,a.opened_at::text AS opened_at,
-               (SELECT max(x.recorded_at)::text
+    sql`SELECT a.state,to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               (SELECT to_char(max(x.recorded_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text
                   FROM execution_run_transcript_batch x
                  WHERE x.tenant=a.tenant AND x.project=a.project
                    AND x.execution=a.execution AND x.attempt=a.attempt) AS observed_at
@@ -434,7 +434,7 @@ async function runAttemptStanding(
 interface RunTurnRow extends RunTokenRow {
   readonly ordinal: string;
   readonly model: string;
-  readonly recorded_at: string;
+  readonly recorded_at: string | null;
 }
 
 interface RunBatchRow {
@@ -442,7 +442,7 @@ interface RunBatchRow {
   readonly path: string;
   readonly digest: string;
   readonly bytes: string;
-  readonly recorded_at: string;
+  readonly recorded_at: string | null;
 }
 
 async function runTurnsPage(
@@ -465,7 +465,7 @@ async function runTurnsPage(
                tokens_output::text AS tokens_output,
                tokens_cache_creation::text AS tokens_cache_creation,
                tokens_cache_read::text AS tokens_cache_read,
-               recorded_at::text AS recorded_at
+               to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at
           FROM execution_run_turn
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution} AND attempt=${attempt}
@@ -479,7 +479,7 @@ async function runTurnsPage(
       ...runTokens(row),
       ordinal: projectRowCounter(row.ordinal, "run turn ordinal"),
       model: row.model,
-      recordedAt: asPublicInstant(row.recorded_at),
+      recordedAt: projectRowInstant(row.recorded_at, "recording time"),
     })),
     ...(next === undefined
       ? {}
@@ -506,7 +506,7 @@ async function runTranscriptStored(
     throw new Error("run evidence read: unknown attempt state");
   const found = await pool.query<RunBatchRow>(
     sql`SELECT batch::text AS batch,path,digest,bytes::text AS bytes,
-               recorded_at::text AS recorded_at
+               to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at
           FROM execution_run_transcript_batch
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND execution=${execution} AND attempt=${attempt}
@@ -526,9 +526,12 @@ async function runTranscriptStored(
       digest: asArtifactDigest(row.digest),
       bytes: projectRowCounter(row.bytes, "run transcript batch bytes"),
       batch: projectRowCounter(row.batch, "run transcript batch"),
-      recordedAt: asPublicInstant(row.recorded_at),
+      recordedAt: projectRowInstant(row.recorded_at, "recording time"),
     })),
-    observedAt: asPublicInstant(standing.observed_at ?? standing.opened_at),
+    observedAt: projectRowInstant(
+      standing.observed_at ?? standing.opened_at,
+      "observation time",
+    ),
     complete: runIsComplete(state),
     ...(next === undefined
       ? {}
