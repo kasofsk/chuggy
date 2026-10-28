@@ -255,6 +255,9 @@ export const selectorHandoffNoteBytesMax = 65_536;
  */
 export const leadDispatchesMax = 8;
 
+/** How many tickets one decision may refuse, and how many it may lift. */
+export const leadRefusalsPerDecisionMax = 16;
+
 /**
  * How much of the handoff note the lead read carries. The note's own ceiling is
  * a whole wire body, and the lead read carries a mailbox tail and a stream

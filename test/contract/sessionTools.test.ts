@@ -17,6 +17,9 @@ import {
   dispatchViewSchemaVersion,
   nativeHttpBodyBytesMax,
 } from "../../src/contract/http.ts";
+import * as authoring from "../../src/contract/authoring.ts";
+import * as brief from "../../src/contract/brief.ts";
+import * as configurationSelection from "../../src/contract/configurationSelection.ts";
 import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import {
   allChuggyTools,
@@ -273,4 +276,34 @@ test("a dispatch view page of the heaviest candidate is under the bound dispatch
   const bytes = Buffer.byteLength(page);
   assert.ok(bytes > nativeHttpBodyBytesMax);
   assert.ok(bytes <= chuggyToolDispatchViewResponseBytesMax);
+});
+
+test("the request shapes a drafting tool publishes, and their bounds, are the package entry's own", async () => {
+  const entry =
+    (await import("@chuggy/worker-contract/sessionTools")) as Record<
+      string,
+      unknown
+    >;
+  const published = {
+    authoringSchema: authoring.authoringSchema,
+    evaluatorDefinitionSchema: authoring.evaluatorDefinitionSchema,
+    programStageSchema: authoring.programStageSchema,
+    briefSchema: brief.briefSchema,
+    briefLinkSchema: brief.briefLinkSchema,
+    briefBranchSchema: brief.briefBranchSchema,
+    briefRepositorySchema: brief.briefRepositorySchema,
+    briefCheckSchema: brief.briefCheckSchema,
+    briefTitleCharsMax: brief.briefTitleCharsMax,
+    briefIntentCharsMax: brief.briefIntentCharsMax,
+    briefLinksMax: brief.briefLinksMax,
+    briefImagesMax: brief.briefImagesMax,
+    briefChecksMax: brief.briefChecksMax,
+    briefBranchCharsMax: brief.briefBranchCharsMax,
+    briefRepositoryCharsMax: brief.briefRepositoryCharsMax,
+    briefLineCharsMax: brief.briefLineCharsMax,
+    configurationSelectionSchema:
+      configurationSelection.configurationSelectionSchema,
+  };
+  for (const [name, value] of Object.entries(published))
+    assert.equal(entry[name], value, name);
 });
