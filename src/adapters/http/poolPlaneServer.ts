@@ -38,6 +38,12 @@
  * and the wait it may name bounds when it is answered; each is refused in the
  * same way.
  *
+ * A POOL OR A PERSONAL RUNNER MAY REPORT how its machine and its work are
+ * doing. The report is held against the caller its bearer resolved to, beside
+ * what that caller's polls named, by the interpreter's `workerPoolReports`. A
+ * chat host is no runner: its report is answered as a caller this route does
+ * not serve, and nothing of its polls is held.
+ *
  * A MEMBER'S CHAT HOST IS SERVED FROM ITS OWN RELEASE ON. One speaking an
  * earlier release is refused on every route as any caller outside the plane's
  * range is, since nothing before it reads what a host is handed.
@@ -53,6 +59,7 @@ import {
   workerPoolPollQuery,
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
+  workerPoolSettlementOutcomes,
   workerPoolSettlementRoutes,
   workerRunnerCapabilitiesHeader,
   workerRunnerCapabilitiesOf,
@@ -62,6 +69,9 @@ import {
   workerRunnerMemoryRoomHeader,
   workerRunnerOf,
   workerRunnerPollWaitHeader,
+  workerRunnerReportBytesMax,
+  workerRunnerReportRoute,
+  workerRunnerReportSchema,
   type AssignmentOutcome,
   type WorkerRunner,
   type WorkerRunnerCapabilitiesNamed,
@@ -95,6 +105,11 @@ import {
   type WorkerPoolRegistry,
   type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
+import type {
+  WorkerPoolPolled,
+  WorkerPoolReporter,
+  WorkerPoolReports,
+} from "../../interpreter/workerPoolReports.ts";
 import type { WorkerPoolSessionPorts } from "../../interpreter/workerPoolSessions.ts";
 import {
   workerRunnerReleaseAnswered,
@@ -135,6 +150,8 @@ export interface PoolPlaneService {
   readonly runners: WorkerPoolRunners;
   /** The release pinned for each runner package, which a poll naming that package's runner is answered with. */
   readonly releases: WorkerRunnerReleases;
+  /** Where each runner's latest report and poll facts are held. */
+  readonly reports: WorkerPoolReports;
   readonly settings: WorkerPoolPollSettings;
   readonly mint: WorkerPoolMint;
   readonly ready: () => Promise<boolean>;
@@ -173,6 +190,24 @@ function poolCountNamed(
 ): WorkerRunnerCountNamed {
   const named = request.headers[header];
   return workerRunnerCountOf(Array.isArray(named) ? named.join(", ") : named);
+}
+
+/** The counts a poll's headers name, or nothing where one of them does not read as a count. */
+function poolCountsNamed(request: FastifyRequest):
+  | {
+      readonly ceiling: WorkerRunnerCountNamed;
+      readonly room: WorkerRunnerCountNamed;
+      readonly wait: WorkerRunnerCountNamed;
+    }
+  | undefined {
+  const counts = {
+    ceiling: poolCountNamed(request, workerRunnerMemoryCeilingHeader),
+    room: poolCountNamed(request, workerRunnerMemoryRoomHeader),
+    wait: poolCountNamed(request, workerRunnerPollWaitHeader),
+  };
+  return Object.values(counts).some((count) => count.named === "Unread")
+    ? undefined
+    : counts;
 }
 
 /**
@@ -310,14 +345,12 @@ function poolAssignmentsRoute(
       if (!query.success) return reply.code(400).send();
       const capabilities = poolCapabilitiesNamed(request);
       if (capabilities.named === "Unread") return reply.code(400).send();
-      const ceiling = poolCountNamed(request, workerRunnerMemoryCeilingHeader);
-      if (ceiling.named === "Unread") return reply.code(400).send();
-      const room = poolCountNamed(request, workerRunnerMemoryRoomHeader);
-      if (room.named === "Unread") return reply.code(400).send();
-      const wait = poolCountNamed(request, workerRunnerPollWaitHeader);
-      if (wait.named === "Unread") return reply.code(400).send();
+      const counts = poolCountsNamed(request);
+      if (counts === undefined) return reply.code(400).send();
+      const { ceiling, room, wait } = counts;
       const runner = poolRunnerNamed(request);
       const contract = workerContractOffered(request);
+      poolPolledHeld(service, identity, runner, room, ceiling);
       const idleSecs = query.data[workerPoolPollQuery.idleSecs];
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
@@ -362,6 +395,56 @@ function poolAssignmentsRoute(
   );
 }
 
+/** A pool or a personal runner as its reports are held, and a chat host as none. */
+function poolReporter(
+  identity: PoolPlaneIdentity,
+): WorkerPoolReporter | undefined {
+  return identity.kind === "ChatHost" ? undefined : identity;
+}
+
+/** Holds what a poll named of its runner and its memory, for a caller whose reports are held. */
+function poolPolledHeld(
+  service: PoolPlaneService,
+  identity: PoolPlaneIdentity,
+  runner: WorkerRunner | undefined,
+  room: WorkerRunnerCountNamed,
+  ceiling: WorkerRunnerCountNamed,
+): void {
+  const reporter = poolReporter(identity);
+  if (reporter === undefined) return;
+  const polled: WorkerPoolPolled = {
+    ...(runner === undefined ? {} : { runner }),
+    ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
+    ...(ceiling.named === "Count" ? { memoryCeilingMib: ceiling.count } : {}),
+  };
+  service.reports.polled(reporter, polled);
+}
+
+/** A runner's report of itself, held against the caller its bearer names whatever the body says. */
+function poolReportRoute(
+  app: FastifyInstance,
+  service: PoolPlaneService,
+): void {
+  poolPlaneRoute(
+    app,
+    service,
+    {
+      method: "POST",
+      url: workerRunnerReportRoute,
+      bodyBytesMax: workerRunnerReportBytesMax,
+    },
+    (request, reply, identity) => {
+      const reporter = poolReporter(identity);
+      if (reporter === undefined)
+        return Promise.resolve(reply.code(404).send());
+      const report = workerRunnerReportSchema.safeParse(request.body);
+      if (!report.success) return Promise.resolve(reply.code(400).send());
+      service.reports.reported(reporter, report.data);
+      return Promise.resolve(reply.code(204).send());
+    },
+  );
+}
+
 /**
  * The three settlements a pool can report, each one the path rather than the
  * body: an accepted assignment is already leased and needs no write, a refusal
@@ -371,7 +454,7 @@ function poolOutcomeRoutes(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
+  for (const outcome of workerPoolSettlementOutcomes)
     poolPlaneRoute(
       app,
       service,
@@ -494,6 +577,7 @@ export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
   planeHealthRoutes(app, service.ready);
   poolAssignmentsRoute(app, service);
   poolOutcomeRoutes(app, service);
+  poolReportRoute(app, service);
   poolPullRoute(app, service);
   return app;
 }

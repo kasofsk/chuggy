@@ -29,6 +29,9 @@ import {
   workerRunnerOf,
   workerRunnerReleaseSchema,
   workerRunnerReleaseUrlCharsMax,
+  workerRunnerHostCharsMax,
+  workerRunnerReportBytesMax,
+  workerRunnerReportSchema,
 } from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
@@ -36,6 +39,10 @@ import {
   workerContractRunnerProjects,
   workerContractRunnerReleases,
 } from "../../src/interpreter/workerPlane.ts";
+import {
+  workerRunnerReportHeaviest,
+  workerRunnerReportLeast,
+} from "./workerRunnerReportFixture.ts";
 import {
   workerContractReleasePool,
   workerContractReplayed,
@@ -466,5 +473,59 @@ test("a registration declares what a pool can do and no capacity", () => {
       concurrency: 4,
     }).success,
     false,
+  );
+});
+
+test("a runner report reads the least a runner may say and the heaviest, the heaviest within the bound it is sent under", () => {
+  assert.deepEqual(
+    workerRunnerReportSchema.parse(workerRunnerReportLeast),
+    workerRunnerReportLeast,
+  );
+  const heaviest = workerRunnerReportHeaviest();
+  assert.deepEqual(workerRunnerReportSchema.parse(heaviest), heaviest);
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(heaviest)) <= workerRunnerReportBytesMax,
+  );
+});
+
+test("a runner report naming a field the contract does not, a host past its bound or of another grammar, or a label outside its roster is refused", () => {
+  const refused = (report: Record<string, unknown>, why: string) => {
+    assert.equal(
+      workerRunnerReportSchema.safeParse({
+        ...workerRunnerReportLeast,
+        ...report,
+      }).success,
+      false,
+      why,
+    );
+  };
+  refused({ tenant: "another" }, "a tenant");
+  refused({ pool: "another" }, "a pool");
+  refused({ owner: "another" }, "an owner");
+  refused({ host: "h".repeat(workerRunnerHostCharsMax + 1) }, "a long host");
+  refused({ host: "" }, "no host");
+  refused({ host: "box\nchuggy_runner_info 1" }, "a host of lines");
+  refused({ host: 'box"' }, "a host quoting");
+  refused({ settlements: { Lost: 1 } }, "a settlement outcome");
+  refused({ refusals: { ImageTooLarge: 1 } }, "a refusal fault");
+  refused({ jobsEnded: { Lost: 1 } }, "a job end");
+  refused({ sessionsEnded: { Stopped: 1 } }, "a session end");
+  refused(
+    {
+      runSecs: {
+        Build: { bucketCounts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], sumSecs: 0 },
+      },
+    },
+    "a run kind",
+  );
+  refused(
+    { imagePullSecs: { bucketCounts: [1], sumSecs: 1 } },
+    "a histogram of the wrong buckets",
+  );
+  refused({ polls: -1 }, "a negative count");
+  refused({ polls: 1.5 }, "a fractional count");
+  refused(
+    { jobsEnded: { Succeeded: Number.MAX_SAFE_INTEGER + 1 } },
+    "an unsafe count",
   );
 });

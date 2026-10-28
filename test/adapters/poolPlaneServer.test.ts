@@ -25,7 +25,10 @@ import {
   workerRunnerMemoryCeilingHeader,
   workerRunnerMemoryRoomHeader,
   workerRunnerPollWaitHeader,
+  workerRunnerReportBytesMax,
+  workerRunnerReportRoute,
 } from "../../src/contract/workerPool.ts";
+import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
@@ -33,6 +36,7 @@ import {
   asSessionId,
 } from "../../src/interpreter/agentSession.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
   workerContractChatHost,
 } from "../../src/interpreter/workerPlane.ts";
@@ -45,6 +49,11 @@ import type {
   WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
+import {
+  workerPoolReportAgeMsMax,
+  workerPoolReports,
+  type WorkerPoolReports,
+} from "../../src/interpreter/workerPoolReports.ts";
 import type {
   SessionLaunchFacts,
   WorkerPoolSessionOpening,
@@ -77,6 +86,10 @@ import {
   planeUnendingAnswered,
 } from "./planeBodies.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import {
+  workerRunnerReportHeaviest,
+  workerRunnerReportLeast,
+} from "../contract/workerRunnerReportFixture.ts";
 
 const issuer = "https://issuer.invalid";
 
@@ -347,11 +360,29 @@ function runnerCalls(): {
   };
 }
 
+/** Where reports are held, under a clock the case moves. */
+function reportsHeld(): {
+  readonly clock: { nowMs: number };
+  readonly reports: WorkerPoolReports;
+} {
+  const clock = { nowMs: 1_000_000 };
+  return {
+    clock,
+    reports: workerPoolReports({
+      issuer,
+      runnersMax: 4,
+      ageMsMax: workerPoolReportAgeMsMax,
+      now: () => clock.nowMs,
+    }),
+  };
+}
+
 function plane(
   ports: WorkerPoolAssignments,
   access: ProjectAccess = authority("Allow"),
   sessions: WorkerPoolSessions = sessionCalls().store,
   runners: WorkerPoolRunners = runnerCalls().runners,
+  reports: WorkerPoolReports = reportsHeld().reports,
 ): PoolPlaneService {
   let minted = 0;
   return {
@@ -389,6 +420,7 @@ function plane(
     },
     runners,
     releases: workerRunnerReleasesRead({ "chuggy-linux": linuxPin }),
+    reports,
     mint: () => `minted-${String((minted += 1))}`,
     settings: {
       leaseSecs: 30,
@@ -1137,6 +1169,16 @@ const poolReplayPolls = [
     undefined,
     undefined,
   ],
+  [
+    "a chat host's session",
+    hostToken,
+    [],
+    0,
+    1,
+    undefined,
+    undefined,
+    undefined,
+  ],
 ] as const;
 
 /**
@@ -1157,7 +1199,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       claimed,
       named,
       room,
-    ] of poolReplayPolls) {
+    ] of poolReplayPolls.filter(
+      ([, token]) =>
+        token !== hostToken ||
+        contractVersionAccepted(workerContractChatHost, older.release),
+    )) {
       const recorded = calls();
       const ports = {
         ...recorded.ports,
@@ -2040,4 +2086,174 @@ test("a chat host's session is opened only in a project its owner may still read
   assert.equal(answered.statusCode, 200);
   assert.deepEqual(read, [[host.owner, asProjectId("project"), "Read"]]);
   assert.deepEqual(sessions.opened, []);
+});
+
+/** The sample lines `reports` serves of the family `name`. */
+function reportSamples(
+  reports: WorkerPoolReports,
+  name: string,
+): readonly string[] {
+  return metricsExposition(reports.families())
+    .split("\n")
+    .filter((line) => line.startsWith(`${name}{`));
+}
+
+function reporting(
+  app: ReturnType<typeof createPoolPlaneApp>,
+  headers: Readonly<Record<string, string>>,
+  payload: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: workerRunnerReportRoute,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: JSON.stringify(payload),
+  });
+}
+
+test("a report is held against the runner its bearer names, and one whose body names another is refused with nothing held", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  for (const named of [
+    { tenant: "elsewhere" },
+    { project: "elsewhere" },
+    { pool: "pool-two" },
+    { owner: "someone-else" },
+  ]) {
+    const refused = await reporting(app, runnerSpeaking, {
+      ...workerRunnerReportLeast,
+      ...named,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(named));
+  }
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_jobs_running"),
+    [],
+  );
+  const taken = await reporting(app, speaking, {
+    ...workerRunnerReportLeast,
+    host: "pool-two",
+  });
+  assert.equal(taken.statusCode, 204);
+  assert.equal(taken.body, "");
+  assert.deepEqual(reportSamples(held.reports, "chuggy_runner_jobs_running"), [
+    'chuggy_runner_jobs_running{tenant="tenant",project="project",pool="pool-one",owner="",personal_runner="",host="pool-two"} 1',
+  ]);
+});
+
+test("a personal runner's series carry its owner's bare subject and its client, and its poll's beside them only once it reports", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  const polled = await app.inject({
+    method: "GET",
+    url: polling([]),
+    headers: {
+      ...runnerSpeaking,
+      [workerRunnerHeader]: "chuggy-linux/0.14.0",
+      [workerRunnerMemoryRoomHeader]: "512",
+      [workerRunnerMemoryCeilingHeader]: "1024",
+    },
+  });
+  assert.equal(polled.statusCode, 200);
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
+  held.clock.nowMs += 1_000;
+  assert.equal(
+    (await reporting(app, runnerSpeaking, workerRunnerReportLeast)).statusCode,
+    204,
+  );
+  const labels =
+    'tenant="tenant",project="",pool="",owner="a-member",personal_runner="chuggy-personal-one",host="build-box.local"';
+  assert.deepEqual(reportSamples(held.reports, "chuggy_runner_info"), [
+    `chuggy_runner_info{${labels},package="chuggy-linux",version="0.14.0"} 1`,
+  ]);
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_last_poll_timestamp_seconds"),
+    [`chuggy_runner_last_poll_timestamp_seconds{${labels}} 1000`],
+  );
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_memory_room_bytes"),
+    [`chuggy_runner_memory_room_bytes{${labels}} 536870912`],
+  );
+  held.clock.nowMs += workerPoolReportAgeMsMax + 1;
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
+});
+
+test("a chat host's report is answered as a caller the route does not serve, and nothing of it or its polls is held", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  await app.inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: hostSpeaking,
+  });
+  const refused = await reporting(app, hostSpeaking, workerRunnerReportLeast);
+  assert.equal(refused.statusCode, 404);
+  assert.equal(
+    (await reporting(app, speaking, workerRunnerReportLeast)).statusCode,
+    204,
+  );
+  assert.equal(
+    reportSamples(held.reports, "chuggy_runner_jobs_running").length,
+    1,
+  );
+});
+
+test("the heaviest report a runner may send is taken, and a byte past the bound is refused", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  const heaviest = JSON.stringify(workerRunnerReportHeaviest());
+  const taken = await reporting(app, speaking, workerRunnerReportHeaviest());
+  assert.equal(taken.statusCode, 204);
+  const past = await app.inject({
+    method: "POST",
+    url: workerRunnerReportRoute,
+    headers: { ...speaking, "content-type": "application/json" },
+    payload: heaviest.padEnd(workerRunnerReportBytesMax + 1, " "),
+  });
+  assert.equal(past.statusCode, 413);
+});
+
+test("a report refuses a caller the plane does not serve before the body it sent ends", async () => {
+  const held = reportsHeld();
+  for (const [caller, token, status] of [
+    ["no bearer", undefined, 401],
+    ["a token the issuer rejects", "stranger", 401],
+    ["an issuer that cannot answer", "issuer-down", 503],
+  ] as const) {
+    await using app = createPoolPlaneApp(
+      plane(calls().ports, undefined, undefined, undefined, held.reports),
+    );
+    const answered = await planeUnendingAnswered(
+      await planeListening(app),
+      "POST",
+      workerRunnerReportRoute,
+      {
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        [workerContractHeader]: workerContractRelease,
+        "content-type": "application/json",
+      },
+    );
+    assert.equal(answered.status, status, caller);
+  }
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
 });
