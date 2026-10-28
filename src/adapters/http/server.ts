@@ -1880,14 +1880,21 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
+function registerConfigurationsLatest(value: unknown): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new TypeError("latest is not true or false");
+}
+
 function registerConfigurations(
   app: FastifyInstance,
   web: InitialNativeWeb,
 ): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/configurations";
   app.get(root, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["cursor", "limit"]);
+    const query = fieldsOnly(request.query, ["cursor", "latest", "limit"]);
     const cursor = query["cursor"];
+    const latest = query["latest"];
     const partition = partitionOf(request);
     const result = await web.configurations(principalOf(request), partition, {
       ...(cursor === undefined
@@ -1899,6 +1906,9 @@ function registerConfigurations(
             ),
           }),
       limit: integerField(query, "limit", 50),
+      ...(latest === undefined
+        ? {}
+        : { latest: registerConfigurationsLatest(latest) }),
     });
     nativeHttpSend(reply, configurationsResponse(result));
   });

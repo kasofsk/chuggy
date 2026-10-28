@@ -285,7 +285,9 @@ function fakeConfigurations(
       return Promise.resolve(undefined);
     },
     configurations: (_principal, _partition, query) => {
-      calls.push(`configurations:${String(query.limit)}`);
+      calls.push(
+        `configurations:${String(query.limit)}${query.latest === undefined ? "" : `:latest=${String(query.latest)}`}`,
+      );
       return Promise.resolve({ result: "NotFound" });
     },
     importRepositoryConfigurations: (_principal, _partition, source) => {
@@ -1537,6 +1539,28 @@ test("authoring and dispatch routes remain thin NativeWeb adapters", async () =>
     "reviseDraft:2",
     "deleteDraft:3",
     "dispatchView:4",
+  ]);
+});
+
+test("the configurations listing passes latest through, and refuses one that is neither true nor false", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const configurations =
+    "/api/v1/tenants/tenant/projects/project/configurations";
+  const statuses = [];
+  for (const latest of ["true", "false", "yes", "1", "TRUE", ""])
+    statuses.push(
+      (
+        await app.inject({
+          url: `${configurations}?latest=${latest}`,
+          headers: { authorization: "Bearer valid" },
+        })
+      ).statusCode,
+    );
+  assert.deepEqual(statuses.slice(2), [400, 400, 400, 400]);
+  assert.deepEqual(calls, [
+    "configurations:50:latest=true",
+    "configurations:50:latest=false",
   ]);
 });
 

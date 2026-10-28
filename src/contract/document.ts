@@ -157,6 +157,12 @@ export function nativeHttpContractDocument(): unknown {
       nonTerminal: "phase=NonTerminal",
       selected: "repeat phase with one or more exact phase names",
     },
+    configurationLatestFilter: {
+      query: "latest",
+      all: "omit latest, or latest=false: every revision, newest first",
+      latest:
+        "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing",
+    },
     identities: {
       installation: "canonical UUID authority identity",
       tenant: "percent-encoded opaque UTF-8 path segment",

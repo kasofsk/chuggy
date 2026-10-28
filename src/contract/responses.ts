@@ -1104,6 +1104,11 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
 ]);
 export type ConfigurationSummary = z.infer<typeof configurationSummarySchema>;
 
+/**
+ * A page of a project's configuration revisions, newest first. Asked with
+ * `latest=true`, it holds only the newest revision of each repository and name,
+ * beside each revision imported from no repository, a bootstrap among them.
+ */
 export const configurationsResponseSchema = z.object({
   configurations: page(configurationSummarySchema),
   nextCursor: cursorSchema.optional(),
