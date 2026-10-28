@@ -1720,10 +1720,26 @@ test("a pool holding a session may pull its session's image, and one holding non
   }
 });
 
+test("a pool holding an index by digest is allowed the platform manifest docker resolves it to, and only in that repository", async () => {
+  const platform = `sha256:${"b".repeat(64)}`;
+  for (const [held, address, status] of [
+    [[pinned], `/v2/worker/manifests/${platform}`, 200],
+    [[pinned], `/v2/api/manifests/${platform}`, 403],
+    [[pinned], "/v2/worker/manifests/v1", 403],
+    [[], `/v2/worker/manifests/${platform}`, 403],
+  ] as const) {
+    const answered = await createPoolPlaneApp(plane(calls(held).ports)).inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address),
+    });
+    assert.equal(answered.statusCode, status, `${held.join(",")} ${address}`);
+  }
+});
+
 test("a pull of an image the pool holds no assignment for is 403", async () => {
   const app = createPoolPlaneApp(plane(calls([pinned]).ports));
   for (const address of [
-    `/v2/worker/manifests/sha256:${"b".repeat(64)}`,
     `/v2/api/manifests/${heldDigest}`,
     `/v2/api/blobs/${heldDigest}`,
   ]) {
@@ -1742,13 +1758,13 @@ test("a pull of an image the pool holds no assignment for is 403", async () => {
   assert.equal(holdingNothing.statusCode, 403);
 });
 
-test("a chat host holding nothing may pull the session image its poll names by digest and that repository's blobs, and no other image, while a pool or a personal runner holding nothing may not", async () => {
+test("a chat host holding nothing may pull the manifests and blobs of the session image's repository its poll names, and no other image, while a pool or a personal runner holding nothing may not", async () => {
   const app = createPoolPlaneApp(plane(calls().ports));
   const named = `sha256:${"c".repeat(64)}`;
   for (const [caller, token, address, status] of [
     ["host", hostToken, `/v2/session/manifests/${named}`, 200],
     ["host", hostToken, `/v2/session/blobs/sha256:${"b".repeat(64)}`, 200],
-    ["host", hostToken, `/v2/session/manifests/sha256:${"d".repeat(64)}`, 403],
+    ["host", hostToken, `/v2/session/manifests/sha256:${"d".repeat(64)}`, 200],
     ["host", hostToken, `/v2/worker/manifests/${heldDigest}`, 403],
     ["pool", poolToken, `/v2/session/manifests/${named}`, 403],
     ["runner", runnerToken, `/v2/session/manifests/${named}`, 403],
