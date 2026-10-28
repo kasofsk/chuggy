@@ -353,8 +353,8 @@ const workerContractWireCheckKinds: ReadonlyMap<
   Object.entries({
     greater_than: { inclusive: "value", value: "value" },
     less_than: { inclusive: "value", value: "value" },
-    max_length: { maximum: "value", when: "when" },
-    min_length: { minimum: "value", when: "when" },
+    max_length: { error: "message", maximum: "value", when: "when" },
+    min_length: { error: "message", minimum: "value", when: "when" },
     "string_format:regex": { pattern: "value" },
     "string_format:starts_with": { pattern: "value", prefix: "value" },
   } as const).map(([kind, keys]) => [

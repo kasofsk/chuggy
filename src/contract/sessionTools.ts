@@ -3,8 +3,9 @@
  * admits each, the bounds one call runs under, and the public API routes the
  * tools reach. The image registers the tools and the control plane names them
  * in allowlists, so the names belong to neither side and both read them here.
- * The tool input schemas are not here: they are the zod raw shapes the agent
- * runtime's own `tool()` takes, and they live in the image beside the handlers.
+ * The request shapes a tool publishes are exported here too, while its input
+ * schemas are not: those are the zod raw shapes the agent runtime's own
+ * `tool()` takes, and they live in the image beside the handlers.
  *
  * TWO CHANNELS, TOLD APART BY WHAT THEY WRITE. A project tool is a command a
  * console user has: it goes over HTTP to the API presenting the pod's session
@@ -60,6 +61,7 @@ import type { SessionCapability } from "./rosters.ts";
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
   agenticRefusalsAnsweredMax,
+  leadRefusalsPerDecisionMax,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpPageItemsMax,
@@ -68,6 +70,28 @@ export {
   threadTurnsAnsweredMax,
 } from "./http.ts";
 export { briefLineCharsMax } from "./brief.ts";
+
+/** The request shapes a drafting tool publishes as its arguments' schemas, and the bounds they hold an argument to. */
+export {
+  authoringSchema,
+  evaluatorDefinitionSchema,
+  programStageSchema,
+} from "./authoring.ts";
+export {
+  briefBranchCharsMax,
+  briefBranchSchema,
+  briefCheckSchema,
+  briefChecksMax,
+  briefImagesMax,
+  briefIntentCharsMax,
+  briefLinkSchema,
+  briefLinksMax,
+  briefRepositoryCharsMax,
+  briefRepositorySchema,
+  briefSchema,
+  briefTitleCharsMax,
+} from "./brief.ts";
+export { configurationSelectionSchema } from "./configurationSelection.ts";
 
 /** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
 export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
@@ -317,9 +341,6 @@ export const builtInToolCapabilities: Readonly<
 export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];
 export const dependentRelationsAdmitted = ["FollowUp"] as const;
-
-/** How many tickets one decision may refuse, and how many it may lift. */
-export const leadRefusalsPerDecisionMax = 16;
 
 /** The public API routes the project tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
