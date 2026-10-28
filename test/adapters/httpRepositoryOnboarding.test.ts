@@ -36,7 +36,7 @@ import {
   githubApps,
   githubInstallationDirectory,
 } from "../../src/adapters/forge/githubApp.ts";
-import { githubAccountOf } from "../../src/adapters/forge/githubAddress.ts";
+import { githubRepositoryAddressOf } from "../../src/adapters/forge/githubAddress.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
 import { githubUserAuthorization } from "../../src/adapters/forge/githubUserAuthorization.ts";
 import {
@@ -289,7 +289,7 @@ function fixtureServiceHalf(
   return {
     forge,
     app: held,
-    accountOf: githubAccountOf,
+    addressOf: githubRepositoryAddressOf,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({

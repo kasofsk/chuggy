@@ -405,8 +405,13 @@ function fixturePortsForgeHalf(
   return {
     forge,
     app: held,
-    accountOf: () =>
-      given.owner === undefined ? undefined : asForgeAccount(given.owner),
+    addressOf: (url) =>
+      given.owner === undefined
+        ? undefined
+        : {
+            account: asForgeAccount(given.owner),
+            name: (url.split("/").at(-1) ?? "").replace(/\.git$/u, ""),
+          },
     apps: {
       app: () =>
         Promise.resolve(
@@ -2338,6 +2343,29 @@ test("a bind the worker App's installation does not select is still bound, with 
     },
   );
   assert.equal(binding.wrote.commands.length, 1);
+});
+
+test("a bind written without the forge's own suffix is the repository the installation selects, and carries no reason", async () => {
+  const bare = asRepositoryId("https://github.com/kasofsk/chuggy");
+  const binding = fixtureService(["Administer"], {
+    ...workerReachGiven([repository]),
+    resolved: {
+      resolved: "Credential",
+      credential: asRepositoryCredential("ghs-proof"),
+    },
+  });
+  assert.deepEqual(
+    await binding.service.bindRepository(principal, partition, {
+      repository: bare,
+      operation,
+    }),
+    {
+      result: "Bound",
+      repository: bare,
+      landing: { mode: "Push" },
+      configurations: { result: "Deferred", reason: "NotConfigured" },
+    },
+  );
 });
 
 /**

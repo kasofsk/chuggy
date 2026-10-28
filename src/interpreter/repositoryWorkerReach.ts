@@ -6,9 +6,11 @@
  * IT ASKS WHAT THE PLANE'S MINT WOULD. The claim is looked up by the owner and
  * the tenant, as the mint looks it up, and the selection is the installation's
  * own listing, read under the same unheld token the onboarding routes read it
- * under. Nothing is held between questions: a selection changes on the forge
- * while a deployment runs, and a held answer would go on saying a repository is
- * reachable after its owner deselected it.
+ * under. A listed repository is the bound one where the forge addresses both
+ * by the same owner and name, as the mint addresses it by them, and not by the
+ * text either was written in. Nothing is held between questions: a selection
+ * changes on the forge while a deployment runs, and a held answer would go on
+ * saying a repository is reachable after its owner deselected it.
  *
  * A READ THAT SETTLED NOTHING IS `Unknown`, NEVER `Covered`. An outage, a
  * refusal of the app's own read, a port that raised, and a listing truncated
@@ -31,6 +33,12 @@ import type {
 } from "./forgeInstallation.ts";
 import type { TenantId } from "./projectStore.ts";
 
+/** One repository as a forge addresses it: the account owning it and its name there. */
+export interface ForgeRepositoryAddress {
+  readonly account: ForgeAccount;
+  readonly name: string;
+}
+
 /**
  * What the worker App reaches of one repository. `Unselected` is an
  * installation on the owner that does not select it, beside the forge's page
@@ -51,8 +59,10 @@ export type RepositoryWorkerReach =
 export interface RepositoryWorkerReachPorts {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
-  /** The account owning a repository on this forge, nothing where the forge addresses no such repository. */
-  readonly accountOf: (repository: RepositoryId) => ForgeAccount | undefined;
+  /** A repository as this forge addresses it, nothing where the forge addresses no such repository. */
+  readonly addressOf: (
+    repository: string,
+  ) => ForgeRepositoryAddress | undefined;
   readonly installations: ForgeInstallationStore;
   readonly installationRepositories: ForgeInstallationRepositories;
   readonly directory: Pick<
@@ -66,6 +76,17 @@ type RepositoryWorkerReachReads = Map<
   ForgeInstallationId,
   Promise<ForgeRepositoriesRead>
 >;
+
+/** Whether two addresses name one repository, which a forge does without regard to case. */
+function sameForgeRepository(
+  one: ForgeRepositoryAddress,
+  other: ForgeRepositoryAddress,
+): boolean {
+  return (
+    one.account.toLowerCase() === other.account.toLowerCase() &&
+    one.name.toLowerCase() === other.name.toLowerCase()
+  );
+}
 
 /** Where an owner changes what the installation selects, `Unknown` where the forge did not say. */
 async function repositoryWorkerReachUnselected(
@@ -82,17 +103,17 @@ async function repositoryWorkerReachUnselected(
 async function repositoryWorkerReachOf(
   ports: RepositoryWorkerReachPorts,
   tenant: TenantId,
-  account: ForgeAccount,
-  repository: RepositoryId,
+  address: ForgeRepositoryAddress,
   reads: RepositoryWorkerReachReads,
 ): Promise<RepositoryWorkerReach> {
   const installation = await ports.installations.installation({
     forge: ports.forge,
     app: ports.app,
-    account,
+    account: address.account,
     tenant,
   });
-  if (installation === undefined) return { reach: "Unclaimed", account };
+  if (installation === undefined)
+    return { reach: "Unclaimed", account: address.account };
   let listing = reads.get(installation.installationId);
   if (listing === undefined) {
     listing = ports.installationRepositories.repositories(installation);
@@ -100,7 +121,15 @@ async function repositoryWorkerReachOf(
   }
   const listed = await listing;
   if (listed.read !== "Repositories") return { reach: "Unknown" };
-  if (listed.repositories.some((granted) => granted.url === repository))
+  if (
+    listed.repositories.some((granted) => {
+      const listedAddress = ports.addressOf(granted.url);
+      return (
+        listedAddress !== undefined &&
+        sameForgeRepository(listedAddress, address)
+      );
+    })
+  )
     return { reach: "Covered" };
   if (listed.truncated) return { reach: "Unknown" };
   return repositoryWorkerReachUnselected(ports, installation.installationId);
@@ -118,17 +147,13 @@ export async function repositoryWorkerReaches(
   const reads: RepositoryWorkerReachReads = new Map();
   const reaches = new Map<RepositoryId, RepositoryWorkerReach>();
   for (const repository of repositories) {
-    const account = ports.accountOf(repository);
-    if (account === undefined) continue;
+    const address = ports.addressOf(repository);
+    if (address === undefined) continue;
     reaches.set(
       repository,
-      await repositoryWorkerReachOf(
-        ports,
-        tenant,
-        account,
-        repository,
-        reads,
-      ).catch((): RepositoryWorkerReach => ({ reach: "Unknown" })),
+      await repositoryWorkerReachOf(ports, tenant, address, reads).catch(
+        (): RepositoryWorkerReach => ({ reach: "Unknown" }),
+      ),
     );
   }
   return reaches;

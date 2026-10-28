@@ -134,6 +134,7 @@ import type {
   RepositoryLanding,
 } from "./repositoryBinding.ts";
 import {
+  type ForgeRepositoryAddress,
   repositoryWorkerReaches,
   type RepositoryWorkerReach,
 } from "./repositoryWorkerReach.ts";
@@ -385,8 +386,10 @@ export interface ProjectRepositoryBindRequest {
 export interface RepositoryOnboardingForgeApp {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
-  /** The account owning a repository on this forge, nothing where the forge addresses no such repository. */
-  readonly accountOf: (repository: RepositoryId) => ForgeAccount | undefined;
+  /** A repository as this forge addresses it, nothing where the forge addresses no such repository. */
+  readonly addressOf: (
+    repository: string,
+  ) => ForgeRepositoryAddress | undefined;
   readonly apps: ForgeApps;
   readonly directory: ForgeInstallationDirectory;
   readonly installationRepositories: ForgeInstallationRepositories;

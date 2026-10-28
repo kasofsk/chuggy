@@ -108,7 +108,7 @@ import {
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
 } from "../adapters/forge/githubInstallationTokens.ts";
-import { githubAccountOf } from "../adapters/forge/githubAddress.ts";
+import { githubRepositoryAddressOf } from "../adapters/forge/githubAddress.ts";
 import {
   githubApps,
   githubInstallationDirectory,
@@ -837,7 +837,7 @@ function forgeAppHalf(pair: ForgeAppPair): RepositoryOnboardingForgeApp {
   return {
     forge: githubForgeId,
     app: pair.app,
-    accountOf: githubAccountOf,
+    addressOf: githubRepositoryAddressOf,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({

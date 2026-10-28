@@ -81,10 +81,15 @@ function fixturePorts(
     ports: {
       forge,
       app: "worker",
-      accountOf: (repository) =>
-        repository.startsWith("https://github.com/kasofsk/")
-          ? owner
-          : undefined,
+      addressOf: (repository) => {
+        const address =
+          /^https:\/\/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/u.exec(
+            repository,
+          );
+        return address?.[1] === undefined || address[2] === undefined
+          ? undefined
+          : { account: asForgeAccount(address[1]), name: address[2] };
+      },
       installations: {
         installation: (query) => {
           asked.claims.push(query);
@@ -188,6 +193,19 @@ test("a truncated listing that names the repository still covers it", async () =
   assert.deepEqual(
     await repositoryWorkerReaches(ports, tenant, [chuggy]),
     new Map([[chuggy, { reach: "Covered" }]]),
+  );
+});
+
+test("a binding written otherwise than the listing names the same repository, and is covered", async () => {
+  const bareChuggy = asRepositoryId("https://github.com/kasofsk/chuggy");
+  const casedChuggy = asRepositoryId("https://github.com/Kasofsk/Chuggy.git");
+  const { ports } = fixturePorts();
+  assert.deepEqual(
+    await repositoryWorkerReaches(ports, tenant, [bareChuggy, casedChuggy]),
+    new Map([
+      [bareChuggy, { reach: "Covered" }],
+      [casedChuggy, { reach: "Covered" }],
+    ]),
   );
 });
 
