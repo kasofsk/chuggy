@@ -12,15 +12,13 @@ import {
   nativeHttpMediaType,
   threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
-import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { asProjectId } from "../../src/interpreter/projectStore.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import type { ThreadEntry } from "../../src/interpreter/threadRead.ts";
-import { asInstallationId } from "../../src/domain/ids.ts";
-import { unservedNativeWeb } from "./threadFixtures.ts";
+import { callerApp } from "./callerAppFixture.ts";
 
 const caller = asPrincipal("issuer geoff");
 const session = asSessionId("own-geoff");
@@ -61,45 +59,7 @@ function chatOf(calls: string[], chat: Partial<MemberChat>): MemberChat {
 }
 
 function appOver(chat: MemberChat) {
-  return createNativeHttpApp(
-    unservedNativeWeb,
-    {
-      authenticateBearer: (token) =>
-        Promise.resolve(
-          token === "valid"
-            ? {
-                authenticated: "Bearer" as const,
-                bearer: { principal: caller },
-              }
-            : { authenticated: "InvalidToken" as const },
-        ),
-    },
-    { ready: () => Promise.resolve(true) },
-    {
-      installationAuthority: () =>
-        Promise.resolve(
-          asInstallationId("018f84a1-4c2b-7def-8abc-0123456789ab"),
-        ),
-    },
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    chat,
-  );
+  return callerApp(caller, { chat });
 }
 
 function write(url: string, payload: unknown) {

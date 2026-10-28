@@ -63,7 +63,6 @@ import type {
   MemberThreadRecord,
   ThreadHidden,
   ThreadMessageEnqueued,
-  ThreadOpenKey,
   ThreadOpened,
   ThreadRecord,
   ThreadRenamed,
@@ -351,30 +350,21 @@ function threadOpening(row: {
   };
 }
 
-async function threadOpen(
+/** The verdict row either open door answers. */
+interface ThreadOpeningRow {
+  readonly opened: string | null;
+  readonly session: string | null;
+  readonly threads_max: string | null;
+}
+
+/** What an open door answered, the thread read back in `partition` where the key names one. */
+async function threadOpenAnswered(
   pool: pg.Pool,
   streamsMax: number,
-  input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly session: SessionId;
-    readonly key: ThreadOpenKey;
-    readonly systemPrompt: string;
-    readonly credentialSlot: string;
-  },
+  partition: Partition,
+  rows: readonly ThreadOpeningRow[],
 ): Promise<ThreadOpened> {
-  const answered = await pool.query<{
-    opened: string | null;
-    session: string | null;
-    threads_max: string | null;
-  }>(
-    sql`SELECT opened,session,threads_max::text AS threads_max
-          FROM open_member_thread(
-            ${input.partition.tenant},${input.partition.project},
-            ${input.principal},${input.session},${input.key},
-            ${input.credentialSlot},${input.systemPrompt})`,
-  );
-  const row = answered.rows[0];
+  const row = rows[0];
   if (row === undefined)
     throw new Error("postgres thread: opening returned no verdict");
   const opening = threadOpening(row);
@@ -384,51 +374,41 @@ async function threadOpen(
     thread: await threadReadBack(
       pool,
       streamsMax,
-      input.partition,
+      partition,
       opening.session,
       "opened",
     ),
   };
 }
 
+async function threadOpen(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: Parameters<ThreadStore["open"]>[0],
+): Promise<ThreadOpened> {
+  const answered = await pool.query<ThreadOpeningRow>(
+    sql`SELECT opened,session,threads_max::text AS threads_max
+          FROM open_member_thread(
+            ${input.partition.tenant},${input.partition.project},
+            ${input.principal},${input.session},${input.key},
+            ${input.credentialSlot},${input.systemPrompt})`,
+  );
+  return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
+}
+
 /** Opens a member's own thread, the definer choosing its partition, roster and limit. */
 async function threadOpenUnscoped(
   pool: pg.Pool,
   streamsMax: number,
-  input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly session: SessionId;
-    readonly key: ThreadOpenKey;
-    readonly systemPrompt: string;
-    readonly credentialSlot: string;
-  },
+  input: Parameters<ThreadStore["openUnscoped"]>[0],
 ): Promise<ThreadOpened> {
-  const answered = await pool.query<{
-    opened: string | null;
-    session: string | null;
-    threads_max: string | null;
-  }>(
+  const answered = await pool.query<ThreadOpeningRow>(
     sql`SELECT opened,session,threads_max::text AS threads_max
           FROM open_unscoped_thread(
             ${input.partition.tenant},${input.principal},${input.session},
             ${input.key},${input.credentialSlot},${input.systemPrompt})`,
   );
-  const row = answered.rows[0];
-  if (row === undefined)
-    throw new Error("postgres thread: opening returned no verdict");
-  const opening = threadOpening(row);
-  if (opening.opened === "ThreadLimitReached") return opening;
-  return {
-    opened: opening.opened,
-    thread: await threadReadBack(
-      pool,
-      streamsMax,
-      input.partition,
-      opening.session,
-      "opened",
-    ),
-  };
+  return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
 }
 
 async function threadEnqueue(
