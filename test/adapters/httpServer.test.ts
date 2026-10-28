@@ -2001,6 +2001,7 @@ function twoBearerAppOf(calls: string[], known: ReadonlySet<string>) {
                   session: liveSession,
                   kind: "Thread" as const,
                   principal: asPrincipal("issuer subject"),
+                  scope: "Project" as const,
                 }
               : undefined,
           );

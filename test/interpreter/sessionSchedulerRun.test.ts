@@ -541,8 +541,8 @@ test("a session that has never run is placed with no reference to resume", async
     principal: session.principal,
     capabilities: session.capabilities,
     credentialSlot: session.credentialSlot,
-    account: session.account,
-    cluster: session.cluster,
+    account: asCapacityAccountId("project"),
+    cluster: asClusterId("cluster"),
     state: session.state,
   };
   await sessionSchedulerPass(
@@ -812,8 +812,8 @@ test("an attempt records at opening the invocation its placement is then asked w
     principal: session.principal,
     capabilities: session.capabilities,
     credentialSlot: session.credentialSlot,
-    account: session.account,
-    cluster: session.cluster,
+    account: asCapacityAccountId("project"),
+    cluster: asClusterId("cluster"),
     state: session.state,
   };
   for (const [awaiting, binding, invocation] of [

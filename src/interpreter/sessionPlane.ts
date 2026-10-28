@@ -80,7 +80,7 @@ export interface SessionAttemptBindingPort {
   binding(input: {
     readonly secret: SessionBearerSecret;
     readonly generation: number;
-  }): Promise<SessionBearerIdentity | undefined>;
+  }): Promise<Omit<SessionBearerIdentity, "scope"> | undefined>;
 }
 
 /**

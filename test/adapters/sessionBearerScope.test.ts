@@ -110,6 +110,7 @@ function scopedApp(
                   session: asSessionId(kind),
                   kind,
                   principal,
+                  scope: "Project" as const,
                 }
               : undefined,
           ),

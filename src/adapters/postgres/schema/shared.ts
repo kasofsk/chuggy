@@ -230,6 +230,10 @@ export const threadWakeCandidatesFunction = "thread_wake_candidates";
 export const threadWakeCursorAdvanceFunction = "advance_thread_wake_cursor";
 export const threadLimitFunction = "member_thread_limit";
 export const threadLimitSetFunction = "set_member_thread_limit";
+/** A member's own reserved partition: `@member-` and the hex digest of their principal. */
+export const memberScopeProjectFunction = "member_scope_project";
+export const unscopedThreadOpenFunction = "open_unscoped_thread";
+export const memberThreadsReadFunction = "read_member_threads";
 export const leadInquiryOpenFunction = "open_lead_inquiry";
 export const leadInquiriesReadFunction = "read_lead_inquiries";
 export const leadInquiryReadFunction = "read_lead_inquiry";

@@ -79,6 +79,12 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "set_attention",
     "set_handoff_note",
     "set_planning_intent",
+    "read_my_abilities",
+    "list_projects",
+    "list_my_threads",
+    "read_my_thread",
+    "list_my_runners",
+    "read_chat_host",
   ]);
 });
 
@@ -96,7 +102,8 @@ test("no tool re-authors a released ticket, whatever roster holds it", () => {
     );
 });
 
-test("every capability is mapped and every tool is gated by exactly one", () => {
+/** `read_docs` reaches no route, so the one tool both reading scopes hold is it. */
+test("every capability is mapped and every tool is gated by exactly one, but the docs both reading scopes hold", () => {
   assert.deepEqual(
     Object.keys(chuggyToolCapabilities).sort(),
     [...sessionCapabilities].sort(),
@@ -106,8 +113,14 @@ test("every capability is mapped and every tool is gated by exactly one", () => 
     for (const tool of chuggyToolCapabilities[capability])
       gates.set(tool, (gates.get(tool) ?? 0) + 1);
   for (const tool of allChuggyTools)
-    assert.equal(gates.get(tool), 1, `${tool} is gated once`);
+    assert.equal(
+      gates.get(tool),
+      tool === "read_docs" ? 2 : 1,
+      `${tool} is gated as often as it should be`,
+    );
   assert.equal(gates.size, allChuggyTools.length);
+  assert.ok(chuggyToolCapabilities.ProjectRead.includes("read_docs"));
+  assert.ok(chuggyToolCapabilities.MemberRead.includes("read_docs"));
 });
 
 test("each capability admits the tools the roster gives it and no other", () => {
@@ -170,6 +183,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     DraftOriginate: [],
     TicketDispatch: [],
     LeadDecision: [],
+    MemberRead: [],
   });
 });
 

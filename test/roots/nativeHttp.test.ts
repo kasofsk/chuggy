@@ -65,7 +65,7 @@ function authenticationProgram(token: string): string {
         asked[named].push(statement.values);
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
-          kind: 'Lead', principal,
+          kind: 'Lead', principal, scope: 'Project',
         }] };
       },
     });

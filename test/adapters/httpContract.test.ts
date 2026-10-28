@@ -220,11 +220,19 @@ test("authoring DTOs reject duplicates, unknown fields, and noncanonical config"
   );
 });
 
-test("partition identities remain opaque strings", () => {
+test("partition identities remain opaque strings, but for the reserved one a member's own is", () => {
   assert.deepEqual(parsePartition("tenant/one", "project two"), {
     tenant: "tenant/one",
     project: "project two",
   });
+  assert.deepEqual(parsePartition("tenant", "project@one"), {
+    tenant: "tenant",
+    project: "project@one",
+  });
+  assert.throws(
+    () => parsePartition("tenant", "@member-one"),
+    /an identity beginning @ is reserved/u,
+  );
 });
 
 test("inventory cursors are opaque, canonical, and round trip", () => {

@@ -472,7 +472,7 @@ function postgresChatHostSessionClaims(
                     ${[...assignments]}::text[]) AS a`,
             ),
           ),
-    awaiting: async (identity, backoffSecs, max) =>
+    awaiting: async (identity, backoffSecs, max, memberScope) =>
       sessionCandidatesOf(
         (
           await pool.query<{
@@ -485,7 +485,8 @@ function postgresChatHostSessionClaims(
             sql`SELECT project,session,kind,capabilities,agent_reference
                   FROM chat_host_sessions_awaiting_claim(
                     ${identity.tenant},${identity.owner},${identity.principal},
-                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")})`,
+                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
+                    ${memberScope})`,
           )
         ).rows,
       ),
@@ -617,9 +618,9 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
       sessionsRouted(identity, sides, (side, held) =>
         side.among(held, assignments),
       ),
-    awaiting: (identity, backoffSecs, max) =>
+    awaiting: (identity, backoffSecs, max, memberScope) =>
       sessionsRouted(identity, sides, (side, held) =>
-        side.awaiting(held, backoffSecs, max),
+        side.awaiting(held, backoffSecs, max, memberScope),
       ),
     open: (identity, opening) =>
       sessionsRouted(identity, sides, (side, held) => side.open(held, opening)),

@@ -86,6 +86,12 @@ export const workerContractChatHost: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a chat host runs its member's own sessions, which name `MemberRead`, a capability a host of an earlier one refuses its whole answer over. */
+export const workerContractUnscopedChat: WorkerContractRange = {
+  min: { major: 1, minor: 29 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

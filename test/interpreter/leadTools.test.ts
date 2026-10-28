@@ -67,10 +67,19 @@ test("origination, revoking, updating and dispatching are admitted for a thread'
     );
     assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(named), tool);
   }
+  const projectTools = new Set<string>(
+    Object.entries(chuggyToolCapabilities)
+      .filter(([capability]) => capability !== "MemberRead")
+      .flatMap(([, tools]) => tools),
+  );
   assert.deepEqual(
     chuggyToolNames(leadSessionCapabilities),
     allChuggyTools
-      .filter((tool) => !(memberOnly as readonly string[]).includes(tool))
+      .filter(
+        (tool) =>
+          projectTools.has(tool) &&
+          !(memberOnly as readonly string[]).includes(tool),
+      )
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
 });

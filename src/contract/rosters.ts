@@ -638,6 +638,7 @@ export const sessionCapabilities = [
   "DraftOriginate",
   "TicketDispatch",
   "LeadDecision",
+  "MemberRead",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
 

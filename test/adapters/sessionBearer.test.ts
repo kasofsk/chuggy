@@ -35,6 +35,7 @@ const identity: SessionBearerIdentity = {
   session: asSessionId("session-one"),
   kind: "Thread",
   principal: asPrincipal("issuer-subject"),
+  scope: "Project",
 };
 
 /**

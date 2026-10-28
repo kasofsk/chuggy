@@ -28,6 +28,12 @@
  * a project the owner cannot read is skipped. A pool's candidates are all of
  * its own project, which its admission already answered for.
  *
+ * A MEMBER'S OWN SESSION IS ITS OWNER'S CHAT HOST'S ALONE, and only while the
+ * owner may still open unscoped chat and the host speaks a contract that runs
+ * one: its partition is no project, so the tenant's permit is asked in place of
+ * a project's read, and it is handed no repository, there being no binding to
+ * read.
+ *
  * A CHAT HOST'S SESSION MAY SIT IDLE AS LONG AS ITS HOST NAMED, up to the
  * bound the scheduler reaps idle attempts by: the claim records the capped
  * bound on the attempt, which the reaper ends it by, and launches it with that
@@ -44,6 +50,7 @@ import type {
   SessionKind,
 } from "./agentSession.ts";
 import type { RepositoryBinding, RepositoryId } from "./finalizer.ts";
+import { memberScopePartition } from "./agentSession.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { ProjectId } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
@@ -53,6 +60,10 @@ import {
   type SessionTaskInvocation,
 } from "./sessionScheduler.ts";
 import type { SessionAttemptMint } from "./sessionSchedulerRun.ts";
+import {
+  contractVersionAccepted,
+  workerContractUnscopedChat,
+} from "./workerPlane.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
 import {
   workerPoolImageHosted,
@@ -125,10 +136,12 @@ export interface WorkerPoolSessionRows<Identity> {
     identity: Identity,
     assignments: readonly string[],
   ): Promise<ReadonlySet<string>>;
+  /** `memberScope` is whether a member's own sessions are among them, which only a chat host's may be. */
   awaiting(
     identity: Identity,
     placementBackoffSecs: number,
     max: number,
+    memberScope: boolean,
   ): Promise<readonly WorkerPoolSessionCandidate[]>;
   open(
     identity: Identity,
@@ -190,7 +203,11 @@ function workerPoolSessionInvocation(
   });
 }
 
-/** Whether a personal runner's or a chat host's owner may still read `project`; a pool's own project is answered by its admission. */
+/**
+ * Whether a personal runner's or a chat host's owner may still read `project`,
+ * or for a chat host, open their own sessions where `project` is their
+ * reserved partition; a pool's own project is answered by its admission.
+ */
 async function workerPoolSessionProjectRead(
   access: ProjectAccess,
   identity: PoolPlaneIdentity,
@@ -199,8 +216,23 @@ async function workerPoolSessionProjectRead(
   switch (identity.kind) {
     case "Dedicated":
       return project === identity.partition.project;
-    case "Personal":
     case "ChatHost":
+      if (workerPoolSessionMemberScoped(identity, project))
+        return (
+          (await access.authorizeTenant(
+            identity.owner,
+            identity.tenant,
+            "OpenUnscopedChat",
+          )) !== undefined
+        );
+      return (
+        (await access.authorize(
+          identity.owner,
+          { tenant: identity.tenant, project },
+          "Read",
+        )) !== undefined
+      );
+    case "Personal":
       return (
         (await access.authorize(
           identity.owner,
@@ -227,8 +259,24 @@ async function workerPoolSessionProjectsServed(
   const served = new Map<ProjectId, RepositoryBinding | undefined>();
   for (const project of new Set(waiting.map((waited) => waited.project)))
     if (await workerPoolSessionProjectRead(access, identity, project))
-      served.set(project, await ports.bindings.binding({ tenant, project }));
+      served.set(
+        project,
+        workerPoolSessionMemberScoped(identity, project)
+          ? undefined
+          : await ports.bindings.binding({ tenant, project }),
+      );
   return served;
+}
+
+/** Whether `project` is the reserved partition of a chat host's own owner. */
+function workerPoolSessionMemberScoped(
+  identity: PoolPlaneIdentity,
+  project: ProjectId,
+): boolean {
+  return (
+    identity.kind === "ChatHost" &&
+    project === memberScopePartition(identity.tenant, identity.owner).project
+  );
 }
 
 /** The idle bound a claim records: a chat host's own, capped at the launch's, and none for any other caller or where either names none. */
@@ -261,6 +309,17 @@ function workerPoolSessionBounds(
     : { ...launch.bounds, idleMs: idleSecs * millisecondsPerSecond };
 }
 
+/** Whether a poll may be handed its owner's own sessions: a chat host's alone, offering a release that runs one. */
+function workerPoolSessionClaimsMemberScope(
+  identity: PoolPlaneIdentity,
+  contract: string | undefined,
+): boolean {
+  return (
+    identity.kind === "ChatHost" &&
+    contractVersionAccepted(workerContractUnscopedChat, contract)
+  );
+}
+
 /**
  * The sessions one poll claims, at most `wanted` of them. Each project's
  * binding is read once, and only once a session in it is waiting.
@@ -271,7 +330,11 @@ export async function workerPoolSessionClaims(
   identity: PoolPlaneIdentity,
   terms: WorkerPoolSessionTerms,
   mint: WorkerPoolMint,
-  asked: { readonly wanted: number; readonly idleSecs?: number },
+  asked: {
+    readonly wanted: number;
+    readonly idleSecs?: number;
+    readonly contract?: string;
+  },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const { wanted } = asked;
   if (wanted <= 0) return [];
@@ -282,6 +345,7 @@ export async function workerPoolSessionClaims(
     identity,
     launch.placementBackoffSecs,
     wanted,
+    workerPoolSessionClaimsMemberScope(identity, asked.contract),
   );
   if (waiting.length === 0) return [];
   const served = await workerPoolSessionProjectsServed(
