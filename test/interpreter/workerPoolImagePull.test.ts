@@ -104,30 +104,52 @@ test("the base is allowed to a pool holding nothing", () => {
   assert.equal(workerPoolImagePullAllowed({ pull: "Base" }, [], hosts), true);
 });
 
-test("a manifest is allowed only by the digest a held assignment pinned", () => {
+test("a manifest is allowed from the repository of a held image, whatever its digest, so an index's platform manifest is", () => {
+  for (const named of [digest, `sha256:${other}`])
+    assert.equal(
+      workerPoolImagePullAllowed(
+        pull("Manifest", "chuggy/worker", named),
+        [pinned],
+        hosts,
+      ),
+      true,
+      named,
+    );
+  for (const repository of ["chuggy/api", "chuggy", "chuggy/worker/cache"])
+    assert.equal(
+      workerPoolImagePullAllowed(
+        pull("Manifest", repository, `sha256:${other}`),
+        [pinned],
+        hosts,
+      ),
+      false,
+      repository,
+    );
   assert.equal(
     workerPoolImagePullAllowed(
-      pull("Manifest", "chuggy/worker"),
-      [pinned],
+      pull("Manifest", "chuggy/worker", `sha256:${other}`),
+      [],
+      hosts,
+    ),
+    false,
+  );
+});
+
+test("a held runtime counts as a held image does", () => {
+  assert.equal(
+    workerPoolImagePullAllowed(
+      pull("Manifest", "chuggy/worker-runtime", `sha256:${other}`),
+      [pinned, `registry.chuggy.internal/chuggy/worker-runtime@${digest}`],
       hosts,
     ),
     true,
   );
+});
+
+test("a manifest by tag is no pull, even of a held image's repository", () => {
   assert.equal(
-    workerPoolImagePullAllowed(
-      pull("Manifest", "chuggy/worker", `sha256:${other}`),
-      [pinned],
-      hosts,
-    ),
-    false,
-  );
-  assert.equal(
-    workerPoolImagePullAllowed(pull("Manifest", "chuggy/api"), [pinned], hosts),
-    false,
-  );
-  assert.equal(
-    workerPoolImagePullAllowed(pull("Manifest", "chuggy/worker"), [], hosts),
-    false,
+    workerPoolImagePullRequested("GET", "/v2/chuggy/worker/manifests/v1"),
+    undefined,
   );
 });
 

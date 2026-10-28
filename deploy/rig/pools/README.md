@@ -63,9 +63,10 @@ reference is named as kept.
 The public registry is read-only, and its front asks the pool plane at
 `/registry/authorize`, outside the `/v1` its public address serves, about every
 request. A pool presents a Basic credential of any user name whose password is
-its own access token, the one its polls carry as a bearer. The base `/v2/`, a
-manifest by the digest of an image or runtime that an assignment the pool still
-holds names, and a blob of that reference's repository, are allowed; everything
+its own access token, the one its polls carry as a bearer. The base `/v2/`, and
+a manifest or a blob by digest in the repository of an image or runtime that an
+assignment the pool still holds names, are allowed, so an index's platform
+manifests are pulled as its blobs are; everything
 else is refused, including the catalog, tags, a manifest by tag, any write, and
 a pull before a claim or after a release. The token is checked as each request
 starts, so a pull's last request has to start before the token expires. The
