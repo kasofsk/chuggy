@@ -271,3 +271,44 @@ test("a tenant's projects are listed for a member's own chat in identity order a
     ],
   );
 });
+
+test("a member's own threads lead their listing, so however many project threads they hold none of their own is cut off", async () => {
+  const partition = await threadRigProject(rig, "unscoped-crowded");
+  const member = threadRigMember(rig, partition, "unscoped-crowded");
+  const own = openedSession(await unscoped(partition, member));
+  const projects = [
+    (await threadRigThread(rig, partition, member)).session,
+    (await threadRigThread(rig, partition, member)).session,
+  ];
+  const listed = await rig.threads.memberThreads({
+    tenant: partition.tenant,
+    principal: member.principal,
+    limit: 2,
+  });
+  assert.equal(listed.length, 2);
+  assert.deepEqual(listed.map(({ session, scope }) => [session, scope]).at(0), [
+    own,
+    "Member",
+  ]);
+  assert.ok(projects.includes(listed[1]?.session ?? own));
+});
+
+test("however many of their own threads a member has closed, their open project thread is still listed", async () => {
+  const partition = await threadRigProject(rig, "unscoped-closed");
+  const member = threadRigMember(rig, partition, "unscoped-closed");
+  for (let closed = 0; closed < 3; closed += 1) {
+    const own = openedSession(await unscoped(partition, member));
+    await rig.sessions.harness.query(
+      `UPDATE agent_session SET state='Closed',closed_at=now() WHERE session=$1`,
+      [own],
+    );
+  }
+  const project = (await threadRigThread(rig, partition, member)).session;
+  const listed = await rig.threads.memberThreads({
+    tenant: partition.tenant,
+    principal: member.principal,
+    limit: 2,
+  });
+  assert.equal(listed[0]?.session, project);
+  assert.equal(listed[1]?.scope, "Member");
+});

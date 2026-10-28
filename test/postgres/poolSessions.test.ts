@@ -2108,3 +2108,34 @@ test("a chat host is handed no member's own thread once its owner may no longer 
     [],
   );
 });
+
+test("a chat host's awaiting read naming no scope, as an earlier pool plane makes it, is answered its member's project sessions and none of their own", async () => {
+  const { partition, member } = await routedProject("host-unnamed");
+  const host = await chatHost(partition, member);
+  const thread = await waiting(
+    partition,
+    "host-unnamed-thread",
+    "Thread",
+    member,
+  );
+  const own = await ownWaiting(partition, member, "host-unnamed");
+  const read = async (scoped: readonly boolean[]) =>
+    new Set(
+      (
+        await poolPlanePool.query<{ session: string }>(
+          `SELECT session FROM chat_host_sessions_awaiting_claim(
+             $1,$2,$3,$4,$5${scoped.length === 0 ? "" : ",$6"})`,
+          [
+            host.tenant,
+            host.owner,
+            host.principal,
+            launch.placementBackoffSecs,
+            4,
+            ...scoped,
+          ],
+        )
+      ).rows.map(({ session }) => session),
+    );
+  assert.deepEqual(await read([]), new Set([thread.session]));
+  assert.deepEqual(await read([true]), new Set([thread.session, own.session]));
+});

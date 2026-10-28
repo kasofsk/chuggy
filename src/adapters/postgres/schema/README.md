@@ -315,7 +315,10 @@ nothing else, which no project's session may hold, and is opened by
 `open_member_thread`'s; `session_route` answers `Pool` for its partition and
 `enqueue_session_turn` refuses it any other route, so only its owner's chat host
 claims it. `read_member_threads` lists a member's own threads across the
-tenant, wherever each is kept. Unfinished work is found by selecting open
+tenant, wherever each is kept, as the project listing pages its own: their open
+threads of their own partition first, which their limit bounds, then their
+other open threads, then the most recent of the rest, cut at the page's bound
+with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
 `sessions_awaiting_placement` answers for the cluster and the chat host's,
 personal runner's and pool's awaiting reads for theirs.

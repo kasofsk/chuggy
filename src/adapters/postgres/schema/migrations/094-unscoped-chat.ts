@@ -27,7 +27,9 @@
  * partition rather than by a project row, and only where the host's caller
  * says it speaks a contract that runs one; a pool claims its project's lead
  * alone and a personal runner the threads of projects it allowlists, so
- * neither reaches one. A session bearer is answered with its session's scope.
+ * neither reaches one. A caller naming no scope is answered as it was before,
+ * so a pool plane still running the earlier image goes on claiming project
+ * sessions. A session bearer is answered with its session's scope.
  *
  * The bodies are written out rather than built from the helpers earlier
  * migrations use, so this file goes on saying what it installed when those
@@ -69,6 +71,9 @@ const enqueued = `public.${sessionTurnEnqueueFunction}(in_tenant text, in_projec
 const hostAwaitingBefore = `public.${chatHostSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint)`;
 
 const hostAwaiting = `public.${chatHostSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint, in_member_scope boolean)`;
+
+/** The same signature as created: a caller that names no member scope is answered as before it existed. */
+const hostAwaitingCreated = `public.${chatHostSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint, in_member_scope boolean DEFAULT false)`;
 
 const hostOpened = `public.${chatHostSessionOpenFunction}(in_tenant text, in_owner text, in_principal text, in_project text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb, in_idle_secs bigint)`;
 
@@ -282,7 +287,8 @@ export const migration094: Migration = {
                       WHERE t.tenant=s.tenant AND t.project=s.project
                         AND t.session=s.session)) AS at) moved
         WHERE s.tenant=in_tenant AND s.principal=in_principal AND s.kind='Thread'
-        ORDER BY (s.state='Open') DESC,moved.at DESC,s.project,s.session
+        ORDER BY (s.scope='Member' AND s.state='Open') DESC,
+                 (s.state='Open') DESC,moved.at DESC,s.project,s.session
         LIMIT least(coalesce(in_max,64),64)
      $$`,
     ...owned(memberThreads, apiRole),
@@ -304,7 +310,7 @@ export const migration094: Migration = {
      $$`,
     ...owned(bearer, apiRole),
     `DROP FUNCTION ${hostAwaitingBefore}`,
-    `CREATE FUNCTION ${hostAwaiting}
+    `CREATE FUNCTION ${hostAwaitingCreated}
        RETURNS TABLE(project text, session text, kind text, capabilities text[], agent_reference text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
