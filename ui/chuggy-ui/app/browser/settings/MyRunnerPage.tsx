@@ -64,7 +64,7 @@ import {
 import { RunnerAskForm } from "../RunnerAsk.tsx";
 import { RunnerSteps } from "../RunnerSteps.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
-import { MyChatHost, useChatHost } from "./MyChatHost.tsx";
+import { HostListingHead, MyChatHost, useChatHost } from "./MyChatHost.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -342,24 +342,7 @@ function MyRunnersTable(props: {
   const runners = props.held.runners;
   return (
     <SettingsListingTable caption="Runners">
-      <thead>
-        <tr>
-          <th scope="col">Runner</th>
-          <th scope="col">Version</th>
-          <th scope="col" className="w-[9em]">
-            Registered
-          </th>
-          <th scope="col" className="w-[9em]">
-            Last polled
-          </th>
-          <th scope="col" className="people-col-status">
-            Status
-          </th>
-          <th scope="col" className="w-[8em]">
-            <span className="visually-hidden">Remove</span>
-          </th>
-        </tr>
-      </thead>
+      <HostListingHead name="Runner" />
       <tbody>
         {runners.map((runner) => (
           <MyRunnerRows
