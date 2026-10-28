@@ -37,14 +37,16 @@
  * redirect, for `githubChangeProposals.ts`'s reasons. A refusal of this app is
  * `Denied` and settled; a throttle, a fault, a timeout, a status the caller did
  * not ask for and an answer this side cannot read are `Unavailable` and may be
- * asked again.
+ * asked again. A refusal's body is the forge's own account of it and is
+ * discarded, except its `message` where the caller asks to tell refusals of
+ * one status apart.
  */
 
 import { open } from "node:fs/promises";
 import { createPrivateKey, type KeyObject } from "node:crypto";
 
 import { SignJWT } from "jose";
-import type { z } from "zod";
+import { z } from "zod";
 
 import type { CredentialMintEvidence } from "../../interpreter/repositoryReadEvidence.ts";
 import { githubResponseTextOf } from "./githubResponse.ts";
@@ -94,6 +96,9 @@ const githubAppJwtBackdateSecs = 60;
 
 /** How long an app's JWT lives, inside the window past its issuance GitHub admits. */
 const githubAppJwtLifetimeSecs = 540;
+
+/** The one field of a refusal's body this tree reads. */
+const githubRefusalSchema = z.object({ message: z.string() });
 
 /** The statuses that are the forge refusing this caller rather than failing. */
 const githubDeniedStatuses: readonly number[] = [401, 403, 404, 422];
@@ -233,6 +238,8 @@ export type GithubAppAnswered =
   | {
       readonly answered: "Denied";
       readonly evidence?: CredentialMintEvidence;
+      /** The forge's `message`, only where the request asked for it and the body held one. */
+      readonly message?: string;
     }
   | {
       readonly answered: "Unavailable";
@@ -245,6 +252,8 @@ export interface GithubAppRequest {
   readonly method: "GET" | "POST";
   readonly okStatus: number;
   readonly body?: unknown;
+  /** Whether a refusal reads the forge's `message`, the one part of its body a caller may tell refusals apart by. */
+  readonly refusalMessage?: true;
 }
 
 /** What a request is answered in, and the bearer it presents where it presents one. */
@@ -284,9 +293,9 @@ async function githubSend(
   }
   if (response.status === request.okStatus)
     return { answered: "Answer", response };
-  await response.body?.cancel().catch(() => undefined);
   const throttled = githubThrottled(response);
-  if (!githubDeniedStatuses.includes(response.status) || throttled)
+  if (!githubDeniedStatuses.includes(response.status) || throttled) {
+    await response.body?.cancel().catch(() => undefined);
     return {
       answered: "Unavailable",
       evidence: {
@@ -294,10 +303,25 @@ async function githubSend(
         status: response.status,
       },
     };
-  return {
-    answered: "Denied",
-    evidence: { mint: "Status", status: response.status },
-  };
+  }
+  return githubSendDenied(own, request, response);
+}
+
+/** A refusal, carrying the forge's `message` where the request asked for it. */
+async function githubSendDenied(
+  own: GithubRequestBounds,
+  request: GithubAppRequest,
+  response: Response,
+): Promise<GithubAppAnswered> {
+  const evidence = { mint: "Status", status: response.status } as const;
+  if (request.refusalMessage !== true) {
+    await response.body?.cancel().catch(() => undefined);
+    return { answered: "Denied", evidence };
+  }
+  const refusal = await githubAppRead(own, response, githubRefusalSchema);
+  return refusal === undefined
+    ? { answered: "Denied", evidence }
+    : { answered: "Denied", evidence, message: refusal.message };
 }
 
 /** The request under a bearer the caller holds. */

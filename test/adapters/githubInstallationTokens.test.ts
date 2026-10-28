@@ -556,6 +556,43 @@ test("a refusal's body reaches nothing the mint answers", async (t) => {
   }
 });
 
+test("only a 422 saying the repository is not accessible to the installation is unselected, and every other refusal is not", async (t) => {
+  const unselected =
+    "There is at least one repository that does not exist or is not accessible to the parent installation.";
+  const answers: readonly (readonly [number, unknown, boolean])[] = [
+    [422, { message: unselected }, true],
+    [
+      422,
+      {
+        message:
+          "The permissions requested are not granted to this installation.",
+      },
+      false,
+    ],
+    [422, "{", false],
+    [401, { message: "A JSON web token could not be decoded" }, false],
+    [403, { message: "This installation has been suspended" }, false],
+    [403, { message: unselected }, false],
+    [404, { message: "Not Found" }, false],
+  ];
+  for (const [status, body, expected] of answers) {
+    const recorder = fixtureForge([
+      new Response(typeof body === "string" ? body : JSON.stringify(body), {
+        status,
+      }),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(t, recorder).mint(fixtureRequest()),
+      {
+        minted: "Denied",
+        evidence: { mint: "Status", status },
+        ...(expected ? { unselected: true } : {}),
+      },
+      `${status} ${JSON.stringify(body)}`,
+    );
+  }
+});
+
 test("a fault, a redirect and an answer this side cannot read are all a wait", async (t) => {
   const answers: readonly (readonly [Response | Error, string])[] = [
     [new TypeError("the network went away"), "Request"],

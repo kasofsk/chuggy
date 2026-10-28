@@ -14,8 +14,9 @@
  * is `Denied`, because that answer is settled for as long as the claim is
  * absent; a forge that could not be reached is `Unavailable`, and so is a store
  * that raised, because a read that failed established nothing. A denial past
- * the address names the installation it went through, or that this tenant
- * claims none on the owner, so a caller can say which one to change.
+ * the address says which it was: the installation it went through does not
+ * select the repository, the forge refused that installation or the app, or
+ * this tenant claims none on the owner, so a caller can say what to change.
  *
  * A TOKEN IS SCOPED TO ONE REPOSITORY AND TO ONE PERMISSION SET, and the set is
  * the composition's rather than the caller's: a source composed for reading a
@@ -123,7 +124,7 @@ export function mintedRepositoryTokens(
         return {
           minted: "Denied",
           evidence: { mint: "NoInstallation" },
-          installation: { app: options.app },
+          unreached: { reach: "Unclaimed", app: options.app },
         };
       const pipelinesAllowed = await mintedRepositoryTokensPipelinesAllowed(
         options,
@@ -139,15 +140,16 @@ export function mintedRepositoryTokens(
           ...(pipelinesAllowed ? { pipelinesAllowed: true } : {}),
         })
         .catch(mintedRaisedMarked("MintRaised"));
-      return minted.minted === "Denied"
-        ? {
-            ...minted,
-            installation: {
-              app: options.app,
-              installationId: installation.installationId,
-            },
-          }
-        : minted;
+      if (minted.minted !== "Denied") return minted;
+      return {
+        minted: "Denied",
+        ...(minted.evidence === undefined ? {} : { evidence: minted.evidence }),
+        unreached: {
+          reach: minted.unselected === true ? "Unselected" : "Refused",
+          app: options.app,
+          installationId: installation.installationId,
+        },
+      };
     },
   };
 }
