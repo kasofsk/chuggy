@@ -1215,6 +1215,7 @@ test("a session bearer is answered by this deployment's own session authority", 
       viaSession: {
         session: "session-pool",
         partition: { tenant: "tenant", project: "project" },
+        scope: "Project",
       },
     },
   });

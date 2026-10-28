@@ -73,7 +73,7 @@ function authorities(
   };
 }
 
-test("a session bearer authorizes as its session's principal, names the session and carries its partition", async () => {
+test("a session bearer authorizes as its session's principal, names the session and carries its partition and scope", async () => {
   const offered: string[] = [];
   const secret = mintedSecret();
   const { oidc, sessions } = authorities(offered, { session: identity });
@@ -85,7 +85,11 @@ test("a session bearer authorizes as its session's principal, names the session 
     authenticated: "Bearer",
     bearer: {
       principal: identity.principal,
-      viaSession: { session: identity.session, partition: identity.partition },
+      viaSession: {
+        session: identity.session,
+        partition: identity.partition,
+        scope: identity.scope,
+      },
     },
   });
   assert.deepEqual(offered, [`session:${secret}`]);

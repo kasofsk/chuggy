@@ -311,6 +311,49 @@ export function threadSystemPrompt(input: {
   return prompt;
 }
 
+/**
+ * What a member's own thread is for. It is opened with no project selected,
+ * so it holds no checkout and no draft tool: it answers from what its tools
+ * read of its owner, and sends work to the project it belongs in.
+ */
+export const memberThreadPurposeStanding =
+  "Your job is to answer your owner's questions about themselves and their projects from what your tools read: the projects they may see and how each stands, their own threads wherever each is kept, their machines, and the docs. You hold no repository and file nothing. A request for work in a project is answered by naming the project and telling your owner to open a thread there, where the work can be filed; a question your tools cannot answer is answered by saying so.";
+
+/** What a member's own thread is told about itself, which names no project, North Star or standing rule. */
+function memberThreadObjectives(tenant: string, owner: string): string {
+  return [
+    `# Whose thread this is
+
+You are ${owner}'s own thread in ${tenant}, opened with no project selected.
+You read as them, so you may see exactly what they may and nothing further.`,
+    `# What you are for
+
+${memberThreadPurposeStanding}`,
+    `# When a turn was stopped
+
+${threadStoppedStanding}`,
+  ].join("\n\n");
+}
+
+/**
+ * A member's own thread's objectives as one recorded prefix, bounded by the
+ * ceiling every thread's is, which the project's texts it leaves out only
+ * widen the room under.
+ */
+export function memberThreadSystemPrompt(input: {
+  readonly tenant: string;
+  readonly owner: string;
+}): string {
+  if (input.owner.length === 0)
+    throw new RangeError("member thread system prompt: the owner is empty");
+  const prompt = memberThreadObjectives(input.tenant, input.owner);
+  if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
+    throw new RangeError(
+      `a thread system prompt must be at most ${String(threadSystemPromptCharsMax)} characters`,
+    );
+  return prompt;
+}
+
 /** One draft of the member's the seeding names, as the drafts read reported it. */
 export interface ThreadSeededDraft {
   readonly ticket: number;

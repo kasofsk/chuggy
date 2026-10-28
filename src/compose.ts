@@ -86,7 +86,11 @@ import {
 } from "./adapters/postgres/repositoryBinding.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
-import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
+import {
+  postgresMemberChatProjects,
+  postgresProjectInventory,
+} from "./adapters/postgres/projectInventory.ts";
+import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
 import { postgresThreadLimits } from "./adapters/postgres/threadLimit.ts";
@@ -905,6 +909,20 @@ export function composeNativeWeb(
     postgresSessionRouteReads(apiPool),
     outputContents,
     projectArtifactMinting(),
+  );
+}
+
+/** A member's own chat over the API pool, through the ports a project's threads are served through. */
+export function composeMemberChat(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  threads: NativeThreadPorts,
+): MemberChat {
+  return memberChat(
+    access,
+    threads,
+    postgresSessionRouteReads(apiPool),
+    postgresMemberChatProjects(apiPool),
   );
 }
 

@@ -54,6 +54,7 @@ import {
   composeExecutionPlacement,
   composeProjectOwnerFallback,
   composeThreadLimits,
+  composeMemberChat,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -1460,6 +1461,16 @@ export function nativeThreadPorts(
   };
 }
 
+/** Listens where the environment names, the loopback on the default port where it names nowhere. */
+function nativeListening(
+  app: ReturnType<typeof createNativeHttpApp>,
+): Promise<string> {
+  return app.listen({
+    host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
+    port: positiveEnvironment("CHUG_API_PORT", 3_000),
+  });
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -1476,6 +1487,7 @@ async function main(): Promise<void> {
   const grants = nativeProjectGrants();
   const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
+  const threads = nativeThreadPorts(pools, artifacts);
   const web = composeNativeWeb(
     pool,
     keying,
@@ -1488,7 +1500,7 @@ async function main(): Promise<void> {
     selectorContextSource(pool, selectorReviewPool),
     forge.repositories,
     nativeLeadPorts(pools, artifacts),
-    nativeThreadPorts(pools, artifacts),
+    threads,
   );
   const hub = nativeStreamHub(pool, web);
   const threadLive = nativeThreadLiveHub();
@@ -1523,12 +1535,10 @@ async function main(): Promise<void> {
     nativePersonalRunners(pool, access),
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
+    composeMemberChat(pool, access, threads),
   );
   nativeStopping(app, pools, [hub, threadLive]);
-  await app.listen({
-    host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
-    port: positiveEnvironment("CHUG_API_PORT", 3_000),
-  });
+  await nativeListening(app);
 }
 
 if (

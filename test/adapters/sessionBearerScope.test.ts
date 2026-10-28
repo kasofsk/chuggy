@@ -1,7 +1,7 @@
 /**
- * A session bearer confined to its own session's partition, driven through the
- * whole app, so what is under test is what a caller is sent rather than the
- * rule beneath it.
+ * A session bearer confined to its own session's partition, or a member's own
+ * to its owner's tenant, driven through the whole app, so what is under test is
+ * what a caller is sent rather than the rule beneath it.
  *
  * THE ROUTER IS WALKED, NOT THE SOURCE. Every route the app serves is asked
  * without a bearer, and one answering `401` reads a bearer and so must have a
@@ -32,7 +32,9 @@ import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
 import { chuggyToolRoutes } from "../../src/contract/sessionTools.ts";
 import {
   asSessionId,
+  memberScopePartition,
   type SessionKind,
+  type SessionScope,
 } from "../../src/interpreter/agentSession.ts";
 import { nativeWeb } from "../../src/interpreter/nativeWeb.ts";
 import {
@@ -62,6 +64,12 @@ const own: Partition = {
   project: asProjectId("atlas"),
 };
 
+/** What the session bearer is confined by, as the hook reads it. */
+const ownSession = { partition: own, scope: "Project" as const, principal };
+
+/** The partition reserved for the principal in `own`'s tenant, which a member's own session bearer is confined to. */
+const ownMember: Partition = memberScopePartition(own.tenant, principal);
+
 /** Another project of the same tenant, and the same project name under another tenant. */
 const elsewhere: readonly Partition[] = [
   { tenant: own.tenant, project: asProjectId("other") },
@@ -89,6 +97,7 @@ function scopedApp(
   reached: string[],
   web?: ServedNativeWeb,
   kind: SessionKind = "Lead",
+  scope: SessionScope = "Project",
 ) {
   return createNativeHttpApp(
     web ?? recorded(reached, "web"),
@@ -106,11 +115,11 @@ function scopedApp(
           Promise.resolve(
             secret === sessionToken
               ? {
-                  partition: own,
+                  partition: scope === "Member" ? ownMember : own,
                   session: asSessionId(kind),
                   kind,
                   principal,
-                  scope: "Project" as const,
+                  scope,
                 }
               : undefined,
           ),
@@ -135,6 +144,7 @@ function scopedApp(
     recorded(reached, "personalRunners"),
     recorded(reached, "ownerFallback"),
     recorded(reached, "threadLimits"),
+    recorded(reached, "chat"),
   );
 }
 
@@ -209,7 +219,7 @@ test("under a session bearer from elsewhere, every classified route refuses befo
       );
       const where = `${route} in ${partition.tenant}/${partition.project}`;
       assert.deepEqual(reached, [], `${where} reached a port`);
-      if (scope === "Refused")
+      if (scope !== "Partition")
         assert.ok(scopeRefused(answered), `${where} was not refused`);
       else {
         assert.equal(answered.statusCode, 404, where);
@@ -220,13 +230,13 @@ test("under a session bearer from elsewhere, every classified route refuses befo
     }
 });
 
-test("in its own partition a session bearer passes every partition route and no refused one", async () => {
+test("in its own partition a session bearer passes every partition route and no refused or member one", async () => {
   const reached: string[] = [];
   await using app = scopedApp(reached);
   for (const [route, scope] of sessionBearerRouteScopes) {
     reached.length = 0;
     const answered = await app.inject(routeRequest(route, own, sessionToken));
-    if (scope === "Refused") {
+    if (scope !== "Partition") {
       assert.ok(scopeRefused(answered), `${route} was not refused`);
       assert.deepEqual(reached, [], `${route} reached a port`);
     } else
@@ -238,21 +248,39 @@ test("in its own partition a session bearer passes every partition route and no 
   }
 });
 
-test("every route a project tool calls admits a session bearer in its own partition, and list_repositories's reaches the project's repositories", async () => {
+/** The routes a member's own session's tools call, each at its owner's tenant. */
+const memberToolRoutes: ReadonlySet<string> = new Set([
+  chuggyToolRoutes.chatAbilities,
+  chuggyToolRoutes.chatProjects,
+  chuggyToolRoutes.chatThreads,
+  chuggyToolRoutes.chatThread,
+  chuggyToolRoutes.personalRunner,
+  chuggyToolRoutes.chatHost,
+]);
+
+test("every route a tool calls admits the session bearer of its scope, and list_repositories's reaches the project's repositories", async () => {
   assert.equal(
     chuggyToolRoutes.projectRepositories,
     nativeHttpRoutes.projectRepositories,
     "list_repositories calls no route",
   );
-  const params = { tenant: own.tenant, project: own.project };
-  for (const [tool, route] of Object.entries(chuggyToolRoutes))
+  const memberSession = {
+    partition: ownMember,
+    scope: "Member" as const,
+    principal,
+  };
+  for (const [tool, route] of Object.entries(chuggyToolRoutes)) {
+    const [session, params] = memberToolRoutes.has(route)
+      ? [memberSession, { tenant: own.tenant }]
+      : [ownSession, { tenant: own.tenant, project: own.project }];
     assert.ok(
       (["GET", "POST", "PUT", "DELETE"] as const).some(
         (method) =>
-          sessionBearerAdmission(own, method, route, params) === "Admitted",
+          sessionBearerAdmission(session, method, route, params) === "Admitted",
       ),
       `${tool} admits no session bearer`,
     );
+  }
   for (const kind of ["Lead", "Thread"] as const) {
     const reached: string[] = [];
     await using app = scopedApp(reached, undefined, kind);
@@ -576,11 +604,21 @@ test("a thread's bearer revoking in another project is answered as a member who 
 test("a session bearer reads a member's thread limit in its own partition and never sets one", () => {
   const params = { tenant: own.tenant, project: own.project, subject: "ada" };
   assert.equal(
-    sessionBearerAdmission(own, "GET", nativeHttpRoutes.threadLimit, params),
+    sessionBearerAdmission(
+      ownSession,
+      "GET",
+      nativeHttpRoutes.threadLimit,
+      params,
+    ),
     "Admitted",
   );
   assert.equal(
-    sessionBearerAdmission(own, "PUT", nativeHttpRoutes.threadLimit, params),
+    sessionBearerAdmission(
+      ownSession,
+      "PUT",
+      nativeHttpRoutes.threadLimit,
+      params,
+    ),
     "Refused",
   );
 });
@@ -588,28 +626,112 @@ test("a session bearer reads a member's thread limit in its own partition and ne
 test("the admission reads the matched route, folds HEAD into GET and refuses what it cannot place", () => {
   const params = { tenant: own.tenant, project: own.project };
   assert.equal(
-    sessionBearerAdmission(own, "HEAD", nativeHttpRoutes.project, params),
+    sessionBearerAdmission(
+      ownSession,
+      "HEAD",
+      nativeHttpRoutes.project,
+      params,
+    ),
     "Admitted",
   );
   assert.equal(
-    sessionBearerAdmission(own, "GET", undefined, params),
+    sessionBearerAdmission(ownSession, "GET", undefined, params),
     "Refused",
   );
   assert.equal(
-    sessionBearerAdmission(own, "PATCH", nativeHttpRoutes.project, params),
+    sessionBearerAdmission(
+      ownSession,
+      "PATCH",
+      nativeHttpRoutes.project,
+      params,
+    ),
     "Refused",
   );
   assert.equal(
-    sessionBearerAdmission(own, "GET", nativeHttpRoutes.project, {
+    sessionBearerAdmission(ownSession, "GET", nativeHttpRoutes.project, {
       tenant: own.tenant,
     }),
     "Refused",
   );
   assert.equal(
-    sessionBearerAdmission(own, "GET", nativeHttpRoutes.project, {
+    sessionBearerAdmission(ownSession, "GET", nativeHttpRoutes.project, {
       ...params,
       project: "other",
     }),
     "OtherPartition",
+  );
+});
+
+test("a member's own session bearer reaches every member route at its tenant, reads there and writes nothing, and reaches no other route", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached, undefined, "Thread", "Member");
+  for (const [route, scope] of sessionBearerRouteScopes) {
+    reached.length = 0;
+    const answered = await app.inject(
+      routeRequest(route, ownMember, sessionToken),
+    );
+    if (scope === "Member")
+      assert.ok(
+        !scopeRefused(answered) && reached.length > 0,
+        `${route} was refused at its tenant: ${String(answered.statusCode)}`,
+      );
+    else {
+      assert.ok(scopeRefused(answered), `${route} was not refused`);
+      assert.deepEqual(reached, [], `${route} reached a port`);
+    }
+    if (scope === "Member") assert.ok(route.startsWith("GET "), route);
+  }
+});
+
+test("a member's own session bearer is answered at another tenant as a caller who cannot reach it, before any port", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached, undefined, "Thread", "Member");
+  const other = { tenant: asTenantId("other"), project: ownMember.project };
+  for (const [route, scope] of sessionBearerRouteScopes) {
+    if (scope !== "Member") continue;
+    reached.length = 0;
+    const answered = await app.inject(routeRequest(route, other, sessionToken));
+    assert.equal(answered.statusCode, 404, route);
+    assert.deepEqual(reached, [], `${route} reached a port`);
+  }
+});
+
+test("a member's own session is admitted only from the partition reserved for its own principal, and a project's never to a member route", () => {
+  const params = { tenant: own.tenant };
+  const route = nativeHttpRoutes.chatThreads;
+  assert.equal(
+    sessionBearerAdmission(
+      { partition: ownMember, scope: "Member", principal },
+      "GET",
+      route,
+      params,
+    ),
+    "Admitted",
+  );
+  assert.equal(
+    sessionBearerAdmission(
+      {
+        partition: memberScopePartition(own.tenant, asPrincipal("someone")),
+        scope: "Member",
+        principal,
+      },
+      "GET",
+      route,
+      params,
+    ),
+    "OtherPartition",
+  );
+  assert.equal(
+    sessionBearerAdmission(ownSession, "GET", route, params),
+    "Refused",
+  );
+  assert.equal(
+    sessionBearerAdmission(
+      { partition: own, scope: "Member", principal },
+      "GET",
+      nativeHttpRoutes.project,
+      { tenant: own.tenant, project: own.project },
+    ),
+    "Refused",
   );
 });

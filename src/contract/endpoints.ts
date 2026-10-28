@@ -3,6 +3,7 @@ import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import { fieldsOnly, integerField, textField } from "./fields.ts";
 import { z } from "zod";
 import {
+  nativeHttpPageItemsMax,
   nativeHttpRoutes,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
@@ -28,6 +29,9 @@ import {
   runErrorResponseSchema,
   threadsResponseSchema,
   threadResponseSchema,
+  chatAbilitiesResponseSchema,
+  chatProjectsResponseSchema,
+  chatThreadsResponseSchema,
   threadTranscriptResponseSchema,
   threadEntryResponseSchema,
   threadMessageAcceptedSchema,
@@ -68,6 +72,15 @@ const transcriptQuery = endpointQuery({
     .optional(),
   after: endpointInteger("after", 0),
   limit: endpointInteger("limit", sessionStorePageBatchesMax),
+});
+/** One of a member's own threads, or one they hold in the project `project` names. */
+const chatThreadQuery = endpointQuery({
+  before: endpointInteger("before").optional(),
+  limit: endpointInteger("limit", threadTurnsAnsweredMax),
+  project: z
+    .unknown()
+    .transform((value) => textField({ project: value }, "project"))
+    .optional(),
 });
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
@@ -188,6 +201,76 @@ export const nativeHttpEndpoints = {
   hideThread: {
     method: "POST",
     path: nativeHttpRoutes.threadHide,
+    body: threadHideRequestSchema,
+    response: threadHideResponseSchema,
+  },
+  chatAbilities: {
+    method: "GET",
+    path: nativeHttpRoutes.chatAbilities,
+    response: chatAbilitiesResponseSchema,
+  },
+  chatProjects: {
+    method: "GET",
+    path: nativeHttpRoutes.chatProjects,
+    query: endpointQuery({
+      after: z
+        .unknown()
+        .transform((value) => textField({ after: value }, "after"))
+        .optional(),
+      limit: endpointInteger("limit", nativeHttpPageItemsMax),
+    }),
+    response: chatProjectsResponseSchema,
+  },
+  chatThreads: {
+    method: "GET",
+    path: nativeHttpRoutes.chatThreads,
+    response: chatThreadsResponseSchema,
+  },
+  chatThread: {
+    method: "GET",
+    path: nativeHttpRoutes.chatThread,
+    query: chatThreadQuery,
+    response: threadResponseSchema,
+  },
+  chatThreadTranscript: {
+    method: "GET",
+    path: nativeHttpRoutes.chatThreadTranscript,
+    query: transcriptQuery,
+    response: threadTranscriptResponseSchema,
+  },
+  openChatThread: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreads,
+    body: threadOpenSchema,
+    response: threadEntryResponseSchema,
+  },
+  sendChatThreadMessage: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreadMessages,
+    body: threadMessageSchema,
+    response: threadMessageAcceptedSchema,
+  },
+  stopChatThreadTurn: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreadTurnStop,
+    body: emptyBody,
+    response: threadTurnStopResponseSchema,
+  },
+  closeChatThread: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreadClose,
+    body: emptyBody,
+    response: threadEntryResponseSchema,
+  },
+  renameChatThread: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreadRename,
+    body: threadRenameRequestSchema,
+    response: threadRenameResponseSchema,
+  },
+  hideChatThread: {
+    method: "POST",
+    path: nativeHttpRoutes.chatThreadHide,
     body: threadHideRequestSchema,
     response: threadHideResponseSchema,
   },

@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
+import { postgresMemberChatProjects } from "../../src/adapters/postgres/projectInventory.ts";
 import { threadsOpenDefault } from "../../src/contract/http.ts";
 import {
   asSessionTurnId,
@@ -246,5 +247,27 @@ test("a member's threads are listed across the tenant, their own beside each pro
         member.principal,
       ]),
     ]),
+  );
+});
+
+test("a tenant's projects are listed for a member's own chat in identity order after the cursor, with how each stands, none in retention", async () => {
+  const partition = await threadRigProject(rig, "unscoped-projects");
+  await rig.sessions.harness.query(
+    `INSERT INTO project(tenant,project,lifecycle)
+     VALUES($1,$2,'Suspended'),($1,$3,'Retention'),($1,$4,'Active')`,
+    [
+      partition.tenant,
+      `${partition.project}-b`,
+      `${partition.project}-c`,
+      `${partition.project}-d`,
+    ],
+  );
+  const store = postgresMemberChatProjects(rig.apiPool);
+  assert.deepEqual(
+    await store.projects(partition.tenant, partition.project, 2),
+    [
+      { project: `${partition.project}-b`, lifecycle: "Suspended" },
+      { project: `${partition.project}-d`, lifecycle: "Active" },
+    ],
   );
 });

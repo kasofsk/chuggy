@@ -138,7 +138,9 @@ import {
   selectorModes,
   agenticRefusalEvents,
   sessionRunnerStandings,
+  sessionScopes,
   sessionStates,
+  projectLifecycles,
   sessionTurnFailures,
   sessionTurnInputKinds,
   sessionTurnStates,
@@ -156,6 +158,7 @@ import {
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "./rosters.ts";
+import { accessProjectRoles } from "./accessPlane.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -1604,6 +1607,23 @@ export const threadsResponseSchema = z.object({
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
 
 /**
+ * One of a member's threads as their own chat lists it: whose it is, and the
+ * project it is kept in, which a thread of their own scope has none of.
+ */
+export const chatThreadEntryResponseSchema = threadEntryResponseSchema.extend({
+  scope: z.enum(sessionScopes),
+  project: identitySchema.optional(),
+});
+export type ChatThreadEntryResponse = z.infer<
+  typeof chatThreadEntryResponseSchema
+>;
+
+export const chatThreadsResponseSchema = z.object({
+  threads: z.array(chatThreadEntryResponseSchema).max(threadsAnsweredMax),
+});
+export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>;
+
+/**
  * One turn of a thread's mailbox, carrying its `input` and its `result` where
  * `leadTurnResponseSchema` carries neither: a lead's are the observation and
  * the decision its log already holds, and a member's are what they typed and
@@ -2132,6 +2152,32 @@ export const projectAbilitiesResponseSchema = z.strictObject({
 export type ProjectAbilitiesResponse = z.infer<
   typeof projectAbilitiesResponseSchema
 >;
+
+/** What a member may do in their tenant, as their own chat is told it, each read live. */
+export const chatAbilitiesResponseSchema = z.strictObject({
+  /** The reader's own principal, encoded as a ticket's `creator` is. */
+  principal: identitySchema,
+  openUnscopedChat: z.boolean(),
+  executeHosted: z.boolean(),
+  registerPersonalRunner: z.boolean(),
+  administerTenant: z.boolean(),
+});
+export type ChatAbilitiesResponse = z.infer<typeof chatAbilitiesResponseSchema>;
+
+/** One project a member's own chat may see, how it stands, and the strongest role they hold on it. */
+export const chatProjectResponseSchema = z.object({
+  project: identitySchema,
+  lifecycle: z.enum(projectLifecycles),
+  role: z.enum(accessProjectRoles),
+});
+export type ChatProjectResponse = z.infer<typeof chatProjectResponseSchema>;
+
+/** A page of those projects, and the project an older page is asked after, absent at the last. */
+export const chatProjectsResponseSchema = z.object({
+  projects: page(chatProjectResponseSchema),
+  nextAfter: identitySchema.optional(),
+});
+export type ChatProjectsResponse = z.infer<typeof chatProjectsResponseSchema>;
 
 /** What a registration-token mint answers: the token, once, and the instant it stops being redeemable. */
 export const workerPoolTokenResponseSchema = z.object({

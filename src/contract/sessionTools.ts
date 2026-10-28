@@ -395,4 +395,18 @@ export const chuggyToolRoutes = {
    * learning a permit from a refusal.
    */
   abilities: nativeHttpRoutes.abilities,
+  /**
+   * What a member's own session reads, each at its tenant and none at a
+   * project: `read_my_abilities` the tenant's questions, `list_projects` the
+   * projects its chat may see, `list_my_threads` and `read_my_thread` its
+   * owner's threads wherever each is kept, a project thread named by the
+   * `project` query, and `list_my_runners` and `read_chat_host` its owner's
+   * machines.
+   */
+  chatAbilities: nativeHttpRoutes.chatAbilities,
+  chatProjects: nativeHttpRoutes.chatProjects,
+  chatThreads: nativeHttpRoutes.chatThreads,
+  chatThread: nativeHttpRoutes.chatThread,
+  personalRunner: nativeHttpRoutes.personalRunner,
+  chatHost: nativeHttpRoutes.chatHost,
 } as const;

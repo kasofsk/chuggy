@@ -2487,8 +2487,11 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose doors reach it as one. */
-function nativeThreadMethods(
+/**
+ * The thread side of the boundary, whose reads and whose doors reach it as one.
+ * A member's own chat reaches the same doors through an access of its own.
+ */
+export function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
