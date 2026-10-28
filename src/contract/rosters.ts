@@ -539,6 +539,7 @@ export const changeProposalMergeabilities = [
   "Mergeable",
   "Conflicting",
   "Blocked",
+  "Behind",
   "Unknown",
 ] as const;
 

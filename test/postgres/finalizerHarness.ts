@@ -1074,6 +1074,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       fake.acts.push("prove");
       return Promise.resolve(fake.ancestry);
     },
+    proveHeadAdoptable: () => {
+      fake.acts.push("adopt");
+      return Promise.resolve("Unadoptable");
+    },
   };
   return fake;
 }

@@ -1,8 +1,15 @@
 /**
  * The adapter behind `ChangeProposalPort` for GitHub: the one request that asks
  * for a pull request, the one that reads back the proposal carrying a request's
- * marker, the one that reads a proposal by its number, and the one that asks
- * for that proposal to be merged.
+ * marker, the one that reads a proposal by its number, the one that asks for
+ * that proposal to be merged, and the one that asks for its branch to be
+ * brought up to date with its base.
+ *
+ * AN UPDATE IS ANSWERED BEFORE IT IS MADE. This forge accepts one and merges
+ * the base into the head in its own time, so its acceptance says nothing of
+ * the head that comes of it and a later reading is what does; one it refuses,
+ * because the head is not the one the update expected or the base will not
+ * merge into it, is an answer that settles the update.
  *
  * WHAT A COLLECTION ANSWERS IS LESS THAN WHAT ONE PROPOSAL ANSWERS. This forge
  * leaves what it says about merging out of the proposals it lists, so a read
@@ -84,9 +91,11 @@
 import { z } from "zod";
 
 import { textCodePointsCount } from "../../contract/http.ts";
+import { assertNever } from "../../domain/assertNever.ts";
 import { asBoundedText } from "../../interpreter/boundedText.ts";
 import {
   asProposalDisplayUrl,
+  type ChangeProposalUpdated,
   asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
@@ -190,6 +199,9 @@ const githubUnmergeableStatus = 405;
 /** The status a forge refuses a merge with when the commit it was conditional on is not the head. */
 const githubStaleHeadStatus = 409;
 
+/** The status a forge refuses an update with, whether the head was not the expected one or the base would not merge into it. */
+const githubUpdateRefusedStatus = 422;
+
 /** The merge this tree asks for, which keeps the promoted commit an ancestor of the base. */
 const githubMergeMethod = "merge";
 
@@ -260,9 +272,10 @@ const githubMergeSchema = z.object({
   merged: z.boolean(),
 });
 
-/** The mergeable state a conflict is named by, and the ones the forge's own rules are. */
+/** The mergeable state a conflict is named by, the one a branch its base moved past is, and the ones the forge's other rules are. */
 const githubConflictingState = "dirty";
-const githubBlockedStates: readonly string[] = ["behind", "blocked", "draft"];
+const githubBehindState = "behind";
+const githubBlockedStates: readonly string[] = ["blocked", "draft"];
 
 /** Refuses a bound no later call could work around, a ceiling among them where the forge sets one. */
 function githubChangeProposalsBound(
@@ -474,6 +487,7 @@ function githubChangeProposalsMergeabilityOf(
 ): Pick<ChangeProposalEvidence, "mergeability"> {
   const state = pull.mergeable_state;
   if (pull.mergeable === undefined && state === undefined) return {};
+  if (state === githubBehindState) return { mergeability: "Behind" };
   if (state !== undefined && githubBlockedStates.includes(state))
     return { mergeability: "Blocked" };
   if (pull.mergeable === false || state === githubConflictingState)
@@ -832,6 +846,16 @@ function githubChangeProposalsMergeUrl(
   return new URL(`${proposal.pathname}/merge`, proposal.origin);
 }
 
+/** The endpoint that brings one addressed proposal's branch up to date with its base. */
+function githubChangeProposalsUpdateUrl(
+  own: GithubChangeProposalsState,
+  address: GithubAddress,
+  number: number,
+): URL {
+  const proposal = githubChangeProposalsProposalUrl(own, address, number);
+  return new URL(`${proposal.pathname}/update-branch`, proposal.origin);
+}
+
 /** What one request addresses when it names a proposal by number, and nothing where this forge holds no such repository. */
 function githubChangeProposalsNumberedAddress(
   own: GithubChangeProposalsState,
@@ -926,6 +950,44 @@ async function githubChangeProposalsMerge(
     : { merged: "Merged", mergeCommit: commit };
 }
 
+/**
+ * Asks this forge to merge one proposal's base into its branch, conditional on
+ * the head the caller pinned, so a push nobody here knows of refuses it.
+ */
+async function githubChangeProposalsUpdate(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): Promise<ChangeProposalUpdated> {
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { updated: "Denied" };
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  if (authorized.authorized === "Refused")
+    return { updated: authorized.refusal };
+  const answer = await githubChangeProposalsSend(
+    own,
+    githubChangeProposalsUpdateUrl(own, address, request.proposal.number),
+    authorized.credential,
+    {
+      method: "PUT",
+      body: JSON.stringify({ expected_head_sha: request.headCommit }),
+    },
+  );
+  switch (answer.answer) {
+    case "Read":
+      return { updated: "Accepted" };
+    case "Denied":
+      return { updated: "Denied" };
+    case "Busy":
+      return { updated: "Unavailable" };
+    case "Unsettled":
+      return answer.status === githubUpdateRefusedStatus
+        ? { updated: "Refused" }
+        : { updated: "Ambiguous" };
+    default:
+      return assertNever(answer);
+  }
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
 export function githubChangeProposals(
   options: GithubChangeProposalsOptions,
@@ -956,5 +1018,6 @@ export function githubChangeProposals(
     readByMarker: (request) => githubChangeProposalsRead(own, request),
     readByNumber: (request) => githubChangeProposalsReadNumbered(own, request),
     merge: (request) => githubChangeProposalsMerge(own, request),
+    updateBranch: (request) => githubChangeProposalsUpdate(own, request),
   };
 }

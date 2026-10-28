@@ -308,6 +308,8 @@ export function changeProposalMergeabilityLabel(
       return "Conflicting";
     case "Blocked":
       return "Blocked";
+    case "Behind":
+      return "Behind its base";
     case "Unknown":
       return "Unknown";
   }

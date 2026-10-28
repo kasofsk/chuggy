@@ -576,6 +576,49 @@ export async function scratchHasCommit(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/** One commit's tree and its parents in order, as the object itself records them. */
+export interface ScratchCommitShape {
+  readonly tree: GitObjectId;
+  readonly parents: readonly GitObjectId[];
+}
+
+/**
+ * The tree and parents one commit records, read with every replace ref set
+ * aside so no ref answers for this commit with another's, and `undefined`
+ * where git could not answer or printed something that is not that.
+ */
+export async function scratchCommitShape(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<ScratchCommitShape | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    argv: [
+      "--no-replace-objects",
+      "show",
+      "--no-patch",
+      "--format=%T %P",
+      commit,
+      "--",
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  const [tree, ...parents] = ran.stdout.trim().split(" ");
+  const shape = {
+    tree: scratchObjectIdOf(tree),
+    parents: parents.map(scratchObjectIdOf),
+  };
+  if (shape.tree === undefined) return undefined;
+  const read: GitObjectId[] = [];
+  for (const parent of shape.parents) {
+    if (parent === undefined) return undefined;
+    read.push(parent);
+  }
+  return { tree: shape.tree, parents: read };
+}
+
 /** Whether one commit is reachable from another, and `undefined` where git could not answer. */
 export async function scratchIsAncestor(
   scratch: GitScratch,

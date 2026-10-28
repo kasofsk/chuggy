@@ -29,11 +29,13 @@ import {
   asProposalRemoteIdentity,
   changeProposalMergeRequest,
   changeProposalRequest,
+  changeProposalUpdatingNone,
   proposalBodyCharsMax,
   proposalMarkerOf,
   proposalMergeRereadSecs,
   proposalTitleCharsMax,
   type ChangeProposalEvidence,
+  type ChangeProposalMergeGathered,
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
   type ChangeProposalPublication,
@@ -47,6 +49,7 @@ import {
   finalizationProposalNext,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
+  finalizationProposalUpdateRecording,
   type FinalizationProposalDecision,
   type FinalizationProposalGathered,
   type FinalizationProposalStanding,
@@ -105,7 +108,7 @@ function evidence(
 /** The ceilings every case below continues a proposal under. */
 const bounds = {
   publication: { creationsMax: 2, reconciliationsMax: 2 },
-  merging: { mergesMax: 2, readingsMax: 2 },
+  merging: { mergesMax: 2, readingsMax: 2, updatesMax: 2 },
 };
 
 /** The finalization every case below stands in unless it names another: one that only proposes. */
@@ -124,9 +127,16 @@ const merging: FinalizationProposalStanding = {
 function gathered(
   publication: ChangeProposalPublication,
   merged: ChangeProposalMerging = { merging: "Unasked" },
+  merge: ChangeProposalMergeGathered = pinned,
 ): FinalizationProposalGathered {
-  return { gathered: "Request", request, publication, merging: merged };
+  return { gathered: "Request", request, publication, merging: merged, merge };
 }
+
+/** The head this request proposed, pinned, with nothing updated yet. */
+const pinned: ChangeProposalMergeGathered = {
+  head: request.head.commit,
+  updating: changeProposalUpdatingNone,
+};
 
 /** One create in flight, with however many readings a case has already taken. */
 function unanswered(
@@ -300,7 +310,7 @@ test("a bound that is not a positive count is refused rather than treated as non
       () =>
         finalizationProposalNext(merging, proved(), {
           publication: bounds.publication,
-          merging: { mergesMax: bound, readingsMax: bound },
+          merging: { mergesMax: bound, readingsMax: bound, updatesMax: bound },
         }),
       RangeError,
       String(bound),
@@ -356,6 +366,7 @@ const mergeCommit = asGitObjectId("d".repeat(40));
 function proved(
   merged: ChangeProposalMerging = { merging: "Unasked" },
   overrides: Partial<ChangeProposalEvidence> = {},
+  merge: ChangeProposalMergeGathered = pinned,
 ): FinalizationProposalGathered {
   return gathered(
     {
@@ -363,6 +374,7 @@ function proved(
       creation: { created: "Created", evidence: evidence(overrides) },
     },
     merged,
+    merge,
   );
 }
 
@@ -784,6 +796,106 @@ test("no merging in flight and no answered one reaches a second merge", () => {
       JSON.stringify(state).slice(0, 60),
     );
   }
+});
+
+test("a proposal behind its base is updated at the pinned head, and its ceiling holds as merges spent", () => {
+  mergesDecided([
+    [
+      waitingOn(0, { mergeability: "Behind" }),
+      { decide: "UpdateProposal", request, merge: mergeRequest },
+    ],
+  ]);
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      proved(
+        waitingOn(0, { mergeability: "Behind" }),
+        {},
+        {
+          ...pinned,
+          updating: { updates: 2, unread: false, turn: true },
+        },
+      ),
+      bounds,
+    ),
+    { decide: "Hold", hold: "ProposalMergesExhausted" },
+  );
+  for (const lifecycle of allClosingLifecycles)
+    assert.deepEqual(
+      finalizationProposalNext(
+        { mode: "PullRequestMerge", lifecycle },
+        proved(waitingOn(0, { mergeability: "Behind" })),
+        bounds,
+      ),
+      { decide: "Abort" },
+      lifecycle,
+    );
+});
+
+test("a head adopted is pinned first and merged at after", () => {
+  const updated = asGitObjectId("e".repeat(40));
+  const at = { head: { ref: request.head.ref, commit: updated } };
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      proved(
+        waitingOn(0, { ...at, mergeability: "Mergeable" }),
+        {},
+        {
+          ...pinned,
+          adoption: { head: updated, adoption: "Adoptable" },
+        },
+      ),
+      bounds,
+    ),
+    { decide: "AdoptProposalHead", head: updated },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      proved(
+        waitingOn(0, { ...at, mergeability: "Mergeable" }),
+        {},
+        {
+          head: updated,
+          updating: changeProposalUpdatingNone,
+        },
+      ),
+      bounds,
+    ),
+    {
+      decide: "MergeProposal",
+      request,
+      merge: { ...mergeRequest, headCommit: updated },
+    },
+  );
+});
+
+test("an update the forge took or left unsettled stands unread, and one it would not take is declined", () => {
+  assert.deepEqual(
+    finalizationProposalUpdateRecording({ updated: "Accepted" }),
+    {
+      record: "Asked",
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalUpdateRecording({ updated: "Ambiguous" }),
+    { record: "Asked" },
+  );
+  assert.deepEqual(
+    finalizationProposalUpdateRecording({ updated: "Refused" }),
+    {
+      record: "Refused",
+    },
+  );
+  assert.deepEqual(
+    finalizationProposalUpdateRecording({ updated: "Unavailable" }),
+    { record: "Declined", hold: "ProposalUnavailable" },
+  );
+  assert.deepEqual(finalizationProposalUpdateRecording({ updated: "Denied" }), {
+    record: "Declined",
+    hold: "ProposalDenied",
+  });
 });
 
 test("the words a proposal carries name its ticket and always end on its marker", () => {

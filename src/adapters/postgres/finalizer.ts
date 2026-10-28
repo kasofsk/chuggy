@@ -113,6 +113,9 @@ import {
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
+  finalizerChangeProposalAdopt,
+  finalizerChangeProposalUpdateMark,
+  finalizerChangeProposalUpdateRecord,
 } from "./finalizerChangeProposal.ts";
 import {
   finalizerPermitGrant,
@@ -810,6 +813,18 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     recordChangeProposalMerge: (record) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalMergeRecord(client, record),
+      ),
+    markChangeProposalUpdate: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalUpdateMark(client, claim),
+      ),
+    recordChangeProposalUpdate: (claim, write) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalUpdateRecord(client, claim, write),
+      ),
+    adoptChangeProposalHead: (claim, head) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalAdopt(client, claim, head),
       ),
   };
 }
