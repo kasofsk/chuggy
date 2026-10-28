@@ -6170,6 +6170,7 @@ const wipeKept = [
   "action_observation",
   "admitted_worker",
   "capacity_account",
+  "chat_host",
   "configuration_revision",
   "deployment_authoring_policy",
   "execution_cluster",

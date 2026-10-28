@@ -4,9 +4,10 @@
  * the one word for why none can take the turn now.
  *
  * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's thread runs only on their
- * own personal runner, their inquiries on a pool they registered, and the lead
- * on any of the project's, so the placement read answers each standing and
- * each surface passes the one its turns would wait on.
+ * chat host or their own personal runner, their inquiries only on their chat
+ * host, and the lead on any of the project's pools, so the placement read
+ * answers each standing and each surface passes the one its turns would wait
+ * on.
  */
 
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
@@ -55,15 +56,15 @@ export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead";
 /** Where a reader adds the runner a session's turn waits on. */
 export type SessionRunnerAdded = "MyRunner" | "Runners";
 
-/** A thread runs only on its member's own runners, so one is added on their own
- * page; an inquiry and the lead run on a project's pools. */
+/** A thread and an inquiry run only on their member's own machines, so one is
+ * added on their own page; the lead runs on a project's pools. */
 export function sessionRunnerAdded(
   session: SessionRunnerSession,
 ): SessionRunnerAdded {
   switch (session) {
     case "Thread":
-      return "MyRunner";
     case "Inquiry":
+      return "MyRunner";
     case "Lead":
       return "Runners";
   }
@@ -75,6 +76,21 @@ export function sessionRunnerShortWord(short: SessionRunnerShort): string {
       return "No runner";
     case "RunnerOffline":
       return "Runner offline";
+  }
+}
+
+/** The word for why no runner can take one session's turn, said of the
+ * machine it waits on: an inquiry waits on its member's chat host alone. */
+export function sessionRunnerNoticeWord(
+  short: SessionRunnerShort,
+  session: SessionRunnerSession,
+): string {
+  if (session !== "Inquiry") return sessionRunnerShortWord(short);
+  switch (short) {
+    case "NoRunner":
+      return "No chat host";
+    case "RunnerOffline":
+      return "Chat host offline";
   }
 }
 

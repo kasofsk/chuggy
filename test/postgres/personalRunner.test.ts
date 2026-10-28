@@ -440,12 +440,13 @@ test("a personal token is spent once, by whichever of two racing redemptions the
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("a1");
   assert.equal(
-    await tokens.mint(tenant, digest, Date.now() + 60_000, member),
+    await tokens.mint(tenant, digest, Date.now() + 60_000, member, "Runner"),
     "Minted",
   );
   assert.deepEqual(await tokens.permitted(digest), {
     tenant,
     mintedBy: member,
+    kind: "Runner",
   });
   const spent = await Promise.all([
     tokens.consume(digest),
@@ -462,7 +463,7 @@ test("a personal token past its expiry is neither readable, spendable nor restor
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("b2");
   assert.equal(
-    await tokens.mint(tenant, digest, Date.now() - 1_000, member),
+    await tokens.mint(tenant, digest, Date.now() - 1_000, member, "Runner"),
     "Minted",
   );
   assert.equal(await tokens.permitted(digest), undefined);
@@ -478,12 +479,35 @@ test("a personal token names a tenant that is a row", async () => {
       postgresHarnessTokenDigest("c3"),
       Date.now() + 60_000,
       member,
+      "Runner",
     ),
     "NotFound",
   );
 });
 
-test("a member holds at most their bound of live tokens in a tenant, and a mint sweeps their expired ones", async () => {
+test("a token is read and spent as the kind it was minted for, and the schema refuses a kind it does not know", async () => {
+  const { tenant } = await project("token-kind");
+  const tokens = postgresPersonalRunnerRegistrationTokens(api);
+  const digest = postgresHarnessTokenDigest("f1");
+  assert.equal(
+    await tokens.mint(tenant, digest, Date.now() + 60_000, member, "ChatHost"),
+    "Minted",
+  );
+  const terms = { tenant, mintedBy: member, kind: "ChatHost" };
+  assert.deepEqual(await tokens.permitted(digest), terms);
+  assert.deepEqual(await tokens.consume(digest), terms);
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO personal_runner_registration_token
+         (token_digest,tenant,minted_by,expires_at,kind)
+       VALUES($1,$2,$3,now()+interval '1 minute','Pool')`,
+      [postgresHarnessTokenDigest("f2"), tenant, member],
+    ),
+    /personal_runner_registration_token_kind_is_known/u,
+  );
+});
+
+test("a member holds at most their bound of live tokens in a tenant, of either kind, and a mint sweeps their expired ones", async () => {
   const { tenant } = await project("token-bound");
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   assert.equal(
@@ -492,6 +516,7 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
       postgresHarnessTokenDigest("d0"),
       Date.now() - 1_000,
       member,
+      "Runner",
     ),
     "Minted",
   );
@@ -502,24 +527,29 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
         postgresHarnessTokenDigest(`d${String(minted)}`),
         Date.now() + 60_000,
         member,
+        minted % 2 === 0 ? "ChatHost" : "Runner",
       ),
       "Minted",
     );
-  assert.equal(
-    await tokens.mint(
-      tenant,
-      postgresHarnessTokenDigest("dff"),
-      Date.now() + 60_000,
-      member,
-    ),
-    "LimitReached",
-  );
+  for (const kind of ["Runner", "ChatHost"] as const)
+    assert.equal(
+      await tokens.mint(
+        tenant,
+        postgresHarnessTokenDigest(kind === "Runner" ? "dfa" : "dfb"),
+        Date.now() + 60_000,
+        member,
+        kind,
+      ),
+      "LimitReached",
+      kind,
+    );
   assert.equal(
     await tokens.mint(
       tenant,
       postgresHarnessTokenDigest("e0"),
       Date.now() + 60_000,
       other,
+      "Runner",
     ),
     "Minted",
     "the bound is one member's, not the tenant's",

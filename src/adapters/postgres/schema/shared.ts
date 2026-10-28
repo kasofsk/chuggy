@@ -111,6 +111,20 @@ export const personalSessionReleaseFunction =
   "release_personal_session_attempt";
 export const personalSessionImagesFunction = "personal_session_images";
 export const personalRunnerFenceFunction = "fence_personal_runner_attempts";
+export const chatHostSessionsAwaitingFunction =
+  "chat_host_sessions_awaiting_claim";
+export const chatHostSessionOpenFunction = "open_chat_host_session_attempt";
+export const chatHostSessionAssignmentsFunction =
+  "chat_host_session_assignments";
+export const chatHostSessionHoldingFunction =
+  "chat_host_session_attempt_holding";
+export const chatHostSessionRenewFunction = "renew_chat_host_session_attempt";
+export const chatHostSessionHeldFunction = "chat_host_session_attempt_held";
+export const chatHostSessionRefuseFunction = "refuse_chat_host_session_attempt";
+export const chatHostSessionReleaseFunction =
+  "release_chat_host_session_attempt";
+export const chatHostSessionImagesFunction = "chat_host_session_images";
+export const chatHostFenceFunction = "fence_chat_host_attempts";
 export const personalExecutionReleaseFunction =
   "release_personal_execution_assignment";
 /** Whether the capabilities a runner declares run an execution's requirement. */

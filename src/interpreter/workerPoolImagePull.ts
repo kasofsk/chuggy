@@ -4,11 +4,12 @@
  *
  * The registry's front forwards the method and address of every request it
  * receives, and a request is allowed only where it is exactly a pull of an
- * image or a runtime an assignment the pool holds names: a manifest by that
- * reference's digest, or a blob of its repository. What an image is called on
- * the cluster and what a pool off it pulls it by differ only in the host, so
- * the digest a pool is handed is the one its execution pinned or its attempt
- * was opened under.
+ * image or a runtime an assignment the pool holds names, or, for a chat host,
+ * of the image its poll is answered with: a manifest by that reference's
+ * digest, or a blob of its repository. What an image is called on the
+ * cluster and what a pool off it pulls it by differ only in the host, so the
+ * digest a pool is handed is the one its execution pinned, its attempt was
+ * opened under, or its site publishes for sessions.
  */
 import { textCodePointsCount } from "../contract/http.ts";
 import { workerImageCharsMax } from "../contract/workerPool.ts";

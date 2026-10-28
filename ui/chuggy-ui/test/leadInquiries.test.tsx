@@ -573,7 +573,7 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
     { code: "LeadNotStarted", word: "Not started", status: 409 },
     { code: "LeadClosed", word: "Closed", status: 409 },
     { code: "HostedRunsNotGranted", word: "Needs hosted runs", status: 403 },
-    { code: "NoRunner", word: "No runner", status: 403 },
+    { code: "NoRunner", word: "No chat host", status: 403 },
   ];
   for (const refused of refusals) {
     const server = await drawInquiries({
@@ -599,45 +599,48 @@ test("a door that refuses is drawn as a word, not as a blank panel", async () =>
   }
 });
 
-/** An inquiry runs on a pool the asker registered where the lead runs on
- * runners, so the box says that pool's standing, whatever the asker's own
- * personal runner or the project's other pools do. */
+/** An inquiry runs on the asker's chat host where the lead runs on runners,
+ * so the box says that host's standing, whatever the asker's own personal
+ * runner or the project's pools do. */
 test.each([
-  ["Pool", "Unregistered", "No runner"],
-  ["Pool", "Offline", "Runner offline"],
+  ["Pool", "Unregistered", "No chat host"],
+  ["Pool", "Offline", "Chat host offline"],
   ["Pool", "Live", undefined],
   ["InCluster", "Unregistered", undefined],
 ] as const)(
-  "a box over a lead on %s with the asker's pool %s says %s",
+  "a box over a lead on %s with the asker's chat host %s says %s",
   async (lead, inquiry, said) => {
     const mine = inquiry === "Live" ? "Unregistered" : "Live";
     await drawInquiries({
       listing: () => ({ inquiries: [] }),
       placement: sessionPlacementBody({ lead, mine, inquiry, project: "Live" }),
     });
-    const words = ["No runner", "Runner offline"].filter(
-      (word) => screen.queryByText(word) !== null,
-    );
+    const words = [
+      "No runner",
+      "Runner offline",
+      "No chat host",
+      "Chat host offline",
+    ].filter((word) => screen.queryByText(word) !== null);
     expect(words).toStrictEqual(said === undefined ? [] : [said]);
   },
 );
 
-/** The refusal says it with where a runner is added, so the runner line
+/** The refusal says it with where a chat host is registered, so the line
  * under it does not say it a second time. */
-test("a question refused for no runner says so once, with the Runners page", async () => {
+test("a question refused for no chat host says so once, with the asker's own runners page", async () => {
   await drawInquiries({
     listing: () => ({ inquiries: [] }),
     asked: () => refusal("NoRunner", 403),
     placement: sessionPlacementBody({ lead: "Pool", inquiry: "Unregistered" }),
   });
-  expect(screen.getAllByText("No runner")).toHaveLength(1);
+  expect(screen.getAllByText("No chat host")).toHaveLength(1);
   await turned(() => {
     typed("why is ticket 41 waiting?");
   });
   await turned(ask);
   await settled();
-  expect(screen.getAllByText("No runner")).toHaveLength(1);
-  expect(screen.getAllByRole("link", { name: "Runners" })).toHaveLength(1);
+  expect(screen.getAllByText("No chat host")).toHaveLength(1);
+  expect(screen.getAllByRole("link", { name: "My runners" })).toHaveLength(1);
 });
 
 /**

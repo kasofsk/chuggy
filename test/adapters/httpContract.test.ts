@@ -101,6 +101,8 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/personal-runner/projects/:project",
   "/api/v1/tenants/:tenant/personal-runner/runners/:runner",
   "/api/v1/tenants/:tenant/personal-runners/:subject",
+  "/api/v1/tenants/:tenant/chat-host-registration-tokens",
+  "/api/v1/tenants/:tenant/chat-host",
   "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
   "/api/v1/tenants/:tenant/projects/:project/drafts",
   "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",

@@ -41,12 +41,13 @@ import {
   type WorkerPoolPorts,
   type WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
-import type {
-  SessionLaunchFacts,
-  WorkerPoolSessionCandidate,
-  WorkerPoolSessionOpened,
-  WorkerPoolSessionOpening,
-  WorkerPoolSessions,
+import {
+  workerPoolSessionIdleSecs,
+  type SessionLaunchFacts,
+  type WorkerPoolSessionCandidate,
+  type WorkerPoolSessionOpened,
+  type WorkerPoolSessionOpening,
+  type WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
 
 const identity: PoolPlaneIdentity = {
@@ -62,6 +63,14 @@ const runner: PoolPlaneIdentity = {
   tenant: asTenantId("tenant"),
   owner: asPrincipal("a-member"),
   principal: asPrincipal("chuggy-personal-one"),
+};
+
+/** The same member's chat host, whose candidates span every project of the tenant. */
+const host: PoolPlaneIdentity = {
+  kind: "ChatHost",
+  tenant: asTenantId("tenant"),
+  owner: asPrincipal("a-member"),
+  principal: asPrincipal("chuggy-chat-host-one"),
 };
 
 /** An authority answering every project read for whoever asks. */
@@ -632,6 +641,70 @@ test("a claimed session is opened with its invocation and launch and handed out 
       },
     },
   ]);
+});
+
+test("a chat host's declared idle bound is capped at the one the launch publishes, and none is read for a pool or a personal runner or under a launch publishing none", () => {
+  const capped = { ...launch, idleSecsMax: 60 };
+  assert.equal(workerPoolSessionIdleSecs(host, capped, 600), 60);
+  assert.equal(workerPoolSessionIdleSecs(host, capped, 30), 30);
+  assert.equal(workerPoolSessionIdleSecs(host, capped, undefined), undefined);
+  assert.equal(workerPoolSessionIdleSecs(host, launch, 30), undefined);
+  for (const other of [identity, runner])
+    assert.equal(workerPoolSessionIdleSecs(other, capped, 30), undefined);
+  assert.throws(() => workerPoolSessionIdleSecs(host, capped, 0), RangeError);
+});
+
+test("a chat host is claimed sessions alone, each in a project its owner may still read asked as its owner, and opened with its idle bound", async () => {
+  const elsewhere = {
+    ...candidate,
+    project: asProjectId("elsewhere"),
+    session: asSessionId("session-elsewhere"),
+  };
+  const { store, opened } = offering([candidate, elsewhere]);
+  const reached: string[] = [];
+  const answered = await workerPoolReconcile(
+    ports(
+      {
+        ...idle,
+        claim: () => Promise.resolve((reached.push("claim"), undefined)),
+        claimPersonal: () =>
+          Promise.resolve((reached.push("claimPersonal"), undefined)),
+      },
+      {
+        ...store,
+        launch: () => Promise.resolve({ ...launch, idleSecsMax: 60 }),
+      },
+      () => "assignment-host",
+      {
+        ...reading,
+        authorize: (principal, partition, kind) => {
+          reached.push(`${principal}:${partition.project}:${kind}`);
+          return Promise.resolve(
+            partition.project === "project"
+              ? memberAuthority(principal)
+              : undefined,
+          );
+        },
+      },
+    ),
+    host,
+    nothingHeld,
+    { wanted: 1, wantedSessions: 2, idleSecs: 600 },
+    settings,
+  );
+  assert.deepEqual(answered.assignments, []);
+  assert.deepEqual(reached, [
+    "a-member:project:Read",
+    "a-member:elsewhere:Read",
+  ]);
+  assert.deepEqual(
+    opened.map((opening) => [
+      opening.candidate.session,
+      opening.idleSecs,
+      opening.launch.bounds.idleMs,
+    ]),
+    [[candidate.session, 60, 60_000]],
+  );
 });
 
 test("a session is claimed only up to the least of the pool's room, the per-poll bound and what the held bound leaves", async () => {
@@ -1286,6 +1359,51 @@ test("the images a pool may pull are those of what it holds of either kind, each
     ["job-image", "session-image"],
   );
   assert.deepEqual(bounds, ["job:3", "session:5"]);
+});
+
+test("a chat host may pull the published session image while it holds nothing, and no other caller is given it", async () => {
+  for (const [caller, images] of [
+    [host, [launch.image]],
+    [identity, []],
+    [runner, []],
+  ] as const)
+    assert.deepEqual(
+      await workerPoolHeldImages(ports(), caller, settings),
+      images,
+      caller.kind,
+    );
+  assert.deepEqual(await workerPoolHeldImages(ports(), host, unaddressed), []);
+});
+
+test("only a chat host's poll names the published session image, by the host it pulls it from, and none where no launch is published or no session is served", async () => {
+  const chatImageOf = async (
+    caller: PoolPlaneIdentity,
+    store: WorkerPoolSessions = noSessions,
+    terms: WorkerPoolPollSettings = settings,
+  ): Promise<string | undefined> => {
+    const polled = await workerPoolPoll(
+      ports(idle, store),
+      caller,
+      asked(),
+      terms,
+    );
+    if (polled.polled !== "Answered") throw new Error("a poll was refused");
+    return polled.answer.chatImage;
+  };
+  assert.equal(
+    await chatImageOf(host),
+    `registry.public.invalid/chuggy/session@sha256:${"c".repeat(64)}`,
+  );
+  for (const other of [identity, runner])
+    assert.equal(await chatImageOf(other), undefined, other.kind);
+  assert.equal(
+    await chatImageOf(host, {
+      ...noSessions,
+      launch: () => Promise.resolve(undefined),
+    }),
+    undefined,
+  );
+  assert.equal(await chatImageOf(host, noSessions, unaddressed), undefined);
 });
 
 test("a personal runner claims only in the projects it allowlists that its owner may still read, every one asked before any claim", async () => {

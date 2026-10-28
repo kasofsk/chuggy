@@ -333,11 +333,16 @@ on, and a session has none of them. Owned by the boundary owner, which is what t
 scheduler's boundaries and the worker plane's run as; its composite key is
 `(tenant, project, session)` and its identity `(tenant, project, session,
 attempt_number)`, with the attempt, the bearer and the bearer's digest each
-unique globally. It is changed by opening, placing, ending, the two reapers and
-the epoch fence, and `session_attempt_is_fenced` refuses a finished attempt any
-change but its cleanup acknowledgement. Unfinished work is found by selecting
-live attempts whose lease has expired by database time, whose epoch is not the
-current one, or which have been idle longer than the window the caller names.
+unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
+`Personal` or `ChatHost`, and is NULL exactly where `pool` is, the cluster's;
+`idle_secs` is the idle bound a chat host declared for its own attempt. It is
+changed by opening, placing, ending, the two reapers and the fences of the
+epoch, a pool, a personal runner and a chat host, and
+`session_attempt_is_fenced` refuses a finished attempt any change but its
+cleanup acknowledgement. Unfinished work is found by selecting live attempts
+whose lease has expired by database time, whose epoch is not the current one,
+or which have been idle longer than their own `idle_secs` where they have one
+and the window the caller names otherwise.
 
 `session_turn` — one exchange in a session's mailbox: what was asked, which
 attempt is holding it, what came back and which store batches it produced.
@@ -464,7 +469,9 @@ registers and removes it whole, and by the pool plane, which stamps its polls
 and what they name; the pool plane, the scheduler and the boundary owner read
 it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
 many in a tenant as the API's bound admits, and it names no project; it points
-at `tenant`, and its principal and client id are each unique. It is changed by
+at `tenant`, and its principal and client id are each unique. Its runners
+claim their owner's threads only while their owner's `chat_host` has not
+polled within the window a runner's standing is bounded by. It is changed by
 a registration, by a poll's stamps and by its removal, which fences, in the
 same transaction, every live attempt it claimed and nothing another runner of
 its owner's holds. It has no unfinished work: a registration is committed or
@@ -480,13 +487,26 @@ the API deletes it with their last runner. It has no unfinished work: an owner
 with no row has runners that serve nothing.
 
 `personal_runner_registration_token` — a single-use token a member mints to
-register their runner in a tenant: its digest, the minter and its expiry.
-Written and read by the API role alone. Its identity is the digest, and it
+register their runner or their chat host in a tenant: its digest, the minter,
+its expiry and its `kind`, `Runner` or `ChatHost`, which is what redeeming it
+registers. Written and read by the API role alone. Its identity is the digest, and it
 points at `tenant`. It is changed by a mint, which first deletes the minter's
 expired tokens and is refused past a bound on their live ones, and by a
 redemption, which marks it redeemed once and unmarks it where the registration
 it paid for was lost. It has no unfinished work: an unredeemed token expires,
 and the minter's next mint removes it.
+
+`chat_host` — a member's chat host in one tenant: its principal, the issuer
+client it is removed by, when it registered and last polled, and the runner
+package and version its newest poll named. Written by the API role, which
+registers and removes it whole, and by the pool plane, which stamps its polls
+and what they name; the pool plane and the boundary owner read it. Its key and
+identity are `(tenant, owner)`, so a member holds one in a tenant, and it names
+no project; it points at `tenant`, and its principal and client id are each
+unique. It is changed by a registration, which replaces the row and fences, in
+the same transaction, every live attempt the replaced one held, by a poll's
+stamps, and by its removal, which fences what it held. It has no unfinished
+work: a registration is committed or it was rolled back.
 
 `repository_action` — the actions each bound repository's newest imported head
 declares, each with its name and the commit it was read at. Owned by the

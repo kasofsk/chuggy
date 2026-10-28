@@ -41,8 +41,8 @@ const metricsPlaneColumns: readonly (readonly [string, string])[] = [
   ["ticket_projection", "tenant,project,phase"],
 ];
 
-export const migration090: Migration = {
-  version: 90,
+export const migration091: Migration = {
+  version: 91,
   name: "a metrics plane reads what every run cost",
   statements: [
     roleStatement(metricsPlaneRole),

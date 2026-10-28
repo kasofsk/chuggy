@@ -163,6 +163,11 @@ import type {
   PersonalRunnerRead,
   PersonalRunnerTokenRedeemed,
 } from "../../interpreter/personalRunnerRegistration.ts";
+import type {
+  ChatHostCredentials,
+  ChatHostDeregistered,
+  ChatHostRead,
+} from "../../interpreter/chatHostRegistration.ts";
 import type { ExecutionPlacementView } from "../../interpreter/executionPlacement.ts";
 import type {
   PlacementRead,
@@ -172,6 +177,8 @@ import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFal
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
+  ChatHostCredentialsResponse,
+  ChatHostResponse,
   ExecutionPlacementResponse,
   PersonalRunnerCredentialsResponse,
   PersonalRunnerPermitResponse,
@@ -1223,6 +1230,60 @@ export function personalRunnerRedemptionResponse(
       );
     case "Registered":
       return response(201, personalRunnerCredentialsBody(result.value));
+    case "HostRegistered":
+      return response(201, chatHostCredentialsBody(result.value));
+    default:
+      return assertNever(result);
+  }
+}
+
+function chatHostCredentialsBody(
+  credentials: ChatHostCredentials,
+): ChatHostCredentialsResponse {
+  return {
+    kind: "ChatHost",
+    tenant: credentials.tenant,
+    owner: credentials.owner,
+    tokenUrl: credentials.tokenUrl,
+    audience: credentials.audience,
+    planeUrl: credentials.planeUrl,
+    ...(credentials.registryHost === undefined
+      ? {}
+      : { registryHost: credentials.registryHost }),
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+  };
+}
+
+/** The caller's own chat host, or the miss a member with none is answered. */
+export function chatHostResponse(result: ChatHostRead): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        id: result.value.id,
+        registeredAt: result.value.registeredAt,
+        ...(result.value.polledAt === undefined
+          ? {}
+          : { polledAt: result.value.polledAt }),
+        live: result.value.live,
+        ...runnerListedBody(result.value.runner),
+      } satisfies ChatHostResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A chat host taken off, or none there the caller may take. */
+export function chatHostDeregisteredResponse(
+  result: ChatHostDeregistered,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deregistered":
+      return noContent();
+    case "NotFound":
+      return notFound();
     default:
       return assertNever(result);
   }

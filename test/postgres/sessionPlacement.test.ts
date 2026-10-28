@@ -13,6 +13,7 @@ import {
   postgresSessionPlacement,
   postgresSessionRoutingPrecondition,
 } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
 import {
@@ -197,7 +198,7 @@ test("a write that changes one kind's route is written, and that route reads bac
   }
 });
 
-test("a pool counts as live for the project, and for its registering member's inquiries, only while its last poll is recent", async () => {
+test("a pool counts as live for the project only while its last poll is recent, and is no runner of its registering member's inquiries", async () => {
   const partition = await postgresHarnessProject(harness.store, "runners");
   const member = asPrincipal("https://issuer.invalid#a-member");
   const other = asPrincipal("https://issuer.invalid#another");
@@ -227,16 +228,11 @@ test("a pool counts as live for the project, and for its registering member's in
     );
   assert.deepEqual(await reads.runners(partition, member), {
     mine: "Unregistered",
-    inquiry: "Offline",
+    inquiry: "Unregistered",
     project: "Offline",
   });
   await polled(1);
-  assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Unregistered",
-    inquiry: "Live",
-    project: "Live",
-  });
-  for (const elsewhere of [other, undefined])
+  for (const elsewhere of [member, other, undefined])
     assert.deepEqual(await reads.runners(partition, elsewhere), {
       mine: "Unregistered",
       inquiry: "Unregistered",
@@ -245,9 +241,85 @@ test("a pool counts as live for the project, and for its registering member's in
   await polled(sessionRunnerPolledSecsMax + 1);
   assert.deepEqual(await reads.runners(partition, member), {
     mine: "Unregistered",
-    inquiry: "Offline",
+    inquiry: "Unregistered",
     project: "Offline",
   });
+});
+
+/** A member's standing for their thread and their inquiry, where the project has no pool. */
+function hosted(
+  mine: string,
+  inquiry = mine,
+): Readonly<Record<string, string>> {
+  return { mine, inquiry, project: "Unregistered" };
+}
+
+test("a member's chat host is their own runner and their inquiries' in every project of its tenant, live only while its last poll is recent, and stands beside their personal runner, either live making a thread's standing live", async () => {
+  const partition = await postgresHarnessProject(harness.store, "hosted");
+  const beside = await postgresHarnessProject(harness.store, "hosted-beside", {
+    tenant: partition.tenant,
+    project: asProjectId(`project-hosted-beside-${randomUUID()}`),
+  });
+  const member = asPrincipal("https://issuer.invalid#a-member");
+  const key = { tenant: partition.tenant, owner: member };
+  const runners = postgresPersonalRunnerRegistry(apiPool);
+  const reads = postgresSessionPlacement(apiPool);
+  assert.equal(
+    await runners.register({
+      ...key,
+      capabilities: [],
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal: asPrincipal(`https://issuer.invalid#runner-${randomUUID()}`),
+    }),
+    "Registered",
+  );
+  assert.equal(await runners.allow(key, partition.project), "Allowed");
+  await harness.query(
+    `UPDATE personal_runner SET last_polled_at=now() WHERE tenant=$1`,
+    [partition.tenant],
+  );
+  assert.equal((await reads.runners(partition, member)).mine, "Live");
+  const clientId = `chuggy-personal-${randomUUID()}`;
+  assert.deepEqual(
+    await postgresChatHostRegistry(apiPool).register({
+      ...key,
+      clientId,
+      principal: asPrincipal(`https://issuer.invalid#host-${randomUUID()}`),
+    }),
+    { written: "Registered" },
+  );
+  const stopped = async () => {
+    assert.deepEqual(
+      await reads.runners(partition, member),
+      hosted("Live", "Offline"),
+      "a live personal runner did not stand beside a chat host offline",
+    );
+    assert.deepEqual(await reads.runners(beside, member), hosted("Offline"));
+  };
+  await stopped();
+  const polled = async (secondsAgo: number) =>
+    harness.query(
+      `UPDATE chat_host SET last_polled_at=now()-make_interval(secs=>$2)
+        WHERE tenant=$1`,
+      [partition.tenant, secondsAgo],
+    );
+  await polled(1);
+  for (const at of [partition, beside])
+    assert.deepEqual(await reads.runners(at, member), hosted("Live"));
+  assert.deepEqual(
+    await reads.runners(partition, asPrincipal("https://issuer.invalid#b")),
+    hosted("Unregistered"),
+  );
+  await polled(sessionRunnerPolledSecsMax + 1);
+  await stopped();
+  assert.equal(
+    await postgresChatHostRegistry(apiPool).deregister(key, clientId),
+    true,
+  );
+  assert.deepEqual(
+    await reads.runners(partition, member),
+    hosted("Live", "Unregistered"),
+  );
 });
 
 test("a member's own runner is their personal runner, live only while its last poll is recent and only in a project it serves, and it is no runner of the project's", async () => {

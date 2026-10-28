@@ -549,6 +549,8 @@ export const nativeHttpRoutes = {
   personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
   personalRunnerRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/runners/:runner`,
   personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
+  chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
+  chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
   actionReports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/actions/:action/reports`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,

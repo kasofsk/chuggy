@@ -22,9 +22,25 @@
  * names and then deletes the row, so a failure part-way leaves a row naming a
  * removed client, which taking it off again starts from. A registration the
  * registry refuses takes the client it minted with it.
+ *
+ * A TOKEN NAMES WHAT IT REGISTERS. The same mint, under the same permit, makes
+ * a token for a runner or for the member's chat host, and redeeming it
+ * registers what it was minted for, whatever the redemption declares; a chat
+ * host's redemption answers its own credentials, which name no capabilities.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
+import {
+  chatHostCredentialsOf,
+  chatHostDeregisteredAt,
+  chatHostRead,
+  chatHostRegisteredAt,
+  type ChatHostCredentials,
+  type ChatHostDeregistered,
+  type ChatHostPorts,
+  type ChatHostRead,
+  type ChatHostRegistry,
+} from "./chatHostRegistration.ts";
 import { oidcPrincipal, type Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
 import type { ProjectId, TenantId } from "./projectStore.ts";
@@ -108,10 +124,15 @@ export interface PersonalRunnerRegistry {
   disallow(key: PersonalRunnerKey, project: ProjectId): Promise<boolean>;
 }
 
-/** The tenant a personal token registers a runner in, and the member it registers it for. */
+/** What a personal token registers: one more of the member's runners, or their chat host. */
+export const allRegistrationTokenKinds = ["Runner", "ChatHost"] as const;
+export type RegistrationTokenKind = (typeof allRegistrationTokenKinds)[number];
+
+/** The tenant a personal token registers in, the member it registers for, and what it registers. */
 export interface PersonalRunnerTokenTerms {
   readonly tenant: TenantId;
   readonly mintedBy: Principal;
+  readonly kind: RegistrationTokenKind;
 }
 
 /** The most tokens one member may have outstanding in one tenant at once. */
@@ -128,6 +149,7 @@ export interface PersonalRunnerRegistrationTokens {
     digest: string,
     expiresAtMs: number,
     mintedBy: Principal,
+    kind: RegistrationTokenKind,
   ): Promise<WorkerPoolTokenWritten>;
   permitted(digest: string): Promise<PersonalRunnerTokenTerms | undefined>;
   consume(digest: string): Promise<PersonalRunnerTokenTerms | undefined>;
@@ -142,11 +164,21 @@ export interface PersonalRunnerTokenMinting {
   readonly nowMs: () => number;
 }
 
-/** The two authorities a registration writes at, and how a client is named. */
+/** The two authorities a registration writes at, the registry of either kind it writes, and how a client is named. */
 export interface PersonalRunnerPorts {
   readonly registry: PersonalRunnerRegistry;
+  readonly chatHosts: ChatHostRegistry;
   readonly clients: WorkerPoolClients;
   readonly clientId: () => string;
+}
+
+/** The ports a chat host's writes go through, which are a runner's with the hosts' registry in place of the runners'. */
+function chatHostPortsOf(ports: PersonalRunnerPorts): ChatHostPorts {
+  return {
+    registry: ports.chatHosts,
+    clients: ports.clients,
+    clientId: ports.clientId,
+  };
 }
 
 /** Everything a runner needs to serve its owner, its secret included, answered once and naming no project. */
@@ -235,6 +267,7 @@ export async function personalRunnerTokenMint(
   principal: Principal,
   tenant: TenantId,
   request: WorkerPoolTokenRequest,
+  kind: RegistrationTokenKind,
 ): Promise<WorkerPoolTokenMinted> {
   if (
     !Number.isSafeInteger(request.lifetimeSecs) ||
@@ -260,6 +293,7 @@ export async function personalRunnerTokenMint(
     minting.digest(token),
     expiresAtMs,
     principal,
+    kind,
   );
   switch (written) {
     case "Minted":
@@ -286,6 +320,10 @@ export type PersonalRunnerTokenRedeemed =
   | {
       readonly result: "Registered";
       readonly value: PersonalRunnerCredentials;
+    }
+  | {
+      readonly result: "HostRegistered";
+      readonly value: ChatHostCredentials;
     };
 
 /** Whether the token's minter is still permitted to register a runner in its tenant. */
@@ -345,6 +383,8 @@ export async function personalRunnerTokenRedeem(
     return { result: "NotFound" };
   const spent = await minting.tokens.consume(digest);
   if (spent === undefined) return { result: "NotFound" };
+  if (spent.kind === "ChatHost")
+    return chatHostTokenRedeemed(minting, ports, site, digest, spent);
   let registered: PersonalRunnerRegisteredAt;
   try {
     registered = await personalRunnerRegisteredAt(
@@ -372,6 +412,39 @@ export async function personalRunnerTokenRedeem(
           site,
           registered.value,
         ),
+      };
+    default:
+      return assertNever(registered);
+  }
+}
+
+/** A spent chat host token's registration, the token given back where its writes faulted. */
+async function chatHostTokenRedeemed(
+  minting: PersonalRunnerTokenMinting,
+  ports: PersonalRunnerPorts,
+  site: WorkerPoolSite,
+  digest: string,
+  spent: PersonalRunnerTokenTerms,
+): Promise<PersonalRunnerTokenRedeemed> {
+  const key = { tenant: spent.tenant, owner: spent.mintedBy };
+  let registered;
+  try {
+    registered = await chatHostRegisteredAt(
+      key,
+      site.issuer,
+      chatHostPortsOf(ports),
+    );
+  } catch (failure) {
+    await minting.tokens.restore(digest);
+    throw failure;
+  }
+  switch (registered.result) {
+    case "NotFound":
+      return { result: "NotFound" };
+    case "Registered":
+      return {
+        result: "HostRegistered",
+        value: chatHostCredentialsOf(key, site, registered.value),
       };
     default:
       return assertNever(registered);
@@ -443,6 +516,17 @@ export interface PersonalRunnerService {
     tenant: TenantId,
     request: WorkerPoolTokenRequest,
   ): Promise<WorkerPoolTokenMinted>;
+  /** A token registering the caller's chat host, under the same permit and bound as a runner's. */
+  mintChatHost(
+    principal: Principal,
+    tenant: TenantId,
+    request: WorkerPoolTokenRequest,
+  ): Promise<WorkerPoolTokenMinted>;
+  chatHost(principal: Principal, tenant: TenantId): Promise<ChatHostRead>;
+  deregisterChatHost(
+    principal: Principal,
+    tenant: TenantId,
+  ): Promise<ChatHostDeregistered>;
   redeem(
     offered: PersonalRunnerRedemption,
   ): Promise<PersonalRunnerTokenRedeemed>;
@@ -475,6 +559,26 @@ export interface PersonalRunnerService {
   ): Promise<PersonalRunnerDeregistered>;
 }
 
+/** A member's runners in a tenant, each with the release its newest poll named as the site lists it. */
+async function personalRunnersListed(
+  registry: PersonalRunnerRegistry,
+  releases: WorkerRunnerReleases,
+  key: PersonalRunnerKey,
+): Promise<PersonalRunnerRead> {
+  const found = await registry.runners(key);
+  if (found === undefined) return { result: "NotFound" };
+  return {
+    result: "Found",
+    value: {
+      ...found,
+      runners: found.runners.map(({ runner, ...view }) => {
+        const listed = workerRunnerListed(releases, runner);
+        return listed === undefined ? view : { ...view, runner: listed };
+      }),
+    },
+  };
+}
+
 export function personalRunnerService(input: {
   readonly access: ProjectAccess;
   readonly minting: PersonalRunnerTokenMinting;
@@ -485,23 +589,31 @@ export function personalRunnerService(input: {
   const { access, minting, ports, site, releases } = input;
   return {
     mint: (principal, tenant, request) =>
-      personalRunnerTokenMint(access, minting, principal, tenant, request),
+      personalRunnerTokenMint(
+        access,
+        minting,
+        principal,
+        tenant,
+        request,
+        "Runner",
+      ),
+    mintChatHost: (principal, tenant, request) =>
+      personalRunnerTokenMint(
+        access,
+        minting,
+        principal,
+        tenant,
+        request,
+        "ChatHost",
+      ),
+    chatHost: (owner, tenant) =>
+      chatHostRead(ports.chatHosts, releases, { tenant, owner }),
+    deregisterChatHost: (owner, tenant) =>
+      chatHostDeregisteredAt({ tenant, owner }, chatHostPortsOf(ports)),
     redeem: (offered) =>
       personalRunnerTokenRedeem(access, minting, ports, site, offered),
-    runners: async (owner, tenant) => {
-      const found = await ports.registry.runners({ tenant, owner });
-      if (found === undefined) return { result: "NotFound" };
-      return {
-        result: "Found",
-        value: {
-          ...found,
-          runners: found.runners.map(({ runner, ...view }) => {
-            const listed = workerRunnerListed(releases, runner);
-            return listed === undefined ? view : { ...view, runner: listed };
-          }),
-        },
-      };
-    },
+    runners: (owner, tenant) =>
+      personalRunnersListed(ports.registry, releases, { tenant, owner }),
     permitted: async (principal, tenant) =>
       (await access.authorizeTenant(
         principal,
