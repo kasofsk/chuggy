@@ -39,9 +39,9 @@
  * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL. It is admitted by its row
  * in its tenant and its owner's standing permit to register one, since no
  * relation names its principal, and it claims its owner's executions in the
- * projects it allowlists that allow one, as its sessions are claimed: the
- * authority is asked whether its owner may still read each project before
- * anything is claimed, so an outage fails the poll with nothing claimed. Each
+ * projects it allowlists that allow one, and no session: the authority is
+ * asked whether its owner may still read each project before anything is
+ * claimed, so an outage fails the poll with nothing claimed. Each
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *

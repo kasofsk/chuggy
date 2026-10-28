@@ -61,6 +61,7 @@ import {
 import { migration089 } from "../../src/adapters/postgres/schema/migrations/089-lead-reads-abilities.ts";
 import { migration090 } from "../../src/adapters/postgres/schema/migrations/090-chat-host.ts";
 import { migration094 } from "../../src/adapters/postgres/schema/migrations/094-unscoped-chat.ts";
+import { migration097 } from "../../src/adapters/postgres/schema/migrations/097-personal-runners-take-no-sessions.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -3296,4 +3297,134 @@ test("094 names every session opened before it a project's, still keyed by its p
       ],
     );
   });
+});
+
+/** A member's live personal runner serving their project, two of their threads each with a turn queued for runners, and the first held by that runner. */
+const personalSeed097 = `
+  ${tenantSeed("tenant-c97")}
+  INSERT INTO recovery_epoch(epoch) VALUES('epoch-c97');
+  INSERT INTO project(tenant,project,lifecycle)
+  VALUES('tenant-c97','project-c97','Active');
+  INSERT INTO personal_runner
+    (tenant,owner,capabilities,principal,client_id,last_polled_at)
+  VALUES('tenant-c97','principal-a','{}','runner-principal-c97',
+         'runner-client-c97',now());
+  INSERT INTO personal_runner_project(tenant,owner,project)
+  VALUES('tenant-c97','principal-a','project-c97');
+  SELECT * FROM open_member_thread('tenant-c97','project-c97','principal-a',
+    'held-c97','key-held-c97','slot-c97','objectives-c97');
+  SELECT * FROM open_member_thread('tenant-c97','project-c97','principal-a',
+    'waiting-c97','key-waiting-c97','slot-c97','objectives-c97');
+  INSERT INTO session_turn
+    (tenant,project,session,turn,ordinal,input_kind,input,route)
+  VALUES('tenant-c97','project-c97','held-c97','turn-held-c97',1,
+         'UserMessage','{}','Pool'),
+        ('tenant-c97','project-c97','waiting-c97','turn-waiting-c97',1,
+         'UserMessage','{}','Pool');
+  INSERT INTO session_attempt
+    (tenant,project,session,attempt,attempt_number,recovery_epoch,state,
+     lease_owner,lease_expires_at,bearer,bearer_secret_digest,idle_since,pool,
+     pool_principal,holder_kind,assignment,image,launch)
+  VALUES('tenant-c97','project-c97','held-c97','attempt-c97',1,'epoch-c97',
+         'Running','principal-a',now()+interval '1 hour','bearer-c97',
+         repeat('a',64),now(),'principal-a','runner-principal-c97','Personal',
+         'assignment-c97','image-c97','{}')`;
+
+const runner097 = `'tenant-c97','principal-a','runner-principal-c97'`;
+
+/** What the member's runner is offered, and how the member stands for a thread, an inquiry and the lead. */
+async function personalOffered097(subject: pg.Pool): Promise<unknown> {
+  return {
+    offered: (
+      await subject.query(
+        `SELECT session FROM personal_sessions_awaiting_claim(${runner097},0,4,120)`,
+      )
+    ).rows,
+    standing: (
+      await subject.query(
+        `SELECT member_standing,inquiry_standing,project_standing
+           FROM session_runner_standing('tenant-c97','project-c97',
+             'principal-a',120)`,
+      )
+    ).rows,
+  };
+}
+
+/** Asserts the runner that held the seed's thread before 097 still holds it after, and renews its lease. */
+async function personalHeldThrough097(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT assignment FROM personal_session_attempt_holding(${runner097})
+         UNION ALL
+         SELECT a FROM personal_session_assignments(${runner097},
+           '{assignment-c97}') a`,
+      )
+    ).rows,
+    [{ assignment: "assignment-c97" }, { assignment: "assignment-c97" }],
+  );
+  for (const call of [
+    `renew_personal_session_attempt(${runner097},'assignment-c97',60)`,
+    `personal_session_attempt_held(${runner097},'assignment-c97')`,
+  ])
+    assert.deepEqual(
+      (await subject.query(`SELECT ${call} AS answered`)).rows,
+      [{ answered: true }],
+      call,
+    );
+}
+
+test("097 offers a personal runner no session and opens none for it, stands a member on their chat host alone, and lets an attempt their runner held before it run on", async () => {
+  await migrationDatabase(
+    "personal_runners_take_no_sessions",
+    async (subject) => {
+      await installationBefore(subject, migration097.version);
+      await subject.query(personalSeed097);
+      const unregistered = {
+        inquiry_standing: "Unregistered",
+        project_standing: "Unregistered",
+      };
+      assert.deepEqual(await personalOffered097(subject), {
+        offered: [{ session: "waiting-c97" }],
+        standing: [{ member_standing: "Live", ...unregistered }],
+      });
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration097.version),
+      );
+
+      assert.deepEqual(await personalOffered097(subject), {
+        offered: [],
+        standing: [{ member_standing: "Unregistered", ...unregistered }],
+      });
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT open_personal_session_attempt(${runner097},'project-c97',
+               'waiting-c97',s.capabilities,s.agent_reference,'attempt-c97-b',
+               'assignment-c97-b','bearer-c97-b',repeat('b',64),60,0,4,'{}',
+               'image-c97','{}',120) AS opened
+               FROM agent_session s WHERE s.session='waiting-c97'`,
+          )
+        ).rows,
+        [{ opened: "NotClaimable" }],
+      );
+      await personalHeldThrough097(subject);
+
+      await subject.query(
+        `INSERT INTO chat_host(tenant,owner,principal,client_id)
+         VALUES('tenant-c97','principal-a','host-principal-c97',
+                'host-client-c97')`,
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT member_standing,inquiry_standing
+               FROM session_runner_standing('tenant-c97','project-c97',
+                 'principal-a',120)`,
+          )
+        ).rows,
+        [{ member_standing: "Offline", inquiry_standing: "Offline" }],
+      );
+    },
+  );
 });

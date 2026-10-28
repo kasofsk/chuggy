@@ -320,8 +320,8 @@ threads of their own partition first, which their limit bounds, then their
 other open threads, then the most recent of the rest, cut at the page's bound
 with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
-`sessions_awaiting_placement` answers for the cluster and the chat host's,
-personal runner's and pool's awaiting reads for theirs.
+`sessions_awaiting_placement` answers for the cluster and the chat host's and
+pool's awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because
@@ -486,12 +486,11 @@ and what they name; the pool plane, the scheduler and the boundary owner read
 it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
 many in a tenant as the API's bound admits, and it names no project; it points
 at `tenant`, and its principal and client id are each unique. Its runners
-claim their owner's threads only while their owner's `chat_host` has not
-polled within the window a runner's standing is bounded by. It is changed by
-a registration, by a poll's stamps and by its removal, which fences, in the
-same transaction, every live attempt it claimed and nothing another runner of
-its owner's holds. It has no unfinished work: a registration is committed or
-it was rolled back.
+claim no session, and hold only an attempt one claimed before they stopped.
+It is changed by a registration, by a poll's stamps and by its removal, which
+fences, in the same transaction, every live attempt it claimed and nothing
+another runner of its owner's holds. It has no unfinished work: a registration
+is committed or it was rolled back.
 
 `personal_runner_project` — a project a member's personal runners may serve.
 Written by the API role alone, for the runners' owner; the pool plane, the

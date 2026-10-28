@@ -5,7 +5,8 @@
  * relation, so every move here is a definer function, scoped as an
  * execution's assignment is to the registration that claimed it: a pool's by
  * its project and name, and a personal runner's and a chat host's by its
- * tenant, its owner and its principal.
+ * tenant, its owner and its principal. A pool and a chat host claim; a
+ * personal runner only holds what it claimed before it stopped claiming.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -20,7 +21,6 @@ import {
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import { asProjectId } from "../../interpreter/projectStore.ts";
-import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import type {
   ChatHostIdentity,
   PersonalRunnerIdentity,
@@ -30,6 +30,8 @@ import type {
 import type {
   SessionLaunchFacts,
   WorkerPoolSessionCandidate,
+  WorkerPoolSessionClaimant,
+  WorkerPoolSessionClaimRows,
   WorkerPoolSessionOpened,
   WorkerPoolSessionOpening,
   WorkerPoolSessionRows,
@@ -221,17 +223,12 @@ function sessionImagesOf(
   return found.rows.flatMap((row) => (row.image === null ? [] : [row.image]));
 }
 
-/** The calls a poll claims a session through. */
-type SessionClaimRows<Identity> = Pick<
-  WorkerPoolSessionRows<Identity>,
-  "among" | "awaiting" | "open"
->;
+/** The calls a poll claims a session through, and tells what it claimed by. */
+type SessionClaimRows<Identity> = WorkerPoolSessionClaimRows<Identity> &
+  Pick<WorkerPoolSessionRows<Identity>, "among">;
 
 /** The calls a poll holds and settles a claimed session through. */
-type SessionHoldRows<Identity> = Omit<
-  WorkerPoolSessionRows<Identity>,
-  keyof SessionClaimRows<Identity>
->;
+type SessionHoldRows<Identity> = Omit<WorkerPoolSessionRows<Identity>, "among">;
 
 /** A pool's claims: every call keyed by its project, its name and the registration that claimed. */
 function postgresPoolSessionClaims(
@@ -348,57 +345,20 @@ function postgresPoolSessionHolds(
   };
 }
 
-/** A personal runner's claims: every call keyed by its tenant, its owner and the registration that claimed, across its projects. */
-function postgresPersonalSessionClaims(
+/** Which of `assignments` a personal runner's registration claimed, keyed by its tenant, its owner and that registration, across its projects. */
+function postgresPersonalSessionsAmong(
   pool: pg.Pool,
-): SessionClaimRows<PersonalRunnerIdentity> {
-  return {
-    among: async (identity, assignments) =>
-      assignments.length === 0
-        ? new Set()
-        : sessionAssignmentsAnswered(
-            await pool.query<{ assignment: string | null }>(
-              sql`SELECT a AS assignment FROM personal_session_assignments(
-                    ${identity.tenant},${identity.owner},${identity.principal},
-                    ${[...assignments]}::text[]) AS a`,
-            ),
+): WorkerPoolSessionRows<PersonalRunnerIdentity>["among"] {
+  return async (identity, assignments) =>
+    assignments.length === 0
+      ? new Set()
+      : sessionAssignmentsAnswered(
+          await pool.query<{ assignment: string | null }>(
+            sql`SELECT a AS assignment FROM personal_session_assignments(
+                  ${identity.tenant},${identity.owner},${identity.principal},
+                  ${[...assignments]}::text[]) AS a`,
           ),
-    awaiting: async (identity, backoffSecs, max) =>
-      sessionCandidatesOf(
-        (
-          await pool.query<{
-            project: string | null;
-            session: string | null;
-            kind: string | null;
-            capabilities: string[] | null;
-            agent_reference: string | null;
-          }>(
-            sql`SELECT project,session,kind,capabilities,agent_reference
-                  FROM personal_sessions_awaiting_claim(
-                    ${identity.tenant},${identity.owner},${identity.principal},
-                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
-                    ${sessionRunnerPolledSecsMax})`,
-          )
-        ).rows,
-      ),
-    open: async (identity, opening) => {
-      const { candidate } = opening;
-      const terms = sessionOpeningTerms(opening);
-      return sessionOpenedOf(
-        await pool.query<{ opened: string | null }>(
-          sql`SELECT open_personal_session_attempt(
-                ${identity.tenant},${identity.owner},${identity.principal},
-                ${candidate.project},${candidate.session},
-                ${terms.capabilities}::text[],${terms.agentReference}::text,
-                ${opening.attempt},${opening.assignment},${opening.bearer},
-                ${opening.bearerSecretDigest},${terms.leaseSecs},
-                ${opening.placementBackoffSecs},${terms.heldMax},
-                ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb,${sessionRunnerPolledSecsMax})::text AS opened`,
-        ),
-      );
-    },
-  };
+        );
 }
 
 /** What a personal runner holds, through the registration that claimed it. */
@@ -570,11 +530,13 @@ function postgresChatHostSessionHolds(
   };
 }
 
-/** The rows of every caller's side, each keyed by the identity it is held through. */
+/** The rows of every caller's side, each keyed by the identity it is held through, and a claimant's claims beside them. */
 interface SessionSides {
-  readonly Dedicated: WorkerPoolSessionRows<WorkerPoolIdentity>;
+  readonly Dedicated: WorkerPoolSessionRows<WorkerPoolIdentity> &
+    WorkerPoolSessionClaimRows<WorkerPoolIdentity>;
   readonly Personal: WorkerPoolSessionRows<PersonalRunnerIdentity>;
-  readonly ChatHost: WorkerPoolSessionRows<ChatHostIdentity>;
+  readonly ChatHost: WorkerPoolSessionRows<ChatHostIdentity> &
+    WorkerPoolSessionClaimRows<ChatHostIdentity>;
 }
 
 /** The answer of whichever side `identity` is held through. */
@@ -596,6 +558,23 @@ function sessionsRouted<Answer>(
   }
 }
 
+/** The answer of whichever side `identity` claims through. */
+function sessionsClaimRouted<Answer>(
+  identity: WorkerPoolSessionClaimant,
+  sides: SessionSides,
+  call: <Identity>(
+    side: WorkerPoolSessionClaimRows<Identity>,
+    claiming: Identity,
+  ) => Answer,
+): Answer {
+  switch (identity.kind) {
+    case "Dedicated":
+      return call(sides.Dedicated, identity);
+    case "ChatHost":
+      return call(sides.ChatHost, identity);
+  }
+}
+
 /** Every caller's side behind one port, each call routed by who is asking. */
 export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
   const sides: SessionSides = {
@@ -604,7 +583,7 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
       ...postgresPoolSessionHolds(pool),
     },
     Personal: {
-      ...postgresPersonalSessionClaims(pool),
+      among: postgresPersonalSessionsAmong(pool),
       ...postgresPersonalSessionHolds(pool),
     },
     ChatHost: {
@@ -619,11 +598,13 @@ export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
         side.among(held, assignments),
       ),
     awaiting: (identity, backoffSecs, max, memberScope) =>
-      sessionsRouted(identity, sides, (side, held) =>
-        side.awaiting(held, backoffSecs, max, memberScope),
+      sessionsClaimRouted(identity, sides, (side, claiming) =>
+        side.awaiting(claiming, backoffSecs, max, memberScope),
       ),
     open: (identity, opening) =>
-      sessionsRouted(identity, sides, (side, held) => side.open(held, opening)),
+      sessionsClaimRouted(identity, sides, (side, claiming) =>
+        side.open(claiming, opening),
+      ),
     renew: (identity, assignment, leaseSecs) =>
       sessionsRouted(identity, sides, (side, held) =>
         side.renew(held, assignment, leaseSecs),
