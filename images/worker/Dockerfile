@@ -117,7 +117,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
     > /tmp/files.txt \
   && mkdir /shipped \
   && while read -r name; do cp "/core/$name" "/shipped/$name" || exit 1; done < /tmp/files.txt \
-  && mv /shipped/entrypoint.mjs /shipped/worker.mjs \
+  && cp /shipped/entrypoint.mjs /shipped/worker.mjs \
   && mv /shipped/check.sh /check.sh \
   && chmod 0555 /shipped/git-askpass.sh
 
@@ -129,7 +129,9 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   bin/codex     the Codex the core runs
 #   bin/tini      the init `check.sh` starts the core under, which reaps what
 #                 a job orphans
-#   lib/chuggy/   the shipped core, its entry named `worker.mjs`, and the
+#   lib/chuggy/   the shipped core, its entry both as `worker.mjs`, the name a
+#                 job starts it by, and as `entrypoint.mjs`, the name its own
+#                 modules start a chat session by and import it by, and the
 #                 packages it imports in a `node_modules` of its own
 #   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
@@ -244,12 +246,13 @@ RUN case "$TARGETARCH" in \
 # probe's files are removed once the probes have run, because a build's verdict
 # is not something a pod needs.
 #
-# THEN THE ENTRY IS IMPORTED, AS A POD IMPORTS IT, from what is left. Loading it
-# starts nothing, so a module it reaches that `files` did not ship fails the
-# build here rather than the first pod. Last, what `coreRuntime.mjs` derives
-# from where the core sits is held to be in this tree and readable, what the
-# core runs of it to be executable, and each agent to report the version this
-# file names.
+# THEN EACH ENTRY IS IMPORTED, AS A POD OR A CHAT CONTAINER IMPORTS IT, from
+# what is left: the worker's and the chat supervisor's. Loading one starts
+# nothing, so a module it reaches that `files` did not ship, or by a name this
+# tree does not ship it under, fails the build here rather than the first pod.
+# Last, what `coreRuntime.mjs` derives from where the core sits is held to be
+# in this tree and readable, what the core runs of it to be executable, and
+# each agent to report the version this file names.
 RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
@@ -272,6 +275,7 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   && /opt/chuggy/bin/node contractProbe.mjs \
   && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
   && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/worker.mjs";' \
+  && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/chatSupervisor.mjs";' \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
     import { accessSync, constants } from "node:fs"; \
     import { coreRuntime } from "/opt/chuggy/lib/chuggy/coreRuntime.mjs"; \
