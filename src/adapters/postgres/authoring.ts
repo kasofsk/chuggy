@@ -479,7 +479,7 @@ async function initializeDraft(
       sql`SELECT ticket FROM ticket_projection
         WHERE tenant=${partition.tenant} AND project=${partition.project}
           AND dependable=true
-        ORDER BY ticket LIMIT ${dependencyCandidatesMax + 1}`,
+        ORDER BY ticket DESC LIMIT ${dependencyCandidatesMax + 1}`,
     );
     await client.query("COMMIT");
     return initializedDraftOf({
