@@ -133,5 +133,10 @@
     "release": "1.26.0",
     "wire": "69178654b205103759e172896e7aca88e577fc499a88558e685b71a9317ab472",
     "files": "6990d9d0030a0770c5c97b79344ae1963a19d7c05fce630e334609690be4fd28"
+  },
+  {
+    "release": "1.27.0",
+    "wire": "07cac87b5d6b71b884d2d2692c2f00f677ec8f308960dd193e5cbaa7439c4a4a",
+    "files": "bcf8f4e6f978b52a592968ce31429bd8baba6a70c90fdc03d3ec994670ccba6b"
   }
 ]
