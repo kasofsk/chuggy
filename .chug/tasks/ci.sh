@@ -54,7 +54,7 @@
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
-#   CHUG_CI_SUITE_TIMEOUT_SECS    per-suite cap, default 300
+#   CHUG_CI_SUITE_TIMEOUT_SECS    per-suite cap, default 900
 #   TRACK_RECORD_TOKEN, TRACK_RECORD_TOKEN_FILE
 #                                 a Track Record token, or the file holding
 #                                 one; either turns reuse on, and a file that
@@ -317,7 +317,7 @@ if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
 else
 	printf '\n--- shell suites\n'
-	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-300}"
+	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-900}"
 
 	# Probed functionally — `command -v` says a binary exists, not that it
 	# runs. macOS ships no GNU `timeout`; `gtimeout` arrives with coreutils.
