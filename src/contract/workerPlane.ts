@@ -27,7 +27,7 @@ import {
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
 import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
-import { artifactRoles, runEndedEvidences } from "./rosters.ts";
+import { artifactRoles, forgeApps, runEndedEvidences } from "./rosters.ts";
 import {
   artifactFailures,
   resultManifestRejections,
@@ -187,8 +187,21 @@ export const workerCredentialAbsences = [
   "NotMinted",
 ] as const;
 
+/**
+ * A repository the forge's installations did not answer a mint for: the app
+ * asked, and the installation of it on the repository's owner the mint went
+ * through, `installation` absent where none is claimed there, so none covers it.
+ */
+export const workerCredentialUncoveredSchema = z.object({
+  repository: workerCredentialRepositorySchema,
+  app: z.enum(forgeApps),
+  installation: identitySchema.optional(),
+});
+
+/** `uncovered` is present only on a `NotMinted` the forge's installations answered. */
 export const workerCredentialAbsentSchema = z.object({
   reason: z.enum(workerCredentialAbsences),
+  uncovered: workerCredentialUncoveredSchema.optional(),
 });
 export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema

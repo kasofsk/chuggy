@@ -12,6 +12,7 @@ import test from "node:test";
 
 import {
   allForgeApps,
+  asForgeInstallationId,
   asForgeInstallationToken,
   workerPodForgeApp,
   type ForgePermissionSet,
@@ -209,6 +210,32 @@ test("a forge that refused this app is a refusal the pod falls back from", async
   assert.deepEqual(await minting.attempt(authorityOf("Work")), {
     minted: "NotFound",
   });
+});
+
+test("a refusal the installations made names the repository, the app and the installation, or that none covers it", async () => {
+  const installationId = asForgeInstallationId("156786211");
+  for (const installation of [
+    { app: workerPodForgeApp, installationId },
+    { app: workerPodForgeApp },
+  ]) {
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf({ minted: "Denied", installation }, []),
+      bindings: bindingsOf(bindingOf(sibling)),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf("Work")), {
+      minted: "NotFound",
+      uncovered: { ...installation, repository },
+    });
+    assert.deepEqual(await minting.attempt(authorityOf("Work"), sibling), {
+      minted: "NotFound",
+      uncovered: { ...installation, repository: sibling },
+    });
+    assert.deepEqual(await minting.session(partition, sibling), {
+      minted: "NotFound",
+      uncovered: { ...installation, repository: sibling },
+    });
+  }
 });
 
 test("a forge that could not be reached is an outage and never a fallback", async () => {

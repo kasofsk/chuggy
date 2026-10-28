@@ -403,6 +403,63 @@ test("a retired binding is not listed, and a project with only retired ones read
   expect(addButtons()).toHaveLength(2);
 });
 
+/** The worker app's installation on kasofsk, whose page on GitHub is where its selection changes. */
+const workerSettingsUrl =
+  "https://github.com/organizations/kasofsk/settings/installations/156786211";
+
+/**
+ * A binding the worker app's installation does not select says so on its row,
+ * with that installation's page on GitHub; one it reaches says nothing.
+ */
+test("a binding the worker app's installation does not select is marked on its row, with the installation's page", async () => {
+  await drawPage({
+    bound: {
+      repositories: [
+        {
+          ...bindings.repositories[0],
+          workerReach: {
+            reach: "Unselected",
+            installationId: "156786211",
+            settingsUrl: workerSettingsUrl,
+          },
+        },
+      ],
+    },
+  });
+  const row = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: /^kasofsk\/chuggy/u,
+  });
+  expect(within(row).getByText("Worker app missing")).toBeDefined();
+  expect(
+    within(row)
+      .getByRole("link", { name: "Review on GitHub" })
+      .getAttribute("href"),
+  ).toBe(workerSettingsUrl);
+});
+
+test("a binding the worker app reaches carries no mark, and one GitHub said nothing of is unread", async () => {
+  await drawPage();
+  const reached = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: "kasofsk/chuggy",
+  });
+  expect(within(reached).queryByText("Worker app missing")).toBeNull();
+  cleanup();
+  await drawPage({
+    bound: {
+      repositories: [
+        { ...bindings.repositories[0], workerReach: { reach: "Unknown" } },
+      ],
+    },
+  });
+  const unread = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: /^kasofsk\/chuggy/u,
+  });
+  expect(within(unread).getByText("Worker app unread")).toBeDefined();
+  expect(
+    within(unread).queryByRole("link", { name: "Review on GitHub" }),
+  ).toBeNull();
+});
+
 /** A binding is a row and a page, and the row is the only way to the page. */
 test("a binding's name is the link to its own page", async () => {
   await drawPage();

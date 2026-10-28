@@ -36,6 +36,7 @@ import {
   githubApps,
   githubInstallationDirectory,
 } from "../../src/adapters/forge/githubApp.ts";
+import { githubRepositoryAddressOf } from "../../src/adapters/forge/githubAddress.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
 import { githubUserAuthorization } from "../../src/adapters/forge/githubUserAuthorization.ts";
 import {
@@ -60,6 +61,7 @@ import {
   asForgeInstallationId,
   asForgeInstallationToken,
   type ForgeApp,
+  type ForgeInstallationStore,
   type ForgeInstallationTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
@@ -287,6 +289,7 @@ function fixtureServiceHalf(
   return {
     forge,
     app: held,
+    addressOf: githubRepositoryAddressOf,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({
@@ -359,6 +362,30 @@ function fixtureServiceAuthorization(
   };
 }
 
+/** The claim a repository's owner is minted under, read from the claims the store holds for this tenant. */
+function fixtureInstallations(store: OnboardingStore): ForgeInstallationStore {
+  return {
+    installation: (query) => {
+      const found = store.held.find(
+        (held) =>
+          held.forge === query.forge &&
+          held.app === query.app &&
+          held.account === query.account,
+      );
+      return Promise.resolve(
+        found === undefined || query.tenant !== tenant
+          ? undefined
+          : {
+              forge: found.forge,
+              app: found.app,
+              account: found.account,
+              installationId: found.installationId,
+            },
+      );
+    },
+  };
+}
+
 function fixtureService(
   t: TestContext,
   store: OnboardingStore,
@@ -378,6 +405,7 @@ function fixtureService(
     access,
     credentials,
     forgeApps: halves,
+    installations: fixtureInstallations(store),
     recording: {
       record: (claim) => {
         store.recordedClaims.push(claim);
@@ -1276,6 +1304,9 @@ test("a bind without the project permit is not found and writes nothing", async 
   assert.deepEqual(refused.store.bound, []);
 });
 
+/** What a binding on `acme` carries where the tenant claims no worker App installation there. */
+const unclaimedReach = { reach: "Unclaimed", account: "acme" } as const;
+
 test("a bind is created at its own address and read back by the listing", async (t) => {
   const binding = fixtureCase(t, { granted: ["Administer", "Read"] });
   const served = await binding.app.inject({
@@ -1293,6 +1324,7 @@ test("a bind is created at its own address and read back by the listing", async 
     repository,
     landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "NotConfigured" },
+    workerReach: unclaimedReach,
   });
   const listed = await binding.app.inject({
     url: repositoriesRoot,
@@ -1307,6 +1339,7 @@ test("a bind is created at its own address and read back by the listing", async 
         landing: { mode: "Push" },
         pipelinesWritable: false,
         configured: false,
+        workerReach: unclaimedReach,
       },
     ],
   });
@@ -1628,6 +1661,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
         landing: { mode: "PullRequest" },
         pipelinesWritable: false,
         configured: false,
+        workerReach: unclaimedReach,
       },
     ],
   });
@@ -1882,6 +1916,7 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           landing: { mode: "Push" },
           pipelinesWritable: false,
           configured: false,
+          workerReach: unclaimedReach,
         },
       ],
     },

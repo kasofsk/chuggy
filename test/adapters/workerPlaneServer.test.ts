@@ -19,6 +19,7 @@ import {
 } from "../../src/contract/workerContract.ts";
 import {
   runEndedEvidences,
+  workerCredentialAbsentSchema,
   workerPlaneRoutes,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
@@ -41,7 +42,11 @@ import {
   asExecutionId,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
-import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
+import {
+  asForgeInstallationId,
+  asForgeInstallationToken,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
@@ -1484,6 +1489,46 @@ test("a plane holding no app key says so, and the pod keeps its mounted credenti
   assert.equal(refused.statusCode, 404);
   assert.deepEqual(refused.json(), { reason: "ForgeNotConfigured" });
   await app.close();
+});
+
+test("a refusal the installations made names the repository, the app and the installation, or that none covers it", async () => {
+  const repository = asRepositoryId(credentialSibling);
+  for (const [uncovered, answer] of [
+    [
+      {
+        repository,
+        app: "worker",
+        installationId: asForgeInstallationId("156786211"),
+      },
+      {
+        repository: credentialSibling,
+        app: "worker",
+        installation: "156786211",
+      },
+    ],
+    [
+      { repository, app: "worker" },
+      { repository: credentialSibling, app: "worker" },
+    ],
+  ] as const) {
+    const app = credentialPlane({ minted: "NotFound", uncovered });
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/credential",
+      headers: held,
+    });
+    assert.equal(refused.statusCode, 404);
+    assert.deepEqual(refused.json(), {
+      reason: "NotMinted",
+      uncovered: answer,
+    });
+    assert.deepEqual(
+      workerCredentialAbsentSchema.parse(refused.json()),
+      refused.json(),
+      "the contract reads back what the plane answered",
+    );
+    await app.close();
+  }
 });
 
 test("a refusal carries no action and an outage carries the wait, so a pod can tell them apart", async () => {

@@ -1694,6 +1694,9 @@ export function projectRepositoryBindResponse(
           repository: result.repository,
           landing: result.landing,
           configurations: result.configurations,
+          ...(result.workerReach === undefined
+            ? {}
+            : { workerReach: result.workerReach }),
         },
         {
           location: resourcePath(partition, "repositories", result.repository),

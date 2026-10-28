@@ -222,9 +222,43 @@ test("a repository this forge does not hold and an account no tenant claimed are
       fixturePartition,
       "read",
     ),
-    { minted: "Denied", evidence: { mint: "NoInstallation" } },
+    {
+      minted: "Denied",
+      evidence: { mint: "NoInstallation" },
+      installation: { app: "portal" },
+    },
   );
   assert.deepEqual(askedMints, [], "no refusal reaches the forge");
+});
+
+test("a forge refusing the mint names the installation it went through, and an outage names none", async () => {
+  const refused = {
+    minted: "Denied",
+    evidence: { mint: "Status", status: 422 },
+  } as const;
+  assert.deepEqual(
+    await fixtureRepositoryTokens({ minted: refused }).token(
+      fixtureRepository,
+      fixturePartition,
+      "read",
+    ),
+    {
+      ...refused,
+      installation: { app: "portal", installationId: fixtureInstallationId },
+    },
+  );
+  const outage = {
+    minted: "Unavailable",
+    evidence: { mint: "Status", status: 500 },
+  } as const;
+  assert.deepEqual(
+    await fixtureRepositoryTokens({ minted: outage }).token(
+      fixtureRepository,
+      fixturePartition,
+      "read",
+    ),
+    outage,
+  );
 });
 
 test("an account another tenant claimed is denied to this one, and the tenant is what the store was asked", async () => {
@@ -233,7 +267,11 @@ test("an account another tenant claimed is denied to this one, and the tenant is
   const tokens = fixtureRepositoryTokens({ askedInstallations, askedMints });
   assert.deepEqual(
     await tokens.token(fixtureRepository, fixtureOtherPartition, "write"),
-    { minted: "Denied", evidence: { mint: "NoInstallation" } },
+    {
+      minted: "Denied",
+      evidence: { mint: "NoInstallation" },
+      installation: { app: "portal" },
+    },
   );
   assert.deepEqual(
     askedInstallations.map((query) => query.tenant),
