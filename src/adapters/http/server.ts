@@ -204,6 +204,8 @@ import {
   personalRunnerRedemptionResponse,
   personalRunnerResponse,
   personalRunnerTokenResponse,
+  chatHostDeregisteredResponse,
+  chatHostResponse,
   executionPlacementBody,
   ownerFallbackBody,
   threadLimitBody,
@@ -1341,6 +1343,52 @@ function registerPersonalRunners(
   });
   registerPersonalRunnerProjects(app, runners);
   registerPersonalRunnerRemovals(app, runners);
+  registerChatHost(app, runners);
+}
+
+/**
+ * A member's chat host: the token they mint for it, redeemed at the same
+ * public route a runner's is, the caller's own host read, and its removal.
+ */
+function registerChatHost(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  app.post(
+    nativeHttpRoutes.chatHostRegistrationTokens,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      nativeHttpSend(
+        reply,
+        personalRunnerTokenResponse(
+          await runners.mintChatHost(
+            principalOf(request),
+            tenantOf(request),
+            parseRegistrationTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(nativeHttpRoutes.chatHost, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      chatHostResponse(
+        await runners.chatHost(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.chatHost, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      chatHostDeregisteredResponse(
+        await runners.deregisterChatHost(
+          principalOf(request),
+          tenantOf(request),
+        ),
+      ),
+    );
+  });
 }
 
 /**

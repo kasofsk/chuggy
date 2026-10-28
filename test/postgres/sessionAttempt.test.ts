@@ -513,7 +513,7 @@ test("only a placed, live attempt of this epoch has a pod to observe", async () 
 async function poolHeld(held: SessionRigAttempt, label: string): Promise<void> {
   await rig.harness.query(
     `UPDATE session_attempt SET pool=$2,pool_principal=$3,assignment=$4,
-            image='registry.invalid/session:1',launch='{}'::jsonb
+            holder_kind='Pool',image='registry.invalid/session:1',launch='{}'::jsonb
       WHERE attempt=$1`,
     [
       held.attempt.attempt,

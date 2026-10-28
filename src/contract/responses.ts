@@ -2076,8 +2076,8 @@ export type ExecutionPlacementResponse = z.infer<
 /**
  * Where a project's threads and its lead run and what decided each, the routes
  * this caller may choose, and the runners each would run on: the caller's own
- * for their thread, a pool they registered for their inquiry, and any of the
- * project's for the lead.
+ * for their thread, their chat host for their inquiry, and any of the
+ * project's pools for the lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -2264,6 +2264,41 @@ export const personalRunnerResponseSchema = z.strictObject({
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
+
+/**
+ * What redeeming a chat host's token answers, once: a runner's file with no
+ * capabilities, since a chat host takes sessions alone, and `kind` telling it
+ * apart from a runner's.
+ */
+export const chatHostCredentialsSchema = z.strictObject({
+  kind: z.literal("ChatHost"),
+  tenant: identitySchema,
+  owner: identitySchema,
+  tokenUrl: workerPoolEndpointSchema,
+  audience: z.string().min(1),
+  planeUrl: workerPoolEndpointSchema,
+  registryHost: workerPoolRegistryHostSchema.optional(),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+});
+export type ChatHostCredentialsResponse = z.infer<
+  typeof chatHostCredentialsSchema
+>;
+
+/**
+ * A member's chat host in one tenant, named by `id`, the client its
+ * registration made. `polledAt` is its newest poll, absent until it polls, and
+ * `live` whether that poll is recent enough for the host to be taking chats.
+ */
+export const chatHostResponseSchema = z.strictObject({
+  id: identitySchema,
+  registeredAt: instantSchema,
+  polledAt: instantSchema.optional(),
+  live: z.boolean(),
+  /** What its newest poll named, absent where it named none. */
+  runner: runnerListedSchema.optional(),
+});
+export type ChatHostResponse = z.infer<typeof chatHostResponseSchema>;
 
 /** Whether a tenant permits the caller to register a personal runner there. */
 export const personalRunnerPermitResponseSchema = z.strictObject({

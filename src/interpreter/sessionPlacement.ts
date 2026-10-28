@@ -65,9 +65,10 @@ export const sessionRunnerPolledSecsMax = 120;
 export const sessionPoolTurnDwellSecs = 30 * 60;
 
 /**
- * The runners a session would run on: the member's own personal runner,
- * allowlisting the project, for their thread; a pool the member registered for
- * their inquiry; and any of the project's pools for the lead.
+ * The runners a session would run on: the member's chat host where they
+ * register one and otherwise their own personal runner, allowlisting the
+ * project, for their thread; the member's chat host for their inquiry; and any
+ * of the project's pools for the lead.
  */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;

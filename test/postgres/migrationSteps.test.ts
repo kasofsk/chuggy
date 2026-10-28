@@ -59,6 +59,7 @@ import {
   toolAllowlistAt088,
 } from "../../src/adapters/postgres/schema/migrations/088-lead-reads-docs.ts";
 import { migration089 } from "../../src/adapters/postgres/schema/migrations/089-lead-reads-abilities.ts";
+import { migration090 } from "../../src/adapters/postgres/schema/migrations/090-chat-host.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -2703,6 +2704,7 @@ test("077 drops the capabilities each registration token was minted with, and a 
         relation: "personal_runner_registration_token",
         columns: [
           "expires_at",
+          "kind",
           "minted_at",
           "minted_by",
           "redeemed_at",
@@ -2733,6 +2735,7 @@ test("077 drops the capabilities each registration token was minted with, and a 
     assert.deepEqual(await member.consume(personal), {
       tenant: "tenant-77",
       mintedBy: minter,
+      kind: "Runner",
     });
     assert.equal(await member.consume(personal), undefined);
   });
@@ -3101,5 +3104,98 @@ test("086 gives a draft that stood the thread its first author held open, and le
       opened: "ThreadLimitReached",
       session: null,
     });
+  });
+});
+
+/** A lead, a thread and an inquiry, and an attempt on each: the lead's in cluster, the inquiry's held by a pool, and the thread's ended on a personal runner. */
+const holdersSeed090 = `
+  ${tenantSeed("tenant-c90")}
+  INSERT INTO recovery_epoch(epoch) VALUES('epoch-c90');
+  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-c90','project-c90','Active');
+  SELECT * FROM open_member_thread('tenant-c90','project-c90','principal-a',
+    'thread-c90','key-c90','slot-c90','objectives-c90');
+  INSERT INTO agent_session
+    (tenant,project,session,kind,principal,parent_session,capabilities,
+     credential_slot,account,cluster)
+  SELECT tenant,project,named.session,named.kind,principal,named.parent,'{}',
+         credential_slot,account,cluster
+    FROM agent_session,
+         (VALUES('lead-c90','Lead',NULL),
+                ('inquiry-c90','Inquiry','lead-c90')) AS named(session,kind,parent)
+   WHERE agent_session.session='thread-c90'
+   ORDER BY named.kind DESC;
+  INSERT INTO worker_pool(tenant,project,pool,principal,client_id,class)
+  VALUES('tenant-c90','project-c90','pool-c90','pool-principal-c90',
+         'pool-client-c90','Dedicated');
+  INSERT INTO session_attempt
+    (tenant,project,session,attempt,attempt_number,recovery_epoch,state,
+     lease_owner,lease_expires_at,evidence,ended_at,bearer,bearer_secret_digest,
+     pool,pool_principal,assignment,image,launch,personal)
+  VALUES
+    ('tenant-c90','project-c90','lead-c90','attempt-cluster',1,'epoch-c90',
+     'Running','pod-c90',now()+interval '1 hour',NULL,NULL,'bearer-cluster',
+     repeat('a',64),NULL,NULL,NULL,NULL,NULL,false),
+    ('tenant-c90','project-c90','inquiry-c90','attempt-pool',1,'epoch-c90',
+     'Running','pool-c90',now()+interval '1 hour',NULL,NULL,'bearer-pool',
+     repeat('b',64),'pool-c90','pool-principal-c90','assignment-pool',
+     'image-c90','{}',false),
+    ('tenant-c90','project-c90','thread-c90','attempt-personal',1,'epoch-c90',
+     'Lost',NULL,NULL,'LeaseExpired',now(),'bearer-personal',repeat('c',64),
+     'principal-a','personal-principal-c90','assignment-personal','image-c90',
+     '{}',true)`;
+
+/** Each attempt's holder kind, in attempt order. */
+async function holderKinds090(subject: pg.Pool): Promise<readonly unknown[]> {
+  return (
+    await subject.query<Record<string, unknown>>(
+      `SELECT attempt,holder_kind,idle_secs FROM session_attempt ORDER BY attempt`,
+    )
+  ).rows;
+}
+
+test("090 names every attempt's holder kind from what it held, finished ones too, drops a session attempt's personal flag alone, and leaves a pool's inquiry held", async () => {
+  await migrationDatabase("chat_host", async (subject) => {
+    await installationBefore(subject, migration090.version);
+    await subject.query(holdersSeed090);
+    assert.ok((await postgresMigrate(subject)).includes(migration090.version));
+
+    assert.deepEqual(await holderKinds090(subject), [
+      { attempt: "attempt-cluster", holder_kind: null, idle_secs: null },
+      { attempt: "attempt-personal", holder_kind: "Personal", idle_secs: null },
+      { attempt: "attempt-pool", holder_kind: "Pool", idle_secs: null },
+    ]);
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT table_name::text AS relation FROM information_schema.columns
+            WHERE table_schema='public' AND column_name='personal'
+            ORDER BY table_name`,
+        )
+      ).rows,
+      [{ relation: "execution_attempt" }],
+    );
+    for (const [attempt, kind] of [
+      ["attempt-cluster", "'Pool'"],
+      ["attempt-pool", "NULL"],
+      ["attempt-pool", "'Runner'"],
+    ] as const)
+      await assert.rejects(
+        subject.query(
+          `UPDATE session_attempt SET holder_kind=${kind} WHERE attempt=$1`,
+          [attempt],
+        ),
+        /session_attempt_holder_(is_runner_held|kind_is_known)/u,
+        `${attempt} as ${kind}`,
+      );
+
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT assignment FROM pool_session_attempt_holding(
+             'tenant-c90','project-c90','pool-c90','pool-principal-c90')`,
+        )
+      ).rows,
+      [{ assignment: "assignment-pool" }],
+    );
   });
 });

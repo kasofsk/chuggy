@@ -37,8 +37,14 @@
  * and the memory room a poll may name steer what is claimed in the same way,
  * and the wait it may name bounds when it is answered; each is refused in the
  * same way.
+ *
+ * A MEMBER'S CHAT HOST IS SERVED FROM ITS OWN RELEASE ON. One speaking an
+ * earlier release is refused on every route as any caller outside the plane's
+ * range is, since nothing before it reads what a host is handed.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
 
 import {
   assignmentOutcomeSchema,
@@ -62,6 +68,11 @@ import {
   type WorkerRunnerCountNamed,
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
+import {
+  contractVersionAccepted,
+  contractVersionRefusal,
+  workerContractChatHost,
+} from "../../interpreter/workerPlane.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
 import {
   workerPoolImagePullAllowed,
@@ -74,6 +85,7 @@ import {
   workerPoolHeldNamedMax,
   workerPoolPoll,
   workerPoolSettled,
+  type ChatHostPlaneRegistry,
   type PersonalRunnerPlaneRegistry,
   type PoolPlaneIdentity,
   type WorkerPoolAssignments,
@@ -117,6 +129,7 @@ export interface PoolPlaneService {
   readonly access: ProjectAccess;
   readonly registry: WorkerPoolRegistry;
   readonly personal: PersonalRunnerPlaneRegistry;
+  readonly chatHosts: ChatHostPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
   readonly runners: WorkerPoolRunners;
@@ -194,8 +207,11 @@ async function poolCaller(
   let identity: PoolPlaneIdentity | undefined;
   try {
     identity = await workerPoolAdmitted(
-      service.registry,
-      service.personal,
+      {
+        pools: service.registry,
+        personal: service.personal,
+        chatHosts: service.chatHosts,
+      },
       service.access,
       authenticated.bearer.principal,
     );
@@ -243,13 +259,28 @@ function poolPlaneRoute(
     { ...route, released: poolPlaneContractChecked },
     async (request, reply) => {
       const caller = await poolCaller(service, poolBearer(request));
-      if (caller.caller === "Pool") return caller.identity;
-      void poolRefused(reply, caller.caller);
-      return undefined;
+      if (caller.caller !== "Pool") {
+        void poolRefused(reply, caller.caller);
+        return undefined;
+      }
+      if (
+        caller.identity.kind === "ChatHost" &&
+        !contractVersionAccepted(
+          workerContractChatHost,
+          workerContractOffered(request),
+        )
+      ) {
+        void reply.code(contractVersionRefusalStatus).send(chatHostRefusal);
+        return undefined;
+      }
+      return caller.identity;
     },
     handler,
   );
 }
+
+/** What a chat host speaking a release before its own is answered with on every route. */
+const chatHostRefusal = contractVersionRefusal(workerContractChatHost);
 
 /** The assignment a settlement's path names, held to the same bound as everywhere else on the wire. */
 function poolAssignmentNamed(request: FastifyRequest): string | undefined {
@@ -287,6 +318,7 @@ function poolAssignmentsRoute(
       if (wait.named === "Unread") return reply.code(400).send();
       const runner = poolRunnerNamed(request);
       const contract = workerContractOffered(request);
+      const idleSecs = query.data[workerPoolPollQuery.idleSecs];
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
         polled = await workerPoolPoll(
@@ -305,6 +337,7 @@ function poolAssignmentsRoute(
               : {}),
             ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
             ...(wait.named === "Count" ? { pollWaitSecs: wait.count } : {}),
+            ...(idleSecs === undefined ? {} : { idleSecs }),
             ...(contract === undefined ? {} : { contract }),
           },
           service.settings,

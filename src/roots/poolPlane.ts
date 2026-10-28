@@ -22,6 +22,7 @@ import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
 import { oidcAuthentication } from "../adapters/http/oidc.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
+import { postgresChatHostPlaneRegistry } from "../adapters/postgres/chatHost.ts";
 import { postgresPersonalRunnerPlaneRegistry } from "../adapters/postgres/personalRunner.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import {
@@ -167,6 +168,7 @@ async function main(): Promise<void> {
     access,
     registry: postgresWorkerPoolRegistry(pool),
     personal: postgresPersonalRunnerPlaneRegistry(pool),
+    chatHosts: postgresChatHostPlaneRegistry(pool),
     assignments: postgresWorkerPoolAssignments(pool),
     sessions: {
       store: postgresWorkerPoolSessions(pool),

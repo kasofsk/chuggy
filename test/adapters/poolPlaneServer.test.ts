@@ -32,8 +32,12 @@ import {
   asSessionBearerSecret,
   asSessionId,
 } from "../../src/interpreter/agentSession.ts";
-import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
+import {
+  workerContractAccepted,
+  workerContractChatHost,
+} from "../../src/interpreter/workerPlane.ts";
 import type {
+  ChatHostIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolAssignments,
@@ -43,6 +47,7 @@ import type {
 import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
 import type {
   SessionLaunchFacts,
+  WorkerPoolSessionOpening,
   WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
 import {
@@ -94,6 +99,14 @@ const runner: PersonalRunnerIdentity = {
   principal: oidcPrincipal(issuer, "chuggy-personal-one"),
 };
 
+/** A member's chat host in the same tenant, known by a token of its own. */
+const hostToken = "host-token";
+const host: ChatHostIdentity = {
+  tenant: partition.tenant,
+  owner: oidcPrincipal(issuer, "a-member"),
+  principal: oidcPrincipal(issuer, "chuggy-personal-host"),
+};
+
 /** The image the one claimed execution pinned, and the name a pool is handed it by. */
 const pinned = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
 const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
@@ -101,6 +114,12 @@ const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
 /** A pool's token and the release it speaks, which is this plane's own. */
 const speaking = {
   authorization: `Bearer ${poolToken}`,
+  [workerContractHeader]: workerContractRelease,
+};
+
+/** A chat host's token and the release it speaks. */
+const hostSpeaking = {
+  authorization: `Bearer ${hostToken}`,
   [workerContractHeader]: workerContractRelease,
 };
 
@@ -262,11 +281,16 @@ function sessionCalls(
 const issuing = {
   authenticateBearer: (token: string) =>
     Promise.resolve(
-      token === poolToken || token === runnerToken
+      token === poolToken || token === runnerToken || token === hostToken
         ? ({
             authenticated: "Bearer",
             bearer: {
-              principal: token === poolToken ? poolPrincipal : runner.principal,
+              principal:
+                token === poolToken
+                  ? poolPrincipal
+                  : token === runnerToken
+                    ? runner.principal
+                    : host.principal,
             },
           } as const)
         : token === "issuer-down"
@@ -343,6 +367,10 @@ function plane(
     personal: {
       identify: (principal) =>
         Promise.resolve(principal === runner.principal ? runner : undefined),
+    },
+    chatHosts: {
+      identify: (principal) =>
+        Promise.resolve(principal === host.principal ? host : undefined),
     },
     assignments: ports,
     sessions: {
@@ -1822,4 +1850,154 @@ test("a personal runner polling while its owner's read cannot be answered is tol
   });
   assert.equal(answered.statusCode, 503);
   assert.equal(answered.body, "");
+});
+
+/** A session side whose launch caps idle at `idleSecsMax`, recording every opening it is asked for. */
+function idleCapped(
+  idleSecsMax: number | undefined,
+  offered: readonly string[] = ["thread-one"],
+): {
+  readonly made: unknown[];
+  readonly opened: WorkerPoolSessionOpening[];
+  readonly store: WorkerPoolSessions;
+} {
+  const offering = sessionCalls([], offered);
+  const opened: WorkerPoolSessionOpening[] = [];
+  return {
+    made: offering.made,
+    opened,
+    store: {
+      ...offering.store,
+      launch: () =>
+        Promise.resolve(
+          idleSecsMax === undefined ? launch : { ...launch, idleSecsMax },
+        ),
+      open: (identity, opening) => {
+        opened.push(opening);
+        return offering.store.open(identity, opening);
+      },
+    },
+  };
+}
+
+test("a chat host of this release is handed its sessions and never an execution, renewing none it names", async () => {
+  const recorded = calls();
+  const sessions = idleCapped(undefined);
+  const answered = await createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling(["unknown"], 1, 1),
+    headers: hostSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  const body = workerPoolReconciliationSchema.parse(answered.json());
+  assert.deepEqual(body.assignments, []);
+  assert.equal(body.sessions.length, 1);
+  assert.deepEqual(recorded.made, [["renew", "unknown"]]);
+  assert.deepEqual(body.stop, ["unknown"]);
+});
+
+test("a chat host speaking a release before its own is refused at the poll and at every settlement, before any port", async () => {
+  const recorded = calls();
+  const sessions = idleCapped(undefined);
+  const app = createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), sessions.store),
+  );
+  for (const [method, url] of [
+    ["GET", polling([], 0, 1)],
+    ["POST", workerPoolSettlementPath("Accepted", "one")],
+  ] as const) {
+    const refused = await app.inject({
+      method,
+      url,
+      headers: { ...hostSpeaking, [workerContractHeader]: "1.26.0" },
+      payload: {},
+    });
+    assert.equal(refused.statusCode, contractVersionRefusalStatus, url);
+    assert.deepEqual(contractVersionRefusalSchema.parse(refused.json()), {
+      action: "stop",
+      reason: "UnsupportedContractVersion",
+      accepted: {
+        min: workerContractVersionText(workerContractChatHost.min),
+        max: workerContractVersionText(workerContractChatHost.max),
+      },
+    });
+  }
+  assert.deepEqual(recorded.made, []);
+  assert.deepEqual(sessions.made, []);
+});
+
+test("a chat host's declared idle bound is capped at the launch's, recorded on its claim and launched as its idle limit", async () => {
+  for (const [declared, cap, recorded] of [
+    [600, 60, 60],
+    [30, 60, 30],
+    [undefined, 60, undefined],
+    [30, undefined, undefined],
+  ] as const) {
+    const sessions = idleCapped(cap);
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), sessions.store),
+    ).inject({
+      method: "GET",
+      url: `${polling([], 0, 1)}${declared === undefined ? "" : `&${workerPoolPollQuery.idleSecs}=${String(declared)}`}`,
+      headers: hostSpeaking,
+    });
+    const named = `${String(declared)} under ${String(cap)}`;
+    assert.equal(answered.statusCode, 200, named);
+    const [opening] = sessions.opened;
+    assert.equal(opening?.idleSecs, recorded, named);
+    assert.equal(
+      opening?.launch.bounds.idleMs,
+      recorded === undefined ? launch.bounds.idleMs : recorded * 1_000,
+      named,
+    );
+  }
+});
+
+test("a pool's or a personal runner's declared idle bound is read from neither, and a bound of no seconds is refused", async () => {
+  for (const headers of [speaking, runnerSpeaking]) {
+    const sessions = idleCapped(60);
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), sessions.store),
+    ).inject({
+      method: "GET",
+      url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=30`,
+      headers,
+    });
+    assert.equal(answered.statusCode, 200);
+    const [opening] = sessions.opened;
+    assert.equal(opening?.idleSecs, undefined);
+    assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
+  }
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), idleCapped(60).store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=0`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
+});
+
+test("a chat host's session is opened only in a project its owner may still read, asked as its owner", async () => {
+  const read: unknown[] = [];
+  const sessions = idleCapped(undefined);
+  const refusing: ProjectAccess = {
+    ...authority("Allow"),
+    authorize: (principal, asked, access) => {
+      read.push([principal, asked.project, access]);
+      return Promise.resolve(undefined);
+    },
+  };
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, refusing, sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: hostSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(read, [[host.owner, asProjectId("project"), "Read"]]);
+  assert.deepEqual(sessions.opened, []);
 });

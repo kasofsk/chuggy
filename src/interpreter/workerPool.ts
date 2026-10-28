@@ -45,6 +45,11 @@
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
+ * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
+ * row and its owner's permit. It claims sessions and never an execution, and
+ * may name how long a session it claims may sit idle, which the plane caps at
+ * the scheduler's own bound; no other caller's poll is read for one.
+ *
  * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
  * memory it takes one job of, each replace the one recorded before anything
  * is claimed, so its own claims match them; a poll naming neither leaves the
@@ -83,7 +88,7 @@ import type { ExecutionRequirement } from "./executionRequirement.ts";
 import type { TaskResources } from "./taskResources.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
-import type { Partition, ProjectId } from "./projectStore.ts";
+import type { Partition, ProjectId, TenantId } from "./projectStore.ts";
 import {
   workerPoolImageHosted,
   type WorkerPoolImageHosts,
@@ -100,12 +105,14 @@ import {
   type WorkerContractRange,
 } from "./workerPlane.ts";
 import type {
+  ChatHostIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 export type {
+  ChatHostIdentity,
   DedicatedPoolIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
@@ -129,7 +136,7 @@ export const workerPoolContractAccepted: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer and the contract release it offered, where it named each. */
+/** What one poll asks: what the pool holds, its room for executions and for sessions, the runner it named, the capabilities it has, the most memory, in MiB, it takes one job of, the memory it has room for now, the longest it waits for an empty answer, how long a session it claims may sit idle and the contract release it offered, where it named each. */
 export interface WorkerPoolAsked {
   readonly held: readonly string[];
   readonly wanted: number;
@@ -139,6 +146,7 @@ export interface WorkerPoolAsked {
   readonly memoryCeilingMib?: number;
   readonly memoryRoomMib?: number;
   readonly pollWaitSecs?: number;
+  readonly idleSecs?: number;
   readonly contract?: string;
 }
 
@@ -153,7 +161,7 @@ export interface WorkerPoolRegistration {
   readonly class: WorkerPoolClass;
   readonly clientId: string;
   readonly principal: Principal;
-  /** The person whose token registered the pool, whose own inquiries are the only ones it is handed; a pool no person registered is handed leads alone. */
+  /** The person whose token registered the pool, recorded as who registered it; every pool is handed its project's lead alone. */
   readonly registeredBy?: Principal;
 }
 
@@ -234,36 +242,62 @@ export interface PersonalRunnerPlaneRegistry {
   identify(principal: Principal): Promise<PersonalRunnerIdentity | undefined>;
 }
 
+/** The lookup a poll resolves a member's chat host by: its row, in a tenant, by the principal its client resolves to. */
+export interface ChatHostPlaneRegistry {
+  identify(principal: Principal): Promise<ChatHostIdentity | undefined>;
+}
+
+/** The registries a poll's principal is looked up in, a pool's first. */
+export interface PoolPlaneRegistries {
+  readonly pools: WorkerPoolRegistry;
+  readonly personal: PersonalRunnerPlaneRegistry;
+  readonly chatHosts: ChatHostPlaneRegistry;
+}
+
+/** Whether a member's owner still holds the tenant's permit a personal runner and a chat host are both registered and admitted under. */
+async function workerPoolMemberPermitted(
+  access: ProjectAccess,
+  member: { readonly tenant: TenantId; readonly owner: Principal },
+): Promise<boolean> {
+  return (
+    (await access.authorizeTenant(
+      member.owner,
+      member.tenant,
+      "RegisterPersonalRunner",
+    )) !== undefined
+  );
+}
+
 /**
- * The pool or personal runner one authenticated principal acts as, and nothing
- * where the authority says it may not: a pool's permit is `Execute` on its
- * project and a personal runner's is its owner's `RegisterPersonalRunner` in
- * its tenant, so revoking either is a revocation like any other and needs no
- * row deleted here. An authority that could not answer throws
- * `ProjectAccessUnavailable` through this function rather than resolving to
- * `undefined`, because a pool told it is not allowed stops where a pool told
- * to retry comes back.
+ * The pool, personal runner or chat host one authenticated principal acts as,
+ * and nothing where the authority says it may not: a pool's permit is
+ * `Execute` on its project, and a personal runner's and a chat host's is their
+ * owner's `RegisterPersonalRunner` in their tenant, so revoking either is a
+ * revocation like any other and needs no row deleted here. An authority that
+ * could not answer throws `ProjectAccessUnavailable` through this function
+ * rather than resolving to `undefined`, because a pool told it is not allowed
+ * stops where a pool told to retry comes back.
  */
 export async function workerPoolAdmitted(
-  registry: WorkerPoolRegistry,
-  personal: PersonalRunnerPlaneRegistry,
+  registries: PoolPlaneRegistries,
   access: ProjectAccess,
   principal: Principal,
 ): Promise<PoolPlaneIdentity | undefined> {
-  const pool = await registry.identify(principal);
+  const pool = await registries.pools.identify(principal);
   if (pool !== undefined)
     return (await workerPoolExecutes(access, pool.partition, principal))
       ? { ...pool, kind: "Dedicated" }
       : undefined;
-  const runner = await personal.identify(principal);
-  if (runner === undefined) return undefined;
-  return (await access.authorizeTenant(
-    runner.owner,
-    runner.tenant,
-    "RegisterPersonalRunner",
-  )) === undefined
-    ? undefined
-    : { ...runner, kind: "Personal" };
+  const runner = await registries.personal.identify(principal);
+  if (runner !== undefined)
+    return (await workerPoolMemberPermitted(access, runner))
+      ? { ...runner, kind: "Personal" }
+      : undefined;
+  const host = await registries.chatHosts.identify(principal);
+  if (host === undefined) return undefined;
+  return (await workerPoolMemberPermitted(access, host))
+    ? { ...host, kind: "ChatHost" }
+    : undefined;
 }
 
 /** Whether the authority permits a pool's principal to run its project's work, which is the one question a pool is admitted or revoked by. */
@@ -552,9 +586,10 @@ interface WorkerPoolClaimer {
 }
 
 /**
- * How this caller claims: a pool deferring to no revoked owner's runners, and a
- * personal runner in the projects its owner may still read. Every answer is
- * the authority's before anything is claimed.
+ * How this caller claims: a pool deferring to no revoked owner's runners, a
+ * personal runner in the projects its owner may still read, and a chat host
+ * nothing, since it takes sessions alone. Every answer is the authority's
+ * before anything is claimed.
  */
 async function workerPoolClaimMade(
   ports: WorkerPoolPorts,
@@ -614,6 +649,11 @@ async function workerPoolClaimMade(
           assignments.waitingPersonal(identity, held(room), projects),
       };
     }
+    case "ChatHost":
+      return {
+        claim: () => Promise.resolve(undefined),
+        waiting: () => Promise.resolve(false),
+      };
   }
 }
 
@@ -717,7 +757,7 @@ function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  wanted: number,
+  asked: { readonly wanted: number; readonly idleSecs?: number },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
   if (apiUrl === undefined) return Promise.resolve([]);
@@ -735,7 +775,7 @@ function workerPoolSessionsClaimed(
       imageHosts: settings.imageHosts,
     },
     ports.mint,
-    wanted,
+    asked,
   );
 }
 
@@ -751,7 +791,7 @@ export async function workerPoolReconcile(
   holding: WorkerPoolHolding,
   asked: Pick<
     WorkerPoolAsked,
-    "wanted" | "wantedSessions" | "memoryRoomMib" | "contract"
+    "wanted" | "wantedSessions" | "memoryRoomMib" | "idleSecs" | "contract"
   >,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
@@ -785,16 +825,14 @@ export async function workerPoolReconcile(
     ...(claimed.jobsWaiting === undefined
       ? {}
       : { jobsWaiting: claimed.jobsWaiting }),
-    sessions: await workerPoolSessionsClaimed(
-      ports,
-      identity,
-      settings,
-      Math.min(
+    sessions: await workerPoolSessionsClaimed(ports, identity, settings, {
+      wanted: Math.min(
         asked.wantedSessions,
         settings.sessionsPerPollMax,
         settings.sessionsHeldMax - holding.sessions.length,
       ),
-    ),
+      ...(asked.idleSecs === undefined ? {} : { idleSecs: asked.idleSecs }),
+    }),
     stop,
   };
 }
@@ -895,6 +933,11 @@ export async function workerPoolPoll(
       throw new RangeError(
         `worker pool ${name} must be a non-negative integer`,
       );
+  if (
+    asked.idleSecs !== undefined &&
+    (!Number.isSafeInteger(asked.idleSecs) || asked.idleSecs < 1)
+  )
+    throw new RangeError("worker pool idleSecs must be a positive integer");
   const holding = await workerPoolHoldingRead(ports, identity, asked);
   if (
     holding.jobs.length > settings.heldMax ||
