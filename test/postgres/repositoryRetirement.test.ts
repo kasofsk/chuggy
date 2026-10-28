@@ -58,6 +58,10 @@ import {
   type PostgresHarness,
 } from "./harness.ts";
 
+/** UTC ISO 8601, the form a binding answers its retirement in. */
+const repositoryRetirementInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
+
 let harness: PostgresHarness;
 let pool: pg.Pool;
 before(async () => {
@@ -187,7 +191,7 @@ test("the doors that answer a whole binding answer its retirement", async () => 
   );
   const retired = await retire(partition, repository);
   const at = retired.outcome === "Retired" ? retired.binding.retiredAt : "none";
-  assert.equal(typeof at, "string");
+  assert.match(at ?? "", repositoryRetirementInstantForm);
   assert.equal(
     (
       await postgresProjectRepositoryLanding(pool).landing(

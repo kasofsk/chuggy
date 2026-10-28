@@ -34,6 +34,10 @@ import {
   type PostgresHarness,
 } from "./harness.ts";
 
+/** UTC ISO 8601, the form a binding answers its instants in. */
+const repositoryBindingInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
+
 /** Long enough for the contender to reach the door and be held at it. */
 const contenderWaitMs = 500;
 
@@ -534,10 +538,8 @@ test("the listing answers one project's bindings, oldest first", async () => {
     listed.map((bound) => String(bound.repository)),
     [first.repository, second.repository],
   );
-  assert.equal(
-    listed.every((bound) => bound.boundAt.length > 0),
-    true,
-  );
+  for (const bound of listed)
+    assert.match(bound.boundAt, repositoryBindingInstantForm);
   assert.equal(
     listed.some((bound) => String(bound.repository) === elsewhere.repository),
     false,
@@ -679,10 +681,8 @@ test("the estate listing names every partition's bindings, oldest first", async 
   );
   assert.deepEqual(named.get(ours.repository)?.partition, mine.partition);
   assert.deepEqual(named.get(theirs.repository)?.partition, stranger.partition);
-  assert.equal(
-    listed.every((bound) => bound.boundAt.length > 0),
-    true,
-  );
+  for (const bound of listed)
+    assert.match(bound.boundAt, repositoryBindingInstantForm);
   const boundAt = listed.map((bound) => bound.boundAt);
   assert.deepEqual(
     boundAt,

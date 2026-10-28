@@ -111,8 +111,8 @@ export function postgresProjectRepositoryBindings(
       partition: Partition,
     ): Promise<readonly ProjectRepositoryBound[]> => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
-                   pipelines_writable,retired_at::text AS retired_at
+        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+                   pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
                 ${projectRepositoriesAnsweredMax})`,
@@ -195,7 +195,7 @@ export function postgresRepositoryBindingListing(
         repository: string | null;
         bound_at: string | null;
       }>(
-        sql`SELECT tenant,project,repository,bound_at::text AS bound_at
+        sql`SELECT tenant,project,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at
               FROM list_repository_bindings(${max})`,
       );
       return found.rows.map((row) => {
@@ -312,8 +312,8 @@ export function postgresProjectRepositoryLanding(
   return {
     landing: async (partition, repository) => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,bound_at::text AS bound_at,landing_mode,
-                   pipelines_writable,retired_at::text AS retired_at
+        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+                   pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM read_project_repository_landing(
                 ${partition.tenant},${partition.project},${repository})`,
       );
@@ -324,8 +324,8 @@ export function postgresProjectRepositoryLanding(
       let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
-          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
-                     pipelines_writable,retired_at::text AS retired_at
+          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+                     pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM set_project_repository_landing(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository},${command.expected.mode},
@@ -370,8 +370,8 @@ export function postgresProjectRepositoryRetirement(
       let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
-          sql`SELECT outcome,repository,bound_at::text AS bound_at,landing_mode,
-                     pipelines_writable,retired_at::text AS retired_at
+          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+                     pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM retire_project_repository(
                   ${command.partition.tenant},${command.partition.project},
                   ${command.repository})`,

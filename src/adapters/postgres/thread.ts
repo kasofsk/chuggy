@@ -169,8 +169,8 @@ async function threadStandingRows(
   const found = await pool.query<ThreadStandingRow>(
     sql`SELECT session,principal,session_state,agent_reference,
                turns::text AS turns,first_message,member_title,
-               opened_at::text AS opened_at,
-               last_activity_at::text AS last_activity_at,
+               to_char(opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(last_activity_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS last_activity_at,
                hidden_at::text AS hidden_at,
                next_before::text AS next_before,
                turn,turn_ordinal::text AS turn_ordinal,input_kind,
@@ -284,8 +284,8 @@ async function threadListing(
   const found = await pool.query<ThreadListingRow>(
     sql`SELECT session,principal,state,agent_reference,
                turns::text AS turns,first_message,member_title,
-               opened_at::text AS opened_at,
-               last_activity_at::text AS last_activity_at,
+               to_char(opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(last_activity_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS last_activity_at,
                hidden_at::text AS hidden_at
           FROM read_project_threads(
                  ${partition.tenant},${partition.project},${reader},${limit})`,

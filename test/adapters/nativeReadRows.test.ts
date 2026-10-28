@@ -28,7 +28,7 @@ function refusedRow(
 ): Parameters<typeof publicOperation>[0] {
   return {
     operation: "operation",
-    accepted_at: "2026-08-28 12:00:00+00",
+    accepted_at: "2026-08-28T12:00:00.000000Z",
     state: "Refused",
     decided_seq: null,
     outcome_code: code,

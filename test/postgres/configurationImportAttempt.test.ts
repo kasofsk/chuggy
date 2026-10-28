@@ -65,6 +65,7 @@ import {
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import type { ProjectRepositoryListed } from "../../src/interpreter/repositoryOnboarding.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
   postgresHarnessConfiguration,
@@ -79,6 +80,10 @@ import {
   fixtureBindRepository,
   fixtureBoundRepository,
 } from "./repositoryBindingFixture.ts";
+
+/** UTC ISO 8601, the form the listing answers every instant in. */
+const configurationImportInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -455,7 +460,7 @@ test("the route asked for no commit imports at the head it read, and keeps an at
 /** One project's listing as the API composes it, by repository. */
 async function listedOf(
   partition: Partition,
-): Promise<ReadonlyMap<string, { readonly lastImport?: unknown }>> {
+): Promise<ReadonlyMap<string, ProjectRepositoryListed>> {
   const listed = await composeRepositoryOnboarding({
     apiPool,
     access: fixtureMember,
@@ -483,6 +488,12 @@ test("the listing answers each binding's last attempt, and nothing of one never 
   );
   const byRepository = await listedOf(bound.partition);
   const lastImport = byRepository.get(attempted)?.lastImport;
+  const instants = [
+    byRepository.get(attempted)?.boundAt,
+    lastImport?.attemptedAt,
+  ];
+  for (const instant of instants)
+    assert.match(instant ?? "", configurationImportInstantForm);
   assert.deepEqual(lastImport && { ...lastImport, attemptedAt: "at" }, {
     attemptedAt: "at",
     commit: commitOf("1"),

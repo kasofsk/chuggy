@@ -870,6 +870,12 @@ export const changeResourceSchema = z
 export const countSchema = z.number().int().safe().nonnegative();
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
+/**
+ * Every instant is ISO 8601 in UTC with a `Z` suffix, as `toISOString`
+ * renders one, to the sub-second precision its source keeps. Every adapter
+ * answers that form; the schema checks only that a value is present, because
+ * tightening it to `z.iso.datetime()` is a contract version.
+ */
 export const instantSchema = z.string().min(1);
 /**
  * All the wire says about a cursor. It is opaque to every reader but the server
