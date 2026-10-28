@@ -111,7 +111,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
     > /tmp/files.txt \
   && mkdir /shipped \
   && while read -r name; do cp "/core/$name" "/shipped/$name" || exit 1; done < /tmp/files.txt \
-  && mv /shipped/entrypoint.mjs /shipped/worker.mjs \
+  && cp /shipped/entrypoint.mjs /shipped/worker.mjs \
   && mv /shipped/check.sh /check.sh \
   && chmod 0555 /shipped/git-askpass.sh
 
@@ -122,8 +122,14 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   bin/claude    the Claude Code the core and a session's SDK both run
 #   bin/codex     the Codex the core runs
 #   bin/tini      the init `check.sh` starts the core under, which reaps what
-#                 a job orphans
-#   lib/chuggy/   the shipped core, its entry named `worker.mjs`, and the
+#                 a job orphans, and the one a chat container starts the
+#                 supervisor under, as root:
+#                 `bin/tini -s -- bin/node lib/chuggy/chatSupervisor.mjs`,
+#                 holding CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID
+#                 and SETPCAP and no other capability, with no new privileges
+#   lib/chuggy/   the shipped core, its entry both as `worker.mjs`, the name a
+#                 job starts it by, and as `entrypoint.mjs`, the name its own
+#                 modules start a chat session by and import it by, and the
 #                 packages it imports in a `node_modules` of its own
 #   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
@@ -238,12 +244,13 @@ RUN case "$TARGETARCH" in \
 # probe's files are removed once the probes have run, because a build's verdict
 # is not something a pod needs.
 #
-# THEN THE ENTRY IS IMPORTED, AS A POD IMPORTS IT, from what is left. Loading it
-# starts nothing, so a module it reaches that `files` did not ship fails the
-# build here rather than the first pod. Last, what `coreRuntime.mjs` derives
-# from where the core sits is held to be in this tree and readable, what the
-# core runs of it to be executable, and each agent to report the version this
-# file names.
+# THEN EACH ENTRY IS IMPORTED, AS A POD OR A CHAT CONTAINER IMPORTS IT, from
+# what is left: the worker's and the chat supervisor's. Loading one starts
+# nothing, so a module it reaches that `files` did not ship, or by a name this
+# tree does not ship it under, fails the build here rather than the first pod.
+# Last, what `coreRuntime.mjs` derives from where the core sits is held to be
+# in this tree and readable, what the core runs of it to be executable, and
+# each agent to report the version this file names.
 RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
@@ -266,6 +273,7 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   && /opt/chuggy/bin/node contractProbe.mjs \
   && rm sdkProbe.mjs toolProbe.mjs toolListing.mjs contractProbe.mjs \
   && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/worker.mjs";' \
+  && /opt/chuggy/bin/node --input-type=module --eval 'import "/opt/chuggy/lib/chuggy/chatSupervisor.mjs";' \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
     import { accessSync, constants } from "node:fs"; \
     import { coreRuntime } from "/opt/chuggy/lib/chuggy/coreRuntime.mjs"; \
@@ -383,6 +391,41 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
   && psql --version \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
+
+# THE USERS A CHAT SESSION RUNS AS ARE NAMED. A member's chat container runs
+# the core's supervisor as root, and it starts each session through `setpriv`
+# and `prlimit` as a user of its own range, whose group is the same number and
+# whose home is under `/sessions`. Git, ssh and node's `os.userInfo()` look up
+# the user they run as, and refuse one the image does not name. The range and
+# the directory the homes are under are read off the core, as the
+# `chatSessionUidFirst`, `chatSessionUidCount` and `chatSessionsDirectory` of
+# its `chatSession.mjs`. The groups a session reads its mirror through are left
+# unnamed: git, ssh and node look up none of them by name, and git holds a tree
+# to its owner's user and not its group. `id` and `groups` print such a group by
+# its number, and say they could not find its name.
+RUN /opt/chuggy/bin/node --input-type=module --eval ' \
+    import { chatSessionUidCount, chatSessionUidFirst, chatSessionsDirectory } \
+      from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
+    console.log(`${chatSessionUidFirst} ${chatSessionUidCount} ${chatSessionsDirectory}`); \
+  ' > /tmp/sessions.txt \
+  && read -r first count sessions < /tmp/sessions.txt \
+  && rm /tmp/sessions.txt \
+  && uid="$first" \
+  && last="$((first + count - 1))" \
+  && echo "chat sessions: users $first to $last, homes under $sessions" \
+  && while [ "$uid" -le "$last" ]; do \
+       groupadd --gid "$uid" "chat-$uid" \
+       && useradd --uid "$uid" --gid "$uid" --no-create-home --no-log-init \
+         --home-dir "$sessions/session-$uid/home" --shell /bin/bash "chat-$uid" \
+       || exit 1; \
+       uid="$((uid + 1))"; \
+     done \
+  && name="$(setpriv --reuid "$last" --regid "$last" --clear-groups id -un)" \
+  && if [ "$name" != "chat-$last" ]; then \
+       echo "the last session user is named $name, not chat-$last"; \
+       exit 1; \
+     fi \
+  && prlimit --version
 
 ENV DISABLE_AUTOUPDATER=1 \
     CHUG_WORKER_WORKSPACE=/workspace \
@@ -542,7 +585,13 @@ RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
 
 # The image any other tree runs on: the base and the toolchains a Python or Rust
 # tree builds with. Rust's belongs to the image's user, so an attempt can fill
-# cargo's registry and install the toolchain a `rust-toolchain.toml` names.
+# cargo's registry and install the toolchain a `rust-toolchain.toml` names. Any
+# other user, as a chat session's is, runs the toolchain installed here and can
+# write none of it: the build holds every file of it to the image's user and
+# group and to no write for others, and runs it as the first session user.
+# Handed `RUSTUP_HOME` and not `CARGO_HOME`, such a user's cargo keeps its
+# registry in its own home. It cannot install the toolchain a
+# `rust-toolchain.toml` names, because `RUSTUP_HOME` is read-only to it.
 FROM worker-base AS generic
 USER 0:0
 ARG TARGETARCH
@@ -590,7 +639,29 @@ RUN case "$TARGETARCH" in \
   && cargo --version \
   && cargo clippy --version \
   && cargo fmt --version \
-  && chown -R 1000:1000 "$RUSTUP_HOME" "$CARGO_HOME"
+  && chown -R 1000:1000 "$RUSTUP_HOME" "$CARGO_HOME" \
+  && writable="$(find "$RUSTUP_HOME" "$CARGO_HOME" ! -type l \
+    \( -perm -0002 -o ! -user 1000 -o ! -group 1000 \))" \
+  && if [ -n "$writable" ]; then \
+       echo "the toolchain holds what a user other than the image's may write:"; \
+       echo "$writable"; \
+       exit 1; \
+     fi \
+  && first="$(/opt/chuggy/bin/node --input-type=module --eval ' \
+    import { chatSessionUidFirst } from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
+    console.log(chatSessionUidFirst); \
+  ')" \
+  && home="$(mktemp -d)" \
+  && chown "$first:$first" "$home" \
+  && setpriv --reuid "$first" --regid "$first" \
+    --clear-groups env -u CARGO_HOME HOME="$home" /bin/sh -c ' \
+      cargo --version && rustc --version && cargo clippy --version \
+      && if mkdir "$RUSTUP_HOME/toolchains/probe" 2>/dev/null \
+        || touch "$1/bin/cargo" 2>/dev/null; then \
+           echo "a session user can write the toolchain"; \
+           exit 1; \
+         fi' sh "$CARGO_HOME" \
+  && rm -rf "$home"
 # A login shell sets PATH afresh from `/etc/profile`, so cargo's is added there.
 RUN printf 'export PATH="%s/bin:$PATH"\n' "$CARGO_HOME" > /etc/profile.d/cargo.sh
 USER 1000:1000
