@@ -16,6 +16,12 @@
 # migrated URL reaches eslint under the dedicated variable — is pinned without
 # a server.
 #
+# THE DATABASE A CALLER'S SERVER IS GIVEN IS ASSERTED THROUGH THE HELPER LOG,
+# and the named one through the conflicting pool: it refuses to migrate the
+# database the URL names, `ignored`, as a server holding a branch's migration
+# row refuses main's. A run that migrated in place could reach no verdict, and
+# every database the log shows created has to be shown dropped.
+#
 # The clean line's subject is asserted on the caller-URL path these cases
 # take; the container path's subject is exercised by `ci.sh` on every run.
 #
@@ -56,6 +62,40 @@ export function postgresMigrate() {
 TS
 }
 
+# A stub that migrates any database but the one the URL names, as a server
+# whose named database holds a conflicting `schema_migration` row would, and
+# logs each it was asked to.
+stub_pool_conflicting() {
+	mkdir -p "$R/src/adapters/postgres"
+	cat > "$R/src/adapters/postgres/pool.ts" <<'TS'
+import { appendFileSync } from "node:fs";
+export function postgresPool(url) {
+  return { url, end: () => Promise.resolve() };
+}
+export function postgresMigrate(pool) {
+  const database = new URL(pool.url).pathname.slice(1);
+  appendFileSync(process.env.CHUG_PG_HELPER_LOG, `migrate ${database}\n`);
+  if (database === "ignored") {
+    return Promise.reject(new Error("schema_migration holds version 90 under another name"));
+  }
+  return Promise.resolve([]);
+}
+TS
+}
+
+# Every database the helper log shows created and never dropped, then a line
+# saying how many it created.
+databases_left() {
+	awk '
+		$1 == "create" { made[$2] = 1; count++ }
+		$1 == "drop" { for (field = 2; field <= NF; field++) gone[$field] = 1 }
+		END {
+			for (name in made) if (!(name in gone)) print "left behind: " name
+			print count + 0 " database(s) created"
+		}
+	' "$CHUG_PG_HELPER_LOG"
+}
+
 # A resolvable plugin and root typescript, so the compiler precondition has two
 # real paths to compare. The nested copy is what a peer-range install produces.
 fake_typescript() { # [nested]
@@ -85,9 +125,10 @@ fake_eslint() { # <rc> [diagnostic line]
 	chmod +x "$R/node_modules/.bin/eslint"
 }
 
-fixture() { # a throwaway repo with a stubbed pool and a clean fake eslint
+fixture() { # a throwaway repo with a stubbed pool, a logging helper and a clean fake eslint
 	fresh_repo "$R"
 	stub_pool
+	database_helper_double "$R"
 	fake_eslint 0
 }
 
@@ -168,6 +209,51 @@ fixture
 git -C "$R" add -A
 run_gate "$R" "CHUG_PG_URL=$ANSWERS"
 check "a clean run names its subject" 0 "$RC" "agrees with the server CHUG_PG_URL names"
-check "eslint was handed the migrated URL under the dedicated variable" 0 "$RC" "eslint saw CHUG_SAFEQL_DATABASE_URL=$ANSWERS"
+check "eslint was handed the migrated URL under the dedicated variable" 0 "$RC" \
+	"eslint saw CHUG_SAFEQL_DATABASE_URL=${ANSWERS%/ignored}/chuggy_queries_"
+
+# --- A caller's server is asked in a database of the run's own ---------------
+
+fixture
+stub_pool_conflicting
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+check "a named database holding a conflicting migration still gets a verdict" 0 "$RC" \
+	"agrees with the server CHUG_PG_URL names"
+OUT="$CHUG_PG_HELPER_LOG"
+check "the run migrates a database it created" 0 0 "migrate chuggy_queries_"
+refute "the named database is never migrated" 0 0 "migrate ignored"
+refute "the named database is never created or dropped" 0 0 " ignored"
+OUT="$WORK/.left"
+databases_left >"$OUT"
+check "the run creates one database of its own" 0 0 "1 database(s) created"
+refute "and leaves it behind on no exit" 0 0 "left behind"
+
+fixture
+stub_pool_conflicting
+fake_eslint 1 'column "nope" does not exist'
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+check "a finding against the run's database is still a finding" 1 "$RC" "FAILED"
+OUT="$WORK/.left"
+databases_left >"$OUT"
+check "a run ending in a finding creates one database" 0 0 "1 database(s) created"
+refute "and drops it" 0 0 "left behind"
+
+fixture
+stub_pool_failing
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS"
+check "a run whose migration fails is a could-not-run" 2 "$RC" "did not migrate"
+OUT="$WORK/.left"
+databases_left >"$OUT"
+check "a run ending in a could-not-run creates one database" 0 0 "1 database(s) created"
+refute "and drops it" 0 0 "left behind"
+
+fixture
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=$ANSWERS" CHUG_PG_HELPER_FAIL=create
+check "a database that cannot be created is a could-not-run" 2 "$RC" "could not create a database for this run"
+refute "and nothing is migrated" 2 "$RC" "agrees with"
 
 done_ "check-queries.test.sh"
