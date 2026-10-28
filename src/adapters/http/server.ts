@@ -2543,18 +2543,10 @@ function registerChatReads(app: FastifyInstance, chat: MemberChat): void {
     nativeHttpEndpoints.chatThread,
     (request, principal, tenant) => {
       const query = nativeHttpEndpoints.chatThread.query.parse(request.query);
-      return chat.thread(
-        principal,
-        tenant,
-        registerEndpointSession(request),
-        {
-          ...(query.before === undefined ? {} : { before: query.before }),
-          limit: query.limit,
-        },
-        query.project === undefined
-          ? undefined
-          : parsePartition(tenant, query.project).project,
-      );
+      return chat.thread(principal, tenant, registerEndpointSession(request), {
+        ...(query.before === undefined ? {} : { before: query.before }),
+        limit: query.limit,
+      });
     },
     threadResponse,
   );

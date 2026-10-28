@@ -34,7 +34,6 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
-  type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
 import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
 import {
@@ -252,7 +251,6 @@ test("every door answers a member whose tenant took unscoped chat as one that is
   const answered = [
     await chat.threads(geoff, tenant),
     await chat.thread(geoff, tenant, own, { limit: 1 }),
-    await chat.thread(geoff, tenant, own, { limit: 1 }, atlas),
     await chat.openThread(geoff, tenant, key),
     await chat.sendThreadMessage(geoff, tenant, {
       session: own,
@@ -350,7 +348,7 @@ test("a message to the member's own thread is enqueued as typed on the runner ro
   ]);
 });
 
-test("the projects listed are those the chat may see, each with the strongest role held, and a full page names where the next begins", async () => {
+test("the projects listed are those the chat may see, each asked in turn and its role at the strongest held, and a full page names where the next begins", async () => {
   const { chat, asked } = chatOf(
     {
       granted: [geoff],
@@ -374,8 +372,18 @@ test("the projects listed are those the chat may see, each with the strongest ro
     await chat.projects(geoff, tenant, { after: borealis, limit: 2 }),
     { result: "Found", projects: [] },
   );
-  assert.ok(asked.includes("cygnus:ChatMetadata"));
-  assert.ok(!asked.includes("cygnus:Administer"));
+  assert.deepEqual(asked, [
+    `${tenant}:OpenUnscopedChat`,
+    "atlas:ChatMetadata",
+    "atlas:Administer",
+    "atlas:Mutate",
+    "borealis:ChatMetadata",
+    "borealis:Administer",
+    "borealis:Mutate",
+    "borealis:DispatchTicket",
+    `${tenant}:OpenUnscopedChat`,
+    "cygnus:ChatMetadata",
+  ]);
   await assert.rejects(chat.projects(geoff, tenant, { limit: 0 }), RangeError);
 });
 
@@ -416,25 +424,26 @@ test("the member's threads are listed across the tenant, their own beside each p
   ]);
 });
 
-test("a project thread is read through the chat only where it is the member's own and the chat may see the project", async () => {
+test("no door reads a project thread's turns, the member's own included, however much of the project the chat may see", async () => {
   const atlasMine = asSessionId("atlas-geoff");
-  const atlasHers = asSessionId("atlas-dana");
-  const { chat } = chatOf(
-    { granted: [geoff], projects: { atlas: ["ChatMetadata"], borealis: [] } },
-    [
-      { partition: { tenant, project: atlas }, record: held(atlasMine, geoff) },
-      { partition: { tenant, project: atlas }, record: held(atlasHers, dana) },
-      {
-        partition: { tenant, project: borealis },
-        record: held(atlasMine, geoff),
-      },
-    ],
+  const { chat, calls } = chatOf(
+    { granted: [geoff], projects: { atlas: ["ChatMetadata", "Read"] } },
+    [{ partition: { tenant, project: atlas }, record: held(atlasMine, geoff) }],
   );
-  const read = (session: SessionId, project: ProjectId) =>
-    chat.thread(geoff, tenant, session, { limit: 1 }, project);
-  assert.equal((await read(atlasMine, atlas)).result, "Found");
-  assert.deepEqual(await read(atlasHers, atlas), { result: "NotFound" });
-  assert.deepEqual(await read(atlasMine, borealis), { result: "NotFound" });
+  assert.deepEqual(await chat.thread(geoff, tenant, atlasMine, { limit: 1 }), {
+    result: "NotFound",
+  });
+  assert.deepEqual(
+    await chat.threadTranscript(geoff, tenant, atlasMine, {
+      after: 0,
+      limit: 1,
+    }),
+    { read: "NotFound" },
+  );
+  assert.ok(
+    calls.every((call) => !call.includes(`:${atlas}:`)),
+    calls.join(" "),
+  );
 });
 
 test("a member's own objectives name their tenant and them, no project, and fit every thread's ceiling", () => {

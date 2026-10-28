@@ -15,9 +15,14 @@
  * module's own, because their texts differ: the objectives name no project and
  * the first turn is seeded with nothing.
  *
- * A PROJECT IS SEEN AS `ChatMetadata` ADMITS IT. Which projects the chat lists,
- * and whose of its owner's project threads it reads, are asked of that permit,
- * which the relation model may draw narrower than `Read`.
+ * A PROJECT IS SEEN AS `ChatMetadata` ADMITS IT, AND ONLY AS METADATA. Which
+ * projects the chat lists, and which of its owner's project threads it lists,
+ * are asked of that permit; no door reads a project thread's turns, which can
+ * quote the project's repositories.
+ *
+ * EVERY PROJECT IS ASKED IN TURN. A listing asks its projects one at a time,
+ * as the project inventory does, and a role stops at the strongest permit
+ * held, so one request holds one question open at the authority.
  */
 
 import type { AccessProjectRole } from "../contract/accessPlane.ts";
@@ -57,7 +62,6 @@ import {
   threadTurnInputCharsMax,
 } from "./thread.ts";
 import {
-  checkedThreadMailboxQuery,
   checkedThreadMessage,
   checkedThreadMessageImages,
   threadEntry,
@@ -131,13 +135,11 @@ export interface MemberChat {
     principal: Principal,
     tenant: TenantId,
   ): Promise<MemberChatThreadsRead>;
-  /** One of the member's own threads, or with `project` one they hold in that project. */
   thread(
     principal: Principal,
     tenant: TenantId,
     session: SessionId,
     query: ThreadMailboxQuery,
-    project?: ProjectId,
   ): Promise<ThreadRead>;
   threadTranscript(
     principal: Principal,
@@ -225,22 +227,16 @@ export function memberChatAccess(access: ProjectAccess): ProjectAccess {
   };
 }
 
-/** The strongest role `principal` holds on a project they may see. */
+/** The strongest role `principal` holds on a project they may see, asked strongest first. */
 async function memberChatRole(
   access: ProjectAccess,
   principal: Principal,
   partition: Partition,
 ): Promise<AccessProjectRole> {
-  const held = await Promise.all(
-    memberChatRoleKinds.map(
-      async ([role, kind]) =>
-        [
-          role,
-          (await access.authorize(principal, partition, kind)) !== undefined,
-        ] as const,
-    ),
-  );
-  return held.find(([, holds]) => holds)?.[0] ?? "Viewer";
+  for (const [role, kind] of memberChatRoleKinds)
+    if ((await access.authorize(principal, partition, kind)) !== undefined)
+      return role;
+  return "Viewer";
 }
 
 export function checkedMemberChatProjectsLimit(limit: number): number {
@@ -269,24 +265,22 @@ function memberChatProjectsMethod(
       return { result: "NotFound" };
     const limit = checkedMemberChatProjectsLimit(query.limit);
     const scanned = await store.projects(tenant, query.after, limit);
-    const seen = await Promise.all(
-      scanned.map(async (row) => {
-        const partition = { tenant, project: row.project };
-        if (
-          (await access.authorize(principal, partition, "ChatMetadata")) ===
-          undefined
-        )
-          return undefined;
-        return {
+    const seen: MemberChatProject[] = [];
+    for (const row of scanned) {
+      const partition = { tenant, project: row.project };
+      if (
+        (await access.authorize(principal, partition, "ChatMetadata")) !==
+        undefined
+      )
+        seen.push({
           ...row,
           role: await memberChatRole(access, principal, partition),
-        };
-      }),
-    );
+        });
+    }
     const last = scanned.at(-1)?.project;
     return {
       result: "Found",
-      projects: seen.filter((project) => project !== undefined),
+      projects: seen,
       ...(scanned.length < limit || last === undefined
         ? {}
         : { nextAfter: last }),
@@ -308,20 +302,17 @@ async function memberChatProjectsSeen(
         .map((record) => record.project),
     ),
   ];
-  const seen = await Promise.all(
-    projects.map(
-      async (project) =>
-        [
-          project,
-          (await access.authorize(
-            principal,
-            { tenant, project },
-            "ChatMetadata",
-          )) !== undefined,
-        ] as const,
-    ),
-  );
-  return new Set(seen.filter(([, holds]) => holds).map(([project]) => project));
+  const seen = new Set<ProjectId>();
+  for (const project of projects)
+    if (
+      (await access.authorize(
+        principal,
+        { tenant, project },
+        "ChatMetadata",
+      )) !== undefined
+    )
+      seen.add(project);
+  return seen;
 }
 
 /** The member's threads across their tenant, their own and each project's they may still see, as the wire names them. */
@@ -355,41 +346,6 @@ function memberChatThreadsMethod(
           ...(record.scope === "Project" ? { project: record.project } : {}),
         })),
     };
-  };
-}
-
-/** One of the member's own threads in a project, which the chat reaches where it may see the project and the thread is theirs. */
-async function memberChatProjectThread(
-  access: ProjectAccess,
-  threads: NativeThreadPorts,
-  principal: Principal,
-  partition: Partition,
-  session: SessionId,
-  query: ThreadMailboxQuery,
-): Promise<ThreadRead> {
-  const authority = await memberChatGranted(
-    access,
-    principal,
-    partition.tenant,
-  );
-  if (
-    authority === undefined ||
-    (await access.authorize(principal, partition, "ChatMetadata")) === undefined
-  )
-    return { result: "NotFound" };
-  const found = await threads.threads.standing({
-    partition,
-    session,
-    query: checkedThreadMailboxQuery(query),
-  });
-  if (found === undefined || found.thread.principal !== principal)
-    return { result: "NotFound" };
-  return {
-    result: "Found",
-    thread: threadEntry(found.thread, principal, authority.subject),
-    turns: found.turns,
-    ...(found.nextBefore === undefined ? {} : { nextBefore: found.nextBefore }),
-    streams: found.streams,
   };
 }
 
@@ -528,17 +484,8 @@ export function memberChat(
     },
     projects: memberChatProjectsMethod(access, projects),
     threads: memberChatThreadsMethod(access, threads),
-    thread: (principal, tenant, session, query, project) =>
-      project === undefined
-        ? doors.thread(principal, at(principal, tenant), session, query)
-        : memberChatProjectThread(
-            access,
-            threads,
-            principal,
-            { tenant, project },
-            session,
-            query,
-          ),
+    thread: (principal, tenant, session, query) =>
+      doors.thread(principal, at(principal, tenant), session, query),
     threadTranscript: (principal, tenant, session, query) =>
       doors.threadTranscript(principal, at(principal, tenant), session, query),
     openThread: memberChatOpenMethod(own, threads, routes),

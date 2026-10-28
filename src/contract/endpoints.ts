@@ -73,15 +73,6 @@ const transcriptQuery = endpointQuery({
   after: endpointInteger("after", 0),
   limit: endpointInteger("limit", sessionStorePageBatchesMax),
 });
-/** One of a member's own threads, or one they hold in the project `project` names. */
-const chatThreadQuery = endpointQuery({
-  before: endpointInteger("before").optional(),
-  limit: endpointInteger("limit", threadTurnsAnsweredMax),
-  project: z
-    .unknown()
-    .transform((value) => textField({ project: value }, "project"))
-    .optional(),
-});
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
 export const nativeHttpEndpoints = {
@@ -229,7 +220,7 @@ export const nativeHttpEndpoints = {
   chatThread: {
     method: "GET",
     path: nativeHttpRoutes.chatThread,
-    query: chatThreadQuery,
+    query: threadQuery,
     response: threadResponseSchema,
   },
   chatThreadTranscript: {

@@ -149,14 +149,12 @@ test("opening one's own thread is located at the tenant's chat, and refused for 
   assert.deepEqual(calls.slice(0, 1), [`${caller}:acme:k-1`]);
 });
 
-test("a thread is read at the tenant, a project one by the project named, and never at a reserved identity", async () => {
+test("a thread is read at the tenant as the member's own, and no request names a project to read one there", async () => {
   const calls: string[] = [];
   await using app = appOver(
     chatOf(calls, {
-      thread: (principal, tenant, asked, query, project) => {
-        calls.push(
-          `${principal}:${tenant}:${asked}:${String(query.limit)}:${String(project)}`,
-        );
+      thread: (principal, tenant, asked, query) => {
+        calls.push(`${principal}:${tenant}:${asked}:${String(query.limit)}`);
         return Promise.resolve({
           result: "Found",
           thread: entry,
@@ -179,15 +177,9 @@ test("a thread is read at the tenant, a project one by the project named, and ne
     url: "/api/v1/tenants/acme/chat/threads/own-geoff?project=atlas&limit=1",
     headers: authorized,
   });
-  assert.equal(projects.statusCode, 200);
-  const reserved = await app.inject({
-    url: "/api/v1/tenants/acme/chat/threads/own-geoff?project=%40member-x",
-    headers: authorized,
-  });
-  assert.equal(reserved.statusCode, 400);
+  assert.equal(projects.statusCode, 400);
   assert.deepEqual(calls, [
-    `${caller}:acme:own-geoff:${String(threadTurnsAnsweredMax)}:undefined`,
-    `${caller}:acme:own-geoff:1:atlas`,
+    `${caller}:acme:own-geoff:${String(threadTurnsAnsweredMax)}`,
   ]);
 });
 
