@@ -8,6 +8,7 @@ import type {
   SchedulerPassNotice,
 } from "../interpreter/executionSchedulerRun.ts";
 import type { FinalizerOwnerId } from "../interpreter/finalizer.ts";
+import { finalizerHoldLog } from "../interpreter/finalizerTelemetry.ts";
 import {
   finalizerPass,
   type FinalizerService,
@@ -725,16 +726,31 @@ export interface FinalizerProcessRootConfig {
   readonly finalizer?: FinalizerConfig;
 }
 
+/**
+ * Composes the finalizer service over the pool its process owns, its holds
+ * written to stderr: a request held where it was found writes nothing anywhere
+ * else, so this is the only place an operator learns which one is.
+ */
+export function finalizerProcessRootService(
+  pool: pg.Pool,
+  config: Pick<FinalizerProcessRootConfig, "service" | "finalizer">,
+): FinalizerService {
+  return composeFinalizerService(
+    pool,
+    config.service(pool),
+    config.finalizer,
+    finalizerHoldLog((line) => {
+      process.stderr.write(line);
+    }),
+  );
+}
+
 /** Owns the finalizer-role pool while repository access remains an explicit port. */
 export function finalizerProcessRoot(
   config: FinalizerProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const service = composeFinalizerService(
-    pool,
-    config.service(pool),
-    config.finalizer,
-  );
+  const service = finalizerProcessRootService(pool, config);
   return ownedProcess(
     pool,
     finalizerProcess(
