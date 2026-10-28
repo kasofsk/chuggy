@@ -20,7 +20,10 @@ against `.chug/tasks/keto/namespaces.ts` by hand.
 The `Tenant` namespace's `personal_runners` and `personal_runners_granters`
 relations, and the `register_personal_runner` and `grant_personal_runners`
 permits over them, are applied to the deployed model before the images that
-ask for them roll out, since until then no new pod is ready.
+ask for them roll out, since until then no new pod is ready. So are its
+`unscoped_chat_revoked` and `unscoped_chat_granters` relations, its
+`open_unscoped_chat` and `grant_unscoped_chat` permits, and the `Project`
+namespace's `chat_metadata` permit.
 
 ## Before migration 26
 
@@ -68,8 +71,11 @@ one is given nothing likewise, so on a project whose defaults predate
 `viewer_granters` its holders are added by whoever may change the project's
 authorities. A tenant holds its `site` link and is given nothing either, so on
 a tenant whose defaults predate `personal_runners_granters` nobody gives
-personal runners until whoever may change the tenant's authorities adds its
-holders.
+personal runners, and on one whose defaults predate `unscoped_chat_granters`
+nobody takes or gives back unscoped chat, until whoever may change the
+tenant's authorities adds its holders. Unscoped chat itself needs no tuple: a
+tenant's administrators and members hold it until `unscoped_chat_revoked`
+names them.
 
 Once given, the holders are a request's to change: the access plane adds and
 removes a holder of each authority for a caller who may manage it. A project,
@@ -137,7 +143,9 @@ defaults, a created project's `tenant` and defaults, and a registered pool's
 `src/roots/accessPlane.ts`, grants and removes a person's `admins` and
 `members` on a tenant and `admins`, `developers`, `dispatchers` and `viewers`
 on a project, gives and takes a person's `hosted_execution` and
-`personal_runners`, and adds and removes the holders of each authority beside
+`personal_runners`, takes and gives back their unscoped chat by writing and
+removing their `unscoped_chat_revoked`, and adds and removes the holders of
+each authority beside
 them, each for a caller holding the kind that grants it. Redeeming an invite
 link writes the tenant role and project roles the link carries, for whoever
 presents its token signed in and whatever kind they hold, since its maker held
@@ -164,7 +172,8 @@ CHUG_PROVISION_ACTION=grant npm run provision:project-access
 `CHUG_PROVISION_RELATION` names one relation, and the model is what turns it
 into the permits a route asks for: `admins`, `developers`, `dispatchers`,
 `viewers`, `agents` and `pools` are the project's, and `admins`, `members`,
-`hosted_execution` and `personal_runners` are the tenant's. A grant with
+`hosted_execution`, `personal_runners` and `unscoped_chat_revoked` are the
+tenant's. A grant with
 `CHUG_PROVISION_PROJECT` absent is a tenant grant, and one whose relation is `tenant` names the tenant
 the project inherits from rather than a person — the one arm that reads no
 issuer or subject. A person's project grant writes that `tenant` link beside

@@ -55,6 +55,7 @@ export const allProjectAccessKinds = [
   "ManageProjectSelector",
   "OverrideTicketConfig",
   "SkipPlannedEvaluations",
+  "ChatMetadata",
   "Execute",
   "Administer",
   "GrantProjectAdmin",
@@ -88,6 +89,8 @@ export const allTenantAccessKinds = [
   "GrantHostedExecution",
   "RegisterPersonalRunner",
   "GrantPersonalRunners",
+  "OpenUnscopedChat",
+  "GrantUnscopedChat",
   "ManageTenantAuthorities",
   "ManageSiteHeldAuthorities",
 ] as const;
@@ -130,6 +133,7 @@ export const projectAccessPermits: Readonly<Record<ProjectAccessKind, string>> =
     ManageProjectSelector: "manage_selector",
     OverrideTicketConfig: "override_ticket_config",
     SkipPlannedEvaluations: "skip_planned_evaluations",
+    ChatMetadata: "chat_metadata",
     Execute: "execute",
     Administer: "administer",
     GrantProjectAdmin: "grant_admin",
@@ -151,6 +155,8 @@ export const tenantAccessPermits: Readonly<Record<TenantAccessKind, string>> = {
   GrantHostedExecution: "grant_hosted_execution",
   RegisterPersonalRunner: "register_personal_runner",
   GrantPersonalRunners: "grant_personal_runners",
+  OpenUnscopedChat: "open_unscoped_chat",
+  GrantUnscopedChat: "grant_unscoped_chat",
   ManageTenantAuthorities: "manage_authorities",
   ManageSiteHeldAuthorities: "manage_site_held_authorities",
 };

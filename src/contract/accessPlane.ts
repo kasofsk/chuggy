@@ -80,6 +80,7 @@ export const accessTenantAuthorities = [
   "MemberGranters",
   "HostedRunsGranters",
   "PersonalRunnersGranters",
+  "UnscopedChatGranters",
   "AuthorityManagers",
 ] as const;
 export type AccessTenantAuthority = (typeof accessTenantAuthorities)[number];
@@ -142,6 +143,7 @@ export const accessTenantAuthorityAdmits: Readonly<
   MemberGranters: ["TenantAdmins", "SiteAdmins", "TenantMembers"],
   HostedRunsGranters: ["TenantAdmins", "SiteAdmins"],
   PersonalRunnersGranters: ["TenantAdmins", "SiteAdmins"],
+  UnscopedChatGranters: ["TenantAdmins", "SiteAdmins"],
   AuthorityManagers: ["TenantAdmins"],
 };
 
@@ -212,6 +214,14 @@ export const accessPlaneRoutes = {
   tenantPersonalRunnersRemoval: {
     method: "DELETE",
     path: `${accessTenantPath}/people/:subject/personal-runners`,
+  },
+  tenantUnscopedChatGrant: {
+    method: "POST",
+    path: `${accessTenantPath}/people/:subject/unscoped-chat`,
+  },
+  tenantUnscopedChatRemoval: {
+    method: "DELETE",
+    path: `${accessTenantPath}/people/:subject/unscoped-chat`,
   },
   tenantInvitation: {
     method: "POST",
@@ -380,7 +390,7 @@ export const accessLastTenantAdministratorCode = "LastTenantAdministrator";
 /** The conflict a site's invitation, or a workspace link's use, is refused with where something already holds the tenant it names. */
 export const accessTenantTakenCode = "InvitationTenantTaken";
 
-/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, hosted runs or personal runners, or manage the authority it names. */
+/** The refusal of a change or an invitation to a caller answered the list who may not grant a role it names, hosted runs, personal runners or unscoped chat, or manage the authority it names. */
 export const accessNotPermittedCode = "AccessNotPermitted";
 
 /** The conflict a holder is refused with where the authority does not admit it, or where a removal names a group the level's list cannot. */
@@ -507,9 +517,10 @@ export const accessProjectRolesHeldSchema = z.strictObject({
 
 /**
  * One person in a tenant. `hostedRuns` is whether the tenant grants them
- * hosted runs and `personalRunners` whether it grants them registering a
- * personal runner, each given and taken by the plane's own route, and `mine` is
- * the server's answer to whether this is the caller.
+ * hosted runs, `personalRunners` whether it grants them registering a personal
+ * runner and `unscopedChat` whether it has not taken unscoped chat from them,
+ * each given and taken by the plane's own route, and `mine` is the server's
+ * answer to whether this is the caller.
  */
 export const accessTenantPersonSchema = z.strictObject({
   subject: z.string().min(1),
@@ -517,6 +528,7 @@ export const accessTenantPersonSchema = z.strictObject({
   tenantRoles: z.array(accessTenantRoleSchema),
   hostedRuns: z.boolean(),
   personalRunners: z.boolean(),
+  unscopedChat: z.boolean(),
   projects: z.array(accessProjectRolesHeldSchema),
   ...accessAccountFields,
 });
@@ -560,16 +572,17 @@ export const accessProjectAbilitiesHeldSchema = z.strictObject({
 
 /**
  * What the caller may do in a tenant: the tenant roles they may grant and
- * remove, whether they may give hosted runs or personal runners, administer
- * the tenant, make an account, change who holds the tenant's authorities and
- * the ones the site holds over it, and what they may do on each of the
- * tenant's projects the answer names.
+ * remove, whether they may give hosted runs, personal runners or unscoped
+ * chat, administer the tenant, make an account, change who holds the tenant's
+ * authorities and the ones the site holds over it, and what they may do on
+ * each of the tenant's projects the answer names.
  */
 export const accessTenantAbilitiesSchema = z.strictObject({
   tenant: identitySchema,
   roles: z.array(accessTenantRoleSchema),
   grantHostedRuns: z.boolean(),
   grantPersonalRunners: z.boolean(),
+  grantUnscopedChat: z.boolean(),
   administerTenant: z.boolean(),
   createAccount: z.boolean(),
   manageAuthorities: z.boolean(),

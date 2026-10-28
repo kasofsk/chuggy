@@ -249,6 +249,22 @@ export function apiRemovePersonalRunners(
   return accessSent(ports, "tenantPersonalRunnersRemoval", { tenant, subject });
 }
 
+export function apiGrantUnscopedChat(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantUnscopedChatGrant", { tenant, subject });
+}
+
+export function apiRemoveUnscopedChat(
+  ports: ApiPorts,
+  tenant: string,
+  subject: string,
+): Promise<ApiResult<undefined>> {
+  return accessSent(ports, "tenantUnscopedChatRemoval", { tenant, subject });
+}
+
 export function apiRemoveTenantAuthorityGroup(
   ports: ApiPorts,
   tenant: string,

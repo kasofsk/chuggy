@@ -124,6 +124,7 @@ const tenantAdministratorKinds: readonly TenantAccessKind[] = [
   "GrantTenantAdmin",
   "GrantMember",
   "GrantPersonalRunners",
+  "GrantUnscopedChat",
   "ManageTenantAuthorities",
 ];
 

@@ -44,6 +44,7 @@ import {
   projectsIn,
   projectsOffered,
   refused,
+  unscopedChatPath,
 } from "./tenantPeopleFixture.tsx";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
@@ -104,6 +105,7 @@ test("an answer with no account field draws its subjects among the people", asyn
     tenantRoles: person.tenantRoles,
     hostedRuns: person.hostedRuns,
     personalRunners: person.personalRunners,
+    unscopedChat: person.unscopedChat,
     projects: person.projects,
   }));
   await drawPeople({
@@ -631,6 +633,26 @@ test("a workspace administrator removes every runner of a member's once asked, a
       .map((request) => request.url),
   ).toStrictEqual([`/api/v1/tenants/${peopleTenant}/personal-runners/s-bob`]);
   expect(within(editor).getByText("No runner you may remove")).toBeTruthy();
+});
+
+/** The abilities of a reader who may also give and take unscoped chat. */
+function unscopedChatGiven(): Response {
+  return answer({ ...peopleAbilitiesAll(), grantUnscopedChat: true });
+}
+
+test("a reader who may give unscoped chat is offered it last on every person, held until it is taken", async () => {
+  const drawn = await drawPeople({ abilities: unscopedChatGiven });
+  const editor = await editorOf("s-bob");
+  expect(boxesIn(editor, "Workspace")).toStrictEqual([
+    "Admin",
+    "Member+",
+    "Hosted runs",
+    "Unscoped chat+",
+  ]);
+  await boxPressed(editor, "Unscoped chat");
+  expect(changesSent(drawn)).toStrictEqual([
+    { method: "DELETE", url: unscopedChatPath("s-bob"), body: undefined },
+  ]);
 });
 
 test("taking hosted runs from a person with an account sends the removal at once", async () => {

@@ -4,7 +4,7 @@
  * API's envelope, what a caller may do and who holds each authority read as their
  * schemas, each change of a holder's outcome, and no request reaching a
  * relation but the ones the role rosters and the authority rosters name,
- * hosted runs, personal runners, and the `site` link a site's invitation
+ * hosted runs, personal runners, unscoped chat, and the `site` link a site's invitation
  * writes on a new tenant, which the site's tenant list then reads back, the
  * caller's own tenants, and a tenant's invite links made, listed, revoked and
  * redeemed, each route's refusals among them, and the directory's registration
@@ -732,6 +732,52 @@ test("personal runners are given and taken by a holder of `GrantPersonalRunners`
   assert.deepEqual(memory.changes, []);
 });
 
+test("unscoped chat is taken and given back by a holder of `GrantUnscopedChat`, forbidden to a caller answered the list who is not one, and absent to a caller not answered it", async () => {
+  const { memory, app } = await served();
+  const changed = (
+    name: "tenantUnscopedChatGrant" | "tenantUnscopedChatRemoval",
+    token: string,
+  ) =>
+    app.inject({
+      method: accessPlaneRoutes[name].method,
+      url: pathOf(name),
+      headers: as(token),
+    });
+  const zed = async () =>
+    accessTenantPeopleSchema
+      .parse(
+        (
+          await app.inject({
+            method: "GET",
+            url: pathOf("tenantPeople"),
+            headers: as("alice-token"),
+          })
+        ).json(),
+      )
+      .people.find((person) => person.subject === "zed");
+  assert.equal(
+    (await changed("tenantUnscopedChatRemoval", "alice-token")).statusCode,
+    204,
+  );
+  assert.equal((await zed())?.unscopedChat, false);
+  assert.equal(
+    (await changed("tenantUnscopedChatGrant", "alice-token")).statusCode,
+    204,
+  );
+  assert.equal(await zed(), undefined);
+  memory.changes.length = 0;
+  for (const name of [
+    "tenantUnscopedChatGrant",
+    "tenantUnscopedChatRemoval",
+  ] as const) {
+    const refused = await changed(name, "mo-token");
+    assert.equal(refused.statusCode, 403, refused.body);
+    enveloped(refused, "Rejected", accessNotPermittedCode);
+    enveloped(await changed(name, "priya-token"), "Absent");
+  }
+  assert.deepEqual(memory.changes, []);
+});
+
 test("a change of a holder is absent, forbidden, a conflict under its own code or rejected, and none of them writes", async () => {
   const { memory, app } = await served();
   for (const name of [
@@ -931,6 +977,8 @@ async function accessReached(
   for (const [method, name] of [
     ["POST", "tenantPersonalRunnersGrant"],
     ["DELETE", "tenantPersonalRunnersRemoval"],
+    ["POST", "tenantUnscopedChatGrant"],
+    ["DELETE", "tenantUnscopedChatRemoval"],
   ] as const)
     await app.inject({ method, url: pathOf(name), headers: as("alice-token") });
   for (const role of accessSpellings())
@@ -983,7 +1031,7 @@ async function accessHoldersReached(
   );
 }
 
-test("no request reaches a relation but the ones the role rosters and the authority rosters name, hosted runs, personal runners, and the site link a site's invitation writes", async () => {
+test("no request reaches a relation but the ones the role rosters and the authority rosters name, hosted runs, personal runners, unscoped chat, and the site link a site's invitation writes", async () => {
   const { memory, app } = await served();
   for (const grant of tenantAuthorityDefaults(tenant))
     await memory.grants.write(grant);
@@ -1010,6 +1058,7 @@ test("no request reaches a relation but the ones the role rosters and the author
       ...(verb === "write" ? [`write Tenant ${tenantSiteRelation}`] : []),
       `${verb} Tenant hosted_execution`,
       `${verb} Tenant personal_runners`,
+      `${verb} Tenant unscoped_chat_revoked`,
       ...Object.values(accessTenantRoleRelations).map(
         (relation) => `${verb} Tenant ${relation}`,
       ),

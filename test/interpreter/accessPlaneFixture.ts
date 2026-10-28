@@ -329,6 +329,7 @@ export function accessGivenTenantAdministrator(
         "GrantTenantAdmin",
         "GrantMember",
         "GrantPersonalRunners",
+        "GrantUnscopedChat",
         "ManageTenantAuthorities",
       ] as const
     ).map((kind) => ({ on: "Tenant", tenant, kind })),

@@ -44,6 +44,7 @@ const abilities: AccessTenantAbilities = {
   roles: ["Member"],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  grantUnscopedChat: false,
   administerTenant: false,
   createAccount: false,
   manageAuthorities: false,

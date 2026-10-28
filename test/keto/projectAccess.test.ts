@@ -75,11 +75,11 @@ test("each project relation carries exactly the kinds the model follows from it"
   const partition = ketoHarnessPartition("relations");
   assert.deepEqual(
     await held(await granted(partition, "reader", "agents"), partition),
-    ["Read"],
+    ["Read", "ChatMetadata"],
   );
   assert.deepEqual(
     await held(await granted(partition, "developer", "developers"), partition),
-    ["Read", "Mutate", "ProposeDispatch", "Execute"],
+    ["Read", "Mutate", "ProposeDispatch", "ChatMetadata", "Execute"],
   );
   assert.deepEqual(
     await held(
@@ -90,7 +90,7 @@ test("each project relation carries exactly the kinds the model follows from it"
   );
   assert.deepEqual(
     await held(await granted(partition, "viewer", "viewers"), partition),
-    ["Read"],
+    ["Read", "ChatMetadata"],
   );
   assert.deepEqual(
     await held(await granted(partition, "administrator", "admins"), partition),
@@ -309,6 +309,66 @@ test("registering a personal runner is the tenant's own grant, which no role, `E
   );
 });
 
+test("unscoped chat is every tenant role holder's with no tuple written, until the tenant revokes it, and a project role alone carries none", async () => {
+  const partition = ketoHarnessPartition("tenant-unscoped");
+  const tenantOf = (subject: string, relation: string) =>
+    tenantPrincipalGrant({
+      issuer: ketoHarnessIssuer,
+      subject,
+      tenant: partition.tenant,
+      relation,
+    });
+  const opens = async (principal: ReturnType<typeof oidcPrincipal>) =>
+    (await access.authorizeTenant(
+      principal,
+      partition.tenant,
+      "OpenUnscopedChat",
+    )) !== undefined;
+  await grants.write(projectTenantGrant(partition));
+  await grants.write(tenantOf("unscoped-member", "members"));
+  await grants.write(tenantOf("unscoped-admin", "admins"));
+  const member = oidcPrincipal(ketoHarnessIssuer, "unscoped-member");
+  const admin = oidcPrincipal(ketoHarnessIssuer, "unscoped-admin");
+  const developer = await granted(partition, "unscoped-dev", "developers");
+  assert.equal(await opens(member), true, "a member");
+  assert.equal(await opens(admin), true, "an administrator");
+  assert.equal(await opens(developer), false, "a project role alone");
+  const revoked = tenantOf("unscoped-member", "unscoped_chat_revoked");
+  await grants.write(revoked);
+  assert.equal(await opens(member), false, "a revoked member");
+  assert.equal(await opens(admin), true, "another member's revocation");
+  await grants.write(tenantOf("unscoped-dev", "unscoped_chat_revoked"));
+  await grants.write(tenantOf("unscoped-dev", "members"));
+  assert.equal(await opens(developer), false, "revoked before joining");
+  await grants.remove(revoked);
+  assert.equal(await opens(member), true, "a revocation removed");
+  assert.equal(
+    await access.authorizeTenant(member, partition.tenant, "GrantUnscopedChat"),
+    undefined,
+    "holding unscoped chat answered for granting it",
+  );
+});
+
+test("a project's chat metadata is its readers', and nobody's beside them", async () => {
+  const partition = ketoHarnessPartition("chat-metadata");
+  const viewer = await granted(partition, "metadata-viewer", "viewers");
+  const dispatcher = await granted(
+    partition,
+    "metadata-dispatcher",
+    "dispatchers",
+  );
+  for (const [who, principal, expected] of [
+    ["a viewer", viewer, true],
+    ["a dispatcher, who does not read", dispatcher, false],
+  ] as const)
+    assert.equal(
+      (await access.authorize(principal, partition, "ChatMetadata")) !==
+        undefined,
+      expected,
+      who,
+    );
+});
+
 /**
  * The object encoding is what keeps two partitions apart, and both halves are
  * arbitrary text that may carry any separator. A joined encoding would let one
@@ -342,7 +402,7 @@ test("two partitions whose halves join to one string are two objects", async () 
     }),
   );
   assert.deepEqual(await held(principal, left), ketoHarnessRoleKinds);
-  assert.deepEqual(await held(principal, right), ["Read"]);
+  assert.deepEqual(await held(principal, right), ["Read", "ChatMetadata"]);
 });
 
 /**

@@ -433,6 +433,7 @@ const ketoTenantAuthorityKinds: Readonly<
   MemberGranters: "GrantMember",
   HostedRunsGranters: "GrantHostedExecution",
   PersonalRunnersGranters: "GrantPersonalRunners",
+  UnscopedChatGranters: "GrantUnscopedChat",
   AuthorityManagers: "ManageTenantAuthorities",
 };
 
