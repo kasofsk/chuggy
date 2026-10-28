@@ -597,6 +597,7 @@ export function composeRepositoryOnboarding(
     access: composition.access,
     forgeApps: composition.forgeApps,
     credentials: composition.credentials,
+    installations: postgresForgeInstallations(composition.apiPool),
     recording: postgresForgeInstallationRecording(composition.apiPool),
     claims: postgresForgeInstallationClaims(composition.apiPool),
     bindings: postgresProjectRepositoryBindings(composition.apiPool),

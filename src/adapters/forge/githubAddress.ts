@@ -10,6 +10,10 @@
  */
 
 import type { RepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asForgeAccount,
+  type ForgeAccount,
+} from "../../interpreter/forgeInstallation.ts";
 
 /** One repository as this forge addresses it. */
 export interface GithubAddress {
@@ -52,4 +56,12 @@ export function githubAddressOf(
     githubAddressSegmentPattern.test(name)
     ? { owner, name }
     : undefined;
+}
+
+/** The account owning one repository on this forge's own host, and nothing where that host addresses no such repository. */
+export function githubAccountOf(
+  repository: RepositoryId,
+): ForgeAccount | undefined {
+  const address = githubAddressOf(repository, githubRepositoryHost);
+  return address === undefined ? undefined : asForgeAccount(address.owner);
 }

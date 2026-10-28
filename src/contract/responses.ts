@@ -1897,6 +1897,29 @@ export type ProjectRepositoryConfigurationsResponse = z.infer<
 >;
 
 /**
+ * Why the worker App cannot be said to reach a bound repository: the
+ * installation on its owner does not select it, beside the forge's page where an
+ * owner changes that; no installation of the worker App is claimed on its
+ * owner; or the forge could not say. It is beside the binding and not part of
+ * it, and is read afresh on every answer.
+ */
+export const projectRepositoryWorkerReachSchema = z.discriminatedUnion(
+  "reach",
+  [
+    z.object({
+      reach: z.literal("Unselected"),
+      installationId: identitySchema,
+      settingsUrl: z.string().min(1),
+    }),
+    z.object({ reach: z.literal("Unclaimed"), account: identitySchema }),
+    z.object({ reach: z.literal("Unknown") }),
+  ],
+);
+export type ProjectRepositoryWorkerReachResponse = z.infer<
+  typeof projectRepositoryWorkerReachSchema
+>;
+
+/**
  * What binding one repository came to. It names the repository and what it
  * carries: the binding privileges no repository over another, so an answer
  * carrying a position or a count would be saying something the row does not.
@@ -1905,6 +1928,8 @@ export const projectRepositoryBoundSchema = z.object({
   repository: z.string().min(1),
   landing: repositoryLandingSchema,
   configurations: projectRepositoryConfigurationsSchema,
+  /** Absent where the worker App reaches the repository, or this deployment holds no worker App key to ask with. */
+  workerReach: projectRepositoryWorkerReachSchema.optional(),
 });
 export type ProjectRepositoryBoundResponse = z.infer<
   typeof projectRepositoryBoundSchema
@@ -1970,6 +1995,8 @@ export const projectRepositoryListedSchema =
     configurationsHeld: projectRepositoryConfigurationsHeldSchema.optional(),
     /** Absent on a binding no import was attempted of. */
     lastImport: repositoryConfigurationImportAttemptSchema.optional(),
+    /** Absent on a retired binding, and as at the bind. */
+    workerReach: projectRepositoryWorkerReachSchema.optional(),
   });
 export type ProjectRepositoryListedResponse = z.infer<
   typeof projectRepositoryListedSchema

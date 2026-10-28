@@ -6,7 +6,9 @@
  * retired one is not listed, and its page is reached only by its address. A
  * binding is added from what those installations grant rather than from a
  * typed address. A binding the project holds no configuration for
- * is drawn as deferred, with its configuration step offered again on its row.
+ * is drawn as deferred, with its configuration step offered again on its row,
+ * and one the worker app cannot be said to reach says why on its row, with the
+ * installation's page on GitHub where its selection is what is missing.
  * Each binding offers Unbind unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
  * The line under Add says why it is withheld, or that a connected account
@@ -76,6 +78,7 @@ import {
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
 import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx";
+import { BindingWorkerReach } from "./repositories/BindingWorkerReach.tsx";
 import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
 import {
   ForgeReturned,
@@ -128,6 +131,9 @@ function BindingRow(props: {
               partition={props.partition}
               repository={binding.repository}
             />
+          )}
+          {binding.workerReach === undefined ? null : (
+            <BindingWorkerReach reach={binding.workerReach} />
           )}
         </span>
       </th>

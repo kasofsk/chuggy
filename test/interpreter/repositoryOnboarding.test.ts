@@ -59,6 +59,7 @@ import {
   asForgeInstallationId,
   asForgeRepositoryName,
   type ForgeApp,
+  type ForgeInstallationId,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
   ForgeInstallationClaim,
@@ -243,6 +244,10 @@ interface FixturePorts {
   /** The one binding retired, or not there at all. */
   readonly retiredAt?: string;
   readonly unbound?: boolean;
+  /** The account a forge half says owns a repository, none where absent, so no reach is asked. */
+  readonly owner?: string;
+  /** The installation this tenant claims on that owner, none where absent. */
+  readonly ownerClaimed?: ForgeInstallationId;
 }
 
 /**
@@ -400,6 +405,8 @@ function fixturePortsForgeHalf(
   return {
     forge,
     app: held,
+    accountOf: () =>
+      given.owner === undefined ? undefined : asForgeAccount(given.owner),
     apps: {
       app: () =>
         Promise.resolve(
@@ -593,6 +600,19 @@ function fixturePorts(
       access,
       forgeApps: fixturePortsForgeApps(given, wrote),
       credentials,
+      installations: {
+        installation: (query) =>
+          Promise.resolve(
+            given.ownerClaimed === undefined
+              ? undefined
+              : {
+                  forge: query.forge,
+                  app: query.app,
+                  account: query.account,
+                  installationId: given.ownerClaimed,
+                },
+          ),
+      },
       recording: {
         record: (claim) => {
           wrote.claims.push(claim);
@@ -2168,6 +2188,156 @@ test("the listing answers what the project holds for each binding, and marks it 
       },
     ]);
   }
+});
+
+/** The worker App's installation on the fixture repository's owner, and the forge's page for it. */
+const workerInstallation = asForgeInstallationId("156786211");
+const workerSettingsUrl =
+  "https://github.com/organizations/kasofsk/settings/installations/156786211";
+
+/** A deployment holding the worker App, its installation on `kasofsk` listing `selected` unless the tenant claims none there. */
+function workerReachGiven(
+  selected: readonly RepositoryId[],
+  given: FixturePorts = {},
+  claimed = true,
+): FixturePorts {
+  return {
+    apps: [app, worker],
+    owner: "kasofsk",
+    ...(claimed ? { ownerClaimed: workerInstallation } : {}),
+    repositories: {
+      read: "Repositories",
+      repositories: selected.map((url) => ({
+        name: asForgeRepositoryName("chuggy"),
+        fullName: "kasofsk/chuggy",
+        url,
+        defaultBranch: "main",
+        private: false,
+      })),
+      truncated: false,
+    },
+    permissions: {
+      read: "Permissions",
+      permissions: "Current",
+      settingsUrl: workerSettingsUrl,
+    },
+    ...given,
+  };
+}
+
+const listedBinding = {
+  repository,
+  boundAt: "2026-09-11T01:00:00Z",
+  landing: { mode: "Push" },
+  pipelinesWritable: false,
+  configured: false,
+} as const;
+
+test("a binding the worker App's installation does not select is listed with that installation and its settings, and one it selects with nothing", async () => {
+  const unselected = fixtureService(["Read"], workerReachGiven([]));
+  const listed = await unselected.service.projectRepositories(
+    principal,
+    partition,
+  );
+  assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
+    {
+      ...listedBinding,
+      workerReach: {
+        reach: "Unselected",
+        installationId: workerInstallation,
+        settingsUrl: workerSettingsUrl,
+      },
+    },
+  ]);
+  assert.deepEqual(unselected.wrote.listed, [worker]);
+  assert.deepEqual(unselected.wrote.compared, [`worker ${workerInstallation}`]);
+
+  const selected = fixtureService(["Read"], workerReachGiven([repository]));
+  const covered = await selected.service.projectRepositories(
+    principal,
+    partition,
+  );
+  assert.deepEqual(covered.result === "Repositories" && covered.repositories, [
+    listedBinding,
+  ]);
+});
+
+test("a binding whose installation could not be read is listed unknown, and one no installation is claimed for unclaimed", async () => {
+  for (const [given, workerReach] of [
+    [
+      workerReachGiven([], { repositories: { read: "Unavailable" } }),
+      { reach: "Unknown" },
+    ],
+    [
+      workerReachGiven([], { permissions: { read: "Unavailable" } }),
+      { reach: "Unknown" },
+    ],
+    [
+      workerReachGiven([], {}, false),
+      { reach: "Unclaimed", account: "kasofsk" },
+    ],
+  ] as const) {
+    const { service } = fixtureService(["Read"], given);
+    const listed = await service.projectRepositories(principal, partition);
+    assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
+      { ...listedBinding, workerReach },
+    ]);
+  }
+});
+
+test("a retired binding and a deployment holding no worker App carry no reach, and ask no forge", async () => {
+  const retired = fixtureService(["Read"], {
+    ...workerReachGiven([]),
+    retiredAt: fixtureRetiredAt,
+  });
+  const listed = await retired.service.projectRepositories(
+    principal,
+    partition,
+  );
+  assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
+    { ...listedBinding, retiredAt: fixtureRetiredAt },
+  ]);
+  const portalOnly = fixtureService(["Read"], {
+    ...workerReachGiven([]),
+    apps: [app],
+  });
+  const answered = await portalOnly.service.projectRepositories(
+    principal,
+    partition,
+  );
+  assert.deepEqual(
+    answered.result === "Repositories" && answered.repositories,
+    [listedBinding],
+  );
+  assert.deepEqual([...retired.wrote.listed, ...portalOnly.wrote.listed], []);
+});
+
+test("a bind the worker App's installation does not select is still bound, with the reason beside it", async () => {
+  const binding = fixtureService(["Administer"], {
+    ...workerReachGiven([]),
+    resolved: {
+      resolved: "Credential",
+      credential: asRepositoryCredential("ghs-proof"),
+    },
+  });
+  assert.deepEqual(
+    await binding.service.bindRepository(principal, partition, {
+      repository,
+      operation,
+    }),
+    {
+      result: "Bound",
+      repository,
+      landing: { mode: "Push" },
+      configurations: { result: "Deferred", reason: "NotConfigured" },
+      workerReach: {
+        reach: "Unselected",
+        installationId: workerInstallation,
+        settingsUrl: workerSettingsUrl,
+      },
+    },
+  );
+  assert.equal(binding.wrote.commands.length, 1);
 });
 
 /**

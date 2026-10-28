@@ -46,6 +46,7 @@ import {
   repositoryUnbindNote,
   repositoryUnbindQuestion,
   repositoryWorkerLine,
+  repositoryWorkerReachLine,
   repositoryWorkerReading,
   type InstallationGrant,
   type RepositoryDrawn,
@@ -916,3 +917,31 @@ test.each(["Connect", "InstallWorker"] as const)(
     ).toBe(false);
   },
 );
+
+test("a bound row names the installation that does not select it and its page, the account none is connected on, or that GitHub said nothing", () => {
+  const settingsUrl =
+    "https://github.com/organizations/kasofsk/settings/installations/156786211";
+  expect(
+    repositoryWorkerReachLine({
+      reach: "Unselected",
+      installationId: "156786211",
+      settingsUrl,
+    }),
+  ).toStrictEqual({
+    status: "Worker app missing",
+    detail:
+      "The worker app's installation 156786211 does not select this repository.",
+    settingsUrl,
+  });
+  expect(
+    repositoryWorkerReachLine({ reach: "Unclaimed", account: "kasofsk" }),
+  ).toStrictEqual({
+    status: "Worker app missing",
+    detail: "No worker app installation is connected on kasofsk.",
+  });
+  expect(repositoryWorkerReachLine({ reach: "Unknown" })).toStrictEqual({
+    status: "Worker app unread",
+    detail:
+      "GitHub did not say whether the worker app reaches this repository.",
+  });
+});

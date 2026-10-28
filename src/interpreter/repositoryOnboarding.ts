@@ -58,6 +58,11 @@
  * one the generator words otherwise or one the release rule has since
  * outgrown, is met as `BootstrapDiffers` rather than replaced, and only counts
  * as held for its own repository and while it still releases.
+ *
+ * WHETHER THE WORKER APP REACHES A REPOSITORY IS REPORTED, NOT REQUIRED. A bind
+ * proves the portal claim, and a repository the worker App's installation does
+ * not select is still bound, with that reason beside it at the bind and on
+ * every listing, read afresh each time by `./repositoryWorkerReach.ts`.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -92,12 +97,14 @@ import type {
   ForgeInstallationRepositories,
   ForgeRepositorySummary,
 } from "./forgeDirectory.ts";
-import type {
-  ForgeAccount,
-  ForgeAccountKind,
-  ForgeApp,
-  ForgeId,
-  ForgeInstallationId,
+import {
+  workerPodForgeApp,
+  type ForgeAccount,
+  type ForgeAccountKind,
+  type ForgeApp,
+  type ForgeId,
+  type ForgeInstallationId,
+  type ForgeInstallationStore,
 } from "./forgeInstallation.ts";
 import type {
   ForgeInstallationClaimed,
@@ -126,6 +133,10 @@ import type {
   ProjectRepositoryRetirementStore,
   RepositoryLanding,
 } from "./repositoryBinding.ts";
+import {
+  repositoryWorkerReaches,
+  type RepositoryWorkerReach,
+} from "./repositoryWorkerReach.ts";
 
 /** One app this deployment holds the key of, as its own forge describes it. */
 export interface ForgeAppSummary extends ForgeAppDescription {
@@ -264,14 +275,25 @@ export type ProjectRepositoryConfigurationsResult =
       readonly reason: ProjectRepositoryConfigurationsDeferral;
     };
 
+/** Why the worker App cannot be said to reach a bound repository, which a binding it reaches carries none of. */
+export type ProjectRepositoryWorkerUnreached = Exclude<
+  RepositoryWorkerReach,
+  { readonly reach: "Covered" }
+>;
+
+/** A binding's `workerReach`, absent where the worker App reaches it or this deployment asks no worker App. */
+type ProjectRepositoryWorkerReachField = {
+  readonly workerReach?: ProjectRepositoryWorkerUnreached;
+};
+
 /** What binding one repository to one project came to. */
 export type ProjectRepositoryBindResult =
-  | {
+  | ({
       readonly result: "Bound";
       readonly repository: RepositoryId;
       readonly landing: RepositoryLanding;
       readonly configurations: ProjectRepositoryConfigurationsResult;
-    }
+    } & ProjectRepositoryWorkerReachField)
   | { readonly result: "AlreadyBound"; readonly repository: RepositoryId }
   | { readonly result: "NotInstalled" }
   | { readonly result: "OperationConflict" }
@@ -289,7 +311,8 @@ export type ProjectRepositoryBindResult =
 export type ProjectRepositoryListed = ProjectRepositoryBound & {
   /** The last configuration import attempted of it, absent where none was. */
   readonly lastImport?: RepositoryConfigurationImportAttempt;
-} & (
+} & ProjectRepositoryWorkerReachField &
+  (
     | { readonly configured: false }
     | {
         readonly configured: true;
@@ -362,6 +385,8 @@ export interface ProjectRepositoryBindRequest {
 export interface RepositoryOnboardingForgeApp {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
+  /** The account owning a repository on this forge, nothing where the forge addresses no such repository. */
+  readonly accountOf: (repository: RepositoryId) => ForgeAccount | undefined;
   readonly apps: ForgeApps;
   readonly directory: ForgeInstallationDirectory;
   readonly installationRepositories: ForgeInstallationRepositories;
@@ -431,6 +456,8 @@ export interface RepositoryOnboardingPorts {
   readonly access: ProjectAccess;
   readonly forgeApps: readonly RepositoryOnboardingForgeApp[];
   readonly credentials: RepositoryCredentialPort;
+  /** The claim a repository's owner is minted under, looked up as the plane's mint looks it up. */
+  readonly installations: ForgeInstallationStore;
   readonly recording: ForgeInstallationRecording;
   readonly claims: ForgeInstallationClaims;
   readonly bindings: ProjectRepositoryBindings;
@@ -886,6 +913,43 @@ async function boundRepositoryLanding(
   return bound.landing;
 }
 
+/**
+ * What the worker App reaches of each repository named, under the project's
+ * tenant, through the first worker App half this deployment holds; none held
+ * is nothing asked. A binding is durable before this runs, so a question that
+ * raised is every repository's `Unknown` rather than a failed bind or listing.
+ */
+async function boundRepositoryWorkerReaches(
+  ports: RepositoryOnboardingPorts,
+  partition: Partition,
+  repositories: readonly RepositoryId[],
+): Promise<ReadonlyMap<RepositoryId, RepositoryWorkerReach>> {
+  const worker = ports.forgeApps.find((held) => held.app === workerPodForgeApp);
+  if (worker === undefined || repositories.length === 0) return new Map();
+  return repositoryWorkerReaches(
+    { ...worker, installations: ports.installations },
+    partition.tenant,
+    repositories,
+  ).catch(
+    () =>
+      new Map(
+        repositories.map((repository) => [
+          repository,
+          { reach: "Unknown" } as const,
+        ]),
+      ),
+  );
+}
+
+/** A binding's reach as it is answered: nothing where the worker App reaches it or nothing was asked. */
+function projectRepositoryWorkerReachField(
+  reach: RepositoryWorkerReach | undefined,
+): ProjectRepositoryWorkerReachField {
+  return reach === undefined || reach.reach === "Covered"
+    ? {}
+    : { workerReach: reach };
+}
+
 /** One binding as the bind route asks for it, which is the permit and then the act. */
 async function bindRepository(
   ports: RepositoryOnboardingPorts,
@@ -909,8 +973,8 @@ async function bindRepository(
  * that would have to answer at execution time is the one asked here, and the
  * token that comes back is read for its verdict and dropped. It is the portal
  * claim that is proved, the api's own reads minting under the portal app, and
- * whether the tenant also claimed the worker app on the repository's owner is
- * the plane's question at execution time.
+ * whether the worker app reaches the repository is the plane's question at
+ * execution time, reported beside the binding here rather than refused.
  */
 async function boundRepository(
   ports: RepositoryOnboardingPorts,
@@ -944,6 +1008,13 @@ async function boundRepository(
           ports,
           binding,
           authority,
+        ),
+        ...projectRepositoryWorkerReachField(
+          (
+            await boundRepositoryWorkerReaches(ports, partition, [
+              request.repository,
+            ])
+          ).get(request.repository),
         ),
       };
     case "AlreadyBound":
@@ -1058,21 +1129,37 @@ function heldRepositoryConfigurations(
   return undefined;
 }
 
-/** One binding beside what the step has left the project for it, and the last import attempted of it. */
+/** What one listing reads beside the bindings themselves. */
+interface ListedRepositoryReads {
+  readonly held: RepositoryConfigurationsHeld;
+  readonly attempted: ReadonlyMap<
+    RepositoryId,
+    RepositoryConfigurationImportAttempt
+  >;
+  readonly reaches: ReadonlyMap<RepositoryId, RepositoryWorkerReach>;
+}
+
+/** One binding beside what the step has left the project for it, the last import attempted of it, and what the worker App reaches of it. */
 function listedRepository(
   row: ProjectRepositoryBound,
-  held: RepositoryConfigurationsHeld,
-  attempted: ReadonlyMap<RepositoryId, RepositoryConfigurationImportAttempt>,
+  reads: ListedRepositoryReads,
 ): ProjectRepositoryListed {
-  const configurationsHeld = heldRepositoryConfigurations(held, row.repository);
-  const lastImport = attempted.get(row.repository);
-  const listed = lastImport === undefined ? row : { ...row, lastImport };
+  const configurationsHeld = heldRepositoryConfigurations(
+    reads.held,
+    row.repository,
+  );
+  const lastImport = reads.attempted.get(row.repository);
+  const listed = {
+    ...row,
+    ...(lastImport === undefined ? {} : { lastImport }),
+    ...projectRepositoryWorkerReachField(reads.reaches.get(row.repository)),
+  };
   return configurationsHeld === undefined
     ? { ...listed, configured: false }
     : { ...listed, configured: true, configurationsHeld };
 }
 
-/** Every binding a reader may see, each with what the step has left the project for it. */
+/** Every binding a reader may see, each with what the step has left the project for it and, where it is live, what the worker App reaches of it. */
 async function projectRepositories(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
@@ -1089,9 +1176,18 @@ async function projectRepositories(
     partition,
     repositories,
   });
+  const reaches = await boundRepositoryWorkerReaches(
+    ports,
+    partition,
+    bound
+      .filter((row) => row.retiredAt === undefined)
+      .map((row) => row.repository),
+  );
   return {
     result: "Repositories",
-    repositories: bound.map((row) => listedRepository(row, held, attempted)),
+    repositories: bound.map((row) =>
+      listedRepository(row, { held, attempted, reaches }),
+    ),
   };
 }
 
