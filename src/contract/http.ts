@@ -61,8 +61,13 @@ export function isBoundedText(value: string, charsMax: number): boolean {
 
 /** What `text` weighs as a JSON string in UTF-8, its quotes included. */
 export function jsonTextBytes(text: string): number {
+  return textUtf8Bytes(JSON.stringify(text));
+}
+
+/** What `text` weighs in UTF-8, a lone surrogate weighing what the replacement character it is written as does. */
+export function textUtf8Bytes(text: string): number {
   let bytes = 0;
-  for (const char of JSON.stringify(text)) {
+  for (const char of text) {
     const point = char.codePointAt(0) ?? 0;
     bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
   }

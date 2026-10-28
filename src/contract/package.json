@@ -4,6 +4,7 @@
   "license": "MIT",
   "type": "module",
   "exports": {
+    "./chatHost": "./chatHost.ts",
     "./sessionPlane": "./sessionPlane.ts",
     "./sessionTools": "./sessionTools.ts",
     "./workerContract": "./workerContract.ts",
