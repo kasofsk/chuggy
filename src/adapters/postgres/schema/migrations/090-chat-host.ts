@@ -36,11 +36,11 @@
  *
  * AN INQUIRY IS ITS MEMBER'S CHAT HOST'S. A pool claims its project's lead
  * alone; a chat host claims its owner's threads and inquiries; a personal runner
- * claims its owner's threads only while its owner registers no chat host, so a
- * thread's attempts land on one machine of a member's. An inquiry a pool
- * already holds is left to run to its end. A member's standing for a thread is
- * their chat host's where they register one and their runners' otherwise, and
- * for an inquiry their chat host's.
+ * claims its owner's threads only while its owner's chat host is not live, by
+ * the window that bounds a runner's standing, so a live host comes first and a
+ * stopped one strands nothing. An inquiry a pool already holds is left to run
+ * to its end. A member's standing for a thread is their chat host's and their
+ * runners' together, and for an inquiry their chat host's.
  *
  * The bodies are written out rather than built from the helpers `041`, `049`,
  * `050` and `070` use, so this file goes on saying what it installed when those
@@ -83,9 +83,13 @@ const poolOpened = `public.${poolSessionOpenFunction}(in_tenant text, in_project
 
 const poolFenced = `public.${workerPoolFenceFunction}(in_tenant text, in_project text, in_pool text)`;
 
-const personalAwaiting = `public.${personalSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint)`;
+const personalAwaitingBefore = `public.${personalSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint)`;
 
-const personalOpened = `public.${personalSessionOpenFunction}(in_tenant text, in_owner text, in_principal text, in_project text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb)`;
+const personalAwaiting = `public.${personalSessionsAwaitingFunction}(in_tenant text, in_owner text, in_principal text, in_backoff_secs bigint, in_max bigint, in_polled_secs_max bigint)`;
+
+const personalOpenedBefore = `public.${personalSessionOpenFunction}(in_tenant text, in_owner text, in_principal text, in_project text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb)`;
+
+const personalOpened = `public.${personalSessionOpenFunction}(in_tenant text, in_owner text, in_principal text, in_project text, in_session text, in_capabilities text[], in_agent_reference text, in_attempt text, in_assignment text, in_bearer text, in_secret_digest text, in_lease_secs bigint, in_backoff_secs bigint, in_held_max bigint, in_invocation jsonb, in_image text, in_launch jsonb, in_polled_secs_max bigint)`;
 
 const personalAssignments = `public.${personalSessionAssignmentsFunction}(in_tenant text, in_owner text, in_principal text, in_assignments text[])`;
 
@@ -337,7 +341,8 @@ export const migration090: Migration = {
          PERFORM ${sessionTurnReleaseFunction}(in_tenant,in_project,stale.session,stale.attempt);
        END LOOP;
      END $$`,
-    `CREATE OR REPLACE FUNCTION ${personalAwaiting}
+    `DROP FUNCTION ${personalAwaitingBefore}`,
+    `CREATE FUNCTION ${personalAwaiting}
        RETURNS TABLE(project text, session text, kind text, capabilities text[], agent_reference text)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -349,7 +354,9 @@ export const migration090: Migration = {
         WHERE r.tenant=in_tenant AND r.owner=in_owner AND r.principal=in_principal
           AND s.state='Open' AND s.kind='Thread' AND s.principal=r.owner
           AND NOT EXISTS(SELECT 1 FROM chat_host h
-                          WHERE h.tenant=r.tenant AND h.owner=r.owner)
+                          WHERE h.tenant=r.tenant AND h.owner=r.owner
+                            AND h.last_polled_at > now() - make_interval(
+                                  secs => in_polled_secs_max::double precision))
           AND EXISTS(SELECT 1 FROM project p
                       WHERE p.tenant=s.tenant AND p.project=s.project
                         AND p.lifecycle='Active')
@@ -364,7 +371,9 @@ export const migration090: Migration = {
                  s.project,s.session
         LIMIT in_max
      $$`,
-    `CREATE OR REPLACE FUNCTION ${personalOpened} RETURNS text
+    ...owned(personalAwaiting, poolPlaneRole),
+    `DROP FUNCTION ${personalOpenedBefore}`,
+    `CREATE FUNCTION ${personalOpened} RETURNS text
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
@@ -382,7 +391,9 @@ export const migration090: Migration = {
         WHERE r.tenant=in_tenant AND r.owner=in_owner AND r.principal=in_principal
           AND l.project=in_project
           AND NOT EXISTS(SELECT 1 FROM chat_host h
-                          WHERE h.tenant=r.tenant AND h.owner=r.owner)
+                          WHERE h.tenant=r.tenant AND h.owner=r.owner
+                            AND h.last_polled_at > now() - make_interval(
+                                  secs => in_polled_secs_max::double precision))
           AND EXISTS(SELECT 1 FROM project p
                       WHERE p.tenant=l.tenant AND p.project=l.project
                         AND p.lifecycle='Active');
@@ -427,6 +438,7 @@ export const migration090: Migration = {
               in_owner,in_principal,'Personal',in_assignment,in_image,in_launch);
        RETURN 'Opened';
      END $$`,
+    ...owned(personalOpened, poolPlaneRole),
     `CREATE OR REPLACE FUNCTION ${personalAssignments} RETURNS SETOF text
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
@@ -734,16 +746,13 @@ export const migration090: Migration = {
                   secs => in_polled_secs_max::double precision), false) AS live
            FROM worker_pool w
           WHERE w.tenant=in_tenant AND w.project=in_project),
-       hosted AS (
-         SELECT CASE WHEN bool_or(live) THEN 'Live'
-                     WHEN count(*)>0 THEN 'Offline'
-                     ELSE 'Unregistered' END AS standing FROM host)
-       SELECT CASE WHEN EXISTS(SELECT 1 FROM host)
-                   THEN (SELECT standing FROM hosted)
-                   ELSE (SELECT CASE WHEN bool_or(live) THEN 'Live'
-                                     WHEN count(*)>0 THEN 'Offline'
-                                     ELSE 'Unregistered' END FROM personal) END,
-              (SELECT standing FROM hosted),
+       member AS (SELECT live FROM personal UNION ALL SELECT live FROM host)
+       SELECT (SELECT CASE WHEN bool_or(live) THEN 'Live'
+                           WHEN count(*)>0 THEN 'Offline'
+                           ELSE 'Unregistered' END FROM member),
+              (SELECT CASE WHEN bool_or(live) THEN 'Live'
+                           WHEN count(*)>0 THEN 'Offline'
+                           ELSE 'Unregistered' END FROM host),
               (SELECT CASE WHEN bool_or(live) THEN 'Live'
                            WHEN count(*)>0 THEN 'Offline'
                            ELSE 'Unregistered' END FROM pools)

@@ -3153,7 +3153,40 @@ async function holderKinds090(subject: pg.Pool): Promise<readonly unknown[]> {
   ).rows;
 }
 
-test("090 names every attempt's holder kind from what it held, finished ones too, drops a session attempt's personal flag alone, and leaves a pool's inquiry held", async () => {
+/** Asserts the pool that held the seed's inquiry before 090 still holds it after, renews its lease, and releases it, which ends it. */
+async function poolHeldThrough090(subject: pg.Pool): Promise<void> {
+  const pool = `'tenant-c90','project-c90','pool-c90','pool-principal-c90'`;
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT assignment FROM pool_session_attempt_holding(${pool})
+         UNION ALL
+         SELECT a FROM pool_session_assignments(${pool},'{assignment-pool}') a`,
+      )
+    ).rows,
+    [{ assignment: "assignment-pool" }, { assignment: "assignment-pool" }],
+  );
+  for (const call of [
+    `renew_pool_session_attempt(${pool},'assignment-pool',60)`,
+    `pool_session_attempt_held(${pool},'assignment-pool')`,
+    `release_pool_session_attempt(${pool},'assignment-pool')`,
+  ])
+    assert.deepEqual(
+      (await subject.query(`SELECT ${call} AS answered`)).rows,
+      [{ answered: true }],
+      call,
+    );
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT state FROM session_attempt WHERE attempt='attempt-pool'`,
+      )
+    ).rows,
+    [{ state: "Withdrawn" }],
+  );
+}
+
+test("090 names every attempt's holder kind from what it held, finished ones too, drops a session attempt's personal flag alone, and leaves a pool's inquiry held, renewed and released by its pool", async () => {
   await migrationDatabase("chat_host", async (subject) => {
     await installationBefore(subject, migration090.version);
     await subject.query(holdersSeed090);
@@ -3188,14 +3221,6 @@ test("090 names every attempt's holder kind from what it held, finished ones too
         `${attempt} as ${kind}`,
       );
 
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT assignment FROM pool_session_attempt_holding(
-             'tenant-c90','project-c90','pool-c90','pool-principal-c90')`,
-        )
-      ).rows,
-      [{ assignment: "assignment-pool" }],
-    );
+    await poolHeldThrough090(subject);
   });
 });

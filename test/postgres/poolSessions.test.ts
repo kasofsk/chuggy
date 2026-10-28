@@ -72,7 +72,10 @@ import {
   type Partition,
   type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
-import { sessionPoolTurnDwellSecs } from "../../src/interpreter/sessionPlacement.ts";
+import {
+  sessionPoolTurnDwellSecs,
+  sessionRunnerPolledSecsMax,
+} from "../../src/interpreter/sessionPlacement.ts";
 import {
   workerPoolHeldImages,
   workerPoolPoll,
@@ -317,6 +320,18 @@ async function chatHost(
     "Registered",
   );
   return { kind: "ChatHost", ...key, principal: registered, clientId };
+}
+
+/** Stamps `host`'s last poll `secsAgo` back: live within the window a runner's standing is bounded by, stopped beyond it. */
+async function hostPolled(
+  host: ChatHostPlaneIdentity,
+  secsAgo = 0,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE chat_host SET last_polled_at=now()-make_interval(secs=>$3)
+      WHERE tenant=$1 AND owner=$2`,
+    [host.tenant, host.owner, secsAgo],
+  );
 }
 
 /** Another project of `partition`'s tenant, its sessions routed to runners. */
@@ -586,7 +601,7 @@ test("every attempt a runner opens names its holder's kind, its holder and the p
   );
 });
 
-test("a lead is handed to any pool of its project and a thread and an inquiry to their member's chat host alone, a thread to their personal runner only while they register no chat host, and nothing to another project's", async () => {
+test("a lead is handed to any pool of its project and a thread and an inquiry to their member's chat host alone, a thread to their personal runner only while their chat host is not live, and nothing to another project's", async () => {
   const partition = await sessionRigProject(rig, "pool-whose");
   await sessionRigRouted(rig, partition, "Pool", "Pool");
   const member = principal("member-whose");
@@ -635,24 +650,29 @@ test("a lead is handed to any pool of its project and a thread and an inquiry to
   assert.deepEqual(await handed(runs), new Set());
 });
 
-test("while a member registers a chat host their personal runner is handed none of their threads, and once it is taken off it is handed them again", async () => {
+test("while a member's chat host is live it is handed their threads ahead of their live personal runner, and while it is not, polled never or not lately, the runner is handed them", async () => {
   const { partition, member } = await routedProject("pool-precedence");
   const thread = await waiting(partition, "precedence", "Thread", member);
   const runs = await personal(partition, member);
   const host = await chatHost(partition, member);
+  const mine = async () =>
+    (await postgresSessionPlacement(apiPool).runners(partition, member)).mine;
+  assert.deepEqual(
+    await awaitingOf(runs),
+    new Set([thread.session]),
+    "a chat host that never polled kept a thread from its member's runner",
+  );
+  await hostPolled(host);
   assert.deepEqual(await awaitingOf(runs), new Set());
   assert.deepEqual((await polled(runs, 4)).sessions, []);
+  assert.equal(await mine(), "Live", "the runner refused was not live");
   assert.deepEqual(await awaitingOf(host), new Set([thread.session]));
-  assert.equal(
-    await chatHostRegistry.deregister(
-      { tenant: partition.tenant, owner: member },
-      host.clientId,
-    ),
-    true,
-  );
+  await hostPolled(host, sessionRunnerPolledSecsMax + 1);
+  assert.equal(await mine(), "Live");
   assert.deepEqual(
     await Promise.all((await polled(runs, 4)).sessions.map(sessionOf)),
     [thread.session],
+    "a stopped chat host stranded its member's thread",
   );
 });
 
@@ -728,7 +748,7 @@ async function openedFor(
   });
 }
 
-test("a lead is read as waiting by every pool of the project, a thread and an inquiry by their member's chat host, and a thread by their personal runner serving its project while they register no chat host", async () => {
+test("a lead is read as waiting by every pool of the project, a thread and an inquiry by their member's chat host, and a thread by their personal runner serving its project while their chat host is not live", async () => {
   const { partition, member, lead, thread, inquiry } =
     await confinedProject("pool-read");
   for (const elsewhere of [member, principal("other-read"), undefined])
@@ -744,10 +764,10 @@ test("a lead is read as waiting by every pool of the project, a thread and an in
     assert.deepEqual(await awaitingOf(elsewhere), new Set());
   const runs = await personal(partition, member);
   assert.deepEqual(await awaitingOf(runs), new Set([thread]));
-  assert.deepEqual(
-    await awaitingOf(await chatHost(partition, member)),
-    new Set([thread, inquiry]),
-  );
+  const host = await chatHost(partition, member);
+  assert.deepEqual(await awaitingOf(host), new Set([thread, inquiry]));
+  assert.deepEqual(await awaitingOf(runs), new Set([thread]));
+  await hostPolled(host);
   assert.deepEqual(await awaitingOf(runs), new Set());
 });
 
@@ -823,7 +843,7 @@ test("a session read as waiting by the runner it is for is opened by no pool or 
   );
 });
 
-test("a session read as waiting by the runner it is for is opened by no chat host it is not for, and a thread by no personal runner while its member registers a chat host", async () => {
+test("a session read as waiting by the runner it is for is opened by no chat host it is not for, and a thread by no personal runner while its member's chat host is live", async () => {
   const { partition, member, lead, thread, inquiry } =
     await confinedProject("host-open");
   const runs = await personal(partition, member);
@@ -833,6 +853,7 @@ test("a session read as waiting by the runner it is for is opened by no chat hos
     host,
   ]);
   const other = await chatHost(partition, principal("other-open"));
+  await hostPolled(host);
   await openedByNone(candidate, [
     [host, lead, "a chat host opened a lead"],
     [other, inquiry, "a chat host opened another member's inquiry"],
@@ -840,7 +861,7 @@ test("a session read as waiting by the runner it is for is opened by no chat hos
     [
       runs,
       thread,
-      "a personal runner opened a thread while its owner registers a chat host",
+      "a personal runner opened a thread while its owner's chat host is live",
     ],
   ]);
   assert.equal(await openedFor(host, candidate(inquiry)), "Opened");
@@ -1153,7 +1174,7 @@ test("a pool may pull the image of a session it holds and of none it does not", 
   assert.deepEqual(await images(pool), []);
 });
 
-test("only a poll that could take a session marks a runner live, and a member's own runner is their chat host where they register one and otherwise their personal runner while it serves the project", async () => {
+test("only a poll that could take a session marks a runner live, and a member's own runners are their chat host and their personal runner while it serves the project, live while either is", async () => {
   const { partition, member, pool } = await routedProject("pool-live");
   const standing = () =>
     postgresSessionPlacement(apiPool).runners(partition, member);
@@ -1203,8 +1224,8 @@ test("only a poll that could take a session marks a runner live, and a member's 
   await chatHost(partition, member);
   assert.deepEqual(
     await standing(),
-    hosted,
-    "a member's live personal runner stood for the chat host they register",
+    { ...hosted, mine: "Live" },
+    "a member's live personal runner did not stand beside a chat host offline",
   );
 });
 

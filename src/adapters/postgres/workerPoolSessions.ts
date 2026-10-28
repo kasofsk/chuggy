@@ -20,6 +20,7 @@ import {
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import { asProjectId } from "../../interpreter/projectStore.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import type {
   ChatHostIdentity,
   PersonalRunnerIdentity,
@@ -375,7 +376,8 @@ function postgresPersonalSessionClaims(
             sql`SELECT project,session,kind,capabilities,agent_reference
                   FROM personal_sessions_awaiting_claim(
                     ${identity.tenant},${identity.owner},${identity.principal},
-                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")})`,
+                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
+                    ${sessionRunnerPolledSecsMax})`,
           )
         ).rows,
       ),
@@ -392,7 +394,7 @@ function postgresPersonalSessionClaims(
                 ${opening.bearerSecretDigest},${terms.leaseSecs},
                 ${opening.placementBackoffSecs},${terms.heldMax},
                 ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb)::text AS opened`,
+                ${terms.launch}::jsonb,${sessionRunnerPolledSecsMax})::text AS opened`,
         ),
       );
     },
