@@ -81,7 +81,11 @@ import {
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
-import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
+import {
+  asForgeInstallationId,
+  asForgeInstallationToken,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -529,18 +533,39 @@ const credentialsMinted: Readonly<
   Unavailable: { minted: "Unavailable" },
 };
 
+/** A refusal the installations made, through the installation on the owner and with none claimed there. */
+const credentialsUncovered: readonly WorkerPlaneCredentialMinted[] = [
+  {
+    minted: "NotFound",
+    uncovered: {
+      repository: asRepositoryId(credentialRepository),
+      app: "worker",
+      installationId: asForgeInstallationId("156786211"),
+    },
+  },
+  {
+    minted: "NotFound",
+    uncovered: {
+      repository: asRepositoryId(credentialRepository),
+      app: "worker",
+    },
+  },
+];
+
 /** Every answer the minting can give, through whichever of its two doors the route calls. */
 const credentialCases: readonly WorkerPlaneCase[] = [
   { name: "a plane that mints nothing" },
-  ...Object.values(credentialsMinted).map((minted) => ({
-    name: `a mint answering ${minted.minted}`,
-    service: {
-      credentials: {
-        attempt: () => Promise.resolve(minted),
-        session: () => Promise.resolve(minted),
+  ...[...Object.values(credentialsMinted), ...credentialsUncovered].map(
+    (minted) => ({
+      name: `a mint answering ${JSON.stringify(minted)}`,
+      service: {
+        credentials: {
+          attempt: () => Promise.resolve(minted),
+          session: () => Promise.resolve(minted),
+        },
       },
-    },
-  })),
+    }),
+  ),
 ];
 
 const bothAnswers = [true, false] as const;

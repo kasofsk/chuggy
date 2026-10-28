@@ -9,7 +9,8 @@
  * reach a URL this tree builds.
  */
 
-import type { RepositoryId } from "../../interpreter/finalizer.ts";
+import { asForgeAccount } from "../../interpreter/forgeInstallation.ts";
+import type { ForgeRepositoryAddress } from "../../interpreter/repositoryWorkerReach.ts";
 
 /** One repository as this forge addresses it. */
 export interface GithubAddress {
@@ -28,7 +29,7 @@ export const githubAddressSegmentPattern = /^[A-Za-z0-9._-]+$/u;
  * naming exactly two path segments on this forge's host is no address of one.
  */
 export function githubAddressOf(
-  repository: RepositoryId,
+  repository: string,
   host: string,
 ): GithubAddress | undefined {
   let url: URL;
@@ -52,4 +53,14 @@ export function githubAddressOf(
     githubAddressSegmentPattern.test(name)
     ? { owner, name }
     : undefined;
+}
+
+/** One repository as this forge's own host addresses it, and nothing where that host addresses no such repository. */
+export function githubRepositoryAddressOf(
+  repository: string,
+): ForgeRepositoryAddress | undefined {
+  const address = githubAddressOf(repository, githubRepositoryHost);
+  return address === undefined
+    ? undefined
+    : { account: asForgeAccount(address.owner), name: address.name };
 }

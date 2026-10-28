@@ -12,6 +12,7 @@
 
 import type { AccessInviteLink } from "../../../../src/contract/accessPlane.ts";
 import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
+import type { ProjectRepositoryWorkerReachResponse } from "../../../../src/contract/responses.ts";
 import type {
   ForgeInstallationPermissionsName,
   SelectorAttention,
@@ -193,6 +194,19 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
       return "pass";
     case "Missing":
       return "parked";
+  }
+}
+
+/** Why the worker app cannot be said to reach a bound repository: a settled absence is parked, a read that said nothing is neutral. */
+export function repositoryWorkerReachTone(
+  reach: ProjectRepositoryWorkerReachResponse["reach"],
+): Tone {
+  switch (reach) {
+    case "Unselected":
+    case "Unclaimed":
+      return "parked";
+    case "Unknown":
+      return "neutral";
   }
 }
 

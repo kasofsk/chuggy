@@ -15,6 +15,7 @@ import type {
   ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
+  ProjectRepositoryWorkerReachResponse,
   RepositoryConfigurationIgnoredResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -146,6 +147,38 @@ export const repositoriesTruncated = "More than shown";
 
 /** What the page and the picker both call a job's app not being where the work is. */
 export const repositoryWorkerMissing = "Worker app missing";
+
+/** What a bound row says of the worker app's reach, why, and the forge's page an owner changes it on where it names one. */
+export interface RepositoryWorkerReachLine {
+  readonly status: string;
+  readonly detail: string;
+  readonly settingsUrl?: string;
+}
+
+/** The line a bound row draws for the reason the worker app cannot be said to reach it. */
+export function repositoryWorkerReachLine(
+  reach: ProjectRepositoryWorkerReachResponse,
+): RepositoryWorkerReachLine {
+  switch (reach.reach) {
+    case "Unselected":
+      return {
+        status: repositoryWorkerMissing,
+        detail: `The worker app's installation ${reach.installationId} does not select this repository.`,
+        settingsUrl: reach.settingsUrl,
+      };
+    case "Unclaimed":
+      return {
+        status: repositoryWorkerMissing,
+        detail: `No worker app installation is connected on ${reach.account}.`,
+      };
+    case "Unknown":
+      return {
+        status: "Worker app unread",
+        detail:
+          "GitHub did not say whether the worker app reaches this repository.",
+      };
+  }
+}
 
 /** A line under the picker's roster, and what its link to the forge says. */
 export interface RepositoryGrantLine {

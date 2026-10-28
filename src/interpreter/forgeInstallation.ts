@@ -311,6 +311,16 @@ export interface ForgeTokenRequest {
   readonly unheld?: true;
 }
 
+/**
+ * The app a refused mint for one repository was asked of, and the installation
+ * of it claimed on the repository's owner that it went through; no
+ * `installationId` is no such claim, so no installation of the app covers it.
+ */
+export interface ForgeMintInstallation {
+  readonly app: ForgeApp;
+  readonly installationId?: ForgeInstallationId;
+}
+
 /** What minting came to, a refusal kept apart from an outage all the way out. */
 export type ForgeTokenMinted =
   | {
@@ -321,6 +331,8 @@ export type ForgeTokenMinted =
   | {
       readonly minted: "Denied";
       readonly evidence?: CredentialMintEvidence;
+      /** Absent where the refusal came before any installation was looked for. */
+      readonly installation?: ForgeMintInstallation;
     }
   | {
       readonly minted: "Unavailable";
