@@ -15,10 +15,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  finalizerHoldLog,
   finalizerTelemetry,
   recordFinalizer,
   silentFinalizerMetrics,
   silentFinalizerTelemetry,
+  type FinalizerHoldReason,
   type FinalizerMetrics,
   type FinalizerTelemetry,
 } from "../../src/interpreter/finalizerTelemetry.ts";
@@ -124,4 +126,79 @@ test("every observation the finalizer declares is emitted by something", () => {
     declared.filter((named) => !emitted.has(named)),
     [],
   );
+});
+
+/** What a hold log wrote, each line with its newline taken off. */
+function holdLogLines(
+  requestsMax?: number,
+): readonly [FinalizerTelemetry, string[]] {
+  const lines: string[] = [];
+  const sealed = finalizerHoldLog((line) => {
+    assert.ok(line.endsWith("\n"), line);
+    lines.push(line.slice(0, -1));
+  }, requestsMax);
+  return [sealed, lines];
+}
+
+/** Advances one request as many times in a row as asked, held at one reason or moved. */
+function holdLogAdvance(
+  sealed: FinalizerTelemetry,
+  request: string,
+  held: FinalizerHoldReason | undefined,
+  times = 1,
+): void {
+  for (let advance = 0; advance < times; advance += 1) {
+    recordFinalizer(sealed, (metrics) => {
+      metrics.advanced(request, held);
+    });
+  }
+}
+
+test("a request held at one reason pass after pass is written as its run doubles, not every pass", () => {
+  const [sealed, lines] = holdLogLines();
+  holdLogAdvance(sealed, "request-one", "CandidateUnbuilt", 9);
+  assert.deepEqual(lines, [
+    'finalizer: request "request-one" held at CandidateUnbuilt, 1 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 2 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 4 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 8 advances in a row',
+  ]);
+});
+
+test("a hold at another reason, or after the request moved, starts its run again", () => {
+  const [sealed, lines] = holdLogLines();
+  holdLogAdvance(sealed, "request-one", "CandidateUnbuilt", 3);
+  holdLogAdvance(sealed, "request-one", "TargetUnreadable");
+  holdLogAdvance(sealed, "request-one", undefined);
+  holdLogAdvance(sealed, "request-one", "TargetUnreadable");
+  holdLogAdvance(sealed, "request-two", undefined, 3);
+  assert.deepEqual(lines, [
+    'finalizer: request "request-one" held at CandidateUnbuilt, 1 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 2 advances in a row',
+    'finalizer: request "request-one" held at TargetUnreadable, 1 advances in a row',
+    'finalizer: request "request-one" held at TargetUnreadable, 1 advances in a row',
+  ]);
+});
+
+test("a hold log remembers no more requests than its bound, forgetting the oldest", () => {
+  const [sealed, lines] = holdLogLines(1);
+  holdLogAdvance(sealed, "request-one", "CandidateUnbuilt", 2);
+  holdLogAdvance(sealed, "request-two", "CandidateUnbuilt");
+  holdLogAdvance(sealed, "request-one", "CandidateUnbuilt");
+  assert.deepEqual(lines, [
+    'finalizer: request "request-one" held at CandidateUnbuilt, 1 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 2 advances in a row',
+    'finalizer: request "request-two" held at CandidateUnbuilt, 1 advances in a row',
+    'finalizer: request "request-one" held at CandidateUnbuilt, 1 advances in a row',
+  ]);
+  assert.throws(() => finalizerHoldLog(() => undefined, 0), RangeError);
+});
+
+test("a hold log writes nothing for any observation but an advance", () => {
+  const [sealed, lines] = holdLogLines();
+  recordFinalizer(sealed, (metrics) => {
+    metrics.holding("CandidateUnbuilt");
+    metrics.claiming(1, 1);
+  });
+  assert.deepEqual(lines, []);
 });

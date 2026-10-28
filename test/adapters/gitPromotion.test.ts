@@ -460,6 +460,89 @@ test("a worker source is accepted only at the commit its remote ref names", asyn
   );
 });
 
+/** Commits one file on whatever the seed has checked out, pushing nothing, and answers the commit. */
+function fixtureSeedCommit(fixture: Fixture, path: string): string {
+  writeFileSync(join(fixture.seed, path), `${path}\n`);
+  fixtureGit(fixture.seed, "add", "-A");
+  fixtureGit(fixture.seed, "-c", "commit.gpgsign=false", "commit", "-qm", path);
+  return fixtureGit(fixture.seed, "rev-parse", "HEAD");
+}
+
+/** Publishes what the seed has checked out under one attempt's source ref, which the marker names. */
+function fixtureSourceRef(fixture: Fixture, marker: string): string {
+  const ref = `refs/heads/chuggy/tickets/1/attempts/${marker.repeat(64)}`;
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, `HEAD:${ref}`);
+  return ref;
+}
+
+test("a worker source squashed past the base it declares is undescended, not missing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const target = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const earlier = fixtureSeedCommit(fixture, "earlier.txt");
+  fixtureSourceRef(fixture, "a");
+  fixtureSeedCommit(fixture, "later.txt");
+  fixtureGit(fixture.seed, "reset", "-q", "--soft", target);
+  const squashed = fixtureSeedCommit(fixture, "squashed.txt");
+  const ref = fixtureSourceRef(fixture, "b");
+  const port = fixturePort(fixture);
+
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(squashed),
+      base: asGitObjectId(earlier),
+    }),
+    { prepared: "Undescended" },
+    "a base the scratch never fetched is still an answer once the history is read",
+  );
+});
+
+test("a worker source rebased past the base it declares is undescended, not missing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const target = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "work");
+  const earlier = fixtureSeedCommit(fixture, "earlier.txt");
+  const earlierRef = fixtureSourceRef(fixture, "a");
+  fixtureSeedCommit(fixture, "later.txt");
+  fixtureGit(fixture.seed, "checkout", "-q", "main");
+  fixtureCommit(fixture, "moved.txt", "moved\n", "moved");
+  fixtureGit(fixture.seed, "checkout", "-q", "work");
+  fixtureGit(
+    fixture.seed,
+    "-c",
+    "commit.gpgsign=false",
+    "rebase",
+    "-q",
+    "main",
+  );
+  const rebased = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const ref = fixtureSourceRef(fixture, "b");
+  const port = fixturePort(fixture);
+
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(earlierRef),
+      commit: asGitObjectId(earlier),
+      base: asGitObjectId(target),
+    }),
+    { prepared: "Candidate", candidate: earlier },
+    "the scratch now holds the base the rebase left behind",
+  );
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(rebased),
+      base: asGitObjectId(earlier),
+    }),
+    { prepared: "Undescended" },
+  );
+});
+
 test("a target the candidate already contains integrates to the candidate itself", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);

@@ -239,6 +239,7 @@ import {
   type FinalizerConfig,
   type FinalizerOwnerId,
   type FinalizerStore,
+  type GitEvidence,
   type GitObjectId,
   type GitPromotionPort,
   type GitRefName,
@@ -1070,11 +1071,52 @@ async function finalizerBuildSource(
     commit: source.source.commit,
     base: source.source.base,
   });
-  if (prepared.prepared !== "Candidate") {
-    finalizerHold(service, tally, "CandidateUnbuilt");
-    return;
+  switch (prepared.prepared) {
+    case "Candidate":
+      await finalizerIntegratePrepared(
+        service,
+        subject,
+        prepared.candidate,
+        tally,
+      );
+      return;
+    case "Undescended":
+      await finalizerPreparationFailed(service, subject, subject.target, tally);
+      return;
+    case "Failed":
+      finalizerHold(
+        service,
+        tally,
+        finalizerBuildSourceHold(prepared.evidence),
+      );
+      return;
+    default:
+      return assertNever(prepared);
   }
-  await finalizerIntegratePrepared(service, subject, prepared.candidate, tally);
+}
+
+/**
+ * What a source that could not be proved is held at. A remote that could not
+ * be reached or would not authorize the read is the repository the target is
+ * read from, which is `TargetUnreadable` and is recorded like it; a ref that
+ * is gone, moved or unfetched says nothing the roster names, so it stays an
+ * operational hold.
+ */
+function finalizerBuildSourceHold(evidence: GitEvidence): FinalizerHoldReason {
+  switch (evidence) {
+    case "RemoteUnreachable":
+    case "RemoteDenied":
+      return "TargetUnreadable";
+    case "RefUnreadable":
+    case "ObjectMissing":
+    case "IntegrationFailed":
+    case "PromotionTimedOut":
+    case "RemoteDeclined":
+    case "WorkflowsRefused":
+      return "CandidateUnbuilt";
+    default:
+      return assertNever(evidence);
+  }
 }
 
 /**
@@ -1840,7 +1882,8 @@ async function finalizerRecordHold(
  * Advances one claimed request by at most one decision, or by none at all, and
  * leaves the request holding what that advance found. A pass that reached a
  * result records nothing: the request is answered, and the columns it carries
- * are the evidence of what answered it.
+ * are the evidence of what answered it, though the sink is told either way
+ * which request this was and the hold it was left at, if any.
  */
 async function finalizerAdvance(
   service: FinalizerService,
@@ -1856,6 +1899,10 @@ async function finalizerAdvance(
   else await finalizerAdvanceDecided(service, gathered.view, tally);
   if (tally.conclusions === spent)
     await finalizerRecordHold(service, claim, tally);
+  const held = tally.conclusions === spent ? tally.heldReason : undefined;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.advanced(claim.request, held);
+  });
 }
 
 /** Performs the one move the pure pass named, every arm of it a durable move or a hold. */
