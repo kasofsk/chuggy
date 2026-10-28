@@ -13,16 +13,21 @@
  * supervisor's stays readable; every other frame is strict. A supervisor writes
  * this version's frames until a host frame names another.
  *
- * EVERY `Start` IS ANSWERED ONCE, by `Started` or by `Refused`, and a refusal
- * is final: no `Ended` follows it. Every `Started` is followed by exactly one
- * `Ended`, however the session ended: by itself, by `Stop`, by `Drain`, or by
- * the end of the host's stream. A `Stop` while the session is being prepared
- * cancels the preparation and is answered by `Refused` with `Stopped`, and one
- * for an assignment the supervisor neither prepares nor runs is answered by
- * nothing. `Drain` is answered by `Drained` once every `Started` has its
- * `Ended`, and a `Start` after it is refused with `Draining`. At the end of its
- * standard input the supervisor stops every session, writes each one's
- * `Ended`, and exits.
+ * EVERY `Start` IS ANSWERED ONCE, by `Started` or by `Refused`. A refusal is
+ * final for the `Start` it answers, and no `Ended` follows it; a `Duplicate`
+ * leaves the earlier `Start`'s own answer and its `Ended` standing. Every
+ * `Started` is followed by exactly one `Ended`, whether the session ended by
+ * itself, by `Stop`, or by the end of the host's stream. A session being
+ * prepared counts wherever a running one does, toward `sessionsMax` included.
+ *
+ * A `Stop` while its session is being prepared cancels the preparation and is
+ * answered by `Refused` with `Stopped`; one for an assignment the supervisor
+ * neither prepares nor runs is answered by nothing. After `Drain` the
+ * supervisor refuses every `Start` with `Draining` and lets each running
+ * session end on its own; once every `Start` read before `Drain` is answered
+ * and every `Started` has its `Ended`, it writes `Drained` and exits. At the
+ * end of its standard input it answers every preparation with `Refused` and
+ * `Stopped`, stops every running session and writes its `Ended`, and exits.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
  * repeats the line it read.
@@ -60,7 +65,7 @@ export const chatHostStopSchema = z.strictObject({
   assignment: workerPoolAssignmentIdentitySchema,
 });
 
-/** Start nothing more, and say `Drained` once every started session has ended. */
+/** Start nothing more, and wait for every running session to end on its own, which `Drained` says. */
 export const chatHostDrainSchema = z.strictObject({
   frame: z.literal("Drain"),
 });
@@ -74,8 +79,8 @@ export const chatHostFrameSchema = z.discriminatedUnion("frame", [
 
 /**
  * The supervisor's first frame: the versions of this protocol it speaks, how
- * many sessions it runs at once, and the release of this contract it was built
- * against. A field it does not name is dropped rather than refused.
+ * many sessions it prepares or runs at once, and the release of this contract
+ * it was built against. A field it does not name is dropped rather than refused.
  */
 export const chatSupervisorReadySchema = z.object({
   frame: z.literal("Ready"),
@@ -94,12 +99,13 @@ export const chatSupervisorStartedSchema = z.strictObject({
 
 /**
  * Why a supervisor did not start a session, each asking something different
- * of the host: `Full`, it already runs as many sessions as its `Ready` named;
- * `Draining`, it was told to drain; `Duplicate`, it already runs that
- * assignment, which is still the one session; `Unprepared`, the session's
- * user, directory or credential could not be made, which is that session's
- * failure rather than the supervisor's; `Stopped`, the host's `Stop` came
- * while it was being prepared, which is the end the host asked for.
+ * of the host: `Full`, it already prepares or runs as many sessions as its
+ * `Ready` named; `Draining`, it was told to drain; `Duplicate`, it already
+ * prepares or runs that assignment, under the earlier `Start`; `Unprepared`,
+ * the session's user, directory or credential could not be made, which is
+ * that session's failure rather than the supervisor's; `Stopped`, a `Stop` or
+ * the end of the host's stream came while it was being prepared, which is the
+ * end the host asked for.
  */
 export const chatSupervisorRefusals = [
   "Full",
@@ -110,7 +116,7 @@ export const chatSupervisorRefusals = [
 ] as const;
 export type ChatSupervisorRefusal = (typeof chatSupervisorRefusals)[number];
 
-/** A `Start` the supervisor did not act on. */
+/** A `Start` that did not become a session. */
 export const chatSupervisorRefusedSchema = z.strictObject({
   frame: z.literal("Refused"),
   assignment: workerPoolAssignmentIdentitySchema,
@@ -124,7 +130,7 @@ export const chatSupervisorEndedSchema = z.strictObject({
   phase: sessionEndedSchema.shape.phase,
 });
 
-/** Every session has ended since `Drain`, and the supervisor exits. */
+/** Every `Start` read before `Drain` is answered and every `Started` has its `Ended`, and the supervisor exits. */
 export const chatSupervisorDrainedSchema = z.strictObject({
   frame: z.literal("Drained"),
 });
