@@ -1,8 +1,9 @@
 /**
  * The reader's own runners in this workspace, as a list: a row each, saying
  * what it declared and runs and whether it is polling, and taking it off; the
- * projects every one of them takes work in; and the command that registers one
- * more, where the workspace lets them and they hold fewer than a member may.
+ * projects every one of them takes work in; the command that registers one
+ * more, where the workspace lets them and they hold fewer than a member may;
+ * and their chat host.
  *
  * A PROJECT IS OFFERED ONLY WHERE THE READER READS IT. The list it is chosen
  * from is the reader's own inventory narrowed to this workspace, which is the
@@ -63,6 +64,7 @@ import {
 import { RunnerAskForm } from "../RunnerAsk.tsx";
 import { RunnerSteps } from "../RunnerSteps.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
+import { MyChatHost, useChatHost } from "./MyChatHost.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -553,6 +555,7 @@ export function MyRunnerPage(): ReactNode {
     (ports) => apiPersonalRunnerPermit(ports, tenant),
   );
   const runner = usePersonalRunner(tenant);
+  const host = useChatHost(tenant);
   const inventory = usePanelInventory((ports) => apiProjectInventoryAll(ports));
   return (
     <SettingsPage title="My runners">
@@ -566,6 +569,11 @@ export function MyRunnerPage(): ReactNode {
               ? myRunnerAddable(inventory.value, tenant, runner.value)
               : undefined
           }
+        />
+        <MyChatHost
+          tenant={tenant}
+          host={host}
+          granted={permit.state === "Ready" && permit.value.granted}
         />
       </SettingsListing>
     </SettingsPage>

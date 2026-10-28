@@ -661,7 +661,8 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
  * liveness and the runner, capabilities and memory ceiling its poll named are
- * all of its row the plane writes.
+ * all of its row the plane writes, as a chat host's liveness and runner are of
+ * its.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -674,6 +675,12 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [poolPlaneRole],
     ),
     [
+      [
+        "chat_host",
+        "SELECT",
+        "owner,principal,runner_package,runner_version,tenant",
+      ],
+      ["chat_host", "UPDATE", "last_polled_at,runner_package,runner_version"],
       [
         "execution",
         "SELECT",
@@ -707,7 +714,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "session_launch",
         "SELECT",
-        "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton",
+        "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
       ],
       [
         "worker_pool",

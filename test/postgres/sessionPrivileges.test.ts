@@ -15,6 +15,16 @@ import { after, before, test } from "node:test";
 import {
   apiRole,
   boundaryOwnerRole,
+  chatHostFenceFunction,
+  chatHostSessionAssignmentsFunction,
+  chatHostSessionHeldFunction,
+  chatHostSessionHoldingFunction,
+  chatHostSessionImagesFunction,
+  chatHostSessionOpenFunction,
+  chatHostSessionRefuseFunction,
+  chatHostSessionReleaseFunction,
+  chatHostSessionRenewFunction,
+  chatHostSessionsAwaitingFunction,
   personalRunnerFenceFunction,
   personalSessionAssignmentsFunction,
   personalSessionHeldFunction,
@@ -174,6 +184,16 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [personalSessionReleaseFunction, poolPlaneRole],
   [personalSessionImagesFunction, poolPlaneRole],
   [personalRunnerFenceFunction, apiRole],
+  [chatHostSessionsAwaitingFunction, poolPlaneRole],
+  [chatHostSessionOpenFunction, poolPlaneRole],
+  [chatHostSessionAssignmentsFunction, poolPlaneRole],
+  [chatHostSessionHoldingFunction, undefined],
+  [chatHostSessionRenewFunction, poolPlaneRole],
+  [chatHostSessionHeldFunction, poolPlaneRole],
+  [chatHostSessionRefuseFunction, poolPlaneRole],
+  [chatHostSessionReleaseFunction, poolPlaneRole],
+  [chatHostSessionImagesFunction, poolPlaneRole],
+  [chatHostFenceFunction, apiRole],
 ];
 
 /** Every runtime credential this installation deploys, none of which owns a relation here. */

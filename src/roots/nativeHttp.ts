@@ -149,6 +149,7 @@ import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
+import { postgresChatHostRegistry } from "../adapters/postgres/chatHost.ts";
 import {
   postgresPersonalRunnerRegistrationTokens,
   postgresPersonalRunnerRegistry,
@@ -400,6 +401,7 @@ function nativePersonalRunners(
     },
     ports: {
       registry: postgresPersonalRunnerRegistry(pool),
+      chatHosts: postgresChatHostRegistry(pool),
       clients: nativeRunnerClients(),
       clientId: () => `chuggy-personal-${randomUUID()}`,
     },

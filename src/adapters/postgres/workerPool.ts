@@ -91,6 +91,8 @@ import { asProjectId, type Partition } from "../../interpreter/projectStore.ts";
 import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import {
   workerPoolsAnsweredMax,
+  type ChatHostIdentity,
+  type PersonalRunnerIdentity,
   type PoolPlaneIdentity,
   type WorkerPoolAssignments,
   type WorkerPoolClaimed,
@@ -355,6 +357,14 @@ export function postgresWorkerPoolRunners(pool: pg.Pool): WorkerPoolRunners {
                 IS DISTINCT FROM (${named}::text,${version}::text,
                   COALESCE(${advertised}::text[],r.capabilities),
                   COALESCE(${ceiling}::bigint,r.memory_ceiling_mib))`);
+          return;
+        case "ChatHost":
+          await pool.query(sql`UPDATE chat_host h
+            SET runner_package=${named},runner_version=${version}
+            WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
+              AND h.principal=${identity.principal}
+              AND (h.runner_package,h.runner_version)
+                IS DISTINCT FROM (${named}::text,${version}::text)`);
           return;
       }
     },
@@ -707,33 +717,68 @@ function postgresPoolExecutionHolds(
   };
 }
 
-/** Each holding call of a pool or a runner, routed to the side the caller holds through. */
+/** A chat host's execution holds, which are none: it never claims an execution, so whatever it names as one is not its own. */
+const chatHostExecutionHolds: WorkerPoolExecutionHolds<ChatHostIdentity> = {
+  renew: () => Promise.resolve(false),
+  refuse: () => Promise.resolve(false),
+  release: () => Promise.resolve(false),
+  held: () => Promise.resolve(false),
+  heldImages: () => Promise.resolve([]),
+};
+
+/** The execution holds of whichever side `identity` holds through. */
+function executionHoldsRouted<Answer>(
+  identity: PoolPlaneIdentity,
+  sides: {
+    readonly Dedicated: WorkerPoolExecutionHolds<WorkerPoolIdentity>;
+    readonly Personal: WorkerPoolExecutionHolds<PersonalRunnerIdentity>;
+    readonly ChatHost: WorkerPoolExecutionHolds<ChatHostIdentity>;
+  },
+  call: <Identity>(
+    side: WorkerPoolExecutionHolds<Identity>,
+    held: Identity,
+  ) => Answer,
+): Answer {
+  switch (identity.kind) {
+    case "Dedicated":
+      return call(sides.Dedicated, identity);
+    case "Personal":
+      return call(sides.Personal, identity);
+    case "ChatHost":
+      return call(sides.ChatHost, identity);
+  }
+}
+
+/** Each holding call of a pool, a runner or a chat host, routed to the side the caller holds through. */
 function postgresExecutionHoldsRouted(
   pool: pg.Pool,
 ): WorkerPoolExecutionHolds<PoolPlaneIdentity> {
-  const pools = postgresPoolExecutionHolds(pool);
-  const runners = postgresPersonalExecutionHolds(pool);
+  const sides = {
+    Dedicated: postgresPoolExecutionHolds(pool),
+    Personal: postgresPersonalExecutionHolds(pool),
+    ChatHost: chatHostExecutionHolds,
+  };
   return {
     renew: (identity, assignment, leaseSecs) =>
-      identity.kind === "Dedicated"
-        ? pools.renew(identity, assignment, leaseSecs)
-        : runners.renew(identity, assignment, leaseSecs),
+      executionHoldsRouted(identity, sides, (side, held) =>
+        side.renew(held, assignment, leaseSecs),
+      ),
     refuse: (identity, assignment, evidence, fault) =>
-      identity.kind === "Dedicated"
-        ? pools.refuse(identity, assignment, evidence, fault)
-        : runners.refuse(identity, assignment, evidence, fault),
+      executionHoldsRouted(identity, sides, (side, held) =>
+        side.refuse(held, assignment, evidence, fault),
+      ),
     release: (identity, assignment) =>
-      identity.kind === "Dedicated"
-        ? pools.release(identity, assignment)
-        : runners.release(identity, assignment),
+      executionHoldsRouted(identity, sides, (side, held) =>
+        side.release(held, assignment),
+      ),
     held: (identity, assignment) =>
-      identity.kind === "Dedicated"
-        ? pools.held(identity, assignment)
-        : runners.held(identity, assignment),
+      executionHoldsRouted(identity, sides, (side, held) =>
+        side.held(held, assignment),
+      ),
     heldImages: (identity, heldMax) =>
-      identity.kind === "Dedicated"
-        ? pools.heldImages(identity, heldMax)
-        : runners.heldImages(identity, heldMax),
+      executionHoldsRouted(identity, sides, (side, held) =>
+        side.heldImages(held, heldMax),
+      ),
   };
 }
 

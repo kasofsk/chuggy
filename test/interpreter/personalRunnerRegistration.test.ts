@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { personalRunnersMax } from "../../src/contract/http.ts";
+import type {
+  ChatHostRegistry,
+  ChatHostView,
+} from "../../src/interpreter/chatHostRegistration.ts";
 import {
   personalRunnerService,
   type PersonalRunnerPorts,
@@ -192,6 +196,51 @@ function registry(): FakeRegistry {
   return fake;
 }
 
+/** The chat host registry a case drives, one host per member, recording what each write replaced. */
+type FakeChatHosts = ChatHostRegistry & {
+  readonly hosts: Map<string, ChatHostView & { principal: Principal }>;
+};
+
+function chatHosts(): FakeChatHosts {
+  const hosts = new Map<string, ChatHostView & { principal: Principal }>();
+  return {
+    hosts,
+    clientOf: (key) => Promise.resolve(hosts.get(memberAt(key))?.id),
+    register: (registration) => {
+      const replaced = hosts.get(memberAt(registration))?.id;
+      hosts.set(memberAt(registration), {
+        id: registration.clientId,
+        principal: registration.principal,
+        registeredAt: "2026-10-09T00:00:00.000Z",
+        live: false,
+      });
+      return Promise.resolve(
+        replaced === undefined
+          ? { written: "Registered" }
+          : { written: "Registered", replaced },
+      );
+    },
+    deregister: (key, clientId) => {
+      if (hosts.get(memberAt(key))?.id !== clientId)
+        return Promise.resolve(false);
+      hosts.delete(memberAt(key));
+      return Promise.resolve(true);
+    },
+    host: (key) => {
+      const found = hosts.get(memberAt(key));
+      return Promise.resolve(
+        found === undefined
+          ? undefined
+          : {
+              id: found.id,
+              registeredAt: found.registeredAt,
+              live: found.live,
+            },
+      );
+    },
+  };
+}
+
 /** The member's runners as the registry holds them. */
 function held(composed: { readonly ports: ReturnType<typeof ports> }): Row[] {
   return (
@@ -202,14 +251,18 @@ function held(composed: { readonly ports: ReturnType<typeof ports> }): Row[] {
 /** The issuer's clients, recording each made and each removed. */
 function ports(store = registry()): PersonalRunnerPorts & {
   readonly store: ReturnType<typeof registry>;
+  readonly hosts: FakeChatHosts;
   readonly live: Set<string>;
 } {
   const live = new Set<string>();
+  const hosts = chatHosts();
   let drawn = 0;
   return {
     store,
+    hosts,
     live,
     registry: store,
+    chatHosts: hosts,
     clients: {
       create: (clientId) => {
         live.add(clientId);
@@ -239,8 +292,8 @@ function minting(): PersonalRunnerTokenMinting & {
     digest: (token) => `digest-of-${token}`,
     nowMs: () => 1_000,
     tokens: {
-      mint: (named, digest, _expiresAtMs, mintedBy) => {
-        held.set(digest, { tenant: named, mintedBy, spent: false });
+      mint: (named, digest, _expiresAtMs, mintedBy, kind) => {
+        held.set(digest, { tenant: named, mintedBy, kind, spent: false });
         return Promise.resolve("Minted");
       },
       permitted: (digest) => {
@@ -300,6 +353,94 @@ async function registered(
   if (minted.result !== "Minted") throw new Error("unreachable");
   return composed.runners.redeem({ token: minted.value.token, capabilities });
 }
+
+/** A member's chat host token minted and redeemed, answering the redemption. */
+async function hostRegistered(composed: ReturnType<typeof service>) {
+  const minted = await composed.runners.mintChatHost(member, tenant, {
+    lifetimeSecs: 60,
+  });
+  assert.equal(minted.result, "Minted");
+  if (minted.result !== "Minted") throw new Error("unreachable");
+  return composed.runners.redeem({
+    token: minted.value.token,
+    capabilities: ["linux"],
+  });
+}
+
+test("a chat host's token registers the member's chat host and no runner, whatever its redemption declares, answering a host's file", async () => {
+  const composed = service();
+  assert.deepEqual(await hostRegistered(composed), {
+    result: "HostRegistered",
+    value: {
+      tenant,
+      owner: member,
+      tokenUrl: site.tokenUrl,
+      audience: site.audience,
+      planeUrl: site.planeUrl,
+      clientId: "chuggy-personal-1",
+      clientSecret: "secret-chuggy-personal-1",
+    },
+  });
+  assert.deepEqual(held(composed), []);
+  assert.deepEqual(
+    [...composed.ports.hosts.hosts.values()].map((host) => host.principal),
+    [oidcPrincipal(issuer, "chuggy-personal-1")],
+  );
+  assert.deepEqual(
+    [...composed.minting.held.values()].map((token) => token.kind),
+    ["ChatHost"],
+  );
+});
+
+test("registering a chat host again replaces it and removes the replaced client, and a runner's token still registers a runner beside it", async () => {
+  const composed = service();
+  await hostRegistered(composed);
+  const again = await hostRegistered(composed);
+  assert.equal(again.result, "HostRegistered");
+  assert.deepEqual([...composed.ports.live], ["chuggy-personal-2"]);
+  assert.deepEqual(await composed.runners.chatHost(member, tenant), {
+    result: "Found",
+    value: {
+      id: "chuggy-personal-2",
+      registeredAt: "2026-10-09T00:00:00.000Z",
+      live: false,
+    },
+  });
+  assert.equal((await registered(composed)).result, "Registered");
+  assert.deepEqual(
+    held(composed).map((row) => row.clientId),
+    ["chuggy-personal-3"],
+  );
+  assert.equal(composed.ports.hosts.hosts.size, 1);
+});
+
+test("a chat host is taken off by its owner, its client first, and a member with none is not found", async () => {
+  const composed = service();
+  assert.equal(
+    await composed.runners.deregisterChatHost(member, tenant),
+    "NotFound",
+  );
+  await hostRegistered(composed);
+  await registered(composed);
+  assert.equal(
+    await composed.runners.deregisterChatHost(member, tenant),
+    "Deregistered",
+  );
+  assert.deepEqual([...composed.ports.live], ["chuggy-personal-2"]);
+  assert.deepEqual(await composed.runners.chatHost(member, tenant), {
+    result: "NotFound",
+  });
+  assert.equal(held(composed).length, 1, "the member's runner stands");
+});
+
+test("a member the tenant does not permit mints no chat host token", async () => {
+  const composed = service({});
+  assert.deepEqual(
+    await composed.runners.mintChatHost(member, tenant, { lifetimeSecs: 60 }),
+    { result: "NotFound" },
+  );
+  assert.equal(composed.minting.held.size, 0);
+});
 
 test("a member the tenant does not permit mints nothing", async () => {
   const composed = service({});

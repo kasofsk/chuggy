@@ -24,8 +24,11 @@ import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import {
   workerPoolAdmitted,
+  type ChatHostIdentity,
+  type ChatHostPlaneRegistry,
   type PersonalRunnerIdentity,
   type PersonalRunnerPlaneRegistry,
+  type PoolPlaneRegistries,
   type WorkerPoolIdentity,
   type WorkerPoolRegistry,
 } from "../../src/interpreter/workerPool.ts";
@@ -69,6 +72,23 @@ function personalOf(
   };
 }
 
+/** A registry of chat hosts that knows `host` alone, or none. */
+function chatHostsOf(host?: ChatHostIdentity): ChatHostPlaneRegistry {
+  return {
+    identify: (asked) =>
+      Promise.resolve(asked === host?.principal ? host : undefined),
+  };
+}
+
+/** The three registries a poll is looked up in, no chat host among them unless named. */
+function registriesOf(
+  pools: WorkerPoolRegistry,
+  personal: PersonalRunnerPlaneRegistry,
+  chatHosts: ChatHostPlaneRegistry = chatHostsOf(),
+): PoolPlaneRegistries {
+  return { pools, personal, chatHosts };
+}
+
 test("a registered pool the authority permits is admitted as the registration its principal names", async () => {
   const partition = ketoHarnessPartition("pool-admitted");
   const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-admitted");
@@ -83,8 +103,7 @@ test("a registered pool the authority permits is admitted as the registration it
   );
   assert.deepEqual(
     await workerPoolAdmitted(
-      registryOf(partition, principal),
-      personalOf(),
+      registriesOf(registryOf(partition, principal), personalOf()),
       access,
       principal,
     ),
@@ -122,8 +141,7 @@ test("a registered pool the authority names nothing about is not admitted", asyn
   const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-ungranted");
   assert.equal(
     await workerPoolAdmitted(
-      registryOf(partition, principal),
-      personalOf(),
+      registriesOf(registryOf(partition, principal), personalOf()),
       access,
       principal,
     ),
@@ -136,8 +154,7 @@ test("a pool polling through an authority that cannot answer is left undecided",
   const principal = oidcPrincipal(ketoHarnessIssuer, "chuggy-pool-outage");
   await assert.rejects(
     workerPoolAdmitted(
-      registryOf(partition, principal),
-      personalOf(),
+      registriesOf(registryOf(partition, principal), personalOf()),
       ketoHarnessAccessAt("http://127.0.0.1:1/"),
       principal,
     ),
@@ -162,8 +179,10 @@ test("a personal runner is admitted while its owner may register one in its tena
   const runner = personalRunner(partition, "personal-admitted");
   const admitted = () =>
     workerPoolAdmitted(
-      registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
-      personalOf(runner),
+      registriesOf(
+        registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
+        personalOf(runner),
+      ),
       access,
       runner.principal,
     );
@@ -176,6 +195,36 @@ test("a personal runner is admitted while its owner may register one in its tena
   });
   await grants.write(permit);
   assert.deepEqual(await admitted(), { ...runner, kind: "Personal" });
+  await grants.remove(permit);
+  assert.equal(await admitted(), undefined);
+});
+
+test("a chat host is admitted under its owner's permit to register a personal runner, and not once they lose it", async () => {
+  const partition = ketoHarnessPartition("chat-host-admitted");
+  const host: ChatHostIdentity = {
+    tenant: partition.tenant,
+    owner: oidcPrincipal(ketoHarnessIssuer, "member-chat-host-admitted"),
+    principal: oidcPrincipal(ketoHarnessIssuer, "chuggy-host-admitted"),
+  };
+  const admitted = () =>
+    workerPoolAdmitted(
+      registriesOf(
+        registryOf(partition, oidcPrincipal(ketoHarnessIssuer, "no-pool")),
+        personalOf(),
+        chatHostsOf(host),
+      ),
+      access,
+      host.principal,
+    );
+  assert.equal(await admitted(), undefined);
+  const permit = tenantPrincipalGrant({
+    issuer: ketoHarnessIssuer,
+    subject: "member-chat-host-admitted",
+    tenant: partition.tenant,
+    relation: "personal_runners",
+  });
+  await grants.write(permit);
+  assert.deepEqual(await admitted(), { ...host, kind: "ChatHost" });
   await grants.remove(permit);
   assert.equal(await admitted(), undefined);
 });

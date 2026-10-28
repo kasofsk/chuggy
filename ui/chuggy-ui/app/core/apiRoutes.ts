@@ -11,6 +11,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
   agenticRefusalsResponseSchema,
+  chatHostResponseSchema,
   configurationResponseSchema,
   configurationsResponseSchema,
   dispatchViewResponseSchema,
@@ -56,6 +57,7 @@ import {
 } from "../../../../src/contract/responses.ts";
 import type {
   AgenticRefusalsResponse,
+  ChatHostResponse,
   ConfigurationResponse,
   ConfigurationsResponse,
   DispatchViewResponse,
@@ -562,6 +564,50 @@ export function apiMintPersonalRunnerToken(
       body: request,
     },
     (value) => workerPoolTokenResponseSchema.parse(value),
+  );
+}
+
+/** The reader's own chat host in a tenant, answered as absent where they register none. */
+export function apiChatHost(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<ChatHostResponse>> {
+  return apiGet(
+    ports,
+    apiFilled(nativeHttpRoutes.chatHost, { tenant }),
+    (value) => chatHostResponseSchema.parse(value),
+  );
+}
+
+/** A single-use token the reader registers their chat host in a tenant with, in place of any they hold. */
+export function apiMintChatHostToken(
+  ports: ApiPorts,
+  tenant: string,
+  request: RegistrationTokenRequest,
+): Promise<ApiResult<WorkerPoolTokenResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiFilled(nativeHttpRoutes.chatHostRegistrationTokens, { tenant }),
+      body: request,
+    },
+    (value) => workerPoolTokenResponseSchema.parse(value),
+  );
+}
+
+/** The reader's chat host in a tenant taken off. */
+export function apiDeregisterChatHost(
+  ports: ApiPorts,
+  tenant: string,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiFilled(nativeHttpRoutes.chatHost, { tenant }),
+    },
+    () => undefined,
   );
 }
 

@@ -35,6 +35,8 @@ const documentRouteNames = [
   "abilities",
   "actionReports",
   "agenticRefusals",
+  "chatHost",
+  "chatHostRegistrationTokens",
   "configuration",
   "configurationHead",
   "configurationImports",

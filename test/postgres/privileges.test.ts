@@ -58,7 +58,7 @@ const executionRoutingColumns =
 const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
-  "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
+  "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton";
 /** The five relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",

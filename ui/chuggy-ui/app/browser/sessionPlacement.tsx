@@ -19,7 +19,7 @@ import {
   sessionPlacementPolledMs,
   sessionPlacementShort,
   sessionRunnerAdded,
-  sessionRunnerShortWord,
+  sessionRunnerNoticeWord,
 } from "../core/sessionRunners.ts";
 import type {
   SessionRunnerSession,
@@ -131,7 +131,11 @@ export function SessionRunnerNotice(props: {
   readonly short: SessionRunnerShort;
 }): ReactNode {
   return (
-    <Notice tone="parked" inline detail={sessionRunnerShortWord(props.short)}>
+    <Notice
+      tone="parked"
+      inline
+      detail={sessionRunnerNoticeWord(props.short, props.session)}
+    >
       {props.short === "NoRunner" ? (
         <span className="text-ink-3">
           {" · "}

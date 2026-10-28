@@ -21,11 +21,18 @@
  * was built from are still the session's — so a session another pool claimed
  * in between is skipped and one this pool has no room for ends the claims.
  *
- * A PERSONAL RUNNER'S OWNER MUST STILL READ THE PROJECT. Its candidates span
- * the projects on its allowlist, and the authority answers whether its owner
- * may still read each one, so every project is asked before anything is opened
- * and a project the owner lost is skipped. A pool's candidates are all of its
- * own project, which its admission already answered for.
+ * A PERSONAL RUNNER'S OR A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. A
+ * runner's candidates span the projects on its allowlist and a chat host's
+ * every project of its tenant, and the authority answers whether its owner may
+ * still read each one, so every project is asked before anything is opened and
+ * a project the owner cannot read is skipped. A pool's candidates are all of
+ * its own project, which its admission already answered for.
+ *
+ * A CHAT HOST'S SESSION MAY SIT IDLE AS LONG AS ITS HOST NAMED, up to the
+ * bound the scheduler reaps idle attempts by: the claim records the capped
+ * bound on the attempt, which the reaper ends it by, and launches it with that
+ * bound as its own idle limit, so the host and the reaper read one figure. A
+ * launch whose publisher named no bound honours none.
  */
 import type { SessionBounds } from "../contract/workerTask.ts";
 import type { WorkerPoolSessionAssignment } from "../contract/workerPool.ts";
@@ -73,6 +80,8 @@ export interface SessionLaunchFacts {
    * backoff.
    */
   readonly placementBackoffSecs: number;
+  /** How long an attempt may claim nothing before the scheduler reaps it, absent where its publisher named none. */
+  readonly idleSecsMax?: number;
 }
 
 /** One session a pool may claim, the project it is in, and what its invocation is built from. */
@@ -98,6 +107,8 @@ export interface WorkerPoolSessionOpening {
   readonly invocation: SessionTaskInvocation;
   readonly image: string;
   readonly launch: SessionTaskLaunch;
+  /** How long the attempt may sit idle, where its caller named a bound and the launch caps one. */
+  readonly idleSecs?: number;
 }
 
 /** `NotClaimable` skips one session; `PoolFull` ends the claims. */
@@ -179,7 +190,7 @@ function workerPoolSessionInvocation(
   });
 }
 
-/** Whether a personal runner's owner may still read `project`; a pool's own project is answered by its admission. */
+/** Whether a personal runner's or a chat host's owner may still read `project`; a pool's own project is answered by its admission. */
 async function workerPoolSessionProjectRead(
   access: ProjectAccess,
   identity: PoolPlaneIdentity,
@@ -189,6 +200,7 @@ async function workerPoolSessionProjectRead(
     case "Dedicated":
       return project === identity.partition.project;
     case "Personal":
+    case "ChatHost":
       return (
         (await access.authorize(
           identity.owner,
@@ -219,6 +231,36 @@ async function workerPoolSessionProjectsServed(
   return served;
 }
 
+/** The idle bound a claim records: a chat host's own, capped at the launch's, and none for any other caller or where either names none. */
+export function workerPoolSessionIdleSecs(
+  identity: PoolPlaneIdentity,
+  launch: SessionLaunchFacts,
+  idleSecs: number | undefined,
+): number | undefined {
+  if (
+    identity.kind !== "ChatHost" ||
+    idleSecs === undefined ||
+    launch.idleSecsMax === undefined
+  )
+    return undefined;
+  const capped = Math.min(idleSecs, launch.idleSecsMax);
+  if (!Number.isSafeInteger(capped) || capped < 1)
+    throw new RangeError("a session's idle bound must be a positive integer");
+  return capped;
+}
+
+const millisecondsPerSecond = 1_000;
+
+/** The bounds a claimed session is launched under: the site's, its idle limit replaced where the claim records a bound of its own. */
+function workerPoolSessionBounds(
+  launch: SessionLaunchFacts,
+  idleSecs: number | undefined,
+): SessionBounds {
+  return idleSecs === undefined
+    ? launch.bounds
+    : { ...launch.bounds, idleMs: idleSecs * millisecondsPerSecond };
+}
+
 /**
  * The sessions one poll claims, at most `wanted` of them. Each project's
  * binding is read once, and only once a session in it is waiting.
@@ -229,11 +271,13 @@ export async function workerPoolSessionClaims(
   identity: PoolPlaneIdentity,
   terms: WorkerPoolSessionTerms,
   mint: WorkerPoolMint,
-  wanted: number,
+  asked: { readonly wanted: number; readonly idleSecs?: number },
 ): Promise<WorkerPoolSessionAssignment[]> {
+  const { wanted } = asked;
   if (wanted <= 0) return [];
   const launch = await ports.store.launch();
   if (launch === undefined) return [];
+  const idleSecs = workerPoolSessionIdleSecs(identity, launch, asked.idleSecs);
   const waiting = await ports.store.awaiting(
     identity,
     launch.placementBackoffSecs,
@@ -273,22 +317,35 @@ export async function workerPoolSessionClaims(
       image: launch.image,
       launch: {
         api: { url: terms.apiUrl },
-        bounds: launch.bounds,
+        bounds: workerPoolSessionBounds(launch, idleSecs),
         model: launch.model,
       },
+      ...(idleSecs === undefined ? {} : { idleSecs }),
     });
     if (opened === "PoolFull") break;
     if (opened === "NotClaimable") continue;
-    claimed.push({
-      assignment,
-      capabilities: [],
-      image: workerPoolImageHosted(launch.image, terms.imageHosts),
-      cpuMillis: terms.cpuMillis,
-      memoryMib: terms.memoryMib,
-      deadlineSecs: launch.deadlineSecs,
-      callbackUrl: terms.callbackUrl,
-      bearer: minted.bearer.secret,
-    });
+    claimed.push(
+      workerPoolSessionHanded(terms, launch, assignment, minted.bearer.secret),
+    );
   }
   return claimed;
+}
+
+/** A session a claim opened, as the pool is handed it on the plane's terms. */
+function workerPoolSessionHanded(
+  terms: WorkerPoolSessionTerms,
+  launch: SessionLaunchFacts,
+  assignment: string,
+  bearer: WorkerPoolSessionAssignment["bearer"],
+): WorkerPoolSessionAssignment {
+  return {
+    assignment,
+    capabilities: [],
+    image: workerPoolImageHosted(launch.image, terms.imageHosts),
+    cpuMillis: terms.cpuMillis,
+    memoryMib: terms.memoryMib,
+    deadlineSecs: launch.deadlineSecs,
+    callbackUrl: terms.callbackUrl,
+    bearer,
+  };
 }
