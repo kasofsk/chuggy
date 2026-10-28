@@ -222,6 +222,7 @@ const chuggyToolRoster = {
     "list_repositories",
     "fetch_image",
     "read_docs",
+    "read_abilities",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -347,4 +348,11 @@ export const chuggyToolRoutes = {
   projectArtifact: nativeHttpRoutes.projectArtifact,
   draftInitialization: nativeHttpRoutes.draftInitialization,
   operations: nativeHttpRoutes.operations,
+  /**
+   * What `read_abilities` answers, taking nothing: the principal the session
+   * acts as, encoded as a ticket's `creator` is, and which permits it holds on
+   * this project, read live. An agent asks it once before acting rather than
+   * learning a permit from a refusal.
+   */
+  abilities: nativeHttpRoutes.abilities,
 } as const;

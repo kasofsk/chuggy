@@ -22,7 +22,7 @@ const readTool = "mcp__chuggy__read_docs";
 const readAfter = "mcp__chuggy__fetch_image";
 
 /** 079's allowlist with `read_docs` in its roster place. */
-function toolAllowlistAt088(): readonly string[] {
+export function toolAllowlistAt088(): readonly string[] {
   return toolAllowlistNamed(toolAllowlistAt079(), readTool, readAfter);
 }
 
