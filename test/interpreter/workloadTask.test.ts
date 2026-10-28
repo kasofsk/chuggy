@@ -22,6 +22,8 @@ import {
 } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
+  catalogNamedWorkloadTask,
+  catalogWorkloadTask,
   pinnedWorkloadTask,
   type WorkloadTaskPosition,
 } from "../../src/interpreter/workloadTask.ts";
@@ -206,4 +208,48 @@ test("a task of a catalog runs its workload as the ticket's overrides leave it",
     runner: "Commands",
     commands: ["npm run lint"],
   });
+});
+
+test("a task of a catalog is named by its workload's key, and an evaluator by its stage's name too", () => {
+  const named = (position: WorkloadTaskPosition) => {
+    const task = catalogNamedWorkloadTask(
+      catalog,
+      undefined,
+      undefined,
+      position,
+    );
+    return task === undefined
+      ? undefined
+      : { name: task.name, stage: task.stage, runner: task.workload.runner };
+  };
+  assert.deepEqual(named({ taskKind: "Work" }), {
+    name: "build",
+    stage: undefined,
+    runner: "Agent",
+  });
+  assert.deepEqual(named({ taskKind: "Evaluation", stage: 0, evaluator: 1 }), {
+    name: "tests",
+    stage: "checks",
+    runner: "Commands",
+  });
+  assert.deepEqual(named({ taskKind: "Evaluation", stage: 1, evaluator: 1 }), {
+    name: "review",
+    stage: "review",
+    runner: "Agent",
+  });
+  assert.equal(
+    named({ taskKind: "Evaluation", stage: 2, evaluator: 1 }),
+    undefined,
+  );
+  assert.deepEqual(
+    Object.keys(
+      catalogWorkloadTask(catalog, undefined, undefined, {
+        taskKind: "Evaluation",
+        stage: 1,
+        evaluator: 2,
+      }) ?? {},
+    ).sort(),
+    ["ticketChecks", "workload"],
+    "the unnamed read carries no name into what a pin spreads",
+  );
 });
