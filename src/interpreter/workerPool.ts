@@ -48,7 +48,10 @@
  * A MEMBER'S CHAT HOST POLLS IT TOO, admitted as a personal runner is, by its
  * row and its owner's permit. It claims sessions and never an execution, and
  * may name how long a session it claims may sit idle, which the plane caps at
- * the scheduler's own bound; no other caller's poll is read for one.
+ * the scheduler's own bound; no other caller's poll is read for one. Its
+ * sessions run in one container it starts before it holds any, so each answer
+ * to it names the session image the scheduler publishes, and it may pull that
+ * image while it holds nothing.
  *
  * A POLL MAY NAME WHAT ITS CALLER CAN RUN: the set it names, and the most
  * memory it takes one job of, each replace the one recorded before anything
@@ -971,7 +974,10 @@ export async function workerPoolPoll(
       settings,
     );
   }
-  return { polled: "Answered", answer };
+  return {
+    polled: "Answered",
+    answer: await workerPoolChatImageNamed(ports, identity, settings, answer),
+  };
 }
 
 /** One settlement against the side `assignment` is held on, whichever kind of caller holds it. */
@@ -1037,17 +1043,52 @@ export async function workerPoolSettled(
   return workerPoolSettledOn(ports.assignments, identity, assignment, offered);
 }
 
-/** The images pinned by what this registration may still renew of either kind, and the runtimes its jobs were opened under, each kind to its own bound. */
+/**
+ * The image a chat host starts its sessions' container from, by the host the
+ * cluster names it with: the session image the scheduler publishes, where the
+ * plane serves sessions and one is published, and none for any other caller.
+ * Every session runs that one image, whatever its kind or route, so there is
+ * no other to choose.
+ */
+async function workerPoolChatImage(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  settings: WorkerPoolPollSettings,
+): Promise<string | undefined> {
+  if (identity.kind !== "ChatHost" || settings.sessionApiUrl === undefined)
+    return undefined;
+  return (await ports.sessions.store.launch())?.image;
+}
+
+/** The images pinned by what this registration may still renew of either kind and the runtimes its jobs were opened under, each kind to its own bound, and the image a chat host is named, which it pulls before it holds anything. */
 export async function workerPoolHeldImages(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
 ): Promise<readonly string[]> {
+  const chatImage = await workerPoolChatImage(ports, identity, settings);
   return [
     ...(await ports.assignments.heldImages(identity, settings.heldMax)),
     ...(await ports.sessions.store.heldImages(
       identity,
       settings.sessionsHeldMax,
     )),
+    ...(chatImage === undefined ? [] : [chatImage]),
   ];
+}
+
+/** `answer` naming a chat host's image by the host it pulls it from, where it is named one; it is read as the answer is made, so a newer publish reaches the next answer. */
+async function workerPoolChatImageNamed(
+  ports: WorkerPoolPorts,
+  identity: PoolPlaneIdentity,
+  settings: WorkerPoolPollSettings,
+  answer: WorkerPoolReconciliation,
+): Promise<WorkerPoolReconciliation> {
+  const chatImage = await workerPoolChatImage(ports, identity, settings);
+  return chatImage === undefined
+    ? answer
+    : {
+        ...answer,
+        chatImage: workerPoolImageHosted(chatImage, settings.imageHosts),
+      };
 }

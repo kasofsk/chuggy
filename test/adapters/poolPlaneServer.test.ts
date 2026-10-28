@@ -1696,6 +1696,47 @@ test("a pull of an image the pool holds no assignment for is 403", async () => {
   assert.equal(holdingNothing.statusCode, 403);
 });
 
+test("a chat host holding nothing may pull the session image its poll names by digest and that repository's blobs, and no other image, while a pool or a personal runner holding nothing may not", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  const named = `sha256:${"c".repeat(64)}`;
+  for (const [caller, token, address, status] of [
+    ["host", hostToken, `/v2/session/manifests/${named}`, 200],
+    ["host", hostToken, `/v2/session/blobs/sha256:${"b".repeat(64)}`, 200],
+    ["host", hostToken, `/v2/session/manifests/sha256:${"d".repeat(64)}`, 403],
+    ["host", hostToken, `/v2/worker/manifests/${heldDigest}`, 403],
+    ["pool", poolToken, `/v2/session/manifests/${named}`, 403],
+    ["runner", runnerToken, `/v2/session/manifests/${named}`, 403],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address, basic(token)),
+    });
+    assert.equal(answered.statusCode, status, `${caller} ${address}`);
+  }
+});
+
+test("a chat host's poll names the session image on its public host, and a pool's and a personal runner's name none", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  for (const [headers, named] of [
+    [hostSpeaking, sessionPublished],
+    [speaking, undefined],
+    [runnerSpeaking, undefined],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: polling([], 0, 0),
+      headers,
+    });
+    assert.equal(answered.statusCode, 200);
+    assert.equal(
+      workerPoolReconciliationSchema.parse(answered.json()).chatImage,
+      named,
+      headers.authorization,
+    );
+  }
+});
+
 test("a caller that is no admitted pool is 403, and an outage of the issuer, the authority or the store is 503", async () => {
   const ports = calls([pinned]).ports;
   const served = plane(ports);

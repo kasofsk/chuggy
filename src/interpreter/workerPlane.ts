@@ -80,7 +80,7 @@ export const workerContractRunnerJobsWaiting: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** The versions a member's chat host polls in, which is where a poll may name its sessions' idle bound; a host of an earlier one is refused every pool plane route. */
+/** The versions a member's chat host polls in, which is where a poll may name its sessions' idle bound and an answer names the image its sessions run in; a host of an earlier one is refused every pool plane route. */
 export const workerContractChatHost: WorkerContractRange = {
   min: { major: 1, minor: 27 },
   max: workerContractAccepted.max,

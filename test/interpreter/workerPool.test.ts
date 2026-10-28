@@ -1361,6 +1361,51 @@ test("the images a pool may pull are those of what it holds of either kind, each
   assert.deepEqual(bounds, ["job:3", "session:5"]);
 });
 
+test("a chat host may pull the published session image while it holds nothing, and no other caller is given it", async () => {
+  for (const [caller, images] of [
+    [host, [launch.image]],
+    [identity, []],
+    [runner, []],
+  ] as const)
+    assert.deepEqual(
+      await workerPoolHeldImages(ports(), caller, settings),
+      images,
+      caller.kind,
+    );
+  assert.deepEqual(await workerPoolHeldImages(ports(), host, unaddressed), []);
+});
+
+test("only a chat host's poll names the published session image, by the host it pulls it from, and none where no launch is published or no session is served", async () => {
+  const chatImageOf = async (
+    caller: PoolPlaneIdentity,
+    store: WorkerPoolSessions = noSessions,
+    terms: WorkerPoolPollSettings = settings,
+  ): Promise<string | undefined> => {
+    const polled = await workerPoolPoll(
+      ports(idle, store),
+      caller,
+      asked(),
+      terms,
+    );
+    if (polled.polled !== "Answered") throw new Error("a poll was refused");
+    return polled.answer.chatImage;
+  };
+  assert.equal(
+    await chatImageOf(host),
+    `registry.public.invalid/chuggy/session@sha256:${"c".repeat(64)}`,
+  );
+  for (const other of [identity, runner])
+    assert.equal(await chatImageOf(other), undefined, other.kind);
+  assert.equal(
+    await chatImageOf(host, {
+      ...noSessions,
+      launch: () => Promise.resolve(undefined),
+    }),
+    undefined,
+  );
+  assert.equal(await chatImageOf(host, noSessions, unaddressed), undefined);
+});
+
 test("a personal runner claims only in the projects it allowlists that its owner may still read, every one asked before any claim", async () => {
   const reached: string[] = [];
   const answered = await workerPoolReconcile(

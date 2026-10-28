@@ -364,6 +364,17 @@ export const workerPoolReconciliationSchema = z.strictObject({
    * runner with no slot free names a room of 0 or none.
    */
   jobsWaiting: z.boolean().optional(),
+  /**
+   * The image a chat host runs its sessions in, by the host it pulls it from,
+   * which is the session image the site publishes as this answer is made: the
+   * host starts one long-lived container from it, whose chat supervisor runs
+   * those sessions, before it names room for any, may pull it while it holds
+   * nothing, and where an answer names another than it runs, drains what it
+   * holds and restarts on the new one. It is named only to a chat host, and
+   * absent where the plane serves no session or its scheduler has published
+   * no launch yet, where the host starts nothing and polls again.
+   */
+  chatImage: workerPoolImageSchema.optional(),
 });
 
 export const workerPoolRegistrationSchema = z.strictObject({
