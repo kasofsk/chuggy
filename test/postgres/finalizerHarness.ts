@@ -99,10 +99,12 @@ import {
   checkedFinalizerConfig,
   finalizerDefaults,
   type AncestryProved,
+  type CandidateHeld,
   type CandidateIntegrated,
   type CandidatePrepared,
   type CandidatePromoted,
   type CandidatePromotion,
+  type FinalizationAttemptOutcome,
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
@@ -848,11 +850,11 @@ export function finalizerIdentity(label: string): string {
   return `${label}-${randomUUID()}`;
 }
 
-/** What one prepared or failed attempt a case writes says, defaulted to the clean prepared one. */
+/** What one attempt a case writes says, defaulted to the clean prepared one. */
 export interface FinalizerAttempt {
   readonly attempt?: string;
   readonly target?: string;
-  readonly outcome?: "Prepared" | "Failed";
+  readonly outcome?: FinalizationAttemptOutcome;
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
   readonly approvalRequired?: boolean;
@@ -922,7 +924,7 @@ export async function finalizerPrepare(
       project.configurationDigest,
       attempt.approvalRequired ?? false,
       outcome,
-      outcome === "Prepared" ? (attempt.candidate ?? finalizerCommit()) : null,
+      outcome === "Failed" ? null : (attempt.candidate ?? finalizerCommit()),
       outcome === "Failed" ? (attempt.failureKind ?? "MergeConflict") : null,
       finalizerDigest(),
       attempt.conflictManifest?.artifact ?? null,
@@ -1030,6 +1032,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   ancestry: AncestryProved;
   preparation?: CandidatePrepared;
   integration?: CandidateIntegrated;
+  held: CandidateHeld;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1040,6 +1043,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     target: { observed: "Target", target },
     promotion: { promoted: "Advanced" },
     ancestry: { proved: "Ancestor", observed: target.commit },
+    held: "Unheld",
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1057,6 +1061,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
         throw new Error("finalizer harness: the pass asked for a preparation");
       }
       return Promise.resolve(fake.preparation);
+    },
+    proveCandidateHeld: () => {
+      fake.acts.push("held");
+      return Promise.resolve(fake.held);
     },
     integrateCandidate: () => {
       fake.acts.push("integrate");

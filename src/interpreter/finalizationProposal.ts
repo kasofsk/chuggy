@@ -24,6 +24,13 @@
  * this step names and decides none of it, which is what keeps the vocabulary in
  * one place.
  *
+ * A REWORK CARRIES ON IN ITS TICKET'S OWN PULL REQUEST. A request with no
+ * proposal of its own adopts the open one an earlier request of the same ticket
+ * recorded on the same head and base, which is already the proposal of the
+ * candidate this request promoted onto that head: its row is written as
+ * adopted, pinned at that candidate, and is continued from then on exactly as
+ * one this request opened.
+ *
  * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
  * opened into a branch, and a branch the remote does not hold is not one a
  * proposal can name — so an unreadable base holds the opening, and creating it
@@ -60,15 +67,18 @@ import type { BriefFinalizationMode } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
+  changeProposalAdoptionNext,
   changeProposalMergeNext,
   changeProposalAddressed,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
   proposalBodyCharsMax,
   proposalTitleCharsMax,
+  type ChangeProposalAdoptionGathered,
   type ChangeProposalCreated,
   type ChangeProposalCreationAnswer,
   type ChangeProposalEvidence,
+  type ChangeProposalIdentity,
   type ChangeProposalMerged,
   type ChangeProposalMergedStanding,
   type ChangeProposalMergeAnswer,
@@ -110,7 +120,8 @@ const finalizationProposalMarkerSeparator = "\n\n";
 /**
  * Everything the step below reads of one proposal, absent where this deployment
  * could not build a request at all and where the base read for it turned out to
- * be the head it would be opened from.
+ * be the head it would be opened from. `adoption` is present only for a request
+ * with no row of its own whose ticket recorded a proposal on its head and base.
  */
 export type FinalizationProposalGathered =
   | {
@@ -119,6 +130,7 @@ export type FinalizationProposalGathered =
       readonly publication: ChangeProposalPublication;
       readonly merging: ChangeProposalMerging;
       readonly merge: ChangeProposalMergeGathered;
+      readonly adoption?: ChangeProposalAdoptionGathered;
     }
   | { readonly gathered: "Unbound" }
   | { readonly gathered: "BaseUnreadable" }
@@ -138,6 +150,11 @@ export type FinalizationProposalDecision =
       readonly request: ChangeProposalRequest;
     }
   | { readonly decide: "RefuseProposalAttempt" }
+  | {
+      readonly decide: "AdoptProposal";
+      readonly request: ChangeProposalRequest;
+      readonly evidence: ChangeProposalEvidence;
+    }
   | {
       readonly decide: "MergeProposal";
       readonly request: ChangeProposalRequest;
@@ -340,6 +357,28 @@ function finalizationProposalMergeNext(
   }
 }
 
+/** The one act reading an earlier request's proposal authorizes before this request opens one of its own. */
+function finalizationProposalAdoption(
+  request: ChangeProposalRequest,
+  adoption: ChangeProposalAdoptionGathered,
+): FinalizationProposalDecision {
+  const next = changeProposalAdoptionNext(request, adoption);
+  switch (next.next) {
+    case "Adopt":
+      return { decide: "AdoptProposal", request, evidence: next.evidence };
+    case "Create":
+      return { decide: "ProposeChange", request };
+    case "Held":
+      return {
+        decide: "Hold",
+        hold:
+          next.reason === "Denied" ? "ProposalDenied" : "ProposalUnavailable",
+      };
+    default:
+      return assertNever(next);
+  }
+}
+
 /**
  * The one act one gathered proposal authorizes. A deployment that binds no forge
  * for the repository is denied rather than crashed, because a binding is
@@ -367,7 +406,10 @@ export function finalizationProposalNext(
   );
   switch (next.next) {
     case "Create":
-      return { decide: "ProposeChange", request };
+      return gathered.publication.publication === "Unopened" &&
+        gathered.adoption !== undefined
+        ? finalizationProposalAdoption(request, gathered.adoption)
+        : { decide: "ProposeChange", request };
     case "Reconcile":
       return { decide: "ReconcileProposal", request };
     case "RefuseAttempt":
@@ -690,6 +732,21 @@ export interface FinalizerProposalStore {
   changeProposal(
     claim: FinalizationClaim,
   ): Promise<StoredChangeProposal | undefined>;
+
+  /**
+   * What the forge last said identifies the newest proposal an earlier request
+   * of the same ticket recorded on this head and base, absent where none did.
+   */
+  ticketChangeProposal(
+    claim: FinalizationClaim,
+    place: Pick<ChangeProposalRequest, "head" | "base">,
+  ): Promise<ChangeProposalIdentity | undefined>;
+
+  /** Starts the row as the adoption of a proposal read open, refused where the row already stands. */
+  adoptChangeProposal(
+    record: ChangeProposalRecord,
+    evidence: ChangeProposalEvidence,
+  ): Promise<ChangeProposalWritten>;
 
   /** Counts one attempt, refused where a create is already in flight or answered. */
   markChangeProposalAttempt(

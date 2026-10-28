@@ -47,6 +47,13 @@
  * AN ADOPTED HEAD IS WRITTEN BESIDE THE ONE ASKED FOR, never over it, and only
  * where the reading the row keeps found the proposal at that head.
  *
+ * AN ADOPTED PROPOSAL IS A ROW ANSWERED IN THE TRANSACTION THAT STARTS IT. The
+ * proposal an earlier request of the same ticket recorded is found by the
+ * ticket and the two refs its rows were opened between, newest first, and only
+ * where a create or a reading proved it. Its row is inserted as every row is,
+ * with no result, and answered with the reading that found it open, counting no
+ * create because none was made.
+ *
  * NO WRITE OUTLIVES THE CLAIM THAT AUTHORIZED IT. Every write here reads the
  * current epoch and rechecks the claim under the request row's lock, because
  * the first of them authorizes a call to the forge and the rest answer one: a
@@ -105,6 +112,7 @@ import {
   type ChangeProposalCreationAnswer,
   type ChangeProposalCreationStored,
   type ChangeProposalEvidence,
+  type ChangeProposalIdentity,
   type ChangeProposalMergeAnswer,
   type ChangeProposalMergeConcluded,
   type ChangeProposalMergeReconciliationAnswer,
@@ -112,6 +120,7 @@ import {
   type ChangeProposalMerging,
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalReconciliationStored,
+  type ChangeProposalRequest,
   type ChangeProposalUpdating,
   type OpenedChangeProposalPublication,
 } from "../../interpreter/changeProposal.ts";
@@ -288,6 +297,7 @@ function changeProposalCreatedOf(
   switch (created) {
     case "Created":
     case "AlreadyExists":
+    case "Adopted":
       return {
         created,
         evidence: changeProposalEvidenceOf(row.creation_evidence, created),
@@ -675,6 +685,97 @@ async function finalizerChangeProposalClaimStands(
       FOR UPDATE`,
   );
   return held.rowCount === 1;
+}
+
+/** The identity a stored document says its proposal has, read the way its evidence is. */
+const changeProposalStoredIdentitySchema =
+  changeProposalStoredEvidenceSchema.shape.identity;
+
+/**
+ * The identity of the newest proposal an earlier request of the claim's ticket
+ * proved on this head and base, absent where none did. Only a create the forge
+ * answered with it and a reading that accepted it prove one.
+ */
+export async function finalizerChangeProposalTicket(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  place: Pick<ChangeProposalRequest, "head" | "base">,
+): Promise<ChangeProposalIdentity | undefined> {
+  const found = await client.query<{ identity: unknown }>(
+    sql`SELECT coalesce(
+              CASE WHEN c.creation IN ('Created', 'AlreadyExists', 'Adopted')
+                   THEN c.creation_evidence END,
+              CASE WHEN c.reconciliation = 'Accepted'
+                   THEN c.reconciliation_evidence END)->'identity' AS identity
+         FROM finalization_change_proposal c
+         JOIN finalization_request f
+           ON f.tenant = c.tenant AND f.project = c.project
+          AND f.request = c.request
+        WHERE c.tenant = ${claim.partition.tenant} AND c.project = ${claim.partition.project}
+          AND f.ticket = ${claim.ticket}
+          AND c.request <> ${claim.request}
+          AND c.head_ref = ${place.head.ref} AND c.base_ref = ${place.base.ref}
+          AND (c.creation IN ('Created', 'AlreadyExists', 'Adopted')
+               OR c.reconciliation = 'Accepted')
+        ORDER BY c.opened_at DESC, c.request DESC
+        LIMIT 1`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const parsed = changeProposalStoredIdentitySchema.safeParse(row.identity);
+  if (!parsed.success) {
+    throw new Error("finalizer row: a proved proposal carries no identity");
+  }
+  const identity = parsed.data;
+  return {
+    forge: asForgeBindingId(identity.forge),
+    remote: asProposalRemoteIdentity(identity.remote),
+    ...(identity.number === undefined
+      ? {}
+      : { number: asProposalNumber(identity.number) }),
+  };
+}
+
+/**
+ * Starts this request's row as the adoption of a proposal read open, with that
+ * reading as its evidence and no create counted. A row already standing, a
+ * reading no document holds, and a claim that has been retired each write
+ * nothing.
+ */
+export async function finalizerChangeProposalAdoption(
+  client: pg.PoolClient,
+  record: ChangeProposalRecord,
+  evidence: ChangeProposalEvidence,
+): Promise<ChangeProposalWritten> {
+  const { claim, request } = record;
+  const document = changeProposalStoredEvidence(evidence);
+  if (document === undefined) return { wrote: "Nothing" };
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const started = await client.query(
+    sql`INSERT INTO finalization_change_proposal
+       (tenant, project, request, permit, proposal_request,
+        head_ref, head_commit, base_ref, base_commit, title, body)
+     VALUES (${claim.partition.tenant},${claim.partition.project},${claim.request},
+             ${record.permit},${request.request},
+             ${request.head.ref},${request.head.commit},
+             ${request.base.ref},${request.base.commit},
+             ${request.title},${request.body})
+     ON CONFLICT (tenant, project, request) DO NOTHING`,
+  );
+  if (started.rowCount !== 1) return { wrote: "Nothing" };
+  const adopted = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET creation = 'Adopted', creation_evidence = ${document}::jsonb
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND creation IS NULL AND attempts = 0`,
+  );
+  if (adopted.rowCount !== 1)
+    throw new Error(
+      "postgres finalizer: the row just started took no adoption",
+    );
+  return { wrote: "Row" };
 }
 
 /**

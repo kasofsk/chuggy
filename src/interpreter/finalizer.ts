@@ -21,6 +21,13 @@
  * promote, and holding it for an unbound repository would park a ticket over a
  * binding its work never needed.
  *
+ * SO DOES A CANDIDATE THE TARGET ALREADY HOLDS. Where the target the ticket
+ * lands on reaches the candidate, or merging the two gives the target's own
+ * tree, landing it would change nothing: the attempt records it as `Landed`
+ * and concludes `FinalizationSucceeded` with no permit, no promotion and no
+ * proposal. A change the target has since reverted reads the same way, because
+ * it did land.
+ *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A non-zero git exit is
  * an outcome `GitPromotionPort` returns and a caller must handle; the one thing
  * that raises is git being unable to run at all, which is the answer no caller
@@ -290,12 +297,16 @@ export const allIntegrationStrategies: readonly IntegrationStrategy[] = [
   "Merge",
 ];
 
-/** What one preparation produced, which the attempt records once and never revises. */
-export type FinalizationAttemptOutcome = "Prepared" | "Failed";
+/**
+ * What one preparation produced, which the attempt records once and never
+ * revises. `Landed` is a candidate the target the ticket lands on already
+ * holds, so there is nothing to promote and nothing to propose.
+ */
+export type FinalizationAttemptOutcome = "Prepared" | "Failed" | "Landed";
 
 /** Every attempt outcome, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome[] =
-  ["Prepared", "Failed"];
+  ["Prepared", "Failed", "Landed"];
 
 /**
  * An integration answered by a conflict and a preparation that produced no
@@ -740,10 +751,10 @@ function finalizationNextAssertView(view: FinalizationView): void {
   }
   if (
     attempt !== undefined &&
-    (attempt.outcome === "Prepared") !== (attempt.candidate !== undefined)
+    (attempt.outcome === "Failed") === (attempt.candidate !== undefined)
   ) {
     throw new RangeError(
-      "finalization view: a prepared attempt pins no candidate, or a failed one pins one",
+      "finalization view: a prepared or landed attempt pins no candidate, or a failed one pins one",
     );
   }
   if (
@@ -760,6 +771,11 @@ function finalizationNextAssertView(view: FinalizationView): void {
     permit.attempt !== attempt.attempt
   ) {
     throw new RangeError("finalization view: the permit names another attempt");
+  }
+  if (permit !== undefined && attempt?.outcome === "Landed") {
+    throw new RangeError(
+      "finalization view: a permit was granted for an attempt that landed nothing",
+    );
   }
   finalizationNextAssertReading(view);
 }
@@ -911,15 +927,22 @@ function finalizationNextUnderPermit(
 
 /**
  * What a finalization that has obtained no permit may do next, the revision
- * fence and the closure abort included. A recorded failure concludes, an
- * earlier request's unsettled reading holds this one under it, and a proposal
- * with nothing to open between is held before anything is built or pushed.
+ * fence and the closure abort included. A recorded failure concludes, and so
+ * does a candidate the target already held; an earlier request's unsettled
+ * reading holds this one under it, and a proposal with nothing to open between
+ * is held before anything is built or pushed.
  */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
   view: FinalizationView,
 ): FinalizationDecision {
   const attempt = view.attempt;
+  if (attempt?.outcome === "Landed") {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationSucceeded" },
+    };
+  }
   if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
@@ -1112,6 +1135,21 @@ export type AncestryProved =
   | { readonly proved: "Absent" }
   | { readonly proved: "Unreadable"; readonly evidence: GitEvidence };
 
+/** One question of whether the target a ticket lands on already holds its candidate. */
+export interface CandidateHeldQuestion {
+  readonly repository: RepositoryBinding;
+  readonly target: ObservedTarget;
+  readonly candidate: GitObjectId;
+}
+
+/**
+ * What git proved of that target. `Held` is a candidate the target already
+ * reaches, or one whose clean merge with the target is the target's own tree;
+ * `Unheld` is any other; and `Unread` is a remote or a scratch that could not
+ * answer.
+ */
+export type CandidateHeld = "Held" | "Unheld" | "Unread";
+
 /**
  * One head a proposal was read at that is not the head pinned for it, and the
  * two branches it stands between. Adopting it is asking whether it is the
@@ -1151,6 +1189,9 @@ export interface GitPromotionPort {
   prepareSource(
     preparation: CandidateSourcePreparation,
   ): Promise<CandidateSourcePrepared>;
+
+  /** Reads whether the target a ticket lands on already holds its candidate, so landing it would change nothing. */
+  proveCandidateHeld(question: CandidateHeldQuestion): Promise<CandidateHeld>;
 
   /** Integrates one candidate against one observed target, deterministically. */
   integrateCandidate(

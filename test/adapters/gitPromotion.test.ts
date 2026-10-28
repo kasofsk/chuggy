@@ -544,6 +544,95 @@ test("a worker source rebased past the base it declares is undescended, not miss
   );
 });
 
+test("a target that reaches the candidate holds it, even after reverting it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const base = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const work = fixtureSeedCommit(fixture, "work.txt");
+  const ref = fixtureSourceRef(fixture, "a");
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(work),
+      base: asGitObjectId(base),
+    }),
+    { prepared: "Candidate", candidate: work },
+  );
+  const candidate = asGitObjectId(work);
+  fixtureCommit(
+    fixture,
+    "later.txt",
+    "later\n",
+    "merged by a person, then more",
+  );
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Held",
+  );
+  fixtureGit(fixture.seed, "rm", "-q", "work.txt");
+  fixtureCommit(fixture, "later.txt", "reverted\n", "revert the work");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Held",
+    "a change the target has since reverted did land",
+  );
+});
+
+test("a target whose merge with the candidate is its own tree holds it, and one gaining a change does not", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.equal(
+    await port.proveCandidateHeld({ repository: binding, target, candidate }),
+    "Unheld",
+    "the target it was built over holds none of its change",
+  );
+  fixtureCommit(fixture, "other.txt", "other\n", "other");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Unheld",
+    "a target that moved on still lacks the candidate's change",
+  );
+  fixtureCommit(fixture, "new.txt", "new\n", "the same change, squashed");
+  const squashed = await fixtureTarget(port, binding);
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: squashed,
+      candidate,
+    }),
+    "Held",
+  );
+  fixtureCommit(fixture, "new.txt", "changed\n", "conflicting");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Unheld",
+    "a conflicting target does not hold it",
+  );
+});
+
 test("a target the candidate already contains integrates to the candidate itself", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);

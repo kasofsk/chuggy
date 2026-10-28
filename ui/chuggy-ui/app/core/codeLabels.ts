@@ -214,6 +214,8 @@ export function finalizationAttemptOutcomeLabel(
       return "Prepared";
     case "Failed":
       return "Failed";
+    case "Landed":
+      return "Already landed";
   }
 }
 
@@ -242,6 +244,8 @@ export function changeProposalCreationLabel(
       return "Contradictory";
     case "Unstorable":
       return "Unstorable";
+    case "Adopted":
+      return "Adopted";
   }
 }
 

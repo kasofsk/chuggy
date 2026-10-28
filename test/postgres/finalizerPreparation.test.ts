@@ -29,6 +29,7 @@ import {
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
 import {
   asChangeProposalRequestIdentity,
   asForgeBindingId,
@@ -2306,6 +2307,49 @@ test("a target that moved without conflicting is merged and the attempt pins wha
   assert.notEqual(written?.candidate_commit, written?.target_commit);
 });
 
+test("work the target already holds lands nothing: no merge commit, no push, and the next pass succeeds", async () => {
+  const { project, remote } = await finalizerSubject(rig, "heldwork", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  finalizerRemoteCommit(remote, "one.txt", "one\n", "merged by hand");
+  const merged = finalizerGitVerb(
+    remote.origin,
+    "rev-parse",
+    "refs/heads/main",
+  );
+  const port = finalizerRemotePort(rig);
+
+  const preparing = await finalizerPassOnce(rig, project, port, "heldwork");
+
+  assert.equal(preparing.preparations, 1);
+  const written = (await attemptsOf(project))[0];
+  assert.equal(written?.outcome, "Landed");
+  assert.equal(written?.target_commit, merged);
+  await finalizerExpireClaim(rig, project);
+
+  const concluding = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "heldwork-again",
+  );
+
+  assert.equal(concluding.conclusions, 1);
+  assert.equal(concluding.promotions, 0);
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    merged,
+    "nothing was pushed",
+  );
+  assert.deepEqual(
+    await rig.as(
+      `SELECT permit FROM commit_permit WHERE tenant=$1 AND project=$2`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [],
+  );
+});
+
 test("a target that moves after an attempt restarts preparation rather than chasing it", async () => {
   const { project, remote } = await finalizerSubject(rig, "restart", [
     { path: "one.txt", content: "one\n" },
@@ -2803,5 +2847,141 @@ test("a head is adopted only where the kept reading found it, and a moved head's
     (await store.changeProposal(claim))?.merging,
     { merging: "Unanswered", merges: 2, readings: 0, reading: undefined },
     "the next merge is counted afresh under the same ceiling",
+  );
+});
+
+/**
+ * An earlier request of this project's ticket, settled, whose proposal row a
+ * create answered with `evidence`. It is copied from the request that stands,
+ * a step earlier in the journal's order, because bringing a ticket round again
+ * by decisions is another suite's work.
+ */
+async function proposalOfEarlierRequest(
+  project: FinalizerProject,
+  evidence: ChangeProposalEvidence,
+): Promise<string> {
+  const authorizingSeq = project.authorizingSeq - 1;
+  const request = `${String(authorizingSeq)}:0:FinalizeTicket`;
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,
+        ticket_version,request_generation,state,kind,work_cycle,
+        finalization_generation)
+     SELECT tenant,project,$4,$5,effect_position,ticket,$5,request_generation,
+            'Fulfilled',kind,work_cycle,finalization_generation
+       FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [...proposalRowKey(project), request, authorizingSeq],
+  );
+  await rig.as(
+    `INSERT INTO finalization_change_proposal
+       (tenant,project,request,permit,proposal_request,head_ref,head_commit,
+        base_ref,base_commit,title,body,attempts)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ticket 1: propose it','propose it',1)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      await permitOf(project),
+      finalizerDigest(),
+      evidence.head.ref,
+      evidence.head.commit,
+      evidence.base.ref,
+      evidence.base.commit,
+    ],
+  );
+  await rig.as(
+    `UPDATE finalization_change_proposal
+        SET creation='Created', creation_evidence=$4::jsonb
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      JSON.stringify(evidence),
+    ],
+  );
+  return request;
+}
+
+test("a request finds the proposal an earlier request of its own ticket proved on its head and base, and no other", async () => {
+  const project = await proposalPromotedSubject("proposalticket");
+  const claim = await finalizerClaim(rig, project, "owner-proposalticket");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalStoredEvidence(project);
+  const earlier = await proposalOfEarlierRequest(project, evidence);
+  const place = { head: evidence.head, base: evidence.base };
+
+  assert.deepEqual(
+    await store.ticketChangeProposal(claim, place),
+    evidence.identity,
+  );
+  assert.equal(
+    await store.ticketChangeProposal(claim, {
+      ...place,
+      base: { ...place.base, ref: asGitRefName("refs/heads/elsewhere") },
+    }),
+    undefined,
+    "a proposal into another base is not this request's to adopt",
+  );
+  assert.equal(
+    await store.ticketChangeProposal(
+      { ...claim, ticket: asTicketId(claim.ticket + 1) },
+      place,
+    ),
+    undefined,
+    "another ticket's proposal is never offered",
+  );
+  assert.equal(
+    await store.ticketChangeProposal({ ...claim, request: earlier }, place),
+    undefined,
+    "a request is not offered its own proposal",
+  );
+});
+
+test("an adopted proposal is a row started answered that counts no create, and is merged like any other", async () => {
+  const project = await proposalPromotedSubject("proposaladopted");
+  const claim = await finalizerClaim(rig, project, "owner-proposaladopted");
+  const store = postgresFinalizer(rig.pool);
+  const evidence = proposalStoredEvidence(project);
+  const request = proposalRequestOf(project);
+  const record = {
+    claim,
+    permit: asCommitPermitId(await permitOf(project)),
+    request,
+  };
+
+  assert.deepEqual(await store.adoptChangeProposal(record, evidence), {
+    wrote: "Row",
+  });
+  const stored = await store.changeProposal(claim);
+  assert.deepEqual(stored?.publication, {
+    publication: "Answered",
+    creation: { created: "Adopted", evidence },
+  });
+  assert.equal(stored?.asked.head.commit, request.head.commit);
+  const row = await proposalOf(project);
+  assert.deepEqual([row?.creation, row?.attempts], ["Adopted", "0"]);
+  assert.deepEqual(
+    await store.adoptChangeProposal(record, evidence),
+    { wrote: "Nothing" },
+    "a row already standing is adopted by nobody",
+  );
+  assert.deepEqual(
+    await store.markChangeProposalAttempt(record),
+    { wrote: "Nothing" },
+    "an adopted row asks for no create",
+  );
+  assert.deepEqual(await store.markChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.match(
+    await rig.ownerRefusal(
+      `UPDATE finalization_change_proposal SET attempts=1
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      proposalRowKey(project),
+    ),
+    /attempts_are_counted|counts one act/u,
+    "an adopted row never counts a create it did not make",
   );
 });

@@ -13,6 +13,7 @@ import {
   asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
+  changeProposalAdoptionNext,
   changeProposalMergeNext,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
@@ -1535,5 +1536,129 @@ test("no merge is spent on a head that is neither the pinned one nor adoptable",
       ),
     RangeError,
     "adoption proved of a head no reading found",
+  );
+});
+
+/** The proposal an earlier request of the ticket recorded, as its row addresses it. */
+const recordedProposal = {
+  forge,
+  remote: asProposalRemoteIdentity("proposal-17"),
+  number: asProposalNumber(17),
+};
+
+test("a proposal an earlier request of the ticket recorded is adopted where it is open on this request's head and base", () => {
+  const earlier = evidence({
+    marker: asProposalMarker("chuggy-handoff:" + "e".repeat(64)),
+    title: "A person retitled it",
+    body: "And rewrote what it says.",
+    head: { ref: request.head.ref, commit: asGitObjectId("f".repeat(40)) },
+  });
+  assert.deepEqual(
+    changeProposalAdoptionNext(request, {
+      proposal: recordedProposal,
+      read: { read: "Found", evidence: earlier },
+    }),
+    { next: "Adopt", evidence: earlier },
+    "its marker, its words and its head commit are not what make it this ticket's",
+  );
+  assert.deepEqual(
+    changeProposalAdoptionNext(request, {
+      proposal: recordedProposal,
+      read: { read: "Absent" },
+    }),
+    { next: "Create" },
+  );
+  for (const read of ["Unavailable", "Denied"] as const)
+    assert.deepEqual(
+      changeProposalAdoptionNext(request, {
+        proposal: recordedProposal,
+        read: { read },
+      }),
+      { next: "Held", reason: read },
+    );
+});
+
+test("a proposal of the ticket's that is closed, merged or elsewhere is not adopted, and this request opens its own", () => {
+  for (const [found, why] of [
+    [evidence({ status: "Closed" }), "a closed proposal"],
+    [evidence({ status: "Merged" }), "a merged proposal"],
+    [
+      evidence({
+        base: { ...request.base, ref: asGitRefName("refs/heads/x") },
+      }),
+      "a proposal into another base",
+    ],
+    [
+      evidence({
+        head: { ...request.head, ref: asGitRefName("refs/heads/y") },
+      }),
+      "a proposal from another head",
+    ],
+    [
+      evidence({
+        identity: { ...recordedProposal, number: asProposalNumber(18) },
+      }),
+      "a proposal the recorded number does not address",
+    ],
+    [
+      evidence({
+        identity: {
+          ...recordedProposal,
+          forge: asForgeBindingId("forge-beta"),
+        },
+      }),
+      "a proposal on another forge",
+    ],
+  ] as const) {
+    assert.deepEqual(
+      changeProposalAdoptionNext(request, {
+        proposal: recordedProposal,
+        read: { read: "Found", evidence: found },
+      }),
+      { next: "Create" },
+      why,
+    );
+  }
+});
+
+test("an adopted proposal is judged by where it stands and never by the words it was opened with", () => {
+  const adopted = evidence({
+    marker: asProposalMarker("chuggy-handoff:" + "e".repeat(64)),
+    title: "A person retitled it",
+  });
+  const answered = (
+    found: ChangeProposalEvidence,
+  ): ChangeProposalPublication => ({
+    publication: "Answered",
+    creation: { created: "Adopted", evidence: found },
+  });
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      answered(adopted),
+      bounds,
+      "Accepted",
+    ),
+    { next: "Accepted", evidence: adopted },
+  );
+  const moved = evidence({
+    base: { ...request.base, ref: asGitRefName("refs/heads/x") },
+  });
+  assert.deepEqual(
+    changeProposalPublicationNext(request, answered(moved), bounds, "Accepted"),
+    { next: "Refused", contradiction: "BaseMismatch", evidence: moved },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      {
+        publication: "Answered",
+        creation: { created: "AlreadyExists", evidence: adopted },
+      },
+      bounds,
+      "Accepted",
+    ),
+    { next: "Refused", contradiction: "MarkerMismatch", evidence: adopted },
+    "a create's answer is still held to this request's marker",
   );
 });

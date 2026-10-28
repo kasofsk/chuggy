@@ -31,6 +31,11 @@
  * Merging a commit into one that already contains it changes nothing, and the
  * ancestry check is what keeps a repeated integration from writing a second
  * merge commit and a second identity for the same work.
+ *
+ * A TARGET HOLDS A CANDIDATE IT REACHES, OR ONE WHOSE MERGE IS ITS OWN TREE.
+ * That is the other direction of the same question, asked of the target a
+ * ticket lands on: either way no commit could land anything there, so no merge
+ * commit is written to find that out.
  */
 
 import { textCodePointsCount } from "../../contract/http.ts";
@@ -39,6 +44,8 @@ import {
   candidateBytesMax,
   candidateFilesMax,
   type CandidateFile,
+  type CandidateHeld,
+  type CandidateHeldQuestion,
   type CandidateIntegrated,
   type CandidateIntegration,
   type CandidatePrepared,
@@ -263,16 +270,16 @@ async function candidateIntegrateMerge(
   }
 }
 
-/** Brings the target's objects in where the scratch has not got them, so an integration is answerable at all. */
-async function candidateIntegrateHasTarget(
+/** Brings the target's objects in where the scratch has not got them, so a question about it is answerable at all. */
+async function candidateHasTarget(
   scratch: GitScratch,
   credential: RepositoryCredential,
-  integration: CandidateIntegration,
+  question: Pick<CandidateIntegration, "repository" | "target">,
 ): Promise<boolean> {
-  const repository = integration.repository.repository;
-  const commit = integration.target.commit;
+  const repository = question.repository.repository;
+  const commit = question.target.commit;
   if (await scratchHasCommit(scratch, repository, commit)) return true;
-  const ref = candidateBaseRef(integration.target);
+  const ref = candidateBaseRef(question.target);
   if (!(await scratchFetchRef(scratch, repository, credential, ref))) {
     return false;
   }
@@ -289,7 +296,7 @@ export async function candidateIntegrate(
   if (!(await scratchHasCommit(scratch, repository, integration.candidate))) {
     return { integrated: "Failed", evidence: "ObjectMissing" };
   }
-  if (!(await candidateIntegrateHasTarget(scratch, credential, integration))) {
+  if (!(await candidateHasTarget(scratch, credential, integration))) {
     return { integrated: "Failed", evidence: "ObjectMissing" };
   }
   const contains = await scratchIsAncestor(
@@ -310,6 +317,59 @@ export async function candidateIntegrate(
     default:
       return assertNever(integration.strategy);
   }
+}
+
+/** Whether a clean merge of the candidate with the target is the target's own tree. */
+async function candidateHeldMerged(
+  scratch: GitScratch,
+  question: CandidateHeldQuestion,
+): Promise<CandidateHeld> {
+  const repository = question.repository.repository;
+  const merged = await scratchMergeTree(
+    scratch,
+    repository,
+    question.target.commit,
+    question.candidate,
+  );
+  switch (merged.merged) {
+    case "Failed":
+      return "Unread";
+    case "Conflicted":
+      return "Unheld";
+    case "Tree": {
+      const shape = await scratchCommitShape(
+        scratch,
+        repository,
+        question.target.commit,
+      );
+      if (shape === undefined) return "Unread";
+      return merged.tree === shape.tree ? "Held" : "Unheld";
+    }
+    default:
+      return assertNever(merged);
+  }
+}
+
+/** Whether the target a ticket lands on already holds its candidate, so landing it would change nothing. */
+export async function candidateHeld(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: CandidateHeldQuestion,
+): Promise<CandidateHeld> {
+  const repository = question.repository.repository;
+  if (!(await scratchHasCommit(scratch, repository, question.candidate)))
+    return "Unread";
+  if (!(await candidateHasTarget(scratch, credential, question)))
+    return "Unread";
+  const reached = await scratchIsAncestor(
+    scratch,
+    repository,
+    question.candidate,
+    question.target.commit,
+  );
+  if (reached === undefined) return "Unread";
+  if (reached) return "Held";
+  return candidateHeldMerged(scratch, question);
 }
 
 /** The commit the base stands at with its objects in the scratch, and nothing where either could not be read. */
