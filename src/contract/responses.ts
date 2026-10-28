@@ -1279,6 +1279,7 @@ export const draftInitializationResponseSchema = z.object({
     programStagesMax: countSchema,
     evaluatorsMax: countSchema,
   }),
+  /** The newest dependable tickets, newest first; truncated where older ones are left out. */
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
   /** The program stage key a brief's checks join, counted from one, absent where no stage takes them. */

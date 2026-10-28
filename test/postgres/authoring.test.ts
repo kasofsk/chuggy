@@ -338,6 +338,58 @@ test("draft creation rejects a stale initialization fence", async () => {
   );
 });
 
+test("draft initialization answers the newest dependable tickets, newest first", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "draft-initialization-candidates",
+  );
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const ticketsDependable = [1, 2, 3, 4, 5];
+  for (const ticket of ticketsDependable)
+    await harness.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES($1,$2,$3,'Pending',1)`,
+      [partition.tenant, partition.project, ticket],
+    );
+  await harness.query(
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,dependable)
+     VALUES($1,$2,6,'Pending',1,false)`,
+    [partition.tenant, partition.project],
+  );
+  const candidates = async (dependencyCandidatesMax: number) => {
+    const initialized = await store.initializeDraft(
+      partition,
+      revision,
+      dependencyCandidatesMax,
+    );
+    if (initialized === undefined || initialized === "PolicyUnavailable")
+      throw new Error("draft was not initialized");
+    return {
+      candidates: initialized.dependencyCandidates,
+      truncated: initialized.dependencyCandidatesTruncated,
+    };
+  };
+  assert.deepEqual(await candidates(3), {
+    candidates: [5, 4, 3],
+    truncated: true,
+  });
+  assert.deepEqual(await candidates(5), {
+    candidates: [5, 4, 3, 2, 1],
+    truncated: false,
+  });
+  assert.deepEqual(await candidates(100), {
+    candidates: [5, 4, 3, 2, 1],
+    truncated: false,
+  });
+});
+
 test("draft creation in a project that is not Active is refused as that, not as stale", async () => {
   const partition = await postgresHarnessProject(
     harness.store,
