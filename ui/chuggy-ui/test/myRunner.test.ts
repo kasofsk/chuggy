@@ -25,7 +25,10 @@ import {
   runnerWait,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
-import { sessionRunnerAdded } from "../app/core/sessionRunners.ts";
+import {
+  sessionRunnerAdded,
+  sessionRunnerNoticeWord,
+} from "../app/core/sessionRunners.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
 
 const held = {
@@ -221,4 +224,17 @@ test("a thread's and an inquiry's missing runner is added on the member's own pa
   expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
   expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
   expect(sessionRunnerAdded("Lead")).toBe("Runners");
+});
+
+test("an inquiry's missing runner is named its member's chat host, and a thread's and the lead's a runner", () => {
+  expect(sessionRunnerNoticeWord("NoRunner", "Inquiry")).toBe("No chat host");
+  expect(sessionRunnerNoticeWord("RunnerOffline", "Inquiry")).toBe(
+    "Chat host offline",
+  );
+  for (const session of ["Thread", "Lead"] as const) {
+    expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No runner");
+    expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(
+      "Runner offline",
+    );
+  }
 });
