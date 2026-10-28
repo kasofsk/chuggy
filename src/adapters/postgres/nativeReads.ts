@@ -97,6 +97,8 @@ interface TicketProjectionRow {
    * what the ticket runs.
    */
   readonly ticket_title: string;
+  /** The repository the released brief names, null where it names none. */
+  readonly ticket_repository: string | null;
   readonly revision: string;
   /**
    * The authority subject the ticket's first authoring revision was written
@@ -451,6 +453,9 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
+    ...(row.ticket_repository === null
+      ? {}
+      : { repository: row.ticket_repository }),
     revision: projectRowCounter(row.revision, "ticket revision"),
     ...(row.creator === null ? {} : { creator: row.creator }),
     phase: projectionPhase(row.phase),
@@ -613,7 +618,7 @@ async function readTicketsByActivity(
                  coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
-                 m.authority_subject AS creator,
+                 b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
                  r.committed_at::text AS released_at,
                  c.committed_at::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -673,7 +678,7 @@ async function readTicketsByIdentity(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               m.authority_subject AS creator,
+               b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
                r.committed_at::text AS released_at,
                c.committed_at::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
@@ -732,7 +737,7 @@ async function readTicketRow(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               m.authority_subject AS creator,
+               b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
                b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,

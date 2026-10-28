@@ -91,9 +91,12 @@ const title =
 
 const creator = "23:https://issuer.example/alice";
 
+const repository = "https://github.com/acme/widgets.git";
+
 const ticket = {
   ticket: 11,
   title,
+  repository,
   creator,
   phase: "Work",
   sequence: 7,
@@ -244,6 +247,17 @@ test("a row names the member who filed it by subject where no email is read, the
   expect(unfiled?.querySelector(".identity")).toBeNull();
 });
 
+test("a row names its repository by owner and name, the whole address on hover, and a row with none names no repository", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  const named = screen.getByText("acme/widgets");
+  expect(named.className).toBe("ticket-list-repository");
+  expect(screen.getByText(title).closest("li")?.contains(named)).toBe(true);
+  fireEvent.focus(named);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(repository);
+  const unnamed = screen.getByText("Escalated ticket").closest("li");
+  expect(unnamed?.querySelector(".ticket-list-repository")).toBeNull();
+});
+
 /** The people read answering, which the case above leaves unanswered. */
 test("a row names its creator by the email the project's people hold for them", async () => {
   await drawTableWith(
@@ -294,6 +308,7 @@ test("a row whose index was truncated draws no chip for its execution", () => {
   const row: ProjectTableRow = {
     ticket: 9,
     title: undefined,
+    repository: undefined,
     creator: undefined,
     phase: "Work",
     badge: undefined,

@@ -23,6 +23,7 @@ function row(
   return {
     ticket,
     title: `Ticket ${String(ticket)}`,
+    repository: undefined,
     creator: undefined,
     phase,
     badge: undefined,

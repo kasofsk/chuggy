@@ -156,7 +156,8 @@
     gap: var(--space-1);
   }
 
-  .ticket-list-runs-on {
+  .ticket-list-runs-on,
+  .ticket-list-repository {
     display: inline-block;
     max-width: var(--col-spent);
     overflow: hidden;
