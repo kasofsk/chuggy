@@ -263,8 +263,9 @@ ci_declare() { # <gate id or suite path>
 		;;
 	check-queries)
 		ci_code src test scripts ui package.json tsconfig.json eslint.config.js \
-			.chug/tasks/_postgres.sh .chug/tasks/check-queries.sh
+			.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-queries.sh
 		ci_probes ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
+		ci_node_looks .chug/tasks .chug
 		ci_install
 		;;
 	check-keto)
