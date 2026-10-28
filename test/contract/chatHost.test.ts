@@ -204,9 +204,43 @@ test("`Ready` names at least one protocol, a ceiling, and a release", () => {
     { contractRelease: "1.21" },
     { contractRelease: "v1.21.0" },
   ])
-    assert.throws(() =>
-      parseChatSupervisorFrame(JSON.stringify({ ...ready, ...wrong })),
-    );
+    for (const read of [ready, { ...ready, later: true }])
+      assert.throws(() =>
+        parseChatSupervisorFrame(JSON.stringify({ ...read, ...wrong })),
+      );
+});
+
+test("a later supervisor's `Ready` is read without the fields this version does not name", () => {
+  const ready = {
+    frame: "Ready",
+    protocols: [chatProtocolVersion, chatProtocolVersion + 1],
+    sessionsMax: 2,
+    contractRelease: workerContractRelease,
+  } as const;
+  assert.deepEqual(
+    parseChatSupervisorFrame(
+      JSON.stringify({ ...ready, models: ["later"], sessionsIdle: 1 }),
+    ),
+    ready,
+  );
+  for (const frame of [
+    { frame: "Started", assignment: "01HZ", later: true },
+    { frame: "Drained", later: true },
+  ])
+    assert.throws(() => parseChatSupervisorFrame(JSON.stringify(frame)));
+});
+
+test("a `Stop` that came while a session was being prepared is refused as `Stopped`", () => {
+  assert.deepEqual(
+    parseChatSupervisorFrame(
+      JSON.stringify({
+        frame: "Refused",
+        assignment: "01HZ",
+        reason: "Stopped",
+      }),
+    ),
+    { frame: "Refused", assignment: "01HZ", reason: "Stopped" },
+  );
 });
 
 test("a host speaks to a supervisor only where its `Ready` names this version", () => {

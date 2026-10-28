@@ -8,7 +8,21 @@
  * A FRAME IS ONE LINE OF JSON, the host's on the supervisor's standard input
  * and the supervisor's on its standard output, no longer than
  * `chatProtocolFrameBytesMax`. The supervisor speaks first, with `Ready`, and a
- * host that speaks none of the versions it names sends it nothing.
+ * host that speaks none of the versions it names sends it nothing. `Ready` is
+ * the one frame read without refusing a field it does not name, so a later
+ * supervisor's stays readable; every other frame is strict. A supervisor writes
+ * this version's frames until a host frame names another.
+ *
+ * EVERY `Start` IS ANSWERED ONCE, by `Started` or by `Refused`, and a refusal
+ * is final: no `Ended` follows it. Every `Started` is followed by exactly one
+ * `Ended`, however the session ended: by itself, by `Stop`, by `Drain`, or by
+ * the end of the host's stream. A `Stop` while the session is being prepared
+ * cancels the preparation and is answered by `Refused` with `Stopped`, and one
+ * for an assignment the supervisor neither prepares nor runs is answered by
+ * nothing. `Drain` is answered by `Drained` once every `Started` has its
+ * `Ended`, and a `Start` after it is refused with `Draining`. At the end of its
+ * standard input the supervisor stops every session, writes each one's
+ * `Ended`, and exits.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
  * repeats the line it read.
@@ -28,11 +42,7 @@ export const chatProtocolVersion = 1;
 /** The longest frame either side writes, in UTF-8, its newline left out. */
 export const chatProtocolFrameBytesMax = 16_384;
 
-/**
- * What a session is started with: a pool's envelope less its workspace. The
- * supervisor makes each session's directory, owned by that session's user,
- * and a path the host named would be one on the host.
- */
+/** What a session is started with: a pool's envelope less its workspace, because the supervisor makes one directory per session for that session's user. */
 export const chatHostSessionEnvelopeSchema = z.strictObject(
   poolEnvelopeSchema.omit({ workspace: true }).shape,
 );
@@ -44,13 +54,13 @@ export const chatHostStartSchema = z.strictObject({
   envelope: chatHostSessionEnvelopeSchema,
 });
 
-/** End a session, which its `Ended` answers. An assignment the supervisor is not running is answered by nothing. */
+/** End a session, or cancel one being prepared. */
 export const chatHostStopSchema = z.strictObject({
   frame: z.literal("Stop"),
   assignment: workerPoolAssignmentIdentitySchema,
 });
 
-/** Start nothing more, and say `Drained` once every session has ended. */
+/** Start nothing more, and say `Drained` once every started session has ended. */
 export const chatHostDrainSchema = z.strictObject({
   frame: z.literal("Drain"),
 });
@@ -65,9 +75,9 @@ export const chatHostFrameSchema = z.discriminatedUnion("frame", [
 /**
  * The supervisor's first frame: the versions of this protocol it speaks, how
  * many sessions it runs at once, and the release of this contract it was built
- * against.
+ * against. A field it does not name is dropped rather than refused.
  */
-export const chatSupervisorReadySchema = z.strictObject({
+export const chatSupervisorReadySchema = z.object({
   frame: z.literal("Ready"),
   protocols: z.array(z.number().int().positive().safe()).min(1),
   sessionsMax: z.number().int().positive().safe(),
@@ -88,13 +98,15 @@ export const chatSupervisorStartedSchema = z.strictObject({
  * `Draining`, it was told to drain; `Duplicate`, it already runs that
  * assignment, which is still the one session; `Unprepared`, the session's
  * user, directory or credential could not be made, which is that session's
- * failure rather than the supervisor's.
+ * failure rather than the supervisor's; `Stopped`, the host's `Stop` came
+ * while it was being prepared, which is the end the host asked for.
  */
 export const chatSupervisorRefusals = [
   "Full",
   "Draining",
   "Duplicate",
   "Unprepared",
+  "Stopped",
 ] as const;
 export type ChatSupervisorRefusal = (typeof chatSupervisorRefusals)[number];
 
