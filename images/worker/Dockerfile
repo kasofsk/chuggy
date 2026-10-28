@@ -395,31 +395,35 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 # THE USERS A CHAT SESSION RUNS AS ARE NAMED. A member's chat container runs
 # the core's supervisor as root, and it starts each session through `setpriv`
 # and `prlimit` as a user of its own range, whose group is the same number and
-# whose home is under `/sessions`. Git, ssh and node's `os.userInfo()` look up
-# the user they run as, and refuse one the image does not name. The range and
-# the directory the homes are under are read off the core, as the
-# `chatSessionUidFirst`, `chatSessionUidCount` and `chatSessionsDirectory` of
-# its `chatSession.mjs`. The groups a session reads its mirror through are left
-# unnamed: git, ssh and node look up none of them by name, and git holds a tree
-# to its owner's user and not its group. `id` and `groups` print such a group by
-# its number, and say they could not find its name.
+# whose home is under the core's sessions directory. Git, ssh and node's
+# `os.userInfo()` look up the user they run as, and refuse one the image does
+# not name. The range, the directory the homes are under and each user's home
+# are read off the core, as the `chatSessionUidFirst`, `chatSessionUidCount`,
+# `chatSessionsDirectory` and `chatSessionHome` of its `chatSession.mjs`, since
+# its supervisor refuses to start where a session user's home is not the one
+# `chatSessionHome` names. The groups a session reads its mirror through are
+# left unnamed: git, ssh and node look up none of them by name, and git holds a
+# tree to its owner's user and not its group. `id` and `groups` print such a
+# group by its number, and say they could not find its name.
 RUN /opt/chuggy/bin/node --input-type=module --eval ' \
-    import { chatSessionUidCount, chatSessionUidFirst, chatSessionsDirectory } \
+    import { chatSessionHome, chatSessionUidCount, chatSessionUidFirst, chatSessionsDirectory } \
       from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
     console.log(`${chatSessionUidFirst} ${chatSessionUidCount} ${chatSessionsDirectory}`); \
+    for (let uid = chatSessionUidFirst; uid < chatSessionUidFirst + chatSessionUidCount; uid++) \
+      console.log(`${uid} ${chatSessionHome(chatSessionsDirectory, uid)}`); \
   ' > /tmp/sessions.txt \
   && read -r first count sessions < /tmp/sessions.txt \
-  && rm /tmp/sessions.txt \
-  && uid="$first" \
   && last="$((first + count - 1))" \
   && echo "chat sessions: users $first to $last, homes under $sessions" \
-  && while [ "$uid" -le "$last" ]; do \
+  && tail -n +2 /tmp/sessions.txt > /tmp/homes.txt \
+  && rm /tmp/sessions.txt \
+  && while read -r uid home; do \
        groupadd --gid "$uid" "chat-$uid" \
        && useradd --uid "$uid" --gid "$uid" --no-create-home --no-log-init \
-         --home-dir "$sessions/session-$uid/home" --shell /bin/bash "chat-$uid" \
+         --home-dir "$home" --shell /bin/bash "chat-$uid" \
        || exit 1; \
-       uid="$((uid + 1))"; \
-     done \
+     done < /tmp/homes.txt \
+  && rm /tmp/homes.txt \
   && name="$(setpriv --reuid "$last" --regid "$last" --clear-groups id -un)" \
   && if [ "$name" != "chat-$last" ]; then \
        echo "the last session user is named $name, not chat-$last"; \
