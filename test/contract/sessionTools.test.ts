@@ -60,6 +60,7 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "list_repositories",
     "fetch_image",
     "read_docs",
+    "read_abilities",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
@@ -131,6 +132,7 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "list_repositories",
     "fetch_image",
     "read_docs",
+    "read_abilities",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",

@@ -9,6 +9,7 @@ import type { ProjectAbilitiesResponse } from "../../../src/contract/responses.t
 import { answer } from "./screenHarness.tsx";
 
 export const abilitiesEvery: ProjectAbilitiesResponse = {
+  principal: "issuer reader",
   mutate: true,
   dispatch: true,
   manageSelector: true,
@@ -18,6 +19,7 @@ export const abilitiesEvery: ProjectAbilitiesResponse = {
 };
 
 export const abilitiesNone: ProjectAbilitiesResponse = {
+  principal: "issuer reader",
   mutate: false,
   dispatch: false,
   manageSelector: false,

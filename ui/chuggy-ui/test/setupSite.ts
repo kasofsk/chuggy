@@ -731,6 +731,7 @@ function abilities(
   return (
     fated(site, "abilities") ??
     answered({
+      principal: setupSiteMember,
       mutate: true,
       dispatch: true,
       manageSelector: administer,
