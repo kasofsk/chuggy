@@ -581,6 +581,41 @@ test("the Brief row counts what the brief holds beside its intent", async () => 
   );
 });
 
+/** The provenance summary's Repository cell: its value, and the address it
+ * keeps for hover. */
+function repositoryCell(): { text: string; title: string | null } {
+  const value = screen.getByText("Repository").nextElementSibling;
+  return {
+    text: value?.textContent ?? "",
+    title: value?.querySelector("[title]")?.getAttribute("title") ?? null,
+  };
+}
+
+test("the provenance summary names the repository by its label, the address on hover", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: [],
+        repository: "https://example.test/acme/atlas.git",
+      },
+    },
+  });
+  await sectionOpened("Provenance");
+  expect(repositoryCell()).toEqual({
+    text: "acme/atlas",
+    title: "https://example.test/acme/atlas.git",
+  });
+});
+
+test("a brief naming no repository leaves the summary's Repository cell absent", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  await sectionOpened("Provenance");
+  expect(repositoryCell()).toEqual({ text: "—", title: null });
+});
+
 test("the shell's top bar draws the ticket's own number and phase", async () => {
   await drawTicket(
     { shapes: ticket21Parked, ticket: parkedTicket },
