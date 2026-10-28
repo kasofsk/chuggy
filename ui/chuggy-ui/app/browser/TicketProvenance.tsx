@@ -52,6 +52,7 @@ import { agoFigure } from "../core/figures.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   configurationLabel,
   creatorLabel,
@@ -93,7 +94,8 @@ function Brief(props: {
   readonly partition: PartitionIdentity;
   readonly brief: TicketBriefBody;
 }): ReactNode {
-  const { intent, links, images, checks, branch, finalization } = props.brief;
+  const { intent, links, images, checks, repository, branch, finalization } =
+    props.brief;
   return (
     <>
       <Field name="intent">
@@ -141,6 +143,7 @@ function Brief(props: {
           </ul>
         )}
       </Field>
+      <Field name="repository">{repository ?? "none"}</Field>
       <Field name="branch">{branch ?? "none"}</Field>
       {finalization === undefined ? null : (
         <Field name="landing">{briefLandingLine(finalization)}</Field>
@@ -254,7 +257,8 @@ function OverriddenMark(): ReactNode {
 type ConfigurationOverridden = ReadonlySet<OverrideField>;
 
 /** The live revision and when it released, the draft beside it, its
- * dependencies, and where the finished work lands. */
+ * dependencies, the repository the work happens in, and where the finished
+ * work lands. */
 function ProvenanceSummary(props: {
   readonly draft: DraftResponse;
   readonly ticket: TicketResponse | undefined;
@@ -264,6 +268,7 @@ function ProvenanceSummary(props: {
   const dependencies = ticket?.dependencies;
   const finalization = ticket?.brief?.finalization;
   const branch = ticket?.brief?.branch;
+  const repository = ticket?.brief?.repository;
   return (
     <div className="ticket-provenance-summary">
       <SummaryCell
@@ -294,6 +299,16 @@ function ProvenanceSummary(props: {
             : dependencies.length === 0
               ? "None"
               : dependencies.join(", ")
+        }
+      />
+      <SummaryCell
+        name="Repository"
+        value={
+          repository === undefined ? (
+            absentMark
+          ) : (
+            <span title={repository}>{repositoryLabel(repository)}</span>
+          )
         }
       />
       <SummaryCell

@@ -180,6 +180,34 @@ test("a brief with no branch says so rather than drawing an empty field", () => 
   );
 });
 
+test("a brief naming a repository draws its whole address", () => {
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({
+        intent: "an intent",
+        links: [],
+        repository: "https://example.test/acme/atlas.git",
+      })}
+    />,
+  );
+  expect(screen.getByText("repository").nextElementSibling?.textContent).toBe(
+    "https://example.test/acme/atlas.git",
+  );
+});
+
+test("a brief naming no repository says so rather than drawing an empty field", () => {
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({ intent: "an intent", links: [] })}
+    />,
+  );
+  expect(screen.getByText("repository").nextElementSibling?.textContent).toBe(
+    "none",
+  );
+});
+
 /** The landing is one field, so the mode is on it whether or not a reference
  * is: a reader who sees no reference has still been told how it lands. */
 function landingLine(): string | undefined {
