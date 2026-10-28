@@ -7,10 +7,14 @@
 /** One sample's labels, by label name. */
 export type MetricsLabels = Readonly<Record<string, string>>;
 
-/** One counter or gauge sample. */
+/**
+ * One counter or gauge sample. A counter's may name when it began, in seconds
+ * since the epoch; a gauge's never does.
+ */
 export interface MetricsValueSample {
   readonly labels: MetricsLabels;
   readonly value: number;
+  readonly createdSecs?: number;
 }
 
 /**
@@ -22,6 +26,7 @@ export interface MetricsHistogramSample {
   readonly labels: MetricsLabels;
   readonly bucketCounts: readonly number[];
   readonly sum: number;
+  readonly createdSecs?: number;
 }
 
 export type MetricsFamily =
@@ -39,7 +44,11 @@ export type MetricsFamily =
       readonly samples: readonly MetricsHistogramSample[];
     };
 
-/** How many series `families` carry: a value sample is one, and a histogram's is each bucket, its sum and its count. */
+/**
+ * How many series `families` carry: a value sample is one, a histogram's is
+ * each bucket, its sum and its count, and a sample naming when it began is one
+ * more.
+ */
 export function metricsFamilySeries(
   families: readonly MetricsFamily[],
 ): number {
@@ -47,7 +56,9 @@ export function metricsFamilySeries(
     (series, family) =>
       series +
       family.samples.length *
-        (family.type === "histogram" ? family.bounds.length + 3 : 1),
+        (family.type === "histogram" ? family.bounds.length + 3 : 1) +
+      family.samples.filter((sample) => sample.createdSecs !== undefined)
+        .length,
     0,
   );
 }

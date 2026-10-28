@@ -1,9 +1,10 @@
 /**
  * The metrics plane's page against a real server, read as the plane's own
  * role: what each family totals to across two projects and their owners, the
- * owner as the bare subject, runs no label tells apart read as one series
- * however many revisions they pinned, a scrape past its bounds refused whole,
- * and readiness only under that role.
+ * owner as the bare subject, when each counter's and histogram's series began,
+ * runs no label tells apart read as one series however many revisions they
+ * pinned, a scrape past its bounds refused whole, and readiness only under that
+ * role.
  *
  * THE ROWS ARE WRITTEN DIRECTLY, AS THE OWNER, WITH REFERENTIAL CHECKS SET
  * ASIDE FOR THE SEEDING TRANSACTION. They are the rows a scheduler, a worker
@@ -225,7 +226,7 @@ async function metricsModel(
   );
 }
 
-/** One session and its turns, each `[state, model, tokens, cost, duration]` with the model absent on an unmeasured one. */
+/** One session and its turns, each `[state, model, tokens, cost, duration]` with the model absent on an unmeasured one, the turn at each ordinal ending that many minutes into the second of January. */
 async function metricsSession(
   query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
   partition: { readonly tenant: string; readonly project: string },
@@ -249,7 +250,8 @@ async function metricsSession(
        VALUES ($1,$2,$3,$4,$5,'UserMessage','hello','InCluster',$6,
          CASE WHEN $6='Answered' THEN 'done' END,
          CASE WHEN $6 IN ('Failed','Abandoned') THEN 'AgentFailed' END,
-         CASE WHEN $6 IN ('Answered','Failed','Abandoned') THEN now() END,
+         CASE WHEN $6 IN ('Answered','Failed','Abandoned')
+              THEN '2026-01-02T00:00:00Z'::timestamptz + make_interval(mins => ($5::bigint)::int) END,
          $7,$8,$9,$10,CASE WHEN $7::text IS NULL THEN NULL ELSE '{}'::text[] END)`,
       [
         partition.tenant,
@@ -359,6 +361,7 @@ async function metricsSeededIn(
   ])
     await metricsExecution(query, seeded);
   await metricsRunsSeeded(query);
+  await metricsRunningSeeded(query);
   await metricsSessionsSeeded(query);
   await metricsRevisionsSeeded(query);
 }
@@ -461,6 +464,21 @@ async function metricsRunsSeeded(
   );
 }
 
+/** A run and its model usage recorded by an attempt still running. */
+async function metricsRunningSeeded(
+  query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
+): Promise<void> {
+  await metricsRun(query, runningOne, "attempt-running-one", 2, 1_000, 500);
+  await metricsModel(
+    query,
+    runningOne,
+    "attempt-running-one",
+    "model-large",
+    [1, 1, 0, 0],
+    9_000,
+  );
+}
+
 /** The sessions' turns and the tickets, beside the runs. */
 async function metricsSessionsSeeded(
   query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
@@ -485,6 +503,7 @@ async function metricsPage(
   pool: pg.Pool,
   seriesMax = 10_000,
   readTimeoutMs = 10_000,
+  accept?: string,
 ): Promise<{ readonly status: number; readonly body: string }> {
   const app = createMetricsPlaneApp({
     scrape: metricsPlane(postgresMetricsPlaneReads(pool, readTimeoutMs), {
@@ -494,7 +513,11 @@ async function metricsPage(
     ready: () => postgresMetricsPlaneReady(pool, metricsPlaneRole),
   });
   try {
-    const answered = await app.inject({ method: "GET", url: "/metrics" });
+    const answered = await app.inject({
+      method: "GET",
+      url: "/metrics",
+      headers: accept === undefined ? {} : { accept },
+    });
     return { status: answered.statusCode, body: answered.body };
   } finally {
     await app.close();
@@ -578,6 +601,86 @@ test("runs total their turns, durations, tokens and cost per model", async () =>
     assert.ok(samples.includes(expected), expected);
 });
 
+/** The page in OpenMetrics, as a Prometheus asks for it. */
+async function metricsOpenMetricsPage(): Promise<readonly string[]> {
+  const page = await metricsPage(
+    plane,
+    10_000,
+    10_000,
+    "application/openmetrics-text;version=1.0.0;escaping=allow-utf-8;q=0.6,*/*;q=0.2",
+  );
+  assert.equal(page.status, 200);
+  assert.match(page.body, /\n# EOF\n$/u);
+  return metricsSamples(page.body);
+}
+
+/** Seconds since the epoch at `secs` past the first of January, when every seeded attempt opened. */
+const attemptEndedSecs = (secs: number) => 1_767_225_600 + secs;
+
+test("each attempt series began when its first attempt ended, its duration's across every end state", async () => {
+  const samples = await metricsOpenMetricsPage();
+  for (const expected of [
+    `chuggy_attempts_ended_created{${workLabels},state="Lost"} ${String(attemptEndedSecs(10))}`,
+    `chuggy_attempts_ended_created{${workLabels},state="Reported"} ${String(attemptEndedSecs(45))}`,
+    `chuggy_attempts_ended_created{${checksLabels},state="Reported"} ${String(attemptEndedSecs(200))}`,
+    `chuggy_attempts_ended_created{${authoredReviewLabels},state="Withdrawn"} ${String(attemptEndedSecs(8_000))}`,
+    `chuggy_attempt_duration_seconds_created{${workLabels}} ${String(attemptEndedSecs(10))}`,
+    `chuggy_attempt_duration_seconds_created{${authoredLabels}} ${String(attemptEndedSecs(3_000))}`,
+  ])
+    assert.ok(samples.includes(expected), expected);
+});
+
+test("each run series began when the first attempt it sums ended", async () => {
+  const samples = await metricsOpenMetricsPage();
+  for (const expected of [
+    `chuggy_run_turns_created{${workLabels}} ${String(attemptEndedSecs(45))}`,
+    `chuggy_run_turns_created{${checksLabels}} ${String(attemptEndedSecs(200))}`,
+    `chuggy_run_duration_seconds_created{${reviewLabels}} ${String(attemptEndedSecs(100))}`,
+    `chuggy_run_api_duration_seconds_created{${authoredLabels}} ${String(attemptEndedSecs(3_000))}`,
+    `chuggy_run_tokens_created{${workLabels},model="model-large",type="cache_read"} ${String(attemptEndedSecs(45))}`,
+    `chuggy_run_cost_usd_created{${reviewLabels},model="model-small"} ${String(attemptEndedSecs(100))}`,
+    `chuggy_run_cost_usd_created{${authoredLabels},model="model-small"} ${String(attemptEndedSecs(3_000))}`,
+  ])
+    assert.ok(samples.includes(expected), expected);
+});
+
+test("a running attempt's run is not counted until the attempt ends", async () => {
+  for (const samples of [
+    await metricsOpenMetricsPage(),
+    metricsSamples((await metricsPage(plane)).body),
+  ])
+    assert.deepEqual(
+      samples.filter(
+        (line) =>
+          line.startsWith("chuggy_run_") && line.includes('placement="Pool"'),
+      ),
+      [],
+    );
+});
+
+test("each session turn series began when its first turn ended, and the tickets gauge at no time", async () => {
+  const samples = await metricsOpenMetricsPage();
+  const lead = `tenant="metrics-one",project="web",owner="selector-service",session="Lead"`;
+  const thread = `tenant="metrics-two",project="api",owner="alice-id",session="Thread"`;
+  const minuteSecs = (minutes: number) => String(1_767_312_000 + minutes * 60);
+  for (const expected of [
+    `chuggy_session_turns_ended_created{${lead},state="Answered"} ${minuteSecs(1)}`,
+    `chuggy_session_turns_ended_created{${lead},state="Failed"} ${minuteSecs(2)}`,
+    `chuggy_session_turn_tokens_created{${lead},model="model-large"} ${minuteSecs(1)}`,
+    `chuggy_session_turn_cost_usd_created{${thread},model="model-small"} ${minuteSecs(1)}`,
+    `chuggy_session_turn_duration_seconds_created{${thread}} ${minuteSecs(1)}`,
+    `chuggy_tickets{tenant="metrics-one",project="web",phase="Work"} 2`,
+  ])
+    assert.ok(samples.includes(expected), expected);
+  assert.ok(!samples.some((line) => line.startsWith("chuggy_tickets_created")));
+  const created = samples.filter((line) => /^\S+_created[{ ]/u.test(line));
+  assert.equal(
+    created.length,
+    samples.filter((line) => /^\S+_(?:total|count)[{ ]/u.test(line)).length,
+    "every counter and histogram series names when it began",
+  );
+});
+
 test("session turns are counted by session kind and state, and measured ones spend per model", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
   const lead = `tenant="metrics-one",project="web",owner="selector-service",session="Lead"`;
@@ -617,7 +720,7 @@ function metricsBounds(seriesMax: number) {
 }
 
 test("a page past the series it may carry is refused whole, and so is a family past them", async () => {
-  const whole = metricsSamples((await metricsPage(plane)).body).length;
+  const whole = (await metricsOpenMetricsPage()).length;
   const refused = await metricsPage(plane, 20);
   assert.equal(refused.status, 503);
   assert.doesNotMatch(refused.body, /chuggy_/u);
@@ -666,6 +769,7 @@ test("runs under many pinned revisions that no label tells apart are one series,
         buckets: [pinnedRevisions, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         ended: pinnedRevisions,
         durationSecs: pinnedRevisions * 10,
+        createdSecs: attemptEndedSecs(10),
       },
     ],
   );

@@ -1,10 +1,12 @@
 /**
  * The metrics plane's routes: `GET /metrics`, the page a scraper reads, beside
  * the plane's health probes. It serves no caller in particular, so it resolves
- * nobody, and it reads no body.
+ * nobody, and it reads no body. The page is in whichever format the scraper's
+ * `Accept` ranks highest, so it varies by that header.
  *
  * A SCRAPE THAT CANNOT BE ANSWERED WHOLE IS 503, never a partial page: a read
- * past its bound, a page past the series it may carry, or a read that failed.
+ * past its bound, a page past the series it may carry, a read that failed, or
+ * families the format refuses to write.
  * Each is said on stderr with its reason, which the body does not carry, since
  * a scraper records only that the target was down.
  */
@@ -13,8 +15,9 @@ import type { FastifyInstance } from "fastify";
 
 import type { MetricsPlaneScrape } from "../../interpreter/metricsPlane.ts";
 import {
-  metricsExposition,
-  metricsExpositionContentType,
+  metricsExpositionNegotiated,
+  metricsExpositionPage,
+  type MetricsExpositionFormat,
 } from "./metricsExposition.ts";
 import { planeApp, planeHealthRoutes } from "./planeRoutes.ts";
 
@@ -23,18 +26,30 @@ export interface MetricsPlaneAppOptions {
   readonly ready: () => Promise<boolean>;
 }
 
-/** Why a scrape was refused, or the page it is answered with. */
+function metricsPlaneFailure(failure: unknown): string {
+  return failure instanceof Error ? failure.message : "unknown failure";
+}
+
+/** Why a scrape was refused, or the page it is answered with in `format`. */
 async function metricsPlanePage(
   scrape: () => Promise<MetricsPlaneScrape>,
-): Promise<{ readonly page: string } | { readonly refused: string }> {
+  format: MetricsExpositionFormat,
+): Promise<
+  | { readonly page: string; readonly contentType: string }
+  | { readonly refused: string }
+> {
+  let scraped: MetricsPlaneScrape;
   try {
-    const scraped = await scrape();
-    return scraped.scraped === "Refused"
-      ? { refused: scraped.why }
-      : { page: metricsExposition(scraped.families) };
+    scraped = await scrape();
+  } catch (failure) {
+    return { refused: `the read failed: ${metricsPlaneFailure(failure)}` };
+  }
+  if (scraped.scraped === "Refused") return { refused: scraped.why };
+  try {
+    return metricsExpositionPage(scraped.families, format);
   } catch (failure) {
     return {
-      refused: `the read failed: ${failure instanceof Error ? failure.message : "unknown failure"}`,
+      refused: `the page was not written: ${metricsPlaneFailure(failure)}`,
     };
   }
 }
@@ -44,8 +59,12 @@ export function createMetricsPlaneApp(
 ): FastifyInstance {
   const app = planeApp();
   planeHealthRoutes(app, options.ready);
-  app.get("/metrics", async (_request, reply) => {
-    const answered = await metricsPlanePage(options.scrape);
+  app.get("/metrics", async (request, reply) => {
+    void reply.header("vary", "Accept");
+    const answered = await metricsPlanePage(
+      options.scrape,
+      metricsExpositionNegotiated(request.headers.accept),
+    );
     if ("refused" in answered) {
       process.stderr.write(
         `metrics plane: scrape refused: ${answered.refused}\n`,
@@ -55,7 +74,7 @@ export function createMetricsPlaneApp(
         .type("text/plain; charset=utf-8")
         .send("the scrape could not be answered whole\n");
     }
-    return reply.type(metricsExpositionContentType).send(answered.page);
+    return reply.type(answered.contentType).send(answered.page);
   });
   return app;
 }
