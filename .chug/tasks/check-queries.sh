@@ -24,12 +24,19 @@
 # wrong verdict rather than a missing one, so it is refused here as a
 # could-not-run before any server is acquired.
 #
-# A CALLER-SUPPLIED SERVER IS MIGRATED IN PLACE. CHUG_PG_URL skips the
-# container exactly as it does for check-postgres, and the database it names
-# is brought to the declared schema before eslint asks it anything.
+# A CALLER-SUPPLIED SERVER GETS A DATABASE OF THE RUN'S OWN, AND THE ONE IT
+# NAMES IS NEVER WRITTEN. CHUG_PG_URL skips the container exactly as it does for
+# check-postgres. The gate creates a database beside the named one under a name
+# carrying the run id from `_postgres.sh`, migrates it, asks it, and drops it
+# when the run ends however it ends; a URL it cannot name that database in is a
+# could-not-run. The named database is only connected to, to create and drop
+# that one: a server shared between checkouts would otherwise keep whatever
+# migration a branch recorded in it, and refuse the migrations of every checkout
+# that numbers them differently.
 #
 # Env: CHUG_PG_URL, CHUG_PG_IMAGE, CHUG_PG_PORT, CHUG_PG_READY_SECS — read by
 # `.chug/tasks/_postgres.sh`, which states each knob.
+# The role in CHUG_PG_URL must be able to create and drop sibling databases.
 #
 # Usage:
 #   .chug/tasks/check-queries.sh
@@ -83,7 +90,51 @@ fi
 
 . "$here/_postgres.sh"
 postgres_acquire "check-queries"
-trap postgres_drop_scratch EXIT
+url="$base_url"
+database=""
+database_helper="$root/.chug/tasks/postgres-databases.ts"
+
+cleanup() {
+	if [ -n "$database" ]; then
+		node --experimental-strip-types "$database_helper" drop "$base_url" "$database" || true
+	fi
+	postgres_drop_scratch
+}
+interrupted() {
+	trap - INT TERM HUP
+	echo "check-queries: LINTER ERROR — interrupted before a verdict"
+	exit 2
+}
+trap cleanup EXIT
+trap interrupted INT TERM HUP
+
+if [ -z "$scratch" ]; then
+	postgres_name_check "chuggy_queries_${run_id}"
+	# Rewritten before anything is made, and silently: a URL the client accepts
+	# and this parser does not would otherwise be echoed, password and all.
+	if ! url="$(node -e '
+let at;
+try {
+  at = new URL(process.argv[1]);
+} catch {
+  process.exit(1);
+}
+if (at.protocol === "socket:") at.searchParams.set("db", process.argv[2]);
+else if (at.protocol === "postgres:" || at.protocol === "postgresql:")
+  at.pathname = "/" + process.argv[2];
+else process.exit(1);
+process.stdout.write(at.toString());
+' "$base_url" "chuggy_queries_${run_id}" 2>/dev/null)"; then
+		echo "check-queries: LINTER ERROR — CHUG_PG_URL is not a URL this gate can name a database of the run's own in"
+		exit 2
+	fi
+	# Named before it is made, so a run killed while making it still drops it.
+	database="chuggy_queries_${run_id}"
+	if ! node --experimental-strip-types "$database_helper" create "$base_url" "$database"; then
+		echo "check-queries: LINTER ERROR — could not create a database for this run beside the one CHUG_PG_URL names"
+		exit 2
+	fi
+fi
 
 if ! node --input-type=module -e '
 const { postgresPool, postgresMigrate } = await import(
@@ -95,13 +146,13 @@ try {
 } finally {
   await pool.end();
 }
-' "$base_url"; then
+' "$url"; then
 	echo "check-queries: LINTER ERROR — the database did not migrate, so there is no schema to ask"
 	exit 2
 fi
 
 set +e
-CHUG_SAFEQL_DATABASE_URL="$base_url" ./node_modules/.bin/eslint src/adapters/postgres
+CHUG_SAFEQL_DATABASE_URL="$url" ./node_modules/.bin/eslint src/adapters/postgres
 rc=$?
 set -e
 

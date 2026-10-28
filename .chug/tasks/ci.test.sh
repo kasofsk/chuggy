@@ -1487,8 +1487,10 @@ pin_scope check-postgres "$record_tool_install" src test deploy/rig/wipe-tickets
 	.chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts .chug/tasks/check-postgres.sh \
 	.chug/tasks/_test-timeout.sh -- .chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 pin_scope check-queries "$record_tool_install" src test scripts ui package.json tsconfig.json \
-	eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/check-queries.sh \
-	-- ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json
+	eslint.config.js .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
+	.chug/tasks/check-queries.sh \
+	-- ':(glob)eslint.config.*' .eslintignore .eslintcache eslint-suppressions.json \
+	.chug/tasks/node_modules .chug/tasks/package.json .chug/node_modules .chug/package.json
 pin_scope check-keto "$record_tool_install" src test .chug/tasks/keto package.json \
 	.chug/tasks/_keto.sh .chug/tasks/_postgres.sh .chug/tasks/postgres-databases.ts \
 	.chug/tasks/check-keto.sh .chug/tasks/_test-timeout.sh \

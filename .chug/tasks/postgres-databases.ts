@@ -76,6 +76,10 @@ async function main(): Promise<void> {
     await prepare(base, databaseName(names[0] ?? ""));
     return;
   }
+  if (command === "create" && names.length === 1) {
+    await createDatabase(base, databaseName(names[0] ?? ""));
+    return;
+  }
   if (command === "clone" && names.length === 2) {
     await createDatabase(
       base,
@@ -89,7 +93,7 @@ async function main(): Promise<void> {
     return;
   }
   throw new Error(
-    "usage: postgres-databases.ts prepare BASE TEMPLATE | clone BASE DATABASE TEMPLATE | drop BASE DATABASE...",
+    "usage: postgres-databases.ts prepare BASE TEMPLATE | create BASE DATABASE | clone BASE DATABASE TEMPLATE | drop BASE DATABASE...",
   );
 }
 
