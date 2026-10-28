@@ -120,6 +120,10 @@ import {
   sessionRigTurn,
   sessionRigTurnState,
 } from "./sessionHarness.ts";
+import {
+  workerPoolReportAgeMsMax,
+  workerPoolReports,
+} from "../../src/interpreter/workerPoolReports.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 
 const rig = await sessionRigOpen();
@@ -1490,6 +1494,12 @@ async function poolPlaneServing(
     sessions: ports.sessions,
     runners: ports.runners,
     releases: new Map(),
+    reports: workerPoolReports({
+      issuer: "https://issuer.invalid",
+      runnersMax: 1,
+      ageMsMax: workerPoolReportAgeMsMax,
+      now: Date.now,
+    }),
     settings,
     mint: ports.mint,
     ready: () => Promise.resolve(true),

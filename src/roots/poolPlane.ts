@@ -14,11 +14,18 @@
  * reads, so the least-trusted outward-facing process cannot make itself a
  * second pool. Discovery happens once, at start-up, which is why an issuer that
  * cannot be reached refuses the start rather than serving refusals.
+ *
+ * ITS RUNNERS' REPORTS ARE SERVED ON A SECOND LISTENER, and only where
+ * `CHUG_POOL_PLANE_METRICS_PORT` names its port.
  */
 import { pathToFileURL } from "node:url";
 
 import { poolBearerMint } from "../adapters/crypto/poolBearerMint.ts";
 import { sessionAttemptMint } from "../adapters/crypto/sessionAttemptMint.ts";
+import {
+  poolPlaneMetricsAddressRead,
+  poolPlaneMetricsListening,
+} from "../adapters/http/poolPlaneMetrics.ts";
 import { createPoolPlaneApp } from "../adapters/http/poolPlaneServer.ts";
 import { oidcAuthentication } from "../adapters/http/oidc.ts";
 import { ketoProjectAccess } from "../adapters/keto/projectAccess.ts";
@@ -33,6 +40,10 @@ import {
   workerPoolMemoryMibDefault,
   type WorkerPoolPollSettings,
 } from "../interpreter/workerPool.ts";
+import {
+  workerPoolReportAgeMsMax,
+  workerPoolReports,
+} from "../interpreter/workerPoolReports.ts";
 import {
   workerPoolImageHostsRead,
   type WorkerPoolImageHosts,
@@ -82,6 +93,19 @@ function poolPlaneImageHosts(): WorkerPoolImageHosts {
   if (read.read === "Refused")
     throw new Error(`${imageHostsVariable} ${read.why}`);
   return read.hosts;
+}
+
+const metricsPortVariable = "CHUG_POOL_PLANE_METRICS_PORT";
+
+/** Where the runners' reports are served, where a malformed port refuses the start rather than serving nothing. */
+function poolPlaneMetricsAddress() {
+  const read = poolPlaneMetricsAddressRead(
+    process.env["CHUG_POOL_PLANE_METRICS_HOST"],
+    process.env[metricsPortVariable],
+  );
+  if (read.read === "Refused")
+    throw new Error(`${metricsPortVariable} ${read.why}`);
+  return read;
 }
 
 /** The issuer a pool's token is verified against, read the way every other bound is. */
@@ -144,11 +168,22 @@ function poolPlaneSettings(
 
 async function main(): Promise<void> {
   const imageHosts = poolPlaneImageHosts();
+  const metricsAddress = poolPlaneMetricsAddress();
+  const issuer = poolPlaneIssuer();
+  const reports = workerPoolReports({
+    issuer: issuer.issuer,
+    runnersMax: planeEnvironmentPositive(
+      "CHUG_POOL_PLANE_METRICS_RUNNERS_MAX",
+      1_000,
+    ),
+    ageMsMax: workerPoolReportAgeMsMax,
+    now: Date.now,
+  });
   const releases = runnerReleasesPinned();
   const pool = postgresPool(
     planeEnvironmentRequired("CHUG_POOL_PLANE_DATABASE_URL"),
   );
-  const authentication = await oidcAuthentication(poolPlaneIssuer()).catch(
+  const authentication = await oidcAuthentication(issuer).catch(
     async (failure: unknown) => {
       await pool.end();
       throw failure;
@@ -177,6 +212,7 @@ async function main(): Promise<void> {
     },
     runners: postgresWorkerPoolRunners(pool),
     releases,
+    reports,
     mint: poolBearerMint,
     settings: poolPlaneSettings(imageHosts),
     ready: async () => {
@@ -195,6 +231,8 @@ async function main(): Promise<void> {
     host: process.env["CHUG_POOL_PLANE_HOST"] ?? "127.0.0.1",
     port: planeEnvironmentPositive("CHUG_POOL_PLANE_PORT", 3_002),
   });
+  const metrics = await poolPlaneMetricsListening(reports, metricsAddress);
+  if (metrics !== undefined) planeStopping(metrics, "pool plane metrics");
 }
 
 if (

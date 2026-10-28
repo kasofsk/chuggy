@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 
+import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
 export const workerPoolTokenCharsMax = 63;
@@ -154,6 +155,13 @@ export const workerPoolSettlementRoutes = {
   Refused: `${workerPoolPollRoute}/:assignment/refused`,
   Unavailable: `${workerPoolPollRoute}/:assignment/unavailable`,
 } as const;
+
+/** The outcomes a settlement names, in the order its routes are keyed. */
+export const workerPoolSettlementOutcomes = [
+  "Accepted",
+  "Refused",
+  "Unavailable",
+] as const satisfies readonly (keyof typeof workerPoolSettlementRoutes)[];
 
 export function workerPoolSettlementPath(
   outcome: keyof typeof workerPoolSettlementRoutes,
@@ -377,6 +385,133 @@ export const workerPoolReconciliationSchema = z.strictObject({
   chatImage: workerPoolImageSchema.optional(),
 });
 
+/**
+ * Where a runner reports how its machine and its work are doing: a POST whose
+ * body is `workerRunnerReportSchema`, answered 204 with no body, and held
+ * against the runner its bearer names, so nothing in it names a tenant, a
+ * project, a pool or an owner. A runner sends one only where its own
+ * configuration turns reporting on, and only to a plane whose answers name
+ * `workerContractRunnerReport` or a later version.
+ */
+export const workerRunnerReportRoute = "/v1/runner-report";
+
+/** The longest machine name a report carries. */
+export const workerRunnerHostCharsMax = 253;
+
+/** The most a report is sent, which the heaviest report `workerRunnerReportSchema` reads fits within. */
+export const workerRunnerReportBytesMax = 4_096;
+
+/** The bounds, in seconds, a report counts its image pulls under. */
+export const workerRunnerImagePullBoundsSecs = [
+  1, 5, 15, 30, 60, 120, 300, 600,
+] as const;
+
+/** The bounds, in seconds, a report counts its runs under. */
+export const workerRunnerRunBoundsSecs = [
+  30, 60, 120, 300, 600, 1200, 1800, 3600, 7200,
+] as const;
+
+/** What a report counts a refusal under: the image fault it named, or `NoFault` where it named none. */
+export const workerRunnerRefusalFaults = [
+  ...workerImageFaults,
+  "NoFault",
+] as const;
+export type WorkerRunnerRefusalFault =
+  (typeof workerRunnerRefusalFaults)[number];
+
+/**
+ * How a job a runner was assigned ended, as the runner sees it: its process
+ * exited, it was killed at its deadline or for want of disk, the plane told the
+ * runner to stop it, or it never ran.
+ */
+export const workerRunnerJobEnds = [
+  "Succeeded",
+  "Failed",
+  "Deadline",
+  "DiskLow",
+  "Stopped",
+  "PlacementFailed",
+] as const;
+export type WorkerRunnerJobEnd = (typeof workerRunnerJobEnds)[number];
+
+/** What a report counts a run's duration by. */
+export const workerRunnerRunKinds = ["Job", "Session"] as const;
+export type WorkerRunnerRunKind = (typeof workerRunnerRunKinds)[number];
+
+/** A machine's name as a runner reports it, which is only ever displayed. */
+const workerRunnerHostSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+  .max(workerRunnerHostCharsMax);
+
+const workerRunnerReportCountSchema = z.number().int().nonnegative().safe();
+
+/** A strict object keyed by every label of `labels`, each holding what `value` reads or left out. */
+function workerRunnerReportKeyedSchema<
+  const Labels extends readonly string[],
+  Value extends z.ZodType,
+>(labels: Labels, value: Value) {
+  return z.strictObject(
+    Object.fromEntries(labels.map((label) => [label, value.optional()])) as {
+      [Label in Labels[number]]: z.ZodOptional<Value>;
+    },
+  );
+}
+
+/** Counts by a roster's labels, a label left out counting none. */
+function workerRunnerReportTallySchema<const Labels extends readonly string[]>(
+  labels: Labels,
+) {
+  return workerRunnerReportKeyedSchema(labels, workerRunnerReportCountSchema);
+}
+
+/** What fell in each bucket of `bounds` alone and in one past the last, and the seconds observed in all. */
+function workerRunnerReportHistogramSchema(bounds: readonly number[]) {
+  return z.strictObject({
+    bucketCounts: z
+      .array(workerRunnerReportCountSchema)
+      .min(bounds.length + 1)
+      .max(bounds.length + 1),
+    sumSecs: z.number().nonnegative(),
+  });
+}
+
+/**
+ * What a runner process knows of itself since it started: its machine's name,
+ * how long it has run, the jobs and sessions it runs now and the most of each
+ * it takes, the disk it has and the floor below which it takes no job where its
+ * backend measures disk, and the machine as its OS gives it. Every count is
+ * since the process started, so a restart starts each again.
+ */
+export const workerRunnerReportSchema = z.strictObject({
+  host: workerRunnerHostSchema,
+  uptimeSecs: z.number().nonnegative(),
+  jobsRunning: workerRunnerReportCountSchema,
+  concurrencyMax: workerRunnerReportCountSchema,
+  sessionsRunning: workerRunnerReportCountSchema,
+  sessionsMax: workerRunnerReportCountSchema,
+  diskFreeBytes: workerRunnerReportCountSchema.optional(),
+  diskFloorBytes: workerRunnerReportCountSchema.optional(),
+  cpus: workerRunnerReportCountSchema.optional(),
+  loadAverageOneMinute: z.number().nonnegative().optional(),
+  memoryTotalBytes: workerRunnerReportCountSchema.optional(),
+  memoryAvailableBytes: workerRunnerReportCountSchema.optional(),
+  /** Polls made, and the ones among them that never reached the plane. */
+  polls: workerRunnerReportCountSchema,
+  pollsFailed: workerRunnerReportCountSchema,
+  settlements: workerRunnerReportTallySchema(workerPoolSettlementOutcomes),
+  refusals: workerRunnerReportTallySchema(workerRunnerRefusalFaults),
+  jobsEnded: workerRunnerReportTallySchema(workerRunnerJobEnds),
+  sessionsEnded: workerRunnerReportTallySchema(sessionContainerEnds),
+  imagePullSecs: workerRunnerReportHistogramSchema(
+    workerRunnerImagePullBoundsSecs,
+  ),
+  runSecs: workerRunnerReportKeyedSchema(
+    workerRunnerRunKinds,
+    workerRunnerReportHistogramSchema(workerRunnerRunBoundsSecs),
+  ),
+});
+
 export const workerPoolRegistrationSchema = z.strictObject({
   pool: z.string().min(1).max(workerPoolIdentityCharsMax),
   capabilities: workerPoolCapabilitiesSchema,
@@ -412,6 +547,7 @@ export type WorkerPoolReconciliation = z.infer<
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
+export type WorkerRunnerReport = z.infer<typeof workerRunnerReportSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
 >;
