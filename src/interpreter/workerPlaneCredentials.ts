@@ -21,10 +21,9 @@
  * this app are all `NotFound`, settled for as long as the claim is absent: a
  * pod falls back from it to its launcher's mount for the repository it works
  * in, and holds no credential for any other it named. A forge or a store that
- * could not be reached is `Unavailable`, and may be asked again. A refusal the
- * forge's installations made names the repository, the app and the installation
- * the mint went through, or that none covers it, so the pod can say which
- * before it falls back.
+ * could not be reached is `Unavailable`, and may be asked again. A refusal met
+ * past the address names the repository, the app and which refusal it was, so
+ * the pod can say what to change before it falls back.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -32,7 +31,7 @@ import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import type {
   ForgeInstallationToken,
-  ForgeMintInstallation,
+  ForgeMintUnreached,
   ForgePermissionSet,
   ForgeRepositoryTokens,
 } from "./forgeInstallation.ts";
@@ -61,14 +60,10 @@ export interface WorkerPlaneCredential {
   readonly expiresAtMs: number;
 }
 
-/**
- * A repository the forge's installations did not answer a mint for: the app
- * asked, and the installation of it on the repository's owner the mint went
- * through, absent where this tenant claims none there.
- */
-export interface WorkerPlaneCredentialUncovered extends ForgeMintInstallation {
+/** A refusal met past the address, and the repository it was met for. */
+export type WorkerPlaneCredentialUnreached = ForgeMintUnreached & {
   readonly repository: RepositoryId;
-}
+};
 
 /** What minting for a pod came to, a refusal kept apart from an outage. */
 export type WorkerPlaneCredentialMinted =
@@ -76,7 +71,7 @@ export type WorkerPlaneCredentialMinted =
   | {
       readonly minted: "NotFound";
       /** Absent where the refusal was the binding's, or came before any installation was looked for. */
-      readonly uncovered?: WorkerPlaneCredentialUncovered;
+      readonly unreached?: WorkerPlaneCredentialUnreached;
     }
   | { readonly minted: "Unavailable" };
 
@@ -142,11 +137,11 @@ async function workerPlaneCredentialMinted(
         },
       };
     case "Denied":
-      return minted.installation === undefined
+      return minted.unreached === undefined
         ? { minted: "NotFound" }
         : {
             minted: "NotFound",
-            uncovered: { ...minted.installation, repository },
+            unreached: { ...minted.unreached, repository },
           };
     case "Unavailable":
       return { minted: "Unavailable" };

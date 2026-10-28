@@ -108,7 +108,7 @@ import {
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
-  WorkerPlaneCredentialUncovered,
+  WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
 import {
   artifactPathRejection,
@@ -1011,19 +1011,21 @@ const workerCredentialNotMinted: WorkerCredentialAbsent = {
   reason: "NotMinted",
 };
 
-/** A refusal the forge's installations made, naming the installation a person would change. */
-function workerCredentialUncovered(
-  uncovered: WorkerPlaneCredentialUncovered,
+/** A refusal met past the address, saying which it was and what a person would change. */
+function workerCredentialUnreached(
+  unreached: WorkerPlaneCredentialUnreached,
 ): WorkerCredentialAbsent {
+  const met = { repository: unreached.repository, app: unreached.app };
   return {
     ...workerCredentialNotMinted,
-    uncovered: {
-      repository: uncovered.repository,
-      app: uncovered.app,
-      ...(uncovered.installationId === undefined
-        ? {}
-        : { installation: uncovered.installationId }),
-    },
+    unreached:
+      unreached.reach === "Unclaimed"
+        ? { reach: unreached.reach, ...met }
+        : {
+            reach: unreached.reach,
+            ...met,
+            installation: unreached.installationId,
+          },
   };
 }
 
@@ -1044,9 +1046,9 @@ function workerCredentialAnswered(
       return reply
         .code(404)
         .send(
-          minted.uncovered === undefined
+          minted.unreached === undefined
             ? workerCredentialNotMinted
-            : workerCredentialUncovered(minted.uncovered),
+            : workerCredentialUnreached(minted.unreached),
         );
     case "Unavailable":
       return workerPlaneRefused(reply, {

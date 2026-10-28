@@ -212,28 +212,29 @@ test("a forge that refused this app is a refusal the pod falls back from", async
   });
 });
 
-test("a refusal the installations made names the repository, the app and the installation, or that none covers it", async () => {
+test("a refusal met past the address names the repository, the app and which refusal it was", async () => {
   const installationId = asForgeInstallationId("156786211");
-  for (const installation of [
-    { app: workerPodForgeApp, installationId },
-    { app: workerPodForgeApp },
-  ]) {
+  for (const unreached of [
+    { reach: "Unselected", app: workerPodForgeApp, installationId },
+    { reach: "Refused", app: workerPodForgeApp, installationId },
+    { reach: "Unclaimed", app: workerPodForgeApp },
+  ] as const) {
     const minting = workerPlaneCredentialMinting({
-      tokens: tokensOf({ minted: "Denied", installation }, []),
+      tokens: tokensOf({ minted: "Denied", unreached }, []),
       bindings: bindingsOf(bindingOf(sibling)),
     });
 
     assert.deepEqual(await minting.attempt(authorityOf("Work")), {
       minted: "NotFound",
-      uncovered: { ...installation, repository },
+      unreached: { ...unreached, repository },
     });
     assert.deepEqual(await minting.attempt(authorityOf("Work"), sibling), {
       minted: "NotFound",
-      uncovered: { ...installation, repository: sibling },
+      unreached: { ...unreached, repository: sibling },
     });
     assert.deepEqual(await minting.session(partition, sibling), {
       minted: "NotFound",
-      uncovered: { ...installation, repository: sibling },
+      unreached: { ...unreached, repository: sibling },
     });
   }
 });

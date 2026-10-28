@@ -1491,27 +1491,34 @@ test("a plane holding no app key says so, and the pod keeps its mounted credenti
   await app.close();
 });
 
-test("a refusal the installations made names the repository, the app and the installation, or that none covers it", async () => {
+test("a refusal met past the address says which it was, and the contract reads each back", async () => {
   const repository = asRepositoryId(credentialSibling);
-  for (const [uncovered, answer] of [
+  const installationId = asForgeInstallationId("156786211");
+  for (const [unreached, answer] of [
     [
+      { reach: "Unselected", repository, app: "worker", installationId },
       {
-        repository,
-        app: "worker",
-        installationId: asForgeInstallationId("156786211"),
-      },
-      {
+        reach: "Unselected",
         repository: credentialSibling,
         app: "worker",
         installation: "156786211",
       },
     ],
     [
-      { repository, app: "worker" },
-      { repository: credentialSibling, app: "worker" },
+      { reach: "Refused", repository, app: "worker", installationId },
+      {
+        reach: "Refused",
+        repository: credentialSibling,
+        app: "worker",
+        installation: "156786211",
+      },
+    ],
+    [
+      { reach: "Unclaimed", repository, app: "worker" },
+      { reach: "Unclaimed", repository: credentialSibling, app: "worker" },
     ],
   ] as const) {
-    const app = credentialPlane({ minted: "NotFound", uncovered });
+    const app = credentialPlane({ minted: "NotFound", unreached });
     const refused = await app.inject({
       method: "POST",
       url: "/v1/credential",
@@ -1520,7 +1527,7 @@ test("a refusal the installations made names the repository, the app and the ins
     assert.equal(refused.statusCode, 404);
     assert.deepEqual(refused.json(), {
       reason: "NotMinted",
-      uncovered: answer,
+      unreached: answer,
     });
     assert.deepEqual(
       workerCredentialAbsentSchema.parse(refused.json()),

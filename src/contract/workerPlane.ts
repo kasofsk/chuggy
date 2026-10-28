@@ -187,21 +187,34 @@ export const workerCredentialAbsences = [
   "NotMinted",
 ] as const;
 
-/**
- * A repository the forge's installations did not answer a mint for: the app
- * asked, and the installation of it on the repository's owner the mint went
- * through, `installation` absent where none is claimed there, so none covers it.
- */
-export const workerCredentialUncoveredSchema = z.object({
-  repository: workerCredentialRepositorySchema,
-  app: z.enum(forgeApps),
-  installation: identitySchema.optional(),
-});
+/** Which refusal a mint for `repository` met, the `app` it was asked of, and where the operator goes to change it. */
+export const workerCredentialUnreachedSchema = z.discriminatedUnion("reach", [
+  /** The installation on the repository's owner does not select it: the operator adds it to that installation's repository selection. */
+  z.object({
+    reach: z.literal("Unselected"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+    installation: identitySchema,
+  }),
+  /** The forge refused that installation or the app itself, for its key, a suspension or a permission not accepted: the operator goes to the app's installation page. */
+  z.object({
+    reach: z.literal("Refused"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+    installation: identitySchema,
+  }),
+  /** No installation of the app is claimed on the owner: the operator installs the app there. */
+  z.object({
+    reach: z.literal("Unclaimed"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+  }),
+]);
 
-/** `uncovered` is present only on a `NotMinted` the forge's installations answered. */
+/** `unreached` is present only on a `NotMinted` whose mint got past the repository's address. */
 export const workerCredentialAbsentSchema = z.object({
   reason: z.enum(workerCredentialAbsences),
-  uncovered: workerCredentialUncoveredSchema.optional(),
+  unreached: workerCredentialUnreachedSchema.optional(),
 });
 export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema

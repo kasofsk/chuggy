@@ -225,28 +225,37 @@ test("a repository this forge does not hold and an account no tenant claimed are
     {
       minted: "Denied",
       evidence: { mint: "NoInstallation" },
-      installation: { app: "portal" },
+      unreached: { reach: "Unclaimed", app: "portal" },
     },
   );
   assert.deepEqual(askedMints, [], "no refusal reaches the forge");
 });
 
-test("a forge refusing the mint names the installation it went through, and an outage names none", async () => {
-  const refused = {
-    minted: "Denied",
-    evidence: { mint: "Status", status: 422 },
-  } as const;
-  assert.deepEqual(
-    await fixtureRepositoryTokens({ minted: refused }).token(
-      fixtureRepository,
-      fixturePartition,
-      "read",
-    ),
-    {
-      ...refused,
-      installation: { app: "portal", installationId: fixtureInstallationId },
-    },
-  );
+test("a forge refusing the mint says whether the installation does not select the repository or was refused, and an outage says neither", async () => {
+  for (const [unselected, reach] of [
+    [true, "Unselected"],
+    [false, "Refused"],
+  ] as const) {
+    const evidence = { mint: "Status", status: 422 } as const;
+    assert.deepEqual(
+      await fixtureRepositoryTokens({
+        minted: {
+          minted: "Denied",
+          evidence,
+          ...(unselected ? { unselected: true } : {}),
+        },
+      }).token(fixtureRepository, fixturePartition, "read"),
+      {
+        minted: "Denied",
+        evidence,
+        unreached: {
+          reach,
+          app: "portal",
+          installationId: fixtureInstallationId,
+        },
+      },
+    );
+  }
   const outage = {
     minted: "Unavailable",
     evidence: { mint: "Status", status: 500 },
@@ -270,7 +279,7 @@ test("an account another tenant claimed is denied to this one, and the tenant is
     {
       minted: "Denied",
       evidence: { mint: "NoInstallation" },
-      installation: { app: "portal" },
+      unreached: { reach: "Unclaimed", app: "portal" },
     },
   );
   assert.deepEqual(

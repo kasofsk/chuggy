@@ -312,14 +312,20 @@ export interface ForgeTokenRequest {
 }
 
 /**
- * The app a refused mint for one repository was asked of, and the installation
- * of it claimed on the repository's owner that it went through; no
- * `installationId` is no such claim, so no installation of the app covers it.
+ * Which refusal a mint for one repository met, and the app it was asked of.
+ * `Unselected` is the forge saying the installation on the repository's owner
+ * does not select it; `Refused` is the forge refusing that installation or the
+ * app itself, for its key, a suspension or a permission its owner has not
+ * accepted; `Unclaimed` is no installation of the app claimed on the owner, so
+ * the forge was never asked.
  */
-export interface ForgeMintInstallation {
-  readonly app: ForgeApp;
-  readonly installationId?: ForgeInstallationId;
-}
+export type ForgeMintUnreached =
+  | {
+      readonly reach: "Unselected" | "Refused";
+      readonly app: ForgeApp;
+      readonly installationId: ForgeInstallationId;
+    }
+  | { readonly reach: "Unclaimed"; readonly app: ForgeApp };
 
 /** What minting came to, a refusal kept apart from an outage all the way out. */
 export type ForgeTokenMinted =
@@ -331,8 +337,10 @@ export type ForgeTokenMinted =
   | {
       readonly minted: "Denied";
       readonly evidence?: CredentialMintEvidence;
+      /** The forge said the installation does not select a repository the mint named. */
+      readonly unselected?: true;
       /** Absent where the refusal came before any installation was looked for. */
-      readonly installation?: ForgeMintInstallation;
+      readonly unreached?: ForgeMintUnreached;
     }
   | {
       readonly minted: "Unavailable";

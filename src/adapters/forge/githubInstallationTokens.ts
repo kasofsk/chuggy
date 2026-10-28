@@ -48,6 +48,15 @@
  * minted before whatever has been granted since and a listing must not turn on
  * whether the forge shows such a token the grant.
  *
+ * A REPOSITORY THE INSTALLATION DOES NOT SELECT IS TOLD APART BY THE FORGE'S
+ * OWN WORDS. GitHub answers a mint naming one with a `422`, and a mint asking
+ * for a permission the installation does not hold with a `422` too, so only
+ * the refusal's `message` separates them. A refusal is `unselected` only where
+ * that message says the repository is not accessible to the installation; any
+ * other is a refusal of the installation or the app, whose page shows its
+ * selection as well, so a message the forge rewords sends no one to the wrong
+ * page.
+ *
  * NAMING NO REPOSITORY IS THE WHOLE INSTALLATION AND NAMING AN EMPTY LIST IS
  * NOTHING AT ALL. GitHub reads an absent `repositories` as every repository the
  * installation grants, which is what enumerating one needs; an empty list would
@@ -197,13 +206,22 @@ type GithubInstallationTokensAsked =
       readonly refused: GithubInstallationTokensRefused;
     };
 
+/** The status, and the words in its message, GitHub refuses a mint naming a repository its installation does not select with. */
+const githubUnselectedStatus = 422;
+const githubUnselectedMessage = "not accessible to the parent installation";
+
 /** A request the forge did not answer, as the mint reports it. */
 function githubInstallationTokensRefusal(
   answered: Exclude<GithubAppAnswered, { readonly answered: "Answer" }>,
 ): GithubInstallationTokensRefused {
+  const unselected =
+    answered.answered === "Denied" &&
+    answered.evidence?.status === githubUnselectedStatus &&
+    answered.message?.includes(githubUnselectedMessage) === true;
   return {
     minted: answered.answered,
     ...(answered.evidence === undefined ? {} : { evidence: answered.evidence }),
+    ...(unselected ? { unselected: true } : {}),
   };
 }
 
@@ -315,6 +333,7 @@ async function githubInstallationTokensSend(
     method: "POST",
     okStatus: githubMintedStatus,
     body: githubInstallationTokensBody(request, asked.permissions),
+    refusalMessage: true,
   });
   if (answered.answered !== "Answer")
     return githubInstallationTokensRefusal(answered);

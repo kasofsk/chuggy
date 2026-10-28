@@ -533,19 +533,21 @@ const credentialsMinted: Readonly<
   Unavailable: { minted: "Unavailable" },
 };
 
-/** A refusal the installations made, through the installation on the owner and with none claimed there. */
-const credentialsUncovered: readonly WorkerPlaneCredentialMinted[] = [
-  {
-    minted: "NotFound",
-    uncovered: {
+/** Each refusal met past the address: an installation that does not select the repository, one the forge refused, and none claimed. */
+const credentialsUnreached: readonly WorkerPlaneCredentialMinted[] = [
+  ...(["Unselected", "Refused"] as const).map((reach) => ({
+    minted: "NotFound" as const,
+    unreached: {
+      reach,
       repository: asRepositoryId(credentialRepository),
-      app: "worker",
+      app: "worker" as const,
       installationId: asForgeInstallationId("156786211"),
     },
-  },
+  })),
   {
     minted: "NotFound",
-    uncovered: {
+    unreached: {
+      reach: "Unclaimed",
       repository: asRepositoryId(credentialRepository),
       app: "worker",
     },
@@ -555,7 +557,7 @@ const credentialsUncovered: readonly WorkerPlaneCredentialMinted[] = [
 /** Every answer the minting can give, through whichever of its two doors the route calls. */
 const credentialCases: readonly WorkerPlaneCase[] = [
   { name: "a plane that mints nothing" },
-  ...[...Object.values(credentialsMinted), ...credentialsUncovered].map(
+  ...[...Object.values(credentialsMinted), ...credentialsUnreached].map(
     (minted) => ({
       name: `a mint answering ${JSON.stringify(minted)}`,
       service: {
