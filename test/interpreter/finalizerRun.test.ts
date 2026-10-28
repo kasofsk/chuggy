@@ -70,6 +70,7 @@ import {
   type CandidatePrepared,
   type CandidatePreparation,
   type CandidateSourcePreparation,
+  type CandidateSourcePrepared,
   type CandidatePromoted,
   type CandidatePromotion,
   type CommitPermit,
@@ -77,6 +78,7 @@ import {
   type FinalizationClaim,
   type FinalizationConclusion,
   type FinalizationFailureKind,
+  type GitEvidence,
   type FinalizationView,
   type FinalizerStore,
   type GitPromotionPort,
@@ -741,6 +743,8 @@ interface GitRecorder extends GitPromotionPort {
   proved: AncestryProved;
   observed: TargetObserved;
   prepared: CandidatePrepared;
+  /** What a source preparation answers, and `prepared` where a case names nothing of its own. */
+  preparedSource?: CandidateSourcePrepared;
   integrated: CandidateIntegrated;
 }
 
@@ -788,7 +792,7 @@ function recordingGit(): GitRecorder {
     },
     prepareSource: (preparation) => {
       own.sourcePreparations.push(preparation);
-      return Promise.resolve(own.prepared);
+      return Promise.resolve(own.preparedSource ?? own.prepared);
     },
     integrateCandidate: (integration) => {
       own.integrations.push(integration);
@@ -3101,6 +3105,114 @@ function sourceOf(work: HandoffWork, marker: string): HandoffSource {
   };
 }
 
+/** A store whose one preparable request hands off the source the marker spells, and nothing else. */
+function sourcedStore(): FinalizerRecorder {
+  const store = recordingStore([preparableView("request-one")]);
+  store.gathering = {
+    work: [passedWork],
+    artifacts: [],
+    sources: [sourceOf(passedWork, "c")],
+  };
+  return store;
+}
+
+/**
+ * A source whose history no longer holds its base is a preparation that
+ * produced no candidate, which the next pass concludes as needing work; it is
+ * not a hold, so nothing is recorded toward a dwell and nothing is integrated.
+ */
+test("a source that does not descend from its base fails its preparation rather than holding", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.preparedSource = { prepared: "Undescended" };
+
+  const report = await passOver(serviceOf(store, git, { holdPassesMax: 1 }));
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(git.integrations, []);
+  assert.equal(store.attempts.length, 1);
+  assert.equal(store.attempts[0]?.outcome, "Failed");
+  assert.equal(store.attempts[0]?.failureKind, "PreparationFailed");
+  assert.deepEqual(store.holds, [undefined]);
+  assert.deepEqual(store.submitted, []);
+});
+
+/**
+ * Every evidence a source preparation can fail with, beside the hold it
+ * reaches and what that hold writes on the request: a remote that could not be
+ * read is the target's, and dwells toward a result, and the rest stay
+ * operational holds that write nothing.
+ */
+test("a source that could not be proved is held, and recorded only where the roster names why", async () => {
+  const expected: Record<GitEvidence, FinalizerHoldReason> = {
+    RemoteUnreachable: "TargetUnreadable",
+    RemoteDenied: "TargetUnreadable",
+    RefUnreadable: "CandidateUnbuilt",
+    ObjectMissing: "CandidateUnbuilt",
+    IntegrationFailed: "CandidateUnbuilt",
+    PromotionTimedOut: "CandidateUnbuilt",
+    RemoteDeclined: "CandidateUnbuilt",
+    WorkflowsRefused: "CandidateUnbuilt",
+  };
+  for (const evidence of populated(allGitEvidence, "allGitEvidence")) {
+    const store = sourcedStore();
+    const git = recordingGit();
+    git.preparedSource = { prepared: "Failed", evidence };
+    const emitted: FinalizerHoldReason[] = [];
+    const service = serviceOf(
+      store,
+      git,
+      { holdPassesMax: 2 },
+      recordingArtifacts(),
+      finalizerTelemetry({
+        ...silentFinalizerMetrics,
+        holding: (reason) => emitted.push(reason),
+      }),
+    );
+    await passOver(service);
+    await passOver(service);
+    const reason = expected[evidence];
+    assert.deepEqual(emitted, [reason, reason], evidence);
+    assert.deepEqual(store.attempts, [], evidence);
+    if (reason === "TargetUnreadable") {
+      assert.deepEqual(store.holds, [reason, reason], evidence);
+      assert.deepEqual(
+        store.concluded,
+        [{ outcome: "FinalizationResultUnavailable", kind: reason }],
+        evidence,
+      );
+    } else {
+      assert.deepEqual(store.holds, [], evidence);
+      assert.deepEqual(store.concluded, [], evidence);
+    }
+  }
+});
+
+/** The sink is told which request each advance was about, and where it was held or that it was not. */
+test("every advance names its request to the sink, beside the hold it was left at", async () => {
+  const store = recordingStore([
+    unboundView("request-held"),
+    preparableView("request-moved"),
+  ]);
+  const advanced: (readonly [string, FinalizerHoldReason | undefined])[] = [];
+  await passOver(
+    serviceOf(
+      store,
+      recordingGit(),
+      {},
+      recordingArtifacts(),
+      finalizerTelemetry({
+        ...silentFinalizerMetrics,
+        advanced: (request, held) => advanced.push([request, held]),
+      }),
+    ),
+  );
+  assert.deepEqual(advanced, [
+    ["request-held", "RepositoryUnbound"],
+    ["request-moved", undefined],
+  ]);
+});
+
 test("a ticket that reworked prepares the source its latest passed work declared", async () => {
   const reworked: HandoffWork = {
     ...passedWork,
@@ -3391,6 +3503,7 @@ test("a promotion is observed by the arm it came back on, and the permit by its 
     "promotion:Advanced",
     "reconciliation:Promoted",
     "permit:Concluded",
+    "advanced:request-observed",
   ]);
 });
 

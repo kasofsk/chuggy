@@ -1043,6 +1043,15 @@ export type CandidatePrepared =
   | { readonly prepared: "Candidate"; readonly candidate: GitObjectId }
   | { readonly prepared: "Failed"; readonly evidence: GitEvidence };
 
+/**
+ * What proving a worker's source found. `Undescended` is a commit the remote
+ * holds at its ref whose history, read to its end, does not hold the base it
+ * declared: an answer about those immutable commits, which no later read
+ * changes, where a failure is the read itself not finishing.
+ */
+export type CandidateSourcePrepared =
+  CandidatePrepared | { readonly prepared: "Undescended" };
+
 /** One integration against exactly one observed target, which is what bounded means here. */
 export interface CandidateIntegration {
   readonly repository: RepositoryBinding;
@@ -1120,7 +1129,7 @@ export interface GitPromotionPort {
   /** Fetches a worker source ref and proves its exact commit descends from its declared base. */
   prepareSource(
     preparation: CandidateSourcePreparation,
-  ): Promise<CandidatePrepared>;
+  ): Promise<CandidateSourcePrepared>;
 
   /** Integrates one candidate against one observed target, deterministically. */
   integrateCandidate(

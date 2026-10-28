@@ -23,6 +23,11 @@
  * that history: one still missing once every commit of it has been read is not
  * in it.
  *
+ * A SOURCE THAT DOES NOT DESCEND FROM ITS BASE IS PROVED THE SAME WAY. A worker
+ * that rewrote the history it was handed publishes a commit whose history no
+ * longer holds the base it declares, and that is `Undescended` only once that
+ * whole history has been read.
+ *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by
  * itself; forcing it, with or without a lease, would put the decision here,
@@ -46,6 +51,7 @@ import type {
   CandidatePrepared,
   CandidatePreparation,
   CandidateSourcePreparation,
+  CandidateSourcePrepared,
   CandidatePromoted,
   CandidatePromotion,
   GitEvidence,
@@ -65,6 +71,7 @@ import {
   scratchNamesCommit,
   scratchObserveHead,
   scratchPush,
+  scratchReaches,
   scratchReadRef,
   scratchOpen,
   scratchWalksHistory,
@@ -191,7 +198,7 @@ async function gitPromotionPrepare(
 async function gitPromotionPrepareSource(
   own: GitPromotionState,
   preparation: CandidateSourcePreparation,
-): Promise<CandidatePrepared> {
+): Promise<CandidateSourcePrepared> {
   const authorized = await gitPromotionCredentialOf(
     own,
     preparation.repository,
@@ -226,15 +233,39 @@ async function gitPromotionPrepareSource(
   ) {
     return { prepared: "Failed", evidence: "ObjectMissing" };
   }
-  const descends = await scratchIsAncestor(
-    own.scratch,
-    repository,
-    preparation.base,
-    preparation.commit,
-  );
-  return descends === true
-    ? { prepared: "Candidate", candidate: preparation.commit }
-    : { prepared: "Failed", evidence: "ObjectMissing" };
+  return gitPromotionSourceDescends(own, repository, preparation);
+}
+
+/**
+ * Whether a fetched source commit descends from its declared base. Git says
+ * no both of a base it does not hold and of a walk that met a commit it could
+ * not read, so a no is `Undescended` only once the commit's whole history has
+ * been read; any read that did not look is a failure to read, not an answer.
+ */
+async function gitPromotionSourceDescends(
+  own: GitPromotionState,
+  repository: RepositoryId,
+  preparation: CandidateSourcePreparation,
+): Promise<CandidateSourcePrepared> {
+  const { base, commit } = preparation;
+  const named = await scratchNamesCommit(own.scratch, repository, base);
+  const reached =
+    named === "Yes"
+      ? await scratchReaches(own.scratch, repository, base, commit)
+      : named;
+  switch (reached) {
+    case "Yes":
+      return { prepared: "Candidate", candidate: commit };
+    case "Unread":
+      return { prepared: "Failed", evidence: "ObjectMissing" };
+    case "No":
+      return (await scratchWalksHistory(own.scratch, repository, commit)) ===
+        "Yes"
+        ? { prepared: "Undescended" }
+        : { prepared: "Failed", evidence: "ObjectMissing" };
+    default:
+      return assertNever(reached);
+  }
 }
 
 /** Integrates one candidate against one observed target. */
