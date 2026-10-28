@@ -449,10 +449,13 @@ async function metricsSessionsSeeded(
 async function metricsPage(
   pool: pg.Pool,
   seriesMax = 10_000,
+  revisionsMax = 512,
 ): Promise<{ readonly status: number; readonly body: string }> {
   const app = createMetricsPlaneApp({
-    scrape: metricsPlane(postgresMetricsPlaneReads(pool), { issuer, seriesMax })
-      .scrape,
+    scrape: metricsPlane(postgresMetricsPlaneReads(pool, revisionsMax), {
+      issuer,
+      seriesMax,
+    }).scrape,
     ready: () => postgresMetricsPlaneReady(pool, metricsPlaneRole),
   });
   try {
@@ -573,7 +576,7 @@ test("a page past the series it may carry is refused whole, and so is a family p
   assert.equal(refused.status, 503);
   assert.doesNotMatch(refused.body, /chuggy_/u);
   assert.deepEqual(
-    await metricsPlane(postgresMetricsPlaneReads(plane), {
+    await metricsPlane(postgresMetricsPlaneReads(plane, 512), {
       issuer,
       seriesMax: 20,
     }).scrape(),
@@ -582,9 +585,20 @@ test("a page past the series it may carry is refused whole, and so is a family p
       why: `the page would carry ${String(whole)} series, past the cap of 20`,
     },
   );
-  assert.deepEqual(await postgresMetricsPlaneReads(plane).read(1), {
+  assert.deepEqual(await postgresMetricsPlaneReads(plane, 512).read(1), {
     read: "Refused",
     why: "a family read more than 1 rows, the cap on the series one page carries",
+  });
+});
+
+test("a scrape whose runs pinned one revision past the cap is refused whole", async () => {
+  assert.equal((await metricsPage(plane, 10_000, 2)).status, 200);
+  const refused = await metricsPage(plane, 10_000, 1);
+  assert.equal(refused.status, 503);
+  assert.doesNotMatch(refused.body, /chuggy_/u);
+  assert.deepEqual(await postgresMetricsPlaneReads(plane, 1).read(10_000), {
+    read: "Refused",
+    why: "the runs pinned more than 1 configuration revisions, the cap on the revisions one scrape reads",
   });
 });
 
@@ -613,7 +627,7 @@ test("the plane is ready under its own role and under no other", async () => {
   try {
     assert.equal(await postgresMetricsPlaneReady(api, metricsPlaneRole), false);
     const app = createMetricsPlaneApp({
-      scrape: metricsPlane(postgresMetricsPlaneReads(api), {
+      scrape: metricsPlane(postgresMetricsPlaneReads(api, 512), {
         issuer,
         seriesMax: 10_000,
       }).scrape,

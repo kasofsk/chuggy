@@ -45,9 +45,6 @@ import {
 } from "../../interpreter/workloadTask.ts";
 import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 
-/** The most revisions one scrape reads, each a whole configuration. */
-export const metricsPlaneRevisionsMax = 512;
-
 const metricsPlaneFigure = z.string().transform((value, context) => {
   const figure = Number(value);
   if (!Number.isFinite(figure)) {
@@ -259,6 +256,7 @@ function metricsPlaneTasks(revisions: ReadonlyMap<string, string>) {
 async function metricsPlaneQuery(
   pool: pg.Pool,
   rowsMax: number,
+  revisionsMax: number,
 ): Promise<MetricsPlaneRow | undefined> {
   const found = await pool.query<MetricsPlaneRow>(
     sql`WITH bounds AS (SELECT ${metricsPlaneDurationBoundsSecs}::float8[] AS secs),
@@ -310,7 +308,7 @@ async function metricsPlaneQuery(
              SELECT c.tenant,c.project,c.revision,c.canonical FROM configuration_revision c
               WHERE (c.tenant,c.project,c.revision) IN
                     (SELECT x.tenant,x.project,x.shape->>'revision' FROM attempt x)
-              LIMIT ${metricsPlaneRevisionsMax + 1}) f) AS revisions,
+              LIMIT ${revisionsMax + 1}) f) AS revisions,
           (SELECT json_agg(f)::text FROM (
              SELECT tenant,project,principal,kind,state,model,bucket::text AS bucket,
                     count(*)::text AS ended,coalesce(sum(tokens),0)::text AS tokens,
@@ -370,11 +368,18 @@ function metricsPlaneRows(
   };
 }
 
-/** The plane's read over `pool`, whose statement timeout is the bound one scrape is read within. */
-export function postgresMetricsPlaneReads(pool: pg.Pool): MetricsPlaneReads {
+/**
+ * The plane's read over `pool`, whose statement timeout is the bound one scrape
+ * is read within, refusing a scrape whose runs pinned more than `revisionsMax`
+ * configuration revisions.
+ */
+export function postgresMetricsPlaneReads(
+  pool: pg.Pool,
+  revisionsMax: number,
+): MetricsPlaneReads {
   return {
     read: async (rowsMax): Promise<MetricsPlaneRead> => {
-      const found = await metricsPlaneQuery(pool, rowsMax);
+      const found = await metricsPlaneQuery(pool, rowsMax, revisionsMax);
       if (found === undefined)
         throw new Error("metrics plane: the read returned no row");
       const attempts = metricsPlaneFamilyRows(
@@ -405,7 +410,7 @@ export function postgresMetricsPlaneReads(pool: pg.Pool): MetricsPlaneReads {
       const revisions = metricsPlaneFamilyRows(
         found.revisions,
         metricsPlaneRevisionSchema,
-        metricsPlaneRevisionsMax,
+        revisionsMax,
       );
       if (
         attempts === undefined ||
@@ -421,7 +426,7 @@ export function postgresMetricsPlaneReads(pool: pg.Pool): MetricsPlaneReads {
       if (revisions === undefined)
         return {
           read: "Refused",
-          why: `the runs pinned more than ${String(metricsPlaneRevisionsMax)} configuration revisions`,
+          why: `the runs pinned more than ${String(revisionsMax)} configuration revisions, the cap on the revisions one scrape reads`,
         };
       return {
         read: "Read",

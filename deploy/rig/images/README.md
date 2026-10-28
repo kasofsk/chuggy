@@ -232,6 +232,7 @@ answers 503 to a scrape it cannot answer whole.
 | `CHUG_METRICS_PLANE_OIDC_ISSUER` | required | the issuer people sign in through; a series' `owner` is the subject a principal carries under it, and empty for any other |
 | `CHUG_METRICS_PLANE_READ_TIMEOUT_MS` | 10000 | how long one scrape's read may take before the scrape is refused |
 | `CHUG_METRICS_PLANE_SERIES_MAX` | 10000 | the most series one page carries, and the most rows one family is read as; a scrape past it is refused |
+| `CHUG_METRICS_PLANE_REVISIONS_MAX` | 512 | the most configuration revisions one scrape reads, which grows with every revision any run pinned and never shrinks; a scrape past it is refused, and the remedy is to raise it |
 | `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
 | `CHUG_METRICS_PLANE_PORT` | 3004 | |
 

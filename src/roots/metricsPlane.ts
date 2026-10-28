@@ -40,6 +40,10 @@ async function main(): Promise<void> {
     "CHUG_METRICS_PLANE_READ_TIMEOUT_MS",
     postgresLimitsDefault.statementTimeoutMs,
   );
+  const revisionsMax = planeEnvironmentPositive(
+    "CHUG_METRICS_PLANE_REVISIONS_MAX",
+    512,
+  );
   const host = process.env["CHUG_METRICS_PLANE_HOST"] ?? "127.0.0.1";
   const port = planeEnvironmentPositive("CHUG_METRICS_PLANE_PORT", 3_004);
   const pool = postgresPool(
@@ -47,7 +51,10 @@ async function main(): Promise<void> {
     { ...postgresLimitsDefault, statementTimeoutMs },
   );
   const app = createMetricsPlaneApp({
-    scrape: metricsPlane(postgresMetricsPlaneReads(pool), settings).scrape,
+    scrape: metricsPlane(
+      postgresMetricsPlaneReads(pool, revisionsMax),
+      settings,
+    ).scrape,
     ready: () => postgresMetricsPlaneReady(pool, metricsPlaneRole),
   });
   planeStopping(app, "metrics plane", pool);
