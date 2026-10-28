@@ -217,8 +217,8 @@ test("taking a member's runners off says whether there were any it could take", 
   ).toMatch(/^Refused · /u);
 });
 
-test("a thread's missing runner is added on the member's own page, and the lead's and an inquiry's on the project's", () => {
+test("a thread's and an inquiry's missing runner is added on the member's own page, and the lead's on the project's", () => {
   expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
-  expect(sessionRunnerAdded("Inquiry")).toBe("Runners");
+  expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
   expect(sessionRunnerAdded("Lead")).toBe("Runners");
 });
