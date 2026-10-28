@@ -178,34 +178,66 @@ export function apiGet<T>(
   return apiRead(ports, request, parse);
 }
 
+/** One of the contract's endpoints, as a call of it reads it. */
+interface ApiEndpoint<Value, Body, Path extends string> {
+  readonly method: "GET" | "POST";
+  readonly path: Path;
+  readonly response: z.ZodType<Value>;
+  readonly body?: z.ZodType<Body>;
+}
+
+/** What one call fills an endpoint's path, query and body with. */
+interface ApiEndpointRequest<Body, Path extends string> {
+  readonly parameters: EndpointParameters<Path>;
+  readonly query?: Query;
+  readonly body?: Body;
+  readonly timeoutMs?: number;
+}
+
 function apiProjectEndpoint<
   Value,
   Body,
   Path extends string,
   Arguments extends unknown[],
 >(
-  endpoint: {
-    readonly method: "GET" | "POST";
-    readonly path: Path;
-    readonly response: z.ZodType<Value>;
-    readonly body?: z.ZodType<Body>;
-  },
+  endpoint: ApiEndpoint<Value, Body, Path>,
   input: (
     partition: PartitionIdentity,
     ...args: Arguments
-  ) => {
-    readonly parameters: EndpointParameters<Path>;
-    readonly query?: Query;
-    readonly body?: Body;
-    readonly timeoutMs?: number;
-  },
+  ) => ApiEndpointRequest<Body, Path>,
+) {
+  return apiScopedEndpoint(endpoint, input);
+}
+
+/** An endpoint at a tenant and under no project, as a member's own chat is. */
+function apiTenantEndpoint<
+  Value,
+  Body,
+  Path extends string,
+  Arguments extends unknown[],
+>(
+  endpoint: ApiEndpoint<Value, Body, Path>,
+  input: (tenant: string, ...args: Arguments) => ApiEndpointRequest<Body, Path>,
+) {
+  return apiScopedEndpoint(endpoint, input);
+}
+
+function apiScopedEndpoint<
+  Value,
+  Body,
+  Path extends string,
+  Scope,
+  Arguments extends unknown[],
+>(
+  endpoint: ApiEndpoint<Value, Body, Path>,
+  input: (scope: Scope, ...args: Arguments) => ApiEndpointRequest<Body, Path>,
 ) {
   return (
     ports: ApiPorts,
-    partition: PartitionIdentity,
+    scope: Scope,
     ...args: Arguments
   ): Promise<ApiResult<Value>> => {
-    const request = input(partition, ...args);
+    const request = input(scope, ...args);
     return apiRead(
       ports,
       {
@@ -1223,6 +1255,81 @@ export const apiRenameThread = apiProjectEndpoint(
   nativeHttpEndpoints.renameThread,
   (partition, session: string, title: string) => ({
     parameters: { ...partition, session },
+    body: { title },
+  }),
+);
+
+/** What the reader may do at their tenant as their own chat is told it,
+ * answered to every caller whether or not they may open one. */
+export const apiChatAbilities = apiTenantEndpoint(
+  nativeHttpEndpoints.chatAbilities,
+  (tenant) => ({ parameters: { tenant } }),
+);
+
+/**
+ * The reader's own threads at their tenant: those of their own chat, then
+ * those they hold in the projects they may still see, which this route names
+ * and never reads. Each door below is a project thread's, at the tenant.
+ */
+export const apiChatThreads = apiTenantEndpoint(
+  nativeHttpEndpoints.chatThreads,
+  (tenant) => ({ parameters: { tenant } }),
+);
+
+export const apiOpenChatThread = apiTenantEndpoint(
+  nativeHttpEndpoints.openChatThread,
+  (tenant, key: string) => ({ parameters: { tenant }, body: { key } }),
+);
+
+export const apiChatThread = apiTenantEndpoint(
+  nativeHttpEndpoints.chatThread,
+  (
+    tenant,
+    session: string,
+    page: { readonly before?: number; readonly limit?: number } = {},
+  ) => ({
+    parameters: { tenant, session },
+    query: { before: page.before, limit: page.limit },
+  }),
+);
+
+export const apiChatThreadTranscript = apiTenantEndpoint(
+  nativeHttpEndpoints.chatThreadTranscript,
+  (tenant, session: string, page: LeadTranscriptPage = {}) => ({
+    parameters: { tenant, session },
+    query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
+
+export const apiSendChatThreadMessage = apiTenantEndpoint(
+  nativeHttpEndpoints.sendChatThreadMessage,
+  (tenant, session: string, message: z.infer<typeof threadMessageSchema>) => ({
+    parameters: { tenant, session },
+    body: message,
+  }),
+);
+
+export const apiCloseChatThread = apiTenantEndpoint(
+  nativeHttpEndpoints.closeChatThread,
+  (tenant, session: string) => ({
+    parameters: { tenant, session },
+    body: {},
+  }),
+);
+
+export const apiStopChatThreadTurn = apiTenantEndpoint(
+  nativeHttpEndpoints.stopChatThreadTurn,
+  (tenant, session: string, turn: string) => ({
+    parameters: { tenant, session, turn },
+    body: {},
+    timeoutMs: apiStopTimeoutMs,
+  }),
+);
+
+export const apiRenameChatThread = apiTenantEndpoint(
+  nativeHttpEndpoints.renameChatThread,
+  (tenant, session: string, title: string) => ({
+    parameters: { tenant, session },
     body: { title },
   }),
 );

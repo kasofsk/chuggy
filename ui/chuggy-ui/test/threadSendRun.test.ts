@@ -14,7 +14,7 @@ import { nativeHttpMediaType } from "../../../src/contract/http.ts";
 import { threadMessageSent } from "../app/core/threadSendRun.ts";
 import { threadRefusalWord } from "../app/core/threads.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import { threadOtherSession, threadPartition } from "./threadFixture.ts";
+import { threadHome, threadOtherSession } from "./threadFixture.ts";
 
 const message = { turn: "thread-turn-a", message: "into the race" };
 
@@ -93,12 +93,7 @@ test("a press the door accepts is sent", async () => {
     posts: [answered({ turn: message.turn, ordinal: 4 }, 202)],
   });
   expect(
-    await threadMessageSent(
-      run.ports,
-      threadPartition,
-      threadOtherSession,
-      message,
-    ),
+    await threadMessageSent(run.ports, threadHome, threadOtherSession, message),
   ).toStrictEqual({ send: "Sent", ordinal: 4 });
   expect(run.posted().length).toBe(1);
 });
@@ -108,12 +103,7 @@ test("a press the door accepts is sent", async () => {
 test("a session not the caller's is refused, and nothing is sent elsewhere", async () => {
   const run = serving({ posts: [disputed] });
   expect(
-    await threadMessageSent(
-      run.ports,
-      threadPartition,
-      threadOtherSession,
-      message,
-    ),
+    await threadMessageSent(run.ports, threadHome, threadOtherSession, message),
   ).toStrictEqual({
     send: "Refused",
     what: "Send",
@@ -132,7 +122,7 @@ test("a rejection that is not a dispute is reported without settling", async () 
   });
   const answer = await threadMessageSent(
     run.ports,
-    threadPartition,
+    threadHome,
     threadOtherSession,
     message,
   );

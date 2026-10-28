@@ -333,7 +333,7 @@ function LeadBody(props: {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
   const listed = lead !== undefined && leadStreamListed(lead);
   const walked = useLeadTranscript({
-    partition: props.partition,
+    of: { lead: props.partition },
     stream: lead?.agentReference,
     highWaterBatch: lead === undefined ? 0 : leadStreamBatches(lead),
   });

@@ -30,7 +30,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConversationTurn } from "../../core/conversation.ts";
 import {
   conversationLiveHeard,
@@ -42,12 +41,14 @@ import type {
   ConversationLiveHeld,
   ConversationLiveKnown,
 } from "../../core/conversationLive.ts";
+import { threadHomeFromNamed, threadHomeNamed } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import { openThreadLiveStream } from "../../core/threadLiveStream.ts";
 import { useSessionGeneration } from "../session.tsx";
 import { useStreamPorts } from "../stream.tsx";
 
 export function useThreadLive(read: {
-  readonly partition: PartitionIdentity;
+  readonly home: ThreadHome;
   readonly session: string;
   /** Whether the thread's newest turn is still out. */
   readonly open: boolean;
@@ -68,7 +69,7 @@ export function useThreadLive(read: {
   const settled = useRef<ReadonlySet<string>>(new Set());
   const frame = useRef<number | undefined>(undefined);
   const [held, setHeld] = useState(conversationLiveNothing);
-  const { tenant, project } = read.partition;
+  const named = threadHomeNamed(read.home);
   const { session, open, turns, reached, stopping, takenBack } = read;
   const kept = conversationLiveKept(held, turns, reached, read.known);
   if (kept !== held) setHeld(kept);
@@ -96,7 +97,7 @@ export function useThreadLive(read: {
     if (!open) return;
     const opened = openThreadLiveStream(
       ports,
-      { tenant, project },
+      threadHomeFromNamed(named),
       session,
       (event) => {
         const next = conversationLiveHeard(
@@ -115,6 +116,6 @@ export function useThreadLive(read: {
     return () => {
       opened.stop();
     };
-  }, [ports, generation, tenant, project, session, open, takenBack]);
+  }, [ports, generation, named, session, open, takenBack]);
   return kept;
 }

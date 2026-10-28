@@ -31,9 +31,11 @@ import {
   openThreadLiveStream,
   threadLiveUrl,
 } from "../app/core/threadLiveStream.ts";
+import { threadHomeOf } from "../app/core/threadHome.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 
 const partition = { tenant: "acme", project: "at las" };
+const home = threadHomeOf(partition);
 const session = "thread/1";
 
 const snapshot = frame("snapshot", undefined, {
@@ -52,11 +54,8 @@ function heard(liveOpenings: Parameters<typeof streamServer>[2]): {
 } {
   const server = streamServer([], "token", liveOpenings);
   const events: ThreadLiveStreamEvent[] = [];
-  const opened = openThreadLiveStream(
-    server.ports,
-    partition,
-    session,
-    (event) => events.push(event),
+  const opened = openThreadLiveStream(server.ports, home, session, (event) =>
+    events.push(event),
   );
   return { server, events, finished: opened.finished };
 }
@@ -66,14 +65,23 @@ test("the stream is asked for at the contract's own route", () => {
     .replace(":tenant", encodeURIComponent(partition.tenant))
     .replace(":project", encodeURIComponent(partition.project))
     .replace(":session", encodeURIComponent(session));
-  expect(threadLiveUrl(partition, session)).toBe(route);
+  expect(threadLiveUrl(home, session)).toBe(route);
+});
+
+test("a member's own thread is asked for at their tenant's chat", () => {
+  const route = nativeHttpRoutes.chatThreadLive
+    .replace(":tenant", encodeURIComponent(partition.tenant))
+    .replace(":session", encodeURIComponent(session));
+  expect(
+    threadLiveUrl({ scope: "Member", tenant: partition.tenant }, session),
+  ).toBe(route);
 });
 
 test("an open carries the bearer and asks for an event stream", async () => {
   const run = heard([{ status: 200, chunks: [snapshot] }, { status: 404 }]);
   await run.finished;
   expect(run.server.liveSeen[0]).toEqual({
-    url: threadLiveUrl(partition, session),
+    url: threadLiveUrl(home, session),
     headers: { accept: "text/event-stream", authorization: "Bearer token" },
   });
 });
@@ -363,7 +371,7 @@ test("a stream that does not say its server cuts it reads no wait from a 503", a
   const opened = openStream(
     server.ports,
     {
-      url: threadLiveUrl(partition, session),
+      url: threadLiveUrl(home, session),
       headers: streamHeaders,
       refused: () => undefined,
       opened: () => undefined,
@@ -385,11 +393,8 @@ test("stopping abandons the request it is reading", async () => {
     { status: 200, chunks: [snapshot], hold: true },
   ]);
   const events: ThreadLiveStreamEvent[] = [];
-  const opened = openThreadLiveStream(
-    server.ports,
-    partition,
-    session,
-    (event) => events.push(event),
+  const opened = openThreadLiveStream(server.ports, home, session, (event) =>
+    events.push(event),
   );
   await expect.poll(() => events.length).toBe(1);
   opened.stop();

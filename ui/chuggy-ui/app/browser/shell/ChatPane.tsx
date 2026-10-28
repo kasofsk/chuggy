@@ -58,6 +58,7 @@ import type {
   ThreadSend,
 } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
+import { threadHomeOf } from "../../core/threadHome.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
 import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -550,7 +551,7 @@ function ChatPaneHeld(props: {
   if (props.thread === undefined) return <span className="flex-1" />;
   return (
     <ChatPaneThreadActions
-      partition={props.partition}
+      home={threadHomeOf(props.partition)}
       thread={props.thread}
       viewOnly={props.viewOnly}
       at="Pane"

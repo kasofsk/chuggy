@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
+import { threadHomeOf } from "../core/threadHome.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ChatPaneThreadActions } from "./shell/ChatPaneHistory.tsx";
@@ -41,7 +42,7 @@ export function ThreadPage(props: {
       <TopBarSlot>
         <div className="flex min-w-0 flex-1 flex-wrap items-center">
           <ChatPaneThreadActions
-            partition={props.partition}
+            home={threadHomeOf(props.partition)}
             thread={state.value}
             viewOnly={viewOnly}
             at="Page"

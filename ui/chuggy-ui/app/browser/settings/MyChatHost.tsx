@@ -52,7 +52,7 @@ import {
 } from "./SettingsListing.tsx";
 
 /** No frame says a host polled, so the read is polled at the pace a session's standing is. */
-const chatHostResource = "chat-host";
+export const chatHostResource = "chat-host";
 
 /** Answered as absent where the reader registers none. */
 export function useChatHost(tenant: string): PanelState<ChatHostResponse> {

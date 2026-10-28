@@ -23,9 +23,10 @@ import {
   queryOptions,
   useQueries,
   useQuery,
+  useQueryClient,
 } from "@tanstack/react-query";
 import type { UseQueryResult } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
@@ -300,6 +301,31 @@ export function usePanelTenantResource<T>(
   polledMs?: number,
 ): PanelState<T> {
   return usePanelQuery(tenantResourceKey(tenant, resource), read, polledMs);
+}
+
+/** How many times one key's read has answered: every read that landed and
+ * every write held as one moves it, and a failed read does not. */
+export function usePanelAnswers(key: ProjectQueryKey): number {
+  const client = useQueryClient();
+  const subscribe = useCallback(
+    (changed: () => void) => client.getQueryCache().subscribe(changed),
+    [client],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => client.getQueryState(key)?.dataUpdateCount ?? 0,
+  );
+}
+
+/** Reads one key again now, answering once the read has how many reads had
+ * answered when it was asked. */
+export function usePanelReread(key: ProjectQueryKey): () => Promise<number> {
+  const client = useQueryClient();
+  return async () => {
+    const reads = client.getQueryState(key)?.dataUpdateCount ?? 0;
+    await client.invalidateQueries({ queryKey: key });
+    return reads;
+  };
 }
 
 /** The reader's own resource, outside every tenant and so every refresh path,

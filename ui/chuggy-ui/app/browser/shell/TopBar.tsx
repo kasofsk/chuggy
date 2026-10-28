@@ -138,6 +138,8 @@ function TopBarPage(): ReactNode {
 
 export function TopBar(props: {
   readonly partition: PartitionIdentity | undefined;
+  /** The tenant whose chat outside every project the page is, where it is. */
+  readonly chat?: string;
 }): ReactNode {
   const partition = props.partition;
   return (
@@ -145,7 +147,10 @@ export function TopBar(props: {
       <header className="topbar">
         <div className="topbar-main">
           <div className="topbar-project">
-            <ProjectSwitcher partition={partition} />
+            <ProjectSwitcher
+              partition={partition}
+              {...(props.chat === undefined ? {} : { chat: props.chat })}
+            />
           </div>
           <div className="flex shrink-0 items-center justify-end">
             <SettingsMenu partition={partition} />

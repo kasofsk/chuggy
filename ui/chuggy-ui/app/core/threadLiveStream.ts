@@ -17,8 +17,11 @@
  * the wait a server with no room names.
  */
 
-import { partitionPath } from "../../../../src/contract/http.ts";
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { endpointPath } from "../../../../src/contract/endpoints.ts";
+import {
+  nativeHttpRoutes,
+  partitionPath,
+} from "../../../../src/contract/http.ts";
 import { parseThreadLiveEvent } from "../../../../src/contract/threadLive.ts";
 import type { ThreadLiveStreamEvent } from "../../../../src/contract/threadLive.ts";
 
@@ -28,12 +31,15 @@ import type {
   StreamHandle,
   StreamPorts,
 } from "./streamConnection.ts";
+import type { ThreadHome } from "./threadHome.ts";
 
-export function threadLiveUrl(
-  partition: PartitionIdentity,
-  session: string,
-): string {
-  return `${partitionPath(partition)}/threads/${encodeURIComponent(session)}/live`;
+export function threadLiveUrl(home: ThreadHome, session: string): string {
+  return home.scope === "Project"
+    ? `${partitionPath(home.partition)}/threads/${encodeURIComponent(session)}/live`
+    : endpointPath(nativeHttpRoutes.chatThreadLive, {
+        tenant: home.tenant,
+        session,
+      });
 }
 
 /** A reader who is not signed in, may not read the project, or names a thread
@@ -52,14 +58,14 @@ const threadLiveLadderSilent = {
 
 export function openThreadLiveStream(
   ports: StreamPorts,
-  partition: PartitionIdentity,
+  home: ThreadHome,
   session: string,
   onEvent: (event: ThreadLiveStreamEvent) => void,
 ): StreamHandle {
   return openStream(
     ports,
     {
-      url: threadLiveUrl(partition, session),
+      url: threadLiveUrl(home, session),
       headers: streamHeaders,
       refused: threadLiveRefused,
       cut: true,
