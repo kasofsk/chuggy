@@ -396,8 +396,10 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 # whose home is under `/sessions`. Git, ssh and node's `os.userInfo()` look up
 # the user they run as, and refuse one the image does not name. The range is
 # the core's `chatSessionUidFirst` and `chatSessionUidCount`. The groups a
-# session reads its mirror through are left unnamed: nothing it runs looks a
-# group up by name, and git holds a tree to its owner's user and not its group.
+# session reads its mirror through are left unnamed: git, ssh and node look up
+# none of them by name, and git holds a tree to its owner's user and not its
+# group. `id` and `groups` print such a group by its number, and say they could
+# not find its name.
 ARG CHAT_SESSION_UID_FIRST
 ARG CHAT_SESSION_UID_COUNT
 RUN uid="$CHAT_SESSION_UID_FIRST" \
@@ -576,9 +578,11 @@ RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
 # tree builds with. Rust's belongs to the image's user, so an attempt can fill
 # cargo's registry and install the toolchain a `rust-toolchain.toml` names. Any
 # other user, as a chat session's is, runs the toolchain installed here and can
-# write none of it, which the build holds of the first session user. Handed
-# `RUSTUP_HOME` and not `CARGO_HOME`, such a user's cargo keeps its registry in
-# its own home.
+# write none of it: the build holds every file of it to the image's user and
+# group and to no write for others, and runs it as the first session user.
+# Handed `RUSTUP_HOME` and not `CARGO_HOME`, such a user's cargo keeps its
+# registry in its own home. It cannot install the toolchain a
+# `rust-toolchain.toml` names, because `RUSTUP_HOME` is read-only to it.
 FROM worker-base AS generic
 USER 0:0
 ARG TARGETARCH
@@ -628,6 +632,13 @@ RUN case "$TARGETARCH" in \
   && cargo clippy --version \
   && cargo fmt --version \
   && chown -R 1000:1000 "$RUSTUP_HOME" "$CARGO_HOME" \
+  && writable="$(find "$RUSTUP_HOME" "$CARGO_HOME" ! -type l \
+    \( -perm -0002 -o ! -user 1000 -o ! -group 1000 \))" \
+  && if [ -n "$writable" ]; then \
+       echo "the toolchain holds what a user other than the image's may write:"; \
+       echo "$writable"; \
+       exit 1; \
+     fi \
   && home="$(mktemp -d)" \
   && chown "$CHAT_SESSION_UID_FIRST:$CHAT_SESSION_UID_FIRST" "$home" \
   && setpriv --reuid "$CHAT_SESSION_UID_FIRST" --regid "$CHAT_SESSION_UID_FIRST" \
