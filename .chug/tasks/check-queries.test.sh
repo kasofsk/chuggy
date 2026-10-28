@@ -251,9 +251,34 @@ check "a run ending in a could-not-run creates one database" 0 0 "1 database(s) 
 refute "and drops it" 0 0 "left behind"
 
 fixture
+stub_pool_conflicting
 git -C "$R" add -A
 run_gate "$R" "CHUG_PG_URL=$ANSWERS" CHUG_PG_HELPER_FAIL=create
 check "a database that cannot be created is a could-not-run" 2 "$RC" "could not create a database for this run"
-refute "and nothing is migrated" 2 "$RC" "agrees with"
+OUT="$CHUG_PG_HELPER_LOG"
+refute "and nothing is migrated" 2 2 "migrate"
+
+# --- A URL the client accepts but no database can be named in ---------------
+#
+# pg reads an empty authority with a `host` parameter as a local socket, and
+# WHATWG URL refuses it. That is a could-not-run before anything is made, and
+# the password stays out of what the gate prints.
+
+fixture
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=postgres://fixture:hunter2@/ignored?host=/run/postgresql"
+check "a URL no database can be named in is a could-not-run" 2 "$RC" "is not a URL this gate can name"
+refute "and the password is not printed" 2 "$RC" "hunter2"
+OUT="$WORK/.left"
+databases_left >"$OUT"
+check "and nothing is created" 2 2 "0 database(s) created"
+
+# --- A socket URL names the run's database in its `db` parameter -------------
+
+fixture
+git -C "$R" add -A
+run_gate "$R" "CHUG_PG_URL=socket:/run/postgresql?db=ignored"
+check "a socket URL is asked in the run's database" 0 "$RC" \
+	"eslint saw CHUG_SAFEQL_DATABASE_URL=socket:/run/postgresql?db=chuggy_queries_"
 
 done_ "check-queries.test.sh"
