@@ -44,6 +44,7 @@ function chatOf(calls: string[], chat: Partial<MemberChat>): MemberChat {
     return Promise.reject(new Error(`${door} is not this case's`));
   };
   return {
+    opens: unasked("opens"),
     abilities: unasked("abilities"),
     projects: unasked("projects"),
     threads: unasked("threads"),

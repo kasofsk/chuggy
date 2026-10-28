@@ -92,12 +92,25 @@ function recorded(reached: string[], port: string): never {
   ) as never;
 }
 
+/** A member's chat whose tenant answers `opens` as `granted` without counting as a port reached, recording every other door. */
+function memberChatRecorded(reached: string[], granted: boolean): never {
+  const doors: Record<string | symbol, unknown> = recorded(reached, "chat");
+  return new Proxy(
+    {},
+    {
+      get: (_target, method) =>
+        method === "opens" ? () => Promise.resolve(granted) : doors[method],
+    },
+  ) as never;
+}
+
 /** The app as a deployment composes it, every optional port present so every route is served. */
 function scopedApp(
   reached: string[],
   web?: ServedNativeWeb,
   kind: SessionKind = "Lead",
   scope: SessionScope = "Project",
+  granted = true,
 ) {
   return createNativeHttpApp(
     web ?? recorded(reached, "web"),
@@ -144,7 +157,7 @@ function scopedApp(
     recorded(reached, "personalRunners"),
     recorded(reached, "ownerFallback"),
     recorded(reached, "threadLimits"),
-    recorded(reached, "chat"),
+    memberChatRecorded(reached, granted),
   );
 }
 
@@ -734,4 +747,18 @@ test("a member's own session is admitted only from the partition reserved for it
     ),
     "Refused",
   );
+});
+
+test("a member's own session bearer reaches no route once its owner may no longer open unscoped chat, answered as a caller who cannot reach it", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached, undefined, "Thread", "Member", false);
+  for (const [route, scope] of sessionBearerRouteScopes) {
+    if (scope !== "Member") continue;
+    reached.length = 0;
+    const answered = await app.inject(
+      routeRequest(route, ownMember, sessionToken),
+    );
+    assert.equal(answered.statusCode, 404, route);
+    assert.deepEqual(reached, [], `${route} reached a port`);
+  }
 });

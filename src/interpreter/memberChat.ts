@@ -122,6 +122,8 @@ export type MemberChatThreadsRead =
 
 /** Every door of a member's own chat, each at their tenant. */
 export interface MemberChat {
+  /** Whether the tenant lets `principal` open unscoped chat, which every door of it, and every read of their own session's bearer, asks first. */
+  opens(principal: Principal, tenant: TenantId): Promise<boolean>;
   abilities(
     principal: Principal,
     tenant: TenantId,
@@ -458,6 +460,8 @@ export function memberChat(
   const at = (principal: Principal, tenant: TenantId) =>
     memberScopePartition(tenant, principal);
   return {
+    opens: async (principal, tenant) =>
+      (await memberChatGranted(access, principal, tenant)) !== undefined,
     abilities: async (principal, tenant) => {
       const held = async (
         kind: Parameters<ProjectAccess["authorizeTenant"]>[2],

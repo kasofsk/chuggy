@@ -457,3 +457,10 @@ test("a member's own objectives name their tenant and them, no project, and fit 
     /the owner is empty/u,
   );
 });
+
+test("a member opens unscoped chat exactly while their tenant lets them", async () => {
+  const { chat, calls } = chatOf({ granted: [geoff] }, []);
+  assert.equal(await chat.opens(geoff, tenant), true);
+  assert.equal(await chat.opens(dana, tenant), false);
+  assert.deepEqual(calls, []);
+});

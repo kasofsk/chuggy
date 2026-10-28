@@ -474,6 +474,7 @@ export async function nativeHttpBearerAuthenticated(
 function registerAuthentication(
   app: FastifyInstance,
   authentication: PrincipalAuthentication,
+  chat?: MemberChat,
 ): void {
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
@@ -489,10 +490,10 @@ function registerAuthentication(
     const session = authenticated.viaSession;
     if (
       session !== undefined &&
-      !registerAuthenticationSession(request, reply, {
+      !(await registerAuthenticationSession(request, reply, chat, {
         ...session,
         principal: authenticated.principal,
-      })
+      }))
     )
       return reply;
     request.principal = authenticated.principal;
@@ -504,14 +505,16 @@ function registerAuthentication(
 
 /**
  * Whether a session bearer may reach the route this request matched, having
- * answered it when it may not: another partition as an unauthorized read is
+ * answered it when it may not: another partition, or a member's own session
+ * whose owner may no longer open unscoped chat, as an unauthorized read is
  * answered, and a route no session may reach as `insufficient_scope`.
  */
-function registerAuthenticationSession(
+async function registerAuthenticationSession(
   request: FastifyRequest,
   reply: FastifyReply,
+  chat: MemberChat | undefined,
   session: SessionBearerConfinement,
-): boolean {
+): Promise<boolean> {
   const admission = sessionBearerAdmission(
     session,
     request.method,
@@ -520,7 +523,14 @@ function registerAuthenticationSession(
   );
   switch (admission) {
     case "Admitted":
-      return true;
+      if (
+        session.scope === "Project" ||
+        (chat !== undefined &&
+          (await chat.opens(session.principal, session.partition.tenant)))
+      )
+        return true;
+      nativeHttpSend(reply, notFound());
+      return false;
     case "OtherPartition":
       nativeHttpSend(reply, notFound());
       return false;
@@ -2822,7 +2832,7 @@ export function createNativeHttpApp(
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
-  registerAuthentication(app, authentication);
+  registerAuthentication(app, authentication, chat);
   registerHealth(app, readiness);
   registerContract(app);
   registerInstallation(app, authority);
