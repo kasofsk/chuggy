@@ -227,17 +227,15 @@ test("a thread's, an inquiry's and a member's own chat's missing runner is added
   expect(sessionRunnerAdded("Lead")).toBe("Runners");
 });
 
-test("an inquiry's and a member's own chat's missing runner is named their chat host, and a thread's and the lead's a runner", () => {
-  for (const session of ["Inquiry", "Chat"] as const) {
+test("a thread's, an inquiry's and a member's own chat's missing runner is named their chat host, and the lead's a runner", () => {
+  for (const session of ["Thread", "Inquiry", "Chat"] as const) {
     expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No chat host");
     expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(
       "Chat host offline",
     );
   }
-  for (const session of ["Thread", "Lead"] as const) {
-    expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No runner");
-    expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(
-      "Runner offline",
-    );
-  }
+  expect(sessionRunnerNoticeWord("NoRunner", "Lead")).toBe("No runner");
+  expect(sessionRunnerNoticeWord("RunnerOffline", "Lead")).toBe(
+    "Runner offline",
+  );
 });
