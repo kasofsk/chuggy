@@ -8,8 +8,8 @@
  * was run with, what it was given to read and whether it leads a session of
  * its own, and then answers as the real one was found to: the runner
  * package's own lines, the files it writes under the home it is run in, and a
- * registration, a pool's or with `--personal` the person's own, redeemed at
- * the site it is pointed to. It answers from what a
+ * registration, a pool's or with `--chat` the person's chat host's, redeemed
+ * at the site it is pointed to. It answers from what a
  * case told the machine, and keeps what it changed beside the home. Nothing
  * here reaches anything of the machine it runs on.
  */
@@ -49,7 +49,7 @@ const home = process.env["HOME"] ?? "";
 const set = process.env["XDG_CONFIG_HOME"] ?? "";
 const config = set.startsWith("/") ? set : join(home, ".config");
 const settings = join(config, "chuggy-linux", "runner.json");
-const login = join(config, "chuggy-linux", "claude-token");
+const login = join(config, "chuggy-linux", "claude", "token");
 
 /** Whether this process was started in a session of its own, which is one with no terminal to ask anyone anything on. */
 function leads(): boolean {
@@ -122,7 +122,7 @@ function unitOf(file: string): string {
 const units = join(config, "systemd", "user");
 const requestMsMax = 10_000;
 
-/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's own for the workspace and the member. */
+/** The file the package keeps a registration's credentials in: a pool's named for its project and pool, the person's chat host's for the workspace and the member. */
 function fileOf(held: {
   readonly tenant: string;
   readonly project?: string;
@@ -131,12 +131,12 @@ function fileOf(held: {
   const name =
     held.owner === undefined
       ? `${machineNamePart(held.tenant)}.${machineNamePart(held.project ?? "")}.${knobs.pool}.json`
-      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.json`;
+      : `${machineNamePart(held.tenant)}.${machineNamePart(held.owner)}.chat.host.json`;
   return join(config, "chuggy", "pools", name);
 }
 
-/** Whether the package this was run from knows `--personal`, which its manifest says by its version. */
-function takesPersonal(): boolean {
+/** Whether the package this was run from knows `--chat`, which its manifest says by its version. */
+function takesChat(): boolean {
   const prefix = dirname(dirname(process.env[machineRunAs] ?? ""));
   const manifest = join(
     prefix,
@@ -147,20 +147,20 @@ function takesPersonal(): boolean {
   );
   const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
   const version = /"version":"(\d+)\.(\d+)\./u.exec(text);
-  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 4;
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 35;
 }
 
-/** A registration, a pool's or with `--personal` the person's own: the token redeemed at the site it names, and the credentials kept in the file the package names for them. */
+/** A registration, a pool's or with `--chat` the person's chat host's: the token redeemed at the site it names, where a chat host's is redeemed where a member's runner's is, and the credentials kept in the file the package names for them. */
 async function register(): Promise<number> {
-  const personal = argv[1] === "--personal";
-  if (personal && !takesPersonal())
-    return said(1, "", "error: unknown option '--personal'\n");
-  const [flag, api = "", word = ""] = argv.slice(personal ? 2 : 1);
+  const chat = argv.at(-1) === "--chat";
+  if (chat && !takesChat())
+    return said(1, "", "error: unknown option '--chat'\n");
+  const [flag, api = "", word = ""] = argv.slice(1, chat ? -1 : undefined);
   const token = word.startsWith("--token=") ? word.slice(8) : "";
   if (flag !== "--api" || !/^[A-Za-z0-9_-]{43}$/u.test(token))
     return said(2, "", "--token is not a registration token\n");
   const answer = await fetch(
-    `${api}/api/v1/${personal ? "personal-runner" : "worker-pool"}-registrations`,
+    `${api}/api/v1/${chat ? "personal-runner" : "worker-pool"}-registrations`,
     {
       method: "POST",
       headers: {
@@ -168,9 +168,7 @@ async function register(): Promise<number> {
         [machineSender]: "runner",
       },
       body: JSON.stringify(
-        personal
-          ? { token, capabilities: [] }
-          : { token, pool: knobs.pool, capabilities: [] },
+        chat ? { token } : { token, pool: knobs.pool, capabilities: [] },
       ),
       signal: AbortSignal.timeout(requestMsMax),
     },

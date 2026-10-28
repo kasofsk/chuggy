@@ -60,7 +60,7 @@ test("with no Claude login the run changes nothing and says what the runner need
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-2), [lines(on).found.ownLive, next]);
+  assert.deepEqual(done.lines.slice(-2), [lines(on).found.chatLive, next]);
 });
 
 const changing = new Set(first.filter((act) => !probes.includes(act)));

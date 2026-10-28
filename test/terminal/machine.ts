@@ -7,7 +7,7 @@
  * reads back every command that was run, with its words, what it was given to
  * read and whether it led a session of its own. The site sees a runner live
  * once its service on the machine is up and polls, as it would the real one:
- * a pool's as the project's runner, and the person's own as theirs.
+ * a pool's as the project's runner, and a chat host's as the person's.
  * The commands that would ask for a password are stood in for too, so one
  * that was run is found and not merely missing.
  */
@@ -70,7 +70,7 @@ export interface Machine {
 function knobsFirst(prefix: string): MachineKnobs {
   return {
     prefix,
-    version: "0.14.0",
+    version: "0.35.0",
     pool: "shame",
     engines: { docker: true, podman: true },
     services: true,
@@ -91,7 +91,7 @@ function lines(path: string): readonly string[] {
     : [];
 }
 
-/** The id the file of the person's own runner names it by, where there is one. */
+/** The id the file of the person's chat host names it by, where there is one. */
 function machineStoodInClient(file: string): string | undefined {
   if (!existsSync(file)) return undefined;
   const held = JSON.parse(readFileSync(file, "utf8")) as {
@@ -105,7 +105,7 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
   const state = join(home.beside, "machine");
   const prefix = join(home.beside, "prefix");
   const config = join(home.home, ".config");
-  const login = join(config, "chuggy-linux", "claude-token");
+  const login = join(config, "chuggy-linux", "claude", "token");
   const pools = join(config, "chuggy", "pools");
   const file = (name: keyof typeof machineFiles) =>
     join(state, machineFiles[name]);
@@ -138,12 +138,11 @@ export function machineStoodIn(home: Home, installation: StandIn): Machine {
       if (name.endsWith(`.${knobs.pool}.service`))
         for (const project of world.projects)
           if (project.pools.includes(knobs.pool)) project.runner = "Live";
-      for (const [tenant, own] of world.own) {
-        const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}`;
+      for (const [tenant, host] of world.chat) {
+        const named = `${machineNamePart(tenant)}.${machineNamePart(world.member)}.chat.host`;
         if (name !== `chuggy-linux-${named}.service`) continue;
         const clientId = machineStoodInClient(join(pools, `${named}.json`));
-        for (const runner of own.runners)
-          if (runner.id === clientId) runner.live = true;
+        if (host.id === clientId) host.live = true;
       }
     }
   };

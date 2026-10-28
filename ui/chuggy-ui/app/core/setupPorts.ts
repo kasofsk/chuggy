@@ -160,6 +160,8 @@ export type SetupDiskKind = "File" | "Directory" | "Other" | "None";
 /** Paths outside the program's own directory, each named whole by the caller. */
 export interface SetupDiskPort {
   readonly kind: (path: string) => SetupDiskKind;
+  /** Whether a path is itself a symbolic link, which is not followed. */
+  readonly linked: (path: string) => boolean;
   /** The names in a directory, or none where there is no such directory to list. */
   readonly names: (directory: string) => readonly string[];
   /** A file's text, or nothing where there is none to read or it is longer than `bytesMax`. */
