@@ -6,6 +6,11 @@
  * is a total over the rows that exist: it only rises while rows only accrue,
  * and a restart leaves it where it was.
  *
+ * A COUNTER'S AND A HISTOGRAM'S SERIES BEGAN AT ITS EARLIEST ROW. A series
+ * first appears already holding that row, so each names that row's time as
+ * when it began, and a scraper counts the row as a rise from nothing. A gauge
+ * names none.
+ *
  * A PAGE IS WHOLE OR REFUSED. A read past its bound, and a page past the series
  * a page may carry, are each a refusal naming why, never a page with some of
  * its series left out.
@@ -43,13 +48,14 @@ export interface MetricsPlaneTask {
   readonly placement: "Cluster" | "Pool" | "Personal";
 }
 
-/** Ended attempts of one task and end state, how many fell in each bucket of the bounds and the one past them. */
+/** Ended attempts of one task and end state, how many fell in each bucket of the bounds and the one past them, and when the first ended. */
 export interface MetricsPlaneAttemptRow {
   readonly task: MetricsPlaneTask;
   readonly state: string;
   readonly buckets: readonly number[];
   readonly ended: number;
   readonly durationSecs: number;
+  readonly createdSecs: number;
 }
 
 export interface MetricsPlaneRunRow {
@@ -57,6 +63,7 @@ export interface MetricsPlaneRunRow {
   readonly turns: number;
   readonly durationMs: number;
   readonly durationApiMs: number;
+  readonly createdSecs: number;
 }
 
 export interface MetricsPlaneModelRow {
@@ -67,9 +74,10 @@ export interface MetricsPlaneModelRow {
   readonly tokensCacheCreation: number;
   readonly tokensCacheRead: number;
   readonly costUsdMicros: number;
+  readonly createdSecs: number;
 }
 
-/** Ended session turns of one owner, session kind, state and model, and how many measured ones fell in each bucket. */
+/** Ended session turns of one owner, session kind, state and model, how many measured ones fell in each bucket, and when the first ended. */
 export interface MetricsPlaneTurnRow {
   readonly tenant: string;
   readonly project: string;
@@ -82,6 +90,7 @@ export interface MetricsPlaneTurnRow {
   readonly tokens: number;
   readonly costMicros: number;
   readonly durationMs: number;
+  readonly createdSecs: number;
 }
 
 export interface MetricsPlaneTicketRow {
@@ -123,14 +132,15 @@ export type MetricsPlaneScrape =
   | { readonly scraped: "Page"; readonly families: readonly MetricsFamily[] }
   | { readonly scraped: "Refused"; readonly why: string };
 
-/** Sums of values under one label set, added to as rows sharing it are read. */
+/** Sums of values under one label set, added to as rows sharing it are read, and the earliest of their created times. */
 interface MetricsPlaneSum {
   readonly labels: MetricsLabels;
   readonly values: number[];
+  createdSecs: number;
 }
 
 /** Rows summed per label set, so rows a label cannot tell apart are one series. */
-function metricsPlaneSummed<Row>(
+function metricsPlaneSummed<Row extends { readonly createdSecs: number }>(
   rows: readonly Row[],
   labelled: (row: Row) => MetricsLabels,
   measured: (row: Row) => readonly number[],
@@ -141,23 +151,31 @@ function metricsPlaneSummed<Row>(
     const values = measured(row);
     const key = JSON.stringify(labels);
     const sum = sums.get(key);
-    if (sum === undefined) sums.set(key, { labels, values: [...values] });
-    else
+    if (sum === undefined)
+      sums.set(key, {
+        labels,
+        values: [...values],
+        createdSecs: row.createdSecs,
+      });
+    else {
       for (const [index, value] of values.entries())
         sum.values[index] = (sum.values[index] ?? 0) + value;
+      sum.createdSecs = Math.min(sum.createdSecs, row.createdSecs);
+    }
   }
   return [...sums.values()];
 }
 
-/** The `index`th of every sum, as a counter's or a gauge's samples. */
+/** The `index`th of every sum, as a counter's samples, each naming when its series began. */
 function metricsPlaneValues(
   sums: readonly MetricsPlaneSum[],
   index: number,
   scale = 1,
 ): readonly MetricsValueSample[] {
-  return sums.map(({ labels, values }) => ({
+  return sums.map(({ labels, values, createdSecs }) => ({
     labels,
     value: (values[index] ?? 0) / scale,
+    createdSecs,
   }));
 }
 
@@ -179,10 +197,11 @@ function metricsPlaneHistogram(
   scale: number,
 ): readonly MetricsHistogramSample[] {
   const buckets = metricsPlaneDurationBoundsSecs.length + 1;
-  return sums.map(({ labels, values }) => ({
+  return sums.map(({ labels, values, createdSecs }) => ({
     labels,
     bucketCounts: values.slice(0, buckets),
     sum: (values[buckets] ?? 0) / scale,
+    createdSecs,
   }));
 }
 
@@ -296,7 +315,11 @@ function metricsPlaneModelFamilies(
 ): readonly MetricsFamily[] {
   const tokens = metricsPlaneSummed(
     rows.flatMap((row) =>
-      metricsPlaneTokenTypes.map((type) => ({ row, type })),
+      metricsPlaneTokenTypes.map((type) => ({
+        row,
+        type,
+        createdSecs: row.createdSecs,
+      })),
     ),
     ({ row, type }) => ({
       ...metricsPlaneTaskLabels(row.task),
@@ -394,18 +417,10 @@ function metricsPlaneTicketFamily(
     type: "gauge",
     name: "chuggy_tickets",
     help: "The project's tickets in each phase.",
-    samples: metricsPlaneValues(
-      metricsPlaneSummed(
-        rows,
-        (row) => ({
-          tenant: row.tenant,
-          project: row.project,
-          phase: row.phase,
-        }),
-        (row) => [row.tickets],
-      ),
-      0,
-    ),
+    samples: rows.map((row) => ({
+      labels: { tenant: row.tenant, project: row.project, phase: row.phase },
+      value: row.tickets,
+    })),
   };
 }
 
