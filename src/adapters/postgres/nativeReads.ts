@@ -64,7 +64,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
-import { projectRowCounter } from "./rows.ts";
+import { projectRowCounter, projectRowInstant } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import {
   releasedBriefOf,
@@ -74,7 +74,7 @@ import {
 
 interface PublicOperationRow {
   readonly operation: string;
-  readonly accepted_at: string;
+  readonly accepted_at: string | null;
   readonly state: string;
   readonly decided_seq: string | null;
   readonly outcome_code: string | null;
@@ -187,24 +187,18 @@ function requiredCounter(value: string | null, what: string): number {
 }
 
 function nativeReadInstant(value: string): ReturnType<typeof asPublicInstant> {
-  const parsed =
-    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)([+-]\d{2})(?::?(\d{2}))?$/u.exec(
-      value,
-    );
-  if (parsed === null)
-    throw new TypeError(
-      "native read: an instant is not PostgreSQL timestamptz text",
-    );
-  return asPublicInstant(
-    `${parsed[1]}T${parsed[2]}${parsed[3]}:${parsed[4] ?? "00"}`,
-  );
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(value))
+    throw new TypeError("native read: an instant is not UTC ISO 8601 text");
+  return asPublicInstant(value);
 }
 
 /** Maps the private storage row onto the deliberately smaller public resource. */
 export function publicOperation(row: PublicOperationRow): OperationResource {
   const base = {
     operation: asOperationId(row.operation),
-    acceptedAt: nativeReadInstant(row.accepted_at),
+    acceptedAt: nativeReadInstant(
+      projectRowInstant(row.accepted_at, "acceptance time"),
+    ),
   };
   const state = operationState(row.state);
   switch (state) {
@@ -619,8 +613,8 @@ async function readTicketsByActivity(
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
                  b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-                 r.committed_at::text AS released_at,
-                 c.committed_at::text AS changed_at,
+                 to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
+                 to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                     FROM ticket_projection d
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
@@ -679,8 +673,8 @@ async function readTicketsByIdentity(
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
                b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
-               r.committed_at::text AS released_at,
-               c.committed_at::text AS changed_at,
+               to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
+               to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
@@ -743,7 +737,7 @@ async function readTicketRow(
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
-               r.committed_at::text AS released_at,c.committed_at::text AS changed_at,
+               to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
@@ -849,7 +843,7 @@ function nativeReadsResources(
   return {
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
-        sql`SELECT o.operation,o.accepted_at::text AS accepted_at,
+        sql`SELECT o.operation,to_char(o.accepted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS accepted_at,
                 d.state,d.decided_seq,d.outcome_code,d.refusal,
                 d.refused_head,d.refused_lifecycle_generation
            FROM operation o JOIN decision_input d

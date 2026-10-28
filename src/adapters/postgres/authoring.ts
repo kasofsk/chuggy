@@ -42,7 +42,6 @@ import {
   storedOverridesText,
 } from "./ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   type RepositoryConfigurationsImported,
   type RepositoryConfigurationStore,
@@ -56,7 +55,11 @@ import type {
   RepositoryConfigurationsHeld,
   RepositoryConfigurationsHeldRead,
 } from "../../interpreter/repositoryOnboarding.ts";
-import { projectRowCounter, projectRowLifecycle } from "./rows.ts";
+import {
+  projectRowCounter,
+  projectRowInstant,
+  projectRowLifecycle,
+} from "./rows.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
@@ -105,7 +108,7 @@ interface ConfigurationPageRow extends ConfigurationVersionRow {
   readonly parent: string | null;
   readonly canonical: string;
   readonly digest: string;
-  readonly created_at: string;
+  readonly created_at: string | null;
   readonly repository: string | null;
   readonly commit: string | null;
   readonly path: string | null;
@@ -151,7 +154,7 @@ function configurationPageSummary(row: ConfigurationPageRow) {
       : { parent: asConfigurationRevisionId(row.parent) }),
     canonical: asCanonicalConfiguration(row.canonical),
     digest: row.digest,
-    createdAt: asPublicInstant(row.created_at),
+    createdAt: projectRowInstant(row.created_at, "creation time"),
     provenance: configurationPageProvenance(row),
     ...(version === undefined ? {} : { version }),
   });
@@ -163,7 +166,7 @@ async function readConfigurations(
   query: ConfigurationPageQuery,
 ): Promise<ConfigurationPage> {
   const found = await pool.query<ConfigurationPageRow>(
-    sql`SELECT r.revision,r.parent,r.canonical,r.digest,r.created_at::text AS created_at,
+    sql`SELECT r.revision,r.parent,r.canonical,r.digest,to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS created_at,
                r.repository,r.commit,r.path,r.name,r.version_name,r.version_number
           FROM (SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at,
                        p.repository,p.repository_commit AS commit,p.path,p.name,
@@ -202,7 +205,7 @@ async function readConfigurations(
       ? {}
       : {
           nextAfter: {
-            createdAt: asPublicInstant(last.created_at),
+            createdAt: projectRowInstant(last.created_at, "creation time"),
             revision: asConfigurationRevisionId(last.revision),
           },
         }),

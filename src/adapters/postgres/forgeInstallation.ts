@@ -35,6 +35,7 @@ import type {
 } from "../../interpreter/forgeInstallationClaim.ts";
 import { allForgeInstallationRecorded } from "../../interpreter/forgeInstallationClaim.ts";
 import type { TenantId } from "../../interpreter/projectStore.ts";
+import { projectRowInstant } from "./rows.ts";
 
 /** The installation a tenant claimed for one account, read as the branded row it is. */
 export function postgresForgeInstallations(
@@ -72,7 +73,7 @@ interface ForgeInstallationRow {
   account: string;
   account_kind: string;
   installation_id: string;
-  claimed_at: string;
+  claimed_at: string | null;
 }
 
 /** One row as the interpreter reads it, every identity narrowed where it is read. */
@@ -85,7 +86,7 @@ function forgeInstallationClaimed(
     account: asForgeAccount(row.account),
     accountKind: asForgeAccountKind(row.account_kind),
     installationId: asForgeInstallationId(row.installation_id),
-    claimedAt: row.claimed_at,
+    claimedAt: projectRowInstant(row.claimed_at, "claim time"),
   };
 }
 
@@ -102,10 +103,10 @@ async function forgeInstallationClaimsPage(
 ): Promise<ForgeInstallationClaimsPage> {
   const found = await pool.query<ForgeInstallationRow>(
     sql`SELECT forge,app,account,account_kind,installation_id,
-               claimed_at::text AS claimed_at
+               to_char(claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at
           FROM forge_installation
           WHERE tenant = ${tenant}
-          ORDER BY claimed_at,forge,app,account
+          ORDER BY forge_installation.claimed_at,forge,app,account
           LIMIT ${forgeInstallationsAnsweredMax + 1}`,
   );
   return {
@@ -129,7 +130,7 @@ async function forgeInstallationClaim(
 ): Promise<ForgeInstallationClaimed | undefined> {
   const found = await pool.query<ForgeInstallationRow>(
     sql`SELECT forge,app,account,account_kind,installation_id,
-               claimed_at::text AS claimed_at
+               to_char(claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at
           FROM forge_installation
           WHERE tenant = ${tenant} AND installation_id = ${installationId}
           ORDER BY forge,app,account
