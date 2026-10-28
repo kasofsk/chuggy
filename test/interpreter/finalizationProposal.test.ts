@@ -39,6 +39,7 @@ import {
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
   type ChangeProposalPublication,
+  type ChangeProposalRead,
   type ChangeProposalReconciliationStored,
 } from "../../src/interpreter/changeProposal.ts";
 import {
@@ -947,4 +948,97 @@ test("a bound falling inside a character keeps the words well formed", () => {
   assert.equal(body.isWellFormed(), true);
   assert.ok(textCodePointsCount(body) <= proposalBodyCharsMax);
   assert.equal(body.endsWith(`\n\n${marker}`), true);
+});
+
+/** The proposal an earlier request of the ticket recorded, as its row addresses it. */
+const recordedProposal = {
+  ...evidence().identity,
+  number: asProposalNumber(7),
+};
+
+/** A request with no row of its own, beside what reading its ticket's proposal found. */
+function adopting(
+  read: ChangeProposalRead,
+  publication: ChangeProposalPublication = { publication: "Unopened" },
+): FinalizationProposalGathered {
+  return {
+    gathered: "Request",
+    request,
+    publication,
+    merging: { merging: "Unasked" },
+    merge: pinned,
+    adoption: { proposal: recordedProposal, read },
+  };
+}
+
+test("a request with no proposal of its own adopts its ticket's open one, and opens its own otherwise", () => {
+  const earlier = evidence({ title: "Retitled by a reviewer" });
+  for (const standing of [proposing, merging])
+    assert.deepEqual(
+      finalizationProposalNext(
+        standing,
+        adopting({ read: "Found", evidence: earlier }),
+        bounds,
+      ),
+      { decide: "AdoptProposal", request, evidence: earlier },
+    );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      adopting({ read: "Found", evidence: evidence({ status: "Closed" }) }),
+      bounds,
+    ),
+    { decide: "ProposeChange", request },
+    "a closed proposal is left closed, and this request opens its own",
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      adopting(
+        { read: "Found", evidence: earlier },
+        { publication: "Idle", creations: 1 },
+      ),
+      bounds,
+    ),
+    { decide: "ProposeChange", request },
+    "a request that already asked for its own proposal adopts nothing",
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      adopting({ read: "Unavailable" }),
+      bounds,
+    ),
+    { decide: "Hold", hold: "ProposalUnavailable" },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(merging, adopting({ read: "Denied" }), bounds),
+    { decide: "Hold", hold: "ProposalDenied" },
+  );
+});
+
+test("an adopted proposal is merged as one this request opened", () => {
+  const earlier = evidence({ title: "Retitled by a reviewer" });
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      gathered({
+        publication: "Answered",
+        creation: { created: "Adopted", evidence: earlier },
+      }),
+      bounds,
+    ),
+    {
+      decide: "MergeProposal",
+      request,
+      merge: changeProposalMergeRequest({
+        binding: request.binding,
+        partition: request.partition,
+        repository: request.repository,
+        proposal: recordedProposal,
+        marker: request.marker,
+        headCommit: request.head.commit,
+      }),
+    },
+  );
 });

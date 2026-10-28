@@ -497,7 +497,11 @@ export const ticketLandingStates = [
 export type TicketLandingState = (typeof ticketLandingStates)[number];
 
 /** What one finalization attempt came to, restating the interpreter's `allFinalizationAttemptOutcomes`. */
-export const finalizationAttemptOutcomes = ["Prepared", "Failed"] as const;
+export const finalizationAttemptOutcomes = [
+  "Prepared",
+  "Failed",
+  "Landed",
+] as const;
 
 /** Why one finalization attempt failed, restating the interpreter's `allFinalizationFailureKinds`. */
 export const finalizationFailureKinds = [
@@ -511,6 +515,7 @@ export const changeProposalCreations = [
   "AlreadyExists",
   "Contradictory",
   "Unstorable",
+  "Adopted",
 ] as const;
 
 /** What a stored change proposal says its merge came to, restating `allChangeProposalMergeAnswers`. */
