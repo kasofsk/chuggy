@@ -159,6 +159,9 @@ function MemberChatThread(props: {
   const client = useQueryClient();
   const state = useMemberThread(props.tenant, props.session);
   const home = { scope: "Member", tenant: props.tenant } as const;
+  const reread = (): void => {
+    void memberChatReread(client, props.tenant, props.session);
+  };
   return (
     <>
       <MemberChatBar {...props}>
@@ -167,9 +170,7 @@ function MemberChatThread(props: {
             home={home}
             thread={state.value}
             at="Page"
-            onChanged={() => {
-              void memberChatReread(client, props.tenant, props.session);
-            }}
+            onChanged={reread}
           />
         ) : (
           <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
@@ -183,6 +184,7 @@ function MemberChatThread(props: {
             tenant={props.tenant}
             thread={state.value}
             named
+            onSent={reread}
           />
         </div>
       ) : (

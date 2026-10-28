@@ -325,11 +325,15 @@ export function ThreadConversation(
 /** One thread of the reader's own chat, which mentions nothing and carries no
  * image, and is theirs to write to. */
 export function MemberThreadConversation(
-  props: ThreadConversationProps & { readonly tenant: string },
+  props: ThreadConversationProps & {
+    readonly tenant: string;
+    readonly onSent: () => void;
+  },
 ): ReactNode {
   const sends = useMemberThreadSend({
     ...threadSendMade(props),
     tenant: props.tenant,
+    onSent: props.onSent,
   });
   const door = useMemberThreadDoor(props.tenant).door;
   return (

@@ -109,12 +109,7 @@ import type {
 } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import type { SessionRunnerShort } from "../../core/sessionRunners.ts";
-import {
-  useApiPorts,
-  usePanelAnswers,
-  usePanelReread,
-  usePanelResource,
-} from "../api.ts";
+import { useApiPorts, usePanelAnswers, usePanelResource } from "../api.ts";
 import type {
   ConversationComposerProps,
   ConversationSent,
@@ -238,17 +233,18 @@ export function useThreadDoor(partition: PartitionIdentity): ThreadDoorHeld {
 }
 
 /** The door of the reader's own chat at their tenant: their chat host as its
- * read stands, read again rather than waiting on the next poll where the door
- * refused. No grant is asked of it, so none is learnt. */
+ * read stands. No grant is asked of it, so none is learnt and none refuses:
+ * the server answers a member's own turn as admitted or as wanting a runner,
+ * never as unhosted. */
 export function useMemberThreadDoor(tenant: string): ThreadDoorHeld {
   const host = useChatHost(tenant);
-  const key = tenantResourceKey(tenant, chatHostResource);
-  const reads = usePanelAnswers(key);
-  const stale = usePanelReread(key);
+  const reads = usePanelAnswers(tenantResourceKey(tenant, chatHostResource));
   return {
     door: memberChatDoor(host, reads),
     learnt: () => undefined,
-    refused: async () => ({ send: "Unhosted", readsAt: await stale() }),
+    refused: () => {
+      throw new Error("a member's own chat was refused a grant it never asks");
+    },
   };
 }
 
@@ -451,6 +447,9 @@ interface ThreadSendMade {
   readonly ended?: readonly string[];
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
+  /** Any message the door took, which a thread no frame names is read again
+   * on. */
+  readonly onSent?: () => void;
   /** What is kept for the thread while it is not drawn. */
   readonly away?: ThreadKeptAway | undefined;
 }
@@ -550,6 +549,7 @@ function useThreadSendPressed(
         uploaded.current.delete(attachment);
     said(answered);
     if (answered.send !== "Sent") return undefined;
+    input.onSent?.();
     if (input.session === undefined) input.onStarted?.(session);
     return session;
   };

@@ -31,17 +31,17 @@ export const memberChatRoutes = {
   thread: "/tenants/$tenant/chat/$session",
 } as const;
 
-/** What a member is told where their workspace has taken their own chat away. */
+/** What a member is told where an admin has taken their own chat away. */
 export const memberChatWithheld =
-  "A workspace admin lets members chat outside a project";
+  "A workspace admin has turned off your chat outside a project";
 
 /** What the project switcher names a workspace's own chat. */
 export const memberChatProjectNone = "No project";
 
 /**
- * How often a member's own thread is read again. No frame names one, so this
- * is what moves its turns on screen: a message sent is listed, and a turn the
- * live stream is answering is settled, on this clock.
+ * How often a member's own thread is read again while its newest turn is
+ * being written. No frame names one, so this is what settles a turn the live
+ * stream is answering.
  */
 export const memberChatThreadPolledMs = 2_000;
 

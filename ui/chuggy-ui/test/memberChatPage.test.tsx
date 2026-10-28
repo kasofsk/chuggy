@@ -75,6 +75,8 @@ const listed = [
 interface ChatServed {
   /** Whether the workspace lets the reader chat outside a project. */
   readonly opens?: boolean;
+  /** An abilities read that never answers, or one that fails. */
+  readonly abilities?: "Pending" | "Failed";
   /** The reader's chat host, or none registered. */
   readonly host?: { readonly live: boolean } | undefined;
   /** What an open answers. */
@@ -87,6 +89,10 @@ function chatServed(served: ChatServed, posts: string[]): typeof fetch {
     if (init?.method === "POST") posts.push(url);
     const ambient = threadReadsAnswered(url, threadTranscriptPage(0).entries);
     if (ambient !== undefined) return Promise.resolve(ambient);
+    if (url.endsWith("/chat/abilities") && served.abilities === "Pending")
+      return new Promise<Response>(() => undefined);
+    if (url.endsWith("/chat/abilities") && served.abilities === "Failed")
+      return Promise.resolve(answer({ error: { code: "Internal" } }, 500));
     if (url.endsWith("/chat/abilities"))
       return Promise.resolve(
         answer({
@@ -221,9 +227,25 @@ test("the project switcher names the chat as the workspace's own, with no projec
   styleless();
 });
 
-test("a workspace that keeps the chat from the reader says who gives it, and draws no composer", async () => {
+test("a reader whose chat an admin turned off is told so, and draws no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { opens: false });
   expect(screen.getByText(memberChatWithheld)).toBeDefined();
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  styleless();
+});
+
+test("abilities not read yet draw the page as loading, and no composer", async () => {
+  await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Pending" });
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(screen.queryByText(memberChatWithheld)).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
+  styleless();
+});
+
+test("abilities whose read failed say so, and draw no composer", async () => {
+  await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Failed" });
+  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(screen.queryByText(memberChatWithheld)).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();
 });
@@ -257,6 +279,19 @@ test("a first message opens a thread of the reader's own chat, and the page move
   expect(router.state.location.pathname).toBe(
     `/tenants/${tenant}/chat/${openedSession}`,
   );
+  styleless();
+});
+
+test("a message sent to an open thread reads it again at once", async () => {
+  await mountedAt(`/tenants/${tenant}/chat/${ownSession}`);
+  const served = globalThis.fetch;
+  const reads: string[] = [];
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (init?.method !== "POST") reads.push(url);
+    return served(url, init);
+  });
+  await sent("again");
+  expect(reads).toContain(`${chatPath}/${ownSession}`);
   styleless();
 });
 

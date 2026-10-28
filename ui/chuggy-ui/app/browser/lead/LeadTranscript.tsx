@@ -21,10 +21,10 @@
  * and the compaction discipline is exactly the part that must not be re-derived.
  * What a caller chooses is the session; everything below is the same.
  *
- * THE SESSION IS A VALUE AND NOT A READER FUNCTION, so that what the walk's
- * effect depends on stays a string, the session named as one: a caller handing it a fresh closure each
- * render would re-run the walk every render, which is a read loop rather than a
- * live page.
+ * `OF` IS A VALUE AND NOT A READER FUNCTION, so that what the walk's effect
+ * depends on stays a string, `of` named as one: a caller handing it a fresh
+ * closure each render would re-run the walk every render, which is a read loop
+ * rather than a live page.
  */
 
 import { useEffect, useRef, useState } from "react";

@@ -12,6 +12,7 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
@@ -33,6 +34,7 @@ import {
   tenantResourceKey,
 } from "../../core/projectQueryKeys.ts";
 import { sessionPlacementPolledMs } from "../../core/sessionRunners.ts";
+import { threadWriting } from "../../core/threads.ts";
 import { usePanelList, usePanelTenantResource } from "../api.ts";
 
 /** The list entry the whole listing keeps, which the chat pane's history reads
@@ -61,17 +63,23 @@ export function useThread(
 }
 
 /** One thread of the reader's own chat, which no frame names and so is read
- * again on its own clock. */
+ * again on its own clock: briskly while its newest turn is still being
+ * written, and otherwise at the pace a session's standing is. A message sent
+ * is read again at once by whoever sent it. */
 export function useMemberThread(
   tenant: string,
   session: string,
 ): PanelState<ThreadResponse> {
-  return usePanelTenantResource(
+  const [writing, setWriting] = useState(false);
+  const state = usePanelTenantResource(
     tenant,
     memberChatThreadResource(session),
     (ports) => apiChatThread(ports, tenant, session),
-    memberChatThreadPolledMs,
+    writing ? memberChatThreadPolledMs : sessionPlacementPolledMs,
   );
+  const now = state.state === "Ready" && threadWriting(state.value);
+  if (now !== writing) setWriting(now);
+  return state;
 }
 
 /** The tenant's entry one thread of the reader's own chat is kept under. */
