@@ -13,9 +13,12 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** The kind each ability asks, exhaustive over the answer's fields, so a field added without a kind is a compile error. */
+/** The kind each ability asks, exhaustive over the answer's fields but the reader's principal, so a field added without a kind is a compile error. */
 export const projectAbilityKinds: Readonly<
-  Record<keyof ProjectAbilitiesResponse, ProjectAccessKind>
+  Record<
+    Exclude<keyof ProjectAbilitiesResponse, "principal">,
+    ProjectAccessKind
+  >
 > = {
   mutate: "Mutate",
   dispatch: "DispatchTicket",
@@ -59,6 +62,7 @@ export async function projectAbilities(
   return {
     result: "Authorized",
     value: {
+      principal,
       mutate,
       dispatch,
       manageSelector,

@@ -2120,6 +2120,8 @@ export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
 /** Which of a project's doors its reader may press, each by the kind that door asks. */
 export const projectAbilitiesResponseSchema = z.strictObject({
+  /** The reader's own principal, encoded as a ticket's `creator` is. */
+  principal: identitySchema,
   mutate: z.boolean(),
   dispatch: z.boolean(),
   manageSelector: z.boolean(),

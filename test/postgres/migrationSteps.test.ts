@@ -54,7 +54,11 @@ import {
   migration079,
   toolAllowlistAt079,
 } from "../../src/adapters/postgres/schema/migrations/079-lead-reads-ticket-landings.ts";
-import { migration088 } from "../../src/adapters/postgres/schema/migrations/088-lead-reads-docs.ts";
+import {
+  migration088,
+  toolAllowlistAt088,
+} from "../../src/adapters/postgres/schema/migrations/088-lead-reads-docs.ts";
+import { migration089 } from "../../src/adapters/postgres/schema/migrations/089-lead-reads-abilities.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -2090,7 +2094,8 @@ test("066 names list_repositories in the seeded allowlist at its roster place, i
         tool !== "mcp__chuggy__fetch_image" &&
         tool !== "mcp__chuggy__read_run_error" &&
         tool !== "mcp__chuggy__read_ticket_landings" &&
-        tool !== "mcp__chuggy__read_docs",
+        tool !== "mcp__chuggy__read_docs" &&
+        tool !== "mcp__chuggy__read_abilities",
     ),
     seededText:
       '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
@@ -2107,7 +2112,8 @@ test("068 names fetch_image in the allowlist 066 left at its roster place, in pl
       (tool) =>
         tool !== "mcp__chuggy__read_run_error" &&
         tool !== "mcp__chuggy__read_ticket_landings" &&
-        tool !== "mcp__chuggy__read_docs",
+        tool !== "mcp__chuggy__read_docs" &&
+        tool !== "mcp__chuggy__read_abilities",
     ),
     seededText:
       '"mcp__chuggy__list_repositories","mcp__chuggy__fetch_image","mcp__chuggy__initialize_draft"',
@@ -2123,7 +2129,8 @@ test("072 names read_run_error in the allowlist 068 left at its roster place, in
     lead: leadToolAllowlist.filter(
       (tool) =>
         tool !== "mcp__chuggy__read_ticket_landings" &&
-        tool !== "mcp__chuggy__read_docs",
+        tool !== "mcp__chuggy__read_docs" &&
+        tool !== "mcp__chuggy__read_abilities",
     ),
     seededText:
       '"mcp__chuggy__read_run_transcript","mcp__chuggy__read_run_error","mcp__chuggy__read_operation"',
@@ -2136,7 +2143,11 @@ test("079 names read_ticket_landings in the allowlist 072 left at its roster pla
     version: migration079.version,
     from: toolAllowlistAt072(),
     tool: "mcp__chuggy__read_ticket_landings",
-    lead: leadToolAllowlist.filter((tool) => tool !== "mcp__chuggy__read_docs"),
+    lead: leadToolAllowlist.filter(
+      (tool) =>
+        tool !== "mcp__chuggy__read_docs" &&
+        tool !== "mcp__chuggy__read_abilities",
+    ),
     seededText:
       '"mcp__chuggy__read_ticket_refusals","mcp__chuggy__read_ticket_landings","mcp__chuggy__read_projects"',
   });
@@ -2148,9 +2159,23 @@ test("088 names read_docs in the allowlist 079 left at its roster place, in plac
     version: migration088.version,
     from: toolAllowlistAt079(),
     tool: "mcp__chuggy__read_docs",
-    lead: leadToolAllowlist,
+    lead: leadToolAllowlist.filter(
+      (tool) => tool !== "mcp__chuggy__read_abilities",
+    ),
     seededText:
       '"mcp__chuggy__fetch_image","mcp__chuggy__read_docs","mcp__chuggy__initialize_draft"',
+  });
+});
+
+test("089 names read_abilities in the allowlist 088 left at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
+  await toolAllowlistWidened({
+    label: "lead_reads_abilities",
+    version: migration089.version,
+    from: toolAllowlistAt088(),
+    tool: "mcp__chuggy__read_abilities",
+    lead: leadToolAllowlist,
+    seededText:
+      '"mcp__chuggy__read_docs","mcp__chuggy__read_abilities","mcp__chuggy__initialize_draft"',
   });
 });
 

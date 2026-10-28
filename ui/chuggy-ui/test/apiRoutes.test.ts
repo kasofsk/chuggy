@@ -385,6 +385,7 @@ test("the hosted-runs grant hangs from the partition and is read as given or not
 
 test("the reader's abilities hang from the partition and are read door by door", async () => {
   const abilities = {
+    principal: "issuer geoff",
     mutate: false,
     dispatch: false,
     manageSelector: false,
