@@ -46,6 +46,8 @@ import { assertNever } from "../../domain/assertNever.ts";
 import type {
   AncestryProof,
   AncestryProved,
+  CandidateHeld,
+  CandidateHeldQuestion,
   CandidateIntegrated,
   CandidateIntegration,
   CandidatePrepared,
@@ -67,6 +69,7 @@ import type {
 } from "../../interpreter/finalizer.ts";
 import {
   candidateAdoptable,
+  candidateHeld,
   candidateIntegrate,
   candidatePrepare,
 } from "./gitCandidate.ts";
@@ -439,6 +442,16 @@ async function gitPromotionProve(
     : { proved: "NotAncestor", observed };
 }
 
+/** Reads whether the target a ticket lands on already holds its candidate, a credential refused being no answer. */
+async function gitPromotionHeld(
+  own: GitPromotionState,
+  question: CandidateHeldQuestion,
+): Promise<CandidateHeld> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return "Unread";
+  return candidateHeld(own.scratch, authorized.credential, question);
+}
+
 /** Reads whether a proposal's head is its pinned head brought up to date with its base, a credential refused being no answer. */
 async function gitPromotionAdoptable(
   own: GitPromotionState,
@@ -473,6 +486,7 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     observeTarget: (repository) => gitPromotionObserve(own, repository),
     prepareCandidate: (preparation) => gitPromotionPrepare(own, preparation),
     prepareSource: (preparation) => gitPromotionPrepareSource(own, preparation),
+    proveCandidateHeld: (question) => gitPromotionHeld(own, question),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),

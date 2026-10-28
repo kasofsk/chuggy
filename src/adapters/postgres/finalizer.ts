@@ -114,6 +114,8 @@ import {
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
   finalizerChangeProposalAdopt,
+  finalizerChangeProposalAdoption,
+  finalizerChangeProposalTicket,
   finalizerChangeProposalUpdateMark,
   finalizerChangeProposalUpdateRecord,
 } from "./finalizerChangeProposal.ts";
@@ -777,6 +779,14 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     changeProposal: (claim) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalRead(client, claim),
+      ),
+    ticketChangeProposal: (claim, place) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalTicket(client, claim, place),
+      ),
+    adoptChangeProposal: (record, evidence) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalAdoption(client, record, evidence),
       ),
     markChangeProposalAttempt: (record) =>
       postgresTransaction(pool, (client) =>

@@ -360,6 +360,50 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
   }
 });
 
+test("an attempt whose target already held its candidate succeeds with nothing promoted", () => {
+  const landed: FinalizationAttempt = { ...prepared, outcome: "Landed" };
+  for (const lifecycle of ["Active", ...allClosingLifecycles] as const)
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: landed,
+          observedTarget: { ...target, commit: moved },
+          approval: "Declined",
+          attemptsMade: 1,
+        }),
+      ),
+      {
+        decide: "Conclude",
+        conclusion: { outcome: "FinalizationSucceeded" },
+      },
+      `${lifecycle}: no target since read and no approval asked changes it`,
+    );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          attempt: landed,
+          permit: permitIn("Granted"),
+          attemptsMade: 1,
+        }),
+      ),
+    RangeError,
+  );
+  const { candidate: pinned, ...unpinned } = landed;
+  assert.equal(pinned, candidate);
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ attempt: unpinned, attemptsMade: 1 }),
+      ),
+    RangeError,
+  );
+});
+
 test("a closing project aborts every finalization that holds no permit", () => {
   for (const lifecycle of populated(
     allClosingLifecycles,

@@ -49,6 +49,16 @@
  * oldest proposal behind on a repository's base is updated, and only while no
  * other update there is unread.
  *
+ * A PROPOSAL AN EARLIER REQUEST OF THE SAME TICKET OPENED IS ADOPTED, NOT
+ * OPENED AGAIN. A forge holds one open proposal per head and base, so a rework
+ * promoted onto the ticket's branch is already carried by the proposal the
+ * last request opened, and a create can only be refused. That proposal is
+ * known by the number its row recorded rather than by a marker, read by that
+ * number, and adopted only where the reading finds it open on this request's
+ * head and base; one closed, merged or elsewhere is left alone and a proposal
+ * of this request's own is opened instead. Closing it to open another would
+ * lose the review and discussion it carries.
+ *
  * A HEAD THAT IS THE PINNED HEAD BROUGHT UP TO DATE IS ADOPTED. A read head
  * other than the pinned one is pinned in its place, and merged at, only where
  * git proves it a merge whose first parent is the pinned head, whose second is
@@ -405,11 +415,17 @@ export type ChangeProposalCreationAnswer = Extract<
 >;
 
 /**
- * What a row says one create came to: the answer the forge gave, or that this
- * deployment could not store the evidence of it.
+ * What a row says one create came to: the answer the forge gave, that this
+ * deployment could not store the evidence of it, or that no create was made
+ * because the proposal an earlier request opened was read open and adopted.
  */
 export type ChangeProposalCreationStored =
-  ChangeProposalCreationAnswer | { readonly created: "Unstorable" };
+  | ChangeProposalCreationAnswer
+  | { readonly created: "Unstorable" }
+  | {
+      readonly created: "Adopted";
+      readonly evidence: ChangeProposalEvidence;
+    };
 
 /** Every answer a create settles a row with, so a suite and a database CHECK iterate. */
 export const allChangeProposalCreationAnswers: readonly ChangeProposalCreationAnswer["created"][] =
@@ -417,7 +433,7 @@ export const allChangeProposalCreationAnswers: readonly ChangeProposalCreationAn
 
 /** Every arm a row records a create as. */
 export const allChangeProposalCreationsStored: readonly ChangeProposalCreationStored["created"][] =
-  [...allChangeProposalCreationAnswers, "Unstorable"];
+  [...allChangeProposalCreationAnswers, "Unstorable", "Adopted"];
 
 export type ChangeProposalRead =
   | { readonly read: "Found"; readonly evidence: ChangeProposalEvidence }
@@ -696,6 +712,70 @@ export function reconcileChangeProposal(
   }
 }
 
+/**
+ * Whether an adopted proposal is still where this request stands. It was
+ * proved by its number and never by this request's marker, so nothing a person
+ * may edit is compared, exactly as for a reading of a merge.
+ */
+function proposalAdoptedContradiction(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  merged: ChangeProposalMergedStanding,
+): ChangeProposalContradiction | undefined {
+  if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
+  return (
+    proposalPlaceContradiction(request, evidence) ??
+    proposalStatusContradiction(evidence, merged)
+  );
+}
+
+/**
+ * The proposal an earlier request of the same ticket recorded on this
+ * request's head and base, as its row addresses it, and what reading it by that
+ * number found.
+ */
+export interface ChangeProposalAdoptionGathered {
+  readonly proposal: ChangeProposalAddress;
+  readonly read: ChangeProposalRead;
+}
+
+export type ChangeProposalAdoptionNext =
+  | { readonly next: "Adopt"; readonly evidence: ChangeProposalEvidence }
+  | { readonly next: "Create" }
+  | { readonly next: "Held"; readonly reason: "Unavailable" | "Denied" };
+
+/**
+ * What reading an earlier request's proposal authorizes before this request
+ * opens one: adopting it where it is the proposal its number addresses, on
+ * this forge, open, and on this request's head and base; and opening one of
+ * this request's own where it is anything else. A reading that could not be
+ * made has said nothing, so the request holds rather than spend a create the
+ * forge would refuse while that proposal stands.
+ */
+export function changeProposalAdoptionNext(
+  request: ChangeProposalRequest,
+  gathered: ChangeProposalAdoptionGathered,
+): ChangeProposalAdoptionNext {
+  const read = gathered.read;
+  switch (read.read) {
+    case "Absent":
+      return { next: "Create" };
+    case "Unavailable":
+    case "Denied":
+      return { next: "Held", reason: read.read };
+    case "Found": {
+      const evidence = read.evidence;
+      return evidence.identity.number === gathered.proposal.number &&
+        proposalAdoptedContradiction(request, evidence, "Contradictory") ===
+          undefined
+        ? { next: "Adopt", evidence }
+        : { next: "Create" };
+    }
+    default:
+      return assertNever(read);
+  }
+}
+
 /** What evidence of a proposal settles this request to, whichever answer carried it. */
 function proposalEvidenceNext(
   request: ChangeProposalRequest,
@@ -749,6 +829,34 @@ function proposalUnansweredNext(
     : { next: "RefuseAttempt" };
 }
 
+/** What a row whose create is settled continues to, an adopted proposal judged as one proved by its number. */
+function changeProposalAnsweredNext(
+  request: ChangeProposalRequest,
+  creation: ChangeProposalCreationStored,
+  merged: ChangeProposalMergedStanding,
+): ChangeProposalPublicationNext {
+  switch (creation.created) {
+    case "Unstorable":
+      return { next: "Held", reason: "EvidenceUnstorable" };
+    case "Adopted": {
+      const contradiction = proposalAdoptedContradiction(
+        request,
+        creation.evidence,
+        merged,
+      );
+      return contradiction === undefined
+        ? { next: "Accepted", evidence: creation.evidence }
+        : { next: "Refused", contradiction, evidence: creation.evidence };
+    }
+    case "Created":
+    case "AlreadyExists":
+    case "Contradictory":
+      return proposalEvidenceNext(request, creation.evidence, merged);
+    default:
+      return assertNever(creation);
+  }
+}
+
 /**
  * Continues one publication from the state its row is in. A create whose
  * outcome is unknown can only be read back; only a state with nothing in
@@ -771,9 +879,7 @@ export function changeProposalPublicationNext(
     case "Unanswered":
       return proposalUnansweredNext(request, publication, bounds, merged);
     case "Answered":
-      return publication.creation.created === "Unstorable"
-        ? { next: "Held", reason: "EvidenceUnstorable" }
-        : proposalEvidenceNext(request, publication.creation.evidence, merged);
+      return changeProposalAnsweredNext(request, publication.creation, merged);
     default:
       return assertNever(publication);
   }

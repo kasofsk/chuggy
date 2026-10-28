@@ -380,6 +380,46 @@ test("a landing that failed on a conflict its preparation found answers Failed, 
   });
 });
 
+test("a landing whose target already held its candidate answers Landed at the target commit, with no permit and no pull request", async () => {
+  const project = await finalizing("held-candidate", "PullRequestMerge");
+  const target = finalizerCommit();
+  const candidate = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, "held-candidate", {
+    outcome: "Landed",
+    target,
+    candidate,
+  });
+  await concluded(project, { outcome: "FinalizationSucceeded" }, attempt);
+  assert.deepEqual(await landingsOf(project), {
+    landings: [
+      {
+        state: "Landed",
+        cycle: 1,
+        generation: 1,
+        attempts: 1,
+        attempt: {
+          outcome: "Landed",
+          targetRef: "refs/heads/main",
+          targetCommit: target,
+          candidateCommit: candidate,
+          preparedAt: await preparedAt(project, attempt),
+        },
+        landedCommit: target,
+      },
+    ],
+    truncated: false,
+  });
+  const [landed] = await rig.harness.query(
+    `SELECT repository_commit FROM read_ticket_landed_commit($1,$2,$3)`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  assert.equal(
+    landed?.["repository_commit"],
+    target,
+    "the ticket's landed commit, read for its actions, is the same commit",
+  );
+});
+
 test("a landing whose pull request the forge would not merge for a conflict answers Failed, the conflict recorded after it, and the mergeability its reading found", async () => {
   const project = await finalizing("merge-conflict", "PullRequestMerge");
   const promoted = await promotion(project, "merge-conflict");
