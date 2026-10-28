@@ -1844,16 +1844,21 @@ test("a personal runner's settlement of an execution reaches the executions it h
   assert.deepEqual(recorded.made, [["held", "live"]]);
 });
 
-test("a personal runner's session is opened only in a project its owner may still read", async () => {
-  const read: unknown[] = [];
-  const sessions = sessionCalls([], ["thread-one"]);
-  const refusing: ProjectAccess = {
+/** Project access that records each read it is asked and refuses every one. */
+function readsRefused(read: unknown[]): ProjectAccess {
+  return {
     ...authority("Allow"),
     authorize: (principal, asked, access) => {
       read.push([principal, asked.project, access]);
       return Promise.resolve(undefined);
     },
   };
+}
+
+test("a personal runner's session is opened only in a project its owner may still read", async () => {
+  const read: unknown[] = [];
+  const sessions = sessionCalls([], ["thread-one"]);
+  const refusing = readsRefused(read);
   const answered = await createPoolPlaneApp(
     plane(calls().ports, refusing, sessions.store),
   ).inject({
@@ -2024,13 +2029,7 @@ test("a pool's or a personal runner's declared idle bound is read from neither, 
 test("a chat host's session is opened only in a project its owner may still read, asked as its owner", async () => {
   const read: unknown[] = [];
   const sessions = idleCapped(undefined);
-  const refusing: ProjectAccess = {
-    ...authority("Allow"),
-    authorize: (principal, asked, access) => {
-      read.push([principal, asked.project, access]);
-      return Promise.resolve(undefined);
-    },
-  };
+  const refusing = readsRefused(read);
   const answered = await createPoolPlaneApp(
     plane(calls().ports, refusing, sessions.store),
   ).inject({

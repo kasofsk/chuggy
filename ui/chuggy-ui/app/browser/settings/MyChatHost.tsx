@@ -135,6 +135,30 @@ function ChatHostRow(props: {
   );
 }
 
+/** The head of a listing of a member's registered hosts: runners, or a chat host. */
+export function HostListingHead(props: { readonly name: string }): ReactNode {
+  return (
+    <thead>
+      <tr>
+        <th scope="col">{props.name}</th>
+        <th scope="col">Version</th>
+        <th scope="col" className="w-[9em]">
+          Registered
+        </th>
+        <th scope="col" className="w-[9em]">
+          Last polled
+        </th>
+        <th scope="col" className="people-col-status">
+          Status
+        </th>
+        <th scope="col" className="w-[8em]">
+          <span className="visually-hidden">Remove</span>
+        </th>
+      </tr>
+    </thead>
+  );
+}
+
 function ChatHostTable(props: {
   readonly host: ChatHostResponse;
   readonly busy: boolean;
@@ -142,24 +166,7 @@ function ChatHostTable(props: {
 }): ReactNode {
   return (
     <SettingsListingTable caption="Chat host">
-      <thead>
-        <tr>
-          <th scope="col">Chat host</th>
-          <th scope="col">Version</th>
-          <th scope="col" className="w-[9em]">
-            Registered
-          </th>
-          <th scope="col" className="w-[9em]">
-            Last polled
-          </th>
-          <th scope="col" className="people-col-status">
-            Status
-          </th>
-          <th scope="col" className="w-[8em]">
-            <span className="visually-hidden">Remove</span>
-          </th>
-        </tr>
-      </thead>
+      <HostListingHead name="Chat host" />
       <tbody>
         <ChatHostRow
           host={props.host}
