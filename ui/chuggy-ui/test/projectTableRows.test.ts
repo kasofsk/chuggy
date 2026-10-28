@@ -103,6 +103,14 @@ test("a row's title is the ticket's own, and absent where the wire names none", 
   expect(projectTableRow(working, undefined, false).title).toBeUndefined();
 });
 
+test("a row names the repository the ticket works in, and none where the wire names none", () => {
+  const repository = "https://github.com/acme/widgets.git";
+  expect(
+    projectTableRow({ ...working, repository }, undefined, false).repository,
+  ).toBe(repository);
+  expect(projectTableRow(working, undefined, false).repository).toBeUndefined();
+});
+
 test("a row names the member who filed the ticket, and nobody where the wire names none", () => {
   const creator = "23:https://issuer.example/user-0123456789abcdef0123";
   expect(

@@ -105,6 +105,7 @@ import {
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
+import { briefRepositoryCharsMax } from "../../src/contract/brief.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
@@ -273,6 +274,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
   const fullest = ticketResponse({
     ticket: asTicketId(3),
     title: "The ticket the contract names",
+    repository: "https://github.com/acme/widgets.git",
     creator: "23:https://issuer.example/alice",
     phase: "Escalated",
     sequence: 9,
@@ -295,6 +297,30 @@ test("a ticket read emits exactly the keys the contract names", () => {
     Object.keys(ticketResponseSchema.shape).sort(),
   );
   assert.ok(ticketResponseSchema.safeParse(fullest).success);
+});
+
+test("a ticket's repository is bounded by the brief's own", () => {
+  const ticket = {
+    ticket: 3,
+    phase: "Done",
+    sequence: 4,
+    changedAt: ticketCarried.changedAt,
+    revision: 1,
+    revokedDependencies: [],
+    openDependencies: [],
+  };
+  assert.ok(ticketResponseSchema.safeParse(ticket).success);
+  assert.ok(
+    ticketResponseSchema.safeParse({
+      ...ticket,
+      repository: "x".repeat(briefRepositoryCharsMax),
+    }).success,
+  );
+  for (const repository of ["", "x".repeat(briefRepositoryCharsMax + 1)])
+    assert.equal(
+      ticketResponseSchema.safeParse({ ...ticket, repository }).success,
+      false,
+    );
 });
 
 test("a parked ticket names its wall and an unparked one names none", () => {

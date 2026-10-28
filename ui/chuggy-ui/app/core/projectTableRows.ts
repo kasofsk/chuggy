@@ -51,6 +51,9 @@ export type ProjectTableExecutionRead =
 export interface ProjectTableRow {
   readonly ticket: number;
   readonly title: string | undefined;
+  /** The repository the ticket's released brief names, absent where the wire
+   * names none; drawn by `repositoryLabel`. */
+  readonly repository: string | undefined;
   /** The principal who filed the ticket, absent where the wire names none;
    * drawn by `creatorLabel` against the project's people. */
   readonly creator: string | undefined;
@@ -119,6 +122,7 @@ export function projectTableRow(
   return {
     ticket: ticket.ticket,
     title: ticket.title,
+    repository: ticket.repository,
     creator: ticket.creator,
     phase: ticket.phase,
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
