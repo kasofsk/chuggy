@@ -754,6 +754,8 @@ export interface ConfigurationPage {
 export interface ConfigurationPageQuery {
   readonly after?: ConfigurationPageCursor;
   readonly limit: number;
+  /** Only the newest revision of each repository configuration; a revision imported from none is its own. */
+  readonly latest?: boolean;
 }
 
 export const configurationPageLimitMax = 100;
@@ -830,6 +832,8 @@ export function checkedConfigurationPageQuery(
     throw new RangeError(
       `configuration page limit must be between 1 and ${String(configurationPageLimitMax)}`,
     );
+  if (query.latest !== undefined && typeof query.latest !== "boolean")
+    throw new TypeError("configuration page latest must be a boolean");
   return query;
 }
 

@@ -163,19 +163,24 @@ async function readConfigurations(
   query: ConfigurationPageQuery,
 ): Promise<ConfigurationPage> {
   const found = await pool.query<ConfigurationPageRow>(
-    sql`SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at::text AS created_at,
-               p.repository,p.repository_commit AS commit,p.path,p.name,
-               v.name AS version_name,v.number::text AS version_number
-          FROM configuration_revision c
-          LEFT JOIN repository_configuration_provenance p
-            USING (tenant,project,revision)
-          LEFT JOIN repository_configuration_version v
-            ON v.tenant=c.tenant AND v.project=c.project
-           AND v.name=p.name AND v.digest=p.digest
-         WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
+    sql`SELECT r.revision,r.parent,r.canonical,r.digest,r.created_at::text AS created_at,
+               r.repository,r.commit,r.path,r.name,r.version_name,r.version_number
+          FROM (SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at,
+                       p.repository,p.repository_commit AS commit,p.path,p.name,
+                       v.name AS version_name,v.number::text AS version_number,
+                       row_number() OVER (PARTITION BY p.repository,p.name
+                                          ORDER BY c.created_at DESC,c.revision DESC) AS newest
+                  FROM configuration_revision c
+                  LEFT JOIN repository_configuration_provenance p
+                    USING (tenant,project,revision)
+                  LEFT JOIN repository_configuration_version v
+                    ON v.tenant=c.tenant AND v.project=c.project
+                   AND v.name=p.name AND v.digest=p.digest
+                 WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}) r
+         WHERE (NOT ${query.latest ?? false}::boolean OR r.repository IS NULL OR r.newest=1)
            AND (${query.after?.createdAt ?? null}::timestamptz IS NULL
-                OR (c.created_at,c.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
-         ORDER BY c.created_at DESC,c.revision DESC
+                OR (r.created_at,r.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
+         ORDER BY r.created_at DESC,r.revision DESC
          LIMIT ${query.limit + 1}`,
   );
   const rows = found.rows.slice(0, query.limit);

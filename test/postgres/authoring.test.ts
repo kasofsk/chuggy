@@ -29,6 +29,7 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   canonicalConfigurationOf,
+  type ConfigurationPage,
   type ConfigurationRevisionId,
   type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
@@ -607,6 +608,89 @@ test("repository configuration imports are idempotent and expose provenance", as
       [partition.tenant, partition.project],
     ),
     [{ count: 1 }],
+  );
+});
+
+/** A project holding a bootstrap, then two imports of one repository declaring two names, oldest first. */
+async function configurationLatestProject() {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-latest",
+  );
+  const binding = await repositoryBinding(partition);
+  const bootstrap = bootstrapConfigurationRevision(binding.repository);
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision: bootstrap,
+    canonical: postgresHarnessConfiguration,
+  });
+  for (const commit of ["d".repeat(40), "e".repeat(40)])
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations: repositoryDeclarations(commit, ["review", "work"]),
+    });
+  await harness.query(
+    `UPDATE configuration_revision c SET created_at=CASE
+       (SELECT p.repository_commit FROM repository_configuration_provenance p
+         WHERE p.tenant=c.tenant AND p.project=c.project AND p.revision=c.revision)
+       WHEN $3 THEN '2026-08-22T00:00:00Z'::timestamptz
+       WHEN $4 THEN '2026-08-23T00:00:00Z'::timestamptz
+       ELSE '2026-08-21T00:00:00Z'::timestamptz END
+      WHERE c.tenant=$1 AND c.project=$2`,
+    [partition.tenant, partition.project, "d".repeat(40), "e".repeat(40)],
+  );
+  return { partition, bootstrap };
+}
+
+test("the latest configurations are the newest revision of each repository name, beside a bootstrap, paged as narrowed", async () => {
+  const { partition, bootstrap } = await configurationLatestProject();
+  const listed = (page: ConfigurationPage) =>
+    page.configurations.map(({ provenance }) =>
+      provenance.source === "Repository"
+        ? `${provenance.name}@${provenance.commit.slice(0, 1)}`
+        : "bootstrap",
+    );
+  const sorted = (rows: readonly string[]) => [...rows].sort();
+  assert.deepEqual(
+    sorted(
+      listed(await harness.authoring.configurations(partition, { limit: 10 })),
+    ),
+    ["bootstrap", "review@d", "review@e", "work@d", "work@e"],
+  );
+  const latest = await harness.authoring.configurations(partition, {
+    limit: 10,
+    latest: true,
+  });
+  assert.deepEqual(listed(latest).slice(2), ["bootstrap"]);
+  assert.deepEqual(sorted(listed(latest).slice(0, 2)), ["review@e", "work@e"]);
+  assert.equal(latest.configurations.at(-1)?.revision, bootstrap);
+  assert.equal(latest.nextAfter, undefined);
+  const first = await harness.authoring.configurations(partition, {
+    limit: 2,
+    latest: true,
+  });
+  assert.deepEqual(sorted(listed(first)), ["review@e", "work@e"]);
+  assert.ok(first.nextAfter !== undefined);
+  const second = await harness.authoring.configurations(partition, {
+    after: first.nextAfter,
+    limit: 2,
+    latest: true,
+  });
+  assert.deepEqual(listed(second), ["bootstrap"]);
+  assert.equal(second.nextAfter, undefined);
+  assert.deepEqual(
+    sorted(
+      listed(
+        await harness.authoring.configurations(partition, {
+          limit: 10,
+          latest: false,
+        }),
+      ),
+    ),
+    ["bootstrap", "review@d", "review@e", "work@d", "work@e"],
   );
 });
 
