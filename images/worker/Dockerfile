@@ -7,12 +7,6 @@ ARG ZOD_VERSION=4.5.4
 # `track-record` stage builds it and the `worker` stage holds the binary to it.
 ARG TRACK_RECORD_VERSION=0.1.0
 
-# The users a chat session runs as, for the same reason again: the
-# `worker-base` stage names them and the `generic` stage runs its toolchains
-# as one of them.
-ARG CHAT_SESSION_UID_FIRST=20000
-ARG CHAT_SESSION_UID_COUNT=32
-
 # EVERY TARGET BUILDS FOR linux/amd64 AND linux/arm64, so that a runner on an
 # arm64 host runs the image natively, and the runtime a pool mounts beside a
 # job's image can be the image's own architecture. Each `FROM` names a
@@ -128,7 +122,11 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   bin/claude    the Claude Code the core and a session's SDK both run
 #   bin/codex     the Codex the core runs
 #   bin/tini      the init `check.sh` starts the core under, which reaps what
-#                 a job orphans
+#                 a job orphans, and the one a chat container starts the
+#                 supervisor under, as root:
+#                 `bin/tini -s -- bin/node lib/chuggy/chatSupervisor.mjs`,
+#                 holding CHOWN, DAC_OVERRIDE, FOWNER, FSETID, SETUID, SETGID
+#                 and SETPCAP and no other capability, with no new privileges
 #   lib/chuggy/   the shipped core, its entry both as `worker.mjs`, the name a
 #                 job starts it by, and as `entrypoint.mjs`, the name its own
 #                 modules start a chat session by and import it by, and the
@@ -398,20 +396,27 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' \
 # the core's supervisor as root, and it starts each session through `setpriv`
 # and `prlimit` as a user of its own range, whose group is the same number and
 # whose home is under `/sessions`. Git, ssh and node's `os.userInfo()` look up
-# the user they run as, and refuse one the image does not name. The range is
-# the core's `chatSessionUidFirst` and `chatSessionUidCount`. The groups a
-# session reads its mirror through are left unnamed: git, ssh and node look up
-# none of them by name, and git holds a tree to its owner's user and not its
-# group. `id` and `groups` print such a group by its number, and say they could
-# not find its name.
-ARG CHAT_SESSION_UID_FIRST
-ARG CHAT_SESSION_UID_COUNT
-RUN uid="$CHAT_SESSION_UID_FIRST" \
-  && last="$((CHAT_SESSION_UID_FIRST + CHAT_SESSION_UID_COUNT - 1))" \
+# the user they run as, and refuse one the image does not name. The range and
+# the directory the homes are under are read off the core, as the
+# `chatSessionUidFirst`, `chatSessionUidCount` and `chatSessionsDirectory` of
+# its `chatSession.mjs`. The groups a session reads its mirror through are left
+# unnamed: git, ssh and node look up none of them by name, and git holds a tree
+# to its owner's user and not its group. `id` and `groups` print such a group by
+# its number, and say they could not find its name.
+RUN /opt/chuggy/bin/node --input-type=module --eval ' \
+    import { chatSessionUidCount, chatSessionUidFirst, chatSessionsDirectory } \
+      from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
+    console.log(`${chatSessionUidFirst} ${chatSessionUidCount} ${chatSessionsDirectory}`); \
+  ' > /tmp/sessions.txt \
+  && read -r first count sessions < /tmp/sessions.txt \
+  && rm /tmp/sessions.txt \
+  && uid="$first" \
+  && last="$((first + count - 1))" \
+  && echo "chat sessions: users $first to $last, homes under $sessions" \
   && while [ "$uid" -le "$last" ]; do \
        groupadd --gid "$uid" "chat-$uid" \
        && useradd --uid "$uid" --gid "$uid" --no-create-home --no-log-init \
-         --home-dir "/sessions/session-$uid/home" --shell /bin/bash "chat-$uid" \
+         --home-dir "$sessions/session-$uid/home" --shell /bin/bash "chat-$uid" \
        || exit 1; \
        uid="$((uid + 1))"; \
      done \
@@ -590,7 +595,6 @@ RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
 FROM worker-base AS generic
 USER 0:0
 ARG TARGETARCH
-ARG CHAT_SESSION_UID_FIRST
 ARG UV_VERSION=0.12.21
 ARG UV_SHA256_AMD64=23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0
 ARG UV_SHA256_ARM64=030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51
@@ -643,9 +647,13 @@ RUN case "$TARGETARCH" in \
        echo "$writable"; \
        exit 1; \
      fi \
+  && first="$(/opt/chuggy/bin/node --input-type=module --eval ' \
+    import { chatSessionUidFirst } from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
+    console.log(chatSessionUidFirst); \
+  ')" \
   && home="$(mktemp -d)" \
-  && chown "$CHAT_SESSION_UID_FIRST:$CHAT_SESSION_UID_FIRST" "$home" \
-  && setpriv --reuid "$CHAT_SESSION_UID_FIRST" --regid "$CHAT_SESSION_UID_FIRST" \
+  && chown "$first:$first" "$home" \
+  && setpriv --reuid "$first" --regid "$first" \
     --clear-groups env -u CARGO_HOME HOME="$home" /bin/sh -c ' \
       cargo --version && rustc --version && cargo clippy --version \
       && if mkdir "$RUSTUP_HOME/toolchains/probe" 2>/dev/null \
