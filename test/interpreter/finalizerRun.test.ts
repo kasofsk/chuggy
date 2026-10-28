@@ -40,6 +40,7 @@ import {
   type ChangeProposalRead,
   type ChangeProposalReconciliationStored,
   type ChangeProposalRequest,
+  type ChangeProposalUpdated,
   type OpenedChangeProposalPublication,
 } from "../../src/interpreter/changeProposal.ts";
 import type {
@@ -81,7 +82,10 @@ import {
   type GitEvidence,
   type FinalizationView,
   type FinalizerStore,
+  type GitObjectId,
   type GitPromotionPort,
+  type HeadAdoption,
+  type HeadAdoptionQuestion,
   type HeldPermit,
   type PermitGranted,
   type PermitRequest,
@@ -279,10 +283,17 @@ interface FinalizerRecorder
   proposalMergeRefusals: number;
   proposalMergeDeclines: number;
   proposalMergeReadings: number;
-  proposalMerge?: ChangeProposalMergeAnswer;
+  proposalMerge?: ChangeProposalMergeAnswer | undefined;
   proposalMergeReading?: ChangeProposalMergeReconciliationStored | undefined;
   /** How many seconds ago the store says the forge was last heard about the merge, which a case moves to stand for the clock. */
   proposalMergeHeardAgeSecs: number;
+  /** The head adopted in place of the one asked for, and the counters updating it keeps. */
+  proposalMergeHead?: GitObjectId;
+  proposalUpdates: number;
+  proposalUpdateDeclines: number;
+  proposalUpdateUnread: boolean;
+  /** Whether it is this proposal's turn among those behind on its base, which a case sets to stand for its siblings. */
+  proposalUpdateTurn: boolean;
   /** Whether this store can hold the evidence an answer carries at all. */
   unstorable?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
@@ -381,6 +392,7 @@ function recordingProposals(
       return Promise.resolve({ wrote: "Row" });
     },
     ...recordingProposalMerges(store),
+    ...recordingProposalUpdates(store),
   };
 }
 
@@ -395,6 +407,14 @@ function recordedProposalOf(
         asked,
         publication: proposalPublicationOf(own),
         merging: proposalMergingOf(own),
+        ...(own.proposalMergeHead === undefined
+          ? {}
+          : { adopted: own.proposalMergeHead }),
+        updating: {
+          updates: own.proposalUpdates - own.proposalUpdateDeclines,
+          unread: own.proposalUpdateUnread,
+          turn: own.proposalUpdateTurn,
+        },
       };
 }
 
@@ -468,9 +488,66 @@ function recordingProposalMerges(
             ? { reconciled: "Unstorable" }
             : record.result.reconciled;
         if (inFlight) own.proposalMergeReadings += 1;
+        own.proposalUpdateUnread = false;
       }
       own.proposalMergeHeardAgeSecs = 0;
       own.mergeResults.push(record);
+      return Promise.resolve({ wrote: "Row" });
+    },
+  };
+}
+
+/**
+ * The updating half of that row: an update is counted before it is asked and
+ * stands unread until a reading is recorded, a decline releases it unspent,
+ * and a head is adopted only where the kept reading found the proposal there,
+ * a moved head's answer giving way to it with the merge it answered released.
+ */
+function recordingProposalUpdates(
+  store: () => FinalizerRecorder,
+): Pick<
+  FinalizerProposalStore,
+  | "markChangeProposalUpdate"
+  | "recordChangeProposalUpdate"
+  | "adoptChangeProposalHead"
+> {
+  return {
+    markChangeProposalUpdate: () => {
+      const own = store();
+      if (
+        !proposalMergeAwaited(own) ||
+        own.proposalMerge !== undefined ||
+        own.proposalUpdateUnread ||
+        !own.proposalUpdateTurn
+      )
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalUpdates += 1;
+      own.proposalUpdateUnread = true;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    recordChangeProposalUpdate: (_claim, write) => {
+      const own = store();
+      if (!own.proposalUpdateUnread)
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalUpdateUnread = write === "Asked";
+      if (write === "Declined") own.proposalUpdateDeclines += 1;
+      else own.proposalMergeHeardAgeSecs = 0;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    adoptChangeProposalHead: (_claim, head) => {
+      const own = store();
+      const reading = own.proposalMergeReading;
+      if (
+        !proposalMergeAwaited(own) ||
+        reading?.reconciled !== "Unmerged" ||
+        reading.evidence.head.commit !== head
+      )
+        return Promise.resolve({ wrote: "Nothing" });
+      own.proposalMergeHead = head;
+      if (own.proposalMerge?.merged === "HeadMoved") {
+        own.proposalMerge = undefined;
+        own.proposalMergeRefusals += 1;
+      }
       return Promise.resolve({ wrote: "Row" });
     },
   };
@@ -625,6 +702,10 @@ function recordingProposalCounters(): Pick<
   | "proposalMergeDeclines"
   | "proposalMergeReadings"
   | "proposalMergeHeardAgeSecs"
+  | "proposalUpdates"
+  | "proposalUpdateDeclines"
+  | "proposalUpdateUnread"
+  | "proposalUpdateTurn"
 > {
   return {
     proposalAttempts: 0,
@@ -636,6 +717,10 @@ function recordingProposalCounters(): Pick<
     proposalMergeDeclines: 0,
     proposalMergeReadings: 0,
     proposalMergeHeardAgeSecs: 0,
+    proposalUpdates: 0,
+    proposalUpdateDeclines: 0,
+    proposalUpdateUnread: false,
+    proposalUpdateTurn: true,
   };
 }
 
@@ -739,6 +824,7 @@ interface GitRecorder extends GitPromotionPort {
   readonly preparations: CandidatePreparation[];
   readonly sourcePreparations: CandidateSourcePreparation[];
   readonly integrations: CandidateIntegration[];
+  readonly adoptions: HeadAdoptionQuestion[];
   promoted: CandidatePromoted;
   proved: AncestryProved;
   observed: TargetObserved;
@@ -746,6 +832,7 @@ interface GitRecorder extends GitPromotionPort {
   /** What a source preparation answers, and `prepared` where a case names nothing of its own. */
   preparedSource?: CandidateSourcePrepared;
   integrated: CandidateIntegrated;
+  adoptable: HeadAdoption;
 }
 
 /**
@@ -761,6 +848,8 @@ function recordingGit(): GitRecorder {
     preparations: [],
     sourcePreparations: [],
     integrations: [],
+    adoptions: [],
+    adoptable: "Adoptable",
     promoted: { promoted: "Advanced" },
     proved: { proved: "Ancestor", observed: asGitObjectId(commitOf("c")) },
     observed: { observed: "Target", target: attemptOf("any").target },
@@ -805,6 +894,10 @@ function recordingGit(): GitRecorder {
     proveCandidateAncestry: (proof) => {
       own.proofs.push(proof);
       return Promise.resolve(own.proved);
+    },
+    proveHeadAdoptable: (question) => {
+      own.adoptions.push(question);
+      return Promise.resolve(own.adoptable);
     },
   };
   return own;
@@ -939,6 +1032,10 @@ interface ForgeRecorder extends ChangeProposalPort {
   readonly reads: ChangeProposalRequest[];
   readonly merges: ChangeProposalMergeRequest[];
   readonly numbered: ChangeProposalMergeRequest[];
+  readonly updates: ChangeProposalMergeRequest[];
+  /** Whether the update was counted on the row before it was asked. */
+  readonly updatedBeforeUpdate: boolean[];
+  updated: ChangeProposalUpdated;
   /** Whether the row saying a create may have happened was already there when it was called. */
   readonly openedBeforeCreate: boolean[];
   /** Whether the row saying a merge may have happened was already there when it was called. */
@@ -987,6 +1084,9 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
     reads: [],
     merges: [],
     numbered: [],
+    updates: [],
+    updatedBeforeUpdate: [],
+    updated: { updated: "Accepted" },
     openedBeforeCreate: [],
     mergedBeforeMerge: [],
     created: "Ambiguous",
@@ -1037,6 +1137,11 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
       own.merges.push(request);
       own.mergedBeforeMerge.push(store.proposalMergeAttempts > 0);
       return Promise.resolve(own.merged);
+    },
+    updateBranch: (request) => {
+      own.updates.push(request);
+      own.updatedBeforeUpdate.push(store.proposalUpdateUnread);
+      return Promise.resolve(own.updated);
     },
   };
   return own;
@@ -1890,14 +1995,9 @@ function mergingService(
   store: FinalizerRecorder,
   forge: ForgeRecorder,
   bounds: Partial<typeof finalizerDefaults> = {},
+  git: GitPromotionPort = recordingGit(),
 ): FinalizerService {
-  return proposingService(
-    store,
-    recordingGit(),
-    forge,
-    bounds,
-    "PullRequestMerge",
-  );
+  return proposingService(store, git, forge, bounds, "PullRequestMerge");
 }
 
 test("a merging brief asks for the merge its proved proposal authorizes and concludes on the commit", async () => {
@@ -2028,6 +2128,7 @@ const blockedEvidence: Partial<ChangeProposalEvidence> = {
 function blockedCase(bounds: Partial<typeof finalizerDefaults> = {}): {
   readonly store: FinalizerRecorder;
   readonly forge: ForgeRecorder;
+  readonly git: GitRecorder;
   readonly service: FinalizerService;
   readonly emitted: FinalizerHoldReason[];
 } {
@@ -2039,14 +2140,15 @@ function blockedCase(bounds: Partial<typeof finalizerDefaults> = {}): {
   forge.created = "Created";
   forge.merged = { merged: "NotMergeable", reason: "Blocked" };
   forge.numberEvidence = blockedEvidence;
+  const git = recordingGit();
   const service = {
-    ...mergingService(store, forge, bounds),
+    ...mergingService(store, forge, bounds, git),
     metrics: finalizerTelemetry({
       ...silentFinalizerMetrics,
       holding: (reason) => emitted.push(reason),
     }),
   };
-  return { store, forge, service, emitted };
+  return { store, forge, git, service, emitted };
 }
 
 /** Drives a blocked case from nothing to the merge waiting on the forge: the create, the merge, its reading, and the wait. */
@@ -2335,8 +2437,10 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "HeadMoved" };
+  const git = recordingGit();
+  git.adoptable = "Unadoptable";
   const service = {
-    ...mergingService(store, forge, { holdPassesMax: 2 }),
+    ...mergingService(store, forge, { holdPassesMax: 2 }, git),
     metrics: finalizerTelemetry({
       ...silentFinalizerMetrics,
       holding: (reason) => emitted.push(reason),
@@ -2360,6 +2464,11 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
   assert.equal(forge.numbered.length, 1);
   assert.equal(forge.merges.length, 1, "a moved head is merged by nobody here");
   assert.deepEqual(store.concluded, [], "and its wait never escalates");
+  assert.deepEqual(
+    git.adoptions.map((asked) => [asked.pinned, asked.head]),
+    Array(2).fill([forge.merges[0]?.headCommit, pushed.commit]),
+    "git was asked whether the pushed head is the proposed one brought up to date, each pass the reading stood",
+  );
 
   forge.numberEvidence = {
     head: pushed,
@@ -2382,36 +2491,147 @@ test("a moved head waits on whoever moved it, is never merged again, and lands o
   );
 });
 
-test("a merge after the forge updated the branch lands, the finalizer itself having asked only for the head it proposed", async () => {
-  const { store, forge, service } = blockedCase();
+/** The evidence a reading of a proposal its base has moved past answers with. */
+const behindEvidence: Partial<ChangeProposalEvidence> = {
+  mergeability: "Behind",
+  mergeState: asProposalMergeState("behind"),
+};
+
+test("a proposal behind its base is updated at the head it proposed, adopted at the head that made, and merged there", async () => {
+  const { store, forge, git, service } = blockedCase();
+  forge.numberEvidence = behindEvidence;
   await blockedWaiting(service, store);
   const proposed = forge.merges[0]?.headCommit;
-  const updated = movedHead(store, commitOf("9"));
 
-  forge.numberEvidence = { head: updated, mergeability: "Mergeable" };
-  forge.merged = { merged: "HeadMoved" };
-  rereadDue(store);
-  await passOver(service);
-  await passOver(service);
-
-  assert.equal(forge.merges.length, 2);
-  assert.ok(
-    forge.merges.every((merge) => merge.headCommit === proposed),
-    "every merge this finalizer asked for was conditional on the head it proposed",
+  const updating = await passOver(service);
+  assert.equal(updating.proposals, 1);
+  assert.deepEqual(
+    forge.updates.map((update) => update.headCommit),
+    [proposed],
+    "the update expects the head this request proposed",
   );
-  assert.equal(proposalMergingOf(store).merging, "Moved");
+  assert.deepEqual(forge.updatedBeforeUpdate, [true], "counted before asked");
+  await passOver(service);
+  assert.equal(forge.updates.length, 1, "an unread update is waited out");
 
-  forge.numberEvidence = {
-    head: updated,
-    status: "Merged",
-    mergeCommit: asGitObjectId(commitOf("f")),
+  const updated = movedHead(store, commitOf("9"));
+  forge.numberEvidence = { head: updated, mergeability: "Mergeable" };
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
   };
   rereadDue(store);
   await passOver(service);
+  assert.equal(store.proposalUpdateUnread, false, "the reading saw the update");
+  await passOver(service);
+  assert.equal(store.proposalMergeHead, updated.commit);
+  assert.deepEqual(
+    git.adoptions.map((asked) => [asked.pinned, asked.head]),
+    [[proposed, updated.commit]],
+  );
+  await passOver(service);
   const proved = await passOver(service);
 
+  assert.deepEqual(
+    forge.merges.map((merge) => merge.headCommit),
+    [proposed, updated.commit],
+    "the second merge was conditional on the head the update made",
+  );
   assert.equal(proved.conclusions, 1);
-  assert.equal(forge.merges.length, 2, "the person's merge was theirs to make");
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+});
+
+test("a proposal behind waits for another on its base, and updates nothing past its ceiling", async () => {
+  const { store, forge, service } = blockedCase({
+    proposalUpdatesMax: 1,
+    holdPassesMax: 2,
+  });
+  forge.numberEvidence = behindEvidence;
+  await blockedWaiting(service, store);
+
+  store.proposalUpdateTurn = false;
+  await passOver(service);
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  assert.equal(forge.updates.length, 0, "another proposal holds the turn");
+
+  store.proposalUpdateTurn = true;
+  await passOver(service);
+  assert.equal(forge.updates.length, 1);
+
+  rereadDue(store);
+  await passOver(service);
+  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+  assert.equal(forge.updates.length, 1, "the ceiling is one update");
+  assert.deepEqual(store.concluded[0], {
+    outcome: "FinalizationResultUnavailable",
+    kind: "ProposalMergesExhausted",
+  });
+});
+
+test("an update the forge refused is spent and read, and one it would not take is spent on nothing", async () => {
+  const { store, forge, service } = blockedCase();
+  forge.numberEvidence = behindEvidence;
+  await blockedWaiting(service, store);
+
+  forge.updated = { updated: "Unavailable" };
+  await passOver(service);
+  assert.equal(store.proposalUpdateUnread, false);
+  assert.equal(store.proposalUpdates - store.proposalUpdateDeclines, 0);
+
+  forge.updated = { updated: "Refused" };
+  await passOver(service);
+  assert.equal(store.proposalUpdateUnread, false, "a refusal is an answer");
+  assert.equal(store.proposalUpdates - store.proposalUpdateDeclines, 1);
+});
+
+test("a branch a person brought up to date is adopted after the merge it moved, and merged at", async () => {
+  const store = recordingStore([
+    proposedView("request-one", "PullRequestMerge"),
+  ]);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "HeadMoved" };
+  const git = recordingGit();
+  git.adoptable = "Unread";
+  const service = mergingService(store, forge, {}, git);
+  await passOver(service);
+  await passOver(service);
+  assert.equal(proposalMergingOf(store).merging, "Moved");
+  const proposed = forge.merges[0]?.headCommit;
+
+  const updated = movedHead(store, commitOf("9"));
+  forge.numberEvidence = { head: updated, mergeability: "Mergeable" };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  assert.equal(
+    forge.merges.length,
+    1,
+    "no merge is spent on a head git could not prove",
+  );
+
+  git.adoptable = "Adoptable";
+  await passOver(service);
+  assert.equal(store.proposalMergeHead, updated.commit);
+  assert.equal(
+    proposalMergingOf(store).merging,
+    "Waiting",
+    "the moved head's answer gave way to the head adopted",
+  );
+  forge.merged = {
+    merged: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.deepEqual(
+    forge.merges.map((merge) => merge.headCommit),
+    [proposed, updated.commit],
+  );
+  assert.equal(proved.conclusions, 1);
   assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
 });
 

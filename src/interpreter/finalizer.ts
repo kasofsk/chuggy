@@ -1113,6 +1113,27 @@ export type AncestryProved =
   | { readonly proved: "Unreadable"; readonly evidence: GitEvidence };
 
 /**
+ * One head a proposal was read at that is not the head pinned for it, and the
+ * two branches it stands between. Adopting it is asking whether it is the
+ * pinned head brought up to date with the base and nothing more.
+ */
+export interface HeadAdoptionQuestion {
+  readonly repository: RepositoryBinding;
+  readonly pinned: GitObjectId;
+  readonly head: GitObjectId;
+  readonly headRef: GitRefName;
+  readonly baseRef: GitRefName;
+}
+
+/**
+ * What git proved of such a head. `Adoptable` is a merge whose first parent is
+ * the pinned head, whose second is a commit on the base, and whose tree is the
+ * one a clean merge of those two gives; `Unadoptable` is any other commit; and
+ * `Unread` is a remote or a scratch that could not answer.
+ */
+export type HeadAdoption = "Adoptable" | "Unadoptable" | "Unread";
+
+/**
  * Git, behind a typed port so the durable state machine can be driven without a
  * remote. A non-zero exit is one of the values below; only git being unable to
  * run at all raises.
@@ -1141,6 +1162,9 @@ export interface GitPromotionPort {
 
   /** Reads back whether the target ref proves the candidate reached it. */
   proveCandidateAncestry(proof: AncestryProof): Promise<AncestryProved>;
+
+  /** Reads whether a proposal's head is its pinned head brought up to date with its base. */
+  proveHeadAdoptable(question: HeadAdoptionQuestion): Promise<HeadAdoption>;
 }
 
 /** What resolving a repository credential found, a denial kept apart from an outage. */
@@ -1193,6 +1217,7 @@ export interface FinalizerConfig {
   readonly proposalReconciliationsMax: number;
   readonly proposalMergesMax: number;
   readonly proposalMergeReadingsMax: number;
+  readonly proposalUpdatesMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -1210,6 +1235,7 @@ export const finalizerDefaults: FinalizerConfig = {
   proposalReconciliationsMax: 3,
   proposalMergesMax: 3,
   proposalMergeReadingsMax: 3,
+  proposalUpdatesMax: 3,
 };
 
 /**
