@@ -85,6 +85,7 @@ export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
 export const accessPlaneRole = "chuggy_access_plane";
+export const metricsPlaneRole = "chuggy_metrics_plane";
 export const workerPoolFenceFunction = "fence_worker_pool_attempts";
 export const workerPoolReleaseFunction = "release_worker_pool_assignment";
 export const poolSessionsAwaitingFunction = "pool_sessions_awaiting_claim";

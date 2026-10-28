@@ -57,6 +57,7 @@
     "start:scheduler": "node --experimental-strip-types src/roots/scheduler.ts",
     "start:ticket-service": "node --experimental-strip-types src/roots/ticketService.ts",
     "start:worker-plane": "node --experimental-strip-types src/roots/workerPlane.ts",
+    "start:metrics-plane": "node --experimental-strip-types src/roots/metricsPlane.ts",
     "provision:forge-installation": "node --experimental-strip-types src/roots/provisionForgeInstallation.ts",
     "provision:project-access": "node --experimental-strip-types src/roots/provisionProjectAccess.ts",
     "provision:access-defaults": "node --experimental-strip-types src/roots/provisionAccessDefaults.ts",

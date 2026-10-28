@@ -48,6 +48,12 @@ export type WorkloadTaskPosition =
       readonly evaluator: number;
     };
 
+/** One task of a catalog with the names the catalog holds it under: its workload's, and an evaluator's stage's. */
+export interface NamedWorkloadTask extends WorkloadTask {
+  readonly name: string;
+  readonly stage?: string;
+}
+
 /**
  * The workload one task of a catalog runs, or none where the catalog, the
  * selection or the task's position does not name one. The stage is the
@@ -60,6 +66,19 @@ export function catalogWorkloadTask(
   selection: ConfigurationSelection | undefined,
   position: WorkloadTaskPosition,
 ): WorkloadTask | undefined {
+  const task = catalogNamedWorkloadTask(value, overrides, selection, position);
+  return task === undefined
+    ? undefined
+    : { workload: task.workload, ticketChecks: task.ticketChecks };
+}
+
+/** The workload one task of a catalog runs, as `catalogWorkloadTask` reads it, with the names it was resolved by. */
+export function catalogNamedWorkloadTask(
+  value: unknown,
+  overrides: ConfigurationOverrides | undefined,
+  selection: ConfigurationSelection | undefined,
+  position: WorkloadTaskPosition,
+): NamedWorkloadTask | undefined {
   const ready = workloadConfigurationReadiness(
     configurationWithOverrides(value, { workloads: overrides?.workloads }),
   );
@@ -67,17 +86,19 @@ export function catalogWorkloadTask(
   const selected = selectedCatalogEntries(ready.configuration, selection);
   if (selected.selected !== "Selected") return undefined;
   if (position.taskKind === "Work")
-    return { workload: selected.value.work.workload, ticketChecks: false };
+    return { ...selected.value.work, ticketChecks: false };
   const stage = position.stage + 1;
   const evaluator = selectedEvaluatorWorkload(
     selected.value,
     stage,
     position.evaluator,
   );
-  if (evaluator === undefined) return undefined;
+  const named = selected.value.plan.stages[position.stage]?.name;
+  if (evaluator === undefined || named === undefined) return undefined;
   const commanded = selectedFirstCommandsEvaluator(selected.value);
   return {
-    workload: evaluator.workload,
+    ...evaluator,
+    stage: named,
     ticketChecks:
       commanded?.stage === stage && commanded.evaluator === position.evaluator,
   };

@@ -88,6 +88,7 @@ import { migration087 } from "./087-memory-ceiling.ts";
 import { migration088 } from "./088-lead-reads-docs.ts";
 import { migration089 } from "./089-lead-reads-abilities.ts";
 import { migration090 } from "./090-chat-host.ts";
+import { migration091 } from "./091-metrics-plane.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -181,4 +182,5 @@ export const migrations: readonly Migration[] = [
   migration088,
   migration089,
   migration090,
+  migration091,
 ];

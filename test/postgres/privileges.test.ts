@@ -9,6 +9,7 @@ import {
   cancellationFunction,
   configurationImporterRole,
   finalizerRole,
+  metricsPlaneRole,
   notificationPublishFunction,
   poolPlaneRole,
   projectChangeAppendFunction,
@@ -84,6 +85,7 @@ after(async () => {
 test("every runtime role may read only the migration ledger contract", async () => {
   for (const role of [
     accessPlaneRole,
+    metricsPlaneRole,
     apiRole,
     ticketServiceRole,
     selectorServiceRole,
@@ -238,6 +240,48 @@ test("the access plane's role reaches its invite links and is refused every rela
   ] as const)
     assert.match(
       (await harness.attemptAs(accessPlaneRole, statement)) ?? "",
+      postgresHarnessDenial(relation),
+      statement,
+    );
+});
+
+test("the metrics plane's role reads the columns its scrape names and nothing else", async () => {
+  for (const statement of [
+    `SELECT tenant,project,execution,ticket,task,source_request,owner,placement,configuration_revision FROM execution`,
+    "SELECT tenant,project,request,task,kind,stage,evaluator FROM execution_request_task",
+    "SELECT tenant,project,ticket,selection,overrides FROM ticket_definition",
+    "SELECT tenant,project,execution,attempt,state,personal,opened_at,ended_at FROM execution_attempt",
+    "SELECT tenant,project,execution,attempt,turns,duration_ms,duration_api_ms FROM execution_run_total",
+    "SELECT model,tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,cost_usd_micros FROM execution_run_model_usage",
+    "SELECT tenant,project,revision,canonical FROM configuration_revision",
+    "SELECT tenant,project,session,state,model,tokens,cost_micros,duration_ms,ended_at FROM session_turn",
+    "SELECT tenant,project,session,kind,principal FROM agent_session",
+    "SELECT tenant,project,phase FROM ticket_projection",
+  ])
+    assert.equal(
+      await harness.attemptAs(metricsPlaneRole, statement),
+      undefined,
+      statement,
+    );
+  for (const [statement, relation] of [
+    ["SELECT pool FROM execution_attempt", "execution_attempt"],
+    ["SELECT workload FROM execution_attempt", "execution_attempt"],
+    ["SELECT capability FROM execution_attempt", "execution_attempt"],
+    ["SELECT requirement_value FROM execution", "execution"],
+    ["SELECT definition FROM ticket_definition", "ticket_definition"],
+    ["SELECT input FROM session_turn", "session_turn"],
+    ["SELECT result FROM session_turn", "session_turn"],
+    ["SELECT system_prompt FROM agent_session", "agent_session"],
+    [
+      "SELECT authority_subject FROM configuration_revision",
+      "configuration_revision",
+    ],
+    ["SELECT * FROM project", "project"],
+    ["SELECT * FROM journal_entry", "journal_entry"],
+    ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
+  ] as const)
+    assert.match(
+      (await harness.attemptAs(metricsPlaneRole, statement)) ?? "",
       postgresHarnessDenial(relation),
       statement,
     );
