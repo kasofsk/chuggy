@@ -1,8 +1,9 @@
 /**
  * The worker image against this tree. The image runs the worker core at the
  * commit `images/worker/core.json` pins, and its build holds everything it can
- * read off itself; what it cannot read is the server its pods call, and the
- * variable the work launcher leaves to the image.
+ * read off itself; what it cannot read is the server its pods call, the
+ * variable the work launcher leaves to the image, and an artifact outside the
+ * runtime fetched for the wrong architecture.
  *
  * THE PIN'S RELEASE IS HELD TO THE RANGE THE PLANES ACCEPT, which is what a
  * pod's every request is refused against. Raising a plane's floor past it turns
@@ -30,6 +31,9 @@ const dockerfilePath = new URL(
   "../../images/worker/Dockerfile",
   import.meta.url,
 );
+
+/** The architectures every target is built for, as BuildKit's `TARGETARCH` names them. */
+const dockerArchitectures = ["amd64", "arm64"] as const;
 
 /** One build stage: what it is built from and the environment it sets itself. */
 interface DockerStage {
@@ -133,14 +137,58 @@ test("each image names the workspace a work pod reads", () => {
   }
 });
 
-test("the glibc a configuration's image is told it needs is the runtime's own floor", () => {
-  const floor = dockerArgumentDefault(
+test("the glibc a configuration's image is told it needs is the runtime's own floor on each architecture", () => {
+  const text = readFileSync(dockerfilePath, "utf8");
+  for (const architecture of dockerArchitectures) {
+    const name = `RUNTIME_VERSION_FLOOR_${architecture.toUpperCase()}`;
+    const floor = dockerArgumentDefault(text, name);
+    assert.ok(floor !== undefined, `the runtime's build states no ${name}`);
+    const glibc = floor
+      .split(" ")
+      .filter((version) => version.startsWith("GLIBC_"));
+    assert.deepEqual(glibc, [`GLIBC_${configurationImageGlibcVersionMin}`]);
+  }
+});
+
+/** Catches a pin made for one architecture alone, and an artifact named for one that `TARGETARCH` does not choose. */
+test("whatever is made for one architecture is chosen by TARGETARCH, and for each", () => {
+  const suffixes = dockerArchitectures.map((name) => name.toUpperCase());
+  const pinned = new Map<string, string[]>();
+  let choices = 0;
+  for (const instruction of dockerInstructions(
     readFileSync(dockerfilePath, "utf8"),
-    "RUNTIME_VERSION_FLOOR",
-  );
-  assert.ok(floor !== undefined, "the runtime's build states no floor");
-  const glibc = floor
-    .split(" ")
-    .filter((version) => version.startsWith("GLIBC_"));
-  assert.deepEqual(glibc, [`GLIBC_${configurationImageGlibcVersionMin}`]);
+  )) {
+    const argument = /^ARG ([A-Z0-9_]+)_(AMD64|ARM64)=/u.exec(instruction);
+    if (argument !== null) {
+      const [, stem = "", suffix = ""] = argument;
+      pinned.set(stem, [...(pinned.get(stem) ?? []), suffix]);
+      continue;
+    }
+    const unchosen = instruction.replace(
+      /\bcase "\$TARGETARCH" in (.*?) esac\b/gu,
+      (_choice, arms: string) => {
+        choices += 1;
+        for (const architecture of dockerArchitectures)
+          assert.match(
+            arms,
+            new RegExp(`(^|\\s)${architecture}\\)`, "u"),
+            `a choice on TARGETARCH has no ${architecture} arm: ${arms}`,
+          );
+        return "";
+      },
+    );
+    assert.doesNotMatch(
+      unchosen,
+      /x86[_-]64|\bx64\b|amd64|aarch64|arm64/u,
+      `this names an architecture outside a choice on TARGETARCH: ${instruction}`,
+    );
+  }
+  assert.ok(pinned.size > 0, "the image pins nothing per architecture");
+  assert.ok(choices > 0, "the image chooses nothing by TARGETARCH");
+  for (const [stem, found] of pinned)
+    assert.deepEqual(
+      found.toSorted(),
+      suffixes,
+      `${stem} is pinned for ${found.join(" and ")}`,
+    );
 });

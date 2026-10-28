@@ -7,6 +7,14 @@ ARG ZOD_VERSION=4.5.4
 # `track-record` stage builds it and the `worker` stage holds the binary to it.
 ARG TRACK_RECORD_VERSION=0.1.0
 
+# EVERY TARGET BUILDS FOR linux/amd64 AND linux/arm64, so that a runner on an
+# arm64 host runs the image natively, and the runtime a pool mounts beside a
+# job's image can be the image's own architecture. Each `FROM` names a
+# multi-architecture index, so a stage takes the variant of the platform it is
+# built for. What this file names for one architecture is selected by
+# BuildKit's `TARGETARCH` and pinned for each, and a stage refuses an
+# architecture it has no build of.
+
 # The base every stage builds from. The image one attempt runs in is built by
 # the fabric, in a pod whose only way out of the cluster is public HTTPS on
 # 443.
@@ -128,13 +136,14 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # the check from it.
 #
 # CLAUDE CODE IS THE SDK'S OWN. The Agent SDK spawns the binary shipped inside
-# it as `@anthropic-ai/claude-agent-sdk-linux-x64`, and `bin/claude` is a link
-# to that file, so a job and a session run one Claude Code. `CLAUDE_CODE_VERSION`
-# names it, and the build fails unless that binary reports it; `just
-# bump-claude-code` moves it with `AGENT_SDK_VERSION`. The SDK's `zod` peer is
-# pinned beside it: `sdkProbe.mjs` reads the SDK's own declared range and fails
-# the build where the pin no longer satisfies it. The pin is declared at the top
-# of this file, where the `core` stage holds it to the core's lock.
+# it as its platform package, `@anthropic-ai/claude-agent-sdk-linux-x64` or
+# `-linux-arm64`, and `bin/claude` is a link to that file, so a job and a
+# session run one Claude Code. `CLAUDE_CODE_VERSION` names it, and the build
+# fails unless that binary reports it; `just bump-claude-code` moves it with
+# `AGENT_SDK_VERSION`. The SDK's `zod` peer is pinned beside it: `sdkProbe.mjs`
+# reads the SDK's own declared range and fails the build where the pin no
+# longer satisfies it. The pin is declared at the top of this file, where the
+# `core` stage holds it to the core's lock.
 #
 # CODEX IS ITS STATIC BUILD. npm's `codex` is a node script that finds its
 # platform package's binary and spawns it; the tree ships that binary alone,
@@ -146,11 +155,13 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # libstdc++ asks for a newer glibc than node does, which would raise the floor
 # stated below.
 FROM base AS runtime
+ARG TARGETARCH
 ARG CLAUDE_CODE_VERSION=2.1.282
 ARG CODEX_VERSION=0.151.0
 ARG AGENT_SDK_VERSION=0.3.282
 ARG TINI_VERSION=0.19.0
-ARG TINI_SHA256=c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee
+ARG TINI_SHA256_AMD64=c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee
+ARG TINI_SHA256_ARM64=eae1d3aa50c48fb23b8cbdf4e369d0910dfc538566bfd09df89a774aa84a48b9
 ARG ZOD_VERSION
 
 # The packages the core imports, installed as one tree, so that npm keeps a
@@ -169,18 +180,28 @@ RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
 
 # The platform package npm's `codex` names as its optional dependency, of which
 # only the binary is kept.
-RUN cd /tmp \
-  && npm pack --silent "@openai/codex@${CODEX_VERSION}-linux-x64" > /tmp/codex.txt \
+RUN case "$TARGETARCH" in \
+       amd64) platform=linux-x64 triple=x86_64-unknown-linux-musl ;; \
+       arm64) platform=linux-arm64 triple=aarch64-unknown-linux-musl ;; \
+       *) echo "Codex has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && cd /tmp \
+  && npm pack --silent "@openai/codex@${CODEX_VERSION}-${platform}" > /tmp/codex.txt \
   && read -r packed < /tmp/codex.txt \
   && tar --extract --gzip --file "/tmp/$packed" --directory /tmp \
-    package/vendor/x86_64-unknown-linux-musl/bin/codex \
-  && install -m 0755 /tmp/package/vendor/x86_64-unknown-linux-musl/bin/codex /opt/chuggy/bin/codex \
+    "package/vendor/${triple}/bin/codex" \
+  && install -m 0755 "/tmp/package/vendor/${triple}/bin/codex" /opt/chuggy/bin/codex \
   && rm -rf /tmp/package "/tmp/$packed" /tmp/codex.txt
 
-RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-amd64" \
+RUN case "$TARGETARCH" in \
+       amd64) sha256="$TINI_SHA256_AMD64" ;; \
+       arm64) sha256="$TINI_SHA256_ARM64" ;; \
+       *) echo "tini has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/krallin/tini/releases/download/v${TINI_VERSION}/tini-static-${TARGETARCH}" \
     --output /tmp/tini \
-  && echo "${TINI_SHA256}  /tmp/tini" | sha256sum --check --quiet - \
+  && echo "${sha256}  /tmp/tini" | sha256sum --check --quiet - \
   && install -m 0755 /tmp/tini /opt/chuggy/bin/tini \
   && rm /tmp/tini \
   && /opt/chuggy/bin/tini --version
@@ -188,7 +209,12 @@ RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
 COPY --from=core /shipped/ /opt/chuggy/lib/chuggy/
 COPY --from=core /check.sh /opt/chuggy/check.sh
 COPY --from=runtime-node /usr/local/bin/node /opt/chuggy/bin/node
-RUN ln -s ../lib/chuggy/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude \
+RUN case "$TARGETARCH" in \
+       amd64) platform=linux-x64 ;; \
+       arm64) platform=linux-arm64 ;; \
+       *) echo "the Agent SDK has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && ln -s "../lib/chuggy/node_modules/@anthropic-ai/claude-agent-sdk-${platform}/claude" \
     /opt/chuggy/bin/claude \
   && install -D -m 0644 /etc/ssl/certs/ca-certificates.crt \
     /opt/chuggy/share/ca-certificates.crt
@@ -262,24 +288,40 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
        exit 1; \
      fi
 
-# WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE:
-# every library an ELF the tree ships needs, and for each family of symbol
-# versions those ELFs reference the highest one, which is the oldest that
-# family's library in the image may be. Only an ELF's version references are
-# read, since its version definitions are what it provides rather than what it
-# needs. The build fails unless the two are exactly these, so a bump that
-# changes either changes this file. An image that lacks one of the libraries,
-# or holds one older than its floor, is one where chuggy's node or claude
-# cannot load, which `check.sh` reports with the status of
-# `ImageLibcUnsupported`. `bin/claude` is held to be a native binary, which a
-# link to anything else would not be.
-ARG RUNTIME_LIBRARIES="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
-ARG RUNTIME_VERSION_FLOOR="CXXABI_1.3.11 GCC_3.4 GLIBCXX_3.4.21 GLIBC_2.28"
-RUN find /opt/chuggy -type f > /tmp/files.txt \
+# WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE
+# FOR EACH ARCHITECTURE: every library an ELF the tree ships needs, and for
+# each family of symbol versions those ELFs reference the highest one, which is
+# the oldest that family's library in the image may be. Only an ELF's version
+# references are read, since its version definitions are what it provides
+# rather than what it needs. The build fails unless the two are exactly these,
+# so a bump that changes either changes this file. Each architecture has its
+# own, because its loader and its libraries' symbol versions are its own. An
+# image that lacks one of the libraries, or holds one older than its floor, is
+# one where chuggy's node or claude cannot load, which `check.sh` reports with
+# the status of `ImageLibcUnsupported`. `bin/claude` is held to be a native
+# binary, which a link to anything else would not be, and every ELF to be of
+# the architecture being built: on a host that runs another architecture
+# through binfmt, such as a Mac with Rosetta, a binary of the wrong one would
+# pass every probe that runs it.
+ARG RUNTIME_LIBRARIES_AMD64="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
+ARG RUNTIME_LIBRARIES_ARM64="ld-linux-aarch64.so.1 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
+ARG RUNTIME_VERSION_FLOOR_AMD64="CXXABI_1.3.11 GCC_3.4 GLIBCXX_3.4.21 GLIBC_2.28"
+ARG RUNTIME_VERSION_FLOOR_ARM64="CXXABI_1.3.11 GCC_3.0 GLIBCXX_3.4.21 GLIBC_2.28"
+RUN case "$TARGETARCH" in \
+       amd64) stated_libraries="$RUNTIME_LIBRARIES_AMD64" stated_floor="$RUNTIME_VERSION_FLOOR_AMD64" elf_format=elf64-x86-64 ;; \
+       arm64) stated_libraries="$RUNTIME_LIBRARIES_ARM64" stated_floor="$RUNTIME_VERSION_FLOOR_ARM64" elf_format=elf64-littleaarch64 ;; \
+       *) echo "this file states no libraries for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && find /opt/chuggy -type f > /tmp/files.txt \
   && : > /tmp/needed.txt \
   && while read -r file; do \
        [ "$(od -An -tx1 -N4 "$file" | tr -d ' \n')" = 7f454c46 ] || continue; \
        objdump -p "$file" > /tmp/elf.txt || exit 1; \
+       format="$(sed -n 's/^.*file format //p' /tmp/elf.txt)"; \
+       if [ "$format" != "$elf_format" ]; then \
+         echo "runtime: $file is $format, and $TARGETARCH is $elf_format"; \
+         exit 1; \
+       fi; \
        echo "runtime: $file is an ELF"; \
        awk '$1 == "NEEDED" { print "library", $2 } \
          /^Version References:/ { references = 1; next } \
@@ -291,12 +333,12 @@ RUN find /opt/chuggy -type f > /tmp/files.txt \
   && floor="$(sed -n 's/^version //p' /tmp/needed.txt | sort -u -V \
     | awk -F_ '{ highest[$1] = $0 } END { for (family in highest) print highest[family] }' \
     | sort | tr '\n' ' ')" \
-  && stated_libraries="$(printf '%s\n' $RUNTIME_LIBRARIES | sort -u | tr '\n' ' ')" \
-  && stated_floor="$(printf '%s\n' $RUNTIME_VERSION_FLOOR | sort | tr '\n' ' ')" \
+  && stated_libraries="$(printf '%s\n' $stated_libraries | sort -u | tr '\n' ' ')" \
+  && stated_floor="$(printf '%s\n' $stated_floor | sort | tr '\n' ' ')" \
   && rm -f /tmp/files.txt /tmp/needed.txt /tmp/elf.txt \
-  && echo "runtime: needs ${libraries}at ${floor}" \
+  && echo "runtime: needs ${libraries}at ${floor}on ${TARGETARCH}" \
   && if [ "$libraries" != "$stated_libraries" ] || [ "$floor" != "$stated_floor" ]; then \
-       echo "the runtime needs ${libraries}at ${floor}and RUNTIME_LIBRARIES and RUNTIME_VERSION_FLOOR state ${stated_libraries}at ${stated_floor}"; \
+       echo "the runtime needs ${libraries}at ${floor}and this file states ${stated_libraries}at ${stated_floor}for ${TARGETARCH}"; \
        exit 1; \
      fi \
   && if [ "$(od -An -tx1 -N4 /opt/chuggy/bin/claude | tr -d ' \n')" != 7f454c46 ]; then \
@@ -358,14 +400,21 @@ FROM worker-base AS worker
 # PATH from the checkout's own model. The sqlite build of the release is the one
 # that runs, because `dsn: memory` in `.chug/tasks/keto/keto.yml` is an
 # in-memory sqlite, and the release's own container image carries a binary
-# linked against musl.
+# linked against musl. The release names its amd64 build `64bit`.
 USER 0:0
+ARG TARGETARCH
 ARG KETO_VERSION=26.2.0
-ARG KETO_SHA256=37aaa6248eccb337503d618978520b18df4cad979e175134a1b017c291457ad0
-RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://github.com/ory/keto/releases/download/v${KETO_VERSION}/keto_${KETO_VERSION}-linux_sqlite_64bit.tar.gz" \
+ARG KETO_SHA256_AMD64=37aaa6248eccb337503d618978520b18df4cad979e175134a1b017c291457ad0
+ARG KETO_SHA256_ARM64=407b5397838f0e5321015d34befdd554d3f32a98c1376afa8a0d76e615be8bfb
+RUN case "$TARGETARCH" in \
+       amd64) build=64bit sha256="$KETO_SHA256_AMD64" ;; \
+       arm64) build=arm64 sha256="$KETO_SHA256_ARM64" ;; \
+       *) echo "Keto has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/ory/keto/releases/download/v${KETO_VERSION}/keto_${KETO_VERSION}-linux_sqlite_${build}.tar.gz" \
     --output /tmp/keto.tgz \
-  && echo "${KETO_SHA256}  /tmp/keto.tgz" | sha256sum --check --quiet - \
+  && echo "${sha256}  /tmp/keto.tgz" | sha256sum --check --quiet - \
   && tar --extract --gzip --file /tmp/keto.tgz --directory /usr/local/bin keto \
   && rm /tmp/keto.tgz \
   && keto version
@@ -496,10 +545,13 @@ RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
 # cargo's registry and install the toolchain a `rust-toolchain.toml` names.
 FROM worker-base AS generic
 USER 0:0
+ARG TARGETARCH
 ARG UV_VERSION=0.12.21
-ARG UV_SHA256=23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0
+ARG UV_SHA256_AMD64=23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0
+ARG UV_SHA256_ARM64=030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51
 ARG RUSTUP_VERSION=1.29.1
-ARG RUSTUP_SHA256=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+ARG RUSTUP_SHA256_AMD64=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
+ARG RUSTUP_SHA256_ARM64=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433
 ARG RUST_VERSION=1.98.1
 ENV RUSTUP_HOME=/usr/local/rustup \
     CARGO_HOME=/usr/local/cargo \
@@ -509,18 +561,28 @@ RUN apt-get update \
     libssl-dev pkg-config python3-pip python3-venv \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
-RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-unknown-linux-gnu.tar.gz" \
+RUN case "$TARGETARCH" in \
+       amd64) triple=x86_64-unknown-linux-gnu sha256="$UV_SHA256_AMD64" ;; \
+       arm64) triple=aarch64-unknown-linux-gnu sha256="$UV_SHA256_ARM64" ;; \
+       *) echo "uv has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${triple}.tar.gz" \
     --output /tmp/uv.tgz \
-  && echo "${UV_SHA256}  /tmp/uv.tgz" | sha256sum --check --quiet - \
+  && echo "${sha256}  /tmp/uv.tgz" | sha256sum --check --quiet - \
   && tar --extract --gzip --file /tmp/uv.tgz --directory /usr/local/bin \
-    --strip-components 1 uv-x86_64-unknown-linux-gnu/uv uv-x86_64-unknown-linux-gnu/uvx \
+    --strip-components 1 "uv-${triple}/uv" "uv-${triple}/uvx" \
   && rm /tmp/uv.tgz \
   && uv --version
-RUN curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/x86_64-unknown-linux-gnu/rustup-init" \
+RUN case "$TARGETARCH" in \
+       amd64) triple=x86_64-unknown-linux-gnu sha256="$RUSTUP_SHA256_AMD64" ;; \
+       arm64) triple=aarch64-unknown-linux-gnu sha256="$RUSTUP_SHA256_ARM64" ;; \
+       *) echo "rustup has no build here for '$TARGETARCH'"; exit 1 ;; \
+     esac \
+  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
+    "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${triple}/rustup-init" \
     --output /tmp/rustup-init \
-  && echo "${RUSTUP_SHA256}  /tmp/rustup-init" | sha256sum --check --quiet - \
+  && echo "${sha256}  /tmp/rustup-init" | sha256sum --check --quiet - \
   && chmod 0755 /tmp/rustup-init \
   && /tmp/rustup-init -y --no-modify-path --profile minimal \
     --default-toolchain "${RUST_VERSION}" --component clippy,rustfmt \
