@@ -51,13 +51,19 @@ import type {
   GitEvidence,
   GitObjectId,
   GitPromotionPort,
+  HeadAdoption,
+  HeadAdoptionQuestion,
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
   RepositoryId,
   TargetObserved,
 } from "../../interpreter/finalizer.ts";
-import { candidateIntegrate, candidatePrepare } from "./gitCandidate.ts";
+import {
+  candidateAdoptable,
+  candidateIntegrate,
+  candidatePrepare,
+} from "./gitCandidate.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
@@ -402,6 +408,16 @@ async function gitPromotionProve(
     : { proved: "NotAncestor", observed };
 }
 
+/** Reads whether a proposal's head is its pinned head brought up to date with its base, a credential refused being no answer. */
+async function gitPromotionAdoptable(
+  own: GitPromotionState,
+  question: HeadAdoptionQuestion,
+): Promise<HeadAdoption> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return "Unread";
+  return candidateAdoptable(own.scratch, authorized.credential, question);
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
 export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
   const own: GitPromotionState = {
@@ -430,5 +446,6 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
+    proveHeadAdoptable: (question) => gitPromotionAdoptable(own, question),
   };
 }

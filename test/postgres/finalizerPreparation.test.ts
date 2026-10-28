@@ -441,6 +441,9 @@ function proposalPort(): ProposalPort {
     merge: () => {
       throw new Error("the pass asked this forge to merge a proposal");
     },
+    updateBranch: () => {
+      throw new Error("the pass asked this forge to update a proposal");
+    },
   };
   return own;
 }
@@ -1525,6 +1528,7 @@ const proposalMergeRewritesRefused: readonly (readonly [
     `merge_commit='${finalizerCommit()}'`,
   ],
   [{ merged: "NotMergeable", reason: "Conflict" }, "merge_reason='Blocked'"],
+  [{ merged: "HeadMoved" }, "merge=NULL, merge_refusals=merge_refusals+1"],
 ];
 
 test("what a merge answered is written once, in every column that carries it", async () => {
@@ -2581,5 +2585,223 @@ test("the work draw orders a ticket's spawns by the task number and not by its t
   assert.deepEqual(
     handoffSuperseded(arriving).work.map((each) => each.task),
     [3, 5, 7, 10],
+  );
+});
+
+/**
+ * One claimed request whose merge waits on a reading that found the proposal
+ * behind its base, on the repository `repository` names.
+ */
+async function proposalBehind(
+  label: string,
+  repository?: string,
+): Promise<{
+  project: FinalizerProject;
+  claim: FinalizationClaim;
+  store: ReturnType<typeof postgresFinalizer>;
+  evidence: ChangeProposalEvidence;
+}> {
+  const proved = await proposalMergeProved(label);
+  const evidence: ChangeProposalEvidence = {
+    ...proved.evidence,
+    ...(repository === undefined
+      ? {}
+      : { repository: asRepositoryId(repository) }),
+    mergeability: "Behind",
+    mergeState: asProposalMergeState("behind"),
+  };
+  await proved.store.markChangeProposalMergeAttempt(proved.claim);
+  await proved.store.recordChangeProposalMerge({
+    claim: proved.claim,
+    result: {
+      records: "Reading",
+      reconciled: { reconciled: "Unmerged", evidence },
+    },
+  });
+  assert.deepEqual(
+    await proved.store.waitChangeProposalMergeAttempt(proved.claim),
+    {
+      wrote: "Row",
+    },
+  );
+  return { ...proved, evidence };
+}
+
+test("an update is counted before it is asked, stands unread until a reading sees it, and a decline spends nothing", async () => {
+  const { claim, store, evidence } = await proposalBehind("proposalupdate");
+  const updating = async () => (await store.changeProposal(claim))?.updating;
+
+  assert.deepEqual(await updating(), { updates: 0, unread: false, turn: true });
+  assert.deepEqual(await store.markChangeProposalUpdate(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(await updating(), { updates: 1, unread: true, turn: true });
+  assert.deepEqual(
+    await store.markChangeProposalUpdate(claim),
+    { wrote: "Nothing" },
+    "an update unread authorizes no second",
+  );
+  assert.deepEqual(await store.recordChangeProposalUpdate(claim, "Asked"), {
+    wrote: "Row",
+  });
+  assert.equal(
+    (await updating())?.unread,
+    true,
+    "an accepted update is unread",
+  );
+  await store.recordChangeProposalMerge({
+    claim,
+    result: {
+      records: "Reading",
+      reconciled: { reconciled: "Unmerged", evidence },
+    },
+  });
+  assert.deepEqual(
+    await updating(),
+    { updates: 1, unread: false, turn: true },
+    "the reading after it sees it",
+  );
+
+  await store.markChangeProposalUpdate(claim);
+  await store.recordChangeProposalUpdate(claim, "Declined");
+  assert.deepEqual(
+    await updating(),
+    { updates: 1, unread: false, turn: true },
+    "one the forge would not take spends nothing",
+  );
+  await store.markChangeProposalUpdate(claim);
+  await store.recordChangeProposalUpdate(claim, "Refused");
+  assert.deepEqual(
+    await updating(),
+    { updates: 2, unread: false, turn: true },
+    "one it refused is spent and answered",
+  );
+  assert.deepEqual(
+    await store.recordChangeProposalUpdate(claim, "Asked"),
+    { wrote: "Nothing" },
+    "nothing unread is nothing to answer for",
+  );
+});
+
+test("a merge not waiting with a reading is updated by nobody", async () => {
+  const { claim, store } = await proposalMergeProved("proposalupdatenone");
+  assert.deepEqual(await store.markChangeProposalUpdate(claim), {
+    wrote: "Nothing",
+  });
+  await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(
+    await store.markChangeProposalUpdate(claim),
+    { wrote: "Nothing" },
+    "a merge in flight is no wait to update",
+  );
+});
+
+test("one update at a time on a repository's base, the oldest proposal behind first", async () => {
+  const repository = "https://forge.invalid/acme/shared.git";
+  const older = await proposalBehind("proposalupdateolder", repository);
+  const newer = await proposalBehind("proposalupdatenewer", repository);
+  const elsewhere = await proposalBehind("proposalupdateelsewhere");
+  for (const sibling of [older, newer])
+    await rig.as(
+      `UPDATE finalization_request SET state='Registered'
+        WHERE tenant=$1 AND project=$2 AND request=$3`,
+      proposalRowKey(sibling.project),
+    );
+  const turn = async (subject: typeof older) =>
+    (await subject.store.changeProposal(subject.claim))?.updating.turn;
+
+  assert.equal(await turn(older), true);
+  assert.equal(await turn(newer), false, "an older proposal is behind there");
+  assert.equal(await turn(elsewhere), true, "another repository is no sibling");
+
+  assert.deepEqual(await older.store.markChangeProposalUpdate(older.claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    await newer.store.markChangeProposalUpdate(newer.claim),
+    { wrote: "Nothing" },
+    "an update unread on the base is the only one there",
+  );
+  assert.deepEqual(
+    await elsewhere.store.markChangeProposalUpdate(elsewhere.claim),
+    { wrote: "Row" },
+  );
+
+  await older.store.recordChangeProposalMerge({
+    claim: older.claim,
+    result: {
+      records: "Reading",
+      reconciled: {
+        reconciled: "Unmerged",
+        evidence: { ...older.evidence, mergeability: "Blocked" },
+      },
+    },
+  });
+  assert.equal(
+    await turn(newer),
+    true,
+    "once the older update is seen and it is behind no longer, the next takes its turn",
+  );
+});
+
+test("a head is adopted only where the kept reading found it, and a moved head's answer gives way to it", async () => {
+  const { project, claim, store, evidence } =
+    await proposalMergeProved("proposaladopt");
+  const updated = asGitObjectId(finalizerCommit());
+  const at = {
+    reconciled: "Unmerged",
+    evidence: {
+      ...evidence,
+      head: { ref: evidence.head.ref, commit: updated },
+      mergeability: "Mergeable",
+    },
+  } as const;
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Merge", merged: { merged: "HeadMoved" } },
+  });
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: at },
+  });
+
+  assert.deepEqual(
+    await store.adoptChangeProposalHead(
+      claim,
+      asGitObjectId(finalizerCommit()),
+    ),
+    { wrote: "Nothing" },
+    "a head no reading found is adopted by nobody",
+  );
+  assert.deepEqual(await store.adoptChangeProposalHead(claim, updated), {
+    wrote: "Row",
+  });
+  const adopted = await store.changeProposal(claim);
+  assert.equal(adopted?.adopted, updated);
+  assert.deepEqual((await proposalMergingAged(store, claim)).merging, {
+    merging: "Waiting",
+    merges: 1,
+    reading: at,
+    heardAgeSecs: 0,
+  });
+  const row = await proposalOf(project);
+  assert.deepEqual(
+    [row?.merge, row?.head_commit === updated],
+    [null, false],
+    "the moved head's answer is gone and what the forge was asked for stands",
+  );
+  assert.deepEqual(
+    await store.adoptChangeProposalHead(claim, updated),
+    { wrote: "Nothing" },
+    "a head already pinned is not adopted twice",
+  );
+  assert.deepEqual(await store.markChangeProposalMergeAttempt(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    (await store.changeProposal(claim))?.merging,
+    { merging: "Unanswered", merges: 2, readings: 0, reading: undefined },
+    "the next merge is counted afresh under the same ceiling",
   );
 });

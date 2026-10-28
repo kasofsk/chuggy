@@ -53,6 +53,7 @@ import {
   type CredentialResolved,
   type GitObjectId,
   type GitPromotionPort,
+  type HeadAdoption,
   type ObservedTarget,
   type RepositoryBinding,
   type RepositoryCredentialPort,
@@ -1128,4 +1129,164 @@ test("a git too old to write merge trees is refused by the floor", () => {
   assert.equal(gitVersionAdmits("git version 2.38.0"), true);
   assert.equal(gitVersionAdmits("git version 3.0.1"), true);
   assert.equal(gitVersionAdmits("no version at all"), false);
+});
+
+/** A branch the finalizer pinned, with the base moved past it since, the way a proposal behind its base stands. */
+interface FixtureBehind {
+  readonly fixture: Fixture;
+  readonly pinned: string;
+  readonly base: string;
+}
+
+function fixtureBehind(t: TestContext): FixtureBehind {
+  const fixture = fixtureOpen(t);
+  fixtureGit(fixture.seed, "config", "commit.gpgsign", "false");
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "topic");
+  writeFileSync(join(fixture.seed, "topic.txt"), "topic\n");
+  fixtureGit(fixture.seed, "add", "-A");
+  fixtureGit(fixture.seed, "commit", "-qm", "topic");
+  const pinned = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "topic:topic");
+  fixtureGit(fixture.seed, "checkout", "-q", "main");
+  const base = fixtureCommit(fixture, "other.txt", "other\n", "other");
+  return { fixture, pinned, base };
+}
+
+/** Pushes whatever commit the seed's HEAD stands at as the proposal's branch, which is how a head moves. */
+function fixtureHeadPushed(behind: FixtureBehind): string {
+  const head = fixtureGit(behind.fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(
+    behind.fixture.seed,
+    "push",
+    "-qf",
+    behind.fixture.remote,
+    `${head}:refs/heads/topic`,
+  );
+  return head;
+}
+
+function fixtureAdoptable(
+  behind: FixtureBehind,
+  head: string,
+): Promise<HeadAdoption> {
+  return fixturePort(behind.fixture).proveHeadAdoptable({
+    repository: fixtureBinding(behind.fixture.remote),
+    pinned: asGitObjectId(behind.pinned),
+    head: asGitObjectId(head),
+    headRef: asGitRefName("refs/heads/topic"),
+    baseRef: asGitRefName("refs/heads/main"),
+  });
+}
+
+test("a head that is the pinned one with its base merged in cleanly is adoptable", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "main",
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Adoptable");
+  fixtureCommit(behind.fixture, "later.txt", "later\n", "later");
+  assert.equal(
+    await fixtureAdoptable(behind, head),
+    "Adoptable",
+    "a second parent the base has since moved past is still on it",
+  );
+});
+
+test("a merge carrying anything but the clean merge of its parents is refused", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "main",
+  );
+  writeFileSync(join(behind.fixture.seed, "smuggled.txt"), "unreviewed\n");
+  fixtureGit(behind.fixture.seed, "add", "-A");
+  fixtureGit(behind.fixture.seed, "commit", "-q", "--amend", "--no-edit");
+  const head = fixtureHeadPushed(behind);
+  assert.equal(
+    fixtureGit(behind.fixture.seed, "rev-list", "--parents", "-n", "1", head)
+      .split(" ")
+      .slice(1)
+      .join(" "),
+    `${behind.pinned} ${behind.base}`,
+    "the parents are the ones an update would have",
+  );
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a merge with its parents swapped is refused, whatever its tree", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "--detach", "main");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    behind.pinned,
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a rebase onto the base is refused, being no merge at all", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(behind.fixture.seed, "rebase", "-q", "main");
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a merge of a commit the base never held is refused", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(
+    behind.fixture.seed,
+    "checkout",
+    "-q",
+    "-b",
+    "elsewhere",
+    "main~1",
+  );
+  writeFileSync(join(behind.fixture.seed, "elsewhere.txt"), "elsewhere\n");
+  fixtureGit(behind.fixture.seed, "add", "-A");
+  fixtureGit(behind.fixture.seed, "commit", "-qm", "elsewhere");
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "elsewhere",
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a head the remote cannot give is unread rather than refused", async (t) => {
+  const behind = fixtureBehind(t);
+  assert.equal(await fixtureAdoptable(behind, "9".repeat(40)), "Unread");
+  assert.equal(
+    await fixturePort(behind.fixture, {
+      resolved: "Unavailable",
+    }).proveHeadAdoptable({
+      repository: fixtureBinding(behind.fixture.remote),
+      pinned: asGitObjectId(behind.pinned),
+      head: asGitObjectId(behind.base),
+      headRef: asGitRefName("refs/heads/topic"),
+      baseRef: asGitRefName("refs/heads/main"),
+    }),
+    "Unread",
+  );
 });

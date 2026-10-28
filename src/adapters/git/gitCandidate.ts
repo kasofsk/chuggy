@@ -20,6 +20,13 @@
  * promotion was never authorized for, and a `.git` component at any depth names
  * the repository itself.
  *
+ * A HEAD IS ADOPTED ONLY AS THAT SAME INTEGRATION. A proposal's head that is
+ * not the one pinned for it stands in for it only where it is a merge whose
+ * first parent is the pinned head, whose second the base reaches, and whose
+ * tree is the tree a clean merge of the two writes — so a parent order swapped,
+ * a rebase, a conflict resolved by hand and a merge carrying anything else are
+ * each another shape or another tree, and are refused.
+ *
  * AN INTEGRATION THE TARGET IS ALREADY INSIDE OF IS THE CANDIDATE ITSELF.
  * Merging a commit into one that already contains it changes nothing, and the
  * ancestry check is what keeps a repeated integration from writing a second
@@ -36,18 +43,24 @@ import {
   type CandidateIntegration,
   type CandidatePrepared,
   type CandidatePreparation,
+  type GitObjectId,
   type GitRefName,
+  type HeadAdoption,
+  type HeadAdoptionQuestion,
   type ObservedTarget,
   type RepositoryCredential,
 } from "../../interpreter/finalizer.ts";
 import {
+  scratchCommitShape,
   scratchCommitTree,
+  scratchFetchHistory,
   scratchFetchRef,
   scratchHasCommit,
   scratchIsAncestor,
   scratchKeepCommit,
   scratchMergeBase,
   scratchMergeTree,
+  scratchReadRef,
   scratchWriteBlob,
   scratchWriteTree,
   type GitScratch,
@@ -296,5 +309,79 @@ export async function candidateIntegrate(
       return candidateIntegrateMerge(scratch, integration);
     default:
       return assertNever(integration.strategy);
+  }
+}
+
+/** The commit the base stands at with its objects in the scratch, and nothing where either could not be read. */
+async function candidateAdoptableBase(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: HeadAdoptionQuestion,
+): Promise<GitObjectId | undefined> {
+  const repository = question.repository.repository;
+  const base = await scratchReadRef(
+    scratch,
+    repository,
+    credential,
+    question.baseRef,
+  );
+  if (base.read !== "Value") return undefined;
+  if (
+    !(await scratchFetchRef(scratch, repository, credential, question.baseRef))
+  )
+    return undefined;
+  return (await scratchHasCommit(scratch, repository, base.value))
+    ? base.value
+    : undefined;
+}
+
+/** Brings the head read into the scratch, by its branch and then by its hash where the branch has moved past it. */
+async function candidateAdoptableHead(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: HeadAdoptionQuestion,
+): Promise<boolean> {
+  const repository = question.repository.repository;
+  await scratchFetchRef(scratch, repository, credential, question.headRef);
+  if (await scratchHasCommit(scratch, repository, question.head)) return true;
+  await scratchFetchHistory(
+    scratch,
+    repository,
+    credential,
+    question.head,
+    scratch.options.remoteTimeoutSecsMax,
+  );
+  return scratchHasCommit(scratch, repository, question.head);
+}
+
+/** Whether a proposal's head is its pinned head brought up to date with its base, and nothing more. */
+export async function candidateAdoptable(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: HeadAdoptionQuestion,
+): Promise<HeadAdoption> {
+  const repository = question.repository.repository;
+  const base = await candidateAdoptableBase(scratch, credential, question);
+  if (base === undefined) return "Unread";
+  if (!(await candidateAdoptableHead(scratch, credential, question)))
+    return "Unread";
+  const shape = await scratchCommitShape(scratch, repository, question.head);
+  if (shape === undefined) return "Unread";
+  const [first, second, ...rest] = shape.parents;
+  if (first !== question.pinned || second === undefined || rest.length > 0)
+    return "Unadoptable";
+  const onBase = await scratchIsAncestor(scratch, repository, second, base);
+  if (onBase === undefined) return "Unread";
+  if (!onBase) return "Unadoptable";
+  const merged = await scratchMergeTree(scratch, repository, first, second);
+  switch (merged.merged) {
+    case "Failed":
+      return "Unread";
+    case "Conflicted":
+      return "Unadoptable";
+    case "Tree":
+      return merged.tree === shape.tree ? "Adoptable" : "Unadoptable";
+    default:
+      return assertNever(merged);
   }
 }
