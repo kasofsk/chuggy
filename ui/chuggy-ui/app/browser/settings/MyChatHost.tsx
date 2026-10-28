@@ -174,7 +174,8 @@ function ChatHostTable(props: {
 /** What the last change left: the token minted with its expiry, the question a removal waits on, or why it was refused. */
 function ChatHostWritten(props: {
   readonly write: ChatHostWrite;
-  readonly short: string;
+  /** The short id of the host the reader holds, where they hold one. */
+  readonly short: string | undefined;
   readonly onRemove: () => void;
   readonly onDone: () => void;
 }): ReactNode {
@@ -202,6 +203,11 @@ function ChatHostWritten(props: {
             text={write.minted.token}
             copyLabel="Copy token"
           />
+          {props.short === undefined ? null : (
+            <p className="text-sm text-ink-3">
+              {`Registering with it replaces chat host ${props.short} and ends the sessions it is running.`}
+            </p>
+          )}
           <div>
             <Button size="sm" onClick={props.onDone}>
               Done
@@ -212,13 +218,13 @@ function ChatHostWritten(props: {
     case "Removing":
       return (
         <Confirm
-          question={`Remove chat host ${props.short}?`}
+          question={`Remove chat host ${props.short ?? ""}?`}
           confirm="Remove"
           busy={false}
           onConfirm={props.onRemove}
           onCancel={props.onDone}
         >
-          {`Chat host ${props.short} stops taking your chats and questions in this workspace.`}
+          {`Chat host ${props.short ?? ""} stops taking your chats and questions in this workspace, and the sessions it is running now end.`}
         </Confirm>
       );
     case "Failed":
@@ -307,7 +313,7 @@ export function MyChatHost(props: {
     >
       <ChatHostWritten
         write={writing.write}
-        short={held === undefined ? "" : myRunnerShort(held.id)}
+        short={held === undefined ? undefined : myRunnerShort(held.id)}
         onRemove={writing.remove}
         onDone={writing.done}
       />

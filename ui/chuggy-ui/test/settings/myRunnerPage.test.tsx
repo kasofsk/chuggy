@@ -374,7 +374,16 @@ test("taking the last runner off says the projects go with it, and leaves none l
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
 });
 
-test("a member's chat host is drawn with whether it has polled, and registering one hands over a token for it", async () => {
+test("a member with no chat host is handed a token that replaces nothing", async () => {
+  const sent = await drawMyRunner();
+  expect(screen.getByText("No chat host yet")).toBeTruthy();
+  await press("Register chat host");
+  expect(written(sent)).toStrictEqual(["POST /chat-host-registration-tokens"]);
+  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(screen.queryByText(/replaces chat host/u)).toBeNull();
+});
+
+test("a member's chat host is drawn with whether it has polled, and registering another hands over a token said to replace it and end its sessions", async () => {
   drawing = { granted: true, runner: undefined, host: hostListed("5be0d7aa") };
   const sent = await drawMyRunner();
   const row = within(screen.getByRole("table", { name: "Chat host" }))
@@ -391,6 +400,11 @@ test("a member's chat host is drawn with whether it has polled, and registering 
       .map((one) => [one.url.slice(tenantPath.length), one.body]),
   ).toStrictEqual([["/chat-host-registration-tokens", { lifetimeSecs: 3600 }]]);
   expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Registering with it replaces chat host 5be0d7aa and ends the sessions it is running.",
+    ),
+  ).toBeTruthy();
   await press("Done");
   expect(screen.queryByText("tok_host-1")).toBeNull();
 });
@@ -404,8 +418,11 @@ test("a chat host is drawn though its owner may no longer register one, and taki
   await press("Remove chat host 5be0d7aa");
   expect(written(sent)).toStrictEqual([]);
   expect(
-    screen.getByRole("group", { name: "Remove chat host 5be0d7aa?" }),
-  ).toBeTruthy();
+    screen.getByRole("group", { name: "Remove chat host 5be0d7aa?" })
+      .textContent,
+  ).toContain(
+    "Chat host 5be0d7aa stops taking your chats and questions in this workspace, and the sessions it is running now end.",
+  );
   drawing.host = undefined;
   await press("Remove");
   expect(written(sent)).toStrictEqual(["DELETE /chat-host"]);
