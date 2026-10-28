@@ -15,7 +15,9 @@
  *
  * EVERY `Start` IS ANSWERED ONCE, by `Started` or by `Refused`. A refusal is
  * final for the `Start` it answers, and no `Ended` follows it; a `Duplicate`
- * leaves the earlier `Start`'s own answer and its `Ended` standing. Every
+ * leaves the earlier `Start`'s own answer and its `Ended` standing. A `Start`
+ * for an assignment the supervisor already prepares or runs is refused with
+ * `Duplicate`, ahead of every other reason, `Draining` included. Every
  * `Started` is followed by exactly one `Ended`, whether the session ended by
  * itself, by `Stop`, or by the end of the host's stream. A session being
  * prepared counts wherever a running one does, toward `sessionsMax` included.
@@ -23,11 +25,12 @@
  * A `Stop` while its session is being prepared cancels the preparation and is
  * answered by `Refused` with `Stopped`; one for an assignment the supervisor
  * neither prepares nor runs is answered by nothing. After `Drain` the
- * supervisor refuses every `Start` with `Draining` and lets each running
- * session end on its own; once every `Start` read before `Drain` is answered
- * and every `Started` has its `Ended`, it writes `Drained` and exits. At the
- * end of its standard input it answers every preparation with `Refused` and
- * `Stopped`, stops every running session and writes its `Ended`, and exits.
+ * supervisor refuses every `Start` that is not a `Duplicate` with `Draining`
+ * and lets each running session end on its own; once every `Start` read
+ * before `Drain` is answered and every `Started` has its `Ended`, it writes
+ * `Drained` and exits. At the end of its standard input it answers every
+ * preparation with `Refused` and `Stopped`, stops every running session and
+ * writes its `Ended`, and exits.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
  * repeats the line it read.
@@ -100,12 +103,12 @@ export const chatSupervisorStartedSchema = z.strictObject({
 /**
  * Why a supervisor did not start a session, each asking something different
  * of the host: `Full`, it already prepares or runs as many sessions as its
- * `Ready` named; `Draining`, it was told to drain; `Duplicate`, it already
- * prepares or runs that assignment, under the earlier `Start`; `Unprepared`,
- * the session's user, directory or credential could not be made, which is
- * that session's failure rather than the supervisor's; `Stopped`, a `Stop` or
- * the end of the host's stream came while it was being prepared, which is the
- * end the host asked for.
+ * `Ready` named; `Draining`, it was told to drain; `Duplicate`, ahead of every
+ * other reason, it already prepares or runs that assignment under an earlier
+ * `Start`; `Unprepared`, the session's user, directory or credential could not
+ * be made, which is that session's failure rather than the supervisor's;
+ * `Stopped`, a `Stop` or the end of the host's stream came while it was being
+ * prepared, which is the end the host asked for.
  */
 export const chatSupervisorRefusals = [
   "Full",
