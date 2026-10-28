@@ -23,6 +23,11 @@
  * did not finish within the bound and never one whose history grew past a
  * count.
  *
+ * EACH COUNTER'S AND HISTOGRAM'S SERIES BEGAN WHEN ITS FIRST ROW'S ATTEMPT OR
+ * TURN ENDED, an aggregate in the statement that sums it. A run's totals carry
+ * no time a reader is granted, so a run is counted once its attempt has ended
+ * and its series began when the first such attempt did.
+ *
  * A PERSONAL RUNNER'S ATTEMPT IS `Personal`, A POOL'S `Pool`, AN IN-CLUSTER ONE
  * `Cluster`. The execution's placement says pool or cluster and the attempt's
  * `personal` tells a member's runner from a pool.
@@ -120,14 +125,23 @@ const metricsPlaneAttemptSchema = z
     buckets: metricsPlaneBucketsSchema,
     ended: metricsPlaneFigure,
     secs: metricsPlaneFigure,
+    created: metricsPlaneFigure,
   })
   .transform(
-    ({ state, buckets, ended, secs, ...task }): MetricsPlaneAttemptRow => ({
+    ({
+      state,
+      buckets,
+      ended,
+      secs,
+      created,
+      ...task
+    }): MetricsPlaneAttemptRow => ({
       task,
       state,
       buckets,
       ended,
       durationSecs: secs,
+      createdSecs: created,
     }),
   );
 
@@ -137,13 +151,21 @@ const metricsPlaneRunSchema = z
     turns: metricsPlaneFigure,
     duration_ms: metricsPlaneFigure,
     duration_api_ms: metricsPlaneFigure,
+    created: metricsPlaneFigure,
   })
   .transform(
-    ({ turns, duration_ms, duration_api_ms, ...task }): MetricsPlaneRunRow => ({
+    ({
+      turns,
+      duration_ms,
+      duration_api_ms,
+      created,
+      ...task
+    }): MetricsPlaneRunRow => ({
       task,
       turns,
       durationMs: duration_ms,
       durationApiMs: duration_api_ms,
+      createdSecs: created,
     }),
   );
 
@@ -156,6 +178,7 @@ const metricsPlaneModelSchema = z
     tokens_cache_creation: metricsPlaneFigure,
     tokens_cache_read: metricsPlaneFigure,
     cost_usd_micros: metricsPlaneFigure,
+    created: metricsPlaneFigure,
   })
   .transform(
     ({
@@ -165,6 +188,7 @@ const metricsPlaneModelSchema = z
       tokens_cache_creation,
       tokens_cache_read,
       cost_usd_micros,
+      created,
       ...task
     }): MetricsPlaneModelRow => ({
       task,
@@ -174,6 +198,7 @@ const metricsPlaneModelSchema = z
       tokensCacheCreation: tokens_cache_creation,
       tokensCacheRead: tokens_cache_read,
       costUsdMicros: cost_usd_micros,
+      createdSecs: created,
     }),
   );
 
@@ -190,6 +215,7 @@ const metricsPlaneTurnSchema = z
     tokens: metricsPlaneFigure,
     cost_micros: metricsPlaneFigure,
     duration_ms: metricsPlaneFigure,
+    created: metricsPlaneFigure,
   })
   .transform(
     ({
@@ -198,6 +224,7 @@ const metricsPlaneTurnSchema = z
       buckets,
       cost_micros,
       duration_ms,
+      created,
       ...row
     }): MetricsPlaneTurnRow => ({
       ...row,
@@ -206,6 +233,7 @@ const metricsPlaneTurnSchema = z
       buckets: buckets ?? undefined,
       costMicros: cost_micros,
       durationMs: duration_ms,
+      createdSecs: created,
     }),
   );
 
@@ -450,21 +478,23 @@ async function metricsPlaneExecutionQuery(
         ended AS (
           SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
                  (SELECT count(*) FROM unnest(b.secs) AS le WHERE le<x.secs) AS bucket,
-                 count(*) AS ended,sum(x.secs) AS secs
+                 count(*) AS ended,sum(x.secs) AS secs,min(x.ended_at) AS created_at
             FROM attempt x CROSS JOIN bounds b WHERE x.ended_at IS NOT NULL
            GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state,bucket)
         SELECT
           (SELECT json_agg(f)::text FROM (
              SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
                     json_object_agg(bucket,ended) AS buckets,sum(ended)::text AS ended,
-                    sum(secs)::text AS secs
+                    sum(secs)::text AS secs,extract(epoch FROM min(created_at))::text AS created
                FROM ended GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state
               LIMIT ${seriesMax + 1}) f) AS attempts,
           (SELECT json_agg(f)::text FROM (
              SELECT x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,
                     sum(r.turns)::text AS turns,sum(r.duration_ms)::text AS duration_ms,
-                    sum(r.duration_api_ms)::text AS duration_api_ms
+                    sum(r.duration_api_ms)::text AS duration_api_ms,
+                    extract(epoch FROM min(x.ended_at))::text AS created
                FROM execution_run_total r JOIN attempt x USING (tenant,project,execution,attempt)
+              WHERE x.ended_at IS NOT NULL
               GROUP BY x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement
               LIMIT ${seriesMax + 1}) f) AS runs,
           (SELECT json_agg(f)::text FROM (
@@ -472,8 +502,10 @@ async function metricsPlaneExecutionQuery(
                     sum(m.tokens_input)::text AS tokens_input,sum(m.tokens_output)::text AS tokens_output,
                     sum(m.tokens_cache_creation)::text AS tokens_cache_creation,
                     sum(m.tokens_cache_read)::text AS tokens_cache_read,
-                    sum(m.cost_usd_micros)::text AS cost_usd_micros
+                    sum(m.cost_usd_micros)::text AS cost_usd_micros,
+                    extract(epoch FROM min(x.ended_at))::text AS created
                FROM execution_run_model_usage m JOIN attempt x USING (tenant,project,execution,attempt)
+              WHERE x.ended_at IS NOT NULL
               GROUP BY x.tenant,x.project,x.owner,x.phase,x.stage,x.runner,x.workload,x.placement,m.model
               LIMIT ${seriesMax + 1}) f) AS models`,
   );
@@ -496,7 +528,8 @@ async function metricsPlaneSessionQuery(
                  CASE WHEN u.model IS NOT NULL THEN (SELECT count(*) FROM unnest(b.secs) AS le
                                                       WHERE le*1000<u.duration_ms) END AS bucket,
                  count(*) AS ended,coalesce(sum(u.tokens),0) AS tokens,
-                 coalesce(sum(u.cost_micros),0) AS cost_micros,coalesce(sum(u.duration_ms),0) AS duration_ms
+                 coalesce(sum(u.cost_micros),0) AS cost_micros,coalesce(sum(u.duration_ms),0) AS duration_ms,
+                 min(u.ended_at) AS created_at
             FROM session_turn u
             JOIN agent_session s
               ON s.tenant=u.tenant AND s.project=u.project AND s.session=u.session
@@ -508,7 +541,8 @@ async function metricsPlaneSessionQuery(
              SELECT tenant,project,owner,kind,state,model,
                     json_object_agg(bucket,ended) FILTER (WHERE bucket IS NOT NULL) AS buckets,
                     sum(ended)::text AS ended,sum(tokens)::text AS tokens,
-                    sum(cost_micros)::text AS cost_micros,sum(duration_ms)::text AS duration_ms
+                    sum(cost_micros)::text AS cost_micros,sum(duration_ms)::text AS duration_ms,
+                    extract(epoch FROM min(created_at))::text AS created
                FROM turn GROUP BY tenant,project,owner,kind,state,model
               LIMIT ${seriesMax + 1}) f) AS turns,
           (SELECT json_agg(f)::text FROM (

@@ -1,4 +1,4 @@
-/** The families a scrape totals rows to: the owner as a bare subject, rows a label cannot tell apart summed, and a page past its cap refused. */
+/** The families a scrape totals rows to: the owner as a bare subject, rows a label cannot tell apart summed and begun at the earliest, and a page past its cap refused. */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -69,18 +69,20 @@ test("rows a label cannot tell apart are one series, and a run's durations are s
   const families = metricsPlaneFamilies({
     ...empty,
     runs: [
-      { task, turns: 2, durationMs: 1_500, durationApiMs: 500 },
+      { task, turns: 2, durationMs: 1_500, durationApiMs: 500, createdSecs: 1 },
       {
         task: { ...task, owner: "" },
         turns: 3,
         durationMs: 0,
         durationApiMs: 0,
+        createdSecs: 1,
       },
       {
         task: { ...task, owner: "" },
         turns: 4,
         durationMs: 0,
         durationApiMs: 0,
+        createdSecs: 1,
       },
     ],
   });
@@ -111,6 +113,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
         buckets: bucketsAt(1, 2),
         ended: 2,
         durationSecs: 100,
+        createdSecs: 20,
       },
       {
         task,
@@ -118,6 +121,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
         buckets: bucketsAt(12, 1),
         ended: 1,
         durationSecs: 9_000,
+        createdSecs: 10,
       },
     ],
   });
@@ -149,8 +153,12 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
         (count, index) => count + (index === 12 ? 1 : 0),
       ),
       sum: 9_100,
+      createdSecs: 10,
     },
   ]);
+});
+
+test("an attempt row of the wrong buckets is refused", () => {
   assert.throws(
     () =>
       metricsPlaneFamilies({
@@ -162,6 +170,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
             buckets: bucketsAt(1, 1).slice(1),
             ended: 1,
             durationSecs: 1,
+            createdSecs: 1,
           },
         ],
       }),
@@ -181,6 +190,7 @@ test("a run's tokens are one series per kind, and its cost is dollars", () => {
         tokensCacheCreation: 3,
         tokensCacheRead: 4,
         costUsdMicros: 1_250_000,
+        createdSecs: 1,
       },
     ],
   });
@@ -221,6 +231,7 @@ function leadTurn(
     tokens: model === undefined ? 0 : 10,
     costMicros: model === undefined ? 0 : 500,
     durationMs: model === undefined ? 0 : 2_000,
+    createdSecs: ended,
   };
 }
 
@@ -245,6 +256,7 @@ test("every ended session turn is counted, and only a measured one spends or is 
           model: "model-large",
         },
         value: 0.0005,
+        createdSecs: 1,
       },
     ],
     "an unmeasured turn spends nothing",
@@ -258,6 +270,48 @@ test("every ended session turn is counted, and only a measured one spends or is 
       : [],
     [[bucketsAt(0, 1), 2]],
   );
+});
+
+test("each counter and histogram series began at the earliest row it sums, and the tickets gauge at no time", () => {
+  const families = metricsPlaneFamilies({
+    ...empty,
+    runs: [300, 100, 200].map((createdSecs) => ({
+      task,
+      turns: 1,
+      durationMs: 0,
+      durationApiMs: 0,
+      createdSecs,
+    })),
+    turns: [
+      leadTurn("Answered", "model-large", 7),
+      leadTurn("Answered", "model-large", 3),
+    ],
+    tickets: [{ tenant: "acme", project: "web", phase: "Work", tickets: 2 }],
+  });
+  for (const name of [
+    "chuggy_run_turns_total",
+    "chuggy_run_duration_seconds_total",
+    "chuggy_run_api_duration_seconds_total",
+  ])
+    assert.deepEqual(
+      family(families, name).samples.map((sample) => sample.createdSecs),
+      [100],
+      name,
+    );
+  for (const name of [
+    "chuggy_session_turns_ended_total",
+    "chuggy_session_turn_tokens_total",
+    "chuggy_session_turn_cost_usd_total",
+    "chuggy_session_turn_duration_seconds",
+  ])
+    assert.deepEqual(
+      family(families, name).samples.map((sample) => sample.createdSecs),
+      [3],
+      name,
+    );
+  assert.deepEqual(family(families, "chuggy_tickets").samples, [
+    { labels: { tenant: "acme", project: "web", phase: "Work" }, value: 2 },
+  ]);
 });
 
 test("a read's refusal is the scrape's, and a page past its series is refused rather than cut", async () => {
@@ -307,4 +361,27 @@ test("a read's refusal is the scrape's, and a page past its series is refused ra
     { issuer, seriesMax: 4 },
   ).scrape();
   assert.equal(page.scraped, "Page");
+});
+
+test("a series' time it began is one more series against the cap", async () => {
+  const run = {
+    task,
+    turns: 1,
+    durationMs: 0,
+    durationApiMs: 0,
+    createdSecs: 1,
+  };
+  assert.deepEqual(
+    await metricsPlane(
+      {
+        read: () =>
+          Promise.resolve({ read: "Read", rows: { ...empty, runs: [run] } }),
+      },
+      { issuer, seriesMax: 5 },
+    ).scrape(),
+    {
+      scraped: "Refused",
+      why: "the page would carry 6 series, past the cap of 5",
+    },
+  );
 });

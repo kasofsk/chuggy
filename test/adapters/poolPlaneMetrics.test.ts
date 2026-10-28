@@ -1,10 +1,13 @@
-/** The pool plane's second listener: none where no port is named, and the held reports served as a page where one is. */
+/** The pool plane's second listener: none where no port is named, and the held reports served as a page where one is, in the format the scraper asks for. */
 
 import assert from "node:assert/strict";
 import { createServer } from "node:net";
 import { test } from "node:test";
 
-import { metricsExpositionContentType } from "../../src/adapters/http/metricsExposition.ts";
+import {
+  metricsExpositionContentType,
+  metricsExpositionOpenMetricsContentType,
+} from "../../src/adapters/http/metricsExposition.ts";
 import {
   poolPlaneMetricsAddressRead,
   poolPlaneMetricsListening,
@@ -97,6 +100,18 @@ test("with a metrics port the held reports are served there as a page", async ()
       await answered.text(),
       /^chuggy_runner_jobs_running\{tenant="acme",project="web",pool="pool-one",owner="",personal_runner="",host="build-box\.local"\} 1$/mu,
     );
+    const open = await fetch(`http://127.0.0.1:${String(port)}/metrics`, {
+      headers: { accept: "application/openmetrics-text;version=1.0.0" },
+    });
+    assert.equal(open.status, 200);
+    assert.equal(
+      open.headers.get("content-type"),
+      metricsExpositionOpenMetricsContentType,
+    );
+    const page = await open.text();
+    assert.match(page, /^# TYPE chuggy_runner_polls counter$/mu);
+    assert.match(page, /^chuggy_runner_polls_total\{/mu);
+    assert.match(page, /\n# EOF\n$/u);
   } finally {
     await app.close();
   }
