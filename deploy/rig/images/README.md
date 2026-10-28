@@ -219,6 +219,31 @@ credential.
 | `CHUG_ACCESS_PLANE_HOST` | | the default is loopback |
 | `CHUG_ACCESS_PLANE_PORT` | 3003 | |
 
+## Configuring the pool plane
+
+The variables here are read by `src/roots/poolPlane.ts` beside the rest of the
+plane's own. `CHUG_POOL_PLANE_IMAGE_HOSTS` is in
+[`deploy/rig/pools/README.md`](../pools/README.md).
+
+A runner whose configuration turns reporting on posts a report of its machine
+and its work to `/v1/runner-report` under its own bearer. The plane holds each
+runner's latest report in memory, and nothing is written to its database. With
+a metrics port named, a second listener serves `GET /metrics` in the Prometheus
+text format: every `chuggy_runner_` series of each runner whose report it
+holds, beside what that runner's latest poll named. A report older than
+`workerPoolReportAgeMsMax` in `src/interpreter/workerPoolReports.ts` is
+dropped, and its runner's series with it.
+
+Every series carries `tenant` and `host`; a pool's carries `project` and
+`pool`, and a personal runner's `owner`, its owner's subject under
+`CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_POOL_PLANE_METRICS_PORT` | | the port the reports are served on, apart from the plane's own so a NetworkPolicy may admit a scraper to it alone; unset, no listener is opened and everything else is served as before |
+| `CHUG_POOL_PLANE_METRICS_HOST` | | the default is loopback |
+| `CHUG_POOL_PLANE_METRICS_RUNNERS_MAX` | 1000 | the most runners whose reports and polls are held; past it the one heard from least recently is dropped |
+
 ## Configuring the metrics plane
 
 Every variable here is read by `src/roots/metricsPlane.ts`, and the process
