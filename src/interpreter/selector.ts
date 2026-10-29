@@ -1955,19 +1955,39 @@ function candidateScanQuery(
  * The scan a pass resumes. An execution placed or ended frees or takes a slot
  * without moving the dispatch view, so an exhausted scan would read its view
  * as unmoved and give no turn to a lead holding candidates for that slot; a
- * published execution therefore starts the scan again.
+ * published execution therefore starts the scan again, and so does a reset,
+ * which may have dropped one.
  */
 function observeSelectorProjectScan(
   state: SelectorProjectState,
-  changes: readonly ProjectNotification[],
+  notifications: NotificationBatch,
 ): SelectorCandidateScan {
   const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
   if (
     scan.state === "Exhausted" &&
-    changes.some((change) => change.kind === "Execution")
+    (notifications.result === "Reset" ||
+      notifications.events.some((change) => change.kind === "Execution"))
   )
     return { state: "Unstarted" };
   return scan;
+}
+
+/**
+ * What one pass over a project found: an observation for the lead, or the
+ * state that steps an exhausted scan's cursor past changes that left its view
+ * where it was. Without the step, every later pass reads the same page of
+ * those changes, and an execution published behind a full one is never read.
+ */
+export type SelectorProjectPass =
+  | { readonly result: "Observed"; readonly observation: SelectorObservation }
+  | { readonly result: "Unmoved"; readonly state: SelectorProjectState };
+
+/** The observation one pass found, or nothing where it found none. */
+export async function observeSelectorProject(
+  ...pass: Parameters<typeof observeSelectorProjectPass>
+): Promise<SelectorObservation | undefined> {
+  const found = await observeSelectorProjectPass(...pass);
+  return found?.result === "Observed" ? found.observation : undefined;
 }
 
 /**
@@ -1977,7 +1997,7 @@ function observeSelectorProjectScan(
  * between the two reads and be counted as the trigger for a window that does
  * not contain it.
  */
-export async function observeSelectorProject(
+export async function observeSelectorProjectPass(
   state: SelectorProjectState,
   source: Pick<
     SelectorObservationSource,
@@ -1988,10 +2008,9 @@ export async function observeSelectorProject(
   notifications: NotificationBatch,
   pageLimit = 100,
   candidateBytesMax = 524_288,
-): Promise<SelectorObservation | undefined> {
+): Promise<SelectorProjectPass | undefined> {
   if (!selectorProjectMoved(state, notifications)) return undefined;
-  const changes = notifications.result === "Events" ? notifications.events : [];
-  const scan = observeSelectorProjectScan(state, changes);
+  const scan = observeSelectorProjectScan(state, notifications);
   const query = candidateScanQuery(scan, pageLimit);
   let page =
     scan.state === "Exhausted"
@@ -2002,7 +2021,11 @@ export async function observeSelectorProject(
           query,
           candidateBytesMax,
         );
-  if (scan.state === "Exhausted" && page.result === "Page") return undefined;
+  if (scan.state === "Exhausted" && page.result === "Page")
+    return {
+      result: "Unmoved",
+      state: { ...state, notificationCursor: notifications.cursor },
+    };
   if (page.result === "Reset")
     page = await boundedCandidatePage(
       source,
@@ -2011,9 +2034,31 @@ export async function observeSelectorProject(
       candidateBytesMax,
     );
   if (page.result === "Reset") return undefined;
+  return {
+    result: "Observed",
+    observation: await observeSelectorProjectPassPage(
+      state,
+      source,
+      refusals,
+      held,
+      notifications,
+      page,
+    ),
+  };
+}
+
+/** The observation a pass builds from the view page it read. */
+async function observeSelectorProjectPassPage(
+  state: SelectorProjectState,
+  source: Pick<SelectorObservationSource, "operationalContext">,
+  refusals: Pick<SelectorRefusalLedger, "standingAmong">,
+  held: Pick<SelectorStateStore, "heldAmong">,
+  notifications: NotificationBatch,
+  page: Exclude<BoundedCandidatePage, { readonly result: "Reset" }>,
+): Promise<SelectorObservation> {
   const observed = {
     notificationCursor: notifications.cursor,
-    changes,
+    changes: notifications.result === "Events" ? notifications.events : [],
     operationalContext: await source.operationalContext(state.partition),
     handoffNote: state.handoffNote,
   };

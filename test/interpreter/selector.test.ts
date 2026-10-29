@@ -951,7 +951,8 @@ function quietPass(
  * leave the dispatch view where it was triggers on every pass for good — and a
  * permit taken on the trigger charges each of those a decision reference, a
  * `selector_interaction` row and a selections-per-minute slot for an attempt
- * with nothing to observe.
+ * with nothing to observe, so the pass writes only its cursor, stepped past
+ * those changes.
  */
 test("a pass whose view has not moved takes no permit, leaves no attempt and asks no admission", async () => {
   const allocated: string[] = [];
@@ -1009,7 +1010,7 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
   );
   assert.deepEqual(allocated, []);
   assert.deepEqual(terminated, []);
-  assert.deepEqual(written, []);
+  assert.deepEqual(written, ["quiet"]);
   assert.equal(admissionAsked, 0);
   assert.equal(result.observed, 0);
   assert.equal(result.quiet, 0);
@@ -1064,6 +1065,92 @@ test("an execution's notification gives a lead holding candidates on an exhauste
   );
   assert.equal(result.observed, 1);
   assert.deepEqual(result.failures, []);
+});
+
+/**
+ * A full page of changes that leave the view where it was stands between the
+ * exhausted scan and an execution placed after them. The first pass steps the
+ * cursor past the page, so the second reads the execution and gives a turn.
+ */
+test("an execution published behind a full page of unmoving changes still gives a lead a turn", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  const drafts = Array.from(
+    { length: selectorNotificationPageLimit },
+    (_, index) => ({
+      ordinal: exhaustedProjectState.notificationCursor + index + 1,
+      kind: "Draft" as const,
+      resource: `draft-${String(index)}`,
+    }),
+  );
+  const pageEnd = drafts[drafts.length - 1]?.ordinal ?? 0;
+  const reads: number[] = [];
+  const source = {
+    ...promptObservationSource(),
+    moved: (_scope: unknown, after: number) => {
+      reads.push(after);
+      return Promise.resolve(
+        after < pageEnd
+          ? ({ result: "Events", cursor: pageEnd, events: drafts } as const)
+          : ({
+              result: "Events",
+              cursor: pageEnd + 1,
+              events: [
+                {
+                  ordinal: pageEnd + 1,
+                  kind: "Execution",
+                  resource: "execution-one",
+                },
+              ],
+            } as const),
+      );
+    },
+    dispatchView: (_scope: unknown, query: DispatchViewQuery) =>
+      Promise.resolve(
+        query.watermark === undefined
+          ? candidateDispatchPage(partition, exhaustedScanToken.digest)
+          : ({
+              result: "Page",
+              token: exhaustedScanToken,
+              candidates: [],
+              notificationCursor: pageEnd + 1,
+            } as const),
+      ),
+  };
+  await quietPass(project.store, source, project.policy);
+  assert.equal(project.turns(), 0);
+  assert.equal(project.stored().notificationCursor, pageEnd);
+  assert.deepEqual(project.stored().candidateScan, {
+    state: "Exhausted",
+    token: exhaustedScanToken,
+  });
+  await quietPass(project.store, source, project.policy);
+  assert.deepEqual(reads, [exhaustedProjectState.notificationCursor, pageEnd]);
+  assert.equal(project.turns(), 1);
+});
+
+/** A reset may have dropped an execution's notification, so it restarts an exhausted scan too. */
+test("a notification reset gives a lead holding candidates on an exhausted scan a turn", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  await quietPass(
+    project.store,
+    {
+      ...promptObservationSource(),
+      moved: () => Promise.resolve({ result: "Reset", cursor: 9 } as const),
+      dispatchView: (_scope, query) =>
+        Promise.resolve(
+          query.watermark === undefined
+            ? candidateDispatchPage(partition, exhaustedScanToken.digest)
+            : ({
+                result: "Page",
+                token: exhaustedScanToken,
+                candidates: [],
+                notificationCursor: 9,
+              } as const),
+        ),
+    },
+    project.policy,
+  );
+  assert.equal(project.turns(), 1);
 });
 
 /**
