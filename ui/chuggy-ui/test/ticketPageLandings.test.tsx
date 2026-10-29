@@ -54,7 +54,15 @@ vi.mock("@tanstack/react-router", () => ({
  * the read asked again on a frame and on a clock.
  */
 
+/**
+ * The instant every case is drawn at. The page reads ages against the clock,
+ * so a clock left moving lets two draws a case compares straddle a change in
+ * an age's text; only `Date` is fixed, so the harness's timers still run.
+ */
+const ticketPageLandingsNowMs = Date.parse("2026-10-29T00:30:00Z");
+
 beforeEach(() => {
+  vi.setSystemTime(ticketPageLandingsNowMs);
   resizeObserverStubbed();
   viewportAtEm(viewportDeskEm);
 });
