@@ -152,17 +152,17 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # longer satisfies it. The pin is declared at the top of this file, where the
 # `core` stage holds it to the core's lock.
 #
-# CODEX IS ITS PLATFORM PACKAGE, LESS ITS ZSH. npm's `codex` is a node script
+# CODEX IS ITS PLATFORM PACKAGE, LESS ITS VOICE. npm's `codex` is a node script
 # that finds its platform package and spawns the binary in it, and that binary
 # finds the rest of the package from where it really sits, through the
 # package's own `codex-package.json`: the host it runs commands through,
 # `bin/codex-code-mode-host`, beside it, and its bubblewrap and ripgrep in the
 # directories that file names. So `lib/codex/` is the package's directory for
 # this architecture as the package lays it out, and `bin/codex` is a link into
-# it. Left out is the zsh Codex runs only under its `shell_zsh_fork` feature,
-# which is off unless a run turns it on, and which alone in the package needs
-# `libtinfo.so.6`, a library nothing else in the tree does. Tini is its
-# release's static build.
+# it. Left out is the voice host and the GStreamer beside it, which Codex runs
+# only for a realtime voice conversation, which `exec` never holds, and which
+# alone in the package need `libresolv.so.2`, a library nothing else in the
+# tree does. Tini is its release's static build.
 #
 # NO LIBRARY IS SHIPPED; THE JOB'S IMAGE PROVIDES THEM. Chuggy's node names no
 # directory of its own to find a library in, so one shipped here would be found
@@ -172,7 +172,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 FROM base AS runtime
 ARG TARGETARCH
 ARG CLAUDE_CODE_VERSION=2.1.282
-ARG CODEX_VERSION=0.151.0
+ARG CODEX_VERSION=0.165.0
 ARG AGENT_SDK_VERSION=0.3.282
 ARG TINI_VERSION=0.19.0
 ARG TINI_SHA256_AMD64=c5b0666b4cb676901f90dfcb37106783c5fe2077b04590973b885950611b30ee
@@ -194,7 +194,7 @@ RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
   && rm -rf /tmp/runtime
 
 # The platform package npm's `codex` names as its optional dependency, of which
-# this architecture's directory is kept whole but for its zsh.
+# this architecture's directory is kept whole but for its voice.
 RUN case "$TARGETARCH" in \
        amd64) platform=linux-x64 triple=x86_64-unknown-linux-musl ;; \
        arm64) platform=linux-arm64 triple=aarch64-unknown-linux-musl ;; \
@@ -204,7 +204,7 @@ RUN case "$TARGETARCH" in \
   && npm pack --silent "@openai/codex@${CODEX_VERSION}-${platform}" > /tmp/codex.txt \
   && read -r packed < /tmp/codex.txt \
   && tar --extract --gzip --file "/tmp/$packed" --directory /tmp \
-    --exclude "package/vendor/${triple}/codex-resources/zsh" \
+    --exclude "package/vendor/${triple}/codex-resources/voice" \
     "package/vendor/${triple}" \
   && mv "/tmp/package/vendor/${triple}" /opt/chuggy/lib/codex \
   && ln -s ../lib/codex/bin/codex /opt/chuggy/bin/codex \
