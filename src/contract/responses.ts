@@ -2254,7 +2254,13 @@ export const runnerListedSchema = workerRunnerSchema.extend({
 });
 export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
 
-/** A project's registered pools in name order, `truncated` where it holds more than one read answers, each with its runner where its newest poll named one. */
+/**
+ * A project's registered pools in name order, `truncated` where it holds more
+ * than one read answers, each with its runner where its newest poll named one.
+ * `polledAt` is a pool's newest poll, absent until it polls, and `live` whether
+ * that poll is recent enough for the pool to be taking work, as a member's
+ * runner's is.
+ */
 export const workerPoolsResponseSchema = z.object({
   pools: z
     .array(
@@ -2262,6 +2268,8 @@ export const workerPoolsResponseSchema = z.object({
         pool: identitySchema,
         capabilities: z.array(z.string().min(1)),
         registeredAt: instantSchema,
+        polledAt: instantSchema.optional(),
+        live: z.boolean(),
         runner: runnerListedSchema.optional(),
       }),
     )

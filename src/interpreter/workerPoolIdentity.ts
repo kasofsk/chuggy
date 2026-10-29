@@ -34,5 +34,11 @@ export type PoolPlaneIdentity =
   | (PersonalRunnerIdentity & { readonly kind: "Personal" })
   | (ChatHostIdentity & { readonly kind: "ChatHost" });
 
+/** Whoever the pool plane admitted that may take an execution: a project's pool or a member's personal runner. */
+export type WorkerPoolExecutionPoller = Exclude<
+  PoolPlaneIdentity,
+  { readonly kind: "ChatHost" }
+>;
+
 /** Draws an assignment's identity and the one-shot bearer its harness answers under. */
 export type WorkerPoolMint = () => string;

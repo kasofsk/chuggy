@@ -284,7 +284,7 @@ export function workerPoolRunnerKept(row: {
       };
 }
 
-/** A project's registered pools over the API's pool, in name order and read one past the page as the roster's. */
+/** A project's registered pools over the API's pool, in name order and read one past the page as the roster's, each live by its newest poll of either kind as a personal runner is. */
 export function postgresWorkerPoolDirectory(
   pool: pg.Pool,
 ): WorkerPoolDirectory {
@@ -294,9 +294,14 @@ export function postgresWorkerPoolDirectory(
         pool: string;
         capabilities: string[];
         registered_at: Date;
+        polled_at: Date | null;
+        live: boolean | null;
         runner_package: string | null;
         runner_version: string | null;
-      }>(sql`SELECT w.pool,w.capabilities,w.registered_at,w.runner_package,w.runner_version
+      }>(sql`SELECT w.pool,w.capabilities,w.registered_at,w.runner_package,w.runner_version,
+          greatest(w.last_polled_at,w.executions_polled_at) AS polled_at,
+          greatest(w.last_polled_at,w.executions_polled_at)
+            > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live
         FROM worker_pool w
         WHERE w.tenant=${partition.tenant} AND w.project=${partition.project}
         ORDER BY w.pool LIMIT ${workerPoolsAnsweredMax + 1}`);
@@ -305,6 +310,10 @@ export function postgresWorkerPoolDirectory(
           pool: row.pool,
           capabilities: row.capabilities,
           registeredAt: row.registered_at.toISOString(),
+          ...(row.polled_at === null
+            ? {}
+            : { polledAt: row.polled_at.toISOString() }),
+          live: row.live === true,
           ...workerPoolRunnerKept(row),
         })),
         truncated: found.rows.length > workerPoolsAnsweredMax,
@@ -782,6 +791,20 @@ function postgresExecutionHoldsRouted(
   };
 }
 
+/** Stamps a pool's poll as one that could take an execution, while this registration is the pool's. */
+async function workerPoolExecutionsPolled(
+  pool: pg.Pool,
+  identity: WorkerPoolIdentity,
+): Promise<void> {
+  await pool.query(
+    sql`UPDATE worker_pool w SET executions_polled_at=now()
+          WHERE w.tenant=${identity.partition.tenant}
+            AND w.project=${identity.partition.project}
+            AND w.pool=${identity.pool}
+            AND w.principal=${identity.principal}`,
+  );
+}
+
 /** Both callers' assignments behind one port, each call routed by who is asking. */
 export function postgresWorkerPoolAssignments(
   pool: pg.Pool,
@@ -821,7 +844,10 @@ export function postgresWorkerPoolAssignments(
       return personalExecutionWaiting(pool, identity, terms, projects);
     },
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
-    polled: (identity) => personalExecutionsPolled(pool, identity),
+    polled: (identity) =>
+      identity.kind === "Personal"
+        ? personalExecutionsPolled(pool, identity)
+        : workerPoolExecutionsPolled(pool, identity),
     ...postgresExecutionHoldsRouted(pool),
   };
 }
