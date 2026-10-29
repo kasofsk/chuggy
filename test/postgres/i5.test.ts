@@ -1794,7 +1794,7 @@ test("rejecting a decision terminates all of its rows under one outcome", async 
 /**
  * A dispatch the lead proposed is not its candidate again while the selector
  * is still delivering it, held for approval or not, and is once the delivery
- * ends.
+ * ends. Only the delivery that ends without a reviewer is named as delivering.
  */
 test("a delivery not yet ended holds its ticket from the candidates", async () => {
   const partition = await postgresHarnessProject(harness.store, "i5-in-flight");
@@ -1803,7 +1803,10 @@ test("a delivery not yet ended holds its ticket from the candidates", async () =
   await state.setAutomaticReadiness(true);
   const automatic = `in-flight-${crypto.randomUUID()}`;
   const approval = `in-flight-approval-${crypto.randomUUID()}`;
-  const held = () => state.heldAmong(partition, [1, 2].map(asTicketId));
+  const held = async () =>
+    [...(await state.heldAmong(partition, [1, 2].map(asTicketId)))].sort(
+      (left, right) => left.ticket - right.ticket,
+    );
   try {
     const restore = await i5HeldDispatchMode("Automatic");
     try {
@@ -1827,24 +1830,24 @@ test("a delivery not yet ended holds its ticket from the candidates", async () =
       (await i5DeliveryRows(automatic)).map((row) => row["state"]),
       ["Pending"],
     );
-    assert.deepEqual(
-      [...(await held())].sort((left, right) => left - right),
-      [1, 2],
-    );
+    assert.deepEqual(await held(), [
+      { ticket: 1, delivering: true },
+      { ticket: 2, delivering: false },
+    ]);
     await state.submitted(automatic, asTicketId(1));
     assert.deepEqual(
       (await i5DeliveryRows(automatic)).map((row) => row["state"]),
       ["Submitted"],
     );
-    assert.deepEqual(
-      [...(await held())].sort((left, right) => left - right),
-      [1, 2],
-    );
+    assert.deepEqual(await held(), [
+      { ticket: 1, delivering: true },
+      { ticket: 2, delivering: false },
+    ]);
     await state.terminal(automatic, asTicketId(1), {
       state: "Refused",
       code: "SelectionChanged",
     });
-    assert.deepEqual(await held(), [2]);
+    assert.deepEqual(await held(), [{ ticket: 2, delivering: false }]);
   } finally {
     await selectorPool.end();
   }

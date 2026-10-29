@@ -215,7 +215,17 @@ export interface SelectorStateStore {
   heldAmong(
     partition: Partition,
     tickets: readonly DispatchCandidate["ticket"][],
-  ): Promise<readonly DispatchCandidate["ticket"][]>;
+  ): Promise<readonly SelectorHeldTicket[]>;
+}
+
+/**
+ * A ticket a decision dispatches whose delivery has not ended: held for
+ * approval, or `delivering`, which is pending or submitted and ends without a
+ * reviewer.
+ */
+export interface SelectorHeldTicket {
+  readonly ticket: DispatchCandidate["ticket"];
+  readonly delivering: boolean;
 }
 
 /** A decision a selector process began and did not finish, as the store holds it. */
@@ -1988,10 +1998,12 @@ function candidateScanQuery(
 
 /**
  * Polls current state after every wake-up or cursor reset and never mixes view
- * watermarks. The notification page is read by the caller and handed in, so it
- * is read once per cycle: reading it here as well would let a row arrive
- * between the two reads and be counted as the trigger for a window that does
- * not contain it.
+ * watermarks, the notification page read once by the caller and handed in, so a
+ * row cannot arrive between two reads and be counted as the trigger for a
+ * window that does not contain it. A page holding a ticket still being
+ * delivered is no observation: ending that delivery journals nothing to the
+ * project, so a cursor stored past it would not see the ticket again, and
+ * storing nothing observes the project afresh each pass until it has ended.
  */
 export async function observeSelectorProject(
   state: SelectorProjectState,
@@ -2048,11 +2060,13 @@ export async function observeSelectorProject(
   const tickets = page.candidates.map((candidate) => candidate.ticket);
   const standing = await refusals.standingAmong(state.partition, tickets);
   const proposed = await held.heldAmong(state.partition, tickets);
+  if (proposed.some((ticket) => ticket.delivering)) return undefined;
   return {
     ...observed,
     token: page.token,
     candidates: undecidedCandidates(page.candidates, standing).filter(
-      (candidate) => !proposed.includes(candidate.ticket),
+      (candidate) =>
+        !proposed.some((ticket) => ticket.ticket === candidate.ticket),
     ),
     refusals: standing,
     nextCandidateScan:

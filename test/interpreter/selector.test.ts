@@ -14,6 +14,7 @@ import {
   leadDispatchesMax,
   leadInputBytesMax,
   observeSelectorProject,
+  proposalCommand,
   runObservedSelectorCycle,
   runSelectorCycle,
   resolvedSelectorSettings,
@@ -29,6 +30,7 @@ import {
   type SelectorPolicyExecution,
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
+  type SelectorHeldTicket,
   type SelectorObservation,
   type SelectorOperationalContextV2,
   type SelectorStandingRefusal,
@@ -284,6 +286,13 @@ function refusalWrites(
 const noneHeld: Pick<SelectorStateStore, "heldAmong"> = {
   heldAmong: () => Promise.resolve([]),
 };
+
+/** The tickets named, each held by a decision awaiting approval. */
+function awaitingApproval(
+  tickets: readonly DispatchCandidate["ticket"][],
+): readonly SelectorHeldTicket[] {
+  return tickets.map((ticket) => ({ ticket, delivering: false }));
+}
 
 /** One standing refusal of the ticket and version named, as the ledger answers it. */
 function standingRefusalOf(
@@ -1215,7 +1224,9 @@ test("every observation holding a candidate is offered a turn", async () => {
       {
         heldAmong: (_scope, tickets) =>
           Promise.resolve(
-            tickets.filter((ticket) => drawn.held.includes(ticket)),
+            awaitingApproval(
+              tickets.filter((ticket) => drawn.held.includes(ticket)),
+            ),
           ),
       },
     );
@@ -1343,7 +1354,8 @@ test("a held page with more to come is a quiet cycle that stores the continuing 
   for (const viewMoved of [false, true]) {
     const label = viewMoved ? "the view moved" : "the view stood";
     const project = heldProjectStore(observedState(5), {
-      heldAmong: (_scope, tickets) => Promise.resolve(tickets),
+      heldAmong: (_scope, tickets) =>
+        Promise.resolve(awaitingApproval(tickets)),
     });
     const log = notificationLog([6]);
     const queries: DispatchViewQuery[] = [];
@@ -1606,6 +1618,110 @@ test("an empty view without room is a quiet cycle as before", async () => {
   assert.equal(project.turns(), 0);
   assert.deepEqual(project.steps, ["quiet"]);
   assert.equal(project.stored().notificationCursor, 6);
+});
+
+/**
+ * One project whose lone dispatch of the view's candidate the writer refused:
+ * the refusal is journaled and has moved the view, and the delivery stands
+ * `Submitted` until a pass's reconciliation ends it.
+ */
+function refusedDeliveryProject(alongside: readonly DispatchCandidate[]) {
+  let delivery: "Submitted" | "Terminal" = "Submitted";
+  const token = candidateDispatchPage(partition, "b".repeat(64)).token;
+  const delivered: SelectorDelivery = {
+    decision: "decision-dispatching",
+    ticket: viewCandidate.ticket,
+    partition,
+    operation: asOperationId("operation-dispatching-t35"),
+    command: proposalCommand({
+      ticket: viewCandidate,
+      token,
+      selectorDecisionReference: "decision-dispatching",
+    }),
+    attempts: 1,
+  };
+  const project = heldProjectStore(
+    { ...observedState(5), candidateScan: { state: "Exhausted", token } },
+    {
+      heldAmong: (_scope, tickets) =>
+        Promise.resolve(
+          delivery === "Submitted" && tickets.includes(viewCandidate.ticket)
+            ? [{ ticket: viewCandidate.ticket, delivering: true }]
+            : [],
+        ),
+    },
+  );
+  const store: SelectorStateStore = {
+    ...project.store,
+    submittedDeliveries: () =>
+      Promise.resolve(delivery === "Submitted" ? [delivered] : []),
+    terminal: () => {
+      delivery = "Terminal";
+      return Promise.resolve();
+    },
+  };
+  const refused = {
+    ...candidateDispatchPage(partition, "e".repeat(64)),
+    token: { ...token, watermark: 2, digest: "e".repeat(64) },
+    candidates: [viewCandidate, ...alongside],
+  };
+  const pass = () =>
+    selectorRunOnce(
+      refusalWrites(),
+      store,
+      {
+        ...promptObservationSource(),
+        moved: notificationLog([6]).moved,
+        dispatchView: (_scope, query) =>
+          Promise.resolve(
+            query.watermark === undefined ||
+              query.watermark === refused.token.watermark
+              ? refused
+              : ({ result: "Reset" } as const),
+          ),
+        projects: () => Promise.resolve({ projects: [partition] }),
+        submit: () => Promise.reject(new Error("no delivery expected")),
+        operation: () =>
+          Promise.resolve({ state: "Refused", code: "SelectionChanged" }),
+      },
+      project.policy,
+      perProjectIdentities(),
+      settingsSource(() => Promise.resolve(runtimeSettings)),
+      { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
+    );
+  return { project, pass, delivery: () => delivery };
+}
+
+/**
+ * The writer refusing a dispatch moves the project before reconciliation ends
+ * its delivery, and ending it journals nothing. A pass between the two that
+ * stored anything would leave its cursor at the head of the log, and the
+ * ticket would not be offered again until the project next moved.
+ */
+test("a ticket hidden while its dispatch is delivered is a candidate on the pass after the delivery ends", async () => {
+  const second = { ...viewCandidate, ticket: asTicketId(36) };
+  for (const alongside of [[], [second]]) {
+    const label = alongside.length === 0 ? "alone" : "beside another";
+    const { project, pass, delivery } = refusedDeliveryProject(alongside);
+    const during = await pass();
+    assert.equal(during.reconciled, 1, label);
+    assert.equal(delivery(), "Terminal", label);
+    assert.equal(project.turns(), 0, label);
+    assert.deepEqual(project.steps, [], label);
+    assert.equal(project.stored().notificationCursor, 5, label);
+    await pass();
+    assert.equal(project.turns(), 1, label);
+    assert.deepEqual(
+      project.observations[0]?.candidates.map((candidate) => candidate.ticket),
+      [viewCandidate.ticket, ...alongside.map((candidate) => candidate.ticket)],
+      label,
+    );
+    assert.deepEqual(
+      project.observations[0]?.changes.map((change) => change.ordinal),
+      [6],
+      label,
+    );
+  }
 });
 
 test("inventory progress follows scanned projects when a permit is unavailable", async () => {
@@ -4580,7 +4696,9 @@ test("a sweep does not offer its lead a ticket a held decision dispatches", asyn
       ...stateStore(() => undefined),
       heldAmong: (_partition, tickets) =>
         Promise.resolve(
-          tickets.filter((ticket) => ticket === dispatchable.ticket),
+          awaitingApproval(
+            tickets.filter((ticket) => ticket === dispatchable.ticket),
+          ),
         ),
     },
     {
