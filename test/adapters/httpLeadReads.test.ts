@@ -34,6 +34,7 @@ import {
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
 import type { AgenticRefusalEntry } from "../../src/interpreter/agenticRefusal.ts";
+import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type {
   LeadRefused,
   LeadStanding,
@@ -209,6 +210,10 @@ interface LeadCase {
   /** The installation's mode and the project's own, each running where unstated. */
   readonly installationMode?: SelectorRuntimeSettings["mode"];
   readonly projectMode?: SelectorRuntimeSettings["mode"];
+  /** Whether a released ticket waits on a dispatch decision. */
+  readonly waiting?: boolean;
+  /** Whether the site's selector may read the project, where the deployment names one. */
+  readonly selectorReads?: boolean;
   readonly draws?: readonly SessionStoreRead[];
   readonly ticketVersion?: number;
   /** How many rows each refusal read answers, so a short page can be driven. */
@@ -322,6 +327,41 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
     },
     history,
     settings: leadPortsSettings(shape),
+    candidates: { read: () => Promise.resolve(dispatchPage(shape)) },
+    ...(shape.selectorReads === undefined
+      ? {}
+      : { selector: selectorPrincipal }),
+  };
+}
+
+const selectorPrincipal = asPrincipal("selector-subject");
+
+/** The dispatch view's first page, holding one released ticket where a case says one waits. */
+function dispatchPage(shape: LeadCase): DispatchViewPage {
+  return {
+    result: "Page",
+    token: {
+      ...partition,
+      recoveryEpoch: "epoch",
+      schemaVersion: 1,
+      watermark: 1,
+      digest: "a".repeat(64),
+    },
+    candidates:
+      (shape.waiting ?? false)
+        ? [
+            {
+              ticket: asTicketId(6),
+              ticketVersion: 1,
+              dependencies: [],
+              program: [],
+              configurationRevision: "revision",
+              configurationDigest: "a".repeat(64),
+              configurationCanonical: "{}",
+            },
+          ]
+        : [],
+    notificationCursor: 1,
   };
 }
 
@@ -342,8 +382,16 @@ function leadPortsSettings(shape: LeadCase): NativeLeadPorts["settings"] {
 
 function appOf(shape: LeadCase = {}) {
   const access: ProjectAccess = {
-    authorize: () =>
-      Promise.resolve((shape.allowed ?? true) ? authority : undefined),
+    authorize: (principal) =>
+      Promise.resolve(
+        (
+          principal === selectorPrincipal
+            ? shape.selectorReads
+            : (shape.allowed ?? true)
+        )
+          ? authority
+          : undefined,
+      ),
     authorizeTenant: () => Promise.resolve(undefined),
     authorizeSite: projectAccessSiteRefused,
   };
@@ -520,6 +568,71 @@ test("a project whose selector is paused answers Paused over any refusal kept, a
     });
     assert.equal(Object.hasOwn(found.json(), "absence"), false);
   }
+});
+
+/** The no-lead answer the lead route gives a project shaped by `shape`. */
+async function leadAbsenceOf(shape: LeadCase): Promise<unknown> {
+  await using app = appOf({ standing: undefined, ...shape });
+  const none = await app.inject({ url: `${root}/lead`, headers: authorized });
+  assert.equal(none.statusCode, 200);
+  assert.deepEqual(
+    nativeHttpEndpoints.lead.response.parse(none.json()),
+    none.json(),
+  );
+  return none.json<{ absence: unknown }>().absence;
+}
+
+/**
+ * A released ticket waiting on a dispatch decision in a project the selector
+ * has kept no state for is not one that needs no lead: it waits on the
+ * selector's next pass, or, where the site's selector may not read the project,
+ * on a grant, since the selector sweeps only the projects it may read. Where
+ * the API names no selector it cannot say whether any reaches the project, and
+ * says that rather than promising a pass.
+ */
+test("a project with a released ticket and no selector state never answers NotNeeded", async () => {
+  assert.deepEqual(await leadAbsenceOf({ waiting: true }), {
+    reason: "SelectorUnnamed",
+  });
+  assert.deepEqual(
+    await leadAbsenceOf({ waiting: true, selectorReads: true }),
+    { reason: "AwaitingSelector" },
+  );
+  assert.deepEqual(
+    await leadAbsenceOf({ waiting: true, selectorReads: false }),
+    { reason: "SelectorNotGranted" },
+  );
+  assert.deepEqual(await leadAbsenceOf({ selectorReads: true }), {
+    reason: "NotNeeded",
+  });
+  assert.deepEqual(await leadAbsenceOf({}), { reason: "NotNeeded" });
+});
+
+/**
+ * A selector that may not read the project never reaches it to ask admission,
+ * so a refusal it kept before is outranked; a paused one outranks it in turn.
+ */
+test("a project the selector may not read answers SelectorNotGranted over a kept refusal, and Paused over that", async () => {
+  const refused: LeadRefused = {
+    reason: "RunnerOffline",
+    since: "2026-09-02T00:00:00.000Z",
+  };
+  assert.deepEqual(
+    await leadAbsenceOf({ refused, waiting: true, selectorReads: false }),
+    { reason: "SelectorNotGranted" },
+  );
+  assert.deepEqual(
+    await leadAbsenceOf({ refused, waiting: true, selectorReads: true }),
+    refused,
+  );
+  assert.deepEqual(
+    await leadAbsenceOf({
+      projectMode: "Paused",
+      waiting: true,
+      selectorReads: false,
+    }),
+    { reason: "Paused" },
+  );
 });
 
 test("the transcript answers the chain over its batches and marks what is held", async () => {

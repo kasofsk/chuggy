@@ -20,6 +20,7 @@ import { randomUUID } from "node:crypto";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
@@ -297,6 +298,7 @@ export function threadRigApp(input: {
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
       settings: postgresSelectorResolvedSettings(pool),
+      candidates: postgresDispatchViews(pool),
     },
     {
       threads: postgresThreads(pool, {
