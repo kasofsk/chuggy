@@ -1,6 +1,7 @@
 import {
   agenticRefusalReasonCharsMax,
   dispatchViewPageLimitMax,
+  leadAttentionRecheckMs,
   leadDispatchesMax,
   selectorFailedDecisionsPerViewMax,
   selectorHandoffNoteBytesMax,
@@ -984,6 +985,28 @@ function policyInstant(value: unknown, what: string): string {
     throw new TypeError(`${what} must be a real canonical UTC instant`);
   const milliseconds = value.length === 20 ? "000" : value.slice(20, 23);
   return `${value.slice(0, 19)}.${milliseconds}Z`;
+}
+
+/** A UTC instant's milliseconds since the epoch, in the proleptic Gregorian calendar. */
+function selectorInstantEpochMs(instant: string): number {
+  const canonical = policyInstant(instant, "a decision's end");
+  const field = (start: number, end: number) =>
+    Number(canonical.slice(start, end));
+  const year = field(0, 4);
+  const month = field(5, 7);
+  const shifted = month <= 2 ? year - 1 : year;
+  const era = Math.floor(shifted / 400);
+  const yearOfEra = shifted - era * 400;
+  const dayOfYear =
+    Math.floor((153 * ((month + 9) % 12) + 2) / 5) + field(8, 10) - 1;
+  const dayOfEra =
+    yearOfEra * 365 +
+    Math.floor(yearOfEra / 4) -
+    Math.floor(yearOfEra / 100) +
+    dayOfYear;
+  const days = era * 146_097 + dayOfEra - 719_468;
+  const seconds = (field(11, 13) * 60 + field(14, 16)) * 60 + field(17, 19);
+  return (days * 86_400 + seconds) * 1_000 + field(20, 23);
 }
 
 function policyNonnegativeInteger(value: unknown, what: string): number {
@@ -1975,6 +1998,72 @@ export function selectorHeldForRoom(
     observation.resourceLimit === undefined &&
     state.attention === "Monitoring" &&
     !selectorDispatchHasRoom(observation.operationalContext)
+  );
+}
+
+/**
+ * Whether a raised attention is the only thing an observation gives the lead
+ * to judge: no resource limit, and no candidate or standing refusal that a
+ * dispatch with room could answer.
+ */
+export function selectorAttentionAlone(
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+): boolean {
+  return (
+    state.attention === "Attention" &&
+    observation.resourceLimit === undefined &&
+    (!selectorDispatchHasRoom(observation.operationalContext) ||
+      (observation.candidates.length === 0 &&
+        observation.refusals.length === 0))
+  );
+}
+
+/** What holding a raised attention needs of a project's newest decision. */
+export interface SelectorLastDecision {
+  readonly completedAtEpochMs: number;
+  /** Whether it failed on a view it left standing, which the next pass retries. */
+  readonly retrying: boolean;
+}
+
+/**
+ * The newest decision of a tail read newest first and at least
+ * `selectorFailedDecisionsPerViewMax` long, or nothing where none is recorded.
+ * It is retrying while the run of failures on its view is shorter than the
+ * failures that view is allowed, as `selectorViewFailuresExhausted` counts them.
+ */
+export function selectorLastDecision(
+  tail: readonly SelectorInteractionRecord[],
+): SelectorLastDecision | undefined {
+  const newest = tail[0];
+  if (newest === undefined) return undefined;
+  const token = newest.observedToken;
+  let failed = 0;
+  for (const record of tail) {
+    if (token === undefined || !selectorInteractionFailedOn(record, token))
+      break;
+    failed += 1;
+  }
+  return {
+    completedAtEpochMs: selectorInstantEpochMs(newest.completedAt),
+    retrying: failed > 0 && failed < selectorFailedDecisionsPerViewMax,
+  };
+}
+
+/**
+ * Whether an observation with only a raised attention to judge waits for
+ * `leadAttentionRecheckMs` since the last decision ended. A wait stores
+ * nothing, as a hold for room stores nothing, so the turn that ends it carries
+ * every change since; a failure still being retried does not wait.
+ */
+export function selectorAttentionAwaitsRecheck(
+  last: SelectorLastDecision | undefined,
+  nowEpochMs: number,
+): boolean {
+  return (
+    last !== undefined &&
+    !last.retrying &&
+    nowEpochMs - last.completedAtEpochMs < leadAttentionRecheckMs
   );
 }
 

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import {
   agenticRefusalReasonCharsMax,
+  leadAttentionRecheckMs,
   selectorFailedDecisionsPerViewMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
@@ -21,6 +22,7 @@ import {
   selectorBacklogsAdmitDispatch,
   selectorDispatchHasRoom,
   selectorDispatchOperation,
+  selectorLastDecision,
   type SelectorDecisionProposals,
   type SelectorInteraction,
   type SelectorProjectOverrides,
@@ -856,6 +858,7 @@ function notificationLog(ordinals: readonly number[]) {
 function heldProjectStore(
   initial: SelectorProjectState,
   held: Pick<SelectorStateStore, "heldAmong"> = noneHeld,
+  execution: () => SelectorPolicyExecution = () => waitingExecution(),
 ) {
   let stored = initial;
   let admissions = 0;
@@ -890,12 +893,14 @@ function heldProjectStore(
       refusalsKept.push(`forgotten before ${String(steps.length)} steps`);
       return Promise.resolve();
     },
+    tail: (_scope, limit) =>
+      Promise.resolve(heldProjectStoreTail(interactions, limit)),
   };
   const policy: SelectorPolicyHost = {
     ...policyHost((request) => {
       turns += 1;
       observations.push(request.observation);
-      return Promise.resolve(waitingExecution());
+      return Promise.resolve(execution());
     }),
     leadAdmission: () => {
       admissions += 1;
@@ -913,6 +918,21 @@ function heldProjectStore(
     admissions: () => admissions,
     turns: () => turns,
   };
+}
+
+/** The decisions a held project recorded, newest first, as the store's tail reads them. */
+function heldProjectStoreTail(
+  interactions: readonly SelectorInteraction[],
+  limit: number,
+): readonly SelectorInteractionRecord[] {
+  return interactions
+    .map((interaction, index) => ({
+      ...interaction,
+      ordinal: index + 1,
+      deliveries: [],
+    }))
+    .reverse()
+    .slice(0, limit);
 }
 
 /** One pass over the one project a case holds. */
@@ -1601,6 +1621,320 @@ test("a raised attention without room is still a turn", async () => {
   );
   assert.equal(project.turns(), 1);
   assert.deepEqual(project.steps, ["permit", "interaction"]);
+});
+
+/** A clock a case moves, which the context, the store's read and the lead's turn all tell the time by. */
+function recheckClock() {
+  let nowEpochMs = Date.parse("2026-10-29T12:00:00.000Z");
+  return {
+    now: () => nowEpochMs,
+    advance: (milliseconds: number) => {
+      nowEpochMs += milliseconds;
+    },
+    instant: () => new Date(nowEpochMs).toISOString(),
+  };
+}
+
+/**
+ * A project whose lead keeps its attention raised, under a view that has
+ * moved by every pass, so each observation has a page to judge.
+ */
+function attentionProject(
+  clock: ReturnType<typeof recheckClock>,
+  log: ReturnType<typeof notificationLog>,
+  context: () => SelectorOperationalContextV2 = () => roomContext(4, 4),
+  page: () => DispatchViewPage = () =>
+    candidateDispatchPage(partition, "b".repeat(64)),
+  execute: () => SelectorPolicyExecution = () => waitingExecution(),
+) {
+  const project = heldProjectStore(
+    { ...observedState(5), attention: "Attention" },
+    noneHeld,
+    () => {
+      const execution = execute();
+      return {
+        ...execution,
+        result: { ...execution.result, attention: "Attention" },
+        startedAt: clock.instant(),
+        completedAt: clock.instant(),
+      };
+    },
+  );
+  const source = {
+    ...heldForRoomSource(
+      log,
+      () => ({ ...context(), observedAtEpochMs: clock.now() }),
+      page,
+    ),
+    dispatchView: (_scope: typeof partition, query: DispatchViewQuery) =>
+      Promise.resolve(
+        query.watermark === undefined ? page() : ({ result: "Reset" } as const),
+      ),
+    currentTimeEpochMs: () => Promise.resolve(clock.now()),
+    currentInstant: () => Promise.resolve(clock.instant()),
+  };
+  const pass = (refusals?: AgenticRefusalWrite) =>
+    quietPass(project.store, source, project.policy, refusals);
+  return { ...project, pass };
+}
+
+/** The ordinals of the window each of a case's turns was shown. */
+function windowsOf(project: { readonly observations: SelectorObservation[] }) {
+  return project.observations.map((observation) =>
+    observation.changes.map((change) => change.ordinal),
+  );
+}
+
+/**
+ * A raised attention hands a person a standing list the lead cannot act on, so
+ * re-reading the project on every change while it stands is a turn that
+ * changes nothing. The changes wait, and the re-check carries them.
+ */
+test("a raised attention with nothing else to judge waits out the re-check, and its turn carries every change since", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(clock, log);
+  await project.pass();
+  assert.equal(project.turns(), 1);
+  const decided = project.stored();
+  clock.advance(60_000);
+  log.append(7);
+  await project.pass();
+  clock.advance(leadAttentionRecheckMs - 60_000 - 1);
+  log.append(8);
+  await project.pass();
+  assert.equal(
+    project.turns(),
+    1,
+    "a change within the interval takes no turn",
+  );
+  assert.deepEqual(project.stored(), decided);
+  clock.advance(1);
+  await project.pass();
+  assert.equal(project.turns(), 2);
+  assert.deepEqual(windowsOf(project), [[6], [7, 8]]);
+  assert.equal(project.stored().notificationCursor, 8);
+});
+
+test("a raised attention with an empty view waits out the re-check as well", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(
+    clock,
+    log,
+    () => roomContext(0, 4),
+    () => emptyViewPage("b".repeat(64)),
+  );
+  await project.pass();
+  log.append(7);
+  await project.pass();
+  assert.equal(project.turns(), 1);
+  clock.advance(leadAttentionRecheckMs);
+  await project.pass();
+  assert.deepEqual(windowsOf(project), [[6], [7]]);
+});
+
+test("a change followed by nothing is decided on once the re-check is due", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(clock, log);
+  await project.pass();
+  log.append(7);
+  await project.pass();
+  assert.equal(project.turns(), 1);
+  clock.advance(leadAttentionRecheckMs);
+  await project.pass();
+  assert.equal(project.turns(), 2);
+  assert.deepEqual(windowsOf(project), [[6], [7]]);
+});
+
+test("a project that has not moved since its last decision is not woken by the re-check", async () => {
+  const clock = recheckClock();
+  const project = attentionProject(clock, notificationLog([6]));
+  await project.pass();
+  const decided = project.stored();
+  clock.advance(leadAttentionRecheckMs * 2);
+  const result = await project.pass();
+  assert.equal(project.turns(), 1);
+  assert.equal(result.observed, 0);
+  assert.deepEqual(project.stored(), decided);
+});
+
+test("a dispatchable candidate with room is a turn at once under a raised attention", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(clock, log, () => roomContext(3, 4));
+  await project.pass();
+  clock.advance(60_000);
+  log.append(7);
+  await project.pass();
+  assert.deepEqual(windowsOf(project), [[6], [7]]);
+});
+
+test("a standing refusal with room is a turn at once under a raised attention", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(clock, log, () => roomContext(3, 4));
+  await project.pass();
+  log.append(7);
+  await project.pass(
+    refusalWrites(
+      () => undefined,
+      [standingRefusalOf(viewCandidate.ticket, viewCandidate.ticketVersion)],
+    ),
+  );
+  assert.equal(project.turns(), 2);
+  assert.deepEqual(project.observations[1]?.candidates, []);
+  assert.equal(project.observations[1]?.refusals.length, 1);
+});
+
+test("an oversized candidate is a turn at once under a raised attention", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  let oversized = false;
+  const project = attentionProject(
+    clock,
+    log,
+    () => roomContext(3, 4),
+    () => ({
+      ...candidateDispatchPage(partition, "b".repeat(64)),
+      candidates: [
+        oversized
+          ? {
+              ...viewCandidate,
+              configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+            }
+          : viewCandidate,
+      ],
+    }),
+  );
+  await project.pass();
+  oversized = true;
+  log.append(7);
+  await project.pass();
+  assert.equal(project.interactions.length, 2);
+  assert.deepEqual(project.interactions[1]?.result, {
+    outcome: "Failed",
+    code: "ResourceLimit",
+  });
+});
+
+/**
+ * A failure keeps the view it failed on and raises the attention, and the
+ * retry of that view is not a re-check: it runs on the next pass until the
+ * view's failures are spent, and only the observations after wait.
+ */
+test("a failed decision is retried on the next pass up to the failures its view allows, and then waits", async () => {
+  const clock = recheckClock();
+  const log = notificationLog([6]);
+  const project = attentionProject(
+    clock,
+    log,
+    undefined,
+    undefined,
+    () =>
+      ({
+        ...waitingExecution(),
+        result: { dispatches: "not a list" },
+      }) as never,
+  );
+  for (
+    let failure = 1;
+    failure <= selectorFailedDecisionsPerViewMax;
+    failure++
+  ) {
+    clock.advance(1_000);
+    await project.pass();
+    assert.equal(project.turns(), failure);
+    assert.deepEqual(project.interactions.at(-1)?.result, {
+      outcome: "Failed",
+      code: "InvalidResult",
+    });
+  }
+  assert.deepEqual(windowsOf(project), [[6], [6], [6]]);
+  assert.equal(project.stored().notificationCursor, 6);
+  log.append(7);
+  await project.pass();
+  assert.equal(project.turns(), selectorFailedDecisionsPerViewMax);
+  clock.advance(leadAttentionRecheckMs);
+  await project.pass();
+  assert.equal(project.turns(), selectorFailedDecisionsPerViewMax + 1);
+  assert.deepEqual(windowsOf(project).at(-1), [7]);
+});
+
+test("a monitoring project with no candidates and nothing else is quiet", async () => {
+  const clock = recheckClock();
+  const project = heldProjectStore(observedState(5));
+  const result = await quietPass(
+    project.store,
+    {
+      ...heldForRoomSource(
+        notificationLog([6]),
+        () => roomContext(0, 4),
+        () => emptyViewPage("b".repeat(64)),
+      ),
+      currentTimeEpochMs: () => Promise.resolve(clock.now()),
+    },
+    project.policy,
+  );
+  assert.equal(result.quiet, 1);
+  assert.equal(project.turns(), 0);
+  assert.deepEqual(project.steps, ["quiet"]);
+});
+
+test("a decision's end is read as the instant it names", () => {
+  for (const instant of [
+    "1970-01-01T00:00:00.000Z",
+    "2000-02-29T23:59:59.999Z",
+    "2026-10-29T12:34:56.789Z",
+    "2100-03-01T00:00:00.001Z",
+  ]) {
+    const record = {
+      ...failedRecordOn(candidateViewToken, 1),
+      completedAt: instant,
+    };
+    assert.equal(
+      selectorLastDecision([record])?.completedAtEpochMs,
+      Date.parse(instant),
+      instant,
+    );
+  }
+  assert.equal(selectorLastDecision([]), undefined);
+});
+
+test("a failure is retrying until its view's run of failures is spent", () => {
+  const other = { ...candidateViewToken, digest: "f".repeat(64) };
+  const run = (tokens: readonly (typeof other)[]) =>
+    selectorLastDecision(
+      tokens.map((token, index) =>
+        failedRecordOn(token, tokens.length - index),
+      ),
+    )?.retrying;
+  assert.equal(run([candidateViewToken]), true);
+  assert.equal(
+    run(Array.from({ length: selectorFailedDecisionsPerViewMax }, () => other)),
+    false,
+  );
+  assert.equal(
+    run([
+      ...Array.from(
+        { length: selectorFailedDecisionsPerViewMax - 1 },
+        () => candidateViewToken,
+      ),
+      other,
+    ]),
+    true,
+    "a failure on another view starts its own run",
+  );
+  assert.equal(
+    selectorLastDecision([
+      {
+        ...failedRecordOn(candidateViewToken, 1),
+        result: { outcome: "Waiting" },
+      },
+    ])?.retrying,
+    false,
+  );
 });
 
 test("an empty view without room is a quiet cycle as before", async () => {
