@@ -121,7 +121,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run
 #   bin/codex     a link to the Codex the core runs, in `lib/codex/`
-#   bin/tini     the init `check.sh` starts the core under, which reaps what
+#   bin/tini      the init `check.sh` starts the core under, which reaps what
 #                 a job orphans, and the one a chat container starts the
 #                 supervisor under, as root:
 #                 `bin/tini -s -- bin/node lib/chuggy/chatSupervisor.mjs`,
@@ -132,7 +132,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #                 modules start a chat session by and import it by, and the
 #                 packages it imports in a `node_modules` of its own
 #   lib/codex/    Codex's platform package, as below
-#   share/       the base's CA bundle, `ca-certificates.crt`, for Codex
+#   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
 #
 # The core finds `bin/` from where it sits, and nothing puts it on PATH.
@@ -260,8 +260,9 @@ RUN case "$TARGETARCH" in \
 # nothing, so a module it reaches that `files` did not ship, or by a name this
 # tree does not ship it under, fails the build here rather than the first pod.
 # Last, what `coreRuntime.mjs` derives from where the core sits is held to be
-# in this tree and readable, what the core runs of it to be executable, and
-# each agent to report the version this file names.
+# in this tree and readable, what the core runs of it to be executable, each
+# agent to report the version this file names, and the host Codex runs commands
+# through to run from beside the binary `bin/codex` resolves to.
 RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
@@ -305,7 +306,9 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
        [ "$codex" != "codex-cli ${CODEX_VERSION}" ]; then \
        echo "the runtime ships $claude and $codex, and this file names Claude Code ${CLAUDE_CODE_VERSION} and Codex ${CODEX_VERSION}"; \
        exit 1; \
-     fi
+     fi \
+  && host="$(dirname "$(readlink -f /opt/chuggy/bin/codex)")/codex-code-mode-host" \
+  && "$host" --help > /dev/null
 
 # WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE
 # FOR EACH ARCHITECTURE: every library an ELF the tree ships needs, and for
