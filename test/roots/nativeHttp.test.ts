@@ -115,19 +115,30 @@ interface Authenticated {
 const leadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
   const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => ({
-    query: async (statement) => {
+  const pooled = (named) => {
+    const query = async (statement) => {
       asked[named].push(statement.text ?? String(statement));
       return { rows: [] };
-    },
-  });
+    };
+    return {
+      query,
+      connect: async () => ({
+        query,
+        on: () => undefined,
+        removeListener: () => undefined,
+        release: () => undefined,
+      }),
+    };
+  };
   const pools = {
     pool: pooled('pool'),
     selectorReviewPool: pooled('selectorReviewPool'),
   };
-  const ports = root.nativeLeadPorts(pools, {
-    readBatch: async () => ({ read: 'NotFound' }),
-  });
+  const ports = root.nativeLeadPorts(
+    pools,
+    { readBatch: async () => ({ read: 'NotFound' }) },
+    'https://issuer.example',
+  );
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.leads.standing(partition, 1);
   await ports.leads.leadRefusal(partition);
@@ -143,6 +154,7 @@ const leadPortsProgram = `
   await ports.refusals.standing(partition, 1);
   await ports.refusals.ledger(partition, 1, 1);
   await ports.settings.projectSettings(partition).catch(() => undefined);
+  await ports.candidates.read(partition, { limit: 1 });
   process.stdout.write(JSON.stringify(asked));
 `;
 
@@ -173,7 +185,22 @@ test("the lead's reads stand on the API pool and never the review pool", async (
     [],
     "no lead read may reach the pool with no grant on 059's doors",
   );
-  assert.equal(asked.pool.length, 8, "every lead read was handed the API pool");
+  assert.equal(
+    asked.pool.length,
+    12,
+    "every lead read was handed the API pool, the dispatch view in its own transaction",
+  );
+});
+
+/** Whether a released ticket waits is the dispatch view the selector itself reads, over the API pool. */
+test("the lead's dispatch candidates are read over the API pool from the dispatch view", async () => {
+  const asked = await leadPortsAsked();
+  assert.ok(
+    asked.pool.some((statement) =>
+      statement.includes("LEFT JOIN dispatch_view v USING (tenant,project)"),
+    ),
+    "the dispatch view was not handed the API pool",
+  );
 });
 
 test("each lead read reaches the definer function the plan names for it", async () => {
@@ -216,12 +243,21 @@ test("the lead's selector mode is read over the API pool from the installation's
 const threadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
   const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => ({
-    query: async (statement) => {
+  const pooled = (named) => {
+    const query = async (statement) => {
       asked[named].push(statement.text ?? String(statement));
       return { rows: [] };
-    },
-  });
+    };
+    return {
+      query,
+      connect: async () => ({
+        query,
+        on: () => undefined,
+        removeListener: () => undefined,
+        release: () => undefined,
+      }),
+    };
+  };
   const pools = {
     pool: pooled('pool'),
     selectorReviewPool: pooled('selectorReviewPool'),

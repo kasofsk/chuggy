@@ -1430,11 +1430,11 @@ export type LeadResponse = z.infer<typeof leadResponseSchema>;
 
 /**
  * Why a project holds no lead: `Paused` while its selector is paused, by the
- * project or the whole installation, ahead of any refusal it keeps, and
+ * project or the whole installation, then `SelectorNotGranted` while the site's
+ * selector may not read the project, each ahead of any refusal it keeps, and
  * otherwise the admission refusal the last cycle that needed a lead met, which
- * has been the answer since `since`. `NotNeeded` where neither holds, because no
- * selector cycle has needed a lead or the last refused one was followed by one
- * admitted or with nothing to decide.
+ * has been the answer since `since`. Where none holds, `Pending` while a
+ * released ticket waits on a dispatch decision and `NotNeeded` while none does.
  */
 export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.enum(leadAbsencesUntimed) }),

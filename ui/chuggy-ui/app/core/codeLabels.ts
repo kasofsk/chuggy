@@ -175,6 +175,10 @@ export function leadAbsenceLabel(
       return "Opens when a ticket is released";
     case "Paused":
       return "Selector paused";
+    case "SelectorNotGranted":
+      return "Selector not granted this project";
+    case "Pending":
+      return "Opens at the selector's next pass";
     case "HostedRunsNotGranted":
       return "Hosted runs not granted";
     case "RunnerOffline":

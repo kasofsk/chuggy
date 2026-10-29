@@ -713,9 +713,18 @@ export const leadAdmissionRefusals = [
 ] as const;
 export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
 
-/** Why a project holds no lead where no refusal stands to date it: no cycle has
- * needed one, or its selector is paused. */
-export const leadAbsencesUntimed = ["NotNeeded", "Paused"] as const;
+/**
+ * Why a project holds no lead where no refusal stands to date it: nothing waits
+ * on a dispatch decision, its selector is paused, the site's selector may not
+ * read it and so never sweeps it, or a released ticket waits for a selector
+ * pass that has not yet taken it up.
+ */
+export const leadAbsencesUntimed = [
+  "NotNeeded",
+  "Paused",
+  "SelectorNotGranted",
+  "Pending",
+] as const;
 export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
 
 /**

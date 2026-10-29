@@ -2,6 +2,7 @@ import { apiRole, selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresApiReady } from "../adapters/postgres/apiReadiness.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
+import { postgresDispatchViews } from "../adapters/postgres/dispatchViews.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
@@ -1423,19 +1424,24 @@ export async function nativeDatabasesReady(
  * The lead's read side over the API pool and the artifact volume, taking both
  * pools and choosing for the reason `nativeAuthentication` does: only the API
  * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
- * observe which pool was reached.
+ * observe which pool was reached. The site's selector is named under `issuer`
+ * where this deployment names one, so a read can say it may not read a project.
  */
 export function nativeLeadPorts(
   pools: NativePools,
   artifacts: SessionStoreReadPort,
+  issuer: string,
 ): NativeLeadPorts {
   const leads = postgresLeadReads(pools.pool);
+  const selector = nativeSelectorPrincipal(issuer);
   return {
     leads,
     store: artifacts,
     refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
+    candidates: postgresDispatchViews(pools.pool),
+    ...(selector === undefined ? {} : { selector }),
   };
 }
 
@@ -1487,7 +1493,7 @@ async function main(): Promise<void> {
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
     forge.repositories,
-    nativeLeadPorts(pools, artifacts),
+    nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
     nativeThreadPorts(pools, artifacts),
   );
   const hub = nativeStreamHub(pool, web);
