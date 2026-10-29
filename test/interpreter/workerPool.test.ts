@@ -1718,17 +1718,21 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names a memory room above nothing, apart from its sessions, and a pool's is not", async () => {
+test("a pool's or a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names a memory room above nothing, apart from its sessions, and a chat host's is not", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
     [runner, { memoryRoomMib: 1 }, ["executions"]],
     [runner, { memoryRoomMib: 0 }, []],
-    [identity, { memoryRoomMib: 4_096 }, []],
+    [identity, { memoryRoomMib: 4_096 }, ["executions"]],
+    [identity, { memoryRoomMib: 0 }, []],
     [runner, {}, []],
+    [identity, {}, []],
     [runner, { wantedSessions: 1 }, ["sessions"]],
     [runner, { wanted: 1, wantedSessions: 1 }, ["sessions", "executions"]],
-    [identity, { wanted: 1 }, []],
+    [identity, { wanted: 1 }, ["executions"]],
+    [identity, { held: ["j1"] }, ["executions"]],
+    [host, { wanted: 1 }, []],
   ] as const) {
     const reached: string[] = [];
     await workerPoolPoll(

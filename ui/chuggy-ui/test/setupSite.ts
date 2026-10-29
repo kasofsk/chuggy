@@ -717,6 +717,7 @@ function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
         pool,
         capabilities: ["Platform:Linux:Amd64"],
         registeredAt: "2026-10-09T00:00:00Z",
+        live: false,
       })),
       truncated: cut(site, "pools"),
     })
