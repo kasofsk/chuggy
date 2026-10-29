@@ -120,7 +120,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #
 #   bin/node      the `runtime-node` stage's node, which runs the core
 #   bin/claude    the Claude Code the core and a session's SDK both run
-#   bin/codex     the Codex the core runs
+#   bin/codex     a link to the Codex the core runs, in `lib/codex/`
 #   bin/tini      the init `check.sh` starts the core under, which reaps what
 #                 a job orphans, and the one a chat container starts the
 #                 supervisor under, as root:
@@ -131,6 +131,7 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 #                 job starts it by, and as `entrypoint.mjs`, the name its own
 #                 modules start a chat session by and import it by, and the
 #                 packages it imports in a `node_modules` of its own
+#   lib/codex/    Codex's platform package, as below
 #   share/        the base's CA bundle, `ca-certificates.crt`, for Codex
 #   check.sh      what a job's container runs first, in the job's own image
 #
@@ -151,9 +152,17 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # longer satisfies it. The pin is declared at the top of this file, where the
 # `core` stage holds it to the core's lock.
 #
-# CODEX IS ITS STATIC BUILD. npm's `codex` is a node script that finds its
-# platform package's binary and spawns it; the tree ships that binary alone,
-# which links against nothing. Tini is its release's static build too.
+# CODEX IS ITS PLATFORM PACKAGE, LESS ITS ZSH. npm's `codex` is a node script
+# that finds its platform package and spawns the binary in it, and that binary
+# finds the rest of the package from where it really sits, through the
+# package's own `codex-package.json`: the host it runs commands through,
+# `bin/codex-code-mode-host`, beside it, and its bubblewrap and ripgrep in the
+# directories that file names. So `lib/codex/` is the package's directory for
+# this architecture as the package lays it out, and `bin/codex` is a link into
+# it. Left out is the zsh Codex runs only under its `shell_zsh_fork` feature,
+# which is off unless a run turns it on, and which alone in the package needs
+# `libtinfo.so.6`, a library nothing else in the tree does. Tini is its
+# release's static build.
 #
 # NO LIBRARY IS SHIPPED; THE JOB'S IMAGE PROVIDES THEM. Chuggy's node names no
 # directory of its own to find a library in, so one shipped here would be found
@@ -185,7 +194,7 @@ RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
   && rm -rf /tmp/runtime
 
 # The platform package npm's `codex` names as its optional dependency, of which
-# only the binary is kept.
+# this architecture's directory is kept whole but for its zsh.
 RUN case "$TARGETARCH" in \
        amd64) platform=linux-x64 triple=x86_64-unknown-linux-musl ;; \
        arm64) platform=linux-arm64 triple=aarch64-unknown-linux-musl ;; \
@@ -195,8 +204,10 @@ RUN case "$TARGETARCH" in \
   && npm pack --silent "@openai/codex@${CODEX_VERSION}-${platform}" > /tmp/codex.txt \
   && read -r packed < /tmp/codex.txt \
   && tar --extract --gzip --file "/tmp/$packed" --directory /tmp \
-    "package/vendor/${triple}/bin/codex" \
-  && install -m 0755 "/tmp/package/vendor/${triple}/bin/codex" /opt/chuggy/bin/codex \
+    --exclude "package/vendor/${triple}/codex-resources/zsh" \
+    "package/vendor/${triple}" \
+  && mv "/tmp/package/vendor/${triple}" /opt/chuggy/lib/codex \
+  && ln -s ../lib/codex/bin/codex /opt/chuggy/bin/codex \
   && rm -rf /tmp/package "/tmp/$packed" /tmp/codex.txt
 
 RUN case "$TARGETARCH" in \
@@ -249,8 +260,9 @@ RUN case "$TARGETARCH" in \
 # nothing, so a module it reaches that `files` did not ship, or by a name this
 # tree does not ship it under, fails the build here rather than the first pod.
 # Last, what `coreRuntime.mjs` derives from where the core sits is held to be
-# in this tree and readable, what the core runs of it to be executable, and
-# each agent to report the version this file names.
+# in this tree and readable, what the core runs of it to be executable, each
+# agent to report the version this file names, and the host Codex runs commands
+# through to run from beside the binary `bin/codex` resolves to.
 RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
   cd /opt/chuggy/lib/chuggy \
   && /opt/chuggy/bin/node --input-type=module --eval ' \
@@ -294,7 +306,9 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
        [ "$codex" != "codex-cli ${CODEX_VERSION}" ]; then \
        echo "the runtime ships $claude and $codex, and this file names Claude Code ${CLAUDE_CODE_VERSION} and Codex ${CODEX_VERSION}"; \
        exit 1; \
-     fi
+     fi \
+  && host="$(dirname "$(readlink -f /opt/chuggy/bin/codex)")/codex-code-mode-host" \
+  && "$host" --help > /dev/null
 
 # WHAT A JOB'S IMAGE MUST PROVIDE IS READ OFF THE TREE, AND STATED HERE ONCE
 # FOR EACH ARCHITECTURE: every library an ELF the tree ships needs, and for
@@ -314,7 +328,7 @@ RUN --mount=type=bind,source=images/worker/core.json,target=/tmp/core.json \
 ARG RUNTIME_LIBRARIES_AMD64="ld-linux-x86-64.so.2 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
 ARG RUNTIME_LIBRARIES_ARM64="ld-linux-aarch64.so.1 libc.so.6 libdl.so.2 libgcc_s.so.1 libm.so.6 libpthread.so.0 librt.so.1 libstdc++.so.6"
 ARG RUNTIME_VERSION_FLOOR_AMD64="CXXABI_1.3.11 GCC_3.4 GLIBCXX_3.4.21 GLIBC_2.28"
-ARG RUNTIME_VERSION_FLOOR_ARM64="CXXABI_1.3.11 GCC_3.0 GLIBCXX_3.4.21 GLIBC_2.28"
+ARG RUNTIME_VERSION_FLOOR_ARM64="CXXABI_1.3.11 GCC_4.2.0 GLIBCXX_3.4.21 GLIBC_2.28"
 RUN case "$TARGETARCH" in \
        amd64) stated_libraries="$RUNTIME_LIBRARIES_AMD64" stated_floor="$RUNTIME_VERSION_FLOOR_AMD64" elf_format=elf64-x86-64 ;; \
        arm64) stated_libraries="$RUNTIME_LIBRARIES_ARM64" stated_floor="$RUNTIME_VERSION_FLOOR_ARM64" elf_format=elf64-littleaarch64 ;; \
