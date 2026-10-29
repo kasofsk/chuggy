@@ -161,8 +161,8 @@ RUN node -e 'for (const name of require("/core/package.json").files) console.log
 # this architecture as the package lays it out, and `bin/codex` is a link into
 # it. Left out is the voice host and the GStreamer beside it, which Codex runs
 # only for a realtime voice conversation, which `exec` never holds, and which
-# alone in the package are built against glibc, and need `libresolv.so.2`, a
-# library nothing else in the tree does. Tini is its release's static build.
+# alone in the package need `libresolv.so.2`, a library nothing else in the
+# tree does. Tini is its release's static build.
 #
 # NO LIBRARY IS SHIPPED; THE JOB'S IMAGE PROVIDES THEM. Chuggy's node names no
 # directory of its own to find a library in, so one shipped here would be found
