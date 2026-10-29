@@ -650,6 +650,12 @@ export const leadSeedingDecisionsMax = 16;
  */
 export const leadTurnTokensMax = 1_000_000;
 
+/**
+ * How long after a project's last decision a raised attention, with nothing
+ * else for the lead to judge, waits before the changes since are a turn.
+ */
+export const leadAttentionRecheckMs = 15 * 60 * 1_000;
+
 /** How many decisions may fail on one dispatch view, the last of which consumes it unanswered. */
 export const selectorFailedDecisionsPerViewMax = 3;
 

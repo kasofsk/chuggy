@@ -1,3 +1,4 @@
+import { selectorFailedDecisionsPerViewMax } from "../contract/http.ts";
 import { asOperationId } from "./operationInbox.ts";
 import type { Partition } from "./projectStore.ts";
 import type { LeadAdmission } from "./sessionPlacement.ts";
@@ -15,6 +16,9 @@ import {
   type SelectorObservationSource,
   type SelectorOperationSource,
   type SelectorPolicyHost,
+  selectorAttentionAlone,
+  selectorAttentionAwaitsRecheck,
+  selectorLastDecision,
   selectorProjectMoved,
   type SelectorProjectState,
   selectorHeldForRoom,
@@ -399,14 +403,16 @@ async function observeProjectAdmissionKept(
 }
 
 /**
- * What this project has to decide about, or nothing. The notification page is
- * read once and handed to the observation, so a row cannot arrive between two
- * reads and be counted as the trigger for a window that does not contain it.
+ * What this project has to decide about, or nothing, which an observation with
+ * only a raised attention to judge is until its re-check is due. The
+ * notification page is read once and handed to the observation, so a row
+ * cannot arrive between two reads and be counted as the trigger for a window
+ * that does not contain it.
  */
 async function projectObservation(
   state: SelectorProjectState,
   refusals: SelectorRefusalLedger,
-  held: Pick<SelectorStateStore, "heldAmong">,
+  store: Pick<SelectorStateStore, "heldAmong" | "tail">,
   source: SelectorRuntimeSource,
   settings: SelectorResolvedSettings,
 ): Promise<SelectorObservation | undefined> {
@@ -416,15 +422,23 @@ async function projectObservation(
     selectorNotificationPageLimit,
   );
   if (!selectorProjectMoved(state, changes)) return undefined;
-  return observeSelectorProject(
+  const observation = await observeSelectorProject(
     state,
     source,
     refusals,
-    held,
+    store,
     changes,
     selectorNotificationPageLimit,
     Math.floor(leadInputBytesMax(settings) / 2),
   );
+  if (observation === undefined || !selectorAttentionAlone(state, observation))
+    return observation;
+  const last = selectorLastDecision(
+    await store.tail(state.partition, selectorFailedDecisionsPerViewMax),
+  );
+  return selectorAttentionAwaitsRecheck(last, await source.currentTimeEpochMs())
+    ? undefined
+    : observation;
 }
 
 const emptyProjectObservation: ProjectObservationResult = {
