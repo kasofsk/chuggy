@@ -171,7 +171,7 @@ test("an evaluator whose process failed is drawn as a stop, and a work task's as
   const failed = { status: "Terminal", outcome: "ProcessFailed" } as const;
   expect(
     cellDrawnOf(executionOf({ identity: evalIdentity(1, 1, 1), ...failed })),
-  ).toEqual({ word: "Blocked", className: "pill pill-retired" });
+  ).toEqual({ word: "Blocked", className: "pill pill-parked" });
   expect(
     cellDrawnOf(executionOf({ identity: workIdentity(1), ...failed })),
   ).toEqual({ word: "Failed", className: "pill pill-fail" });
