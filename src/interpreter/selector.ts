@@ -1952,6 +1952,25 @@ function candidateScanQuery(
 }
 
 /**
+ * The scan a pass resumes. An execution placed or ended frees or takes a slot
+ * without moving the dispatch view, so an exhausted scan would read its view
+ * as unmoved and give no turn to a lead holding candidates for that slot; a
+ * published execution therefore starts the scan again.
+ */
+function observeSelectorProjectScan(
+  state: SelectorProjectState,
+  changes: readonly ProjectNotification[],
+): SelectorCandidateScan {
+  const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
+  if (
+    scan.state === "Exhausted" &&
+    changes.some((change) => change.kind === "Execution")
+  )
+    return { state: "Unstarted" };
+  return scan;
+}
+
+/**
  * Polls current state after every wake-up or cursor reset and never mixes view
  * watermarks. The notification page is read by the caller and handed in, so it
  * is read once per cycle: reading it here as well would let a row arrive
@@ -1972,7 +1991,7 @@ export async function observeSelectorProject(
 ): Promise<SelectorObservation | undefined> {
   if (!selectorProjectMoved(state, notifications)) return undefined;
   const changes = notifications.result === "Events" ? notifications.events : [];
-  const scan = state.candidateScan ?? ({ state: "Unstarted" } as const);
+  const scan = observeSelectorProjectScan(state, changes);
   const query = candidateScanQuery(scan, pageLimit);
   let page =
     scan.state === "Exhausted"

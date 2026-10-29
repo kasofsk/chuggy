@@ -1017,6 +1017,56 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
 });
 
 /**
+ * The incident's shape: the lead held its candidates and stored the scan
+ * exhausted, and an execution placed since leaves the view's watermark where
+ * it was. The execution's notification restarts the scan, so the held
+ * candidates are read again and the lead is asked to decide.
+ */
+test("an execution's notification gives a lead holding candidates on an exhausted scan a turn", async () => {
+  const project = heldProjectStore(exhaustedProjectState);
+  const queries: DispatchViewQuery[] = [];
+  const result = await quietPass(
+    project.store,
+    {
+      ...promptObservationSource(),
+      moved: () =>
+        Promise.resolve({
+          result: "Events",
+          cursor: 9,
+          events: [
+            { ordinal: 9, kind: "Execution", resource: "execution-one" },
+          ],
+        } as const),
+      dispatchView: (_scope, query) => {
+        queries.push(query);
+        return Promise.resolve(
+          query.watermark === undefined
+            ? candidateDispatchPage(partition, exhaustedScanToken.digest)
+            : ({
+                result: "Page",
+                token: exhaustedScanToken,
+                candidates: [],
+                notificationCursor: 9,
+              } as const),
+        );
+      },
+    },
+    project.policy,
+  );
+  assert.deepEqual(
+    queries.map((query) => query.watermark),
+    [undefined],
+  );
+  assert.equal(project.turns(), 1);
+  assert.deepEqual(
+    project.observations.map((observed) => observed.candidates.length),
+    [1],
+  );
+  assert.equal(result.observed, 1);
+  assert.deepEqual(result.failures, []);
+});
+
+/**
  * The view moved, and what it moved to holds nothing the lead can judge: no
  * candidate, no standing refusal, and an attention nobody raised. The pass
  * stores the cursor and the scan as a decision that dispatched nothing would,
