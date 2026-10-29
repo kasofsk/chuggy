@@ -211,11 +211,21 @@ export interface SelectorStateStore {
   planningIntent(
     partition: Partition,
   ): Promise<SelectorPlanningIntent | undefined>;
-  /** Which of the tickets named a decision held for approval already dispatches. */
+  /** Which of the tickets named a decision's delivery not yet ended already dispatches. */
   heldAmong(
     partition: Partition,
     tickets: readonly DispatchCandidate["ticket"][],
-  ): Promise<readonly DispatchCandidate["ticket"][]>;
+  ): Promise<readonly SelectorHeldTicket[]>;
+}
+
+/**
+ * A ticket a decision dispatches whose delivery has not ended: held for
+ * approval, or `delivering`, which is pending or submitted and ends without a
+ * reviewer.
+ */
+export interface SelectorHeldTicket {
+  readonly ticket: DispatchCandidate["ticket"];
+  readonly delivering: boolean;
 }
 
 /** A decision a selector process began and did not finish, as the store holds it. */
@@ -1934,6 +1944,41 @@ export function selectorQuietCycle(
 }
 
 /**
+ * Whether a dispatch could do more than queue: the account under its maximum,
+ * the account half of `executionMayAdmit`, and none of the project's
+ * executions `Queued`, cluster slots aside because they are shared and come
+ * back without this project moving. A version 1 context is only ever a
+ * retained input holding neither count, so it reads as room.
+ */
+export function selectorDispatchHasRoom(
+  context: SelectorOperationalContext,
+): boolean {
+  if (context.version === 1) return true;
+  return (
+    context.capacity.accountActive < context.capacity.accountMaximum &&
+    context.activeWork.queued === 0
+  );
+}
+
+/**
+ * Whether an observation that is no quiet cycle waits for room rather than
+ * being a turn, its candidates and refusals mattering only to a dispatch that
+ * would now only queue, unless it is over its resource limit or under a raised
+ * attention. A hold stores nothing, so every pass observes the project again
+ * until there is room and the turn that ends the hold carries what moved.
+ */
+export function selectorHeldForRoom(
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+): boolean {
+  return (
+    observation.resourceLimit === undefined &&
+    state.attention === "Monitoring" &&
+    !selectorDispatchHasRoom(observation.operationalContext)
+  );
+}
+
+/**
  * The view page one scan state asks for: a fresh page, the continuation of a
  * page, or the single row that says whether an exhausted scan's view has moved.
  */
@@ -1953,10 +1998,12 @@ function candidateScanQuery(
 
 /**
  * Polls current state after every wake-up or cursor reset and never mixes view
- * watermarks. The notification page is read by the caller and handed in, so it
- * is read once per cycle: reading it here as well would let a row arrive
- * between the two reads and be counted as the trigger for a window that does
- * not contain it.
+ * watermarks, the notification page read once by the caller and handed in, so a
+ * row cannot arrive between two reads and be counted as the trigger for a
+ * window that does not contain it. A page holding a ticket still being
+ * delivered is no observation: ending that delivery journals nothing to the
+ * project, so a cursor stored past it would not see the ticket again, and
+ * storing nothing observes the project afresh each pass until it has ended.
  */
 export async function observeSelectorProject(
   state: SelectorProjectState,
@@ -2013,11 +2060,13 @@ export async function observeSelectorProject(
   const tickets = page.candidates.map((candidate) => candidate.ticket);
   const standing = await refusals.standingAmong(state.partition, tickets);
   const proposed = await held.heldAmong(state.partition, tickets);
+  if (proposed.some((ticket) => ticket.delivering)) return undefined;
   return {
     ...observed,
     token: page.token,
     candidates: undecidedCandidates(page.candidates, standing).filter(
-      (candidate) => !proposed.includes(candidate.ticket),
+      (candidate) =>
+        !proposed.some((ticket) => ticket.ticket === candidate.ticket),
     ),
     refusals: standing,
     nextCandidateScan:

@@ -17,6 +17,7 @@ import {
   type SelectorPolicyHost,
   selectorProjectMoved,
   type SelectorProjectState,
+  selectorHeldForRoom,
   selectorQuietCycle,
   type SelectorProposedDecision,
   selectorSettingsFence,
@@ -254,6 +255,7 @@ async function observeProject(
   if (observation === undefined) return emptyProjectObservation;
   const quiet = selectorQuietCycle(state, observation);
   if (quiet !== undefined) return observeQuietProject(partition, store, quiet);
+  if (selectorHeldForRoom(state, observation)) return emptyProjectObservation;
   const admission = await observeProjectAdmission(partition, policy, store);
   if (!admission.admitted) return admission.passedOver;
   const admitted = await observeAdmittedProject(
