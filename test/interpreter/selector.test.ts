@@ -18,6 +18,7 @@ import {
   runSelectorCycle,
   resolvedSelectorSettings,
   selectorBacklogsAdmitDispatch,
+  selectorDispatchHasRoom,
   selectorDispatchOperation,
   type SelectorDecisionProposals,
   type SelectorInteraction,
@@ -29,6 +30,7 @@ import {
   type SelectorPolicyHost,
   type SelectorPolicyRequest,
   type SelectorObservation,
+  type SelectorOperationalContextV2,
   type SelectorStandingRefusal,
   type SelectorInteractionRecord,
   type SelectorProjectState,
@@ -47,6 +49,7 @@ import {
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
   DispatchCandidate,
+  DispatchViewPage,
   DispatchViewQuery,
 } from "../../src/interpreter/dispatchView.ts";
 import type { ProjectNotification } from "../../src/interpreter/notifications.ts";
@@ -1417,6 +1420,192 @@ test("a turn after several quiet cycles is recorded, and shows the page after th
   assert.equal(project.interactions.length, 1);
   assert.equal(project.stored().notificationCursor, 9);
   assert.equal(project.stored().revision, observedState(5).revision + 3);
+});
+
+/** The fixture context with the account and the project's queue as named. */
+function roomContext(
+  accountActive: number,
+  accountMaximum: number,
+  queued = 0,
+): SelectorOperationalContextV2 {
+  return {
+    ...operationalContext,
+    activeWork: { ...operationalContext.activeWork, queued },
+    capacity: { ...operationalContext.capacity, accountActive, accountMaximum },
+  };
+}
+
+test("a dispatch has room only under the account maximum and with nothing queued", () => {
+  assert.equal(selectorDispatchHasRoom(roomContext(3, 4)), true);
+  assert.equal(selectorDispatchHasRoom(roomContext(4, 4)), false);
+  assert.equal(selectorDispatchHasRoom(roomContext(5, 4)), false);
+  assert.equal(selectorDispatchHasRoom(roomContext(0, 4, 1)), false);
+  assert.equal(
+    selectorDispatchHasRoom({
+      ...roomContext(0, 4),
+      capacity: { ...roomContext(0, 4).capacity, clusterActive: 10 },
+    }),
+    true,
+    "cluster slots are shared and are not this project's room",
+  );
+});
+
+/** A project whose view holds one candidate, read under whatever context `context` answers. */
+function heldForRoomSource(
+  log: ReturnType<typeof notificationLog>,
+  context: () => SelectorOperationalContextV2,
+  page: () => DispatchViewPage = () =>
+    candidateDispatchPage(partition, "b".repeat(64)),
+) {
+  return {
+    ...promptObservationSource(),
+    moved: log.moved,
+    dispatchView: () => Promise.resolve(page()),
+    operationalContext: () => Promise.resolve(context()),
+  };
+}
+
+/**
+ * A dispatch into a full account only queues, so the changes that arrive while
+ * it is full are not turns. Nothing is stored, and the turn that room brings
+ * back carries every change since the last decision.
+ */
+test("a candidate with its account at maximum waits, and the next pass with room is a turn over every change", async () => {
+  const project = heldProjectStore(observedState(5));
+  const log = notificationLog([6]);
+  let context = roomContext(4, 4);
+  const source = heldForRoomSource(log, () => context);
+  const first = await quietPass(project.store, source, project.policy);
+  log.append(7);
+  const second = await quietPass(project.store, source, project.policy);
+  assert.equal(project.turns(), 0);
+  assert.equal(first.quiet + second.quiet, 0);
+  assert.deepEqual(project.steps, []);
+  assert.equal(project.admissions(), 0);
+  assert.deepEqual(project.stored(), observedState(5));
+  log.append(8);
+  context = roomContext(3, 4);
+  const third = await quietPass(project.store, source, project.policy);
+  assert.equal(third.observed, 1);
+  assert.equal(project.turns(), 1);
+  assert.deepEqual(project.steps, ["permit", "interaction"]);
+  assert.deepEqual(
+    project.observations[0]?.changes.map((change) => change.ordinal),
+    [6, 7, 8],
+  );
+  assert.equal(project.stored().notificationCursor, 8);
+});
+
+/** Room can come back with no change to the project, as a raised maximum does. */
+test("raising the account's maximum ends a hold on the next pass with no change to the project", async () => {
+  const project = heldProjectStore(observedState(5));
+  let context = roomContext(4, 4);
+  const source = heldForRoomSource(notificationLog([6]), () => context);
+  await quietPass(project.store, source, project.policy);
+  assert.equal(project.turns(), 0);
+  context = roomContext(4, 5);
+  await quietPass(project.store, source, project.policy);
+  assert.equal(project.turns(), 1);
+  assert.deepEqual(
+    project.observations[0]?.changes.map((change) => change.ordinal),
+    [6],
+  );
+});
+
+test("a candidate with account room and executions queued takes no turn", async () => {
+  const project = heldProjectStore(observedState(5));
+  const result = await quietPass(
+    project.store,
+    heldForRoomSource(notificationLog([6]), () => roomContext(0, 4, 2)),
+    project.policy,
+  );
+  assert.equal(project.turns(), 0);
+  assert.equal(result.quiet, 0);
+  assert.deepEqual(project.steps, []);
+  assert.deepEqual(project.stored(), observedState(5));
+});
+
+/** A refusal matters only to a dispatch, so lifting it waits for room too. */
+test("a standing refusal with no candidate waits for room, and is a turn with it", async () => {
+  for (const room of [false, true]) {
+    const label = room ? "room" : "no room";
+    const project = heldProjectStore(observedState(5));
+    await quietPass(
+      project.store,
+      heldForRoomSource(notificationLog([6]), () =>
+        room ? roomContext(3, 4) : roomContext(4, 4),
+      ),
+      project.policy,
+      refusalWrites(
+        () => undefined,
+        [standingRefusalOf(viewCandidate.ticket, viewCandidate.ticketVersion)],
+      ),
+    );
+    assert.equal(project.turns(), room ? 1 : 0, label);
+    assert.deepEqual(
+      project.steps,
+      room ? ["permit", "interaction"] : [],
+      label,
+    );
+    if (room) assert.deepEqual(project.observations[0]?.candidates, [], label);
+  }
+});
+
+test("an oversized candidate without room is still a recorded failure", async () => {
+  const project = heldProjectStore(observedState(5));
+  await quietPass(
+    project.store,
+    heldForRoomSource(
+      notificationLog([6]),
+      () => roomContext(4, 4),
+      () => ({
+        ...candidateDispatchPage(partition, "b".repeat(64)),
+        candidates: [
+          {
+            ...viewCandidate,
+            configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+          },
+        ],
+      }),
+    ),
+    project.policy,
+  );
+  assert.deepEqual(project.steps, ["permit", "interaction"]);
+  assert.deepEqual(project.interactions[0]?.result, {
+    outcome: "Failed",
+    code: "ResourceLimit",
+  });
+});
+
+test("a raised attention without room is still a turn", async () => {
+  const project = heldProjectStore({
+    ...observedState(5),
+    attention: "Attention",
+  });
+  await quietPass(
+    project.store,
+    heldForRoomSource(notificationLog([6]), () => roomContext(4, 4, 1)),
+    project.policy,
+  );
+  assert.equal(project.turns(), 1);
+  assert.deepEqual(project.steps, ["permit", "interaction"]);
+});
+
+test("an empty view without room is a quiet cycle as before", async () => {
+  const project = heldProjectStore(observedState(5));
+  const result = await quietPass(
+    project.store,
+    heldForRoomSource(
+      notificationLog([6]),
+      () => roomContext(4, 4, 1),
+      () => emptyViewPage("b".repeat(64)),
+    ),
+    project.policy,
+  );
+  assert.equal(result.quiet, 1);
+  assert.equal(project.turns(), 0);
+  assert.deepEqual(project.steps, ["quiet"]);
+  assert.equal(project.stored().notificationCursor, 6);
 });
 
 test("inventory progress follows scanned projects when a permit is unavailable", async () => {

@@ -1633,7 +1633,7 @@ async function heldAmong(
   const found = await pool.query<{ ticket: string }>(
     sql`SELECT DISTINCT ticket::text AS ticket FROM selector_proposal_delivery
      WHERE tenant=${partition.tenant} AND project=${partition.project}
-       AND state='AwaitingApproval' AND ticket=ANY(${[...tickets]}::bigint[])`,
+       AND state<>'Terminal' AND ticket=ANY(${[...tickets]}::bigint[])`,
   );
   return found.rows.map((row) => asTicketId(Number(row.ticket)));
 }

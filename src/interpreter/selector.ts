@@ -211,7 +211,7 @@ export interface SelectorStateStore {
   planningIntent(
     partition: Partition,
   ): Promise<SelectorPlanningIntent | undefined>;
-  /** Which of the tickets named a decision held for approval already dispatches. */
+  /** Which of the tickets named a decision's delivery not yet ended already dispatches. */
   heldAmong(
     partition: Partition,
     tickets: readonly DispatchCandidate["ticket"][],
@@ -1931,6 +1931,41 @@ export function selectorQuietCycle(
     recoveryEpoch: observation.token.recoveryEpoch,
     candidateScan: observation.nextCandidateScan,
   };
+}
+
+/**
+ * Whether a dispatch could do more than queue: the account under its maximum,
+ * the account half of `executionMayAdmit`, and none of the project's
+ * executions `Queued`, cluster slots aside because they are shared and come
+ * back without this project moving. A version 1 context is only ever a
+ * retained input holding neither count, so it reads as room.
+ */
+export function selectorDispatchHasRoom(
+  context: SelectorOperationalContext,
+): boolean {
+  if (context.version === 1) return true;
+  return (
+    context.capacity.accountActive < context.capacity.accountMaximum &&
+    context.activeWork.queued === 0
+  );
+}
+
+/**
+ * Whether an observation that is no quiet cycle waits for room rather than
+ * being a turn, its candidates and refusals mattering only to a dispatch that
+ * would now only queue, unless it is over its resource limit or under a raised
+ * attention. A hold stores nothing, so every pass observes the project again
+ * until there is room and the turn that ends the hold carries what moved.
+ */
+export function selectorHeldForRoom(
+  state: SelectorProjectState,
+  observation: SelectorObservation,
+): boolean {
+  return (
+    observation.resourceLimit === undefined &&
+    state.attention === "Monitoring" &&
+    !selectorDispatchHasRoom(observation.operationalContext)
+  );
 }
 
 /**
