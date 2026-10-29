@@ -42,11 +42,13 @@
     --edge-control: light-dark(#6f7a72, #66716a); /* the border of a control */
 
     /* tones — the machine's states, and nothing else */
-    --tone-pass: light-dark(#1a7443, #5cc687);
-    --tone-fail: light-dark(#b3261e, #f37a70);
-    --tone-live: light-dark(#0a5fb4, #64b5ff);
-    --tone-parked: light-dark(#7f5200, #e0b24e);
-    --tone-queued: var(--ink-3);
+    --tone-pass: light-dark(#287740, #79c68f);
+    --tone-fail: light-dark(#b3342c, #f08880);
+    --tone-live: light-dark(#1b65a0, #74b7f0);
+    --tone-evaluation: light-dark(#7550ac, #b9a0ee);
+    --tone-finalization: light-dark(#167566, #68cbb6);
+    --tone-parked: light-dark(#885600, #efb85b);
+    --tone-queued: light-dark(#59665e, #a4aca6);
     --tone-retired: var(--ink-3);
     --tone-on-danger: light-dark(#ffffff, #0e1210);
 

@@ -22,6 +22,10 @@ export function standingDotFill(tone: Tone): string {
       return "bg-tone-fail";
     case "live":
       return "bg-tone-live";
+    case "evaluation":
+      return "bg-tone-evaluation";
+    case "finalization":
+      return "bg-tone-finalization";
     case "queued":
       return "bg-tone-queued";
     case "parked":

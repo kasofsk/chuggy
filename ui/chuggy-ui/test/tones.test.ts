@@ -65,7 +65,9 @@ test("every state of an invite link draws a tone the pill knows, an open one liv
 
 test("the machine's own meanings keep their own hues", () => {
   expect(phaseTone("Escalated")).toBe("parked");
-  expect(phaseTone("Evaluation")).toBe("live");
+  expect(phaseTone("Work")).toBe("live");
+  expect(phaseTone("Evaluation")).toBe("evaluation");
+  expect(phaseTone("Finalization")).toBe("finalization");
   expect(phaseTone("Pending")).toBe("queued");
   expect(phaseTone("Done")).toBe("pass");
   expect(phaseTone("Revoked")).toBe("retired");
@@ -73,7 +75,9 @@ test("the machine's own meanings keep their own hues", () => {
   expect(verdictTone("Failed")).toBe("fail");
   expect(verdictTone("Starting")).toBe("queued");
   expect(verdictTone("Running")).toBe("live");
-  expect(verdictTone("Blocked")).toBe("retired");
+  expect(verdictTone("Blocked")).toBe("parked");
+  expect(verdictTone("Cancelled")).toBe("retired");
+  expect(executionTone("Terminal", "Blocked")).toBe("parked");
 });
 
 test("each arm a stage has without evaluators is its own word and its own tone", () => {
