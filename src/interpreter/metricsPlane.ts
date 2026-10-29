@@ -8,8 +8,8 @@
  *
  * EVERY SUM IS OF WHOLE UNITS — milliseconds, millionths of a dollar, counts —
  * scaled only once summed. A sum of fractions depends on the order its rows are
- * added in, which no read fixes, so it can fall in its last place from one
- * scrape to the next, and a scraper reads any fall as a reset.
+ * added in, so it can fall in its last place from one scrape to the next, and a
+ * scraper reads any fall as a reset.
  *
  * A COUNTER'S AND A HISTOGRAM'S SERIES BEGAN AT ITS EARLIEST ROW. A series
  * first appears already holding that row, so each names that row's time as

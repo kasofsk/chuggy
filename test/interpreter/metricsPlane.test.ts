@@ -103,7 +103,7 @@ test("rows a label cannot tell apart are one series, and a run's durations are s
   );
 });
 
-test("an attempt's state labels its count and not its duration, whose buckets are summed across states", () => {
+test("an attempt's state labels its count and not its duration, whose buckets and milliseconds are summed across states before scaling", () => {
   const families = metricsPlaneFamilies({
     ...empty,
     attempts: [
@@ -112,7 +112,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
         state: "Reported",
         buckets: bucketsAt(1, 2),
         ended: 2,
-        durationMs: 100_000,
+        durationMs: 100_100,
         createdSecs: 20,
       },
       {
@@ -120,7 +120,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
         state: "Lost",
         buckets: bucketsAt(12, 1),
         ended: 1,
-        durationMs: 9_000_000,
+        durationMs: 9_000_200,
         createdSecs: 10,
       },
     ],
@@ -152,7 +152,7 @@ test("an attempt's state labels its count and not its duration, whose buckets ar
       bucketCounts: bucketsAt(1, 2).map(
         (count, index) => count + (index === 12 ? 1 : 0),
       ),
-      sum: 9_100,
+      sum: 9_100.3,
       createdSecs: 10,
     },
   ]);

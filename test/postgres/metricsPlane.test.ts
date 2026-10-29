@@ -89,7 +89,7 @@ const three = { tenant: "metrics-three", project: "ops" };
 /** How many revisions, each pinned by one run of the same task, project three holds. */
 const pinnedRevisions = 30;
 
-/** How long each of project three's runs took, in milliseconds: a fraction of a second no float sum of many of them states exactly. */
+/** How long each of project three's runs took, in milliseconds: whole seconds and a fraction, which a float sum of many of them states inexactly. */
 const pinnedMs = 10_300;
 
 /** How many members another issuer signed in chat on their own, one turn each. */
@@ -621,7 +621,7 @@ test("an attempt's duration is a histogram whose buckets count everything at or 
     assert.ok(samples.includes(expected), expected);
 });
 
-test("an attempt's duration sum is exact however many fractional durations it adds up", async () => {
+test("an attempt's duration sum is exact over many durations of whole seconds and a fraction", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
   const expected = `chuggy_attempt_duration_seconds_sum{${pinnedLabels}} ${String((pinnedRevisions * pinnedMs) / 1_000)}`;
   assert.ok(samples.includes(expected), expected);
