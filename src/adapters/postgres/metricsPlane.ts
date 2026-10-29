@@ -464,7 +464,7 @@ async function metricsPlaneExecutionQuery(
                  coalesce(o.owner,'') AS owner,t.kind AS phase,m.stage,m.runner,m.workload,
                  CASE WHEN e.placement='InCluster' THEN 'Cluster'
                       WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
-                 extract(epoch FROM a.ended_at-a.opened_at)::float8 AS secs
+                 extract(epoch FROM a.ended_at-coalesce(a.claimed_at,a.opened_at))::float8 AS secs
             FROM execution_attempt a
             JOIN execution e
               ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution

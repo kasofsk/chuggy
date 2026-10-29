@@ -696,7 +696,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution_attempt",
         "UPDATE",
-        "assignment,capability_secret_digest,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
+        "assignment,capability_secret_digest,claimed_at,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
       ],
       [
         "personal_runner",

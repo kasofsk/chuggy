@@ -784,6 +784,21 @@ export interface RefusedAttempt extends FencedAttempt {
   readonly fault?: WorkerImageFault;
 }
 
+/**
+ * An attempt offered to pools that no runner holds: invoked, unleased and
+ * `Placing`, waiting for a runner to claim it. Whether its project is still
+ * `Active` is read beside it, since no claim takes one of a project that is not.
+ */
+export interface WaitingAttempt extends FencedAttempt {
+  readonly projectActive: boolean;
+}
+
+/** What a waiting attempt records of the job it runs, which a fresh preparation is compared against. */
+export interface WaitingAttemptRecord {
+  readonly invocation: WorkTaskInvocation;
+  readonly runtime: string;
+}
+
 /** One claim of a focused request, held for a bounded stretch of database time. */
 export interface RequestClaim {
   readonly partition: Partition;
@@ -868,7 +883,11 @@ export interface ExecutionSchedulerStore {
    */
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
-  /** Records what a `Placing` attempt is invoked with, once and only for its current generation. */
+  /**
+   * Records what a `Placing` attempt is invoked with, once and only for its
+   * current generation. One whose execution is routed to pools gives up its
+   * lease in the same move, so it waits for a runner rather than lapsing.
+   */
   attemptInvoked(
     attempt: FencedAttempt,
     invocation: WorkTaskInvocation,
@@ -949,10 +968,41 @@ export interface ExecutionSchedulerStore {
   ): Promise<readonly RefusedAttempt[]>;
 
   /**
+   * At most `attemptsMax` waiting attempts of this epoch, in key order after
+   * the last one the previous call answered, or from the first where that call
+   * answered fewer than `attemptsMax`, so successive calls reach every one; and
+   * nothing under a superseded epoch.
+   */
+  waitingAttempts(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<readonly WaitingAttempt[]>;
+
+  /**
+   * Withdraws a waiting attempt without spending the budget, backing its
+   * execution off, where it is still waiting: one a runner claimed since it was
+   * read is left alone.
+   */
+  waitingAttemptWithdrawn(
+    attempt: FencedAttempt,
+    evidence: AttemptEvidenceRecord,
+  ): Promise<boolean>;
+
+  /**
+   * Withdraws a waiting attempt as `PlacementUnavailable`, as
+   * `waitingAttemptWithdrawn` does, where what it records differs from
+   * `current`.
+   */
+  waitingAttemptOutdated(
+    attempt: FencedAttempt,
+    current: WaitingAttemptRecord,
+  ): Promise<boolean>;
+
+  /**
    * Ends at most `attemptsMax` attempts whose lease has run out and that no
    * pool refused, backing their executions off. One that ran and vanished is
-   * `Lost` and spends the safe retry budget, and one offered to pools that no
-   * pool took is withdrawn as `PlacementUnavailable` without spending it.
+   * `Lost` and spends the safe retry budget, and one offered to pools that was
+   * never invoked is withdrawn as `PlacementUnavailable` without spending it.
    */
   reapLapsedAttempts(
     epoch: RecoveryEpoch,
@@ -976,7 +1026,10 @@ export interface ExecutionSchedulerStore {
   /** Acknowledges external cleanup only after the placement backend accepted removal. */
   attemptCleanupCompleted(attempt: FencedAttempt): Promise<boolean>;
 
-  /** At most `executionsMax` executions that own a slot and have no live attempt. */
+  /**
+   * At most `executionsMax` executions that own a slot and have no live
+   * attempt, and none routed to pools whose project is not `Active`.
+   */
   unlaunched(
     epoch: RecoveryEpoch,
     executionsMax: number,

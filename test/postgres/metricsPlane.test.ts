@@ -150,7 +150,7 @@ async function metricsExecution(
   );
 }
 
-/** One attempt of an execution, ended `secs` after it opened where it has ended, and held by a pool where its execution is. */
+/** One attempt of an execution, ended `secs` after it opened where it has ended, held by a pool where its execution is, and claimed `claimedSecs` after it opened where that is named. */
 async function metricsAttempt(
   query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
   seeded: MetricsExecution,
@@ -158,16 +158,18 @@ async function metricsAttempt(
   state: string,
   secs: number | null,
   personal = false,
+  claimedSecs?: number,
 ): Promise<void> {
   const pooled = seeded.placement === "Pool";
   await query(
     `INSERT INTO execution_attempt (tenant,project,execution,attempt,attempt_number,recovery_epoch,
-       state,opened_at,ended_at,capability,manifest,pool,pool_principal,assignment,personal)
+       state,opened_at,ended_at,capability,manifest,pool,pool_principal,assignment,personal,claimed_at)
      VALUES ($1,$2,$3,$4,
        (SELECT count(*)+1 FROM execution_attempt WHERE tenant=$1 AND project=$2 AND execution=$3),
        'epoch',$5,'2026-01-01T00:00:00Z',
        '2026-01-01T00:00:00Z'::timestamptz + make_interval(secs => $6::float8),
-       'capability-' || $4,'manifest-' || $4,$7,$7,$8,$9)`,
+       'capability-' || $4,'manifest-' || $4,$7,$7,$8,$9,
+       '2026-01-01T00:00:00Z'::timestamptz + make_interval(secs => $10::float8))`,
     [
       seeded.partition.tenant,
       seeded.partition.project,
@@ -178,6 +180,7 @@ async function metricsAttempt(
       pooled ? (personal ? alice : "pool") : null,
       pooled ? `assignment-${attempt}` : null,
       personal,
+      claimedSecs ?? null,
     ],
   );
 }
@@ -434,6 +437,7 @@ async function metricsRunsSeeded(
     "Reported",
     200,
     true,
+    150,
   );
   await metricsRun(query, checksOne, "attempt-checks-one", 0, 0, 0);
   await metricsAttempt(query, reviewOne, "attempt-review-one", "Reported", 100);
@@ -595,7 +599,7 @@ test("every ended attempt is counted under what ran it and whose ticket it was, 
   assert.doesNotMatch(page.body, /execution-|attempt-|session-|\bpool\b/u);
 });
 
-test("an attempt's duration is a histogram whose buckets count everything at or below them", async () => {
+test("an attempt's duration is a histogram whose buckets count everything at or below them, measured from a runner's claim where one claimed it", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
   for (const expected of [
     `chuggy_attempt_duration_seconds_bucket{${workLabels},le="30"} 1`,
@@ -604,6 +608,7 @@ test("an attempt's duration is a histogram whose buckets count everything at or 
     `chuggy_attempt_duration_seconds_bucket{${workLabels},le="+Inf"} 2`,
     `chuggy_attempt_duration_seconds_sum{${workLabels}} 55`,
     `chuggy_attempt_duration_seconds_count{${workLabels}} 2`,
+    `chuggy_attempt_duration_seconds_sum{${checksLabels}} 50`,
     `chuggy_attempt_duration_seconds_bucket{${authoredLabels},le="2700"} 0`,
     `chuggy_attempt_duration_seconds_bucket{${authoredLabels},le="3600"} 1`,
     `chuggy_attempt_duration_seconds_bucket{${authoredReviewLabels},le="7200"} 0`,

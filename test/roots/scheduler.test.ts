@@ -1079,6 +1079,7 @@ function processExecutionFakes(observed: boolean): string {
       admit: async () => ({ admitted: 'NoCandidate' }),
       refusedAttempts: async () => [],
       attemptsAwaitingObservation: async () => ${observed ? "[attempt]" : "[]"},
+      waitingAttempts: async () => [],
       reapLapsedAttempts: async () => 0,
       attemptsAwaitingCleanup: async () => [],
       attemptCleanupCompleted: async () => true,

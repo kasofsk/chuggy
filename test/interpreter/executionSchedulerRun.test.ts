@@ -42,6 +42,8 @@ import {
   type AttemptWorkloadObserved,
   type AttemptOpening,
   type Terminalized,
+  type WaitingAttempt,
+  type WaitingAttemptRecord,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -244,6 +246,15 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     reapLapsedAttempts: () => Promise.resolve(0),
     attemptsAwaitingCleanup: () => Promise.resolve([]),
     attemptCleanupCompleted: () => Promise.resolve(true),
+    waitingAttempts: () => Promise.resolve([]),
+    waitingAttemptWithdrawn: (_attempt, evidence) => {
+      calls.push(`waiting-withdrawn:${evidence}`);
+      return Promise.resolve(true);
+    },
+    waitingAttemptOutdated: () => {
+      calls.push("waiting-outdated");
+      return Promise.resolve(true);
+    },
     unlaunched: () => Promise.resolve([execution]),
     fenceOldEpochAttempts: () => {
       calls.push("fenced");
@@ -728,6 +739,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("observing");
       return Promise.resolve([]);
     },
+    waitingAttempts: () => {
+      calls.push("waiting");
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: () => {
       calls.push("reaped");
       return Promise.resolve(0);
@@ -761,6 +776,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "claimed:SpawnWork,SpawnEvaluation",
     "admitted",
     "observing",
+    "waiting",
     "reaped",
     "unlaunched",
     "lost",
@@ -960,6 +976,10 @@ test("each sweep is asked for at most the count a pass is configured to take", a
       swept.push(`observe:${String(attemptsMax)}`);
       return Promise.resolve([]);
     },
+    waitingAttempts: (_epoch, attemptsMax) => {
+      swept.push(`waiting:${String(attemptsMax)}`);
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       swept.push(`reap:${String(attemptsMax)}`);
       return Promise.resolve(0);
@@ -970,6 +990,7 @@ test("each sweep is asked for at most the count a pass is configured to take", a
   assert.deepEqual(swept, [
     `fence:${bound}`,
     `observe:${bound}`,
+    `waiting:${bound}`,
     `reap:${bound}`,
   ]);
 });
@@ -1966,6 +1987,139 @@ test("an authority that cannot answer decides nothing, so the execution is held 
     );
     assert.deepEqual(calls, ["registered:project"]);
   }
+});
+
+/** The fixture's attempt as a pass reads it waiting for a runner. */
+const waitingAttempt: WaitingAttempt = {
+  partition,
+  execution: execution.execution,
+  attempt: attempt.attempt,
+  generation: attempt.generation,
+  projectActive: true,
+};
+
+/**
+ * A pass that finds the fixture's attempt waiting for a runner and nothing to
+ * open, against the registry page, the policy and the authority a case
+ * supplies, answering each withdrawal as `withdrawn` says and noting what an
+ * outdated one was compared against.
+ */
+async function poolWaitingPass(
+  calls: string[],
+  over: {
+    readonly waiting?: WaitingAttempt;
+    readonly page?: WorkerPoolRosterPage;
+    readonly resolved?: ProfileResolved;
+    readonly access?: ProjectAccess;
+    readonly withdrawn?: boolean;
+    readonly compared?: WaitingAttemptRecord[];
+  } = {},
+): Promise<void> {
+  const service = serviceWith(calls, over.resolved ?? runnable, placedOk);
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        waitingAttempts: () =>
+          Promise.resolve([over.waiting ?? waitingAttempt]),
+        execution: () =>
+          Promise.resolve({
+            ...execution,
+            route: "Pool" as const,
+            status: "Launching" as const,
+          }),
+        waitingAttemptWithdrawn: (_attempt, evidence) => {
+          calls.push(`waiting-withdrawn:${evidence}`);
+          return Promise.resolve(over.withdrawn ?? true);
+        },
+        waitingAttemptOutdated: (_attempt, current) => {
+          calls.push("waiting-outdated");
+          over.compared?.push(current);
+          return Promise.resolve(false);
+        },
+        unlaunched: () => Promise.resolve([]),
+      },
+      workerPools: {
+        personal: () => Promise.resolve([]),
+        registered: () => {
+          calls.push("registered");
+          return Promise.resolve(
+            over.page ?? {
+              pools: [registeredPool(["Platform:Linux:Amd64"])],
+              truncated: false,
+            },
+          );
+        },
+      },
+      access: over.access ?? poolAccess(),
+    },
+    epoch,
+  );
+}
+
+test("a waiting attempt of a project no longer Active is withdrawn without asking the pools", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, {
+    waiting: { ...waitingAttempt, projectActive: false },
+  });
+  assert.deepEqual(calls, ["waiting-withdrawn:PlacementUnavailable"]);
+});
+
+test("a waiting attempt no configured runner could take now is withdrawn and its execution blocked, and nothing is blocked where a runner took it first", async () => {
+  const none = { pools: [], truncated: false };
+  const calls: string[] = [];
+  await poolWaitingPass(calls, { page: none });
+  assert.deepEqual(calls, [
+    "registered",
+    "waiting-withdrawn:PlacementIncompatible",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+  const raced: string[] = [];
+  await poolWaitingPass(raced, { page: none, withdrawn: false });
+  assert.deepEqual(raced, [
+    "registered",
+    "waiting-withdrawn:PlacementIncompatible",
+  ]);
+});
+
+test("a waiting attempt whose policy now denies it is blocked as at opening, and one whose policy cannot answer goes on waiting", async () => {
+  const denied: string[] = [];
+  await poolWaitingPass(denied, {
+    resolved: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  });
+  assert.deepEqual(denied, [
+    "registered",
+    "waiting-withdrawn:PolicyDenied",
+    "blocked:ExecutionPolicyDenied",
+  ]);
+  const held: string[] = [];
+  await poolWaitingPass(held, { resolved: { resolved: "Unavailable" } });
+  assert.deepEqual(held, ["registered"]);
+});
+
+test("a waiting attempt whose authority cannot answer is neither prepared again nor ended", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, {
+    access: {
+      authorize: () =>
+        Promise.reject(new ProjectAccessUnavailable("no answer")),
+      authorizeTenant: () =>
+        Promise.reject(new ProjectAccessUnavailable("no answer")),
+      authorizeSite: projectAccessSiteRefused,
+    },
+  });
+  assert.deepEqual(calls, ["registered"]);
+});
+
+test("a waiting attempt that prepares is compared against what this pass would record, under the runtime the pass opens attempts under", async () => {
+  const calls: string[] = [];
+  const compared: WaitingAttemptRecord[] = [];
+  await poolWaitingPass(calls, { compared });
+  assert.deepEqual(calls, ["registered", "waiting-outdated"]);
+  const [current] = compared;
+  assert.equal(current?.runtime, workerRuntime);
+  assert.deepEqual(current.invocation.profile, runnable.profile);
 });
 
 const member = asPrincipal("member-one");

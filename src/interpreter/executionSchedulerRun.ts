@@ -88,9 +88,21 @@
  * each revoked where the project authority withholds its `Execute`. That is
  * the two inabilities again: no pool configured to run it blocks, and one that
  * could is a hold, as is an authority that could not answer. A held attempt,
- * prepared and invoked as a placed one is where a pool could run it, waits on
- * its own lease, and one no pool holds when that lapses is withdrawn without
- * spending the budget.
+ * prepared and invoked as a placed one is where a pool could run it, waits
+ * for a runner with no lease, as `runner.qnt` holds an `Unavailable`
+ * placement until one can take it. Its place in the claims' order is its
+ * opening, so waiting longer never sends it to the back.
+ *
+ * A WAITING ATTEMPT IS ASKED AGAIN, IN TURN, WHAT ITS OPENING ASKED. Once no
+ * lapse ends it, nothing else would: a pass reads a bounded batch of them, each
+ * after where the last batch stopped, and checks each for a project no longer
+ * `Active`, the pools again, and a preparation that would now record something
+ * else — a repinned runtime, a policy or a briefing that moved. The first and
+ * the last withdraw it without spending the budget, for the pass to open again,
+ * which it does for a project only while it is `Active`; the pools and the
+ * preparation block it as they would at opening, and a hold leaves it waiting.
+ * Every one of those ends is fenced by `pool` being null in the statement that
+ * ends it, so a runner that claimed it in between keeps it.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,
@@ -146,6 +158,7 @@
 import {
   attemptRefusalBlock,
   checkedExecutionSchedulerConfig,
+  executionOwnsSlot,
   executionRoutes,
   recordScheduler,
   type AttemptEvidenceRecord,
@@ -163,6 +176,7 @@ import {
   type SchedulerTelemetry,
   type AttemptPlacementPort,
   type ClusterId,
+  type WaitingAttempt,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
 import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
@@ -426,6 +440,25 @@ export async function executionSchedulerAdmit(
   return admitted;
 }
 
+/** Retires the execution an attempt names, which is what a definitive inability earns once its attempt is ended. */
+async function schedulerBlockExecution(
+  service: ExecutionSchedulerService,
+  attempt: FencedAttempt,
+  reason: BlockedReason,
+): Promise<void> {
+  const blocked = await service.store.blockExecution(
+    attempt.partition,
+    attempt.execution,
+    reason,
+  );
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.blocking(blocked.blocked, reason);
+    if (blocked.blocked === "Conflicting") {
+      metrics.incident("ImpossibleState");
+    }
+  });
+}
+
 /**
  * Withdraws the attempt and retires the execution it names, which is what a
  * definitive inability earns, answering whether this move ended the attempt.
@@ -442,32 +475,54 @@ async function schedulerBlock(
     "Withdrawn",
     evidence,
   );
-  const blocked = await service.store.blockExecution(
-    attempt.partition,
-    attempt.execution,
-    reason,
-  );
-  recordScheduler(service.metrics, (metrics) => {
-    metrics.blocking(blocked.blocked, reason);
-    if (blocked.blocked === "Conflicting") {
-      metrics.incident("ImpossibleState");
-    }
-  });
+  await schedulerBlockExecution(service, attempt, reason);
   return ended;
 }
 
-/** What policy granted this execution, or the durable move its refusal earns. */
+/**
+ * What a preparation or a question of the pools earns instead of going on: a
+ * definitive inability, which blocks, or a temporary one, which holds.
+ */
+type SchedulerRefused =
+  | {
+      readonly refused: "Block";
+      readonly evidence: AttemptEvidenceRecord;
+      readonly reason: BlockedReason;
+    }
+  | { readonly refused: "Hold"; readonly evidence: AttemptEvidenceRecord };
+
+/** Takes the move a refusal earns against an attempt just opened: a block, or a withdrawal spending nothing. */
+async function schedulerRefuse(
+  service: ExecutionSchedulerService,
+  attempt: FencedAttempt,
+  refused: SchedulerRefused,
+): Promise<void> {
+  switch (refused.refused) {
+    case "Block":
+      await schedulerBlock(service, attempt, refused.evidence, refused.reason);
+      return;
+    case "Hold":
+      await schedulerEndAttempt(
+        service,
+        attempt,
+        "Withdrawn",
+        refused.evidence,
+      );
+      return;
+  }
+}
+
+/** What policy granted this execution, or the refusal it answered. */
 async function schedulerPolicyFor(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  attempt: PhysicalAttempt,
 ): Promise<
   | {
       readonly profile: ExecutionProfile;
       readonly grant: PolicyAuthorityGrant;
       readonly image?: string;
     }
-  | undefined
+  | SchedulerRefused
 > {
   const resolved = await service.policy.profileFor(execution);
   switch (resolved.resolved) {
@@ -478,16 +533,13 @@ async function schedulerPolicyFor(
         ...(resolved.image === undefined ? {} : { image: resolved.image }),
       };
     case "Denied":
-      await schedulerBlock(service, attempt, "PolicyDenied", resolved.reason);
-      return undefined;
+      return {
+        refused: "Block",
+        evidence: "PolicyDenied",
+        reason: resolved.reason,
+      };
     case "Unavailable":
-      await schedulerEndAttempt(
-        service,
-        attempt,
-        "Withdrawn",
-        "PolicyUnavailable",
-      );
-      return undefined;
+      return { refused: "Hold", evidence: "PolicyUnavailable" };
   }
 }
 
@@ -595,40 +647,29 @@ async function schedulerProjectContext(
   return { ...readOnly, ...dependencies };
 }
 
-/** The durable move an ungatherable briefing input earns, one arm each. */
-async function schedulerUnready(
+/** The refusal an ungatherable briefing input earns, one arm each. */
+function schedulerUnready(
   service: ExecutionSchedulerService,
-  attempt: FencedAttempt,
   unready: BriefingUnready,
-): Promise<void> {
+): SchedulerRefused {
   switch (unready.gathered) {
     case "Missing":
-      await schedulerBlock(
-        service,
-        attempt,
-        "PolicyDenied",
-        "TicketConfigIncompatible",
-      );
-      return;
+      return {
+        refused: "Block",
+        evidence: "PolicyDenied",
+        reason: "TicketConfigIncompatible",
+      };
     case "Incompatible":
       recordScheduler(service.metrics, (metrics) => {
         metrics.briefing(unready.fault);
       });
-      await schedulerBlock(
-        service,
-        attempt,
-        `PolicyDenied: ${unready.fault}`,
-        "TicketConfigIncompatible",
-      );
-      return;
+      return {
+        refused: "Block",
+        evidence: `PolicyDenied: ${unready.fault}`,
+        reason: "TicketConfigIncompatible",
+      };
     case "Unavailable":
-      await schedulerEndAttempt(
-        service,
-        attempt,
-        "Withdrawn",
-        "PolicyUnavailable",
-      );
-      return;
+      return { refused: "Hold", evidence: "PolicyUnavailable" };
   }
 }
 
@@ -738,39 +779,30 @@ function schedulerTaskPurpose(
     : (configuration.evaluations?.[execution.stage]?.purpose ?? "Review");
 }
 
-/** Resolves policy, gathers the pinned briefing inputs and composes one invocation. */
-async function schedulerPrepare(
+/**
+ * Resolves policy, gathers the pinned briefing inputs and composes one
+ * invocation, or answers the refusal that stopped it. It moves nothing, so an
+ * attempt just opened and one already waiting each take the refusal their own
+ * way.
+ */
+async function schedulerPrepared(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  attempt: PhysicalAttempt,
-): Promise<TaskLaunch | undefined> {
-  const policy = await schedulerPolicyFor(service, execution, attempt);
-  if (policy === undefined) return undefined;
+): Promise<TaskLaunch | SchedulerRefused> {
+  const policy = await schedulerPolicyFor(service, execution);
+  if ("refused" in policy) return policy;
   const configuration = await schedulerConfiguration(service, execution);
-  if ("gathered" in configuration) {
-    await schedulerUnready(service, attempt, configuration);
-    return undefined;
-  }
+  if ("gathered" in configuration)
+    return schedulerUnready(service, configuration);
   const runtime = await schedulerRuntimeFacts(service, execution);
-  if ("gathered" in runtime) {
-    await schedulerUnready(service, attempt, runtime);
-    return undefined;
-  }
+  if ("gathered" in runtime) return schedulerUnready(service, runtime);
   const project = await schedulerProjectContext(service, execution);
-  if ("gathered" in project) {
-    await schedulerUnready(service, attempt, project);
-    return undefined;
-  }
+  if ("gathered" in project) return schedulerUnready(service, project);
   const priorWorkReports = await schedulerPriorWorkReports(service, execution);
-  if ("gathered" in priorWorkReports) {
-    await schedulerUnready(service, attempt, priorWorkReports);
-    return undefined;
-  }
+  if ("gathered" in priorWorkReports)
+    return schedulerUnready(service, priorWorkReports);
   const rework = await schedulerRework(service, execution);
-  if ("gathered" in rework) {
-    await schedulerUnready(service, attempt, rework);
-    return undefined;
-  }
+  if ("gathered" in rework) return schedulerUnready(service, rework);
   const brief = await service.ticketBriefs.brief(
     execution.partition,
     execution.ticket,
@@ -798,14 +830,24 @@ async function schedulerPrepare(
       recordScheduler(service.metrics, (metrics) => {
         metrics.briefing(composed.fault);
       });
-      await schedulerBlock(
-        service,
-        attempt,
-        `PolicyDenied: ${composed.fault}`,
-        "TicketConfigIncompatible",
-      );
-      return undefined;
+      return {
+        refused: "Block",
+        evidence: `PolicyDenied: ${composed.fault}`,
+        reason: "TicketConfigIncompatible",
+      };
   }
+}
+
+/** Prepares an attempt just opened, taking the move a refusal earns against it. */
+async function schedulerPrepare(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<TaskLaunch | undefined> {
+  const prepared = await schedulerPrepared(service, execution);
+  if (!("refused" in prepared)) return prepared;
+  await schedulerRefuse(service, attempt, prepared);
+  return undefined;
 }
 
 /** Places one opened attempt, or records the durable evidence of why it was not placed. */
@@ -953,19 +995,23 @@ async function schedulerPoolsAnswered(
   }
 }
 
+/** What asking the pools found: an attempt that may wait for one, an authority that could not answer, or a block. */
+type SchedulerPoolsAnswer =
+  | { readonly pools: "Offerable" }
+  | { readonly pools: "Undecided" }
+  | Extract<SchedulerRefused, { readonly refused: "Block" }>;
+
 /**
  * Asks what can be said of an execution routed to pools against the pools its
- * project registered and its owner's personal runners, blocks the one no
- * runner is configured to run, for its size where that is all that stops one,
- * and answers whether its attempt may be offered. A page the registry cut
- * short never blocks, since a pool past it may be, and an undecided authority
- * holds.
+ * project registered and its owner's personal runners: the one no runner is
+ * configured to run blocks, for its size where that is all that stops one. A
+ * page the registry cut short never blocks, since a pool past it may be, and
+ * an authority that could not answer decides nothing.
  */
-async function schedulerOfferable(
+async function schedulerPoolsAsked(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
-  attempt: PhysicalAttempt,
-): Promise<boolean> {
+): Promise<SchedulerPoolsAnswer> {
   const registered = await service.workerPools.registered(execution.partition);
   const answered = await schedulerPoolsAnswered(
     service,
@@ -973,7 +1019,7 @@ async function schedulerOfferable(
     registered.pools,
     await schedulerOwnerRunners(service, execution),
   );
-  if (answered === undefined) return false;
+  if (answered === undefined) return { pools: "Undecided" };
   const outcome = workerPoolOutcomeRegistered(
     execution,
     answered,
@@ -981,22 +1027,38 @@ async function schedulerOfferable(
   );
   switch (outcome) {
     case "DefinitiveIncompatibility":
-      if (registered.truncated) return true;
-      await schedulerBlock(
-        service,
-        attempt,
-        "PlacementIncompatible",
-        workerPoolIncompatibility(execution, answered, service.poolMemoryMib),
-      );
-      return false;
+      if (registered.truncated) return { pools: "Offerable" };
+      return {
+        refused: "Block",
+        evidence: "PlacementIncompatible",
+        reason: workerPoolIncompatibility(
+          execution,
+          answered,
+          service.poolMemoryMib,
+        ),
+      };
     case "Placeable":
     case "Unavailable":
-      return true;
+      return { pools: "Offerable" };
     case "NotApplicable":
       throw new Error(
         `execution scheduler: ${execution.execution} is routed to pools and no pool outcome applies to it`,
       );
   }
+}
+
+/** Asks the pools of an attempt just opened, blocking where they answer a block, and answers whether it may be offered. */
+async function schedulerOfferable(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  attempt: PhysicalAttempt,
+): Promise<boolean> {
+  const asked = await schedulerPoolsAsked(service, execution);
+  if ("refused" in asked) {
+    await schedulerRefuse(service, attempt, asked);
+    return false;
+  }
+  return asked.pools === "Offerable";
 }
 
 /**
@@ -1214,6 +1276,86 @@ export async function executionSchedulerObserve(
   return { observed, notices };
 }
 
+/**
+ * Withdraws a waiting attempt where no runner has claimed it since it was read,
+ * and blocks its execution for `reason` where one is named and this move ended
+ * the attempt; one a runner took in between is left as it took it.
+ */
+async function schedulerWaitingWithdraw(
+  service: ExecutionSchedulerService,
+  attempt: WaitingAttempt,
+  evidence: AttemptEvidenceRecord,
+  reason?: BlockedReason,
+): Promise<void> {
+  if (!(await service.store.waitingAttemptWithdrawn(attempt, evidence))) return;
+  recordScheduler(service.metrics, (metrics) => {
+    metrics.attemptEnded("Withdrawn", evidence);
+  });
+  if (reason !== undefined)
+    await schedulerBlockExecution(service, attempt, reason);
+}
+
+/**
+ * Asks one waiting attempt again whether its project is `Active`, whether a
+ * configured runner could still take it, and whether preparing it now would
+ * record what it records, ending it as the module header says where not.
+ */
+async function schedulerWaitingChecked(
+  service: ExecutionSchedulerService,
+  attempt: WaitingAttempt,
+): Promise<void> {
+  if (!attempt.projectActive) {
+    await schedulerWaitingWithdraw(service, attempt, "PlacementUnavailable");
+    return;
+  }
+  const execution = await service.store.execution(
+    attempt.partition,
+    attempt.execution,
+  );
+  if (execution === undefined || !executionOwnsSlot(execution.status)) return;
+  const asked = await schedulerPoolsAsked(service, execution);
+  if ("refused" in asked) {
+    await schedulerWaitingWithdraw(
+      service,
+      attempt,
+      asked.evidence,
+      asked.reason,
+    );
+    return;
+  }
+  if (asked.pools === "Undecided") return;
+  const prepared = await schedulerPrepared(service, execution);
+  if ("refused" in prepared) {
+    if (prepared.refused === "Block")
+      await schedulerWaitingWithdraw(
+        service,
+        attempt,
+        prepared.evidence,
+        prepared.reason,
+      );
+    return;
+  }
+  const outdated = await service.store.waitingAttemptOutdated(attempt, {
+    invocation: workTaskInvocation(prepared),
+    runtime: service.workerRuntime,
+  });
+  if (outdated)
+    recordScheduler(service.metrics, (metrics) => {
+      metrics.attemptEnded("Withdrawn", "PlacementUnavailable");
+    });
+}
+
+/** Checks a bounded batch of the attempts waiting for a runner, one at a time. */
+async function schedulerWaitingCheck(
+  service: ExecutionSchedulerService,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+): Promise<void> {
+  const waiting = await service.store.waitingAttempts(epoch, attemptsMax);
+  for (const attempt of waiting)
+    await schedulerWaitingChecked(service, attempt);
+}
+
 /** Places attempts for the executions that hold a slot and have no live attempt. */
 export async function executionSchedulerLaunch(
   service: ExecutionSchedulerService,
@@ -1225,6 +1367,7 @@ export async function executionSchedulerLaunch(
     service.finalizer,
   );
   await schedulerBlockRefused(service, epoch, config.attemptsPerPassMax);
+  await schedulerWaitingCheck(service, epoch, config.attemptsPerPassMax);
   const reaped = await service.store.reapLapsedAttempts(
     epoch,
     config.attemptsPerPassMax,

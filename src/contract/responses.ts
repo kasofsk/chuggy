@@ -766,6 +766,12 @@ const executionAttemptSchema = z.object({
   /** `Running` once its run has started, though a runner's attempt is stored `Placing` until it ends. */
   state: z.enum(attemptStates),
   openedAt: instantSchema,
+  /**
+   * When a runner claimed it, absent where none has: a `Placing` attempt
+   * without one is still waiting for a runner. Absent too on an attempt that
+   * ended before claims were recorded.
+   */
+  claimedAt: instantSchema.optional(),
   endedAt: instantSchema.optional(),
   evidence: z.enum(attemptEvidences).optional(),
   run: executionRunSchema.optional(),

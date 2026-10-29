@@ -207,6 +207,8 @@ export interface ExecutionAttemptResource {
   readonly generation: number;
   readonly state: AttemptState;
   readonly openedAt: PublicInstant;
+  /** When a runner claimed it, absent where none has or it ended before claims were recorded. */
+  readonly claimedAt?: PublicInstant;
   readonly endedAt?: PublicInstant;
   readonly evidence?: AttemptEvidence;
   readonly run?: ExecutionRunResource;
