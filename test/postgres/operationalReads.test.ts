@@ -22,6 +22,7 @@ import {
 } from "../../src/interpreter/schedulerIdentity.ts";
 import {
   executionSchedulerDefaults,
+  type ExecutionStatus,
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
@@ -33,6 +34,7 @@ import {
   schedulerEvaluationRequest,
   schedulerFurtherTicket,
   schedulerIngressPool,
+  schedulerOpenedAttempt,
   schedulerOwner,
   schedulerPlacedAttempt,
   schedulerProject,
@@ -786,19 +788,8 @@ test("a summary says when the open attempt's run started, and not before or afte
   const label = "operational-run-started";
   const project = await schedulerProject(rig, label);
   await operationalRegistered(project, project.request, label);
-  const admitted = await rig.store.admit(project.cluster);
-  assert.ok(admitted.admitted === "Admitted");
-  const read = () => operationalRunStart(project, admitted.execution);
-  const opened = await rig.store.openAttempt({
-    partition: project.partition,
-    execution: admitted.execution,
-    epoch: project.epoch,
-    leaseSecs: 300,
-    retriesMax: 3,
-    placementBackoffSecs: 1,
-    runtime: schedulerRuntime,
-  });
-  assert.ok(opened.opened === "Opened");
+  const opened = await schedulerOpenedAttempt(rig, project, label);
+  const read = () => operationalRunStart(project, opened.execution);
   const unstarted = { runStartedAt: undefined, run: undefined };
   assert.deepEqual(await read(), { status: "Launching", ...unstarted });
   assert.equal(
@@ -826,8 +817,74 @@ test("a summary says when the open attempt's run started, and not before or afte
     runStartedAt: undefined,
     run: started.run,
   });
-  await operationalReopened(project, admitted.execution);
+  await operationalReopened(project, opened.execution);
   assert.deepEqual(await read(), { status: "Running", ...unstarted });
+});
+
+/** What one execution and its open attempt read as, and which status selections list it. */
+async function operationalRunningRead(
+  project: SchedulerProject,
+  execution: ExecutionId,
+) {
+  const reads = postgresOperationalReads(ingress);
+  const detail = await reads.execution(project.partition, execution, reader);
+  const selecting = async (states: readonly ExecutionStatus[]) =>
+    (
+      await reads.executions(
+        project.partition,
+        {
+          limit: 10,
+          ticket: id(project.ticket),
+          selection: { selection: "Selected", states },
+        },
+        reader,
+      )
+    ).executions.map((each) => each.status);
+  return {
+    status: detail?.status,
+    attempt: detail?.attempts.at(-1)?.state,
+    launching: await selecting(["Launching"]),
+    running: await selecting(["Running"]),
+  };
+}
+
+/**
+ * A runner's placement leaves the stored execution `Launching` and its attempt
+ * `Placing` until the run ends, so only the run says it started.
+ */
+test("an execution whose open attempt's run started reads, and is selected, as running", async () => {
+  const label = "operational-runner-running";
+  const project = await schedulerProject(rig, label);
+  await operationalRegistered(project, project.request, label);
+  const opened = await schedulerOpenedAttempt(rig, project, label);
+  assert.deepEqual(await operationalRunningRead(project, opened.execution), {
+    status: "Launching",
+    attempt: "Placing",
+    launching: ["Launching"],
+    running: [],
+  });
+  await operationalRunRecorded(opened.attempt);
+  assert.deepEqual(await operationalRunningRead(project, opened.execution), {
+    status: "Running",
+    attempt: "Running",
+    launching: [],
+    running: ["Running"],
+  });
+  const stored = await schedulerExecutions(rig, project.partition);
+  assert.equal(
+    stored.find((each) => each.execution === opened.execution)?.status,
+    "Launching",
+  );
+  assert.equal(
+    await rig.store.attemptEnded(opened.attempt, "Lost", "Vanished"),
+    true,
+  );
+  assert.deepEqual(await operationalRunningRead(project, opened.execution), {
+    status: "Launching",
+    attempt: "Lost",
+    launching: ["Launching"],
+    running: [],
+  });
 });
 
 /** UTC ISO 8601, the form every instant a read answers takes. */

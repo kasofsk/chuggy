@@ -387,7 +387,7 @@ async function executionRows(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
@@ -408,12 +408,7 @@ async function executionRows(
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
-                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
-                   AND r.execution=a.execution AND r.attempt=a.attempt
-                 WHERE a.tenant=e.tenant AND a.project=e.project
-                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
-                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
+               to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
                CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
                     THEN e.owner_fallback END AS owner_fallback,
@@ -430,11 +425,18 @@ async function executionRows(
           LEFT JOIN repository_configuration_version v
             ON v.tenant=e.tenant AND v.project=e.project
            AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN LATERAL (SELECT r.started_at FROM execution_attempt a
+              LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+               AND r.execution=a.execution AND r.attempt=a.attempt
+             WHERE a.tenant=e.tenant AND a.project=e.project
+               AND a.execution=e.execution AND a.state IN ('Placing','Running')
+             ORDER BY a.attempt_number DESC LIMIT 1) live ON true
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND (${afterTicket}::bigint IS NULL
                 OR (e.ticket,e.task)>(${afterTicket}::bigint,${afterTask}::bigint))
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
-           AND e.status=ANY(${[...selectedStatuses(query)]}::text[])
+           AND s.status=ANY(${[...selectedStatuses(query)]}::text[])
          ORDER BY e.ticket,e.task LIMIT ${query.limit + 1}`,
   );
   return found.rows;
@@ -486,7 +488,7 @@ async function oneExecution(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
@@ -507,12 +509,7 @@ async function oneExecution(
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT to_char(r.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
-                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
-                   AND r.execution=a.execution AND r.attempt=a.attempt
-                 WHERE a.tenant=e.tenant AND a.project=e.project
-                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
-                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
+               to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
                CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
                     THEN e.owner_fallback END AS owner_fallback,
@@ -529,6 +526,13 @@ async function oneExecution(
           LEFT JOIN repository_configuration_version v
             ON v.tenant=e.tenant AND v.project=e.project
            AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN LATERAL (SELECT r.started_at FROM execution_attempt a
+              LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+               AND r.execution=a.execution AND r.attempt=a.attempt
+             WHERE a.tenant=e.tenant AND a.project=e.project
+               AND a.execution=e.execution AND a.state IN ('Placing','Running')
+             ORDER BY a.attempt_number DESC LIMIT 1) live ON true
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution=${execution}`,
   );
@@ -545,7 +549,12 @@ async function attempts(
                n.generation::text AS generation,n.state,to_char(n.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
                to_char(n.ended_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
                n.pool_refusal
-          FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
+          FROM (SELECT a.attempt,a.attempt_number,a.generation,
+                       (CASE WHEN a.state='Placing' AND EXISTS (
+                              SELECT 1 FROM execution_run x
+                               WHERE x.tenant=a.tenant AND x.project=a.project
+                                 AND x.execution=a.execution AND x.attempt=a.attempt)
+                            THEN 'Running' ELSE a.state END)::text AS state,a.opened_at,
                        a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
                   FROM execution_attempt a
                   LEFT JOIN worker_artifact_reservation r
