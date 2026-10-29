@@ -82,6 +82,27 @@ test("a project with no lead says why under the line, and since when where it wa
   ).toBe("Selector paused");
   expect(
     projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "SelectorNotGranted" } }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe("Selector not granted this project");
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "AwaitingSelector" } }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe("Opens at the selector's next pass");
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "SelectorUnnamed" } }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe("No selector named for this site");
+  expect(
+    projectLeadAbsenceLine(
       ready({
         lead: "None",
         absence: { reason: "RunnerOffline", since: sinceIso },
@@ -149,17 +170,19 @@ test("a refusal for no live runner is drawn only until the placement has said wh
   );
 });
 
-/** A lead that has not opened only because nothing has needed one yet is one
- * that will dispatch; every other reason, or none given, leaves it to a press. */
-test("a lead dispatches where one stands or nothing has needed one yet, and not otherwise", () => {
+/** A lead that has not opened only because nothing has needed one yet, or the
+ * selector's next pass has not come, is one that will dispatch; every other
+ * reason, or none given, leaves it to a press. */
+test("a lead dispatches where one stands or will open, and not otherwise", () => {
   expect(projectLeadDispatches(ready(lead))).toBe(true);
-  expect(
-    projectLeadDispatches(
-      ready({ lead: "None", absence: { reason: "NotNeeded" } }),
-    ),
-  ).toBe(true);
+  for (const reason of ["NotNeeded", "AwaitingSelector"] as const)
+    expect(
+      projectLeadDispatches(ready({ lead: "None", absence: { reason } })),
+    ).toBe(true);
   for (const absence of [
     { reason: "Paused" },
+    { reason: "SelectorNotGranted" },
+    { reason: "SelectorUnnamed" },
     { reason: "RunnerOffline", since: sinceIso },
     { reason: "HostedRunsNotGranted", since: sinceIso },
   ] as const)

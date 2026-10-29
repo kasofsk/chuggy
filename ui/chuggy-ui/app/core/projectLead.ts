@@ -5,8 +5,9 @@
  * A PROJECT WITH NO LEAD HAS NOT BEEN DISPATCHED BY THE SELECTOR YET. The
  * selector opens a project's lead at the first decision that needs one and
  * dispatches through it, so the read's `absence` says whether one will open
- * (`NotNeeded`, until a released ticket waits on a decision) or why none can,
- * and while none can the project's tickets run where somebody presses
+ * (`NotNeeded`, until a released ticket waits on a decision, and
+ * `AwaitingSelector` while one waits for the selector's next pass) or why none
+ * can, and while none can the project's tickets run where somebody presses
  * Dispatch. A server that gives no reason says only that there is no lead. The
  * selector's settings say how a lead would dispatch, not whether this project
  * has one.
@@ -74,7 +75,8 @@ export function projectLeadDispatches(
 ): boolean | undefined {
   if (state.state !== "Ready") return undefined;
   if ("session" in state.value) return true;
-  return state.value.absence?.reason === "NotNeeded";
+  const reason = state.value.absence?.reason;
+  return reason === "NotNeeded" || reason === "AwaitingSelector";
 }
 
 /**

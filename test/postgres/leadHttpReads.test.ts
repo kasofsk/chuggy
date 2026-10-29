@@ -46,6 +46,7 @@ import { leadAdmissionRefusals } from "../../src/contract/rosters.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
+import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import {
   asSessionStoreStream,
   type SessionId,
@@ -53,7 +54,11 @@ import {
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import { postgresHarnessKeying, postgresHarnessRolePool } from "./harness.ts";
+import {
+  postgresHarnessHistory,
+  postgresHarnessKeying,
+  postgresHarnessRolePool,
+} from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import {
   leadRigDecision,
@@ -140,8 +145,8 @@ async function recordBatch(
   );
 }
 
-/** The app the routes are driven through, over the API role and the real ports. */
-function leadApp(subject: string) {
+/** The app the routes are driven through, over the API role and the real ports, naming the site's selector where a case does. */
+function leadApp(subject: string, selector?: string) {
   const pool = rig.apiPool;
   const leads = postgresLeadReads(pool);
   const web = composeNativeWeb(
@@ -161,6 +166,10 @@ function leadApp(subject: string) {
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
       settings: postgresSelectorResolvedSettings(pool),
+      candidates: postgresDispatchViews(pool),
+      ...(selector === undefined
+        ? {}
+        : { selector: oidcPrincipal(issuer, selector) }),
     },
   );
   return createNativeHttpApp(
@@ -517,8 +526,12 @@ test("a readable project whose only session is a thread answers that it has no l
 });
 
 /** The no-lead answer the lead route gives one project, parsed as a console parses it. */
-async function leadAbsence(label: string, partition: Partition) {
-  await using app = leadApp(label);
+async function leadAbsence(
+  label: string,
+  partition: Partition,
+  selector?: string,
+) {
+  await using app = leadApp(label, selector);
   const found = await app.inject({
     url: `${pathOf(partition)}/lead`,
     headers: authorized,
@@ -526,6 +539,49 @@ async function leadAbsence(label: string, partition: Partition) {
   assert.equal(found.statusCode, 200);
   return leadNoneResponseSchema.parse(found.json()).absence;
 }
+
+/**
+ * A released ticket the dispatch view holds, in a project the selector has
+ * written no state for, waits on the selector's next pass, on a grant where the
+ * site's selector may not read the project, or, where the API names no selector,
+ * on one being named; it never needs no lead.
+ */
+test("a project with a released, undispatched ticket and no selector state never answers NotNeeded", async () => {
+  const partition = await readableProject("http-released");
+  assert.deepEqual(await leadAbsence("http-released", partition), {
+    reason: "NotNeeded",
+  });
+  await postgresHarnessHistory(
+    rig.sessions.harness,
+    partition,
+    "http-released",
+    1,
+  );
+  assert.equal(
+    await rig.sessions.harness.pool
+      .query(
+        `SELECT 1 FROM selector_project_state WHERE tenant=$1 AND project=$2`,
+        [partition.tenant, partition.project],
+      )
+      .then((found) => found.rowCount),
+    0,
+  );
+  assert.deepEqual(await leadAbsence("http-released", partition), {
+    reason: "SelectorUnnamed",
+  });
+  const selector = "http-released-selector";
+  assert.deepEqual(await leadAbsence("http-released", partition, selector), {
+    reason: "SelectorNotGranted",
+  });
+  rig.sessions.harness.access.grant({
+    partition,
+    principal: oidcPrincipal(issuer, selector),
+    access: new Set(["Read"]),
+  });
+  assert.deepEqual(await leadAbsence("http-released", partition, selector), {
+    reason: "AwaitingSelector",
+  });
+});
 
 /**
  * The refusal is written by the selector's own credential and read through the

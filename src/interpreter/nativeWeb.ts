@@ -162,7 +162,10 @@ import {
 import {
   checkedLeadTranscriptQuery,
   leadNotNeeded,
+  leadAwaitingSelector,
   leadPaused,
+  leadSelectorNotGranted,
+  leadSelectorUnnamed,
   leadTranscriptPage,
   sessionHeldWalk,
   sessionHeldWalkAsks,
@@ -1660,6 +1663,10 @@ export interface NativeLeadPorts {
   readonly history: SelectorHistoryStore;
   /** The project's settings as the selector resolves them, which say whether it is paused. */
   readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
+  /** The tickets a dispatch is enabled at, which say whether one waits on a decision. */
+  readonly candidates: DispatchViewStore;
+  /** The site's selector, whose read of a project is what its sweep lists it by, where the deployment names one. */
+  readonly selector?: Principal;
 }
 
 function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
@@ -1804,18 +1811,45 @@ type NativeLeadMethods = Pick<
 >;
 
 /**
- * Why a project holds no lead, where a paused selector outranks the refusal it
- * keeps, since a paused selector asks no admission and its kept refusal may have
- * stopped being true. The resolved mode is `Paused` under an installation pause
- * as under the project's own, which is what the selector stops for.
+ * Why a project holds no lead, where a selector paused, by the installation or
+ * the project, or one that may not read the project outranks the refusal it
+ * keeps, since neither asks admission and a kept refusal may have stopped being
+ * true. With neither and no refusal, a released ticket the selector has not yet
+ * taken up is `AwaitingSelector`, or `SelectorUnnamed` where no selector is
+ * named whose reach could be read, and only a project where none waits is
+ * `NotNeeded`.
  */
 async function nativeLeadSessionAbsence(
+  access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
 ): Promise<LeadAbsence> {
   if ((await ports.settings.projectSettings(partition)).mode === "Paused")
     return leadPaused;
-  return (await ports.leads.leadRefusal(partition)) ?? leadNotNeeded;
+  if (
+    ports.selector !== undefined &&
+    (await access.authorize(ports.selector, partition, "Read")) === undefined
+  )
+    return leadSelectorNotGranted;
+  const refused = await ports.leads.leadRefusal(partition);
+  if (refused !== undefined) return refused;
+  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
+    return leadNotNeeded;
+  return ports.selector === undefined
+    ? leadSelectorUnnamed
+    : leadAwaitingSelector;
+}
+
+/**
+ * Whether a released ticket waits on a dispatch decision. A view being rebuilt
+ * answers no candidates, so it says none waits until it stands again.
+ */
+async function nativeLeadDispatchWaits(
+  candidates: DispatchViewStore,
+  partition: Partition,
+): Promise<boolean> {
+  const page = await candidates.read(partition, { limit: 1 });
+  return page.result === "Page" && page.candidates.length > 0;
 }
 
 /**
@@ -1840,7 +1874,7 @@ function nativeLeadSessionMethods(
       if (standing === undefined)
         return {
           result: "None",
-          absence: await nativeLeadSessionAbsence(ports, partition),
+          absence: await nativeLeadSessionAbsence(access, ports, partition),
         };
       return {
         result: "Found",
