@@ -350,10 +350,11 @@ scheduler's boundaries and the worker plane's run as; its composite key is
 `(tenant, project, session)` and its identity `(tenant, project, session,
 attempt_number)`, with the attempt, the bearer and the bearer's digest each
 unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
-`Personal` or `ChatHost`, and is NULL exactly where `pool` is, the cluster's;
-`idle_secs` is the idle bound a chat host declared for its own attempt. It is
-changed by opening, placing, ending, the two reapers and the fences of the
-epoch, a pool, a personal runner and a chat host, and
+`ChatHost` or, on an attempt that has ended, `Personal`, which
+`session_attempt_personal_is_finished` holds it to, and is NULL exactly where
+`pool` is, the cluster's; `idle_secs` is the idle bound a chat host declared
+for its own attempt. It is changed by opening, placing, ending, the two
+reapers and the fences of the epoch, a pool and a chat host, and
 `session_attempt_is_fenced` refuses a finished attempt any change but its
 cleanup acknowledgement. Unfinished work is found by selecting live attempts
 whose lease has expired by database time, whose epoch is not the current one,
@@ -486,12 +487,11 @@ stamps its polls and what they name; the pool plane, the scheduler and the
 boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
 so a member holds as many in a tenant as the API's bound admits, and it names
 no project; it points at `tenant`, and its principal and client id are each
-unique. Its runners claim and hold no session: an attempt one claimed before
-they stopped is told to stop and lapses with its lease. It is changed by a
+unique. Its runners claim and hold no session. It is changed by a
 registration, by a poll's stamps and by its removal, which fences, in the same
-transaction, every live attempt it claimed and nothing another runner of its
-owner's holds. It has no unfinished work: a registration is committed or it
-was rolled back.
+transaction, every live execution attempt it claimed and nothing another
+runner of its owner's holds. It has no unfinished work: a registration is
+committed or it was rolled back.
 
 `personal_runner_project` — a project a member's personal runners may serve.
 Written by the API role alone, for the runners' owner; the pool plane, the
