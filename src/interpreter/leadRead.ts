@@ -151,15 +151,26 @@ export interface LeadRefused {
   readonly since: string;
 }
 
-/** Why a project holds no lead: its selector is paused, no refusal stands, or
- * the one the selector keeps. */
+/** Why a project holds no lead: a reason no refusal dates, or the refusal the
+ * selector keeps. */
 export type LeadAbsence = { readonly reason: LeadAbsenceUntimed } | LeadRefused;
 
-/** The absence of a project no refusal stands for. */
+/** The absence of a project no refusal stands for and no released ticket waits in. */
 export const leadNotNeeded: LeadAbsence = { reason: "NotNeeded" };
 
 /** The absence of a project whose selector is paused, whatever refusal it keeps. */
 export const leadPaused: LeadAbsence = { reason: "Paused" };
+
+/** The absence of a project the site's selector may not read, whatever refusal it keeps. */
+export const leadSelectorNotGranted: LeadAbsence = {
+  reason: "SelectorNotGranted",
+};
+
+/** The absence of a project no refusal stands for and a released ticket waits in. */
+export const leadAwaitingSelector: LeadAbsence = { reason: "AwaitingSelector" };
+
+/** The absence of a project a released ticket waits in where no selector is named to reach it. */
+export const leadSelectorUnnamed: LeadAbsence = { reason: "SelectorUnnamed" };
 
 /** How large the handoff note is, and as much of it as the lead read carries. */
 export interface HandoffNotePreview {
