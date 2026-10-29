@@ -1883,12 +1883,10 @@ test("a personal runner is admitted by its owner's permit, renews the executions
   assert.deepEqual(body.stop, []);
   assert.deepEqual(body.sessions, []);
   assert.deepEqual(recorded.made, [["renew", "live"]]);
-  assert.ok(
-    !sessions.made.some(
-      (call) =>
-        Array.isArray(call) && (call[0] === "awaiting" || call[0] === "open"),
-    ),
-    "a personal runner's poll read or opened a session",
+  assert.deepEqual(
+    sessions.made,
+    [],
+    "a personal runner's poll asked its session store",
   );
 });
 

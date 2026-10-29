@@ -22,7 +22,7 @@
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
  * runner's current one and its project to be on the allowlist, so a project
- * taken off stops what the runner holds there, as its sessions do.
+ * taken off stops what the runner holds there.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -199,13 +199,16 @@ export async function personalExecutionsAllowlisted(
   return found.rows.map((row) => asProjectId(row.project));
 }
 
-/** Stamps the runner's poll as one that could take an execution, while this registration is one of its member's runners. */
+/** Stamps the runner's poll, and as one that could take an execution where `executions` says it could, while this registration is one of its member's runners. */
 export async function personalExecutionsPolled(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,
+  executions: boolean,
 ): Promise<void> {
   await pool.query(
-    sql`UPDATE personal_runner r SET executions_polled_at=now()
+    sql`UPDATE personal_runner r SET last_polled_at=now(),
+          executions_polled_at=CASE WHEN ${executions}::boolean THEN now()
+                                    ELSE r.executions_polled_at END
           WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
             AND r.principal=${identity.principal}`,
   );

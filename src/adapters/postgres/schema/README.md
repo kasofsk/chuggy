@@ -479,18 +479,19 @@ it.
 
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
-registered and last polled for a session and for an execution, and the runner
-package and version its newest poll named. Written by the API role, which
-registers and removes it whole, and by the pool plane, which stamps its polls
-and what they name; the pool plane, the scheduler and the boundary owner read
-it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
-many in a tenant as the API's bound admits, and it names no project; it points
-at `tenant`, and its principal and client id are each unique. Its runners
-claim no session, and hold only an attempt one claimed before they stopped.
-It is changed by a registration, by a poll's stamps and by its removal, which
-fences, in the same transaction, every live attempt it claimed and nothing
-another runner of its owner's holds. It has no unfinished work: a registration
-is committed or it was rolled back.
+registered, last polled and last polled as one that could take an execution,
+and the runner package and version its newest poll named. Written by the API
+role, which registers and removes it whole, and by the pool plane, which
+stamps its polls and what they name; the pool plane, the scheduler and the
+boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
+so a member holds as many in a tenant as the API's bound admits, and it names
+no project; it points at `tenant`, and its principal and client id are each
+unique. Its runners claim and hold no session: an attempt one claimed before
+they stopped is told to stop and lapses with its lease. It is changed by a
+registration, by a poll's stamps and by its removal, which fences, in the same
+transaction, every live attempt it claimed and nothing another runner of its
+owner's holds. It has no unfinished work: a registration is committed or it
+was rolled back.
 
 `personal_runner_project` — a project a member's personal runners may serve.
 Written by the API role alone, for the runners' owner; the pool plane, the

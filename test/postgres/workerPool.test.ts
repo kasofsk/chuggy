@@ -812,7 +812,7 @@ test("a pool's poll keeps the runner it named under its current registration, wr
   );
 });
 
-test("a pool is listed live only while its newest poll of either kind is inside the window, and only its current registration's poll for executions stamps it", async () => {
+test("a pool is listed live only while its newest poll of either kind is inside the window, and only its current registration's poll that could take an execution stamps it for one", async () => {
   const project = await poolProject("pool-polled");
   const { partition } = project;
   const pool = "pool-polled";
@@ -831,9 +831,11 @@ test("a pool is listed live only while its newest poll of either kind is inside 
       [partition.tenant, partition.project, pool, secsAgo],
     );
   assert.deepEqual(await listed(), { polled: false, live: false });
-  await assignments.polled(stale);
+  await assignments.polled(current, false);
   assert.deepEqual(await listed(), { polled: false, live: false });
-  await assignments.polled(current);
+  await assignments.polled(stale, true);
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(current, true);
   assert.deepEqual(await listed(), { polled: true, live: true });
   assert.deepEqual(
     await rig.harness.query(

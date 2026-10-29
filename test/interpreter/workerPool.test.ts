@@ -1675,8 +1675,18 @@ test("a caller with no room asks the authority nothing and claims nothing", asyn
   assert.deepEqual(reached, []);
 });
 
-test("a personal runner renews, settles and pulls the images of its executions through its own identity", async () => {
+test("a personal runner renews, settles and pulls the images of its executions through its own identity, and asks the session store nothing", async () => {
   const reached: string[] = [];
+  const asking = (call: string) => (): Promise<never> =>
+    Promise.reject(new Error(`a personal runner asked sessions ${call}`));
+  const sessions: WorkerPoolSessions = {
+    ...noSessions,
+    among: asking("among"),
+    renew: asking("renew"),
+    held: asking("held"),
+    heldImages: asking("heldImages"),
+    polled: asking("polled"),
+  };
   const executions: WorkerPoolAssignments = {
     ...idle,
     renew: (caller, assignment) =>
@@ -1691,22 +1701,22 @@ test("a personal runner renews, settles and pulls the images of its executions t
     heldImages: (caller) =>
       Promise.resolve((reached.push(`images:${caller.kind}`), ["job-image"])),
   };
-  const answered = await workerPoolReconcile(
-    ports(executions),
+  const polled = await workerPoolPoll(
+    ports(executions, sessions),
     runner,
-    { jobs: ["live", "gone"], sessions: [] },
-    { wanted: 0, wantedSessions: 0 },
-    settings,
+    asked({ held: ["live", "gone"], wantedSessions: 1 }),
+    { ...settings, pollsMax: 1 },
   );
-  assert.deepEqual(answered.stop, ["gone"]);
+  assert.ok(polled.polled === "Answered");
+  assert.deepEqual(polled.answer.stop, ["gone"]);
   assert.equal(
-    await workerPoolSettled(ports(executions), runner, "live", {
+    await workerPoolSettled(ports(executions, sessions), runner, "live", {
       outcome: "Accepted",
     }),
     true,
   );
   assert.deepEqual(
-    await workerPoolHeldImages(ports(executions), runner, settings),
+    await workerPoolHeldImages(ports(executions, sessions), runner, settings),
     ["job-image"],
   );
   assert.deepEqual(reached, [
@@ -1717,18 +1727,18 @@ test("a personal runner renews, settles and pulls the images of its executions t
   ]);
 });
 
-test("a pool's or a personal runner's poll is recorded as one that could take an execution where it has room for one, holds one or names a memory room above nothing, apart from its sessions, and a chat host's is not", async () => {
+test("a personal runner's every poll is recorded, and a pool's or a personal runner's as one that could take an execution where it has room for one, holds one or names a memory room above nothing, a personal runner's never as one that could take a session, and a chat host's not at all", async () => {
   for (const [caller, over, recorded] of [
     [runner, { wanted: 1 }, ["executions"]],
     [runner, { held: ["j1"] }, ["executions"]],
     [runner, { memoryRoomMib: 1 }, ["executions"]],
-    [runner, { memoryRoomMib: 0 }, []],
+    [runner, { memoryRoomMib: 0 }, ["polled"]],
     [identity, { memoryRoomMib: 4_096 }, ["executions"]],
     [identity, { memoryRoomMib: 0 }, []],
-    [runner, {}, []],
+    [runner, {}, ["polled"]],
     [identity, {}, []],
-    [runner, { wantedSessions: 1 }, ["sessions"]],
-    [runner, { wanted: 1, wantedSessions: 1 }, ["sessions", "executions"]],
+    [runner, { wantedSessions: 1 }, ["polled"]],
+    [runner, { wanted: 1, wantedSessions: 1 }, ["executions"]],
     [identity, { wanted: 1 }, ["executions"]],
     [identity, { held: ["j1"] }, ["executions"]],
     [host, { wanted: 1 }, []],
@@ -1738,7 +1748,10 @@ test("a pool's or a personal runner's poll is recorded as one that could take an
       ports(
         {
           ...idle,
-          polled: () => Promise.resolve(void reached.push("executions")),
+          polled: (_, executions) =>
+            Promise.resolve(
+              void reached.push(executions ? "executions" : "polled"),
+            ),
         },
         {
           ...noSessions,
