@@ -121,6 +121,7 @@ interface AttemptViewRow {
   readonly generation: string;
   readonly state: string;
   readonly opened_at: string | null;
+  readonly claimed_at: string | null;
   readonly ended_at: string | null;
   readonly evidence: string | null;
   readonly error_bytes: string | null;
@@ -310,6 +311,9 @@ function attemptResource(
     generation: projectRowCounter(row.generation, "attempt generation"),
     state: known(row.state, allAttemptStates, "attempt state"),
     openedAt: projectRowInstant(row.opened_at, "opening time"),
+    ...(row.claimed_at === null
+      ? {}
+      : { claimedAt: asPublicInstant(row.claimed_at) }),
     ...(row.ended_at === null
       ? {}
       : { endedAt: asPublicInstant(row.ended_at) }),
@@ -547,6 +551,7 @@ async function attempts(
   const found = await pool.query<AttemptViewRow>(
     sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
                n.generation::text AS generation,n.state,to_char(n.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(n.claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at,
                to_char(n.ended_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
                n.pool_refusal
           FROM (SELECT a.attempt,a.attempt_number,a.generation,
@@ -555,7 +560,7 @@ async function attempts(
                                WHERE x.tenant=a.tenant AND x.project=a.project
                                  AND x.execution=a.execution AND x.attempt=a.attempt)
                             THEN 'Running' ELSE a.state END)::text AS state,a.opened_at,
-                       a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
+                       a.claimed_at,a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
                   FROM execution_attempt a
                   LEFT JOIN worker_artifact_reservation r
                     ON r.tenant=a.tenant AND r.project=a.project

@@ -63,6 +63,7 @@ import { migration090 } from "../../src/adapters/postgres/schema/migrations/090-
 import { migration094 } from "../../src/adapters/postgres/schema/migrations/094-unscoped-chat.ts";
 import { migration097 } from "../../src/adapters/postgres/schema/migrations/097-personal-runners-take-no-sessions.ts";
 import { migration098 } from "../../src/adapters/postgres/schema/migrations/098-personal-runners-hold-no-sessions.ts";
+import { migration099 } from "../../src/adapters/postgres/schema/migrations/099-attempt-claimed-at.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -93,6 +94,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   apiRole,
+  metricsPlaneRole,
   boundaryOwnerRole,
   leadCloseFunction,
   leadRefusalReadFunction,
@@ -3573,6 +3575,71 @@ test("098 ends what a personal runner still held as removing it would, its turn 
           )
         ).rows,
         [{ attempt: "hosted-c98", state: "Running" }],
+      );
+    },
+  );
+});
+
+test("099 stamps a live attempt a runner holds with its opening and no other, and lets the pool plane write the claim and the API and the metrics plane read it", async () => {
+  await migrationDatabaseAt(
+    migration099.version - 1,
+    "attempt_claimed_at",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}
+       ${deletionJournalRow(1, journalledRevocation)};
+       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+       INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+       INSERT INTO input_bundle(tenant,project,bundle,digest)
+       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null, "repeat('d',64)", 1)};
+       ${identityExecution(2, "SpawnWork", "kind,cycle", "'Work',3", null, "repeat('d',64)", 2)};
+       ${identityExecution(3, "SpawnWork", "kind,cycle", "'Work',3", null, "repeat('d',64)", 3)};
+       UPDATE execution_attempt
+          SET pool='pool-5',pool_principal='principal-5',assignment='assignment-'||attempt
+        WHERE tenant='tenant-5' AND attempt IN ('attempt-1','attempt-2');
+       UPDATE execution_attempt SET state='Lost',evidence='LeaseExpired',ended_at=now()
+        WHERE tenant='tenant-5' AND attempt='attempt-2'`,
+      );
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration099.version),
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT attempt, claimed_at IS NOT DISTINCT FROM opened_at AS at_opening,
+                    claimed_at IS NULL AS unclaimed
+               FROM execution_attempt WHERE tenant='tenant-5' ORDER BY attempt`,
+          )
+        ).rows,
+        [
+          { attempt: "attempt-1", at_opening: true, unclaimed: false },
+          { attempt: "attempt-2", at_opening: false, unclaimed: true },
+          { attempt: "attempt-3", at_opening: false, unclaimed: true },
+        ],
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT has_column_privilege($1,'public.execution_attempt','claimed_at','UPDATE') AS plane_writes,
+                    has_column_privilege($2,'public.execution_attempt','claimed_at','SELECT') AS api_reads,
+                    has_column_privilege($3,'public.execution_attempt','claimed_at','SELECT') AS metrics_reads,
+                    has_column_privilege($2,'public.execution_attempt','claimed_at','UPDATE') AS api_writes,
+                    has_column_privilege($4,'public.execution_attempt','claimed_at','UPDATE') AS scheduler_writes`,
+            [poolPlaneRole, apiRole, metricsPlaneRole, schedulerRole],
+          )
+        ).rows,
+        [
+          {
+            plane_writes: true,
+            api_reads: true,
+            metrics_reads: true,
+            api_writes: false,
+            scheduler_writes: false,
+          },
+        ],
       );
     },
   );

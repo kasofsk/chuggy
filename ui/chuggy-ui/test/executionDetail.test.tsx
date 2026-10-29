@@ -186,6 +186,48 @@ test("an execution with two attempts draws two rows told apart by number, state,
   expect(reported?.cells[2]).toBe("2m 48s");
 });
 
+test("a placing run no runner has claimed reads as waiting, one a runner claimed does not, and a claimed run's length starts at its claim", async () => {
+  const waitingOpenedAt = minutesAgo(30);
+  const claimedOpenedAt = minutesAgo(20);
+  const endedOpenedAt = minutesAgo(10);
+  const endedClaimedAt = new Date(
+    Date.parse(endedOpenedAt) + 60_000,
+  ).toISOString();
+  const drawn = await details(
+    passed(
+      [
+        runAttempt("a0", {
+          number: 1,
+          state: "Placing",
+          openedAt: waitingOpenedAt,
+        }),
+        runAttempt("a1", {
+          number: 2,
+          state: "Placing",
+          openedAt: claimedOpenedAt,
+          claimedAt: minutesAgo(15),
+        }),
+        runAttempt("a2", {
+          number: 3,
+          openedAt: endedOpenedAt,
+          claimedAt: endedClaimedAt,
+          endedAt: new Date(Date.parse(endedClaimedAt) + 30_000).toISOString(),
+        }),
+      ],
+      [],
+    ),
+  );
+  const table = within(drawn).getByRole("table", { name: "Runs" });
+  const [waiting, claimed, ended] = within(table)
+    .getAllByRole("row")
+    .slice(1)
+    .map(cellTexts);
+  expect(waiting?.[0]).toBe("Waiting");
+  expect(claimed?.[0]).toBe("Placing");
+  expect(ended?.[0]).toBe("Reported");
+  expect(ended?.[2]).toBe("30s");
+});
+
 /** A diagnostic a worker uploads that no task output declares. */
 const undeclared = artifact(0, ".chuggy/lint-output.txt", 1234);
 

@@ -69,7 +69,8 @@ export async function personalExecutionClaimed(
         personal=true,assignment=${claim.assignment},pool_refusal=NULL,
         capability_secret_digest=${claim.digest},
         lease_owner=${identity.owner},
-        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision)
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
+        claimed_at=now()
       FROM execution e
       WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
         AND (a.tenant,a.project,a.execution,a.attempt) IN (

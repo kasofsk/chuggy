@@ -15,7 +15,10 @@
  * reads `placement = 'Pool'` and an attempt no pool holds yet, and it rebinds
  * `capability_secret_digest` to the bearer the assignment carries — the secret
  * the scheduler minted went to an in-cluster pod that was never launched, and
- * an attempt whose bearer nobody holds is an attempt nothing can report.
+ * an attempt whose bearer nobody holds is an attempt nothing can report. The
+ * attempt waited with no lease, and the claim leases it and stamps
+ * `claimed_at`, which is how a reader that may not read `pool` tells a claimed
+ * attempt from a waiting one.
  *
  * THE CLAIM IS `workerPoolCanAssign`, DECIDED UNDER THE ROW LOCK. The execution
  * is `Launching`; an attempt no pool holds is a placement still waiting; the
@@ -473,7 +476,8 @@ async function workerPoolClaimed(
         assignment=${assignment},pool_refusal=NULL,
         capability_secret_digest=${workerPoolDigest(bearer)},
         lease_owner=${identity.pool},
-        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision)
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
+        claimed_at=now()
       FROM execution e
       WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
         AND (a.tenant,a.project,a.execution,a.attempt) IN (

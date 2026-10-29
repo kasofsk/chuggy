@@ -255,7 +255,7 @@ function metricsPlaneAttemptFamilies(
     {
       type: "histogram",
       name: "chuggy_attempt_duration_seconds",
-      help: "How long each ended execution attempt was open, from opening to ending.",
+      help: "How long each ended execution attempt ran, from a runner's claim where one claimed it, else its opening, to its ending.",
       bounds: metricsPlaneDurationBoundsSecs,
       samples: metricsPlaneHistogram(durations, 1),
     },

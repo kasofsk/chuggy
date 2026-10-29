@@ -356,10 +356,17 @@ test("a project's fallback is written through its door by the API alone, and abs
   );
 });
 
-test("a runner's claim returns the runtime its attempt was opened under", async () => {
+test("a runner's claim returns the runtime its attempt was opened under, and stamps when it claimed an attempt that waited unleased", async () => {
   const member = principal("member");
   const project = await ownedProject("runtime", member, "Strict", 1);
-  await opened(project);
+  const attempt = await opened(project);
+  const standing = async () =>
+    (await rig.harness.query(
+      `SELECT lease_owner IS NULL AS unleased, claimed_at IS NOT NULL AS claimed
+         FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt],
+    )) as readonly { unleased: boolean; claimed: boolean }[];
+  assert.deepEqual(await standing(), [{ unleased: true, claimed: false }]);
   const runner = await runnerOf(project.partition, member);
   const taken = await assignments.claimPersonal(
     runner,
@@ -369,6 +376,7 @@ test("a runner's claim returns the runtime its attempt was opened under", async 
     [project.partition.project],
   );
   assert.equal(taken?.runtime, schedulerRuntime);
+  assert.deepEqual(await standing(), [{ unleased: false, claimed: true }]);
 });
 
 test("a runner's claim returns the project of the attempt it took, across every project it serves", async () => {
