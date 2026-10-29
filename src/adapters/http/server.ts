@@ -31,7 +31,10 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
-import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
+import {
+  executionSelectionRefused,
+  type ExecutionListQuery,
+} from "../../interpreter/operationsView.ts";
 import {
   asProjectId,
   asTenantId,
@@ -1860,15 +1863,13 @@ function executionSelection(value: unknown): {
     throw new TypeError("state is not text");
   if (values.length === 1 && values[0] === "NonTerminal")
     return { selection: { selection: "NonTerminal" } };
-  if (
-    values.length < 1 ||
-    values.some(
-      (state) =>
-        state === "NonTerminal" ||
-        !allExecutionStatuses.includes(state as ExecutionStatus),
-    )
-  )
-    throw new RangeError("execution state selection is invalid");
+  if (values.length < 1) throw executionSelectionRefused(undefined);
+  const refused = (values as readonly string[]).find(
+    (state) =>
+      state === "NonTerminal" ||
+      !allExecutionStatuses.includes(state as ExecutionStatus),
+  );
+  if (refused !== undefined) throw executionSelectionRefused(refused);
   return {
     selection: {
       selection: "Selected",

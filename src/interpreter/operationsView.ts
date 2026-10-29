@@ -301,6 +301,16 @@ export interface ProjectOperationalStatus {
 
 export const executionPageLimitMax = 100;
 
+/** Refuses an execution state selection by the value it refused, absent where it named none, and the values it accepts. */
+export function executionSelectionRefused(
+  refused: string | undefined,
+): RangeError {
+  const named = refused === undefined ? "no state" : JSON.stringify(refused);
+  return new RangeError(
+    `execution state selection is invalid: it refused ${named}, and accepts NonTerminal alone or distinct states among ${allExecutionStatuses.join(", ")}`,
+  );
+}
+
 export function checkedExecutionListQuery(
   query: ExecutionListQuery,
 ): ExecutionListQuery {
@@ -314,13 +324,13 @@ export function checkedExecutionListQuery(
     );
   if (query.selection?.selection === "Selected") {
     const states = query.selection.states;
-    if (
-      states.length < 1 ||
-      states.length > allExecutionStatuses.length ||
-      new Set(states).size !== states.length ||
-      states.some((state) => !allExecutionStatuses.includes(state))
-    )
-      throw new RangeError("execution state selection is invalid");
+    if (states.length < 1) throw executionSelectionRefused(undefined);
+    const refused = states.find(
+      (state, index) =>
+        !allExecutionStatuses.includes(state) ||
+        states.indexOf(state) !== index,
+    );
+    if (refused !== undefined) throw executionSelectionRefused(refused);
   }
   if (
     query.after !== undefined &&

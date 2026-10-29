@@ -684,6 +684,10 @@ export const executionSummarySchema = z.object({
       memoryMib: countSchema.optional(),
     })
     .optional(),
+  /**
+   * `Running` once the open attempt's run has started, though a runner's
+   * placement stores it `Launching` until it ends.
+   */
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,
@@ -759,6 +763,7 @@ const executionAttemptSchema = z.object({
   attempt: identitySchema,
   number: countSchema,
   generation: countSchema,
+  /** `Running` once its run has started, though a runner's attempt is stored `Placing` until it ends. */
   state: z.enum(attemptStates),
   openedAt: instantSchema,
   endedAt: instantSchema.optional(),

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
+import type { ExecutionStatus } from "../../src/interpreter/executionScheduler.ts";
 import {
   branchDiffOutput,
   checkOutputOutput,
@@ -119,6 +120,26 @@ test("execution selections reject empty, duplicate, and unbounded pages", () => 
       }),
     RangeError,
   );
+});
+
+test("a refused execution selection names the value it refused and the values it accepts", () => {
+  const accepts =
+    "accepts NonTerminal alone or distinct states among Queued, Admitted, Launching, Running, Terminal, Cancelled";
+  const refusal = (states: readonly string[]) => () =>
+    checkedExecutionListQuery({
+      limit: 10,
+      selection: { selection: "Selected", states: states as ExecutionStatus[] },
+    });
+  assert.throws(refusal(["Queued", "Placing"]), {
+    name: "RangeError",
+    message: `execution state selection is invalid: it refused "Placing", and ${accepts}`,
+  });
+  assert.throws(refusal(["Running", "Running"]), {
+    message: `execution state selection is invalid: it refused "Running", and ${accepts}`,
+  });
+  assert.throws(refusal([]), {
+    message: `execution state selection is invalid: it refused no state, and ${accepts}`,
+  });
 });
 
 test("a summary carries what its own execution's runs sum to, and no other's", () => {

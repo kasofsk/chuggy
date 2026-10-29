@@ -1330,14 +1330,14 @@ test("operational routes parse bounded filters and artifact identities", async (
     url: `${root}/executions/execution-1/artifacts/2`,
     headers,
   });
-  assert.equal(
-    (
-      await app.inject({
-        url: `${root}/executions?state=Unknown`,
-        headers,
-      })
-    ).statusCode,
-    400,
+  const refused = await app.inject({
+    url: `${root}/executions?state=Queued&state=Unknown`,
+    headers,
+  });
+  assert.equal(refused.statusCode, 400);
+  assert.match(
+    refused.body,
+    /it refused \\"Unknown\\", and accepts NonTerminal alone or distinct states among Queued, Admitted, Launching, Running, Terminal, Cancelled/u,
   );
   assert.equal(
     (
