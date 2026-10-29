@@ -6,6 +6,11 @@
  * is a total over the rows that exist: it only rises while rows only accrue,
  * and a restart leaves it where it was.
  *
+ * EVERY SUM IS OF WHOLE UNITS — milliseconds, millionths of a dollar, counts —
+ * scaled only once summed. A sum of fractions depends on the order its rows are
+ * added in, which no read fixes, so it can fall in its last place from one
+ * scrape to the next, and a scraper reads any fall as a reset.
+ *
  * A COUNTER'S AND A HISTOGRAM'S SERIES BEGAN AT ITS EARLIEST ROW. A series
  * first appears already holding that row, so each names that row's time as
  * when it began, and a scraper counts the row as a rise from nothing. A gauge
@@ -59,7 +64,7 @@ export interface MetricsPlaneAttemptRow {
   readonly state: string;
   readonly buckets: readonly number[];
   readonly ended: number;
-  readonly durationSecs: number;
+  readonly durationMs: number;
   readonly createdSecs: number;
 }
 
@@ -196,16 +201,15 @@ function metricsPlaneBucketed(
   return [...buckets, sum];
 }
 
-/** Bucketed sums as histogram samples, the duration sum scaled to seconds by `scale`. */
+/** Bucketed sums as histogram samples, the duration sum read in milliseconds and served in seconds. */
 function metricsPlaneHistogram(
   sums: readonly MetricsPlaneSum[],
-  scale: number,
 ): readonly MetricsHistogramSample[] {
   const buckets = metricsPlaneDurationBoundsSecs.length + 1;
   return sums.map(({ labels, values, createdSecs }) => ({
     labels,
     bucketCounts: values.slice(0, buckets),
-    sum: (values[buckets] ?? 0) / scale,
+    sum: (values[buckets] ?? 0) / 1_000,
     createdSecs,
   }));
 }
@@ -243,7 +247,7 @@ function metricsPlaneAttemptFamilies(
   const durations = metricsPlaneSummed(
     rows,
     (row) => metricsPlaneTaskLabels(row.task),
-    (row) => metricsPlaneBucketed(row.buckets, row.durationSecs),
+    (row) => metricsPlaneBucketed(row.buckets, row.durationMs),
   );
   return [
     {
@@ -257,7 +261,7 @@ function metricsPlaneAttemptFamilies(
       name: "chuggy_attempt_duration_seconds",
       help: "How long each ended execution attempt ran, from a runner's claim where one claimed it, else its opening, to its ending.",
       bounds: metricsPlaneDurationBoundsSecs,
-      samples: metricsPlaneHistogram(durations, 1),
+      samples: metricsPlaneHistogram(durations),
     },
   ];
 }
@@ -410,7 +414,7 @@ function metricsPlaneTurnFamilies(
       name: "chuggy_session_turn_duration_seconds",
       help: "How long each measured session turn took.",
       bounds: metricsPlaneDurationBoundsSecs,
-      samples: metricsPlaneHistogram(durations, 1_000),
+      samples: metricsPlaneHistogram(durations),
     },
   ];
 }

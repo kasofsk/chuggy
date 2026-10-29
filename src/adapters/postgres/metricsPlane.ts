@@ -125,7 +125,7 @@ const metricsPlaneAttemptSchema = z
     state: z.string(),
     buckets: metricsPlaneBucketsSchema,
     ended: metricsPlaneFigure,
-    secs: metricsPlaneFigure,
+    duration_ms: metricsPlaneFigure,
     created: metricsPlaneFigure,
   })
   .transform(
@@ -133,7 +133,7 @@ const metricsPlaneAttemptSchema = z
       state,
       buckets,
       ended,
-      secs,
+      duration_ms,
       created,
       ...task
     }): MetricsPlaneAttemptRow => ({
@@ -141,7 +141,7 @@ const metricsPlaneAttemptSchema = z
       state,
       buckets,
       ended,
-      durationSecs: secs,
+      durationMs: duration_ms,
       createdSecs: created,
     }),
   );
@@ -464,7 +464,7 @@ async function metricsPlaneExecutionQuery(
                  coalesce(o.owner,'') AS owner,t.kind AS phase,m.stage,m.runner,m.workload,
                  CASE WHEN e.placement='InCluster' THEN 'Cluster'
                       WHEN a.personal THEN 'Personal' ELSE 'Pool' END AS placement,
-                 extract(epoch FROM a.ended_at-coalesce(a.claimed_at,a.opened_at))::float8 AS secs
+                 round(extract(epoch FROM a.ended_at-coalesce(a.claimed_at,a.opened_at))*1000)::bigint AS ms
             FROM execution_attempt a
             JOIN execution e
               ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
@@ -478,15 +478,15 @@ async function metricsPlaneExecutionQuery(
             LEFT JOIN named o ON o.principal=e.owner),
         ended AS (
           SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
-                 (SELECT count(*) FROM unnest(b.secs) AS le WHERE le<x.secs) AS bucket,
-                 count(*) AS ended,sum(x.secs) AS secs,min(x.ended_at) AS created_at
+                 (SELECT count(*) FROM unnest(b.secs) AS le WHERE le*1000<x.ms) AS bucket,
+                 count(*) AS ended,sum(x.ms) AS ms,min(x.ended_at) AS created_at
             FROM attempt x CROSS JOIN bounds b WHERE x.ended_at IS NOT NULL
            GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state,bucket)
         SELECT
           (SELECT json_agg(f)::text FROM (
              SELECT tenant,project,owner,phase,stage,runner,workload,placement,state,
                     json_object_agg(bucket,ended) AS buckets,sum(ended)::text AS ended,
-                    sum(secs)::text AS secs,extract(epoch FROM min(created_at))::text AS created
+                    sum(ms)::text AS duration_ms,extract(epoch FROM min(created_at))::text AS created
                FROM ended GROUP BY tenant,project,owner,phase,stage,runner,workload,placement,state
               LIMIT ${seriesMax + 1}) f) AS attempts,
           (SELECT json_agg(f)::text FROM (

@@ -89,6 +89,9 @@ const three = { tenant: "metrics-three", project: "ops" };
 /** How many revisions, each pinned by one run of the same task, project three holds. */
 const pinnedRevisions = 30;
 
+/** How long each of project three's runs took, in milliseconds: a fraction of a second no float sum of many of them states exactly. */
+const pinnedMs = 10_300;
+
 /** How many members another issuer signed in chat on their own, one turn each. */
 const foreignMembers = 4;
 
@@ -410,7 +413,7 @@ async function metricsRevisionsSeeded(
       seeded,
       `attempt-pinned-${String(index)}`,
       "Reported",
-      10,
+      pinnedMs / 1_000,
     );
   }
 }
@@ -573,6 +576,7 @@ const checksLabels = `tenant="metrics-one",project="web",owner="alice-id",phase=
 const reviewLabels = `tenant="metrics-one",project="web",owner="bob-id",phase="Evaluation",stage="review",runner="Agent",placement="Cluster",workload="review"`;
 const authoredLabels = `tenant="metrics-two",project="api",owner="",phase="Work",stage="",runner="Agent",placement="Cluster",workload=""`;
 const authoredReviewLabels = `tenant="metrics-two",project="api",owner="",phase="Evaluation",stage="1",runner="Agent",placement="Cluster",workload=""`;
+const pinnedLabels = `tenant="metrics-three",project="ops",owner="alice-id",phase="Work",stage="",runner="Agent",placement="Cluster",workload="build"`;
 
 test("every ended attempt is counted under what ran it and whose ticket it was, the owner its bare subject", async () => {
   const page = await metricsPage(plane);
@@ -615,6 +619,12 @@ test("an attempt's duration is a histogram whose buckets count everything at or 
     `chuggy_attempt_duration_seconds_bucket{${authoredReviewLabels},le="+Inf"} 1`,
   ])
     assert.ok(samples.includes(expected), expected);
+});
+
+test("an attempt's duration sum is exact however many fractional durations it adds up", async () => {
+  const samples = metricsSamples((await metricsPage(plane)).body);
+  const expected = `chuggy_attempt_duration_seconds_sum{${pinnedLabels}} ${String((pinnedRevisions * pinnedMs) / 1_000)}`;
+  assert.ok(samples.includes(expected), expected);
 });
 
 test("runs total their turns, durations, tokens and cost per model", async () => {
@@ -849,8 +859,8 @@ test("runs under many pinned revisions that no label tells apart are one series,
         state: "Reported",
         buckets: [pinnedRevisions, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         ended: pinnedRevisions,
-        durationSecs: pinnedRevisions * 10,
-        createdSecs: attemptEndedSecs(10),
+        durationMs: pinnedRevisions * pinnedMs,
+        createdSecs: attemptEndedSecs(pinnedMs / 1_000),
       },
     ],
   );
