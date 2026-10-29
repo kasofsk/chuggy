@@ -17,8 +17,8 @@ test.each([
   (phase, tone) => {
     const badge = document.createElement("span");
     badge.className = "ticket-list-state";
-    badge.dataset.tone = phaseTone(phase);
-    badge.dataset.standing = phase;
+    badge.dataset["tone"] = phaseTone(phase);
+    badge.dataset["standing"] = phase;
     const listRules = sheetRules(listSheet, []);
     expect(sheetDeclared(listRules, badge, "color")).toBe(
       `var(--tone-${tone})`,
@@ -29,7 +29,7 @@ test.each([
 
     const status = document.createElement("section");
     status.className = "ticket-status";
-    status.dataset.tone = phaseTone(phase);
+    status.dataset["tone"] = phaseTone(phase);
     const statusRules = sheetRules(ticketSheet, []);
     expect(sheetDeclared(statusRules, status, "background")).toBe(
       `var(--wash-${tone})`,
