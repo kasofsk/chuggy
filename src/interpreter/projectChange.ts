@@ -4,13 +4,14 @@
  * a cursor is no longer retained.
  *
  * IT IS A SUPERSET OF THE PUBLICATION LOG RATHER THAN A SECOND ONE. Every kind
- * `project_notification` publishes bridges into it unchanged, and `Execution`,
+ * `project_notification` publishes bridges into it unchanged, and
  * `NativeAction`, `AgenticRefusal` and `Session` are the kinds with no
- * publication behind them: an execution moves without a project ordinal being
- * allocated for it, a finalization approval is opened from the finalizer's own
- * boundary, which takes no project row lock and may not begin taking one to
- * publish, and the last two are the selector's own output — a publication of
- * either would wake the selector on what it had just decided.
+ * publication behind them: a finalization approval is opened from the
+ * finalizer's own boundary, which takes no project row lock and may not begin
+ * taking one to publish, and the last two are the selector's own output — a
+ * publication of either would wake the selector on what it had just decided.
+ * An execution is published only as it is placed and as it ends; its other
+ * moves, and its attempts, runs and artifacts, are appended here alone.
  *
  * THE DURABLE CHECK ON THIS ROSTER IS GENERATED FROM IT, at the migration that
  * last replaced `project_change_kind_is_known`. A fresh installation therefore
@@ -33,10 +34,9 @@ export const projectChangeChannel = "chuggy_project_change";
 /** What an append rings with, held constant so one transaction wakes a consumer once. */
 export const projectChangePayload = "";
 
-/** Every kind a change row may carry: each publication's, and the four without one. */
+/** Every kind a change row may carry: each publication's, and the three without one. */
 export const allProjectChangeKinds = [
   ...notificationKinds,
-  "Execution",
   "NativeAction",
   "AgenticRefusal",
   "Session",

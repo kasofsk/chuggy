@@ -34,6 +34,7 @@ import {
   type SelectorProjectState,
   type SelectorReviewFeedback,
   selectorNotificationPageLimit,
+  selectorProjectMoved,
   type JsonValue,
 } from "../../src/interpreter/selector.ts";
 import {
@@ -454,6 +455,22 @@ test("an observation carries the notification page that triggered it", async () 
   );
   assert.deepEqual(observed?.changes, events);
   assert.equal(observed?.notificationCursor, 5);
+});
+
+test("an execution's notification moves the project its lead is observing", () => {
+  const state = observedState(3);
+  assert.equal(
+    selectorProjectMoved(state, {
+      result: "Events",
+      cursor: 4,
+      events: [{ ordinal: 4, kind: "Execution", resource: "execution-one" }],
+    }),
+    true,
+  );
+  assert.equal(
+    selectorProjectMoved(state, { result: "Events", cursor: 3, events: [] }),
+    false,
+  );
 });
 
 test("selector observation restarts a continued scan when its view resets", async () => {

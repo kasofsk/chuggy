@@ -91,6 +91,7 @@ import { migration090 } from "./090-chat-host.ts";
 import { migration091 } from "./091-metrics-plane.ts";
 import { migration092 } from "./092-proposal-updates.ts";
 import { migration093 } from "./093-adopted-proposals.ts";
+import { migration094 } from "./094-execution-notifications.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -187,4 +188,5 @@ export const migrations: readonly Migration[] = [
   migration091,
   migration092,
   migration093,
+  migration094,
 ];

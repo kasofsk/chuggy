@@ -340,6 +340,7 @@ export const notificationKinds = [
   "Draft",
   "Configuration",
   "Project",
+  "Execution",
 ] as const;
 export type NotificationKind = (typeof notificationKinds)[number];
 
