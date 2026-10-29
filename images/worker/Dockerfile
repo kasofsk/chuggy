@@ -5,7 +5,7 @@ ARG ZOD_VERSION=4.5.4
 
 # The Track Record the image ships, declared here for the same reason: the
 # `track-record` stage builds it and the `worker` stage holds the binary to it.
-ARG TRACK_RECORD_VERSION=0.1.0
+ARG TRACK_RECORD_VERSION=0.2.1
 
 # EVERY TARGET BUILDS FOR linux/amd64 AND linux/arm64, so that a runner on an
 # arm64 host runs the image natively, and the runtime a pool mounts beside a
