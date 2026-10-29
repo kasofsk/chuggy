@@ -723,7 +723,7 @@ test("a resumed ticket says it was resumed", async () => {
     ticket: resumedTicket,
   });
   const bar = statusBar(container);
-  expect(bar.getAttribute("data-tone")).toBe("live");
+  expect(bar.getAttribute("data-tone")).toBe("evaluation");
   expect(bar.textContent).toContain("Evaluating");
   expect(bar.textContent).toContain("Resumed at stage 1 · cycle 3");
 });

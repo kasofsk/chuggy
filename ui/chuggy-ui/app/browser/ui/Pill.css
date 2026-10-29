@@ -42,9 +42,19 @@
     border-radius: 0;
   }
 
-  .pill-live .pill-mark {
+  .pill-live .pill-mark,
+  .pill-evaluation .pill-mark,
+  .pill-finalization .pill-mark {
     background: var(--tone-live);
     animation: pill-pulse var(--duration-pulse) var(--ease-out) infinite;
+  }
+
+  .pill-evaluation .pill-mark {
+    background: var(--tone-evaluation);
+  }
+
+  .pill-finalization .pill-mark {
+    background: var(--tone-finalization);
   }
 
   .pill-queued .pill-mark {

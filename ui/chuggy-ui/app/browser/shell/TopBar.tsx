@@ -42,6 +42,8 @@ const navDotFills: Readonly<Record<Tone, string>> = {
   pass: "bg-tone-pass",
   fail: "bg-tone-fail",
   live: "bg-tone-live",
+  evaluation: "bg-tone-evaluation",
+  finalization: "bg-tone-finalization",
   queued: "bg-tone-queued",
   parked: "bg-tone-parked",
   retired: "bg-tone-retired",

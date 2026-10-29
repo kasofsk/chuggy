@@ -42,6 +42,8 @@ export const pillTones = [
   "pass",
   "fail",
   "live",
+  "evaluation",
+  "finalization",
   "queued",
   "parked",
   "retired",
@@ -56,9 +58,11 @@ export function phaseTone(phase: TicketPhase): Tone {
     case "Pending":
       return "queued";
     case "Work":
-    case "Evaluation":
-    case "Finalization":
       return "live";
+    case "Evaluation":
+      return "evaluation";
+    case "Finalization":
+      return "finalization";
     case "Escalated":
       return "parked";
     case "Done":
@@ -80,8 +84,9 @@ export function verdictTone(verdict: SetVerdict): Tone {
     case "Running":
       return "live";
     case "Cancelled":
-    case "Blocked":
       return "retired";
+    case "Blocked":
+      return "parked";
   }
 }
 

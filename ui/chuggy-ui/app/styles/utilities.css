@@ -25,6 +25,8 @@
   --color-tone-pass: var(--tone-pass);
   --color-tone-fail: var(--tone-fail);
   --color-tone-live: var(--tone-live);
+  --color-tone-evaluation: var(--tone-evaluation);
+  --color-tone-finalization: var(--tone-finalization);
   --color-tone-parked: var(--tone-parked);
   --color-tone-queued: var(--tone-queued);
   --color-tone-retired: var(--tone-retired);
