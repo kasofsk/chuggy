@@ -1,5 +1,7 @@
 /** Versioned native authoring state, outside the journaled ticket core. */
 
+import { createHash } from "node:crypto";
+
 import {
   authoringSchema,
   type ReleaseAuthoringBody,
@@ -18,10 +20,16 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
+import {
+  bootstrapConfigurationName,
+  bootstrapConfigurationRevisionPrefix,
+} from "../contract/responses.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { defaultPlan, type Config } from "../domain/config.ts";
+import type { SessionId } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Lifecycle, Partition } from "./projectStore.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { GitObjectId, RepositoryId } from "./finalizer.ts";
 import type {
@@ -93,10 +101,11 @@ export type TicketConfiguration =
  * The faults about the pairing of a brief and a configuration rather than
  * either document, either alone being fine: a configuration commanding no check
  * stage contradicts a brief that appends check lines to it, a brief naming no
- * repository has nothing to pair with, and a configuration imported from a
- * repository contradicts a brief working in a different one. A revision of the
- * brief mends each, so each is refused under its own code rather than as the
- * configuration's.
+ * repository has nothing to pair with, a configuration imported from a
+ * repository contradicts a brief working in a different one, and a program
+ * leaving out the task a brief's check lines join would never run them. A
+ * revision of the draft mends each, so each is refused under its own code
+ * rather than as the configuration's.
  */
 export const releasePairingFaults = [
   "BriefChecksUncommanded",
@@ -105,6 +114,9 @@ export const releasePairingFaults = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "ProgramSkipsBriefChecks",
+  "OverridesUnsupported",
+  "OverridesUnknown",
 ] as const satisfies readonly BoundaryRefusalCode[];
 export type ReleasePairingFault = (typeof releasePairingFaults)[number];
 
@@ -170,6 +182,71 @@ export function asConfigurationRevisionId(
     "configuration revision",
     256,
   ) as ConfigurationRevisionId;
+}
+
+/**
+ * The one revision a repository's bootstrap is authored at. A digest rather
+ * than the repository itself, because a repository may be as long as a
+ * revision is.
+ */
+export function bootstrapConfigurationRevision(
+  repository: RepositoryId,
+): ConfigurationRevisionId {
+  return asConfigurationRevisionId(
+    bootstrapConfigurationRevisionPrefix.concat(
+      createHash("sha256").update(repository).digest("hex"),
+    ),
+  );
+}
+
+/**
+ * The repository one configuration revision releases from alone, where there
+ * is one: the repository it was imported from, or the one a bootstrap's
+ * revision is named for.
+ */
+export type ConfigurationRepository =
+  | { readonly from: "Imported"; readonly repository: RepositoryId }
+  | { readonly from: "Bootstrap"; readonly revision: ConfigurationRevisionId };
+
+/** The repository a revision releases from alone, from what was imported of it and the revision itself. */
+export function configurationRepositoryOf(
+  revision: ConfigurationRevisionId,
+  imported: RepositoryId | undefined,
+): ConfigurationRepository | undefined {
+  if (imported !== undefined) return { from: "Imported", repository: imported };
+  return revision.startsWith(bootstrapConfigurationRevisionPrefix)
+    ? { from: "Bootstrap", revision }
+    : undefined;
+}
+
+/**
+ * The repository a new release under a revision releases from alone. The
+ * project's one bootstrap from before each repository had its own is named for
+ * none, so nothing new releases under it, while a ticket already released
+ * under it is still judged as under any authored revision.
+ */
+export function releaseConfigurationRepositoryOf(
+  revision: ConfigurationRevisionId,
+  imported: RepositoryId | undefined,
+): ConfigurationRepository | undefined {
+  return imported === undefined && revision === bootstrapConfigurationName
+    ? { from: "Bootstrap", revision }
+    : configurationRepositoryOf(revision, imported);
+}
+
+/** Whether a ticket in one repository releases under a revision scoped to one repository. */
+function configurationRepositoryReleases(
+  scoped: ConfigurationRepository,
+  repository: RepositoryId,
+): boolean {
+  switch (scoped.from) {
+    case "Imported":
+      return scoped.repository === repository;
+    case "Bootstrap":
+      return scoped.revision === bootstrapConfigurationRevision(repository);
+    default:
+      return assertNever(scoped);
+  }
 }
 
 /** Accepts already-canonical configuration bytes after the transport's schema validation. */
@@ -263,6 +340,8 @@ function releaseDocumentTicketReadiness(
 ): TicketConfigurationReadiness {
   if (!configurationSelectionEmpty(selection))
     return { readiness: "Incomplete", fault: "SelectionUnsupported" };
+  if (overrides?.workloads !== undefined)
+    return { readiness: "Incomplete", fault: "OverridesUnsupported" };
   const readiness = releaseDocumentReadiness(
     configurationWithOverrides(value, overrides),
     brief,
@@ -275,10 +354,32 @@ function releaseDocumentTicketReadiness(
       };
 }
 
+/** Whether a catalog ticket's overrides name a workload, or a prompt file, its catalog does not hold. */
+function workloadTicketOverridesUnknown(
+  catalog: WorkloadConfiguration,
+  workloads: NonNullable<ConfigurationOverrides["workloads"]>,
+): boolean {
+  const prompts = new Set(
+    Object.values(catalog.workloads).flatMap((workload) =>
+      workload.runner === "Agent" && workload.prompt.path !== undefined
+        ? [workload.prompt.path]
+        : [],
+    ),
+  );
+  return Object.entries(workloads).some(
+    ([name, override]) =>
+      !Object.hasOwn(catalog.workloads, name) ||
+      (override.prompt !== undefined &&
+        "path" in override.prompt &&
+        !prompts.has(override.prompt.path)),
+  );
+}
+
 /**
- * A version 2 ticket: the catalog and the entries the ticket selected from it.
- * A catalog takes no overrides, since a ticket changes what it runs by
- * selecting among reviewed entries rather than by rewriting one.
+ * A version 2 ticket: the catalog with the ticket's workload overrides
+ * applied, and the entries the ticket selected from it. A catalog ticket
+ * overrides workloads alone, since every other field it could name is one a
+ * catalog does not have.
  */
 function workloadTicketReadiness(
   value: unknown,
@@ -286,9 +387,22 @@ function workloadTicketReadiness(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
 ): TicketConfigurationReadiness {
-  if (overrides !== undefined)
-    return { readiness: "Incomplete", fault: "SelectionUnsupported" };
-  const readiness = workloadConfigurationReadiness(value);
+  const { workloads, ...unsupported } = overrides ?? {};
+  if (Object.values(unsupported).some((field) => field !== undefined))
+    return { readiness: "Incomplete", fault: "OverridesUnsupported" };
+  const pinned = workloadConfigurationReadiness(value);
+  if (pinned.readiness === "Incomplete") return pinned;
+  if (
+    workloads !== undefined &&
+    workloadTicketOverridesUnknown(pinned.configuration, workloads)
+  )
+    return { readiness: "Incomplete", fault: "OverridesUnknown" };
+  const readiness =
+    workloads === undefined
+      ? pinned
+      : workloadConfigurationReadiness(
+          configurationWithOverrides(value, { workloads }),
+        );
   if (readiness.readiness === "Incomplete") return readiness;
   const selected = selectedCatalogEntries(readiness.configuration, selection);
   if (selected.selected === "Unknown")
@@ -348,18 +462,73 @@ function ticketProgramFits(
   );
 }
 
+/** Whether a program runs one task: the stage keyed `stage`, and in it the evaluator keyed `evaluator` where one is named. */
+function ticketProgramRuns(
+  program: ReleaseAuthoringProgram,
+  stage: number,
+  evaluator?: number,
+): boolean {
+  const evaluators =
+    program.find((entry) => entry.key === stage)?.evaluators ?? [];
+  return evaluator === undefined
+    ? evaluators.length > 0
+    : evaluators.some((entry) => entry.key === evaluator);
+}
+
+/**
+ * Whether a program runs less than its ticket's configuration plans: a stage of
+ * a catalog's selected plan it does not run, or an evaluator of one it does;
+ * for a document, a block of its `evaluations` it runs no stage under. A
+ * document's stage runs one block whatever evaluator keys it lists, so only its
+ * stages count, and a document listing no `evaluations` plans none.
+ */
+export function ticketProgramShort(
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticket.version === 1)
+    return (ticket.configuration.evaluations ?? []).some(
+      (_block, index) => !ticketProgramRuns(program, index + 1),
+    );
+  return ticket.selection.plan.stages.some((stage, index) =>
+    stage.evaluators.some(
+      (_entry, position) =>
+        !ticketProgramRuns(program, index + 1, position + 1),
+    ),
+  );
+}
+
+/**
+ * Whether a program runs the task a brief's own check lines join: the stage
+ * `ticketCommandedCheckStage` names, and for a catalog the evaluator in it that
+ * runs commands. A configuration commanding none has nothing to leave out.
+ */
+function ticketProgramRunsBriefChecks(
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticket.version === 1) {
+    const stage = ticketCommandedCheckStage(ticket);
+    return stage === undefined || ticketProgramRuns(program, stage);
+  }
+  const commanded = selectedFirstCommandsEvaluator(ticket.selection);
+  return (
+    commanded === undefined ||
+    ticketProgramRuns(program, commanded.stage, commanded.evaluator)
+  );
+}
+
 /**
  * The release-time minimum for one draft: the configuration's own readiness
  * with what the draft asks of it applied, plus the repository the brief and the
- * configuration have to agree on. Only an imported revision was read out of a
- * repository, so a configuration carrying no provenance repository releases
- * under any binding and one carrying a provenance repository releases from
- * that binding alone.
+ * configuration have to agree on. An imported revision was read out of a
+ * repository and a bootstrap was authored for one, so each releases from that
+ * binding alone, and any other configuration releases under any binding.
  */
 export function draftReleaseReadiness(
   configuration: CanonicalConfiguration,
   brief: ReleaseBrief | undefined,
-  configurationRepository: RepositoryId | undefined,
+  configurationRepository: ConfigurationRepository | undefined,
   overrides: ConfigurationOverrides | undefined,
   selection?: ConfigurationSelection,
   program?: ReleaseAuthoringProgram,
@@ -373,12 +542,19 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
+  if (
+    program !== undefined &&
+    brief !== undefined &&
+    brief.checks.length > 0 &&
+    !ticketProgramRunsBriefChecks(readiness.ticket, program)
+  )
+    return { readiness: "Incomplete", fault: "ProgramSkipsBriefChecks" };
   const repository = brief?.repository;
   if (repository === undefined)
     return { readiness: "Incomplete", fault: "BriefNamesNoRepository" };
   if (
     configurationRepository !== undefined &&
-    configurationRepository !== repository
+    !configurationRepositoryReleases(configurationRepository, repository)
   )
     return {
       readiness: "Incomplete",
@@ -485,6 +661,8 @@ export interface ConfigurationRevisionResource {
   readonly canonical: CanonicalConfiguration;
   readonly digest: string;
   readonly version?: ConfigurationVersion;
+  /** The file each catalog workload named by path was read from, where an import kept any. */
+  readonly workloadPaths?: Readonly<Record<string, string>>;
 }
 
 export interface ConfigurationPageCursor {
@@ -576,6 +754,8 @@ export interface ConfigurationPage {
 export interface ConfigurationPageQuery {
   readonly after?: ConfigurationPageCursor;
   readonly limit: number;
+  /** Only the newest revision of each repository configuration; a revision imported from none is its own. */
+  readonly latest?: boolean;
 }
 
 export const configurationPageLimitMax = 100;
@@ -652,6 +832,8 @@ export function checkedConfigurationPageQuery(
     throw new RangeError(
       `configuration page limit must be between 1 and ${String(configurationPageLimitMax)}`,
     );
+  if (query.latest !== undefined && typeof query.latest !== "boolean")
+    throw new TypeError("configuration page latest must be a boolean");
   return query;
 }
 
@@ -722,7 +904,10 @@ export type DraftCreated =
   | { readonly created: "ArtifactNotBound" }
   | { readonly created: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly created: "LandingUnbranched" }
-  | { readonly created: "Stale" };
+  /** The project head moved past the one the initialization answered, and is at this one now. */
+  | { readonly created: "Stale"; readonly currentProjectSequence: number }
+  /** The project's lifecycle mints no ticket at any head, so no head to retry with is answered. */
+  | { readonly created: "NotActive"; readonly lifecycle: Lifecycle };
 
 export interface DraftInitialization {
   readonly configuration: ConfigurationRevisionResource;
@@ -737,8 +922,9 @@ export interface DraftInitialization {
   readonly dependencyCandidatesTruncated: boolean;
   /**
    * The stage this configuration runs as commands and a ticket's own check
-   * lines would join, absent where it commands none — which is what makes a
-   * brief carrying them unreleasable against this configuration.
+   * lines would join, by its program stage key, absent where it commands none
+   * — which is what makes a brief carrying them unreleasable against this
+   * configuration.
    */
   readonly commandedCheckStage?: number;
   /** The same fact in words, stated whether or not a stage takes them. */
@@ -820,17 +1006,18 @@ function draftInitializationProgram(
 }
 
 /**
- * The stage a ticket's own check lines join, by its index from zero: the first
- * block a document runs as commands, or the stage holding the first evaluator a
- * catalog's selected plan runs as commands.
+ * The stage a ticket's own check lines join, by the key its program stage
+ * takes, counted from one: the first block a document runs as commands, or the
+ * stage holding the first evaluator a catalog's selected plan runs as commands.
  */
 export function ticketCommandedCheckStage(
   ticket: TicketConfiguration,
 ): number | undefined {
-  if (ticket.version === 1)
-    return firstCommandedCheckStage(ticket.configuration);
-  const first = selectedFirstCommandsEvaluator(ticket.selection);
-  return first === undefined ? undefined : first.stage - 1;
+  if (ticket.version === 1) {
+    const at = firstCommandedCheckStage(ticket.configuration);
+    return at === undefined ? undefined : at + 1;
+  }
+  return selectedFirstCommandsEvaluator(ticket.selection)?.stage;
 }
 
 const ticketCommandedCheckStageNoteNone =
@@ -848,7 +1035,7 @@ export function ticketCommandedCheckStageNote(
   if (ticket.version === 1)
     return stage === undefined
       ? ticketCommandedCheckStageNoteNone
-      : `A brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, after the commands this configuration runs there.`;
+      : `A brief's checks run in evaluation stage ${String(stage)}, counted from one, after the commands this configuration runs there.`;
   const plan = ticket.selection.plan;
   if (stage === undefined) {
     const commanded = catalogPlansCommanded(ticket.configuration);
@@ -856,20 +1043,18 @@ export function ticketCommandedCheckStageNote(
       ? ticketCommandedCheckStageNoteNone
       : `Plan "${plan.name}" commands no check stage, so a brief carrying checks is refused at release as BriefChecksUncommanded unless the ticket selects a plan that does: ${commanded.map((name) => `"${name}"`).join(", ")}.`;
   }
-  const named = plan.stages[stage]?.name;
+  const named = plan.stages[stage - 1]?.name;
   if (named === undefined)
     throw new RangeError(
       `catalog: plan ${plan.name} has no stage ${String(stage)}`,
     );
-  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage + 1)}, counted from one, named "${named}", after the commands the plan runs there.`;
+  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage)}, counted from one, named "${named}", after the commands the plan runs there.`;
 }
 
 /**
  * `RepositoryNotBound`, `ArtifactNotBound`, `Unavailable` and `LandingUnbranched`
  * are the refusals `DraftCreated` documents. A released draft is revisable
- * while its ticket is Pending — past it `NotDraft` — and one moving its
- * dependencies is `DependenciesLocked`, because the update releasing it would
- * be refused `TicketDependenciesChanged`.
+ * while its ticket is Pending, and past it `NotDraft`.
  */
 export type DraftRevised =
   | { readonly revised: "Revised"; readonly draft: DraftResource }
@@ -879,7 +1064,6 @@ export type DraftRevised =
       readonly revised: "NotDraft";
       readonly state: Exclude<DraftState, "Draft">;
     }
-  | { readonly revised: "DependenciesLocked" }
   | { readonly revised: "ConfigurationNotFound" }
   | { readonly revised: "RepositoryNotBound" }
   | { readonly revised: "ArtifactNotBound" }
@@ -909,6 +1093,19 @@ export type DraftDeleted =
       readonly state: Exclude<DraftState, "Draft">;
     };
 
+/**
+ * One retained draft revision as a release of it is judged: the program it
+ * runs and what its configuration plans, from the configuration revision it
+ * pins with its overrides and selection. A revision is written once and never
+ * changed, so this is what the release's decision resolves.
+ */
+export interface DraftRevisionPlan {
+  readonly canonical: CanonicalConfiguration;
+  readonly overrides?: ConfigurationOverrides;
+  readonly selection?: ConfigurationSelection;
+  readonly program: ReleaseAuthoringProgram;
+}
+
 export interface AuthoringStore {
   initializeDraft(
     partition: Partition,
@@ -929,6 +1126,15 @@ export interface AuthoringStore {
   ): Promise<DraftResource | undefined>;
   /** One page of the drafts a project still holds open, ascending by ticket. */
   drafts(partition: Partition, query: DraftPageQuery): Promise<DraftPage>;
+  /** The revision a release or an update names, undefined where the project retains none at those keys. */
+  draftRevision(
+    partition: Partition,
+    revision: {
+      readonly ticket: TicketId;
+      readonly authoringVersion: number;
+      readonly configurationRevision: string;
+    },
+  ): Promise<DraftRevisionPlan | undefined>;
   createConfiguration(input: {
     readonly partition: Partition;
     readonly authority: Authority;
@@ -946,6 +1152,8 @@ export interface AuthoringStore {
     readonly brief: DraftBrief;
     readonly overrides?: ConfigurationOverrides;
     readonly selection?: ConfigurationSelection;
+    /** The session the draft was created through, absent where no session's bearer carried it; no revision moves it. */
+    readonly originSession?: SessionId;
   }): Promise<DraftCreated>;
   reviseDraft(input: {
     readonly partition: Partition;

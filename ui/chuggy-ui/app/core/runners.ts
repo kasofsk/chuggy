@@ -16,7 +16,6 @@ import {
   placementRoutes,
 } from "../../../../src/contract/rosters.ts";
 import {
-  workerPoolCapabilitiesMax,
   workerPoolCapabilitySchema,
   workerPoolTokenCharsMax,
 } from "../../../../src/contract/workerPool.ts";
@@ -35,10 +34,6 @@ export interface RunnerPackage {
   readonly label: string;
   /** The program the package installs, which registers the machine. */
   readonly program: string;
-  /** The platforms a token minted for it lets a runner declare: the ones it runs on. */
-  readonly platforms: readonly string[];
-  /** The platforms of the machine itself a runner declares beside its containers' with `--host`, none where they are the same. */
-  readonly hostPlatforms: readonly string[];
   /** What a machine needs before the install, in one line. */
   readonly needs: string;
   /** The command that installs the package's current release. */
@@ -75,8 +70,6 @@ export const runnerPackages = {
   linux: {
     label: "Linux",
     program: "chuggy-linux",
-    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-    hostPlatforms: [],
     needs: "Linux · Node 24 · Docker or Podman",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
@@ -85,8 +78,6 @@ export const runnerPackages = {
   darwin: {
     label: "Mac",
     program: "chuggy-darwin",
-    platforms: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-    hostPlatforms: ["Platform:MacOS:Amd64", "Platform:MacOS:Arm64"],
     needs: "macOS · Node 24 · Colima",
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
@@ -148,27 +139,6 @@ export function runnerCapabilitiesTyped(
   return { capabilities };
 }
 
-/**
- * What a token minted for the ask lets a runner declare: its package's
- * platforms, the machine's own where it runs work there, and the reader's
- * capabilities, or why there are too many.
- */
-export function runnerMintCapabilities(
-  ask: RunnerAsk,
-): { readonly capabilities: string[] } | { readonly refused: string } {
-  const offered = runnerPackages[ask.package];
-  const capabilities = [
-    ...offered.platforms,
-    ...(ask.host ? offered.hostPlatforms : []),
-    ...ask.capabilities,
-  ];
-  return capabilities.length > workerPoolCapabilitiesMax
-    ? {
-        refused: `At most ${String(workerPoolCapabilitiesMax)} capabilities, platforms included`,
-      }
-    : { capabilities };
-}
-
 /** How long a minted token stays redeemable, which is the time a reader has to paste it. */
 export const runnerTokenLifetimeSecs = 3600;
 
@@ -212,31 +182,21 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
-/** Whose a registered machine is: one of the project's pools, or the reader's own. */
-export type RunnerKind = "Pool" | "Personal";
+/** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
+export type RunnerKind = "Pool" | "Personal" | "ChatHost";
 
-/** What a reader's choices ask, with what the token is minted for, or why it cannot be. */
+/** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
   chosen: RunnerPackageName,
   host: boolean,
   typed: string,
-):
-  | { readonly ask: RunnerAsk; readonly capabilities: readonly string[] }
-  | { readonly refused: string } {
+): { readonly ask: RunnerAsk } | { readonly refused: string } {
   const read = runnerCapabilitiesTyped(typed);
   if ("refused" in read) return read;
-  const ask: RunnerAsk = {
-    package: chosen,
-    host,
-    capabilities: read.capabilities,
-  };
-  const minted = runnerMintCapabilities(ask);
-  return "refused" in minted
-    ? minted
-    : { ask, capabilities: minted.capabilities };
+  return { ask: { package: chosen, host, capabilities: read.capabilities } };
 }
 
-/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's or as the reader's own, declaring what the reader asked. */
+/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's, as the reader's own or as their chat host, declaring what the reader asked. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,
@@ -245,17 +205,18 @@ export function runnerRegisterCommand(
   ask: Pick<RunnerAsk, "host" | "capabilities"> = runnerAskDefault,
 ): string {
   const personal = kind === "Personal" ? " --personal" : "";
+  const chat = kind === "ChatHost" ? " --chat" : "";
   const host = ask.host ? " --host" : "";
   const declared = ask.capabilities
     .map((capability) => ` --capability ${capability}`)
     .join("");
-  return `${installed.program} register${personal} --api ${origin} --token=${token}${host}${declared}`;
+  return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
 }
 
 /**
  * Where minting a registration token has got to: nothing pressed, the ask the
  * reader fills in with why the last was refused, the mint, and the steps the
- * token is handed over in with what it was minted for.
+ * token is handed over in with what the reader asked.
  */
 export type RunnerMint =
   | { readonly mint: "Idle" }

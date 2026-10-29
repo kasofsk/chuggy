@@ -58,12 +58,13 @@ import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import {
   asConfigurationRevisionId,
   parseDraftAuthoring,
+  type ReleaseAuthoring,
 } from "../../interpreter/authoring.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
-import { projectRowCounter } from "./rows.ts";
+import { projectRowCounter, projectRowInstant } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import {
   releasedBriefOf,
@@ -73,7 +74,7 @@ import {
 
 interface PublicOperationRow {
   readonly operation: string;
-  readonly accepted_at: string;
+  readonly accepted_at: string | null;
   readonly state: string;
   readonly decided_seq: string | null;
   readonly outcome_code: string | null;
@@ -96,6 +97,8 @@ interface TicketProjectionRow {
    * what the ticket runs.
    */
   readonly ticket_title: string;
+  /** The repository the released brief names, null where it names none. */
+  readonly ticket_repository: string | null;
   readonly revision: string;
   /**
    * The authority subject the ticket's first authoring revision was written
@@ -113,20 +116,18 @@ interface TicketProjectionRow {
   readonly released_at: string | null;
   readonly changed_at: string | null;
   /**
-   * The dependencies a Pending ticket's release event named that are
-   * themselves Revoked, ascending; a ticket in any other phase waits on
-   * nothing and names none. The release entry is the only place the edges are
-   * written down — no relation holds them — so it is read back through the
-   * same join the release instant comes from, and a release nobody can parse
-   * names none.
+   * The dependencies a Pending ticket's last update named, or else its
+   * release, that are themselves Revoked, ascending; a ticket in any other
+   * phase names none. The journal is the only place the edges are written
+   * down — no relation holds them — so they are read off those entries.
    */
   readonly revoked_dependencies: string[] | null;
   /**
-   * The same release's dependencies that are neither Done nor Revoked, as a
-   * JSON array of each one's ticket and phase, ascending: the wait that can
-   * still end beside `revoked_dependencies`, the wait that cannot. A Pending
-   * ticket alone names any, because a ticket in any other phase had every
-   * dependency Done before it was dispatched.
+   * The same dependencies that are neither Done nor Revoked, as a JSON array
+   * of each one's ticket and phase, ascending: the wait that can still end
+   * beside `revoked_dependencies`, the wait that cannot. A Pending ticket alone
+   * names any, because a ticket in any other phase had every dependency Done
+   * before it was dispatched.
    */
   readonly open_dependencies: string | null;
 }
@@ -186,24 +187,18 @@ function requiredCounter(value: string | null, what: string): number {
 }
 
 function nativeReadInstant(value: string): ReturnType<typeof asPublicInstant> {
-  const parsed =
-    /^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?)([+-]\d{2})(?::?(\d{2}))?$/u.exec(
-      value,
-    );
-  if (parsed === null)
-    throw new TypeError(
-      "native read: an instant is not PostgreSQL timestamptz text",
-    );
-  return asPublicInstant(
-    `${parsed[1]}T${parsed[2]}${parsed[3]}:${parsed[4] ?? "00"}`,
-  );
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/u.test(value))
+    throw new TypeError("native read: an instant is not UTC ISO 8601 text");
+  return asPublicInstant(value);
 }
 
 /** Maps the private storage row onto the deliberately smaller public resource. */
 export function publicOperation(row: PublicOperationRow): OperationResource {
   const base = {
     operation: asOperationId(row.operation),
-    acceptedAt: nativeReadInstant(row.accepted_at),
+    acceptedAt: nativeReadInstant(
+      projectRowInstant(row.accepted_at, "acceptance time"),
+    ),
   };
   const state = operationState(row.state);
   switch (state) {
@@ -452,6 +447,9 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
     ...(row.ticket_title === "" ? {} : { title: row.ticket_title }),
+    ...(row.ticket_repository === null
+      ? {}
+      : { repository: row.ticket_repository }),
     revision: projectRowCounter(row.revision, "ticket revision"),
     ...(row.creator === null ? {} : { creator: row.creator }),
     phase: projectionPhase(row.phase),
@@ -614,21 +612,21 @@ async function readTicketsByActivity(
                  coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                    AS ticket_title,
-                 m.authority_subject AS creator,
-                 r.committed_at::text AS released_at,
-                 c.committed_at::text AS changed_at,
+                 b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+                 to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
+                 to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                  (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                     FROM ticket_projection d
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase='Revoked'
-                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                     AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                    AS revoked_dependencies,
                  (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                   ORDER BY d.ticket)
                     FROM ticket_projection d
                    WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                      AND d.phase NOT IN ('Done','Revoked')
-                     AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                     AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                    AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
@@ -650,6 +648,7 @@ async function readTicketsByActivity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
           LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
@@ -673,21 +672,21 @@ async function readTicketsByIdentity(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               m.authority_subject AS creator,
-               r.committed_at::text AS released_at,
-               c.committed_at::text AS changed_at,
+               b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
+               to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,
+               to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies,
                (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                 ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase NOT IN ('Done','Revoked')
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                  AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN ticket_definition b
@@ -709,6 +708,7 @@ async function readTicketsByIdentity(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
           LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
@@ -731,26 +731,25 @@ async function readTicketRow(
                coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
                  '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')
                  AS ticket_title,
-               m.authority_subject AS creator,
+               b.brief->>'repository' AS ticket_repository, m.authority_subject AS creator,
                b.brief::text AS brief,
                b.overrides::text AS overrides, b.selection::text AS selection,
                t.configuration_revision,
                v.name AS version_name,v.number::text AS version_number,
                a.authoring AS released_authoring,
-               r.committed_at::text AS released_at,
-               c.committed_at::text AS changed_at,
+               to_char(r.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS released_at,to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase='Revoked'
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies,
                (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                 ORDER BY d.ticket)
                   FROM ticket_projection d
                  WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
                    AND d.phase NOT IN ('Done','Revoked')
-                   AND coalesce(r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
+                   AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                  AS open_dependencies
           FROM ticket_projection t
           LEFT JOIN journal_entry c
@@ -767,6 +766,7 @@ async function readTicketRow(
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
           LEFT JOIN ticket_definition b
             ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
           LEFT JOIN draft_revision m
@@ -789,6 +789,18 @@ async function readTicketRow(
            AND t.ticket=${ticket}`,
   );
   return found.rows[0];
+}
+
+/** The program and the dependencies a ticket's last release or update was resolved from. */
+function ticketReleasedAuthoring(
+  authoring: ReleaseAuthoring,
+): Pick<TicketResource, "program" | "dependencies"> {
+  return {
+    program: authoring.prog,
+    dependencies: [...authoring.deps]
+      .sort((left, right) => left - right)
+      .map((dependency) => asTicketId(dependency)),
+  };
 }
 
 /** One ticket with its brief and its run totals, which a project's page carries neither of. */
@@ -819,7 +831,7 @@ async function readTicket(
     ...(selection === undefined ? {} : { selection }),
     ...(row.released_authoring === null
       ? {}
-      : { program: parseDraftAuthoring(row.released_authoring).prog }),
+      : ticketReleasedAuthoring(parseDraftAuthoring(row.released_authoring))),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }
@@ -831,7 +843,7 @@ function nativeReadsResources(
   return {
     operation: async (partition, operation) => {
       const found = await pool.query<PublicOperationRow>(
-        sql`SELECT o.operation,o.accepted_at::text AS accepted_at,
+        sql`SELECT o.operation,to_char(o.accepted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS accepted_at,
                 d.state,d.decided_seq,d.outcome_code,d.refusal,
                 d.refused_head,d.refused_lifecycle_generation
            FROM operation o JOIN decision_input d

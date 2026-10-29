@@ -37,7 +37,9 @@ builds with.
   it too mounts in a suite with no provider.
 - `ui/chuggy-ui/app/styles/` — `tokens.css`, the one file that states a colour
   or a size, `base.css`, the element defaults, and `utilities.css`, which maps
-  Tailwind's namespaces onto those tokens by reference. Both themes are
+  Tailwind's namespaces onto those tokens by reference. The chat pane's sizes
+  are the exception, stated in `ui/chuggy-ui/app/core/chatPane.ts` because the
+  library that divides the frame takes them as props. Both themes are
   defined in the same line through `light-dark()`, and the shell's control
   chooses between them by putting `data-theme` on the document element.
 - `ui/chuggy-ui/app/browser/ticket/` — the ticket page's own compositions and

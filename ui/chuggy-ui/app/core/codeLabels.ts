@@ -92,6 +92,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
       return "Runtime version unsupported";
     case "RequiredCapabilityUnavailable":
       return "Nowhere to run this work";
+    case "RequiredMemoryUnavailable":
+      return "Too large for every runner";
   }
 }
 
@@ -114,6 +116,10 @@ export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
       return "Integration failed";
     case "PromotionTimedOut":
       return "Promotion timed out";
+    case "RemoteDeclined":
+      return "Remote declined";
+    case "WorkflowsRefused":
+      return "Workflows refused";
   }
 }
 
@@ -153,6 +159,10 @@ export function finalizationUnavailableKindLabel(
       return "Proposal creations exhausted";
     case "ProposalMergesExhausted":
       return "Proposal merges exhausted";
+    case "PromotionDeclined":
+      return "Push declined";
+    case "PromotionWorkflowsRefused":
+      return "Workflow files refused";
   }
 }
 
@@ -165,6 +175,12 @@ export function leadAbsenceLabel(
       return "Opens when a ticket is released";
     case "Paused":
       return "Selector paused";
+    case "SelectorNotGranted":
+      return "Selector not granted this project";
+    case "AwaitingSelector":
+      return "Opens at the selector's next pass";
+    case "SelectorUnnamed":
+      return "No selector named for this site";
     case "HostedRunsNotGranted":
       return "Hosted runs not granted";
     case "RunnerOffline":
@@ -204,6 +220,8 @@ export function finalizationAttemptOutcomeLabel(
       return "Prepared";
     case "Failed":
       return "Failed";
+    case "Landed":
+      return "Already landed";
   }
 }
 
@@ -232,6 +250,8 @@ export function changeProposalCreationLabel(
       return "Contradictory";
     case "Unstorable":
       return "Unstorable";
+    case "Adopted":
+      return "Adopted";
   }
 }
 
@@ -298,6 +318,8 @@ export function changeProposalMergeabilityLabel(
       return "Conflicting";
     case "Blocked":
       return "Blocked";
+    case "Behind":
+      return "Behind its base";
     case "Unknown":
       return "Unknown";
   }
@@ -354,17 +376,29 @@ export function runStepLabel(step: RunStepEvidence): string {
       return "Push failed";
     case "RunTimedOut":
       return "Timed out";
+    case "RunDiskLow":
+      return "Disk low";
   }
 }
 
-/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change. */
+/** Where a failed setup's fix goes, for a reader the card offers the ticket's setup lines to change, and what a runner whose disk ran low needs. */
 export function runStepLine(
   failed: RunStepFailure,
   setupOverridable: boolean,
 ): string | undefined {
-  return failed.evidence === "RunSetupFailed" && setupOverridable
-    ? "Fix it under Overrides · Setup, then Resume"
-    : undefined;
+  switch (failed.evidence) {
+    case "RunSetupFailed":
+      return setupOverridable
+        ? "Fix it under Overrides · Setup, then Resume"
+        : undefined;
+    case "RunDiskLow":
+      return "Free space on its runner, then Resume";
+    case "RunCloneFailed":
+    case "RunCommitFailed":
+    case "RunPushFailed":
+    case "RunTimedOut":
+      return undefined;
+  }
 }
 
 /**
@@ -384,17 +418,38 @@ export function escalationDetail(escalation: TicketEscalation): string {
 }
 
 /** Where the way past an escalation is, for one whose line can name a page. */
-export type EscalationStep = "Runners";
+export type EscalationStep = "Runners" | "Repositories";
 
 /** The page an escalation's one line leads to: where the project's work runs,
- * for a wall that is nothing being there to run it or a pool that lost it. */
+ * for a wall that is nothing being there to run it or nothing large enough, or
+ * a pool that lost it, and where a repository's Workflow files are set, for a
+ * push refused for them. */
 export function escalationStep(
   escalation: TicketEscalation,
 ): EscalationStep | undefined {
-  return escalation.evidence === "RequiredCapabilityUnavailable" ||
+  if (
+    escalation.evidence === "RequiredCapabilityUnavailable" ||
+    escalation.evidence === "RequiredMemoryUnavailable" ||
     escalation.lost?.runner.kind === "Pool"
-    ? "Runners"
+  )
+    return "Runners";
+  return escalation.evidence === "PromotionWorkflowsRefused"
+    ? "Repositories"
     : undefined;
+}
+
+/** What has to change before a resume gets a push past, for an escalation
+ * whose evidence is a declined push or a push whose branch would not read. */
+export function escalationEvidenceLine(
+  evidence: TicketEscalation["evidence"],
+): string | undefined {
+  if (evidence === "PromotionWorkflowsRefused")
+    return "Turn on Workflow files and the App's Workflows, then Resume";
+  if (evidence === "PromotionDeclined")
+    return "Check the branch's rules and hooks, then Resume";
+  if (evidence === "ReconciliationUnreadable")
+    return "Restore the branch or the App's access, then Resume";
+  return undefined;
 }
 
 /** What the page knows about the wall, which is what the second line can name. */
@@ -476,9 +531,9 @@ export function nativeActionKindLabel(kind: NativeActionKind): string {
 
 /**
  * The one line a Pending ticket names when a dependency it waits on was
- * revoked: nothing will ever complete that dependency, so the wait is over and
- * the only exit is revoking this ticket too. Absent for every ticket the read
- * lists none for.
+ * revoked: nothing will ever complete that dependency, so the wait ends only
+ * when an edit drops it or this ticket is revoked too. Absent for every ticket
+ * the read lists none for.
  */
 export function revokedDependencyLine(
   revokedDependencies: readonly number[],
@@ -699,6 +754,10 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Ticket already exists";
     case "DependenciesNotFound":
       return "Dependencies not found";
+    case "DependenciesRevoked":
+      return "Dependencies revoked";
+    case "DependencyCycle":
+      return "Dependency cycle";
     case "SelfDependency":
       return "Depends on itself";
     case "TicketNotFound":
@@ -709,8 +768,6 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Different ticket";
     case "TicketRevisionStale":
       return "Revision out of date";
-    case "TicketDependenciesChanged":
-      return "Dependencies changed";
     case "DependenciesIncomplete":
       return "Dependencies not done";
     case "TicketNotRevocable":
@@ -745,6 +802,12 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Configuration cannot take this selection";
     case "ProgramExceedsPlan":
       return "Program exceeds the evaluation plan";
+    case "ProgramSkipsBriefChecks":
+      return "Program skips the brief's checks";
+    case "OverridesUnsupported":
+      return "Configuration cannot take these overrides";
+    case "OverridesUnknown":
+      return "Overrides name no catalog workload";
     case "TicketCapacityReached":
       return "Ticket capacity reached";
     case "FinalizationRequestClosed":
@@ -765,6 +828,8 @@ export function mutationRefusalLabel(code: MutationRefusalCode): string {
       return "Not admitted right now";
     case "OperationNotPending":
       return "Already decided";
+    case "ProgramSkipsPlannedEvaluations":
+      return "Program skips planned evaluations";
   }
 }
 

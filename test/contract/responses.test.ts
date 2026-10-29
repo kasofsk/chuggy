@@ -38,7 +38,6 @@ import {
   projectRepositoryConfigureResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
-  projectRepositoryCreateResponse,
   projectResponse,
   runConfigurationResponse,
   runErrorResponse,
@@ -80,7 +79,6 @@ import {
   projectRepositoryLandingWrittenSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
-  projectRepositoryCreatedSchema,
   projectRepositoryLandingConflictSchema,
   projectRepositoryRetiredSchema,
   projectRepositoryConfigurationsHeldSchema,
@@ -107,6 +105,7 @@ import {
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
+import { briefRepositoryCharsMax } from "../../src/contract/brief.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
@@ -118,9 +117,7 @@ import { workerPoolTokenCharsMax } from "../../src/contract/workerPool.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import type {
   ProjectRepositoryConfigurationsResult,
-  ProjectRepositoryCreateResult,
   ProjectRepositoryListed,
-  ProjectRepositoryRulesetResult,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
@@ -277,6 +274,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
   const fullest = ticketResponse({
     ticket: asTicketId(3),
     title: "The ticket the contract names",
+    repository: "https://github.com/acme/widgets.git",
     creator: "23:https://issuer.example/alice",
     phase: "Escalated",
     sequence: 9,
@@ -290,6 +288,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     overrides: { work: { instructions: ["Do it this way."] } },
     selection: { work: "build" },
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
+    dependencies: [asTicketId(1), asTicketId(2)],
     runTotals,
     ...ticketCarried,
   }).body as Record<string, unknown>;
@@ -298,6 +297,30 @@ test("a ticket read emits exactly the keys the contract names", () => {
     Object.keys(ticketResponseSchema.shape).sort(),
   );
   assert.ok(ticketResponseSchema.safeParse(fullest).success);
+});
+
+test("a ticket's repository is bounded by the brief's own", () => {
+  const ticket = {
+    ticket: 3,
+    phase: "Done",
+    sequence: 4,
+    changedAt: ticketCarried.changedAt,
+    revision: 1,
+    revokedDependencies: [],
+    openDependencies: [],
+  };
+  assert.ok(ticketResponseSchema.safeParse(ticket).success);
+  assert.ok(
+    ticketResponseSchema.safeParse({
+      ...ticket,
+      repository: "x".repeat(briefRepositoryCharsMax),
+    }).success,
+  );
+  for (const repository of ["", "x".repeat(briefRepositoryCharsMax + 1)])
+    assert.equal(
+      ticketResponseSchema.safeParse({ ...ticket, repository }).success,
+      false,
+    );
 });
 
 test("a parked ticket names its wall and an unparked one names none", () => {
@@ -1051,7 +1074,10 @@ test("every refusal an update earns is answered on the wire, the machine's with 
     ticketRefusals.TicketNotPending,
     ticketRefusals.TicketIdentityMismatch,
     ticketRefusals.TicketRevisionStale,
-    ticketRefusals.TicketDependenciesChanged,
+    ticketRefusals.SelfDependency,
+    ticketRefusals.DependenciesNotFound,
+    ticketRefusals.DependenciesRevoked,
+    ticketRefusals.DependencyCycle,
     { type: "AuthoringChanged" },
     { type: "ConfigurationInvalid" },
     { type: "BriefNamesNoRepository" },
@@ -1165,6 +1191,25 @@ test("a configuration read and its page parse with readiness and provenance", ()
     }).body,
   );
   assert.equal(page.configurations[0]?.readiness, "Ready");
+});
+
+test("the file each workload was read from reaches a revision's response, and one outside .chug is refused", () => {
+  const workloadPaths = { review: ".chug/workloads/review.json" };
+  assert.deepEqual(
+    configurationResponseSchema.parse(
+      configurationResponse({ ...versionedConfiguration, workloadPaths }).body,
+    ).workloadPaths,
+    workloadPaths,
+  );
+  assert.equal(
+    configurationResponseSchema.safeParse({
+      ...configurationResponseSchema.parse(
+        configurationResponse(versionedConfiguration).body,
+      ),
+      workloadPaths: { review: "workloads/review.json" },
+    }).success,
+    false,
+  );
 });
 
 test("a configuration version reaches every response that names a revision", () => {
@@ -1328,6 +1373,25 @@ test("an initialization parses with what its note says of checks", () => {
   );
 });
 
+test("an initialization names the stage a brief's checks join by its program stage key, counted from one", () => {
+  const body = initializationBody();
+  assert.equal(
+    draftInitializationResponseSchema.parse({
+      ...body,
+      commandedCheckStage: 1,
+    }).commandedCheckStage,
+    1,
+  );
+  assert.equal(
+    draftInitializationResponseSchema.safeParse({
+      ...body,
+      commandedCheckStage: 0,
+    }).success,
+    false,
+    "no program stage is keyed zero",
+  );
+});
+
 test("a hand-assembled read drops an unknown field at every depth", () => {
   const body = draftResponse(draftResource).body as Record<string, unknown>;
   const inner = body["authoring"] as Record<string, unknown>;
@@ -1456,6 +1520,7 @@ test("a briefed draft and ticket read carry the brief, and an older one omits it
   assert.deepEqual(briefed.brief, {
     intent: "Serve the brief on the ticket resource.",
     links: ["https://example.test/issues/340"],
+    images: [],
     checks: ["npm test"],
     branch: "refs/heads/rt/ticket-brief",
     finalization: { mode: "PullRequest", target: "refs/heads/main" },
@@ -2010,6 +2075,7 @@ test("a binding and a project's bindings name the repository and its moment", ()
     repository: onboardingRepository,
     boundAt: instant,
     landing: { mode: "Push" as const },
+    pipelinesWritable: false,
   };
   const listed: readonly ProjectRepositoryListed[] = [
     {
@@ -2087,6 +2153,7 @@ test("a binding names a landing, and both answers carry the row that stands", ()
     repository: onboardingRepository,
     boundAt: instant,
     landing: { mode: "PullRequest" as const },
+    pipelinesWritable: true,
   };
   assert.deepEqual(
     projectRepositoryLandingWrittenSchema.parse(
@@ -2118,6 +2185,15 @@ test("a binding names a landing, and both answers carry the row that stands", ()
       landing: { mode: "Merge" },
     }),
   );
+  assert.throws(
+    () =>
+      projectRepositoryResponseSchema.parse({
+        repository: onboardingRepository,
+        boundAt: instant,
+        landing: { mode: "Push" },
+      }),
+    "a binding answers whether its jobs may write its pipeline definitions",
+  );
 });
 
 test("a retirement answers the row it left, carrying the instant it was retired at", () => {
@@ -2125,6 +2201,7 @@ test("a retirement answers the row it left, carrying the instant it was retired 
     repository: onboardingRepository,
     boundAt: instant,
     landing: { mode: "Push" as const },
+    pipelinesWritable: false,
     retiredAt: instant,
   };
   assert.deepEqual(
@@ -2284,139 +2361,6 @@ test("an import of a commit declaring none answers what its `.chug/` holds inste
   assert.deepEqual(repositoryConfigurationsAbsentSchema.parse(absent.body), {
     ignored: ignoredAtHead,
   });
-});
-
-/** One created repository as the route answers it, whichever part a case varies. */
-function onboardingCreated(
-  given: Partial<
-    Extract<ProjectRepositoryCreateResult, { readonly result: "Created" }>
-  > = {},
-): ProjectRepositoryCreateResult {
-  return {
-    result: "Created",
-    repository: onboardingRepository,
-    landing: { mode: "Push" },
-    created: {
-      account: asForgeAccount("kasofsk"),
-      name: asForgeRepositoryName("engine"),
-      url: onboardingRepository,
-    },
-    seeded: true,
-    ruleset: { result: "Created" },
-    configurations: { result: "Imported", count: 1 },
-    ...given,
-  };
-}
-
-test("a created repository names what was made and how far each step got", () => {
-  const created = projectRepositoryCreatedSchema.parse(
-    projectRepositoryCreateResponse(partition, onboardingCreated()).body,
-  );
-  assert.deepEqual(created.created, {
-    account: "kasofsk",
-    name: "engine",
-    url: onboardingRepository,
-  });
-  assert.equal(created.seeded, true);
-  assert.deepEqual(created.ruleset, { result: "Created" });
-});
-
-/** One object without one of its own fields, which is what each partial is. */
-function onboardingWithout(
-  whole: Readonly<Record<string, unknown>>,
-  absent: string,
-): Readonly<Record<string, unknown>> {
-  return Object.fromEntries(
-    Object.entries(whole).filter(([named]) => named !== absent),
-  );
-}
-
-/**
- * Every body one field short, named and one level deep. A loop over the top
- * level alone leaves a nested field free to become optional unseen.
- */
-function onboardingCreatedPartials(
-  body: Readonly<Record<string, unknown>>,
-): readonly (readonly [string, unknown])[] {
-  const partials: (readonly [string, unknown])[] = [];
-  for (const [named, value] of Object.entries(body)) {
-    partials.push([named, onboardingWithout(body, named)]);
-    if (typeof value !== "object" || value === null) continue;
-    const nested = value as Readonly<Record<string, unknown>>;
-    for (const inner of Object.keys(nested))
-      partials.push([
-        `${named}.${inner}`,
-        { ...body, [named]: onboardingWithout(nested, inner) },
-      ]);
-  }
-  return partials;
-}
-
-test("a created body is refused when any part of it is absent", () => {
-  const results: readonly ProjectRepositoryCreateResult[] = [
-    onboardingCreated(),
-    onboardingCreated({
-      ruleset: { result: "Refused", message: "rulesets are not available" },
-      configurations: {
-        result: "Bootstrapped",
-        revision: asConfigurationRevisionId("bootstrap"),
-      },
-    }),
-  ];
-  for (const result of results) {
-    const body = projectRepositoryCreateResponse(partition, result)
-      .body as Readonly<Record<string, unknown>>;
-    for (const [named, partial] of onboardingCreatedPartials(body))
-      assert.equal(
-        projectRepositoryCreatedSchema.safeParse(partial).success,
-        false,
-        named,
-      );
-  }
-});
-
-test("every ruleset outcome parses as the schema answers it", () => {
-  const rulesets: readonly ProjectRepositoryRulesetResult[] = [
-    { result: "Created" },
-    { result: "Refused", message: "rulesets are not available" },
-    { result: "Skipped" },
-    { result: "Unavailable" },
-  ];
-  for (const ruleset of rulesets) {
-    assert.deepEqual(
-      projectRepositoryCreatedSchema.parse(
-        projectRepositoryCreateResponse(
-          partition,
-          onboardingCreated({ ruleset }),
-        ).body,
-      ).ruleset,
-      ruleset,
-    );
-  }
-});
-
-test("each way a creation is refused is its own status and never a creation", () => {
-  const refusals: readonly (readonly [
-    ProjectRepositoryCreateResult,
-    number,
-  ])[] = [
-    [{ result: "InstallationMissing", app: asForgeApp("worker") }, 422],
-    [{ result: "PersonalAccountCreatesOnGitHub" }, 422],
-    [{ result: "RepositoryExists" }, 409],
-    [{ result: "ForgeRefused", step: "create", message: "no such org" }, 422],
-    [{ result: "BindRefused", bind: { result: "BoundElsewhere" } }, 409],
-    [{ result: "NotConfigured" }, 404],
-    [{ result: "NotFound" }, 404],
-    [{ result: "Unavailable" }, 503],
-  ];
-  for (const [result, status] of refusals) {
-    const answer = projectRepositoryCreateResponse(partition, result);
-    assert.equal(answer.status, status, result.result);
-    assert.equal(
-      errorEnvelopeSchema.parse(answer.body).error.code.length > 0,
-      true,
-    );
-  }
 });
 
 test("a reopened draft names the version its ticket runs beside the one it stands at", () => {

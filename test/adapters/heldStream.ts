@@ -88,19 +88,26 @@ export function unreading(
   return socket;
 }
 
-/** How many bytes a connection that had read nothing can still read, once it reads until its stream ends or fails. */
+/**
+ * How many bytes a connection that had read nothing can still read, once it
+ * reads until its stream ends, fails or closes. A connection that failed
+ * before it was read has already closed and emits nothing more, so it can
+ * read nothing.
+ */
 export function readOut(socket: net.Socket): Promise<number> {
   return new Promise((resolve) => {
     let bytes = 0;
+    if (socket.destroyed) {
+      resolve(bytes);
+      return;
+    }
     socket.on("data", (chunk: Buffer) => {
       bytes += chunk.length;
     });
-    socket.once("error", () => {
-      resolve(bytes);
-    });
-    socket.once("end", () => {
-      resolve(bytes);
-    });
+    for (const ended of ["error", "end", "close"] as const)
+      socket.once(ended, () => {
+        resolve(bytes);
+      });
     socket.resume();
   });
 }

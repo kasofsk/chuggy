@@ -61,8 +61,13 @@ export function isBoundedText(value: string, charsMax: number): boolean {
 
 /** What `text` weighs as a JSON string in UTF-8, its quotes included. */
 export function jsonTextBytes(text: string): number {
+  return textUtf8Bytes(JSON.stringify(text));
+}
+
+/** What `text` weighs in UTF-8, a lone surrogate weighing what the replacement character it is written as does. */
+export function textUtf8Bytes(text: string): number {
   let bytes = 0;
-  for (const char of JSON.stringify(text)) {
+  for (const char of text) {
     const point = char.codePointAt(0) ?? 0;
     bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
   }
@@ -73,7 +78,7 @@ export function jsonTextBytes(text: string): number {
 const jsonEscapedCharChars = 6;
 
 /** What a JSON string of this many characters weighs: its quotes, every character escaped. */
-function jsonStringChars(chars: number): number {
+export function jsonStringChars(chars: number): number {
   return chars * jsonEscapedCharChars + 2;
 }
 
@@ -255,6 +260,9 @@ export const selectorHandoffNoteBytesMax = 65_536;
  */
 export const leadDispatchesMax = 8;
 
+/** How many tickets one decision may refuse, and how many it may lift. */
+export const leadRefusalsPerDecisionMax = 16;
+
 /**
  * How much of the handoff note the lead read carries. The note's own ceiling is
  * a whole wire body, and the lead read carries a mailbox tail and a stream
@@ -370,6 +378,25 @@ export const threadBacklogMax = 8;
 /** How many threads one listing answers with. */
 export const threadsAnsweredMax = 64;
 
+/** How many threads a member may hold open in one project where no administrator has set their limit. */
+export const threadsOpenDefault = 10;
+
+/**
+ * The highest limit an administrator may set on a member's open threads. It is
+ * one listing's worth, and a listing leads with its reader's own open threads,
+ * so every thread a member holds open is on the page that lists them for them.
+ */
+export const threadsOpenMax = threadsAnsweredMax;
+
+/**
+ * The longest key a client opens a thread under, which a UUID fits. Opening is
+ * idempotent on it, so a retried open answers the thread the first one opened.
+ */
+export const threadOpenKeyCharsMax = 64;
+
+/** The characters a thread's open key is spelled in, which every surface holds unescaped. */
+export const threadOpenKeyPattern = /^[A-Za-z0-9_-]+$/u;
+
 /** How many claimed installations one tenant's listing answers with, oldest first. */
 export const forgeInstallationsAnsweredMax = 64;
 
@@ -405,6 +432,9 @@ export const ticketLandingsAnsweredMax = 8;
  */
 export const ticketLandingConflictBytesMax = 2_048;
 
+/** The longest reference name a landing answers, which is the longest one its rows carry. */
+export const ticketLandingRefCharsMax = 256;
+
 /** How many of the entries under `.chug/` a configuration import read none of one answer names. */
 export const repositoryConfigurationIgnoredAnsweredMax = 10;
 
@@ -414,13 +444,6 @@ export const repositoryConfigurationIgnoredAnsweredMax = 10;
  * where the setting is read, so the wire's bound is the one a reader relies on.
  */
 export const forgeRepositoriesAnsweredMax = 1_000;
-
-/**
- * The longest account of a refusal a forge's own answer reaches a caller as. It
- * is the forge's words and never this tree's request, so an administrator is
- * told what the forge would not do without a body being quoted back.
- */
-export const forgeRefusalMessageCharsMax = 512;
 
 /** How many turns of one thread's mailbox a read answers with, newest last. */
 export const threadTurnsAnsweredMax = 32;
@@ -504,10 +527,10 @@ export const nativeHttpRoutes = {
   events: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/events`,
   configurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations`,
   configurationImports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports`,
+  configurationHead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/imports/head`,
   configuration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/configurations/:revision`,
   forgeCredentials: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/forge-credentials`,
   projectRepositories: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories`,
-  projectRepositoriesNew: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/new`,
   projectRepositoryLanding: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/landing`,
   projectRepositoryRetirement: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/retirement`,
   projectRepositoryConfigurations: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/repositories/configurations`,
@@ -526,12 +549,26 @@ export const nativeHttpRoutes = {
   personalRunnerProject: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/projects/:project`,
   personalRunnerRunner: `${nativeHttpBasePath}/tenants/:tenant/personal-runner/runners/:runner`,
   personalRunnerMember: `${nativeHttpBasePath}/tenants/:tenant/personal-runners/:subject`,
+  chatHostRegistrationTokens: `${nativeHttpBasePath}/tenants/:tenant/chat-host-registration-tokens`,
+  chatHost: `${nativeHttpBasePath}/tenants/:tenant/chat-host`,
+  chatAbilities: `${nativeHttpBasePath}/tenants/:tenant/chat/abilities`,
+  chatProjects: `${nativeHttpBasePath}/tenants/:tenant/chat/projects`,
+  chatThreads: `${nativeHttpBasePath}/tenants/:tenant/chat/threads`,
+  chatThread: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session`,
+  chatThreadTranscript: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/transcript`,
+  chatThreadMessages: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/messages`,
+  chatThreadClose: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/close`,
+  chatThreadRename: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/rename`,
+  chatThreadHide: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/hide`,
+  chatThreadLive: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/live`,
+  chatThreadTurnStop: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/turns/:turn/stop`,
   actionReports: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/actions/:action/reports`,
   drafts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts`,
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
   threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
+  threadLimit: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/thread-limits/:subject`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
   threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,
@@ -854,6 +891,12 @@ export const changeResourceSchema = z
 export const countSchema = z.number().int().safe().nonnegative();
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
+/**
+ * Every instant is ISO 8601 in UTC with a `Z` suffix, as `toISOString`
+ * renders one, to the sub-second precision its source keeps. Every adapter
+ * answers that form; the schema checks only that a value is present, because
+ * tightening it to `z.iso.datetime()` is a contract version.
+ */
 export const instantSchema = z.string().min(1);
 /**
  * All the wire says about a cursor. It is opaque to every reader but the server

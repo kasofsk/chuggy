@@ -16,6 +16,10 @@
 
 import { asSafeInteger } from "../../domain/ids.ts";
 import {
+  asPublicInstant,
+  type PublicInstant,
+} from "../../interpreter/publicResource.ts";
+import {
   allLifecycles,
   asOwnerId,
   asProjectId,
@@ -51,6 +55,19 @@ export function projectRowCounter(value: string, what: string): number {
   const counter = Number(value);
   asSafeInteger(counter, what);
   return counter;
+}
+
+/**
+ * Reads an instant a query rendered with `to_char`, which the checker types as
+ * nullable whatever the column it renders, refusing the null no NOT NULL
+ * column can have written.
+ */
+export function projectRowInstant(
+  value: string | null,
+  what: string,
+): PublicInstant {
+  if (value === null) throw new Error(`project row: ${what} is null`);
+  return asPublicInstant(value);
 }
 
 /** Narrows a lifecycle column to the closed set, refusing a value no migration can have written. */

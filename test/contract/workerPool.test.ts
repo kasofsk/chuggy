@@ -22,15 +22,27 @@ import {
   workerPoolSettlementPath,
   workerPoolSettlementRoutes,
   workerImageCharsMax,
+  workerPoolTokenCharsMax,
+  workerRunnerCapabilitiesOf,
+  workerRunnerCapabilitiesSchema,
+  workerRunnerCountOf,
   workerRunnerOf,
   workerRunnerReleaseSchema,
   workerRunnerReleaseUrlCharsMax,
+  workerRunnerHostCharsMax,
+  workerRunnerReportBytesMax,
+  workerRunnerReportSchema,
 } from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
+  workerContractRunnerProjects,
   workerContractRunnerReleases,
 } from "../../src/interpreter/workerPlane.ts";
+import {
+  workerRunnerReportHeaviest,
+  workerRunnerReportLeast,
+} from "./workerRunnerReportFixture.ts";
 import {
   workerContractReleasePool,
   workerContractReplayed,
@@ -110,6 +122,45 @@ test("an assignment's runtime is a reference bounded as its image is, and an ass
   );
 });
 
+test("a job assignment may name its project, held to the bound of every other name on the wire", () => {
+  const named = { ...assignment, project: "chuggy" };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(named), named);
+  const longest = {
+    ...assignment,
+    project: "p".repeat(workerPoolIdentityCharsMax),
+  };
+  assert.deepEqual(workerPoolAssignmentSchema.parse(longest), longest);
+  for (const project of ["", "p".repeat(workerPoolIdentityCharsMax + 1), 7])
+    assert.equal(
+      workerPoolAssignmentSchema.safeParse({ ...assignment, project }).success,
+      false,
+      String(project).slice(0, 20),
+    );
+});
+
+test("a pool of a release the runner-projects range accepts reads a job assignment naming its project, and one of any earlier refuses the whole answer", async () => {
+  const answer = {
+    assignments: [{ ...assignment, project: "chuggy" }],
+    sessions: [],
+    stop: [],
+  };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunnerProjects,
+      workerContractRelease,
+    ),
+  );
+  assert.ok(workerPoolReconciliationSchema.safeParse(answer).success);
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(workerContractRunnerProjects, older),
+      older,
+    );
+  }
+});
+
 test("a session assignment is an assignment that always names its image, under a session's own bearer", () => {
   const session = {
     ...assignment,
@@ -124,6 +175,7 @@ test("a session assignment is an assignment that always names its image, under a
     { ...session, image: "" },
     { ...session, lease: 30 },
     { ...session, runtime: "registry.invalid/chuggy/runtime:1" },
+    { ...session, project: "chuggy" },
   ])
     assert.equal(
       workerPoolSessionAssignmentSchema.safeParse(invalid).success,
@@ -263,6 +315,86 @@ test("a runner is named as its package and its version, and anything else names 
     assert.equal(workerRunnerOf(unread), undefined, String(unread));
 });
 
+test("a poll's capabilities are tokens separated by commas, an absent header names none and an empty one the empty set", () => {
+  const longest = `9${"a".repeat(workerPoolTokenCharsMax - 1)}`;
+  const most = Array.from(
+    { length: workerPoolCapabilitiesMax },
+    (_, index) => `Tool:${String(index)}`,
+  );
+  for (const [header, capabilities] of [
+    ["Platform:Linux:Amd64", ["Platform:Linux:Amd64"]],
+    ["Platform:Linux:Amd64,Tool:Bazel", ["Platform:Linux:Amd64", "Tool:Bazel"]],
+    [" Tool:Bazel ,\tAgent:Claude\t", ["Tool:Bazel", "Agent:Claude"]],
+    ["Tool:Bazel, , Agent:Claude,", ["Tool:Bazel", "Agent:Claude"]],
+    [longest, [longest]],
+    [most.join(", "), most],
+    ["", []],
+    [" , ", []],
+  ] as const)
+    assert.deepEqual(
+      workerRunnerCapabilitiesOf(header),
+      { named: "Set", capabilities },
+      JSON.stringify(header),
+    );
+  assert.deepEqual(workerRunnerCapabilitiesOf(undefined), { named: "None" });
+});
+
+test("a poll's capabilities header naming a token outside the grammar, one twice, or more than a pool declares is unread", () => {
+  for (const header of [
+    "Tool Bazel",
+    "Tool:Bazel;Agent:Claude",
+    "-Tool",
+    ":Tool",
+    "Tool/Bazel",
+    '"Tool:Bazel"',
+    "Tool:Bazel\nAgent:Claude",
+    "a".repeat(workerPoolTokenCharsMax + 1),
+    "Tool:Bazel, Tool:Bazel",
+    Array.from(
+      { length: workerPoolCapabilitiesMax + 1 },
+      (_, index) => `Tool:${String(index)}`,
+    ).join(","),
+  ])
+    assert.deepEqual(
+      workerRunnerCapabilitiesOf(header),
+      { named: "Unread" },
+      JSON.stringify(header).slice(0, 120),
+    );
+  assert.equal(
+    workerRunnerCapabilitiesSchema.safeParse(["Tool:Bazel", "Tool:Bazel"])
+      .success,
+    false,
+  );
+});
+
+test("a poll's count header is a count as its query writes one, an absent header names none, and anything else is unread", () => {
+  assert.deepEqual(workerRunnerCountOf(undefined), { named: "None" });
+  for (const [header, count] of [
+    ["0", 0],
+    ["4096", 4_096],
+    [String(Number.MAX_SAFE_INTEGER), Number.MAX_SAFE_INTEGER],
+  ] as const)
+    assert.deepEqual(
+      workerRunnerCountOf(header),
+      { named: "Count", count },
+      header,
+    );
+  for (const header of [
+    "",
+    "-1",
+    "+1",
+    "01",
+    "1.5",
+    "1e3",
+    "0x10",
+    "4096 MiB",
+    " 4096",
+    "4096, 4096",
+    String(Number.MAX_SAFE_INTEGER + 2),
+  ])
+    assert.deepEqual(workerRunnerCountOf(header), { named: "Unread" }, header);
+});
+
 test("a pool of a release the runner-release range accepts reads an answer naming a release, and one of any earlier refuses it", async () => {
   const answer = { assignments: [], sessions: [], stop: [], release };
   assert.ok(
@@ -341,5 +473,59 @@ test("a registration declares what a pool can do and no capacity", () => {
       concurrency: 4,
     }).success,
     false,
+  );
+});
+
+test("a runner report reads the least a runner may say and the heaviest, the heaviest within the bound it is sent under", () => {
+  assert.deepEqual(
+    workerRunnerReportSchema.parse(workerRunnerReportLeast),
+    workerRunnerReportLeast,
+  );
+  const heaviest = workerRunnerReportHeaviest();
+  assert.deepEqual(workerRunnerReportSchema.parse(heaviest), heaviest);
+  assert.ok(
+    Buffer.byteLength(JSON.stringify(heaviest)) <= workerRunnerReportBytesMax,
+  );
+});
+
+test("a runner report naming a field the contract does not, a host past its bound or of another grammar, or a label outside its roster is refused", () => {
+  const refused = (report: Record<string, unknown>, why: string) => {
+    assert.equal(
+      workerRunnerReportSchema.safeParse({
+        ...workerRunnerReportLeast,
+        ...report,
+      }).success,
+      false,
+      why,
+    );
+  };
+  refused({ tenant: "another" }, "a tenant");
+  refused({ pool: "another" }, "a pool");
+  refused({ owner: "another" }, "an owner");
+  refused({ host: "h".repeat(workerRunnerHostCharsMax + 1) }, "a long host");
+  refused({ host: "" }, "no host");
+  refused({ host: "box\nchuggy_runner_info 1" }, "a host of lines");
+  refused({ host: 'box"' }, "a host quoting");
+  refused({ settlements: { Lost: 1 } }, "a settlement outcome");
+  refused({ refusals: { ImageTooLarge: 1 } }, "a refusal fault");
+  refused({ jobsEnded: { Lost: 1 } }, "a job end");
+  refused({ sessionsEnded: { Stopped: 1 } }, "a session end");
+  refused(
+    {
+      runSecs: {
+        Build: { bucketCounts: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], sumSecs: 0 },
+      },
+    },
+    "a run kind",
+  );
+  refused(
+    { imagePullSecs: { bucketCounts: [1], sumSecs: 1 } },
+    "a histogram of the wrong buckets",
+  );
+  refused({ polls: -1 }, "a negative count");
+  refused({ polls: 1.5 }, "a fractional count");
+  refused(
+    { jobsEnded: { Succeeded: Number.MAX_SAFE_INTEGER + 1 } },
+    "an unsafe count",
   );
 });

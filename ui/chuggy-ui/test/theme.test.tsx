@@ -14,6 +14,8 @@ import type { ReactNode } from "react";
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
 import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { holderDouble } from "./screenHarness.tsx";
 import {
   themeChoiceApply,
   themeChoiceRead,
@@ -80,9 +82,11 @@ test("the attribute carries the choice, and System takes it off", () => {
 async function themeMenuOpened(): Promise<void> {
   cleanup();
   render(
-    <ChatPaneProvider twoColumn>
-      <SettingsMenu chat />
-    </ChatPaneProvider>,
+    <SessionProvider holder={holderDouble()}>
+      <ChatPaneProvider twoColumn>
+        <SettingsMenu partition={undefined} />
+      </ChatPaneProvider>
+    </SessionProvider>,
   );
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
     key: "ArrowDown",

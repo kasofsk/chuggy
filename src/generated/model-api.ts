@@ -57,7 +57,7 @@ import type {
   Obligation,
   SuccessfulTicketDecision,
   TicketCommand,
-  IncompleteDependencies,
+  RefusedDependencies,
   CurrentTaskRefusal,
   CurrentFinalizationRefusal,
   StaleRevision,
@@ -1770,13 +1770,13 @@ export function decodeTicketCommand(value: unknown): TicketCommand {
   return ticketCommandSchemaWire.parse(value);
 }
 
-export const incompleteDependenciesSchema: z.ZodType<IncompleteDependencies> = z
+export const refusedDependenciesSchema: z.ZodType<RefusedDependencies> = z
   .object({
     ticket: z.number().int().safe(),
     dependencies: z.set(z.number().int().safe()).readonly(),
   })
   .readonly();
-const incompleteDependenciesSchemaWire: z.ZodType<IncompleteDependencies> = z
+const refusedDependenciesSchemaWire: z.ZodType<RefusedDependencies> = z
   .object({
     ticket: z.number().int().safe(),
     dependencies: z
@@ -1785,15 +1785,13 @@ const incompleteDependenciesSchemaWire: z.ZodType<IncompleteDependencies> = z
       .transform((items) => new Set(items)),
   })
   .readonly();
-export function encodeIncompleteDependencies(
-  value: IncompleteDependencies,
+export function encodeRefusedDependencies(
+  value: RefusedDependencies,
 ): ModelJson {
   return encodeJson(value);
 }
-export function decodeIncompleteDependencies(
-  value: unknown,
-): IncompleteDependencies {
-  return incompleteDependenciesSchemaWire.parse(value);
+export function decodeRefusedDependencies(value: unknown): RefusedDependencies {
+  return refusedDependenciesSchemaWire.parse(value);
 }
 
 export const currentTaskRefusalSchema: z.ZodType<CurrentTaskRefusal> = z
@@ -1867,7 +1865,19 @@ export const ticketRefusalSchema: z.ZodType<TicketRefusal> = z.union([
   z
     .object({
       type: z.literal("DependenciesNotFound"),
-      value: incompleteDependenciesSchema,
+      value: refusedDependenciesSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesRevoked"),
+      value: refusedDependenciesSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependencyCycle"),
+      value: refusedDependenciesSchema,
     })
     .readonly(),
   z
@@ -1902,14 +1912,8 @@ export const ticketRefusalSchema: z.ZodType<TicketRefusal> = z.union([
     .readonly(),
   z
     .object({
-      type: z.literal("TicketDependenciesChanged"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-  z
-    .object({
       type: z.literal("DependenciesIncomplete"),
-      value: incompleteDependenciesSchema,
+      value: refusedDependenciesSchema,
     })
     .readonly(),
   z
@@ -1947,7 +1951,19 @@ const ticketRefusalSchemaWire: z.ZodType<TicketRefusal> = z.union([
   z
     .object({
       type: z.literal("DependenciesNotFound"),
-      value: incompleteDependenciesSchemaWire,
+      value: refusedDependenciesSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependenciesRevoked"),
+      value: refusedDependenciesSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("DependencyCycle"),
+      value: refusedDependenciesSchemaWire,
     })
     .readonly(),
   z
@@ -1982,14 +1998,8 @@ const ticketRefusalSchemaWire: z.ZodType<TicketRefusal> = z.union([
     .readonly(),
   z
     .object({
-      type: z.literal("TicketDependenciesChanged"),
-      value: z.number().int().safe(),
-    })
-    .readonly(),
-  z
-    .object({
       type: z.literal("DependenciesIncomplete"),
-      value: incompleteDependenciesSchemaWire,
+      value: refusedDependenciesSchemaWire,
     })
     .readonly(),
   z

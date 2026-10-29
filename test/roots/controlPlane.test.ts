@@ -139,6 +139,7 @@ const successfulProcessProgram = `
         admit: async () => ({ admitted: 'NoCandidate' }),
         refusedAttempts: async () => [],
         attemptsAwaitingObservation: async () => [],
+        waitingAttempts: async () => [],
         reapLapsedAttempts: async () => 0,
         attemptsAwaitingCleanup: async () => [],
         attemptCleanupCompleted: async () => true,
@@ -558,5 +559,35 @@ test("the selector process refuses to start without every door a decision opens"
       ["selector-lead-doors", "Refused"],
     ],
     "a half-granted migration is a selector that refuses to start, not one that runs blind",
+  );
+});
+
+/** The service the finalizer root composes, asked only where its holds go, so no database is reached. */
+test("the composed finalizer writes a held request to stderr, and not on every pass", async () => {
+  const program = `
+    const roots = await import('./src/roots/controlPlane.ts');
+    const telemetry = await import('./src/interpreter/finalizerTelemetry.ts');
+    const pool = { query: async () => { throw new Error('a composition queried the database'); } };
+    const service = roots.finalizerProcessRootService(pool, {
+      service: () => ({ git: {}, forges: {}, artifactRoot: '/nonexistent' }),
+    });
+    for (let pass = 0; pass < 3; pass += 1)
+      telemetry.recordFinalizer(service.metrics, (metrics) => {
+        metrics.holding('CandidateUnbuilt');
+        metrics.advanced('request-held', 'CandidateUnbuilt');
+        metrics.advanced('request-moved', undefined);
+      });
+  `;
+  const result = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd() },
+  );
+  assert.deepEqual(
+    result.stderr.split("\n").filter((line) => line.startsWith("finalizer:")),
+    [
+      'finalizer: request "request-held" held at CandidateUnbuilt, 1 advances in a row',
+      'finalizer: request "request-held" held at CandidateUnbuilt, 2 advances in a row',
+    ],
   );
 });

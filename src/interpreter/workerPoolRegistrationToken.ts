@@ -6,23 +6,15 @@
  * at every machine, and a machine cannot be trusted to name its own project, so
  * the owner mints a short-lived single-use token scoped to one partition and the
  * operator configures the machine with it. Redeeming it is the only path by
- * which anything but an owner's own command causes a client to exist.
+ * which anything but an owner's own command causes a client to exist. What the
+ * pool declares it can run is its own claim, made as it redeems and again on
+ * any poll naming a set, as it is where the owner registers one by command.
  *
- * WHAT IT BOUNDS IS THE CAPABILITY CLAIM. A pool's capabilities are otherwise
- * unverifiable — a token is a string a machine asserts about itself — and the
- * one party who knows what machine is about to be registered is the owner
- * minting the token. So a redemption may declare any subset of what the token
- * permits and nothing outside it, and a token minted for Linux containers
- * cannot register a pool claiming macOS.
- *
- * THE TOKEN IS READ BEFORE IT IS SPENT. Consuming it and then refusing the
- * capabilities would burn an owner's token on an operator's typo, so what the
- * token permits is read first and the consuming update is still the only thing
- * that decides single use — a second redeemer racing the first is answered by
- * that update and by nothing here. A fault after the spend — an issuer or an
- * authority that could not answer — gives the token back before it is raised,
- * so an outage costs the operator a retry and not the owner a token; what
- * stays spent is a redemption that was answered.
+ * THE CONSUMING UPDATE ALONE DECIDES SINGLE USE: a second redeemer racing the
+ * first is answered by that update and by nothing here. A fault after the
+ * spend — an issuer or an authority that could not answer — gives the token
+ * back before it is raised, so an outage costs the operator a retry and not
+ * the owner a token; what stays spent is a redemption that was answered.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -43,10 +35,9 @@ import {
   type WorkerRunnerReleases,
 } from "./workerRunnerRelease.ts";
 
-/** What a token permits, and who minted it where the token records that, as the durable side answers a caller holding one. */
+/** The partition a token registers a pool in, and who minted it where the token records that, as the durable side answers a caller holding one. */
 export interface WorkerPoolRegistrationTokenTerms {
   readonly partition: Partition;
-  readonly capabilities: readonly string[];
   readonly mintedBy?: Principal;
 }
 
@@ -58,22 +49,18 @@ export type WorkerPoolTokenWritten = "Minted" | "NotFound" | "LimitReached";
 
 /**
  * The durable side of a token's whole life. `mint` writes a row only under the
- * project's bound and sweeps that project's expired tokens as it does, `permitted` reads a token that is neither spent nor expired, `consume`
- * is the single write that spends it, so nothing but that write decides which
- * of two redeemers won, and `restore` gives back an unexpired one whose
- * redemption faulted.
+ * project's bound and sweeps that project's expired tokens as it does,
+ * `consume` is the single write that spends one neither spent nor expired, so
+ * nothing but that write decides which of two redeemers won, and `restore`
+ * gives back an unexpired one whose redemption faulted.
  */
 export interface WorkerPoolRegistrationTokens {
   mint(
     partition: Partition,
     digest: string,
-    capabilities: readonly string[],
     expiresAtMs: number,
     mintedBy: Principal,
   ): Promise<WorkerPoolTokenWritten>;
-  permitted(
-    digest: string,
-  ): Promise<WorkerPoolRegistrationTokenTerms | undefined>;
   consume(
     digest: string,
   ): Promise<WorkerPoolRegistrationTokenTerms | undefined>;
@@ -114,15 +101,13 @@ export interface WorkerPoolCredentials
   readonly capabilities: readonly string[];
 }
 
-/** What redeeming came to, with the capability refusal named rather than hidden. */
+/** What redeeming came to. */
 export type WorkerPoolTokenRedeemed =
   | { readonly result: "NotFound" }
-  | { readonly result: "CapabilityNotPermitted" }
   | { readonly result: "Registered"; readonly value: WorkerPoolCredentials };
 
-/** What one mint asks for: what the machine will be allowed to claim, and for how long. */
+/** What one mint asks for: how long the token stands. */
 export interface WorkerPoolTokenRequest {
-  readonly capabilities: readonly string[];
   readonly lifetimeSecs: number;
 }
 
@@ -170,7 +155,6 @@ export async function workerPoolTokenMint(
   const written = await minting.tokens.mint(
     partition,
     minting.digest(token),
-    request.capabilities,
     expiresAtMs,
     principal,
   );
@@ -194,9 +178,10 @@ export interface WorkerPoolRedemption {
 }
 
 /**
- * Redemption, which authenticates on the token alone and authorizes on what the
- * token permits. A token that is unknown, spent or expired is one answer,
- * because telling the three apart tells a holder which of them it is.
+ * Redemption, which authenticates and authorizes on the token alone and
+ * registers the pool with what it declares. A token that is unknown, spent or
+ * expired is one answer, because telling the three apart tells a holder which
+ * of them it is.
  */
 export async function workerPoolTokenRedeem(
   minting: WorkerPoolTokenMinting,
@@ -205,14 +190,6 @@ export async function workerPoolTokenRedeem(
   offered: WorkerPoolRedemption,
 ): Promise<WorkerPoolTokenRedeemed> {
   const digest = minting.digest(offered.token);
-  const terms = await minting.tokens.permitted(digest);
-  if (terms === undefined) return { result: "NotFound" };
-  if (
-    !offered.capabilities.every((capability) =>
-      terms.capabilities.includes(capability),
-    )
-  )
-    return { result: "CapabilityNotPermitted" };
   const spent = await minting.tokens.consume(digest);
   if (spent === undefined) return { result: "NotFound" };
   let registered;

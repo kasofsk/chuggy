@@ -21,6 +21,11 @@
  * KETO ENFORCES NONE OF THE DECLARED TYPES. It stores any tuple and follows any
  * subject set, so what a holder may be is this tree's to refuse.
  *
+ * ONE RELATION NAMES WHO IS REFUSED RATHER THAN WHO HOLDS. `open_unscoped_chat`
+ * is held by every holder of a tenant role but the ones `unscoped_chat_revoked`
+ * names, so a tenant answers it with no tuple written, and taking it from a
+ * member is writing them there.
+ *
  * A TENANT REACHES THE SITE BY ITS `site` TUPLE. One without it is not managed
  * from the site, with no error, though a holder written there as the site's
  * `admins` still holds.
@@ -56,11 +61,13 @@ class Tenant implements Namespace {
     members: User[];
     hosted_execution: User[];
     personal_runners: User[];
+    unscoped_chat_revoked: User[];
     site: Site[];
     admin_granters: (User | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     member_granters: (User | SubjectSet<Tenant, "admins"> | SubjectSet<Tenant, "members"> | SubjectSet<Site, "admins">)[];
     hosted_execution_granters: (User | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     personal_runners_granters: (User | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
+    unscoped_chat_granters: (User | SubjectSet<Tenant, "admins"> | SubjectSet<Site, "admins">)[];
     authority_managers: (User | SubjectSet<Tenant, "admins">)[];
   };
   permits = {
@@ -71,12 +78,17 @@ class Tenant implements Namespace {
       this.related.hosted_execution.includes(ctx.subject),
     register_personal_runner: (ctx: Context): boolean =>
       this.related.personal_runners.includes(ctx.subject),
+    open_unscoped_chat: (ctx: Context): boolean =>
+      (this.related.admins.includes(ctx.subject) || this.related.members.includes(ctx.subject)) &&
+      !this.related.unscoped_chat_revoked.includes(ctx.subject),
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_member: (ctx: Context): boolean => this.related.member_granters.includes(ctx.subject),
     grant_hosted_execution: (ctx: Context): boolean =>
       this.related.hosted_execution_granters.includes(ctx.subject),
     grant_personal_runners: (ctx: Context): boolean =>
       this.related.personal_runners_granters.includes(ctx.subject),
+    grant_unscoped_chat: (ctx: Context): boolean =>
+      this.related.unscoped_chat_granters.includes(ctx.subject),
     manage_site_held_authorities: (ctx: Context): boolean =>
       this.related.site.traverse((s) => s.permits.manage_authorities(ctx)),
     manage_authorities: (ctx: Context): boolean =>
@@ -118,6 +130,9 @@ class Project implements Namespace {
     execute: (ctx: Context): boolean =>
       this.related.pools.includes(ctx.subject) || this.permits.develop(ctx),
     manage_selector: (ctx: Context): boolean => this.permits.administer(ctx),
+    override_ticket_config: (ctx: Context): boolean => this.permits.administer(ctx),
+    skip_planned_evaluations: (ctx: Context): boolean => this.permits.administer(ctx),
+    chat_metadata: (ctx: Context): boolean => this.permits.read(ctx),
     grant_admin: (ctx: Context): boolean => this.related.admin_granters.includes(ctx.subject),
     grant_developer: (ctx: Context): boolean => this.related.developer_granters.includes(ctx.subject),
     grant_dispatcher: (ctx: Context): boolean => this.related.dispatcher_granters.includes(ctx.subject),

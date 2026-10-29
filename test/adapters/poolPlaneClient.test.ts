@@ -10,6 +10,14 @@ import {
   checkedPoolPlaneClientSettings,
   poolPlaneClient,
 } from "../../src/adapters/http/poolPlaneClient.ts";
+import {
+  workerPoolClientPass,
+  workerPoolClientRun,
+  type WorkerPoolBackend,
+  type WorkerPoolClient,
+  type WorkerPoolPass,
+  type WorkerPoolPlane,
+} from "../../src/interpreter/workerPoolClient.ts";
 
 const planeSettings = {
   baseUrl: "https://pool-plane.invalid",
@@ -30,6 +38,7 @@ function tokenSettings(fetcher: typeof fetch) {
     responseReadsMax: 64,
     refreshMarginMs: 10_000,
     mintCooldownMs: 1_000,
+    refusalConfirmMs: 60_000,
     fetch: fetcher,
   };
 }
@@ -68,9 +77,43 @@ function sentHeader(init: Parameters<typeof fetch>[1], name: string): string {
   return (init?.headers as Record<string, string> | undefined)?.[name] ?? "";
 }
 
-/** One answer as the plane would send it, with no server to send it. */
+/** One answer as the plane would send it, naming its release as every one does, with no server to send it. */
 function answered(status: number, body: string): Response {
-  return new Response(status === 204 ? null : body, { status });
+  return new Response(status === 204 ? null : body, {
+    status,
+    headers: { [workerContractHeader]: workerContractRelease },
+  });
+}
+
+/** A refusal as Hydra words one. */
+function refusal(status: number, error: string): Response {
+  return new Response(
+    JSON.stringify({
+      error,
+      error_description: "Client authentication failed.",
+    }),
+    { status, headers: { "content-type": "application/json;charset=UTF-8" } },
+  );
+}
+
+/** What traefik answers in place of a service with no endpoint ready. */
+function proxyNotFound(): Response {
+  return new Response("404 page not found\n", {
+    status: 404,
+    headers: { "content-type": "text/plain; charset=utf-8" },
+  });
+}
+
+/** A grant of `token` for `expiresInSeconds`, as the issuer answers one. */
+function granted(token: string, expiresInSeconds: number): Response {
+  return new Response(
+    JSON.stringify({
+      access_token: token,
+      token_type: "bearer",
+      expires_in: expiresInSeconds,
+    }),
+    { status: 200 },
+  );
 }
 
 test("a poll names what the pool holds and wants, and carries its own token", async () => {
@@ -179,12 +222,62 @@ test("each settlement is the path it is said on and the body it needs", async ()
   );
 });
 
+test("the plane's own 404, empty as it sends one, denies the pool from a poll and from a settlement", async () => {
+  const refusing = poolPlaneClient(planeSettings, () =>
+    Promise.resolve(answered(404, "")),
+  );
+  assert.deepEqual(await refusing.poll("pool-token", [], 1, 0), {
+    polled: "Denied",
+    evidence: "the plane serves no such pool",
+  });
+  assert.equal(
+    await refusing.settle("pool-token", "one", { outcome: "Accepted" }),
+    "Denied",
+  );
+});
+
+test("a 404 or a 400 naming no release of the plane's is an outage, from a poll and from a settlement", async () => {
+  for (const [status, body, headers] of [
+    [404, "404 page not found\n", { "content-type": "text/plain" }],
+    [400, "400 Bad Request", { "content-type": "text/plain" }],
+    [404, "", { [workerContractHeader]: "not a release" }],
+  ] as const) {
+    const proxy = poolPlaneClient(planeSettings, () =>
+      Promise.resolve(new Response(body, { status, headers })),
+    );
+    assert.deepEqual(await proxy.poll("pool-token", [], 1, 0), {
+      polled: "Unavailable",
+      evidence: `the plane's address answered ${String(status)}, naming no release`,
+    });
+    assert.equal(
+      await proxy.settle("pool-token", "one", { outcome: "Accepted" }),
+      "Unavailable",
+      `status ${String(status)}`,
+    );
+  }
+});
+
+test("a 409 naming no release of the plane's loses no assignment", async () => {
+  const proxy = poolPlaneClient(planeSettings, () =>
+    Promise.resolve(new Response("", { status: 409 })),
+  );
+  assert.equal(
+    await proxy.settle("pool-token", "one", {
+      outcome: "Refused",
+      evidence: "no git",
+      fault: "ImageLacksGit",
+    }),
+    "Unavailable",
+  );
+});
+
 test("a settlement the plane will not take says which kind of no it was", async () => {
   for (const [status, expected] of [
     [204, "Settled"],
     [409, "Lost"],
     [401, "Stale"],
     [404, "Denied"],
+    [400, "Denied"],
     [503, "Unavailable"],
   ] as const) {
     const plane = poolPlaneClient(planeSettings, () =>
@@ -217,22 +310,72 @@ test("a plane address that carries a credential or no scheme is refused", () => 
   );
 });
 
-test("a grant the issuer refused is a denial and everything else is an outage", async () => {
-  for (const [status, expected] of [
-    [400, "Denied"],
-    [401, "Denied"],
-    [403, "Denied"],
-    [500, "Unavailable"],
-    [503, "Unavailable"],
+test("a proxy's plain-text 404 from the token URL is an outage", async () => {
+  assert.deepEqual(
+    await poolClientTokens(
+      tokenSettings(() => Promise.resolve(proxyNotFound())),
+    ).acquire(),
+    {
+      acquired: "Unavailable",
+      evidence: "client credentials grant returned 404",
+    },
+  );
+});
+
+test("Hydra's 401 invalid_client is an outage while it is confirmed, naming its code", async () => {
+  assert.deepEqual(
+    await poolClientTokens(
+      tokenSettings(() => Promise.resolve(refusal(401, "invalid_client"))),
+    ).acquire(),
+    {
+      acquired: "Unavailable",
+      evidence:
+        "client credentials grant returned 401 invalid_client, a refusal being confirmed: 0s of 60s",
+    },
+  );
+});
+
+/**
+ * Each status, code and body is varied apart from the others, with a code no
+ * failed lookup also gives, so that only the row naming `invalid_client` is an
+ * outage by being confirmed.
+ */
+test("a grant the issuer refused is a denial, one a failed lookup also gives is confirmed first, and everything else is an outage, neither naming the secret", async () => {
+  const secret = "s3cret-that-never-reaches-a-message";
+  const oversized = JSON.stringify({
+    error: "invalid_grant",
+    error_description: "x".repeat(70_000),
+  });
+  for (const [answer, expected] of [
+    ...[
+      "invalid_request",
+      "invalid_grant",
+      "unauthorized_client",
+      "unsupported_grant_type",
+      "invalid_scope",
+    ].map((code) => [() => refusal(400, code), "Denied"] as const),
+    [() => refusal(401, "invalid_grant"), "Denied"],
+    [() => refusal(400, "invalid_client"), "Unavailable"],
+    [() => refusal(403, "invalid_grant"), "Unavailable"],
+    [() => refusal(404, "invalid_request"), "Unavailable"],
+    [() => refusal(401, "server_error"), "Unavailable"],
+    [() => refusal(400, "temporarily_unavailable"), "Unavailable"],
+    [() => new Response("{}", { status: 400 }), "Unavailable"],
+    [() => new Response("{}", { status: 401 }), "Unavailable"],
+    [
+      () => new Response(JSON.stringify("invalid_grant"), { status: 401 }),
+      "Unavailable",
+    ],
+    [() => new Response(oversized, { status: 401 }), "Unavailable"],
+    [() => new Response("{}", { status: 500 }), "Unavailable"],
+    [() => new Response("{}", { status: 503 }), "Unavailable"],
   ] as const) {
-    const tokens = poolClientTokens(
-      tokenSettings(() => Promise.resolve(answered(status, "{}"))),
-    );
-    assert.equal(
-      (await tokens.acquire()).acquired,
-      expected,
-      `status ${String(status)}`,
-    );
+    const acquired = await poolClientTokens({
+      ...tokenSettings(() => Promise.resolve(answer())),
+      clientSecret: secret,
+    }).acquire();
+    assert.equal(acquired.acquired, expected, String(answer));
+    assert.ok(!acquired.evidence.includes(secret), acquired.evidence);
   }
 });
 
@@ -358,4 +501,165 @@ test("a plane refusing this client's release ends the pool rather than losing an
     await losing.settle("pool-token", "one", { outcome: "Accepted" }),
     "Lost",
   );
+  assert.equal(
+    (await losing.poll("pool-token", [], 1, 0)).polled,
+    "Unavailable",
+  );
+});
+
+/** A plane with nothing to offer, answering every poll as the plane does. */
+const quietPlane = poolPlaneClient(planeSettings, () =>
+  Promise.resolve(
+    answered(200, JSON.stringify({ assignments: [], sessions: [], stop: [] })),
+  ),
+);
+
+/** A backend holding nothing and placing everything. */
+const idleBackend: WorkerPoolBackend = {
+  place: () => Promise.resolve({ placed: "Placed" }),
+  stop: () => Promise.resolve({ stopped: "Stopped" }),
+  held: () => Promise.resolve([]),
+  ended: () => Promise.resolve([]),
+  clear: () => Promise.reject(new Error("an idle backend ends no job")),
+};
+
+interface IssuedPool {
+  readonly running: WorkerPoolClient;
+  readonly minted: { count: number };
+  sleep(milliseconds: number): () => Promise<void>;
+}
+
+/**
+ * A pool over an issuer answering each grant from `issued` in turn, the last
+ * from then on, on clocks that move only by what `sleep` moves them.
+ */
+function issuedPool(
+  issued: readonly (() => Response)[],
+  plane: WorkerPoolPlane = quietPlane,
+): IssuedPool {
+  const minted = { count: 0 };
+  const clock = { nowEpochMs: 1_000_000, elapsedMs: 0 };
+  const tokens = poolClientTokens({
+    ...tokenSettings(() => {
+      minted.count += 1;
+      const answer = issued[Math.min(minted.count, issued.length) - 1];
+      assert.ok(answer !== undefined);
+      return Promise.resolve(answer());
+    }),
+    refreshMarginMs: 60_000,
+    mintCooldownMs: 5_000,
+    currentTimeEpochMs: () => clock.nowEpochMs,
+    monotonicMs: () => clock.elapsedMs,
+  });
+  return {
+    running: {
+      tokens,
+      plane,
+      jobs: {
+        end: () => Promise.reject(new Error("no job was killed in this case")),
+      },
+      backend: idleBackend,
+      settings: { concurrencyMax: 1, outageBackoffMs: 1, passesMax: 10 },
+    },
+    minted,
+    sleep: (milliseconds) => () => {
+      clock.nowEpochMs += milliseconds;
+      clock.elapsedMs += milliseconds;
+      return Promise.resolve();
+    },
+  };
+}
+
+test("a run backs off through a proxy's 404 in front of the issuer and of the plane, and ends on the issuer refusing its client", async () => {
+  let polled = 0;
+  const plane = poolPlaneClient(planeSettings, () => {
+    polled += 1;
+    return Promise.resolve(proxyNotFound());
+  });
+  const issuer = issuedPool(
+    [
+      proxyNotFound,
+      () => granted("token-1", 900),
+      () => refusal(401, "invalid_client"),
+    ],
+    plane,
+  );
+  let slept = 0;
+  const passed = await workerPoolClientRun(issuer.running, async () => {
+    slept += 1;
+    await issuer.sleep(841_000)();
+  });
+  assert.deepEqual(passed, {
+    passed: "Denied",
+    evidence: "client credentials grant returned 401 invalid_client",
+  });
+  assert.equal(slept, 3);
+  assert.equal(issuer.minted.count, 4);
+  assert.equal(polled, 1);
+});
+
+test("an invalid_client the issuer gives once and then grants past keeps the run going", async () => {
+  const issuer = issuedPool([
+    () => refusal(401, "invalid_client"),
+    () => granted("token-1", 900),
+  ]);
+  const passed = await workerPoolClientRun(issuer.running, issuer.sleep(5_000));
+  assert.equal(passed.passed, "Reconciled");
+  assert.equal(issuer.minted.count, 2);
+});
+
+/**
+ * Each grant is a pass and a back-off apart. The refusal is confirmed by the
+ * first grant at least the interval after the first refused, and by no
+ * earlier one.
+ */
+test("an invalid_client the issuer gives every grant across the interval ends the run, said to be confirmed until then", async () => {
+  const issuer = issuedPool([() => refusal(401, "invalid_client")]);
+  const passes: WorkerPoolPass[] = [];
+  for (let pass = 0; pass < 3; pass += 1) {
+    passes.push(await workerPoolClientPass(issuer.running));
+    await issuer.sleep(30_000)();
+  }
+  const confirming = "client credentials grant returned 401 invalid_client";
+  assert.deepEqual(passes, [
+    {
+      passed: "Unavailable",
+      evidence: `${confirming}, a refusal being confirmed: 0s of 60s`,
+    },
+    {
+      passed: "Unavailable",
+      evidence: `${confirming}, a refusal being confirmed: 30s of 60s`,
+    },
+    { passed: "Denied", evidence: confirming },
+  ]);
+  assert.equal(issuer.minted.count, 3);
+});
+
+/**
+ * Each pass is longer apart than the interval, so a refusal carried across
+ * the answer between would be final at the third pass rather than the fourth.
+ */
+test("a refusal any other answer breaks is confirmed afresh from the next", async () => {
+  for (const [broken, between] of [
+    [() => granted("token-1", 61), "Reconciled"],
+    [proxyNotFound, "Unavailable"],
+    [() => refusal(400, "invalid_client"), "Unavailable"],
+  ] as const) {
+    const issuer = issuedPool([
+      () => refusal(401, "invalid_client"),
+      broken,
+      () => refusal(401, "invalid_client"),
+    ]);
+    const passes: string[] = [];
+    for (let pass = 0; pass < 4; pass += 1) {
+      passes.push((await workerPoolClientPass(issuer.running)).passed);
+      await issuer.sleep(70_000)();
+    }
+    assert.deepEqual(
+      passes,
+      ["Unavailable", between, "Unavailable", "Denied"],
+      String(broken),
+    );
+    assert.equal(issuer.minted.count, 4);
+  }
 });

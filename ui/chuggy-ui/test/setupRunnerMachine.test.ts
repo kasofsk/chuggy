@@ -14,11 +14,13 @@ import { expect, test } from "vitest";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import {
+  setupChatFiles,
+  setupChatPackageLeast,
   setupChildFailed,
   setupLingerByHand,
   setupLingerCommand,
   setupLingerRead,
-  setupOwnFiles,
+  setupPackageLeast,
   setupPackageProbed,
   setupPoolFilePrefix,
   setupPoolFiles,
@@ -40,9 +42,9 @@ import {
   boxHome,
   boxLogin,
   boxNamePart,
+  boxChatFile,
+  boxChatUnitName,
   boxOwn,
-  boxOwnFile,
-  boxOwnUnitName,
   boxPoolFile,
   boxPools,
   boxPrefix,
@@ -79,7 +81,7 @@ test("the package's things are under the person's configuration directory: the o
   for (const configHome of ["/data/config", "/data/config//"])
     expect(setupRunnerPlaces({ ...surroundings, configHome })).toEqual({
       settings: "/data/config/chuggy-linux/runner.json",
-      login: "/data/config/chuggy-linux/claude-token",
+      login: "/data/config/chuggy-linux/claude/token",
       pools: "/data/config/chuggy/pools",
       units: "/data/config/systemd/user",
       own: boxOwn,
@@ -151,28 +153,29 @@ test("a pool file's service is named as the package names it, which the registra
     setupUnitOf(places, { path: boxPoolFile("acme", "widgets") }).name,
   ).toBe(boxUnitName("acme", "widgets"));
   expect(
-    setupUnitOf(places, { path: boxOwnFile("acme", setupSiteMember) }).name,
-  ).toBe(boxOwnUnitName("acme", setupSiteMember));
+    setupUnitOf(places, { path: boxChatFile("acme", setupSiteMember) }).name,
+  ).toBe(boxChatUnitName("acme", setupSiteMember));
 });
 
-test("the files of the person's own runner in a workspace are the files named for it and one whole part beside the pool files, found by name and never opened", () => {
+test("the files of the person's chat host in a workspace are the files named for it, one whole part and then chat.host, beside the pool files, found by name and never opened", () => {
   const member = boxNamePart(setupSiteMember);
   const machine = pooled([
+    `acme.${member}.chat.host.json`,
     `acme.${member}.json`,
     "acme.widgets.shame.json",
-    "acme.a_2eb.json",
-    "acme.a.b.json",
-    "acme..json",
-    `acme.${member}.json.1234.draft`,
-    `globex.${member}.json`,
-    `acme_2ex.${member}.json`,
+    "acme.a_2eb.chat.host.json",
+    "acme.a.b.chat.host.json",
+    "acme..chat.host.json",
+    `acme.${member}.chat.host.json.1234.draft`,
+    `globex.${member}.chat.host.json`,
+    `acme_2ex.${member}.chat.host.json`,
   ]);
-  expect(setupOwnFiles(machine.ports(), places, "acme")).toEqual([
-    { path: `${boxPools}/acme.${member}.json` },
-    { path: `${boxPools}/acme.a_2eb.json` },
+  expect(setupChatFiles(machine.ports(), places, "acme")).toEqual([
+    { path: `${boxPools}/acme.${member}.chat.host.json` },
+    { path: `${boxPools}/acme.a_2eb.chat.host.json` },
   ]);
   expect(machine.box.read).toEqual([]);
-  expect(setupOwnFiles(setupMachine().ports(), places, "acme")).toEqual([]);
+  expect(setupChatFiles(setupMachine().ports(), places, "acme")).toEqual([]);
 });
 
 test("the commands run on the machine are the package's and the service manager's own, each word a word", () => {
@@ -375,7 +378,7 @@ function packaged(held: string | undefined): SetupMachine {
 
 test("the package is found under the prefix npm names or under the person's own, by its command's whole path, with the version its manifest names where that is one", async () => {
   const probed = (machine: SetupMachine) =>
-    setupPackageProbed(machine.ports(), places);
+    setupPackageProbed(machine.ports(), places, setupPackageLeast);
   const command = `${boxPrefix}/bin/chuggy-linux`;
   expect(await probed(setupMachine())).toEqual({
     found: undefined,
@@ -405,15 +408,19 @@ test("the package is found under the prefix npm names or under the person's own,
   });
 });
 
-test("where the machine's prefix and the person's own both hold the package, the one a run can use is found, and the machine's where both or neither can be used", async () => {
-  const found = async (machineWide: string, theirs: string) => {
+test("where the machine's prefix and the person's own both hold the package, the one a run can use is found, and the machine's where both or neither can be used, a run that sets up a chat host using none older than a chat host needs", async () => {
+  const found = async (
+    machineWide: string,
+    theirs: string,
+    least = setupPackageLeast,
+  ) => {
     const machine = packaged(JSON.stringify({ version: machineWide }));
     machine.box.paths.set(`${boxOwn}/bin/chuggy-linux`, "#!");
     machine.box.paths.set(
       `${boxOwn}/lib/node_modules/chuggy-linux/package.json`,
       JSON.stringify({ version: theirs }),
     );
-    return (await setupPackageProbed(machine.ports(), places)).found;
+    return (await setupPackageProbed(machine.ports(), places, least)).found;
   };
   const own = `${boxOwn}/bin/chuggy-linux`;
   const machineWide = `${boxPrefix}/bin/chuggy-linux`;
@@ -433,6 +440,14 @@ test("where the machine's prefix and the person's own both hold the package, the
     command: own,
     version: "1.0.0-rc.1",
   });
+  expect(await found("0.14.0", "0.35.0", setupChatPackageLeast)).toEqual({
+    command: own,
+    version: "0.35.0",
+  });
+  expect(await found("0.14.0", "0.20.0", setupChatPackageLeast)).toEqual({
+    command: machineWide,
+    version: "0.14.0",
+  });
 });
 
 test("the prefix npm prints is taken only as one whole path, and is this person's to install under only where both of its directories are theirs to write", async () => {
@@ -443,6 +458,7 @@ test("the prefix npm prints is taken only as one whole path, and is this person'
     const { prefix: read, mine } = await setupPackageProbed(
       machine.ports(),
       places,
+      setupPackageLeast,
     );
     return [read, mine];
   };
@@ -598,18 +614,18 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect(await here(bare)).toEqual({
     room: { room: "Open", engine: "docker" },
     held: false,
-    own: false,
+    chat: false,
     claude: "Subscription",
   });
   expect(bare.box.paths).toEqual(before);
   expect(bare.box.acts).toEqual(["services", "docker"]);
 
   const registered = pooled(["acme.widgets.shame.json"]);
-  expect(await here(registered)).toMatchObject({ held: true, own: false });
-  registered.box.paths.set(boxOwnFile("acme", setupSiteMember), "{}");
-  expect(await here(registered)).toMatchObject({ held: true, own: true });
+  expect(await here(registered)).toMatchObject({ held: true, chat: false });
+  registered.box.paths.set(boxChatFile("acme", setupSiteMember), "{}");
+  expect(await here(registered)).toMatchObject({ held: true, chat: true });
   registered.box.engines.docker = "No";
-  expect(await here(registered)).toMatchObject({ held: false, own: false });
+  expect(await here(registered)).toMatchObject({ held: false, chat: false });
 
   const named = setupMachine();
   named.box.paths.set(
@@ -634,7 +650,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
       how: { barred: "Named", settings: boxSettings },
     },
     held: false,
-    own: false,
+    chat: false,
     claude: "Subscription",
   });
   expect(barred.box.acts).toEqual(["services"]);
@@ -659,7 +675,7 @@ test("what the bare command reads of the machine changes nothing: whether a runn
   expect(await here(mac)).toEqual({
     room: { room: "Mac" },
     held: false,
-    own: false,
+    chat: false,
     claude: undefined,
   });
   expect(mac.box.ran).toEqual([]);

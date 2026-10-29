@@ -161,7 +161,7 @@ function LeadAskNotice(props: {
   }
 }
 
-/** Why no pool the asker registered can take a question now, unless the last
+/** Why the asker's chat host cannot take a question now, unless the last
  * press was refused, which says why in its own word. */
 function LeadAskRunner(props: {
   readonly partition: PartitionIdentity;

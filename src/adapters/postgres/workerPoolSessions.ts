@@ -4,8 +4,8 @@
  * session attempt through. The pool plane holds no privilege on a session
  * relation, so every move here is a definer function, scoped as an
  * execution's assignment is to the registration that claimed it: a pool's by
- * its project and name, and a personal runner's by its tenant, its owner and
- * its principal.
+ * its project and name, and a chat host's by its tenant, its owner and its
+ * principal.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -21,13 +21,13 @@ import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import { asProjectId } from "../../interpreter/projectStore.ts";
 import type {
-  PersonalRunnerIdentity,
-  PoolPlaneIdentity,
+  ChatHostIdentity,
   WorkerPoolIdentity,
 } from "../../interpreter/workerPoolIdentity.ts";
 import type {
   SessionLaunchFacts,
   WorkerPoolSessionCandidate,
+  WorkerPoolSessionClaimant,
   WorkerPoolSessionOpened,
   WorkerPoolSessionOpening,
   WorkerPoolSessionRows,
@@ -52,16 +52,18 @@ export function postgresSessionLaunchPrecondition(
       await pool.query(
         sql`INSERT INTO session_launch
               (singleton,image,authority,mirrors,bounds,model,deadline_secs,
-               backoff_secs,published_at)
+               backoff_secs,idle_secs_max,published_at)
             VALUES (1,${launch.image},${JSON.stringify(launch.authority)}::jsonb,
                     ${JSON.stringify(launch.mirrors)}::jsonb,
                     ${JSON.stringify(launch.bounds)}::jsonb,${launch.model},
-                    ${launch.deadlineSecs},${launch.placementBackoffSecs},now())
+                    ${launch.deadlineSecs},${launch.placementBackoffSecs},
+                    ${launch.idleSecsMax ?? null}::bigint,now())
             ON CONFLICT (singleton) DO UPDATE
               SET image=EXCLUDED.image,authority=EXCLUDED.authority,
                   mirrors=EXCLUDED.mirrors,bounds=EXCLUDED.bounds,
                   model=EXCLUDED.model,deadline_secs=EXCLUDED.deadline_secs,
                   backoff_secs=EXCLUDED.backoff_secs,
+                  idle_secs_max=EXCLUDED.idle_secs_max,
                   published_at=EXCLUDED.published_at`,
       );
       signal.throwIfAborted();
@@ -88,10 +90,12 @@ async function sessionLaunch(
     model: string;
     deadline_secs: string;
     backoff_secs: string;
+    idle_secs_max: string | null;
   }>(
     sql`SELECT image,authority,mirrors,bounds,model,
                deadline_secs::text AS deadline_secs,
-               backoff_secs::text AS backoff_secs
+               backoff_secs::text AS backoff_secs,
+               idle_secs_max::text AS idle_secs_max
           FROM session_launch WHERE singleton=1`,
   );
   const row = found.rows[0];
@@ -120,6 +124,14 @@ async function sessionLaunch(
       row.backoff_secs,
       "session launch backoff",
     ),
+    ...(row.idle_secs_max === null
+      ? {}
+      : {
+          idleSecsMax: projectRowCounter(
+            row.idle_secs_max,
+            "session launch idle bound",
+          ),
+        }),
   };
 }
 
@@ -334,22 +346,22 @@ function postgresPoolSessionHolds(
   };
 }
 
-/** A personal runner's claims: every call keyed by its tenant, its owner and the registration that claimed, across its projects. */
-function postgresPersonalSessionClaims(
+/** A chat host's claims: every call keyed by its tenant, its owner and the registration that claimed, across every project of its tenant. */
+function postgresChatHostSessionClaims(
   pool: pg.Pool,
-): SessionClaimRows<PersonalRunnerIdentity> {
+): SessionClaimRows<ChatHostIdentity> {
   return {
     among: async (identity, assignments) =>
       assignments.length === 0
         ? new Set()
         : sessionAssignmentsAnswered(
             await pool.query<{ assignment: string | null }>(
-              sql`SELECT a AS assignment FROM personal_session_assignments(
+              sql`SELECT a AS assignment FROM chat_host_session_assignments(
                     ${identity.tenant},${identity.owner},${identity.principal},
                     ${[...assignments]}::text[]) AS a`,
             ),
           ),
-    awaiting: async (identity, backoffSecs, max) =>
+    awaiting: async (identity, backoffSecs, max, memberScope) =>
       sessionCandidatesOf(
         (
           await pool.query<{
@@ -360,18 +372,23 @@ function postgresPersonalSessionClaims(
             agent_reference: string | null;
           }>(
             sql`SELECT project,session,kind,capabilities,agent_reference
-                  FROM personal_sessions_awaiting_claim(
+                  FROM chat_host_sessions_awaiting_claim(
                     ${identity.tenant},${identity.owner},${identity.principal},
-                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")})`,
+                    ${backoffSecs},${workerPoolSessionBound(max, "claim bound")},
+                    ${memberScope})`,
           )
         ).rows,
       ),
     open: async (identity, opening) => {
       const { candidate } = opening;
       const terms = sessionOpeningTerms(opening);
+      const idleSecs =
+        opening.idleSecs === undefined
+          ? null
+          : workerPoolSessionBound(opening.idleSecs, "idle bound");
       return sessionOpenedOf(
         await pool.query<{ opened: string | null }>(
-          sql`SELECT open_personal_session_attempt(
+          sql`SELECT open_chat_host_session_attempt(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${candidate.project},${candidate.session},
                 ${terms.capabilities}::text[],${terms.agentReference}::text,
@@ -379,22 +396,22 @@ function postgresPersonalSessionClaims(
                 ${opening.bearerSecretDigest},${terms.leaseSecs},
                 ${opening.placementBackoffSecs},${terms.heldMax},
                 ${terms.invocation}::jsonb,${opening.image},
-                ${terms.launch}::jsonb)::text AS opened`,
+                ${terms.launch}::jsonb,${idleSecs}::bigint)::text AS opened`,
         ),
       );
     },
   };
 }
 
-/** What a personal runner holds, through the registration that claimed it. */
-function postgresPersonalSessionHolds(
+/** What a chat host holds, through the registration that claimed it. */
+function postgresChatHostSessionHolds(
   pool: pg.Pool,
-): SessionHoldRows<PersonalRunnerIdentity> {
+): SessionHoldRows<ChatHostIdentity> {
   return {
     renew: async (identity, assignment, leaseSecs) =>
       sessionAnswered(
         await pool.query<{ answered: boolean | null }>(
-          sql`SELECT renew_personal_session_attempt(
+          sql`SELECT renew_chat_host_session_attempt(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${assignment},
                 ${workerPoolSessionBound(leaseSecs, "lease")})::boolean AS answered`,
@@ -403,7 +420,7 @@ function postgresPersonalSessionHolds(
     held: async (identity, assignment) =>
       sessionAnswered(
         await pool.query<{ answered: boolean | null }>(
-          sql`SELECT personal_session_attempt_held(
+          sql`SELECT chat_host_session_attempt_held(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${assignment})::boolean AS answered`,
         ),
@@ -411,7 +428,7 @@ function postgresPersonalSessionHolds(
     refuse: async (identity, assignment, evidence) =>
       sessionAnswered(
         await pool.query<{ answered: boolean | null }>(
-          sql`SELECT refuse_personal_session_attempt(
+          sql`SELECT refuse_chat_host_session_attempt(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${assignment},${evidence})::boolean AS answered`,
         ),
@@ -419,7 +436,7 @@ function postgresPersonalSessionHolds(
     release: async (identity, assignment) =>
       sessionAnswered(
         await pool.query<{ answered: boolean | null }>(
-          sql`SELECT release_personal_session_attempt(
+          sql`SELECT release_chat_host_session_attempt(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${assignment})::boolean AS answered`,
         ),
@@ -427,100 +444,89 @@ function postgresPersonalSessionHolds(
     heldImages: async (identity, max) =>
       sessionImagesOf(
         await pool.query<{ image: string | null }>(
-          sql`SELECT i AS image FROM personal_session_images(
+          sql`SELECT i AS image FROM chat_host_session_images(
                 ${identity.tenant},${identity.owner},${identity.principal},
                 ${workerPoolSessionBound(max, "held bound")}) AS i`,
         ),
       ),
     polled: async (identity) => {
       await pool.query(
-        sql`UPDATE personal_runner r SET last_polled_at=now()
-              WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
-                AND r.principal=${identity.principal}`,
+        sql`UPDATE chat_host h SET last_polled_at=now()
+              WHERE h.tenant=${identity.tenant} AND h.owner=${identity.owner}
+                AND h.principal=${identity.principal}`,
       );
     },
   };
 }
 
+/** The rows of every claimant's side, each keyed by the identity it is held through. */
+interface SessionSides {
+  readonly Dedicated: WorkerPoolSessionRows<WorkerPoolIdentity>;
+  readonly ChatHost: WorkerPoolSessionRows<ChatHostIdentity>;
+}
+
 /** The answer of whichever side `identity` is held through. */
 function sessionsRouted<Answer>(
-  identity: PoolPlaneIdentity,
-  pooled: (identity: WorkerPoolIdentity) => Answer,
-  personal: (identity: PersonalRunnerIdentity) => Answer,
+  identity: WorkerPoolSessionClaimant,
+  sides: SessionSides,
+  call: <Identity>(
+    side: WorkerPoolSessionRows<Identity>,
+    held: Identity,
+  ) => Answer,
 ): Answer {
   switch (identity.kind) {
     case "Dedicated":
-      return pooled(identity);
-    case "Personal":
-      return personal(identity);
+      return call(sides.Dedicated, identity);
+    case "ChatHost":
+      return call(sides.ChatHost, identity);
   }
 }
 
-/** Both callers' sides behind one port, each call routed by who is asking. */
+/** Every claimant's side behind one port, each call routed by who is asking. */
 export function postgresWorkerPoolSessions(pool: pg.Pool): WorkerPoolSessions {
-  const pools = {
-    ...postgresPoolSessionClaims(pool),
-    ...postgresPoolSessionHolds(pool),
-  };
-  const personal = {
-    ...postgresPersonalSessionClaims(pool),
-    ...postgresPersonalSessionHolds(pool),
+  const sides: SessionSides = {
+    Dedicated: {
+      ...postgresPoolSessionClaims(pool),
+      ...postgresPoolSessionHolds(pool),
+    },
+    ChatHost: {
+      ...postgresChatHostSessionClaims(pool),
+      ...postgresChatHostSessionHolds(pool),
+    },
   };
   return {
     launch: () => sessionLaunch(pool),
     among: (identity, assignments) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.among(held, assignments),
-        (held) => personal.among(held, assignments),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.among(held, assignments),
       ),
-    awaiting: (identity, backoffSecs, max) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.awaiting(held, backoffSecs, max),
-        (held) => personal.awaiting(held, backoffSecs, max),
+    awaiting: (identity, backoffSecs, max, memberScope) =>
+      sessionsRouted(identity, sides, (side, held) =>
+        side.awaiting(held, backoffSecs, max, memberScope),
       ),
     open: (identity, opening) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.open(held, opening),
-        (held) => personal.open(held, opening),
-      ),
+      sessionsRouted(identity, sides, (side, held) => side.open(held, opening)),
     renew: (identity, assignment, leaseSecs) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.renew(held, assignment, leaseSecs),
-        (held) => personal.renew(held, assignment, leaseSecs),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.renew(held, assignment, leaseSecs),
       ),
     held: (identity, assignment) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.held(held, assignment),
-        (held) => personal.held(held, assignment),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.held(held, assignment),
       ),
     refuse: (identity, assignment, evidence) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.refuse(held, assignment, evidence),
-        (held) => personal.refuse(held, assignment, evidence),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.refuse(held, assignment, evidence),
       ),
     release: (identity, assignment) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.release(held, assignment),
-        (held) => personal.release(held, assignment),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.release(held, assignment),
       ),
     heldImages: (identity, max) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.heldImages(held, max),
-        (held) => personal.heldImages(held, max),
+      sessionsRouted(identity, sides, (side, held) =>
+        side.heldImages(held, max),
       ),
     polled: (identity) =>
-      sessionsRouted(
-        identity,
-        (held) => pools.polled(held),
-        (held) => personal.polled(held),
-      ),
+      sessionsRouted(identity, sides, (side, held) => side.polled(held)),
   };
 }

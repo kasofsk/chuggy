@@ -54,6 +54,7 @@ import {
   type SessionPlaneStore,
 } from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresSessionScheduler } from "../../src/adapters/postgres/sessionScheduler.ts";
+import { postgresChatHostRegistry } from "../../src/adapters/postgres/chatHost.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import {
   schedulerRole,
@@ -194,8 +195,26 @@ export async function sessionRigRouted(
   );
 }
 
-/** Registers the member's personal runner in the project's tenant, serving the project and never having polled. */
+/** Registers the member's chat host in the project's tenant, never having polled. */
 export async function sessionRigRunner(
+  rig: SessionRig,
+  partition: Partition,
+  member: Principal,
+): Promise<void> {
+  const registered = await postgresChatHostRegistry(rig.harness.pool).register({
+    tenant: partition.tenant,
+    owner: member,
+    clientId: `chuggy-host-${randomUUID()}`,
+    principal: asPrincipal(`https://issuer.invalid#host-${randomUUID()}`),
+  });
+  if (registered.written !== "Registered")
+    throw new Error(
+      `session rig: the member's chat host answered ${registered.written}`,
+    );
+}
+
+/** Registers one of the member's personal runners in the project's tenant, serving the project and polled just now. */
+export async function sessionRigPersonalRunner(
   rig: SessionRig,
   partition: Partition,
   member: Principal,
@@ -213,6 +232,10 @@ export async function sessionRigRunner(
   const allowed = await registry.allow(key, partition.project);
   if (allowed !== "Allowed")
     throw new Error(`session rig: the member's runner allowed ${allowed}`);
+  await rig.harness.query(
+    `UPDATE personal_runner SET last_polled_at=now() WHERE tenant=$1 AND owner=$2`,
+    [partition.tenant, member],
+  );
 }
 
 /** Moves a turn's enqueue back by `secs`, as though it had waited that long. */

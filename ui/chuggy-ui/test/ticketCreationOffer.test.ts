@@ -27,6 +27,7 @@ import {
 } from "../app/core/ticketCreation.ts";
 import {
   creationBinding,
+  creationBootstrapRevision,
   creationDeclared as declared,
   creationForm,
   creationListed,
@@ -142,7 +143,7 @@ test("a binding that declares nothing is offered the bootstrap the project holds
   ]);
   expect(creationConfigurationsOffered(mixed, both)[0]).toStrictEqual({
     name: "bootstrap",
-    revision: "bootstrap",
+    revision: creationBootstrapRevision(scratch),
     listed: undefined,
   });
 });
@@ -153,17 +154,49 @@ test("the bootstrap offered is the revision the binding's answer names, once how
     configurationsHeld: { result: "Bootstrapped" as const, revision: "seed" },
   };
   expect(revisions(mixed, [imported(chuggy), seeded])).toStrictEqual([
+    "seed",
     "n-development",
     "n-sonnet",
-    "seed",
   ]);
+  const fabric = {
+    ...bootstrapped("https://forge.test/kasofsk/chuggy-fabric"),
+    configurationsHeld: { result: "Bootstrapped" as const, revision: "seed" },
+  };
+  expect(revisions(mixed, [imported(chuggy), seeded, fabric])).toStrictEqual([
+    "seed",
+    "n-development",
+    "n-sonnet",
+  ]);
+});
+
+/**
+ * Each binding declaring nothing holds the bootstrap authored for it, and a
+ * ticket releases under that one alone, so each is offered by its repository.
+ */
+test("bindings declaring nothing are each offered their own bootstrap, told apart by their repositories", () => {
+  const fabric = "https://forge.test/kasofsk/chuggy-fabric";
+  const mirror = "https://mirror.test/gdoteof/scratch";
   expect(
-    revisions(mixed, [
+    creationConfigurationsOffered(mixed, [
       imported(chuggy),
       bootstrapped(scratch),
-      bootstrapped("https://forge.test/kasofsk/chuggy-fabric"),
-    ]),
-  ).toStrictEqual(["bootstrap", "n-development", "n-sonnet"]);
+      bootstrapped(fabric),
+    ]).slice(0, 2),
+  ).toStrictEqual([
+    {
+      name: "bootstrap · gdoteof/scratch",
+      revision: creationBootstrapRevision(scratch),
+      listed: undefined,
+    },
+    {
+      name: "bootstrap · kasofsk/chuggy-fabric",
+      revision: creationBootstrapRevision(fabric),
+      listed: undefined,
+    },
+  ]);
+  expect(
+    names(mixed, [bootstrapped(scratch), bootstrapped(mirror)]),
+  ).toStrictEqual([`bootstrap · ${scratch}`, `bootstrap · ${mirror}`]);
 });
 
 test("the bootstrap is not offered where no live binding holds one", () => {
@@ -187,7 +220,11 @@ test("a declared configuration named bootstrap is never taken for the project's 
   const seeded = [row, ...mixed];
   expect(creationConfigurationsOffered(seeded, both).slice(0, 2)).toStrictEqual(
     [
-      { name: "bootstrap", revision: "bootstrap", listed: undefined },
+      {
+        name: "bootstrap",
+        revision: creationBootstrapRevision(scratch),
+        listed: undefined,
+      },
       {
         name: "bootstrap · kasofsk/chuggy",
         revision: "repository:0a1b2c3:bootstrap",
@@ -213,6 +250,22 @@ const authored = [
 test("a project whose live bindings all declare nothing is offered the bootstrap alone", () => {
   expect(names(authored, [bootstrapped(scratch)])).toStrictEqual(["bootstrap"]);
   expect(names(listing, [bootstrapped(scratch)])).toStrictEqual(["bootstrap"]);
+});
+
+/** A bootstrap releases only in the repository it was authored for, and the
+ * project's one from before each repository had its own in none, so neither
+ * is offered where no live binding holds it. */
+test("a project whose live bindings hold nothing is never offered a bootstrap", () => {
+  const legacy = [creationSummary("bootstrap", "Ready"), ...authored];
+  expect(names(legacy, [unheld(chuggy)])).toStrictEqual(["r9"]);
+  const another = [
+    creationSummary(creationBootstrapRevision(scratch), "Ready"),
+    ...authored,
+  ];
+  expect(revisions(another, [unheld(chuggy)])).toStrictEqual(["r9"]);
+  expect(
+    names([creationSummary("bootstrap", "Ready")], [unheld(chuggy)]),
+  ).toStrictEqual([]);
 });
 
 test("a project whose live bindings hold nothing is offered its newest ready revision", () => {

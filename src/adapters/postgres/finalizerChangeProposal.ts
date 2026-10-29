@@ -35,6 +35,25 @@
  * same way, and `merge_heard_at` is when the forge was last heard about the
  * merge at all, which is what either wait is aged from.
  *
+ * AN UPDATE IS IN FLIGHT UNTIL A READING SEES IT, ONE PER BASE. The forge
+ * answers an update before it makes it, so `merge_update_unread` stands from
+ * the count until the next reading of the proposal is recorded. Whose turn it
+ * is to update is read across every open request's proposal on the same
+ * repository and base: none may update while another's update is unread, and
+ * only the oldest found behind may update at all. The count takes a lock on
+ * that repository and base for its transaction and asks the first half again
+ * under it, so two finalizers cannot both start one.
+ *
+ * AN ADOPTED HEAD IS WRITTEN BESIDE THE ONE ASKED FOR, never over it, and only
+ * where the reading the row keeps found the proposal at that head.
+ *
+ * AN ADOPTED PROPOSAL IS A ROW ANSWERED IN THE TRANSACTION THAT STARTS IT. The
+ * proposal an earlier request of the same ticket recorded is found by the
+ * ticket and the two refs its rows were opened between, newest first, and only
+ * where a create or a reading proved it. Its row is inserted as every row is,
+ * with no result, and answered with the reading that found it open, counting no
+ * create because none was made.
+ *
  * NO WRITE OUTLIVES THE CLAIM THAT AUTHORIZED IT. Every write here reads the
  * current epoch and rechecks the claim under the request row's lock, because
  * the first of them authorizes a call to the forge and the rest answer one: a
@@ -93,6 +112,7 @@ import {
   type ChangeProposalCreationAnswer,
   type ChangeProposalCreationStored,
   type ChangeProposalEvidence,
+  type ChangeProposalIdentity,
   type ChangeProposalMergeAnswer,
   type ChangeProposalMergeConcluded,
   type ChangeProposalMergeReconciliationAnswer,
@@ -100,10 +120,13 @@ import {
   type ChangeProposalMerging,
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalReconciliationStored,
+  type ChangeProposalRequest,
+  type ChangeProposalUpdating,
   type OpenedChangeProposalPublication,
 } from "../../interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
+  ChangeProposalUpdateWrite,
   ChangeProposalMergeResult,
   ChangeProposalRecord,
   ChangeProposalResult,
@@ -115,6 +138,7 @@ import {
   asGitRefName,
   asRepositoryId,
   type FinalizationClaim,
+  type GitObjectId,
 } from "../../interpreter/finalizer.ts";
 import { projectRowCounter } from "./rows.ts";
 import { finalizerRowValue } from "./finalizerRows.ts";
@@ -150,6 +174,11 @@ interface ChangeProposalRow {
   readonly merge_declines: string;
   readonly merge_readings: string;
   readonly merge_heard_secs: string | null;
+  readonly merge_head: string | null;
+  readonly merge_updates: string;
+  readonly merge_update_declines: string;
+  readonly merge_update_unread: boolean;
+  readonly update_turn: boolean;
 }
 
 /** The columns one answer writes, whichever arm it came back on. */
@@ -268,6 +297,7 @@ function changeProposalCreatedOf(
   switch (created) {
     case "Created":
     case "AlreadyExists":
+    case "Adopted":
       return {
         created,
         evidence: changeProposalEvidenceOf(row.creation_evidence, created),
@@ -548,6 +578,25 @@ function publicationOf(
   };
 }
 
+/** How updating the row stands, the ceiling spent from the updates the forge may have taken. */
+function changeProposalUpdatingOf(
+  row: ChangeProposalRow,
+): ChangeProposalUpdating {
+  const updates = projectRowCounter(
+    row.merge_updates,
+    "change proposal updates",
+  );
+  const declines = projectRowCounter(
+    row.merge_update_declines,
+    "change proposal update declines",
+  );
+  return {
+    updates: updates - declines,
+    unread: row.merge_update_unread,
+    turn: row.update_turn,
+  };
+}
+
 /**
  * Everything the pure step reads of one stored proposal, absent until one is
  * attempted. The state is read from the counters, which is the whole reason the
@@ -574,8 +623,30 @@ export async function finalizerChangeProposalRead(
             merge_readings::text AS merge_readings,
             CASE WHEN merge_heard_at IS NOT NULL
                  THEN floor(extract(epoch FROM (now() - merge_heard_at)))
-                        ::bigint::text END AS merge_heard_secs
-       FROM finalization_change_proposal
+                        ::bigint::text END AS merge_heard_secs,
+            merge_head,
+            merge_updates::text AS merge_updates,
+            merge_update_declines::text AS merge_update_declines,
+            merge_update_unread,
+            NOT EXISTS (
+              SELECT 1 FROM finalization_change_proposal s
+                JOIN finalization_request f
+                  ON f.tenant = s.tenant AND f.project = s.project
+                 AND f.request = s.request
+               WHERE s.base_ref = c.base_ref
+                 AND s.merge_reading_evidence->>'repository'
+                     = c.merge_reading_evidence->>'repository'
+                 AND (s.tenant, s.project, s.request)
+                     <> (c.tenant, c.project, c.request)
+                 AND f.state IN ('Open', 'Registered')
+                 AND s.merge IS NULL
+                 AND (s.merge_update_unread
+                      OR (s.merge_reading = 'Unmerged'
+                          AND s.merge_reading_evidence->>'mergeability' = 'Behind'
+                          AND (s.opened_at, s.tenant, s.project, s.request)
+                              < (c.opened_at, c.tenant, c.project, c.request)))
+            ) AS update_turn
+       FROM finalization_change_proposal c
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}`,
   );
@@ -585,6 +656,10 @@ export async function finalizerChangeProposalRead(
     asked: changeProposalAskedOf(row),
     publication: publicationOf(row),
     merging: mergingOf(row),
+    ...(row.merge_head === null
+      ? {}
+      : { adopted: asGitObjectId(row.merge_head) }),
+    updating: changeProposalUpdatingOf(row),
   };
 }
 
@@ -610,6 +685,97 @@ async function finalizerChangeProposalClaimStands(
       FOR UPDATE`,
   );
   return held.rowCount === 1;
+}
+
+/** The identity a stored document says its proposal has, read the way its evidence is. */
+const changeProposalStoredIdentitySchema =
+  changeProposalStoredEvidenceSchema.shape.identity;
+
+/**
+ * The identity of the newest proposal an earlier request of the claim's ticket
+ * proved on this head and base, absent where none did. Only a create the forge
+ * answered with it and a reading that accepted it prove one.
+ */
+export async function finalizerChangeProposalTicket(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  place: Pick<ChangeProposalRequest, "head" | "base">,
+): Promise<ChangeProposalIdentity | undefined> {
+  const found = await client.query<{ identity: unknown }>(
+    sql`SELECT coalesce(
+              CASE WHEN c.creation IN ('Created', 'AlreadyExists', 'Adopted')
+                   THEN c.creation_evidence END,
+              CASE WHEN c.reconciliation = 'Accepted'
+                   THEN c.reconciliation_evidence END)->'identity' AS identity
+         FROM finalization_change_proposal c
+         JOIN finalization_request f
+           ON f.tenant = c.tenant AND f.project = c.project
+          AND f.request = c.request
+        WHERE c.tenant = ${claim.partition.tenant} AND c.project = ${claim.partition.project}
+          AND f.ticket = ${claim.ticket}
+          AND c.request <> ${claim.request}
+          AND c.head_ref = ${place.head.ref} AND c.base_ref = ${place.base.ref}
+          AND (c.creation IN ('Created', 'AlreadyExists', 'Adopted')
+               OR c.reconciliation = 'Accepted')
+        ORDER BY c.opened_at DESC, c.request DESC
+        LIMIT 1`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const parsed = changeProposalStoredIdentitySchema.safeParse(row.identity);
+  if (!parsed.success) {
+    throw new Error("finalizer row: a proved proposal carries no identity");
+  }
+  const identity = parsed.data;
+  return {
+    forge: asForgeBindingId(identity.forge),
+    remote: asProposalRemoteIdentity(identity.remote),
+    ...(identity.number === undefined
+      ? {}
+      : { number: asProposalNumber(identity.number) }),
+  };
+}
+
+/**
+ * Starts this request's row as the adoption of a proposal read open, with that
+ * reading as its evidence and no create counted. A row already standing, a
+ * reading no document holds, and a claim that has been retired each write
+ * nothing.
+ */
+export async function finalizerChangeProposalAdoption(
+  client: pg.PoolClient,
+  record: ChangeProposalRecord,
+  evidence: ChangeProposalEvidence,
+): Promise<ChangeProposalWritten> {
+  const { claim, request } = record;
+  const document = changeProposalStoredEvidence(evidence);
+  if (document === undefined) return { wrote: "Nothing" };
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const started = await client.query(
+    sql`INSERT INTO finalization_change_proposal
+       (tenant, project, request, permit, proposal_request,
+        head_ref, head_commit, base_ref, base_commit, title, body)
+     VALUES (${claim.partition.tenant},${claim.partition.project},${claim.request},
+             ${record.permit},${request.request},
+             ${request.head.ref},${request.head.commit},
+             ${request.base.ref},${request.base.commit},
+             ${request.title},${request.body})
+     ON CONFLICT (tenant, project, request) DO NOTHING`,
+  );
+  if (started.rowCount !== 1) return { wrote: "Nothing" };
+  const adopted = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET creation = 'Adopted', creation_evidence = ${document}::jsonb
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND creation IS NULL AND attempts = 0`,
+  );
+  if (adopted.rowCount !== 1)
+    throw new Error(
+      "postgres finalizer: the row just started took no adoption",
+    );
+  return { wrote: "Row" };
 }
 
 /**
@@ -970,6 +1136,7 @@ async function finalizerChangeProposalMergeRead(
               + CASE WHEN merge IS NULL
                       AND merge_attempts = merge_refusals + merge_declines + 1
                      THEN 1 ELSE 0 END,
+            merge_update_unread = false,
             merge_heard_at = now()
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}
@@ -995,4 +1162,109 @@ export function finalizerChangeProposalMergeRecord(
         record.claim,
         record.result.reconciled,
       );
+}
+
+/**
+ * Counts one update of a waiting merge's branch, under a lock on its
+ * repository and base held to the end of the transaction, so no other update
+ * there is counted beside it. A row with an update already unread, one not
+ * waiting with a reading, one whose turn another proposal holds, and one whose
+ * claim has been retired are each left exactly as they stand.
+ */
+export async function finalizerChangeProposalUpdateMark(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+              coalesce(merge_reading_evidence->>'repository', '') || ' ' || base_ref,
+              0))::text AS locked
+         FROM finalization_change_proposal
+        WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+          AND request = ${claim.request}`,
+  );
+  const marked = await client.query(
+    sql`UPDATE finalization_change_proposal c
+        SET merge_updates = merge_updates + 1,
+            merge_update_unread = true
+      WHERE c.tenant = ${claim.partition.tenant} AND c.project = ${claim.partition.project}
+        AND c.request = ${claim.request}
+        AND c.merge IS NULL
+        AND c.merge_attempts = c.merge_refusals + c.merge_declines
+        AND c.merge_reading = 'Unmerged'
+        AND NOT c.merge_update_unread
+        AND NOT EXISTS (
+          SELECT 1 FROM finalization_change_proposal s
+            JOIN finalization_request f
+              ON f.tenant = s.tenant AND f.project = s.project
+             AND f.request = s.request
+           WHERE s.base_ref = c.base_ref
+             AND s.merge_reading_evidence->>'repository'
+                 = c.merge_reading_evidence->>'repository'
+             AND f.state IN ('Open', 'Registered')
+             AND s.merge IS NULL
+             AND s.merge_update_unread)`,
+  );
+  return marked.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Records what the update in flight came to: one the forge was asked for
+ * stands unread and is the moment the forge was last heard, one it refused is
+ * read and spent, and one it would not take is released unspent.
+ */
+export async function finalizerChangeProposalUpdateRecord(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  write: ChangeProposalUpdateWrite,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_update_unread = ${write === "Asked"},
+            merge_update_declines = merge_update_declines
+              + ${write === "Declined" ? 1 : 0},
+            merge_heard_at = CASE WHEN ${write === "Declined"}
+                                  THEN merge_heard_at ELSE now() END
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_update_unread`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Pins the head the kept reading found as the one this proposal is merged at.
+ * A row answered as a moved head gives that answer up in the same write and
+ * the merge it answered is released, so the next merge is counted afresh
+ * under the same ceiling; a row with a merge in flight, one whose reading
+ * found another head, and one whose claim has been retired take none.
+ */
+export async function finalizerChangeProposalAdopt(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  head: GitObjectId,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_head = ${head},
+            merge = NULL,
+            merge_refusals = merge_refusals
+              + CASE WHEN merge = 'HeadMoved' THEN 1 ELSE 0 END
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge_reading = 'Unmerged'
+        AND merge_reading_evidence->'head'->>'commit' = ${head}
+        AND merge_head IS DISTINCT FROM ${head}
+        AND ((merge IS NULL
+              AND merge_attempts = merge_refusals + merge_declines)
+             OR merge = 'HeadMoved')`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
 }

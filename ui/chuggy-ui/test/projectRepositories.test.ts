@@ -46,6 +46,7 @@ import {
   repositoryUnbindNote,
   repositoryUnbindQuestion,
   repositoryWorkerLine,
+  repositoryWorkerReachLine,
   repositoryWorkerReading,
   type InstallationGrant,
   type RepositoryDrawn,
@@ -56,7 +57,6 @@ import {
 } from "../app/core/projectRepositories.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
-import { repositoryRefusalsDrawn } from "./repositoryRefusals.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   executionPlacementBody,
@@ -106,6 +106,7 @@ test("a row is marked bound by the address the binding names", () => {
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
         landing: { mode: "Push" as const },
+        pipelinesWritable: false,
       },
     ],
     [],
@@ -120,6 +121,7 @@ test("a row whose binding is retired is not marked bound", () => {
     repository: "https://forge.test/kasofsk/chuggy",
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode: "Push" as const },
+    pipelinesWritable: false,
   };
   const marked = (retiredAt: string | undefined): readonly boolean[] =>
     repositoryChoices(
@@ -476,7 +478,30 @@ test("each refusal is the one line the picker draws under itself", () => {
       body: undefined,
     }),
   ).toBe("Not installed");
-  repositoryRefusalsDrawn(status);
+  expect(
+    status({ outcome: "Conflict", code: "RepositoryBound", body: undefined }),
+  ).toBe("Bound elsewhere");
+  expect(
+    status({ outcome: "Conflict", code: "OperationConflict", body: undefined }),
+  ).toBe("Conflict");
+  expect(
+    status({
+      outcome: "Retryable",
+      code: "ForgeUnavailable",
+      retryAfterSeconds: 5,
+    }),
+  ).toBe("Deferring");
+  expect(status({ outcome: "Absent" })).toBe("Not found");
+  expect(status({ outcome: "Unauthenticated" })).toBe("Not signed in");
+  expect(status({ outcome: "Fault", code: "InternalError", status: 500 })).toBe(
+    "Failed",
+  );
+  expect(status({ outcome: "Unreachable", reason: "offline" })).toBe(
+    "Unreachable",
+  );
+  expect(status({ outcome: "Unreadable", reason: "bad body" })).toBe(
+    "Unreadable",
+  );
 });
 
 /** A retired binding is the one refusal Retry cannot outlast, so it alone
@@ -567,6 +592,7 @@ test("an unbind the route retired leaves nothing to say, and a refusal is its wo
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
         landing: { mode: "Push" },
+        pipelinesWritable: false,
         retiredAt: "2026-09-14T00:00:00Z",
       },
     }),
@@ -656,7 +682,7 @@ const unauthorizing: PanelState<ForgeAppsResponse> = ready({ apps: [] });
  * only where the deployment answers a client to authorize, so a line that
  * carried a step either withholds is a step the reader cannot take.
  */
-test("the line under Add and Create says what is missing, and carries a step only where it is offered", () => {
+test("the line under Add says what is missing, and carries a step only where it is offered", () => {
   const cases: readonly (readonly [
     PanelState<ForgeInstallationsResponse>,
     PanelState<ForgeAppsResponse>,
@@ -834,6 +860,7 @@ const bound = {
   repository: "https://forge.test/kasofsk/chuggy",
   boundAt: "2026-09-11T00:00:00Z",
   landing: { mode: "Push" as const },
+  pipelinesWritable: false,
 };
 
 const both = [claim("portal", "kasofsk"), claim("worker", "kasofsk")];
@@ -890,3 +917,31 @@ test.each(["Connect", "InstallWorker"] as const)(
     ).toBe(false);
   },
 );
+
+test("a bound row names the installation that does not select it and its page, the account none is connected on, or that GitHub said nothing", () => {
+  const settingsUrl =
+    "https://github.com/organizations/kasofsk/settings/installations/156786211";
+  expect(
+    repositoryWorkerReachLine({
+      reach: "Unselected",
+      installationId: "156786211",
+      settingsUrl,
+    }),
+  ).toStrictEqual({
+    status: "Worker app missing",
+    detail:
+      "The worker app's installation 156786211 does not select this repository.",
+    settingsUrl,
+  });
+  expect(
+    repositoryWorkerReachLine({ reach: "Unclaimed", account: "kasofsk" }),
+  ).toStrictEqual({
+    status: "Worker app missing",
+    detail: "No worker app installation is connected on kasofsk.",
+  });
+  expect(repositoryWorkerReachLine({ reach: "Unknown" })).toStrictEqual({
+    status: "Worker app unread",
+    detail:
+      "GitHub did not say whether the worker app reaches this repository.",
+  });
+});

@@ -1,5 +1,7 @@
 /* Menu: the panel a Radix dropdown draws its choices in, and the items
-   inside it. */
+   inside it. The panel's edge is its own and does not come and go with focus,
+   which Radix moves between the panel and its items as the pointer moves; the
+   item under the pointer or the keys is told by its background alone. */
 
 @layer ui {
   .menu {
@@ -11,10 +13,15 @@
     padding: var(--space-1);
     background: var(--surface-1);
     color: var(--ink-1);
-    border: var(--hairline) solid var(--edge);
+    border: var(--hairline) solid var(--edge-control);
     border-radius: var(--radius-3);
     font: var(--weight-regular) var(--text-md) / var(--leading-dense)
       var(--font-prose);
+  }
+
+  .menu:focus-visible {
+    box-shadow: none;
+    border-radius: var(--radius-3);
   }
 
   .menu-item {
@@ -28,7 +35,10 @@
     overflow-wrap: anywhere;
   }
 
-  .menu-item[data-highlighted] {
+  .menu-item[data-highlighted],
+  .menu-item:focus-visible {
     background: var(--surface-2);
+    box-shadow: none;
+    border-radius: var(--radius-3);
   }
 }

@@ -29,6 +29,7 @@ import {
 } from "../../../../src/contract/brief.ts";
 import { imageMediaTypes } from "../../../../src/contract/http.ts";
 import type { ImageMediaType } from "../../../../src/contract/http.ts";
+import type { WorkloadOverride } from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
@@ -36,7 +37,10 @@ import {
   type BriefFinalizationMode,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
-import { bootstrapConfigurationName } from "../../../../src/contract/responses.ts";
+import {
+  bootstrapConfigurationName,
+  bootstrapConfigurationRevisionPrefix,
+} from "../../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   DraftInitializationResponse,
@@ -57,7 +61,12 @@ import {
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import type { ProjectAbilityRead } from "./projectAbilities.ts";
+import { projectAbilityRefused } from "./projectAbilities.ts";
+import type {
+  ProjectAbilities,
+  ProjectAbilityRead,
+} from "./projectAbilities.ts";
+import { programPlanned, programShort } from "./programPlan.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { repositoryConfigurations } from "./repositoryConfigurations.ts";
 import { sessionRunnerShortWord } from "./sessionRunners.ts";
@@ -67,6 +76,7 @@ import {
   overrideFieldLabel,
   overrideFields,
   overridesNestedOf,
+  overridesSame,
 } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import type { WorkRunner } from "./workRunner.ts";
@@ -106,6 +116,10 @@ export interface TicketCreationForm extends CreationAuthoring {
    * catalog's default; sent only under a catalog, and cleared when another
    * configuration is chosen, whose names are its own. */
   readonly selection: ConfigurationSelection;
+  /** What this ticket replaces of each catalog workload, by the name the
+   * catalog holds it under; sent only under a catalog, and cleared with the
+   * selection. */
+  readonly workloads: Readonly<Record<string, WorkloadOverride>>;
 }
 
 export type CreationField =
@@ -138,14 +152,18 @@ export type CreationAssembly =
   | { readonly assembled: "Faults"; readonly faults: readonly CreationFault[] };
 
 /**
- * The newest revision this project has ready. The list arrives newest first, so
- * the first ready one is the latest, and a project with none is a state to draw
- * rather than a choice to offer.
+ * The newest revision this project has ready that is no bootstrap, which
+ * releases only in the repository it was authored for. The list arrives newest
+ * first, so the first such is the latest, and a project with none is a state
+ * to draw rather than a choice to offer.
  */
 export function latestReadyConfiguration(
   configurations: readonly ConfigurationSummary[],
 ): ConfigurationSummary | undefined {
-  return configurations.find((summary) => summary.readiness === "Ready");
+  return configurations.find(
+    (summary) =>
+      summary.readiness === "Ready" && !creationBootstrapIs(summary.revision),
+  );
 }
 
 /**
@@ -228,35 +246,65 @@ function creationOfferName(
   return (apart ?? creationConfigurationName)(configuration);
 }
 
+/** One bootstrap a live binding is released under, beside the repository it is that binding's for. */
+interface CreationBootstrap {
+  readonly revision: string;
+  readonly repository: string;
+}
+
 /**
  * What the project holds for its live bindings, as the listing of them says:
  * the ones whose repositories declared names into it, and the bootstrap
- * revisions the ones declaring none are released under.
+ * revisions the ones declaring none are released under, each once.
  */
 function creationHeld(
   repositories: readonly ProjectRepositoryListedResponse[],
 ): {
   readonly imported: readonly ProjectRepositoryListedResponse[];
-  readonly bootstraps: readonly string[];
+  readonly bootstraps: readonly CreationBootstrap[];
 } {
   const live = creationRepositories(repositories);
-  const bootstraps = live.flatMap(({ configurationsHeld: held }) =>
-    held?.result === "Bootstrapped" ? [held.revision] : [],
+  const bootstraps = live.flatMap(({ repository, configurationsHeld: held }) =>
+    held?.result === "Bootstrapped"
+      ? [{ revision: held.revision, repository }]
+      : [],
   );
   return {
     imported: live.filter(
       (binding) => binding.configurationsHeld?.result === "Imported",
     ),
-    bootstraps: [...new Set(bootstraps)],
+    bootstraps: bootstraps.filter(
+      (bootstrap, index) =>
+        bootstraps.findIndex((one) => one.revision === bootstrap.revision) ===
+        index,
+    ),
   };
+}
+
+/**
+ * The name one bootstrap is offered by: the bootstrap's own where it is the
+ * only one, and beside its repository where several are — short where that
+ * tells them apart, whole where two shorten alike.
+ */
+function creationBootstrapName(
+  bootstrap: CreationBootstrap,
+  bootstraps: readonly CreationBootstrap[],
+): string {
+  if (bootstraps.length === 1) return bootstrapConfigurationName;
+  const short = repositoryLabel(bootstrap.repository);
+  const apart = bootstraps.every(
+    (other) =>
+      other === bootstrap || repositoryLabel(other.repository) !== short,
+  );
+  return `${bootstrapConfigurationName} · ${apart ? short : bootstrap.repository}`;
 }
 
 /**
  * The configurations a new ticket may be drawn under, by name and in name
  * order: what the newest commit of each live binding that declares has ready,
  * and the bootstrap of each that declares nothing. A project whose live
- * bindings hold neither has its newest ready revision and nothing else,
- * whichever binding or author that came from.
+ * bindings hold neither has its newest ready revision that is no bootstrap
+ * and nothing else, whichever binding that came from.
  */
 export function creationConfigurationsOffered(
   configurations: readonly ConfigurationSummary[],
@@ -272,17 +320,22 @@ export function creationConfigurationsOffered(
     .filter((summary) => summary.readiness === "Ready");
   const listed =
     imported.length === 0 && bootstraps.length === 0 ? fallback : declared;
+  const bootstrapsNamed = bootstraps.map((bootstrap) => ({
+    name: creationBootstrapName(bootstrap, bootstraps),
+    revision: bootstrap.revision,
+    listed: undefined,
+  }));
   const offered: readonly CreationOfferListed[] = [
     ...listed.map((one) => ({
-      name: creationOfferName(one, listed, bootstraps),
+      name: creationOfferName(
+        one,
+        listed,
+        bootstrapsNamed.map(({ name }) => name),
+      ),
       revision: one.revision,
       listed: one,
     })),
-    ...bootstraps.map((revision) => ({
-      name: revision,
-      revision,
-      listed: undefined,
-    })),
+    ...bootstrapsNamed,
   ];
   return offered.toSorted((left, right) => {
     if (left.name === right.name) return 0;
@@ -383,10 +436,11 @@ export function creationConfigurationAsked(
  */
 export function creationConfigurationLabel(offer: CreationOffer): Label {
   const held = offer.initialization.configuration;
-  const label = configurationLabel(
-    held.revision,
-    offer.listed?.version ?? held.version,
-  );
+  const version = offer.listed?.version ?? held.version;
+  const label =
+    version === undefined && offer.listed === undefined
+      ? { text: offer.name, title: held.revision }
+      : configurationLabel(held.revision, version);
   const commit =
     offer.listed === undefined
       ? undefined
@@ -397,19 +451,29 @@ export function creationConfigurationLabel(offer: CreationOffer): Label {
 
 /**
  * What a ticket on the bootstrap is for, which is the one thing it can do:
- * write the repository's own configuration. An authored bootstrap's revision
- * is its name, and an imported one is known by the name it was declared under.
+ * write the repository's own configuration. An authored bootstrap is known by
+ * its revision, a repository's named for it and a project's from before each
+ * repository had its own being the bootstrap's name, and an imported one by the
+ * name it was declared under.
  */
 export function creationBootstrapLine(
   offer: CreationOffer,
 ): string | undefined {
   const name =
     offer.listed === undefined
-      ? offer.name
+      ? offer.initialization.configuration.revision
       : creationConfigurationName(offer.listed);
-  return name === bootstrapConfigurationName
+  return creationBootstrapIs(name)
     ? "First ticket · writes this repository's configuration"
     : undefined;
+}
+
+/** Whether a revision or a declared name is a bootstrap's. */
+function creationBootstrapIs(name: string): boolean {
+  return (
+    name === bootstrapConfigurationName ||
+    name.startsWith(bootstrapConfigurationRevisionPrefix)
+  );
 }
 
 /**
@@ -488,6 +552,7 @@ export function creationFormFrom(
     }),
     overrides: {},
     selection: {},
+    workloads: {},
   };
 }
 
@@ -607,12 +672,15 @@ export function creationConfigurationChosen(
   name: string,
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  return creationDrawnChosen(
-    form,
-    offers,
-    { configuration: name, selection: {} },
-    repositories,
-  );
+  return {
+    ...creationDrawnChosen(
+      form,
+      offers,
+      { configuration: name, selection: {} },
+      repositories,
+    ),
+    workloads: {},
+  };
 }
 
 /** The form with another selection from the catalog it is drawn under. */
@@ -1060,20 +1128,83 @@ function creationUndrawnFaults(
 }
 
 /**
- * What a form sends of its configuration's own choices: the selection under a
- * catalog and the overrides under any other configuration, each with no key at
- * all where it holds none.
+ * What a form sends of its configuration's own choices: the selection and the
+ * workloads it overrides under a catalog, and the overrides under any other
+ * configuration, each with no key at all where it holds none.
  */
 function creationChoicesOf(
   form: TicketCreationForm,
   offer: CreationOffer | undefined,
 ): { readonly overrides?: unknown; readonly selection?: unknown } {
   if (creationCatalogOf(offer) !== undefined)
-    return Object.keys(form.selection).length === 0
-      ? {}
-      : { selection: form.selection };
+    return {
+      ...(Object.keys(form.selection).length === 0
+        ? {}
+        : { selection: form.selection }),
+      ...(Object.keys(form.workloads).length === 0
+        ? {}
+        : { overrides: { workloads: form.workloads } }),
+    };
   const overrides = overridesNestedOf(form.overrides);
   return overrides === undefined ? {} : { overrides };
+}
+
+/**
+ * What a reader's role lets a form send: overrides, beside what the draft
+ * already holds of them, and a program that runs less than its plan.
+ */
+export interface AuthoringStanding {
+  readonly mayOverride: boolean;
+  /** The overrides the draft holds, none for a ticket not yet made. */
+  readonly held?: unknown;
+  /** Whether the reader may release a program that leaves out part of its
+   * plan; absent, they may. */
+  readonly maySkipPlanned?: boolean;
+}
+
+/** What the abilities read lets a form send: everything it has not said no to. */
+export function creationStandingOf(
+  abilities: ProjectAbilities,
+): AuthoringStanding {
+  return {
+    mayOverride: !projectAbilityRefused(abilities, "overrideTicketConfig"),
+    maySkipPlanned: !projectAbilityRefused(abilities, "skipPlannedEvaluations"),
+  };
+}
+
+const overridesRefusedReason =
+  "your role in this project may not override its checked-in configuration; remove the overrides to continue";
+
+/** The fault of overrides a reader who may not override is changing, if it is one. */
+function creationOverridesFaults(
+  overrides: unknown,
+  standing: AuthoringStanding | undefined,
+): readonly CreationFault[] {
+  if (
+    standing === undefined ||
+    standing.mayOverride ||
+    overrides === undefined ||
+    overridesSame(overrides, standing.held)
+  )
+    return [];
+  return [{ field: "overrides", reason: overridesRefusedReason }];
+}
+
+const programShortReason =
+  "your role in this project may not leave out part of the plan; restore every stage and evaluator it plans to continue";
+
+/** The fault of a program running less than its plan, for a reader who may not release one. */
+function creationProgramFaults(
+  drawn: DraftInitializationResponse,
+  program: TicketCreationForm["program"],
+  standing: AuthoringStanding | undefined,
+): readonly CreationFault[] {
+  if (
+    standing?.maySkipPlanned !== false ||
+    !programShort(programPlanned(drawn), program)
+  )
+    return [];
+  return [{ field: "authoring", reason: programShortReason }];
 }
 
 /**
@@ -1086,6 +1217,7 @@ export function creationBodyFrom(
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
+  standing?: AuthoringStanding,
 ): CreationAssembly {
   const offer = creationOfferDrawn(offers, form);
   const drawn = offer?.initialization;
@@ -1109,10 +1241,20 @@ export function creationBodyFrom(
     ...creationChoicesOf(form, offer),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
-  if (parsed.success && stated.length === 0)
+  const refused = [
+    ...creationOverridesFaults(
+      parsed.success ? parsed.data.overrides : undefined,
+      standing,
+    ),
+    ...creationProgramFaults(drawn, form.program, standing),
+  ];
+  if (parsed.success && stated.length === 0 && refused.length === 0)
     return { assembled: "Body", body: parsed.data };
   const issues = parsed.success ? [] : parsed.error.issues;
-  return { assembled: "Faults", faults: creationFaultsOf(issues, stated) };
+  return {
+    assembled: "Faults",
+    faults: [...creationFaultsOf(issues, stated), ...refused],
+  };
 }
 
 /** The mutation that turns the draft just created into a ticket the machine runs. */

@@ -101,6 +101,7 @@ export const peopleListed: AccessTenantPeople = {
       tenantRoles: ["Admin"],
       hostedRuns: true,
       personalRunners: false,
+      unscopedChat: true,
       projects: [{ project: "atlas", roles: ["Admin", "Developer"] }],
       account: true,
       email: "ada@example.com",
@@ -112,6 +113,7 @@ export const peopleListed: AccessTenantPeople = {
       tenantRoles: ["Member"],
       hostedRuns: false,
       personalRunners: false,
+      unscopedChat: true,
       projects: [],
       account: false,
     },
@@ -121,6 +123,7 @@ export const peopleListed: AccessTenantPeople = {
       tenantRoles: [],
       hostedRuns: true,
       personalRunners: false,
+      unscopedChat: true,
       projects: [],
       account: false,
     },
@@ -138,6 +141,7 @@ export function peopleAbilitiesAll(
     roles: [...accessTenantRoles],
     grantHostedRuns: true,
     grantPersonalRunners: false,
+    grantUnscopedChat: false,
     administerTenant: true,
     createAccount: true,
     manageAuthorities: true,
@@ -157,6 +161,7 @@ export const peopleAbilitiesNone: AccessTenantAbilities = {
   roles: [],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  grantUnscopedChat: false,
   administerTenant: false,
   createAccount: false,
   manageAuthorities: false,
@@ -214,6 +219,10 @@ export function hostedRunsPath(subject: string): string {
 /** Where one person's personal runners are given and taken. */
 export function personalRunnersPath(subject: string): string {
   return `${peoplePath}/${subject}/personal-runners`;
+}
+
+export function unscopedChatPath(subject: string): string {
+  return `${peoplePath}/${subject}/unscoped-chat`;
 }
 
 export function listReads(drawn: DrawnStrict): number {

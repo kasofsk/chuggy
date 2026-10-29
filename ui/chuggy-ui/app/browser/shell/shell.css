@@ -3,15 +3,102 @@
    corners belong to the notice inside it. The thread the chat pane holds is
    marked in its history by a slow wash and an outline rather than a mark
    beside it; with motion reduced the wash holds still. A pane given the whole
-   frame sets its conversation as a column to read — narrower than the frame,
-   in larger text on a taller line — and beside the pages it leaves the
-   conversation the console's own. */
+   frame, and a thread's own page, set the conversation as a column to read —
+   narrower than the frame, in larger text on a taller line — and beside the
+   pages the pane leaves the conversation the console's own.
+
+   The edge between the pages and the pane is a hairline a reader drags, drawn
+   over both so its ring is not cut by either; the library dividing the frame
+   says whether it is hovered or held, and the stronger edge says so to the
+   reader. A drag held into the strip gives the open pane the strip's width
+   before the pane becomes the strip, and the pane draws nothing in it.
+
+   The bar is two rows at every width: the project and the gear, then the
+   screens. A screen's entry is its glyph and its name, and the screen the
+   reader is on is marked three ways at once — its ink, a wash, and a bar along
+   the header's foot — so it reads from across the room. On a phone the entry
+   is its glyph alone, its name kept for a reader who does not see it, and the
+   entries spread across the row; the project's name gives way, cut short,
+   before the gear does. */
 
 @layer page {
   .chat-reading {
     --conversation-width: var(--width-reading);
     --conversation-text: var(--text-lg);
     --conversation-leading: var(--leading-reading);
+  }
+
+  .chat-strip {
+    display: grid;
+    justify-items: center;
+    align-content: start;
+    padding-block: var(--space-2);
+  }
+
+  .chat-strip > .btn {
+    flex-direction: column;
+    padding-inline: var(--space-1);
+  }
+
+  .chat-strip[data-placement="bottom"] {
+    align-content: center;
+    padding-block: 0;
+  }
+
+  .chat-strip[data-placement="bottom"] > .btn {
+    flex-direction: row;
+    padding-inline: var(--space-3);
+  }
+
+  .chat-strip-name {
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+    writing-mode: vertical-rl;
+  }
+
+  .chat-strip[data-placement="bottom"] .chat-strip-name {
+    writing-mode: horizontal-tb;
+  }
+
+  .chat-separator {
+    position: relative;
+    z-index: 1;
+    background: var(--edge);
+    transition:
+      background-color var(--duration-1) var(--ease-out),
+      box-shadow var(--duration-1) var(--ease-out);
+  }
+
+  .chat-separator[aria-orientation="vertical"] {
+    width: var(--hairline);
+  }
+
+  .chat-separator[aria-orientation="horizontal"] {
+    height: var(--hairline);
+  }
+
+  .chat-separator[data-separator="hover"],
+  .chat-separator[data-separator="active"] {
+    background: var(--edge-strong);
+    box-shadow: 0 0 0 var(--hairline) var(--edge-strong);
+  }
+
+  .chat-separator:focus-visible {
+    border-radius: 0;
+    box-shadow: var(--ring-focus);
+  }
+
+  /* Beside the pages, a panel under the pane's least width is one a held drag
+   * has taken to the strip's. The least is stated in the root's type and read
+   * here in the pane's, which is smaller, so a pane laid at its least, short of
+   * it by what the library rounds, still draws. */
+  @container (max-width: 20em) {
+    [data-group]:has(> .chat-separator[aria-orientation="vertical"])
+      .chat-open
+      > * {
+      visibility: hidden;
+    }
   }
 
   .shell-banner > .notice {
@@ -35,5 +122,104 @@
     50% {
       background: transparent;
     }
+  }
+
+  .topbar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .topbar-main {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .topbar-project {
+    display: flex;
+    min-width: 0;
+  }
+
+  .topbar-nav {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .topbar-entry {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    border-radius: var(--radius-2);
+    color: var(--ink-3);
+    font-size: var(--text-md);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .topbar-entry:hover {
+    background: var(--surface-2);
+    color: var(--ink-1);
+  }
+
+  .topbar-entry[aria-current="page"] {
+    background: var(--surface-2);
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .topbar-entry[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: var(--space-2);
+    bottom: calc(-1 * var(--space-2));
+    height: calc(2 * var(--hairline));
+    border-radius: var(--radius-1);
+    background: var(--ink-1);
+  }
+
+  .topbar-entry-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  @media (max-width: 40em) {
+    .topbar {
+      padding-inline: var(--space-3);
+    }
+
+    .topbar-nav {
+      flex-wrap: nowrap;
+      justify-content: space-between;
+      gap: 0;
+    }
+
+    .topbar-entry {
+      justify-content: center;
+      padding: var(--space-2) var(--space-3);
+    }
+
+    .topbar-entry-label {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+  }
+
+  /* The gear's menu leads its setup pages with their glyphs, so its gutter
+     is a glyph wide for the radio marks under them too. */
+  .settings-menu .picker-gutter {
+    width: var(--space-4);
   }
 }

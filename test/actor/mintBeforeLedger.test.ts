@@ -3,13 +3,13 @@
  * golden's journal.
  *
  * THE OLD MINT IS PINNED, NOT RECOMPUTED. `mint-before-ledger.json` holds, for
- * every golden the manifest names and every state of it, each ticket's
- * `spawned` as the image before the ledger recorded it on the ticket. Its
- * counter was folded inside `evolve`; this image folds `slotsClaimed` beside
- * it, from the states either side of a row. The journal each state decided so
- * far is replayed here through `replayJournal`, and the two counters must agree
- * at every state, because a task identity minted twice is two tasks under one
- * name.
+ * every golden `test/fixtures/corpus-before-dependency-change/` names and every
+ * state of it, each ticket's `spawned` as the image before the ledger recorded
+ * it on the ticket. Its counter was folded inside `evolve`; this image folds
+ * `slotsClaimed` beside it, from the states either side of a row. The journal
+ * each state decided so far is replayed here through `replayJournal`, and the
+ * two counters must agree at every state, because a task identity minted twice
+ * is two tasks under one name.
  */
 
 import assert from "node:assert/strict";
@@ -20,9 +20,14 @@ import { test } from "node:test";
 import { replayJournal } from "../../src/actor/journal.ts";
 import type { Entry } from "../../src/domain/generated/modelTypes.ts";
 import { decodeTrace, stateValue } from "../itf/decode.ts";
-import { decodeLastDecision } from "../itf/vocabulary.ts";
+import { decodeDecidedStep } from "../itf/vocabulary.ts";
 
-const goldenDir = join(import.meta.dirname, "..", "golden");
+const goldenDir = join(
+  import.meta.dirname,
+  "..",
+  "fixtures",
+  "corpus-before-dependency-change",
+);
 
 /** Each golden's states, each state's tickets as `[id, spawned]` pairs in id order. */
 const pinned = JSON.parse(
@@ -55,9 +60,9 @@ for (const name of names) {
     const journal: Entry[] = [];
     trace.states.forEach((state, at) => {
       if (at > 0 && stateValue(state, actionVar) !== "settle") {
-        const last = decodeLastDecision(stateValue(state, stepVar));
-        if (last !== "NoDecision" && last.type === "Decided")
-          journal.push({ seq: journal.length + 1, event: last.value.event });
+        const decided = decodeDecidedStep(stateValue(state, stepVar));
+        if (decided !== undefined)
+          journal.push({ seq: journal.length + 1, event: decided.event });
       }
       const ledgers = replayJournal(journal).ledgers;
       assert.deepEqual(

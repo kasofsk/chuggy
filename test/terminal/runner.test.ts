@@ -3,19 +3,19 @@
  * installation: the real program, real children, real files and real HTTP,
  * with nothing of this machine in any of it.
  *
- * These are the cases only real processes make. The registration token is one
- * word of one child's arguments and is in nothing the program writes, also
- * where that child says it back, whole or in pieces, as it fails. Every child
- * is given nothing to read and a session of its own, so none can ask a person
- * for a password, and no command that asks for one is run. The site is sent
- * the mints and the project added to what the person's own runner serves, and
- * none of them where the machine and that runner already have what they need.
- * Most cases are of a project whose chats run on the cluster, so of the
- * project's runner alone; the person's own beside it has cases of its own.
- * Every run takes itself for the user the runner package takes docker from
- * unless its case says another, whoever the suite runs as. The last case is
- * the control: everything every run here wrote is searched for everything the
- * stand-ins handed out and for the runner's Claude login.
+ * These are the cases only real processes make of what a run sets up, and
+ * sets up again; where a run stops is
+ * `test/terminal/runnerStops.test.ts`'s. The registration token is one word of
+ * one child's arguments and is in nothing the program writes. Every child is
+ * given nothing to read and a session of its own, so none can ask a person for
+ * a password, and no command that asks for one is run. The site is sent the
+ * mints, and none of them where the machine already has what it needs. Most
+ * cases are of a project whose chats run on the cluster, so of the project's
+ * runner alone; the person's chat host beside it has cases of its own. Every run
+ * takes itself for the user the runner package takes docker from, whoever the
+ * suite runs as. The last case is the control: everything every run here wrote
+ * is searched for everything the stand-ins handed out and for the runner's
+ * Claude login.
  */
 
 import assert from "node:assert/strict";
@@ -32,129 +32,39 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { runnerPackageOffered } from "../../ui/chuggy-ui/app/core/runners.ts";
-import { boxActOf } from "../../ui/chuggy-ui/test/setupRunnerBox.ts";
-import { rosterLines } from "../../ui/chuggy-ui/test/setupRunnerRoster.ts";
-import type { PlacementRoute } from "../../src/contract/rosters.ts";
+import { setupSiteChatAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
+
+import { machineLoginSecret } from "./machine.ts";
+import { program, shellWords, userSaid } from "./program.ts";
 import {
-  setupSiteAt,
-  setupSiteMember,
-  setupSiteOwnAdded,
-} from "../../ui/chuggy-ui/test/setupSite.ts";
-import {
-  machineAskers,
-  machineLoginSecret,
-  machineStoodIn,
-} from "./machine.ts";
-import type { Machine } from "./machine.ts";
-import { machineNamePart } from "./machineShape.ts";
-import {
-  dialect,
-  making,
-  platformSaid,
-  program,
-  shellWords,
-  signedIn,
-  userSaid,
-} from "./program.ts";
-import type { Home, Ran } from "./program.ts";
-import type { StandIn } from "./standIn.ts";
+  type Stood,
+  acts,
+  again,
+  chatFile,
+  chatUnit,
+  cleared,
+  first,
+  lines,
+  mint,
+  next,
+  poolFile,
+  probes,
+  ran,
+  redemption,
+  rerun,
+  runner,
+  stood,
+  stoodSearched,
+  unasked,
+  unit,
+  user,
+  words,
+} from "./runnerStood.ts";
 
-const made = making();
-
-interface Stood {
-  readonly installation: StandIn;
-  readonly home: Home;
-  readonly machine: Machine;
-}
-
-/** Every machine this suite stood up, for the control to search. */
-const stoodAll: Stood[] = [];
-
-const runner = ["runner", "--workspace", "acme", "--project", "widgets"];
-const flags = "--workspace acme --project widgets";
-const poolFile = "acme.widgets.shame.json";
-const unit = "chuggy-linux-acme.widgets.shame.service";
-/** The user a run here takes itself for, by number: the one the runner package takes docker from, and for the cases that say so one it does not. */
-const user = "1000";
-const other = "1001";
-const mint =
-  "program POST /api/v1/tenants/acme/projects/widgets/worker-pool-registration-tokens";
-const redemption = "runner POST /api/v1/worker-pool-registrations";
-const ownFile = `acme.${machineNamePart(setupSiteMember)}.json`;
-const ownUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.service`;
-const ownMint =
-  "program POST /api/v1/tenants/acme/personal-runner-registration-tokens";
-const ownRedemption = "runner POST /api/v1/personal-runner-registrations";
-const serves =
-  "program PUT /api/v1/tenants/acme/personal-runner/projects/widgets";
-const next = `next: node ${program} ${flags}`;
-const again = `rule: Run node ${program} runner ${flags} only `;
-
-/** A machine a runner could be put on, signed in to an installation whose project is set up as far as a runner and whose chats run where `chats` says, with nothing yet kept of what was asked or run. */
-async function stood(chats: PlacementRoute = "InCluster"): Promise<Stood> {
-  const installation = await made.installation();
-  const home = made.machine();
-  const machine = machineStoodIn(home, installation);
-  const done = await signedIn(installation, home);
-  assert.equal(done.code, 0, done.stdout);
-  installation.world = setupSiteAt("Configured");
-  for (const project of installation.world.projects) project.threads = chats;
-  installation.asked.length = 0;
-  machine.forget();
-  const on = { installation, home, machine };
-  stoodAll.push(on);
-  return on;
-}
-
-/** Everything the stand-ins handed out on this machine that nothing the program writes may hold. */
-function secrets(on: Stood): readonly string[] {
-  return [
-    ...on.installation.world.secrets,
-    ...on.installation.issued,
-    machineLoginSecret,
-  ];
-}
-
-/** One run, which is in the dialect and holds no secret whatever it met. */
-async function ran(
-  on: Stood,
-  argv: readonly string[] = runner,
-  environment?: Readonly<Record<string, string>>,
-): Promise<Ran> {
-  const done = await on.home.run(argv, { [userSaid]: user, ...environment });
-  dialect(done, done.stdout);
-  for (const secret of secrets(on))
-    assert.ok(!done.stdout.includes(secret), done.stdout);
-  return done;
-}
-
-function lines(on: Stood, engine: "docker" | "podman" = "docker") {
-  return rosterLines({
-    command: join(on.machine.prefix, "bin", "chuggy-linux"),
-    settings: on.machine.settings,
-    login: on.machine.login,
-    pool: join(on.machine.pools, poolFile),
-    unit,
-    own: join(on.machine.pools, ownFile),
-    ownUnit,
-    engine,
-  });
-}
-
-/** What each command run was for, in order, but for the ones that are no act of `runner`'s. */
-function acts(on: Stood): readonly string[] {
-  return on.machine
-    .calls()
-    .flatMap((call) => boxActOf([call.name, ...call.argv]) ?? []);
-}
-
-/** The words each command of this name was run with. */
-function words(on: Stood, name: string): readonly (readonly string[])[] {
-  return on.machine
-    .calls()
-    .filter((call) => call.name === name)
-    .map((call) => call.argv);
-}
+const chatMint =
+  "program POST /api/v1/tenants/acme/chat-host-registration-tokens";
+/** Where a chat host's token is redeemed, which is where a member's runner's is. */
+const chatRedemption = "runner POST /api/v1/personal-runner-registrations";
 
 /** The arguments of a command the program printed, as a shell makes words of it. */
 async function commanded(command: string): Promise<readonly string[]> {
@@ -163,42 +73,6 @@ async function commanded(command: string): Promise<readonly string[]> {
   return argv;
 }
 
-/** No command run so far could have asked anyone for a password: each was given nothing to read, each led a session of its own, and none is a command that asks. */
-function unasked(on: Stood): void {
-  const calls = on.machine.calls();
-  assert.ok(calls.length > 0);
-  for (const call of calls) {
-    const said = JSON.stringify(call);
-    assert.equal(call.stdin, "/dev/null", said);
-    assert.ok(!machineAskers.some((asker) => asker === call.name), said);
-    assert.ok(call.leads, said);
-    if (call.argv.includes("enable-linger"))
-      assert.equal(call.argv[0], "--no-ask-password", said);
-  }
-}
-
-const first = [
-  "services",
-  "docker",
-  "install",
-  "register",
-  "doctor",
-  "service",
-  "linger",
-  "lingerOn",
-  "linger",
-  "enabled",
-  "active",
-  "reload",
-  "start",
-  "active",
-];
-
-const probes = ["services", "docker", "doctor", "linger", "enabled", "active"];
-
-/** What a run on a machine that has everything runs: its probes, and the package's `install-service`, which writes the unit again as it was. */
-const rerun = [...probes.slice(0, 3), "service", ...probes.slice(3)];
-
 /** A fresh machine taken through `runner` to a runner the site sees live. */
 async function setUp(): Promise<Stood> {
   const on = await stood();
@@ -206,12 +80,6 @@ async function setUp(): Promise<Stood> {
   assert.equal(done.code, 0, done.stdout);
   assert.equal(done.lines.at(-1), next, done.stdout);
   return on;
-}
-
-/** Forgets what was asked and run, so a case reads only what its next run did. */
-function cleared(on: Stood): void {
-  on.machine.forget();
-  on.installation.writes.length = 0;
 }
 
 test("on a fresh machine the bare command offers a runner having changed nothing, and the command its rule names installs, registers, checks and starts one, with the token one word of one command, and ends on a checklist that says the runner live", async () => {
@@ -304,19 +172,19 @@ test("a second run on a machine that has everything finds each thing as it is, r
   unasked(on);
 });
 
-/** The words each registration was run with, a pool's and the person's own. */
+/** The words each registration was run with, a pool's and the person's chat host's. */
 function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on runners and they have none, the bare command offers two services of theirs here, and the command its rule names makes this machine the project's runner and then their own, on one package, one settings file and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command offers two services of theirs here, and the command its rule names makes this machine the project's runner and then their chat host, on one package, one settings file and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);
   assert.equal(offered.code, 0, offered.stdout);
   assert.match(
     offered.lines.at(-3) ?? "",
-    / two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, /u,
+    / two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, /u,
   );
   const rule = offered.lines.at(-2) ?? "";
   const yes = " only once the person says yes to a runner on this machine.";
@@ -341,37 +209,36 @@ test("where the person's chats run on runners and they have none, the bare comma
     did.linger,
     did.started,
     found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.chatStarted,
+    found.chatLive,
     next,
   ]);
   assert.deepEqual(on.installation.writes, [
     mint,
     redemption,
-    ownMint,
-    ownRedemption,
-    serves,
+    chatMint,
+    chatRedemption,
   ]);
   const [, token = ""] = on.installation.world.secrets.filter((secret) =>
     secret.includes("registration"),
   );
   assert.deepEqual(registrations(on)[1], [
     "register",
-    "--personal",
     "--api",
     on.installation.site,
     `--token=${token}`,
+    "--chat",
   ]);
   assert.deepEqual(words(on, "chuggy-linux").at(-1), [
     "install-service",
     "--pool",
-    join(on.machine.pools, ownFile),
+    join(on.machine.pools, chatFile),
   ]);
   assert.equal(acts(on).filter((act) => act === "install").length, 1);
-  assert.ok(existsSync(join(on.machine.units, ownUnit)));
+  assert.ok(existsSync(join(on.machine.units, chatUnit)));
   assert.equal(readFileSync(on.machine.login, "utf8"), machineLoginSecret);
   unasked(on);
 
@@ -379,16 +246,16 @@ test("where the person's chats run on runners and they have none, the bare comma
   assert.ok(after.lines.includes("step: runner      done     live"));
 });
 
-/** A fresh machine, where the person's chats run on runners, taken through `runner` to both runners the site sees live. */
+/** A fresh machine, where the person's chats run on a chat host, taken through `runner` to the project's runner and their chat host the site sees live. */
 async function setUpBoth(): Promise<Stood> {
   const on = await stood("Pool");
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.equal(done.lines.at(-2), lines(on).found.ownLive, done.stdout);
+  assert.equal(done.lines.at(-2), lines(on).found.chatLive, done.stdout);
   return on;
 }
 
-test("a second run where both runners are live and the person's own serves the project changes nothing, says each thing as found, writes both units again only as they were, and sends the site no write", async () => {
+test("a second run where the project's runner and the person's chat host are both live changes nothing, says each thing as found, writes both units again only as they were, and sends the site no write", async () => {
   const on = await setUpBoth();
   const { found } = lines(on);
   cleared(on);
@@ -396,27 +263,33 @@ test("a second run where both runners are live and the person's own serves the p
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines.slice(-7), [
     found.live,
-    found.own,
-    found.ownUnit,
-    found.ownRunning,
-    found.serves,
-    found.ownLive,
+    found.chat,
+    found.chatCheck,
+    found.chatUnit,
+    found.chatRunning,
+    found.chatLive,
     next,
   ]);
   assert.ok(!done.lines.some((line) => line.startsWith("did: ")));
-  assert.deepEqual(acts(on), [...rerun, "service", "enabled", "active"]);
+  assert.deepEqual(acts(on), [
+    ...rerun,
+    "doctor",
+    "service",
+    "enabled",
+    "active",
+  ]);
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
+test("a workspace that does not let the person register a chat host stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
   const on = await stood("Pool");
   on.installation.world.withheld.add("acme");
   const withheld = await ran(on);
   assert.equal(withheld.code, 0, withheld.stdout);
   assert.deepEqual(withheld.lines.slice(-5), [
     lines(on).found.live,
-    "found: the workspace does not let you register a runner of your own",
-    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+    "found: the workspace does not let you register a chat host",
+    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
     `${again}once the person says Personal runners is on for them in the workspace.`,
     "next: stop",
   ]);
@@ -427,64 +300,51 @@ test("a workspace that does not let the person register a runner of their own st
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-2), [lines(on).found.ownLive, next]);
-  assert.deepEqual(on.installation.writes, [ownMint, ownRedemption, serves]);
+  assert.deepEqual(done.lines.slice(-2), [lines(on).found.chatLive, next]);
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
 });
 
-test("the person's own runner on this machine that serves another project is given this one, and nothing is registered again", async () => {
+test("a chat host of the person's live on another machine is left serving their chats, and this machine is registered as nothing but the project's runner", async () => {
+  const on = await stood("Pool");
+  const { found } = lines(on);
+  const elsewhere = setupSiteChatAdded(on.installation.world, "acme", true);
+  const done = await ran(on);
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(done.lines.slice(-3), [
+    found.live,
+    found.chatElsewhere,
+    next,
+  ]);
+  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.equal(registrations(on).length, 1);
+  assert.ok(!existsSync(join(on.machine.pools, chatFile)));
+  assert.deepEqual(on.installation.world.chat.get("acme"), {
+    id: elsewhere,
+    live: true,
+  });
+});
+
+test("a chat host of the person's removed on the My runners page is said, and this machine is registered as it again, its file replaced and its service restarted, and waited on until the site sees it live", async () => {
   const on = await setUpBoth();
   const { found, did } = lines(on);
-  const held = on.installation.world.own.get("acme");
-  assert.ok(held !== undefined);
-  held.projects = ["gadgets"];
+  on.installation.world.chat.delete("acme");
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-6), [
-    found.own,
-    found.ownUnit,
-    found.ownRunning,
-    did.serves,
-    found.ownLive,
-    next,
-  ]);
-  assert.deepEqual(on.installation.writes, [serves]);
-  assert.deepEqual(registrations(on), []);
-  assert.deepEqual(held.projects, ["gadgets", "widgets"]);
-});
-
-test("a runner of the person's own on another machine is kept, and this machine is registered as one more of theirs, with a file and a service of its own, and waited on until the site sees it live", async () => {
-  const on = await stood("Pool");
-  const { found, did } = lines(on);
-  const elsewhere = setupSiteOwnAdded(on.installation.world, "acme", true);
-  on.installation.world.own.get("acme")?.projects.push("gadgets");
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines.slice(-7), [
-    found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    found.chatGone,
+    did.chat,
+    found.chatCheck,
+    found.chatUnit,
+    did.chatRestarted,
+    found.chatLive,
     next,
   ]);
-  assert.deepEqual(on.installation.writes, [
-    mint,
-    redemption,
-    ownMint,
-    ownRedemption,
-    serves,
-  ]);
-  assert.equal(registrations(on).length, 2);
-  assert.ok(existsSync(join(on.machine.pools, ownFile)));
-  assert.ok(existsSync(join(on.machine.units, ownUnit)));
-  assert.deepEqual(on.installation.world.own.get("acme"), {
-    projects: ["gadgets", "widgets"],
-    runners: [
-      { id: elsewhere, live: true },
-      { id: "chuggy-personal-2", live: true },
-    ],
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
+  assert.equal(registrations(on).length, 1);
+  assert.deepEqual(on.installation.world.chat.get("acme"), {
+    id: "chuggy-chat-2",
+    live: true,
   });
 });
 
@@ -514,7 +374,7 @@ test("a machine whose project's runner was set up on a package older than the fi
     found.engine,
     found.settings,
     found.login,
-    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.14.0 or later`,
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.35.0 or later`,
     did.package,
     found.pool,
     found.check,
@@ -522,171 +382,17 @@ test("a machine whose project's runner was set up on a package older than the fi
     found.linger,
     did.restarted,
     found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.chatStarted,
+    found.chatLive,
     next,
   ]);
   assert.deepEqual(installs(), [install]);
   assert.equal(acts(on).filter((act) => act === "restart").length, 1);
-  assert.deepEqual(on.installation.writes, [ownMint, ownRedemption, serves]);
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
   unasked(on);
-});
-
-test("with no Claude login the run changes nothing and says what the runner needs: the login claude setup-token makes, saved alone and readable only by the person, or another kind its guide names, and the run its rule names once it is there finishes the job", async () => {
-  const on = await stood("Pool");
-  rmSync(on.machine.login);
-  await unchanged(on, "found: the runner has no Claude login on this machine");
-  const missing = await ran(on);
-  assert.deepEqual(missing.lines.slice(-3), [
-    `tell: The runner needs a Claude login of its own on this machine, and there is none at ${on.machine.login}, so nothing was changed on this machine. It is the login the command claude setup-token makes, which needs a Claude plan that allows it, saved alone in ${on.machine.login} and readable only by you (mode 600). An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${runnerPackageOffered.guideAddress}. Tell me once one is there.`,
-    `${again}once the person says the runner's Claude login is on this machine.`,
-    "next: stop",
-  ]);
-  writeFileSync(on.machine.login, machineLoginSecret, { mode: 0o600 });
-  cleared(on);
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-2), [lines(on).found.ownLive, next]);
-});
-
-const changing = new Set(first.filter((act) => !probes.includes(act)));
-
-/** What the runner's settings hold, or nothing where there are none. */
-function settings(on: Stood): string | undefined {
-  return existsSync(on.machine.settings)
-    ? readFileSync(on.machine.settings, "utf8")
-    : undefined;
-}
-
-/** One run that stopped short of changing anything: it says what it found, names `runner` to be run again, and has installed nothing, written nothing and sent nothing but reads. */
-async function unchanged(on: Stood, found: string, as = user): Promise<void> {
-  const before = settings(on);
-  const done = await ran(on, runner, { [userSaid]: as });
-  assert.equal(done.code, 0, done.stdout);
-  assert.equal(done.lines.at(-1), "next: stop", done.stdout);
-  assert.ok(
-    done.lines.some((line) => line.startsWith(found)),
-    done.stdout,
-  );
-  assert.ok(
-    done.lines.some((line) => line.startsWith(again)),
-    done.stdout,
-  );
-  assert.deepEqual(
-    acts(on).filter((act) => changing.has(act)),
-    [],
-  );
-  assert.deepEqual(on.installation.writes, []);
-  assert.equal(settings(on), before, found);
-  assert.ok(!existsSync(on.machine.pools), found);
-  assert.ok(!/sk-ant|OAUTH/u.test(done.stdout), done.stdout);
-}
-
-test("a machine that could not take a runner, or lacks what this program cannot make, stops the run with nothing installed, nothing written and nothing sent but reads", async () => {
-  const lacks: readonly (readonly [(on: Stood) => void, string])[] = [
-    [
-      (on) => {
-        on.machine.tell({ engines: { docker: false } });
-      },
-      "found: docker did not answer you without a password; podman is not installed",
-    ],
-    [
-      (on) => {
-        on.machine.tell({ services: false });
-      },
-      "found: this machine's user services did not answer systemctl --user",
-    ],
-    [
-      (on) => {
-        rmSync(on.machine.login);
-      },
-      "found: the runner has no Claude login on this machine: nothing is at ",
-    ],
-    [
-      (on) => {
-        on.machine.has("npm", false);
-      },
-      "found: the runner package is not installed at a version chuggy setup can use, and npm did not answer",
-    ],
-  ];
-  for (const [lack, found] of lacks) {
-    const on = await stood();
-    lack(on);
-    await unchanged(on, found);
-    assert.equal(settings(on), undefined, found);
-  }
-});
-
-test("a user the runner package bars from docker is stopped before anything is changed where podman is not there, where it does not answer them, and where the settings set the runner to use docker, and docker is never run", async () => {
-  const bars: readonly (readonly [(on: Stood) => void, string])[] = [
-    [
-      () => undefined,
-      "found: podman is not installed, and docker was not asked: the runner package takes docker only from this machine's user 1000",
-    ],
-    [
-      (on) => {
-        on.machine.has("podman");
-        on.machine.tell({ engines: { docker: true, podman: false } });
-      },
-      "found: podman did not answer you without a password, and docker was not asked: ",
-    ],
-    [
-      (on) => {
-        on.machine.has("podman");
-        writeFileSync(
-          on.machine.settings,
-          JSON.stringify({ claudeTokenFile: on.machine.login }),
-        );
-      },
-      "found: the runner is set to use docker, in ",
-    ],
-  ];
-  for (const [bar, found] of bars) {
-    const on = await stood();
-    bar(on);
-    await unchanged(on, found, other);
-    assert.deepEqual(words(on, "docker"), [], found);
-    unasked(on);
-  }
-});
-
-test("a user the runner package bars from docker is asked podman alone, and where it answers them the runner is set up on it: podman is what the settings name, and docker is never run", async () => {
-  const on = await stood();
-  on.machine.has("podman");
-  const as = { [userSaid]: other };
-  const { found, did } = lines(on, "podman");
-  const offered = await ran(on, [], as);
-  assert.equal(offered.lines.at(-1), "next: stop");
-  assert.deepEqual(acts(on), ["services", "podman"]);
-  const done = await ran(on, runner, as);
-  assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(1, 5), [
-    found.engine,
-    found.login,
-    did.package,
-    did.settings,
-  ]);
-  assert.deepEqual(done.lines.slice(-2), [found.live, next]);
-  assert.deepEqual(words(on, "docker"), []);
-  const settings = JSON.parse(
-    readFileSync(on.machine.settings, "utf8"),
-  ) as Record<string, unknown>;
-  assert.equal(settings["engine"], "podman");
-  assert.deepEqual(words(on, "loginctl")[0], [
-    "show-user",
-    other,
-    "--property",
-    "Linger",
-  ]);
-  unasked(on);
-
-  cleared(on);
-  const second = await ran(on, runner, as);
-  assert.deepEqual(second.lines.slice(-2), [found.live, next]);
-  assert.deepEqual(acts(on), ["services", "podman", ...rerun.slice(2)]);
 });
 
 type Did = ReturnType<typeof lines>["did"];
@@ -837,7 +543,7 @@ test("where the machine's own prefix is not this person's to write, the package 
     const own = join(on.machine.own, "bin", "chuggy-linux");
     assert.ok(
       done.lines.includes(
-        `did: installed the runner package, chuggy-linux 0.14.0, at ${own}`,
+        `did: installed the runner package, chuggy-linux 0.35.0, at ${own}`,
       ),
       done.stdout,
     );
@@ -852,8 +558,8 @@ test("where the machine's own prefix is not this person's to write, the package 
 test("where the person keeps their configuration in a directory of their own choosing, the runner's things are looked for and put there and nowhere under the usual one", async () => {
   const on = await stood();
   const config = join(on.home.beside, "config");
-  mkdirSync(join(config, "chuggy-linux"), { recursive: true });
-  renameSync(on.machine.login, join(config, "chuggy-linux", "claude-token"));
+  mkdirSync(join(config, "chuggy-linux", "claude"), { recursive: true });
+  renameSync(on.machine.login, join(config, "chuggy-linux", "claude", "token"));
   const done = await ran(on, runner, { XDG_CONFIG_HOME: config });
   assert.equal(done.code, 0, done.stdout);
   assert.equal(done.lines.at(-1), next);
@@ -865,156 +571,6 @@ test("where the person keeps their configuration in a directory of their own cho
     assert.ok(existsSync(join(config, made)), made);
   for (const usual of [on.machine.settings, on.machine.pools, on.machine.units])
     assert.ok(!existsSync(usual), usual);
-});
-
-/** As long a stretch of a registration token as is in no other word a run prints. */
-const stretch = 16;
-
-/** Whether any stretch of a secret is in a text, which is the secret said whole or in pieces. */
-function pieced(text: string, secret: string): boolean {
-  return Array.from({ length: secret.length - stretch + 1 }, (_, at) =>
-    secret.slice(at, at + stretch),
-  ).some((piece) => text.includes(piece));
-}
-
-test("a registration that fails saying its own arguments back, whole and in halves, has nothing it printed said of it: the package's own refusal is told in this program's words with no piece of the token, and the token it lost is left unredeemed while the next run mints another and finishes", async () => {
-  const on = await stood();
-  on.machine.tell({
-    fails: {
-      register: {
-        exit: 1,
-        aside: `chuggy at ${on.installation.site} did not answer the registration: fetch failed`,
-        echoes: true,
-      },
-    },
-  });
-  const failed = await ran(on);
-  assert.equal(failed.code, 1, failed.stdout);
-  const [lost = ""] = on.installation.world.secrets;
-  assert.ok(
-    words(on, "chuggy-linux")[0]?.includes(`--token=${lost}`),
-    "the child was given the token, and said it back",
-  );
-  assert.ok(lost.length > stretch && !pieced(failed.stdout, lost));
-  assert.ok(pieced(`said ${lost.slice(0, stretch)} back`, lost));
-  assert.ok(!failed.stdout.includes("fetch failed"), failed.stdout);
-  assert.ok(
-    failed.lines.includes(
-      "found: registering this machine ended with exit 1: the site did not answer the runner package",
-    ),
-    failed.stdout,
-  );
-  assert.equal(failed.lines.at(-1), "next: stop");
-  assert.ok(failed.lines.at(-2)?.startsWith(again), failed.stdout);
-  assert.deepEqual(on.installation.writes, [mint]);
-
-  on.machine.tell({ fails: {} });
-  cleared(on);
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(on.installation.writes, [mint, redemption]);
-  assert.equal(on.installation.world.mints.length, 2);
-  assert.deepEqual(on.installation.world.projects[0]?.tokens, [lost]);
-  assert.equal(done.lines.at(-1), next);
-});
-
-test("the runner's own check failing with a secret in what it says is told with the secret struck out, and nothing is started", async () => {
-  const on = await stood();
-  on.machine.tell({
-    doctor: {
-      exit: 1,
-      aside: `FAIL  Claude credential: ${machineLoginSecret} is no login\n`,
-    },
-  });
-  const failed = await ran(on);
-  assert.equal(failed.code, 1, failed.stdout);
-  assert.ok(
-    failed.lines.includes(
-      "found: the runner's Claude credential is not as it needs it; the runner's own check said: FAIL Claude credential: [redacted] is no login",
-    ),
-    failed.stdout,
-  );
-  assert.equal(acts(on).at(-1), "doctor");
-});
-
-test("where keeping services running after a logout wants a password, none is taken: the person is told the command to run themselves, and the run after they have finishes", async () => {
-  const on = await stood();
-  on.machine.tell({ lingerAsks: true });
-  const asked = await ran(on);
-  assert.equal(asked.code, 0, asked.stdout);
-  assert.equal(asked.lines.at(-1), "next: stop");
-  assert.ok(asked.lines.at(-2)?.startsWith(again), asked.stdout);
-  assert.match(
-    asked.lines.at(-3) ?? "",
-    /^tell: .* In a terminal of your own, run loginctl enable-linger and tell me once you have\.$/u,
-  );
-  assert.deepEqual(words(on, "loginctl"), [
-    ["show-user", user, "--property", "Linger"],
-    ["--no-ask-password", "enable-linger", user],
-  ]);
-  assert.ok(!acts(on).includes("start"));
-  unasked(on);
-
-  on.machine.keep({ ...on.machine.state(), linger: true });
-  cleared(on);
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
-  assert.ok(done.lines.includes(lines(on).found.linger), done.stdout);
-  assert.deepEqual(done.lines.slice(-2), [lines(on).found.live, next]);
-  assert.deepEqual(on.installation.writes, []);
-});
-
-test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, having asked the service manager once more whether it still runs, and the run after it is seen ends on the checklist", async () => {
-  const on = await stood();
-  on.machine.tell({ polls: false });
-  const waited = await ran(on, [...runner, "--wait-secs", "2"]);
-  assert.equal(waited.code, 1, waited.stdout);
-  assert.ok(
-    waited.lines.includes(
-      "found: the runner's service is running, and after 2 s the site still sees no runner of acme/widgets live",
-    ),
-    waited.stdout,
-  );
-  assert.equal(waited.lines.at(-1), "next: stop");
-  assert.ok(waited.lines.at(-2)?.startsWith(again), waited.stdout);
-  assert.deepEqual(acts(on).slice(-3), ["start", "active", "active"]);
-
-  on.machine.tell({ polls: true });
-  cleared(on);
-  const done = await ran(on);
-  assert.deepEqual(done.lines.slice(-3), [
-    lines(on).found.running,
-    lines(on).found.live,
-    next,
-  ]);
-  assert.deepEqual(on.installation.writes, []);
-});
-
-test("on a Mac runner says it cannot set one up and asks nothing of the machine or the site, and the bare command says the same of the runner's step and offers nothing", async () => {
-  const on = await stood();
-  const mac = { [platformSaid]: "darwin" };
-  const done = await ran(on, runner, mac);
-  assert.equal(done.code, 2, done.stdout);
-  assert.equal(
-    done.lines[0],
-    "found: this machine is a Mac, and chuggy setup puts a runner only on Linux",
-  );
-  assert.deepEqual(done.lines.slice(-2), [
-    `rule: Run node ${program} ${flags} only once the person says a runner is running.`,
-    "next: stop",
-  ]);
-  assert.deepEqual(on.machine.calls(), []);
-  assert.deepEqual(on.installation.asked, []);
-
-  const bare = await ran(on, [], mac);
-  assert.equal(bare.code, 0, bare.stdout);
-  assert.match(
-    bare.lines.at(-3) ?? "",
-    /^tell: .* This machine is a Mac and chuggy setup puts a runner only on Linux, but a Mac runs one with chuggy-darwin, added by hand: /u,
-  );
-  assert.ok(!bare.stdout.includes(" runner --workspace"), bare.stdout);
-  assert.deepEqual(acts(on), []);
-  assert.deepEqual(on.installation.writes, []);
 });
 
 /** The names a run's environment holds: what a home sets, the user this suite has it take itself for, and what a shell adds of its own. */
@@ -1061,21 +617,5 @@ test("a run is given nothing of the suite's own surroundings: the programs it fi
 });
 
 test("across every run of this suite, nothing the site or the issuer handed out and nothing of the runner's Claude login is in anything the program wrote", () => {
-  const handed = stoodAll.flatMap((on) => on.installation.world.secrets);
-  for (const kind of ["registration", "credential"])
-    assert.ok(
-      handed.some((secret) => secret.startsWith(kind)),
-      kind,
-    );
-  for (const on of stoodAll) {
-    const wrote = on.home.written.join("\n");
-    assert.ok(wrote.length > 0);
-    for (const secret of secrets(on)) {
-      assert.ok(secret.length >= 16, secret);
-      assert.ok(!wrote.includes(secret));
-    }
-  }
-  assert.ok(
-    stoodAll.some((on) => on.home.written.join("\n").includes("[redacted]")),
-  );
+  stoodSearched();
 });

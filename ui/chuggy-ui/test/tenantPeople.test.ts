@@ -44,6 +44,7 @@ import {
   tenantPeopleParted,
   tenantHostedRunsOffered,
   tenantPersonalRunnersOffered,
+  tenantUnscopedChatOffered,
   tenantPersonBoxChecked,
   tenantPersonChangeAsks,
   tenantPersonChangeNote,
@@ -114,6 +115,7 @@ const person: AccessTenantPerson = {
   tenantRoles: [],
   hostedRuns: false,
   personalRunners: false,
+  unscopedChat: true,
   projects: [],
 };
 
@@ -330,6 +332,7 @@ const abilities: AccessTenantAbilities = {
   roles: ["Member"],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  grantUnscopedChat: false,
   administerTenant: false,
   createAccount: false,
   manageAuthorities: false,
@@ -517,6 +520,9 @@ test("an editor is offered where the reader may change anything at all, and not 
     tenantPersonEditOffered({ ...none, grantPersonalRunners: true }, []),
   ).toBe(true);
   expect(
+    tenantPersonEditOffered({ ...none, grantUnscopedChat: true }, []),
+  ).toBe(true);
+  expect(
     tenantPersonEditOffered({ ...none, projects: abilities.projects }, [
       "beacon",
     ]),
@@ -582,6 +588,23 @@ test("an editor's personal runners box follows hosted runs, offered by its own a
   ]);
 });
 
+test("an editor's unscoped chat box comes last, drawn only where its own ability offers it, held as the person is not refused it", () => {
+  expect(
+    tenantPersonWorkspaceBoxes(
+      { ...abilities, grantUnscopedChat: true },
+      person,
+    ).at(-1),
+  ).toStrictEqual({
+    label: "Unscoped chat",
+    change: { scope: "UnscopedChat", held: true },
+    offered: true,
+  });
+  expect(
+    tenantPersonWorkspaceBoxes(abilities, person).map((box) => box.label),
+  ).toStrictEqual(["Member"]);
+  expect(tenantUnscopedChatOffered(undefined)).toBe(false);
+});
+
 test("an editor's project box is the change a press asks for, absent where neither offered nor held", () => {
   const holding: AccessTenantPerson = {
     ...person,
@@ -631,6 +654,7 @@ test("a box is checked as the list holds it, and the one being sent as the chang
     { scope: "Tenant", role: "Admin", held: false },
     { scope: "HostedRuns", held: false },
     { scope: "PersonalRunners", held: false },
+    { scope: "UnscopedChat", held: false },
   ] as const;
   for (const sending of elsewhere)
     expect(tenantPersonBoxChecked(beacon, sending)).toBe(false);

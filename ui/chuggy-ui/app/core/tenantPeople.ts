@@ -182,7 +182,8 @@ export type TenantPersonChange =
       readonly held: boolean;
     }
   | { readonly scope: "HostedRuns"; readonly held: boolean }
-  | { readonly scope: "PersonalRunners"; readonly held: boolean };
+  | { readonly scope: "PersonalRunners"; readonly held: boolean }
+  | { readonly scope: "UnscopedChat"; readonly held: boolean };
 
 /** Two removals are asked first: the reader's own workspace admin, after which
  * the list is no longer theirs to read, and hosted runs from a subject that is
@@ -230,6 +231,14 @@ export function tenantPersonalRunnersOffered(
   abilities: AccessTenantAbilities | undefined,
 ): boolean {
   return abilities?.grantPersonalRunners ?? false;
+}
+
+/** Whether the reader may give and take unscoped chat, which a reader whose
+ * abilities were not read may not. */
+export function tenantUnscopedChatOffered(
+  abilities: AccessTenantAbilities | undefined,
+): boolean {
+  return abilities?.grantUnscopedChat ?? false;
 }
 
 /** Whether the reader may take a member's own runners off, which only an
@@ -294,6 +303,9 @@ export const tenantHostedRunsLabel = "Hosted runs";
 
 /** What personal runners are called wherever a person holds them or may be given them. */
 export const tenantPersonalRunnersLabel = "Personal runners";
+
+/** What unscoped chat is called wherever a person may be given it. */
+export const tenantUnscopedChatLabel = "Unscoped chat";
 
 /** The list's people, and apart from them its subjects the plane says are no
  * account, each in the list's order. */
@@ -373,6 +385,7 @@ export function tenantPersonEditOffered(
   return (
     tenantHostedRunsOffered(abilities) ||
     tenantPersonalRunnersOffered(abilities) ||
+    tenantUnscopedChatOffered(abilities) ||
     tenantRunnerRemovalOffered(abilities) ||
     accessTenantRoles.some((role) => tenantRoleOffered(abilities, role)) ||
     projects.some((project) =>
@@ -397,7 +410,8 @@ function tenantPersonBoxDrawn(box: TenantPersonBox): boolean {
 
 /** The workspace's boxes in a person's editor: each role, then hosted runs,
  * then personal runners, one the reader may not change drawn only where it is
- * held. */
+ * held, then unscoped chat, drawn only where the reader may change it, since
+ * every member holds it until it is taken. */
 export function tenantPersonWorkspaceBoxes(
   abilities: AccessTenantAbilities | undefined,
   person: AccessTenantPerson,
@@ -421,7 +435,15 @@ export function tenantPersonWorkspaceBoxes(
     change: { scope: "PersonalRunners", held: person.personalRunners },
     offered: tenantPersonalRunnersOffered(abilities),
   };
-  return [...roles, hostedRuns, personalRunners].filter(tenantPersonBoxDrawn);
+  const unscopedChat: TenantPersonBox = {
+    label: tenantUnscopedChatLabel,
+    change: { scope: "UnscopedChat", held: person.unscopedChat },
+    offered: tenantUnscopedChatOffered(abilities),
+  };
+  return [
+    ...[...roles, hostedRuns, personalRunners].filter(tenantPersonBoxDrawn),
+    ...(unscopedChat.offered ? [unscopedChat] : []),
+  ];
 }
 
 /** One project's box for one role in a person's editor, absent where the
@@ -449,6 +471,7 @@ function tenantPersonChangeNamed(change: TenantPersonChange): string {
   switch (change.scope) {
     case "HostedRuns":
     case "PersonalRunners":
+    case "UnscopedChat":
       return change.scope;
     case "Tenant":
       return `${change.scope} ${change.role}`;

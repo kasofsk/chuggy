@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   assistantLine,
   configurationReads,
@@ -23,7 +22,7 @@ import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -118,34 +117,34 @@ test("a settled run's details draw its prompt first, as its row's conversation d
   await pressed("Details");
   const transcript = screen.getByRole("region", { name: "transcript" });
   const inDetails = within(transcript).getByRole("group", {
-    name: "Conversation",
+    name: "Transcript",
   });
   promptFirst(inDetails);
   const drawn = inDetails.textContent;
 
-  await pressed("Conversation");
+  await pressed("Transcript");
   expect(screen.queryByRole("region", { name: "transcript" })).toBeNull();
-  const opened = screen.getByRole("group", { name: "Conversation" });
+  const opened = screen.getByRole("group", { name: "Transcript" });
   promptFirst(opened);
   expect(opened.textContent).toBe(drawn);
 });
 
 test("a settled run's conversation opens in one press, and reads its prompt only then", async () => {
   const drawn = await runPageDrawn(atlas, settledRun());
-  expect(screen.queryByRole("group", { name: "Conversation" })).toBeNull();
+  expect(screen.queryByRole("group", { name: "Transcript" })).toBeNull();
   expect(configurationReads(drawn.reads)).toBe(0);
 
-  await pressed("Conversation");
-  promptFirst(screen.getByRole("group", { name: "Conversation" }));
+  await pressed("Transcript");
+  promptFirst(screen.getByRole("group", { name: "Transcript" }));
   expect(configurationReads(drawn.reads)).toBe(1);
   expect(
     screen
-      .getByRole("button", { name: "Hide conversation" })
+      .getByRole("button", { name: "Hide transcript" })
       .getAttribute("aria-expanded"),
   ).toBe("true");
 
-  await pressed("Hide conversation");
-  expect(screen.queryByRole("group", { name: "Conversation" })).toBeNull();
+  await pressed("Hide transcript");
+  expect(screen.queryByRole("group", { name: "Transcript" })).toBeNull();
 });
 
 /** The word under each exchange a conversation draws. */
@@ -184,9 +183,9 @@ test("a run in the middle of its work reads Open, and Answered once it has repor
         transcripts: [runTranscriptPage([1, 2], true, calling)],
       }),
     );
-    await pressed("Conversation");
+    await pressed("Transcript");
     const drawn = standingWords(
-      screen.getByRole("group", { name: "Conversation" }),
+      screen.getByRole("group", { name: "Transcript" }),
     );
     cleanup();
     return drawn;
@@ -201,7 +200,7 @@ test("a run that recorded no transcript offers no conversation", async () => {
   for (const run of [runEvidenceOf(0, { transcript: undefined }), undefined]) {
     await runPageDrawn(atlas, settledRun(attemptServed(run)));
     expect(screen.getByRole("button", { name: "Details" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Conversation" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Transcript" })).toBeNull();
     cleanup();
   }
 });
@@ -213,8 +212,8 @@ test("a run that kept no prompt says so where the prompt would be", async () => 
   ];
   for (const served of cases) {
     await runPageDrawn(atlas, settledRun(served));
-    await pressed("Conversation");
-    const conversation = screen.getByRole("group", { name: "Conversation" });
+    await pressed("Transcript");
+    const conversation = screen.getByRole("group", { name: "Transcript" });
     expect(conversation.textContent?.startsWith("Prompt not kept")).toBe(true);
     expect(conversation.textContent).not.toContain("Keep it to one line.");
     cleanup();
@@ -232,8 +231,8 @@ test("a long prompt is folded to its opening lines until the reader asks", async
     atlas,
     settledRun({ configuration: runSnapshot(lines.join("\n\n")) }),
   );
-  await pressed("Conversation");
-  const conversation = screen.getByRole("group", { name: "Conversation" });
+  await pressed("Transcript");
+  const conversation = screen.getByRole("group", { name: "Transcript" });
   expect(conversation.textContent).toContain("Line 1 of the brief.");
   expect(conversation.textContent).not.toContain("Line 12 of the brief.");
 

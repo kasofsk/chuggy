@@ -65,7 +65,6 @@ import {
 import type { InboxAnswer, InboxAnswers } from "../core/inboxAnswers.ts";
 import {
   inboxActionsPage,
-  inboxCountLabel,
   inboxPage,
   inboxPhases,
   inboxRefusalsPage,
@@ -134,7 +133,7 @@ import {
 import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { drawBytes } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { ScreenTitle } from "./shell/slots.tsx";
 import {
   TicketRevokeConfirm,
   useTicketRevokeAsk,
@@ -747,15 +746,9 @@ export function InboxScreen(props: {
   const answering = useInboxAnswers(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
-  const count = inboxCountLabel(inbox.union);
   return (
     <>
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Inbox</h1>
-        {count === undefined ? null : (
-          <span className="text-ink-3 text-sm tabular-nums">{count}</span>
-        )}
-      </TopBarSlot>
+      <ScreenTitle>Inbox</ScreenTitle>
       <InboxNotices executions={executions} index={index} held={inbox} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>

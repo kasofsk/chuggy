@@ -19,6 +19,8 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import { catalogQueryOf } from "../core/catalogConfigurations.ts";
+import type { CatalogQuery } from "../core/catalogConfigurations.ts";
 import {
   forgeCallbackQueryOf,
   forgeCallbackRoutePath,
@@ -28,6 +30,7 @@ import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
+import { memberChatRoutes } from "../core/memberChat.ts";
 import {
   projectCreationQueryOf,
   projectCreationRoutePath,
@@ -36,12 +39,14 @@ import type { ProjectCreationQuery } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
+import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
+import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
 import {
   ProjectCreation,
@@ -58,6 +63,7 @@ import {
 } from "./settings/settingsRoutes.tsx";
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
+import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketDuplicate.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
@@ -152,6 +158,18 @@ const leadRoute = createRoute({
   component: LeadPage,
 });
 
+function CatalogRoute(): ReactNode {
+  return <CatalogPage query={catalogRoute.useSearch()} />;
+}
+
+const catalogRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/catalog",
+  component: CatalogRoute,
+  validateSearch: (search: Readonly<Record<string, unknown>>): CatalogQuery =>
+    catalogQueryOf(search),
+});
+
 const repositoriesRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/repositories",
@@ -162,6 +180,52 @@ const runnersRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/runners",
   component: RunnersPage,
+});
+
+function ThreadRoute(): ReactNode {
+  const params = threadRoute.useParams();
+  return (
+    <ThreadPage
+      key={params.session}
+      partition={{ tenant: params.tenant, project: params.project }}
+      session={params.session}
+    />
+  );
+}
+
+/** One thread's own page, which the shell draws with no chat pane. */
+const threadRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/threads/$session",
+  component: ThreadRoute,
+});
+
+function MemberChatRoute(): ReactNode {
+  return (
+    <MemberChatPage
+      tenant={memberChatRoute.useParams().tenant}
+      session={undefined}
+    />
+  );
+}
+
+function MemberChatThreadRoute(): ReactNode {
+  const params = memberChatThreadRoute.useParams();
+  return <MemberChatPage tenant={params.tenant} session={params.session} />;
+}
+
+/** The reader's own chat at a tenant, outside every project as the
+ * workspace's settings are. */
+const memberChatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: memberChatRoutes.chat,
+  component: MemberChatRoute,
+});
+
+const memberChatThreadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: memberChatRoutes.thread,
+  component: MemberChatThreadRoute,
 });
 
 /** One binding's own page. The repository is an address, which the router
@@ -250,14 +314,18 @@ const routeTree = rootRoute.addChildren([
   projectCreationRoute,
   inviteRoute,
   workspaceSettingsRoutes(rootRoute),
+  memberChatRoute,
+  memberChatThreadRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,
     leadRoute,
+    catalogRoute,
     projectSettingsRoutes(partitionRoute),
     repositoriesRoute,
     repositoryRoute,
     runnersRoute,
+    threadRoute,
     ticketCreationRoute,
     ticketRoute,
     ticketEditRoute,

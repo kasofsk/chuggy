@@ -597,6 +597,7 @@ export type AttemptEvidence =
   | "RunCommitFailed"
   | "RunPushFailed"
   | "RunTimedOut"
+  | "RunDiskLow"
   | WorkerImageFault;
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
@@ -621,6 +622,7 @@ export const allAttemptEvidence: readonly AttemptEvidence[] = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
   ...workerImageFaults,
 ];
 
@@ -741,7 +743,7 @@ export type Blocked =
 
 /**
  * A definitive inability to run the immutable contract. The domain has one
- * reason for all five, because no decider ever read which it was; which
+ * reason for all of them, because no decider ever read which it was; which
  * refusal it was is evidence this layer records beside the execution, so the
  * roster is its own rather than a slice of the model's.
  */
@@ -750,7 +752,8 @@ export type BlockedReason =
   | "TicketConfigIncompatible"
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
-  | "RequiredCapabilityUnavailable";
+  | "RequiredCapabilityUnavailable"
+  | "RequiredMemoryUnavailable";
 
 /** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
@@ -759,6 +762,7 @@ export const allBlockedReasons: readonly BlockedReason[] = [
   "ExecutionProfileUnavailable",
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
+  "RequiredMemoryUnavailable",
 ];
 
 /**
@@ -778,6 +782,21 @@ export function attemptRefusalBlock(fault: WorkerImageFault | undefined): {
 /** An attempt a pool refused, with the image fault its refusal named where it named one. */
 export interface RefusedAttempt extends FencedAttempt {
   readonly fault?: WorkerImageFault;
+}
+
+/**
+ * An attempt offered to pools that no runner holds: invoked, unleased and
+ * `Placing`, waiting for a runner to claim it. Whether its project is still
+ * `Active` is read beside it, since no claim takes one of a project that is not.
+ */
+export interface WaitingAttempt extends FencedAttempt {
+  readonly projectActive: boolean;
+}
+
+/** What a waiting attempt records of the job it runs, which a fresh preparation is compared against. */
+export interface WaitingAttemptRecord {
+  readonly invocation: WorkTaskInvocation;
+  readonly runtime: string;
 }
 
 /** One claim of a focused request, held for a bounded stretch of database time. */
@@ -864,7 +883,11 @@ export interface ExecutionSchedulerStore {
    */
   openAttempt(opening: AttemptOpening): Promise<AttemptOpened>;
 
-  /** Records what a `Placing` attempt is invoked with, once and only for its current generation. */
+  /**
+   * Records what a `Placing` attempt is invoked with, once and only for its
+   * current generation. One whose execution is routed to pools gives up its
+   * lease in the same move, so it waits for a runner rather than lapsing.
+   */
   attemptInvoked(
     attempt: FencedAttempt,
     invocation: WorkTaskInvocation,
@@ -945,10 +968,41 @@ export interface ExecutionSchedulerStore {
   ): Promise<readonly RefusedAttempt[]>;
 
   /**
+   * At most `attemptsMax` waiting attempts of this epoch, in key order after
+   * the last one the previous call answered, or from the first where that call
+   * answered fewer than `attemptsMax`, so successive calls reach every one; and
+   * nothing under a superseded epoch.
+   */
+  waitingAttempts(
+    epoch: RecoveryEpoch,
+    attemptsMax: number,
+  ): Promise<readonly WaitingAttempt[]>;
+
+  /**
+   * Withdraws a waiting attempt without spending the budget, backing its
+   * execution off, where it is still waiting: one a runner claimed since it was
+   * read is left alone.
+   */
+  waitingAttemptWithdrawn(
+    attempt: FencedAttempt,
+    evidence: AttemptEvidenceRecord,
+  ): Promise<boolean>;
+
+  /**
+   * Withdraws a waiting attempt as `PlacementUnavailable`, as
+   * `waitingAttemptWithdrawn` does, where what it records differs from
+   * `current`.
+   */
+  waitingAttemptOutdated(
+    attempt: FencedAttempt,
+    current: WaitingAttemptRecord,
+  ): Promise<boolean>;
+
+  /**
    * Ends at most `attemptsMax` attempts whose lease has run out and that no
    * pool refused, backing their executions off. One that ran and vanished is
-   * `Lost` and spends the safe retry budget, and one offered to pools that no
-   * pool took is withdrawn as `PlacementUnavailable` without spending it.
+   * `Lost` and spends the safe retry budget, and one offered to pools that was
+   * never invoked is withdrawn as `PlacementUnavailable` without spending it.
    */
   reapLapsedAttempts(
     epoch: RecoveryEpoch,
@@ -972,7 +1026,10 @@ export interface ExecutionSchedulerStore {
   /** Acknowledges external cleanup only after the placement backend accepted removal. */
   attemptCleanupCompleted(attempt: FencedAttempt): Promise<boolean>;
 
-  /** At most `executionsMax` executions that own a slot and have no live attempt. */
+  /**
+   * At most `executionsMax` executions that own a slot and have no live
+   * attempt, and none routed to pools whose project is not `Active`.
+   */
   unlaunched(
     epoch: RecoveryEpoch,
     executionsMax: number,
@@ -1052,9 +1109,10 @@ export type AttemptPlacementOutcome =
 
 /**
  * What one look at a placed attempt's workload found that its own worker could
- * not report. A fault of the image carries the text its person is shown, and a
- * fault of the site says what an operator has to mend; `Unfaulted` is every
- * other answer together, because the lease is what collects all of them.
+ * not report. A fault of the image and a run its site stopped at its deadline
+ * carry the text their person is shown, and a fault of the site says what an
+ * operator has to mend; `Unfaulted` is every other answer together, because
+ * the lease is what collects all of them.
  */
 export type AttemptWorkloadObserved =
   | {
@@ -1062,6 +1120,7 @@ export type AttemptWorkloadObserved =
       readonly fault: WorkerImageFault;
       readonly text: string;
     }
+  | { readonly observed: "TimedOut"; readonly text: string }
   | { readonly observed: "SiteFault"; readonly why: string }
   | { readonly observed: "Unfaulted" };
 

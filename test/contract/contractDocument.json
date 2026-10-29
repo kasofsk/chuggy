@@ -19,6 +19,11 @@
     "nonTerminal": "phase=NonTerminal",
     "selected": "repeat phase with one or more exact phase names"
   },
+  "configurationLatestFilter": {
+    "query": "latest",
+    "all": "omit latest, or latest=false: every revision, newest first",
+    "latest": "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing"
+  },
   "identities": {
     "installation": "canonical UUID authority identity",
     "tenant": "percent-encoded opaque UTF-8 path segment",
@@ -35,18 +40,19 @@
   "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
   "selectorProposals": "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
+  "threadLimit": "a member holds at most their limit of open threads in a project, 10 until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing",
   "forgeInstallations": "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
   "projectCreation": "a principal creates a project in a tenant it administers, or, where the site permits it to create a tenant, in a tenant no grant holds, which it then administers, and a caller the site does not permit is refused for such a tenant before anything is written; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most 39 lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named access, api, auth, forge, health, invite, projects, tenants, and its creator repeating the request, under any idempotency key, answers the same project",
   "repositoryBinding": "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
   "repositoryLanding": "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket whose landing is None names no reference to land on",
   "repositoryRetirement": "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
-  "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap that still releases and otherwise answers what the project holds; the bootstrap is one revision per project and never rewritten, so two requests racing author it once and a repository meeting one whose text differs, being another repository's or outgrown by the release rule, defers as BootstrapDiffers until it declares its own",
-  "repositoryCreation": "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
+  "repositoryConfigurations": "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
   "executionPlacement": "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
-  "sessionPlacement": "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread to its member's personal runners where they serve the project, an inquiry to a pool its member registered on the project, and the lead to any of the project's pools, so a member with no such runner for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner is registered and has polled lately",
+  "sessionPlacement": "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread and an inquiry to its member's chat host and the lead to any of the project's pools, so a member with no chat host for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner or host is registered and has polled lately",
   "ownerFallback": "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
-  "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
+  "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
   "personalRunnerRegistration": "a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold 16, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live",
+  "chatHostRegistration": "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
   "actionReports": "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
   "actionReach": "for each action a ticket's repository declares, whether what was reported of the action holds the commit the ticket landed at: Reached where its newest success does, Failed where its newest report is a failure that does, RolledBack where only a success beneath its newest, reported since the ticket landed, does, NotYet where none does, and Unknown where this server could not find out inside the time one read is given, which it answers rather than wait and a later read may answer otherwise; a mark read from a report shows it; a ticket that has landed nowhere, which one whose proposal a person is left to merge is, answers no repository, commit or actions; it is read as the ticket is and derived each time it is asked",
   "ticketLandings": "each finalization a ticket has had, oldest first and the newest of them where it has had more than one read answers, as what is recorded of it: Running, Held at the last hold recorded, AwaitingApproval while a person has an approval open, Failed where it sent the ticket back to work, Unavailable where it escalated, Landed with the commit it landed at, Proposed where it concluded at an open pull request, or Invalidated; with its newest attempt, the paths a conflict its manifest records named, and its pull request; one that landed nothing and tried nothing is left out; it is read as the ticket is, written with no event, and polled",
@@ -95,10 +101,10 @@
     "events": "/api/v1/tenants/:tenant/projects/:project/events",
     "configurations": "/api/v1/tenants/:tenant/projects/:project/configurations",
     "configurationImports": "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
+    "configurationHead": "/api/v1/tenants/:tenant/projects/:project/configurations/imports/head",
     "configuration": "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
     "forgeCredentials": "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
     "projectRepositories": "/api/v1/tenants/:tenant/projects/:project/repositories",
-    "projectRepositoriesNew": "/api/v1/tenants/:tenant/projects/:project/repositories/new",
     "projectRepositoryLanding": "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
     "projectRepositoryRetirement": "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
     "projectRepositoryConfigurations": "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
@@ -117,12 +123,26 @@
     "personalRunnerProject": "/api/v1/tenants/:tenant/personal-runner/projects/:project",
     "personalRunnerRunner": "/api/v1/tenants/:tenant/personal-runner/runners/:runner",
     "personalRunnerMember": "/api/v1/tenants/:tenant/personal-runners/:subject",
+    "chatHostRegistrationTokens": "/api/v1/tenants/:tenant/chat-host-registration-tokens",
+    "chatHost": "/api/v1/tenants/:tenant/chat-host",
+    "chatAbilities": "/api/v1/tenants/:tenant/chat/abilities",
+    "chatProjects": "/api/v1/tenants/:tenant/chat/projects",
+    "chatThreads": "/api/v1/tenants/:tenant/chat/threads",
+    "chatThread": "/api/v1/tenants/:tenant/chat/threads/:session",
+    "chatThreadTranscript": "/api/v1/tenants/:tenant/chat/threads/:session/transcript",
+    "chatThreadMessages": "/api/v1/tenants/:tenant/chat/threads/:session/messages",
+    "chatThreadClose": "/api/v1/tenants/:tenant/chat/threads/:session/close",
+    "chatThreadRename": "/api/v1/tenants/:tenant/chat/threads/:session/rename",
+    "chatThreadHide": "/api/v1/tenants/:tenant/chat/threads/:session/hide",
+    "chatThreadLive": "/api/v1/tenants/:tenant/chat/threads/:session/live",
+    "chatThreadTurnStop": "/api/v1/tenants/:tenant/chat/threads/:session/turns/:turn/stop",
     "actionReports": "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
     "drafts": "/api/v1/tenants/:tenant/projects/:project/drafts",
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "dispatchView": "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
     "threads": "/api/v1/tenants/:tenant/projects/:project/threads",
+    "threadLimit": "/api/v1/tenants/:tenant/projects/:project/thread-limits/:subject",
     "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
     "threadTranscript": "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
     "threadMessages": "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
@@ -373,6 +393,391 @@
                     }
                   },
                   "additionalProperties": false
+                },
+                "workloads": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+                  },
+                  "additionalProperties": {
+                    "type": "object",
+                    "properties": {
+                      "runner": {
+                        "type": "string",
+                        "enum": ["Agent", "Commands"]
+                      },
+                      "purpose": {
+                        "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                        "type": "string",
+                        "enum": ["Review", "Check"]
+                      },
+                      "prompt": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "text": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 65536,
+                                "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                              }
+                            },
+                            "required": ["text"],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "path": {
+                                "type": "string",
+                                "maxLength": 256,
+                                "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                                "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                              }
+                            },
+                            "required": ["path"],
+                            "additionalProperties": false
+                          }
+                        ],
+                        "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                      },
+                      "worker": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "oneOf": [
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "SingleAgent"
+                                      },
+                                      "agent": {
+                                        "type": "string",
+                                        "const": "Claude"
+                                      },
+                                      "arguments": {
+                                        "maxItems": 64,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "model": {
+                                        "not": {}
+                                      }
+                                    },
+                                    "required": ["type", "agent", "arguments"]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "type": {
+                                        "type": "string",
+                                        "const": "SingleAgent"
+                                      },
+                                      "agent": {
+                                        "type": "string",
+                                        "const": "Codex"
+                                      },
+                                      "arguments": {
+                                        "maxItems": 64,
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string"
+                                        }
+                                      },
+                                      "model": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                        "maxLength": 128,
+                                        "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                      }
+                                    },
+                                    "required": [
+                                      "type",
+                                      "agent",
+                                      "arguments",
+                                      "model"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "arguments": {
+                                "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                              },
+                              "setup": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                              },
+                              "files": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "content": {
+                                      "type": "string",
+                                      "maxLength": 65536
+                                    }
+                                  },
+                                  "required": ["path", "content"]
+                                }
+                              }
+                            },
+                            "required": ["mode", "setup", "files"]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "setup": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                },
+                                "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                              },
+                              "files": {
+                                "maxItems": 64,
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "path": {
+                                      "type": "string"
+                                    },
+                                    "content": {
+                                      "type": "string",
+                                      "maxLength": 65536
+                                    }
+                                  },
+                                  "required": ["path", "content"]
+                                }
+                              }
+                            },
+                            "required": ["setup", "files"],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "authority": {
+                        "type": "object",
+                        "properties": {
+                          "tools": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "credentials": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "network": {
+                            "type": "boolean"
+                          },
+                          "filesystem": {
+                            "type": "string",
+                            "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                          },
+                          "mayCompleteTask": {
+                            "type": "boolean"
+                          }
+                        }
+                      },
+                      "framing": {
+                        "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                        "type": "string",
+                        "enum": ["Chuggy"]
+                      },
+                      "practices": {
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "RegressionCoverage",
+                            "ChangedCallPaths",
+                            "AcceptanceCriteria"
+                          ]
+                        },
+                        "description": "The importer also holds that each is named at most once."
+                      },
+                      "brief": {
+                        "type": "object",
+                        "properties": {
+                          "motivation": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "acceptanceCriteria": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          },
+                          "constraints": {
+                            "maxItems": 8,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                            }
+                          }
+                        },
+                        "required": [
+                          "motivation",
+                          "acceptanceCriteria",
+                          "constraints"
+                        ],
+                        "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                      },
+                      "commands": {
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        },
+                        "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                      },
+                      "image": {
+                        "type": "string",
+                        "maxLength": 512,
+                        "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                        "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                      },
+                      "executionRequirement": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "Container"
+                              },
+                              "operatingSystem": {
+                                "type": "string",
+                                "enum": ["Linux", "MacOS"]
+                              },
+                              "architecture": {
+                                "type": "string",
+                                "enum": ["Amd64", "Arm64"]
+                              },
+                              "image": {
+                                "type": "string",
+                                "maxLength": 512,
+                                "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                                "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "operatingSystem",
+                              "architecture",
+                              "image"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "description": "ContainerCapability is this mode's former name, read as Capability.",
+                                "type": "string",
+                                "enum": ["Capability", "ContainerCapability"]
+                              },
+                              "operatingSystem": {
+                                "type": "string",
+                                "enum": ["Linux", "MacOS"]
+                              },
+                              "architecture": {
+                                "type": "string",
+                                "enum": ["Amd64", "Arm64"]
+                              },
+                              "capabilities": {
+                                "minItems": 1,
+                                "maxItems": 63,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 63,
+                                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                                },
+                                "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                              }
+                            },
+                            "required": [
+                              "mode",
+                              "operatingSystem",
+                              "architecture",
+                              "capabilities"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      },
+                      "resources": {
+                        "type": "object",
+                        "properties": {
+                          "cpus": {
+                            "description": "Whole CPUs.",
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 64
+                          },
+                          "memoryMib": {
+                            "description": "Memory in MiB.",
+                            "type": "integer",
+                            "minimum": 512,
+                            "maximum": 262144
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+                  }
                 }
               },
               "additionalProperties": false
@@ -507,35 +912,11 @@
         }
       ]
     },
-    "configurationCreation": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "revision": {
-          "type": "string",
-          "minLength": 1
-        },
-        "parent": {
-          "type": "string",
-          "minLength": 1
-        },
-        "canonical": {
-          "type": "string",
-          "minLength": 1
-        }
-      },
-      "required": ["revision", "canonical"],
-      "additionalProperties": false
-    },
     "repositoryConfigurationImport": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
         "repository": {
-          "type": "string",
-          "minLength": 1
-        },
-        "commit": {
           "type": "string",
           "minLength": 1
         }
@@ -846,6 +1227,391 @@
                 }
               },
               "additionalProperties": false
+            },
+            "workloads": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "runner": {
+                    "type": "string",
+                    "enum": ["Agent", "Commands"]
+                  },
+                  "purpose": {
+                    "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                    "type": "string",
+                    "enum": ["Review", "Check"]
+                  },
+                  "prompt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536,
+                            "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                          }
+                        },
+                        "required": ["text"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                            "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                          }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                  },
+                  "worker": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Claude"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "not": {}
+                                  }
+                                },
+                                "required": ["type", "agent", "arguments"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Codex"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "agent",
+                                  "arguments",
+                                  "model"
+                                ]
+                              }
+                            ]
+                          },
+                          "arguments": {
+                            "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                          },
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["mode", "setup", "files"]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["setup", "files"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "authority": {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "credentials": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "network": {
+                        "type": "boolean"
+                      },
+                      "filesystem": {
+                        "type": "string",
+                        "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                      },
+                      "mayCompleteTask": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "framing": {
+                    "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                    "type": "string",
+                    "enum": ["Chuggy"]
+                  },
+                  "practices": {
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "RegressionCoverage",
+                        "ChangedCallPaths",
+                        "AcceptanceCriteria"
+                      ]
+                    },
+                    "description": "The importer also holds that each is named at most once."
+                  },
+                  "brief": {
+                    "type": "object",
+                    "properties": {
+                      "motivation": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "acceptanceCriteria": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "constraints": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "motivation",
+                      "acceptanceCriteria",
+                      "constraints"
+                    ],
+                    "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                  },
+                  "commands": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                    },
+                    "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                  },
+                  "image": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                    "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                  },
+                  "executionRequirement": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "Container"
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "image": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                            "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "image"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "description": "ContainerCapability is this mode's former name, read as Capability.",
+                            "type": "string",
+                            "enum": ["Capability", "ContainerCapability"]
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "capabilities": {
+                            "minItems": 1,
+                            "maxItems": 63,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 63,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                            },
+                            "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "capabilities"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "resources": {
+                    "type": "object",
+                    "properties": {
+                      "cpus": {
+                        "description": "Whole CPUs.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 64
+                      },
+                      "memoryMib": {
+                        "description": "Memory in MiB.",
+                        "type": "integer",
+                        "minimum": 512,
+                        "maximum": 262144
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false,
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+              }
             }
           },
           "additionalProperties": false
@@ -1180,6 +1946,391 @@
                 }
               },
               "additionalProperties": false
+            },
+            "workloads": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "runner": {
+                    "type": "string",
+                    "enum": ["Agent", "Commands"]
+                  },
+                  "purpose": {
+                    "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
+                    "type": "string",
+                    "enum": ["Review", "Check"]
+                  },
+                  "prompt": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "text": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 65536,
+                            "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                          }
+                        },
+                        "required": ["text"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "type": "string",
+                            "maxLength": 256,
+                            "pattern": "^\\.chug(?:\\/(?!\\.\\.?(?:\\/|$))[^/\\\\\\u0000-\\u001f\\u007f-\\u009f]+)+$",
+                            "description": "A file in the repository, relative to its root and under .chug/, read at the commit the configuration is imported from. The importer also holds that it is a regular file and not a symbolic link."
+                          }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names."
+                  },
+                  "worker": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "oneOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Claude"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "not": {}
+                                  }
+                                },
+                                "required": ["type", "agent", "arguments"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "const": "SingleAgent"
+                                  },
+                                  "agent": {
+                                    "type": "string",
+                                    "const": "Codex"
+                                  },
+                                  "arguments": {
+                                    "maxItems": 64,
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "model": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128,
+                                    "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  }
+                                },
+                                "required": [
+                                  "type",
+                                  "agent",
+                                  "arguments",
+                                  "model"
+                                ]
+                              }
+                            ]
+                          },
+                          "arguments": {
+                            "description": "Ignored beside mode. The importer also holds that it is not a list of strings."
+                          },
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["mode", "setup", "files"]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "setup": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset."
+                          },
+                          "files": {
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "path": {
+                                  "type": "string"
+                                },
+                                "content": {
+                                  "type": "string",
+                                  "maxLength": 65536
+                                }
+                              },
+                              "required": ["path", "content"]
+                            }
+                          }
+                        },
+                        "required": ["setup", "files"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "authority": {
+                    "type": "object",
+                    "properties": {
+                      "tools": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "credentials": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "network": {
+                        "type": "boolean"
+                      },
+                      "filesystem": {
+                        "type": "string",
+                        "enum": ["None", "ReadWorkspace", "WriteWorkspace"]
+                      },
+                      "mayCompleteTask": {
+                        "type": "boolean"
+                      }
+                    }
+                  },
+                  "framing": {
+                    "description": "Chuggy adds the standing role and result wording of chuggy's own briefing template around the prompt; absent adds none.",
+                    "type": "string",
+                    "enum": ["Chuggy"]
+                  },
+                  "practices": {
+                    "maxItems": 3,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "RegressionCoverage",
+                        "ChangedCallPaths",
+                        "AcceptanceCriteria"
+                      ]
+                    },
+                    "description": "The importer also holds that each is named at most once."
+                  },
+                  "brief": {
+                    "type": "object",
+                    "properties": {
+                      "motivation": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "acceptanceCriteria": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      },
+                      "constraints": {
+                        "maxItems": 8,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "motivation",
+                      "acceptanceCriteria",
+                      "constraints"
+                    ],
+                    "description": "The importer also holds that motivation and acceptanceCriteria are not both empty."
+                  },
+                  "commands": {
+                    "minItems": 1,
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                    },
+                    "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
+                  },
+                  "image": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                    "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                  },
+                  "executionRequirement": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "Container"
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "image": {
+                            "type": "string",
+                            "maxLength": 512,
+                            "pattern": "^(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::[0-9]+)?\\/)?[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*(?:\\/[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*)*(?::[A-Za-z0-9_][A-Za-z0-9_.-]{0,127})?(?:@sha256:[0-9a-f]{64})?$",
+                            "description": "A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at /opt/chuggy and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc 2.28 or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in /workspace, with the repository its ticket names checked out at /workspace/repository; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "image"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "description": "ContainerCapability is this mode's former name, read as Capability.",
+                            "type": "string",
+                            "enum": ["Capability", "ContainerCapability"]
+                          },
+                          "operatingSystem": {
+                            "type": "string",
+                            "enum": ["Linux", "MacOS"]
+                          },
+                          "architecture": {
+                            "type": "string",
+                            "enum": ["Amd64", "Arm64"]
+                          },
+                          "capabilities": {
+                            "minItems": 1,
+                            "maxItems": 63,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "maxLength": 63,
+                              "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
+                            },
+                            "description": "Tokens the project and its runners agree on, an agent among them as Agent:<name>. The importer also holds that each is named at most once."
+                          }
+                        },
+                        "required": [
+                          "mode",
+                          "operatingSystem",
+                          "architecture",
+                          "capabilities"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "resources": {
+                    "type": "object",
+                    "properties": {
+                      "cpus": {
+                        "description": "Whole CPUs.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 64
+                      },
+                      "memoryMib": {
+                        "description": "Memory in MiB.",
+                        "type": "integer",
+                        "minimum": 512,
+                        "maximum": 262144
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "additionalProperties": false,
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+              }
             }
           },
           "additionalProperties": false
@@ -1328,26 +2479,6 @@
       "required": ["repository"],
       "additionalProperties": false
     },
-    "projectRepositoryCreate": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
-      "properties": {
-        "account": {
-          "type": "string",
-          "minLength": 1
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "visibility": {
-          "type": "string",
-          "enum": ["private", "public"]
-        }
-      },
-      "required": ["account", "name", "visibility"],
-      "additionalProperties": false
-    },
     "projectRepositoryLanding": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1377,9 +2508,22 @@
           },
           "required": ["mode"],
           "additionalProperties": false
+        },
+        "pipelinesWritable": {
+          "type": "object",
+          "properties": {
+            "expected": {
+              "type": "boolean"
+            },
+            "wanted": {
+              "type": "boolean"
+            }
+          },
+          "required": ["expected", "wanted"],
+          "additionalProperties": false
         }
       },
-      "required": ["repository", "expected", "landing"],
+      "required": ["repository", "expected", "landing", "pipelinesWritable"],
       "additionalProperties": false
     },
     "projectRepositoryRetirement": {
@@ -1545,6 +2689,33 @@
       "required": ["outcome"],
       "additionalProperties": false
     },
+    "threadOpen": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        }
+      },
+      "required": ["key"],
+      "additionalProperties": false
+    },
+    "threadLimit": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "threadsMax": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        }
+      },
+      "required": ["threadsMax"],
+      "additionalProperties": false
+    },
     "threadMessage": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
@@ -1597,7 +2768,14 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
       "properties": {
+        "lifetimeSecs": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
         "capabilities": {
+          "deprecated": true,
+          "description": "Ignored. A runner declares its capabilities when it redeems the token.",
           "maxItems": 64,
           "type": "array",
           "items": {
@@ -1605,14 +2783,9 @@
             "maxLength": 63,
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_:-]*$"
           }
-        },
-        "lifetimeSecs": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
         }
       },
-      "required": ["capabilities", "lifetimeSecs"],
+      "required": ["lifetimeSecs"],
       "additionalProperties": false
     },
     "workerPoolRedemption": {

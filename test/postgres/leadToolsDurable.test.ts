@@ -519,7 +519,7 @@ const leadToolDoors: readonly {
   },
   {
     door: `${repositoryLandingReadFunction}(text,text,text)`,
-    holders: [apiRole, workerPlaneRole],
+    holders: [apiRole, workerPlaneRole, finalizerRole],
   },
   {
     door: `${repositoryBindingListFunction}(text,text,bigint)`,

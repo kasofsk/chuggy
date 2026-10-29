@@ -6,7 +6,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { ticketLandingsPolledMs } from "../app/core/ticketLandings.ts";
 import {
   answer,
@@ -35,7 +34,7 @@ import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -55,7 +54,15 @@ vi.mock("@tanstack/react-router", () => ({
  * the read asked again on a frame and on a clock.
  */
 
+/**
+ * The instant every case is drawn at. The page reads ages against the clock,
+ * so a clock left moving lets two draws a case compares straddle a change in
+ * an age's text; only `Date` is fixed, so the harness's timers still run.
+ */
+const ticketPageLandingsNowMs = Date.parse("2026-10-29T00:30:00Z");
+
 beforeEach(() => {
+  vi.setSystemTime(ticketPageLandingsNowMs);
   resizeObserverStubbed();
   viewportAtEm(viewportDeskEm);
 });

@@ -40,6 +40,8 @@
  *      dropped, and its settlement of that turn is taken and recorded nowhere.
  */
 
+import { createHash } from "node:crypto";
+
 import {
   sessionIdentityCharsMax,
   sessionStoreStreamCharsMax,
@@ -50,7 +52,7 @@ import {
 } from "../contract/sessionPlane.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type { Principal } from "./principal.ts";
-import type { Partition } from "./projectStore.ts";
+import { asProjectId, type Partition, type TenantId } from "./projectStore.ts";
 import type { CapacityAccountId, ClusterId } from "./schedulerIdentity.ts";
 
 declare const sessionIdBrand: unique symbol;
@@ -155,6 +157,36 @@ export function asSessionBearerSecret(value: string): SessionBearerSecret {
 export const allSessionKinds = ["Lead", "Thread", "Inquiry"] as const;
 export type SessionKind = (typeof allSessionKinds)[number];
 
+/**
+ * Whose a session is: a project's, which reads and writes that project, or a
+ * member's own, which no project holds and which runs on their chat host alone.
+ */
+export const allSessionScopes = ["Project", "Member"] as const;
+export type SessionScope = (typeof allSessionScopes)[number];
+
+/**
+ * The partition a member's own sessions are kept in: their tenant, and a
+ * project identity no project may take, since it begins `@`. It is the hex
+ * SHA-256 of the principal so that it is bounded whatever the principal is,
+ * and the schema computes the same value to hold each row to its owner.
+ */
+export function memberScopePartition(
+  tenant: TenantId,
+  principal: Principal,
+): Partition {
+  return {
+    tenant,
+    project: asProjectId(
+      `@member-${createHash("sha256").update(principal, "utf8").digest("hex")}`,
+    ),
+  };
+}
+
+/** Whether a partition is a member's own rather than a project's. */
+export function memberScopeReserved(partition: Partition): boolean {
+  return partition.project.startsWith("@");
+}
+
 /** Whether a session still takes turns, which is the whole of its lifecycle. */
 export const allSessionStates = ["Open", "Closed"] as const;
 export type SessionState = (typeof allSessionStates)[number];
@@ -173,16 +205,29 @@ export const allSessionCapabilities = [
   /** The chuggy server's authorship: drafts, and releasing one. */
   "DraftAuthor",
   /**
-   * Originating a draft from nothing and revoking a ticket, which a member
-   * may do and the lead may not. It is its own member rather than part of
+   * Originating a draft from nothing, applying a Pending ticket's revision
+   * and revoking a ticket, which a member may do and the lead may not. It is its own member rather than part of
    * `DraftAuthor` because `DraftAuthor` is where the derived-work rule sits —
    * a dependent is filed against a parent that already exists, and there is
    * no bare create — and widening it would hand the lead the one thing that
    * rule withholds.
    */
   "DraftOriginate",
+  /**
+   * Dispatching a released ticket as the session's principal, which the API
+   * authorizes as that principal's own dispatch. It is not `LeadDecision`
+   * because a decision tool writes nothing and this one submits a command.
+   */
+  "TicketDispatch",
   /** The decision tools, which write nothing and compose the turn's answer. */
   "LeadDecision",
+  /**
+   * What a member's own session reads of them: who they are, the projects
+   * they may list, their threads and their machines. A project's session never
+   * holds it and a member's holds nothing else, so neither reaches the other's
+   * reads.
+   */
+  "MemberRead",
 ] as const;
 export type SessionCapability = (typeof allSessionCapabilities)[number];
 
@@ -372,6 +417,8 @@ export interface SessionBearerIdentity {
   readonly session: SessionId;
   readonly kind: SessionKind;
   readonly principal: Principal;
+  /** A member's own session is confined to the member's routes, and a project's to its partition's. */
+  readonly scope: SessionScope;
 }
 
 /**
@@ -404,8 +451,9 @@ export interface AgentSession {
   readonly capabilities: readonly SessionCapability[];
   /** The named credential mount the session speaks through. */
   readonly credentialSlot: string;
-  readonly account: CapacityAccountId;
-  readonly cluster: ClusterId;
+  /** The capacity a project's session draws, absent from a member's own session, which draws none. */
+  readonly account?: CapacityAccountId;
+  readonly cluster?: ClusterId;
   readonly state: SessionState;
 }
 

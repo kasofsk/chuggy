@@ -150,8 +150,12 @@ export function agentSessionRowOf(row: AgentSessionRow): AgentSession {
       : { agentReference: row.agent_reference }),
     capabilities: sessionRowCapabilities(row.capabilities),
     credentialSlot: sessionRowText(row.credential_slot, "credential slot"),
-    account: asCapacityAccountId(sessionRowText(row.account, "account")),
-    cluster: asClusterId(sessionRowText(row.cluster, "cluster")),
+    ...(row.account === null && row.cluster === null
+      ? {}
+      : {
+          account: asCapacityAccountId(sessionRowText(row.account, "account")),
+          cluster: asClusterId(sessionRowText(row.cluster, "cluster")),
+        }),
     state: sessionRowMember<SessionState>(
       allSessionStates,
       row.state,

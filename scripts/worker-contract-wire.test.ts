@@ -278,6 +278,16 @@ const keyRows: readonly (readonly [string, string, string])[] = [
     'z.string().refine((value) => value.length > 1, "short")',
     'z.string().refine((value) => value.length > 1, "brief")',
   ],
+  [
+    "minimum length error",
+    'z.string().min(1, { error: "empty" })',
+    'z.string().min(1, { error: "blank" })',
+  ],
+  [
+    "maximum length error",
+    'z.string().max(8, { error: "long" })',
+    'z.string().max(8, { error: "lengthy" })',
+  ],
   ["enum entries", 'z.enum(["a", "b"])', 'z.enum(["a", "c"])'],
   ["literal values", 'z.literal("a")', 'z.literal("b")'],
   ["nullable innerType", "z.string().nullable()", "z.number().nullable()"],

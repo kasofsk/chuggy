@@ -1,6 +1,6 @@
 /**
- * The edit form as a person drives it: what it is prefilled with, what it
- * will not let them change, and what one click sends in what order.
+ * The edit form as a person drives it: what it is prefilled with, which
+ * dependencies it offers, and what one click sends in what order.
  *
  * The API is a double that records every request, so what is asserted is the
  * traffic and the screen rather than a return value.
@@ -141,13 +141,35 @@ test("the form opens on the draft's current revision", () => {
   ).toBe("topic/one");
 });
 
-test("the dependencies are drawn, and nowhere offered to change", () => {
-  draw(api({ status: 200, body: draft }).ports, []);
-  expect(screen.getByText("#7")).toBeDefined();
-  expect(screen.getByText("Fixed once released")).toBeDefined();
+/** Ticket 3 is held though the project no longer offers it, as a revoked
+ * dependency is, and ticket 12 is the one being edited. */
+test("the dependencies are offered to change, the held ones kept and the ticket itself left out", async () => {
+  const holding = {
+    ...draft,
+    authoring: { ...draft.authoring, dependencies: [3, 7] },
+  };
+  const held = api({ status: 200, body: { ...holding, authoringVersion: 4 } });
+  draw(held.ports, [], holding, [
+    creationOffer(undefined, { dependencyCandidates: [7, 8, 12] }),
+  ]);
   fireEvent.click(screen.getByRole("button", { name: /Advanced/u }));
-  expect(screen.queryByText("Ticket 7")).toBeNull();
-  expect(screen.queryAllByRole("checkbox")).toEqual([]);
+  const offered = screen.getAllByRole<HTMLInputElement>("checkbox");
+  expect(
+    offered.map((box) => [box.parentElement?.textContent, box.checked]),
+  ).toStrictEqual([
+    ["Ticket 3", true],
+    ["Ticket 7", true],
+    ["Ticket 8", false],
+  ]);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Ticket 3" }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Ticket 8" }));
+  submit();
+  await waitFor(() => {
+    expect(held.sent.some((one) => one.method === "PUT")).toBe(true);
+  });
+  expect(held.sent.find((one) => one.method === "PUT")?.body).toMatchObject({
+    authoring: { dependencies: [7, 8] },
+  });
 });
 
 test("a submit revises the draft, then releases the update, then leaves", async () => {
@@ -181,16 +203,16 @@ test("a submit revises the draft, then releases the update, then leaves", async 
   });
 });
 
-test("a revision the door locks is said in its own words, and nothing is released", async () => {
+test("a revision the door refuses is said in its own words, and nothing is released", async () => {
   const held = api({
     status: 409,
-    body: { error: { code: "DependenciesLocked" } },
+    body: { error: { code: "DraftNotEditable" } },
   });
   const updated: string[] = [];
   draw(held.ports, updated);
   submit();
   await screen.findByText(
-    "what this ticket depends on cannot change once it is released",
+    "the draft is closed to revision: only a pending ticket's draft can be revised",
   );
   expect(updated).toStrictEqual([]);
   expect(held.sent.some((one) => one.path.endsWith("/operations"))).toBe(false);

@@ -13,33 +13,76 @@
  * through it, since what it says is true of the chat as well.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
- * navigation under it: the pages change beneath the bar and the conversation
- * does not. It takes the body three ways and no fourth — a column beside the
- * pages, the whole body, or the strip its own control expands — and a viewport
- * too narrow to divide stacks the column or the strip under the pages instead,
- * starting as the strip until the reader expands it.
+ * navigation between the pages: they change beneath the bar and the
+ * conversation does not. It takes the body three ways and no fourth — a column
+ * beside the pages, the whole body, or the strip its own control expands — and
+ * a viewport too narrow to divide stacks the column or the strip under the
+ * pages instead, starting as the strip until the reader expands it. A thread's
+ * own page is drawn with no pane at all, since the thread is the page there.
+ *
+ * THE READER DRAGS THE EDGE. The column is as wide as the reader leaves it,
+ * or under the pages as great a share of the height, and dragging it past its
+ * narrowest makes it the strip. So the pages are a column of whatever width is
+ * left, and the details ask that column rather than the viewport whether they
+ * fit beside a page.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live.
  */
 
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useParams } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
-import type { ReactNode } from "react";
+import { memo, useLayoutEffect, useMemo, useState } from "react";
+import type { ReactNode, RefObject } from "react";
+import {
+  Group,
+  Panel,
+  Separator as PanelSeparator,
+  useDefaultLayout,
+  useGroupRef,
+  usePanelRef,
+} from "react-resizable-panels";
+import type {
+  GroupImperativeHandle,
+  Layout,
+  LayoutChangedMeta,
+  PanelImperativeHandle,
+} from "react-resizable-panels";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
-  chatPaneContentDrawn,
   chatPaneCoversBar,
+  chatPaneDragged,
+  chatPaneKept,
+  chatPaneLayoutId,
+  chatPaneLayoutKept,
+  chatPaneLayoutPanels,
+  chatPaneLayoutShare,
+  chatPaneLayoutStore,
   chatPaneNarrowed,
+  chatPaneOnPage,
+  chatPaneOrientation,
+  chatPanePanels,
+  chatPaneShareText,
+  chatPaneSizes,
+  chatPaneSizeStrip,
   chatPaneStripped,
 } from "../core/chatPane.ts";
-import type { ChatPanePlacement, ChatPaneState } from "../core/chatPane.ts";
+import type {
+  ChatPaneLayout,
+  ChatPaneSizes,
+  ChatPaneState,
+} from "../core/chatPane.ts";
 import {
   projectStreamCarrying,
   projectStreamUnanswered,
 } from "../core/projectStream.ts";
-import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
+import {
+  clipboardWritten,
+  elapsedMs,
+  persistentStore,
+  syntaxWorkerOpened,
+} from "./ports.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -47,7 +90,10 @@ import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
 import { TopBar } from "./shell/TopBar.tsx";
 import {
+  useElementAtLeastEm,
   useViewportAtLeastEm,
+  viewportColumnAsideEm,
+  ViewportColumnAsideProvider,
   viewportNarrowEm,
   viewportTwoColumnEm,
 } from "./shell/viewport.ts";
@@ -83,37 +129,6 @@ export function StreamBanner(): ReactNode {
       detail={exhausted ? "Stream closed · fallback exhausted" : detail}
     />
   );
-}
-
-/** The tracks the body below the bar takes, total over the placements so a
- * placement the roster grows stops compiling rather than drawing one column. */
-const shellBodyTracks: Readonly<Record<ChatPanePlacement, string>> = {
-  Right: "grid-cols-[minmax(0,1fr)_var(--width-chat)]",
-  Left: "grid-cols-[var(--width-chat)_minmax(0,1fr)]",
-  Bottom: "grid-rows-[minmax(0,1fr)_var(--height-chat)]",
-};
-
-/** The same tracks for a collapsed pane, which is a strip of its own width
- * rather than a share of the frame. */
-const shellStripTracks: Readonly<Record<ChatPanePlacement, string>> = {
-  Right: "grid-cols-[minmax(0,1fr)_var(--width-chat-strip)]",
-  Left: "grid-cols-[var(--width-chat-strip)_minmax(0,1fr)]",
-  Bottom: "grid-rows-[minmax(0,1fr)_var(--width-chat-strip)]",
-};
-
-/** The edge the pane draws against the pages, which is the side the pages are
- * on. */
-const shellPaneEdges: Readonly<Record<ChatPanePlacement, string>> = {
-  Right: "border-l border-edge",
-  Left: "border-r border-edge",
-  Bottom: "border-t border-edge",
-};
-
-function shellBodyTracksDrawn(chat: ChatPaneState): string {
-  if (!chatPaneContentDrawn(chat)) return "grid-cols-1";
-  return chatPaneStripped(chat)
-    ? shellStripTracks[chat.placement]
-    : shellBodyTracks[chat.placement];
 }
 
 /**
@@ -160,19 +175,250 @@ function ShellHeader(props: {
   );
 }
 
-/** Everything under the bar, which is what the pages and the pane divide
- * between them. */
-function ShellBody(props: {
-  readonly children: ReactNode;
+/** The pages' panel, which says to every page under it whether its width holds
+ * the details beside a page. Nothing it is handed changes while the edge is
+ * dragged, so a drag does not draw the pages again. */
+const ShellBodyPages = memo(function ShellBodyPages(props: {
+  readonly sizes: ChatPaneSizes;
+}): ReactNode {
+  const [columnHeld, columnAside] = useElementAtLeastEm(viewportColumnAsideEm);
+  return (
+    <Panel
+      id={chatPanePanels.pages}
+      minSize={props.sizes.pagesMin}
+      elementRef={columnHeld}
+      className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
+    >
+      <ViewportColumnAsideProvider value={columnAside}>
+        <DetailsPane>
+          <Outlet />
+        </DetailsPane>
+      </ViewportColumnAsideProvider>
+    </Panel>
+  );
+});
+
+/**
+ * The pane's panel made to follow the stored presentation: collapsed to the
+ * strip, or opened to the layout these panels were last laid open at, else to
+ * the one stored for them, else to its default. A stored share the frame has
+ * since grown too narrow for is laid as the strip, so it opens at its least
+ * instead.
+ */
+function shellBodyFollowed(
+  group: GroupImperativeHandle | null,
+  panel: PanelImperativeHandle | null,
+  along: {
+    readonly stripped: boolean;
+    readonly opened: ChatPaneLayout | undefined;
+    readonly stored: ChatPaneLayout | undefined;
+    readonly sizes: ChatPaneSizes;
+  },
+): void {
+  if (group === null || panel === null) return;
+  if (along.stripped === panel.isCollapsed()) return;
+  if (along.stripped) {
+    panel.collapse();
+    return;
+  }
+  const open = along.opened ?? along.stored;
+  if (open === undefined) panel.resize(along.sizes.chatDefault);
+  else group.setLayout(open);
+  if (panel.isCollapsed()) panel.resize(along.sizes.chatMin);
+}
+
+/** The pane's panel, which keeps the unit of the size it is held to as the
+ * frame around it resizes and gives the pages what is left. It is named for
+ * where it is drawn, and like the pages it is not drawn again by a drag. */
+const ShellBodyChat = memo(function ShellBodyChat(props: {
+  readonly id: string;
+  readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  readonly sizes: ChatPaneSizes;
+  readonly panelRef: RefObject<PanelImperativeHandle | null>;
 }): ReactNode {
   return (
-    <div
-      data-chat={props.chat.presentation.toLowerCase()}
-      className={`grid min-h-0 min-w-0 ${shellBodyTracksDrawn(props.chat)}`}
+    <Panel
+      id={props.id}
+      panelRef={props.panelRef}
+      collapsible
+      collapsedSize={chatPaneSizeStrip}
+      defaultSize={props.sizes.chatDefault}
+      minSize={props.sizes.chatMin}
+      groupResizeBehavior={chatPaneKept(
+        props.sizes,
+        chatPaneStripped(props.chat),
+      )}
+      className="@container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
-      {props.children}
-    </div>
+      <ChatPane partition={props.partition} chat={props.chat} />
+    </Panel>
+  );
+});
+
+/** The panels in the order drawn, with the edge between two of them. They are
+ * keyed by what they are rather than by the names they are drawn under, so
+ * the pane moving leaves every one of them mounted. */
+function shellBodyDrawn(props: {
+  readonly partition: PartitionIdentity;
+  readonly chat: ChatPaneState | undefined;
+  readonly sizes: ChatPaneSizes;
+  readonly panelIds: readonly string[];
+  readonly chatPanel: RefObject<PanelImperativeHandle | null>;
+  readonly shareText: string | undefined;
+}): readonly ReactNode[] {
+  return props.panelIds.flatMap((id, index) => [
+    ...(index === 0
+      ? []
+      : [
+          <PanelSeparator
+            key="separator"
+            aria-label="Chat size"
+            aria-valuetext={props.shareText}
+            disableDoubleClick
+            className="chat-separator"
+          />,
+        ]),
+    id === chatPanePanels.pages || props.chat === undefined ? (
+      <ShellBodyPages key="pages" sizes={props.sizes} />
+    ) : (
+      <ShellBodyChat
+        key="chat"
+        id={id}
+        partition={props.partition}
+        chat={props.chat}
+        sizes={props.sizes}
+        panelRef={props.chatPanel}
+      />
+    ),
+  ]);
+}
+
+/**
+ * The pane's panel kept to the stored presentation, once the group has laid
+ * the panels drawn and again whenever a layout it finishes takes the pane into
+ * the strip or out of it. It is told each layout the group lays and each one
+ * it finishes.
+ */
+function useShellBodyFollowed(along: {
+  readonly group: RefObject<GroupImperativeHandle | null>;
+  readonly chatPanel: RefObject<PanelImperativeHandle | null>;
+  readonly panelIds: readonly string[];
+  readonly stripped: boolean;
+  readonly stored: ChatPaneLayout | undefined;
+  readonly sizes: ChatPaneSizes;
+}): {
+  readonly laid: (next: Layout) => void;
+  readonly finished: (next: Layout, collapsed: boolean) => void;
+} {
+  const { group, chatPanel, panelIds, stripped, stored, sizes } = along;
+  const [laid, laidAs] = useState<string>();
+  /** Whether the last layout the group finished left the pane at the strip,
+   * which a frame resized can change with no reader's move. */
+  const [laidStripped, laidStrippedAs] = useState<boolean>();
+  /** The layout each set of panels was last laid at with the pane open, which
+   * the strip forgets, so a pane the frame alone takes into the strip opens
+   * again where it was. */
+  const [opened] = useState(() => new Map<string, Layout>());
+  useLayoutEffect(() => {
+    const drawn = panelIds.join();
+    if (laid !== drawn) return;
+    if (stripped) opened.delete(drawn);
+    shellBodyFollowed(group.current, chatPanel.current, {
+      stripped,
+      opened: opened.get(drawn),
+      stored,
+      sizes,
+    });
+  }, [
+    group,
+    chatPanel,
+    laid,
+    laidStripped,
+    opened,
+    panelIds,
+    stripped,
+    stored,
+    sizes,
+  ]);
+  return {
+    laid: (next) => {
+      laidAs(Object.keys(next).join());
+    },
+    finished: (next, collapsed) => {
+      laidStrippedAs(collapsed);
+      if (!collapsed) opened.set(Object.keys(next).join(), next);
+    },
+  };
+}
+
+/**
+ * The pages, the pane and the edge between them, laid by a library that keeps
+ * and stores each set of panels' layout under their names. The stored
+ * presentation decides whether the pane is the strip: a layout the reader made
+ * by the edge moves it as the pane's own control does, the panel follows it,
+ * and the edge says the pane's share as each layout is laid.
+ */
+function ShellBody(props: {
+  readonly partition: PartitionIdentity;
+  readonly chat: ChatPaneState | undefined;
+}): ReactNode {
+  const held = useChatPane();
+  const group = useGroupRef();
+  const chatPanel = usePanelRef();
+  const orientation = chatPaneOrientation(props.chat);
+  const sizes = chatPaneSizes[orientation];
+  const panelIds = chatPaneLayoutPanels(props.chat);
+  const [storage] = useState(() => chatPaneLayoutStore(persistentStore));
+  const layout = useDefaultLayout({
+    id: chatPaneLayoutId,
+    panelIds: useMemo(() => [...panelIds], [panelIds]),
+    storage,
+  });
+  const stored = chatPaneLayoutKept(layout.defaultLayout, panelIds);
+  const followed = useShellBodyFollowed({
+    group,
+    chatPanel,
+    panelIds,
+    stripped: props.chat !== undefined && chatPaneStripped(props.chat),
+    stored,
+    sizes,
+  });
+  const [shareText, sharedAs] = useState<string>();
+  const change = (next: Layout): void => {
+    followed.laid(next);
+    sharedAs(chatPaneShareText(chatPaneLayoutShare(next)));
+  };
+  const changed = (next: Layout, meta: LayoutChangedMeta): void => {
+    const panel = chatPanel.current;
+    if (panel === null) return;
+    const collapsed = panel.isCollapsed();
+    followed.finished(next, collapsed);
+    if (!meta.isUserInteraction) return;
+    if (!collapsed) layout.onLayoutChanged(next, meta);
+    const moved = chatPaneDragged(held.state, collapsed);
+    if (moved !== held.state) held.moveTo(moved);
+  };
+  return (
+    <Group
+      id={chatPaneLayoutId}
+      groupRef={group}
+      orientation={orientation}
+      defaultLayout={stored}
+      onLayoutChange={change}
+      onLayoutChanged={changed}
+      data-chat={props.chat?.presentation.toLowerCase() ?? "none"}
+      className="min-h-0 min-w-0"
+    >
+      {shellBodyDrawn({
+        partition: props.partition,
+        chat: props.chat,
+        sizes,
+        panelIds,
+        chatPanel,
+        shareText,
+      })}
+    </Group>
   );
 }
 
@@ -181,43 +427,17 @@ function ShellDrawn(props: {
   readonly twoColumn: boolean;
 }): ReactNode {
   const narrow = !useViewportAtLeastEm(viewportNarrowEm);
-  const chat = chatPaneNarrowed(useChatPane().state, props.twoColumn);
-  const drawn = chatPaneContentDrawn(chat);
-  const pages = drawn ? (
-    <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]">
-      <DetailsPane>
-        <Outlet />
-      </DetailsPane>
-    </div>
-  ) : null;
-  const pane = (
-    <div
-      className={`grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] ${
-        pages === null ? "" : shellPaneEdges[chat.placement]
-      }`}
-    >
-      <ChatPane partition={props.partition} chat={chat} />
-    </div>
+  const chat = chatPaneOnPage(
+    chatPaneNarrowed(useChatPane().state, props.twoColumn),
+    useParams({ strict: false }),
   );
   return (
     <ShellFrame>
       <ShellHeader
         partition={props.partition}
-        covered={chatPaneCoversBar(chat, narrow)}
+        covered={chat !== undefined && chatPaneCoversBar(chat, narrow)}
       />
-      <ShellBody chat={chat}>
-        {chat.placement === "Left" ? (
-          <>
-            {pane}
-            {pages}
-          </>
-        ) : (
-          <>
-            {pages}
-            {pane}
-          </>
-        )}
-      </ShellBody>
+      <ShellBody partition={props.partition} chat={chat} />
     </ShellFrame>
   );
 }

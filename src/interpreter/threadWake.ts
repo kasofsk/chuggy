@@ -33,20 +33,21 @@
  * cursor, which is the same rule the paragraph below states for a sequence
  * read in part. A raise instead would end the pacing loop, and an outage is
  * not a reason to stop selecting. One routed to runners where the member has no
- * personal runner serving the project is skipped too, read off the page beside
- * its route, because no runner would take the turn.
+ * chat host is skipped too, read off the page beside its route, because no
+ * runner would take the turn.
  *
  * A CURSOR MAY ONLY MOVE PAST A SEQUENCE THE PASS DECIDED WHOLE. One change row
- * wakes one thread per member who authored a revision of the ticket it names,
- * so a page that filled its bound may hold only part of the last sequence's
- * candidates — and a cursor moved past that sequence would drop the rest of
- * them permanently and silently. So a full page advances to the highest
- * sequence BELOW its last, which the ordering makes complete, and its last
- * sequence is read again next pass, where what was already woken answers
- * `AlreadyWoken`. The one case with no complete sequence to move to is a page
- * entirely of one sequence: there the pass moves past it anyway and says so in
- * `truncatedAt`, because the alternative is a cursor that can never move again
- * for any project and no bound a deployment can set would free it.
+ * wakes at most the one thread its ticket's draft was filed from, but the pass
+ * does not rest on that read's shape: a page that filled its bound may hold
+ * only part of the last sequence's candidates — and a cursor moved past that
+ * sequence would drop the rest of them permanently and silently. So a full
+ * page advances to the highest sequence BELOW its last, which the ordering
+ * makes complete, and its last sequence is read again next pass, where what
+ * was already woken answers `AlreadyWoken`. The one case with no complete
+ * sequence to move to is a page entirely of one sequence: there the pass moves
+ * past it anyway and says so in `truncatedAt`, because the alternative is a
+ * cursor that can never move again for any project and no bound a deployment
+ * can set would free it.
  *
  * THE PASS TRUSTS THE PAGE'S ORDER AND CHECKS IT. The reasoning above holds
  * only where a page is a PREFIX of the window after the cursor, so a page that
@@ -85,7 +86,7 @@ import {
   type ThreadWakeReason,
 } from "./thread.ts";
 
-/** One change row the roster says wakes one member's thread. */
+/** One change row and the thread it wakes: the open thread its ticket's draft was filed from. */
 export interface ThreadWakeCandidate {
   readonly sequence: number;
   readonly partition: Partition;
@@ -95,7 +96,7 @@ export interface ThreadWakeCandidate {
   readonly session: SessionId;
   /** Where the thread's turns run as the page was read, which decides whether the wake needs the hosted grant. */
   readonly route: PlacementRoute;
-  /** Whether the member has a personal runner serving the project, which a wake on a runner route needs. */
+  /** Whether the member has a chat host, which a wake on a runner route needs. */
   readonly runner: SessionRunnerStanding;
   /**
    * The project's own standing rules, absent where it takes the default. It
@@ -127,7 +128,7 @@ export interface ThreadWakeStore {
   ): Promise<readonly ThreadWakeCandidate[]>;
   wake(input: {
     readonly partition: Partition;
-    readonly principal: Principal;
+    readonly session: SessionId;
     readonly turn: SessionTurnId;
     readonly input: string;
     /** The route the wake was admitted on, which it keeps whatever the thread's route becomes. */
@@ -258,7 +259,7 @@ async function threadWakesOffered(
     if (!admitted) continue;
     const offered = await service.store.wake({
       partition: candidate.partition,
-      principal: candidate.principal,
+      session: candidate.session,
       turn: threadWakeTurn(candidate),
       route: candidate.route,
       input: threadWakeText(

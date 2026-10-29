@@ -26,6 +26,7 @@ import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolDirectory,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRoster,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import {
@@ -51,6 +52,7 @@ import type {
 } from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import {
   postgresHarnessConfiguration,
   postgresHarnessNewEpoch,
@@ -86,7 +88,11 @@ const assignments = postgresWorkerPoolAssignments(planePool);
 const leaseSecs = 300;
 
 /** A claim's terms, holding more than any pool here holds. */
-const terms: WorkerPoolClaimTerms = { leaseSecs, heldMax: 4 };
+const terms: WorkerPoolClaimTerms = {
+  leaseSecs,
+  heldMax: 4,
+  memoryMibDefault: 4_096,
+};
 
 /** The platform every configuration here requires, as a pool declares it. */
 const platform = "Platform:Linux:Amd64";
@@ -474,6 +480,20 @@ test("an assignment is renewed, refused and released by the pool holding it", as
     true,
   );
   assert.equal(
+    await assignments.refuse(mine, renewed.assignment, "a later refusal"),
+    false,
+    "a refusal posted again is answered as an assignment no longer held",
+  );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT pool_refusal FROM execution_attempt
+        WHERE tenant=$1 AND project=$2 AND assignment=$3`,
+      [project.partition.tenant, project.partition.project, renewed.assignment],
+    ),
+    [{ pool_refusal: "no node takes this" }],
+    "the refusal taken first stands",
+  );
+  assert.equal(
     await assignments.renew(mine, renewed.assignment, leaseSecs),
     false,
     "a refused assignment is not renewed again",
@@ -641,7 +661,9 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * plane reads to do it; this is every other column the plane may touch, so an
  * attempt's invocation, the digest a bearer is checked against and a pool's
  * client are none of them. A session's launch is read whole, and a pool's
- * liveness and the runner its poll named are all of its row the plane writes.
+ * liveness and the runner, capabilities and memory ceiling its poll named are
+ * all of its row the plane writes, as a chat host's liveness and runner are of
+ * its.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -654,6 +676,12 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [poolPlaneRole],
     ),
     [
+      [
+        "chat_host",
+        "SELECT",
+        "owner,principal,runner_package,runner_version,tenant",
+      ],
+      ["chat_host", "UPDATE", "last_polled_at,runner_package,runner_version"],
       [
         "execution",
         "SELECT",
@@ -668,17 +696,17 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "execution_attempt",
         "UPDATE",
-        "assignment,capability_secret_digest,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
+        "assignment,capability_secret_digest,claimed_at,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
       ],
       [
         "personal_runner",
         "SELECT",
-        "capabilities,executions_polled_at,owner,principal,runner_package,runner_version,tenant",
+        "capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
       ],
       [
         "personal_runner",
         "UPDATE",
-        "executions_polled_at,last_polled_at,runner_package,runner_version",
+        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
       ],
       ["personal_runner_project", "SELECT", "owner,project,tenant"],
       ["project", "SELECT", "lifecycle,project,tenant"],
@@ -687,14 +715,18 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "session_launch",
         "SELECT",
-        "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton",
+        "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
       ],
       [
         "worker_pool",
         "SELECT",
-        "capabilities,class,pool,principal,project,runner_package,runner_version,tenant",
+        "capabilities,class,memory_ceiling_mib,pool,principal,project,runner_package,runner_version,tenant",
       ],
-      ["worker_pool", "UPDATE", "last_polled_at,runner_package,runner_version"],
+      [
+        "worker_pool",
+        "UPDATE",
+        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+      ],
     ].map(([table_name, privilege_type, columns]) => ({
       table_name,
       privilege_type,
@@ -739,10 +771,10 @@ test("a pool's poll keeps the runner it named under its current registration, wr
     unnamed,
     "a registration names no runner",
   );
-  await runners.named(identity, linux);
+  await runners.named(identity, linux, undefined);
   const named = await poolRunnerRow(partition, pool);
   assert.deepEqual(named.kept, linux);
-  await runners.named(identity, linux);
+  await runners.named(identity, linux, undefined);
   assert.equal(
     (await poolRunnerRow(partition, pool)).written,
     named.written,
@@ -758,15 +790,15 @@ test("a pool's poll keeps the runner it named under its current registration, wr
     unnamed,
     "a registration made again names no runner",
   );
-  await runners.named(identity, linux);
+  await runners.named(identity, linux, undefined);
   assert.deepEqual(
     (await poolRunnerRow(partition, pool)).kept,
     unnamed,
     "an older registration's poll writes nothing",
   );
-  await runners.named(newer, linux);
+  await runners.named(newer, linux, undefined);
   assert.deepEqual((await poolRunnerRow(partition, pool)).kept, linux);
-  await runners.named(newer, undefined);
+  await runners.named(newer, undefined, undefined);
   assert.deepEqual(
     (await poolRunnerRow(partition, pool)).kept,
     unnamed,
@@ -778,6 +810,47 @@ test("a pool's poll keeps the runner it named under its current registration, wr
     ),
     [false],
   );
+});
+
+test("a pool is listed live only while its newest poll of either kind is inside the window, and only its current registration's poll that could take an execution stamps it for one", async () => {
+  const project = await poolProject("pool-polled");
+  const { partition } = project;
+  const pool = "pool-polled";
+  const stale = await registered(partition, pool, [platform]);
+  const current = await poolRegisteredAgain(project, pool);
+  const directory = postgresWorkerPoolDirectory(apiPool);
+  const listed = async () => {
+    const [only] = (await directory.listed(partition)).pools;
+    return { polled: only?.polledAt !== undefined, live: only?.live };
+  };
+  const stamp = (column: string, secsAgo: number) =>
+    rig.harness.query(
+      `UPDATE worker_pool
+          SET ${column}=now()-make_interval(secs=>$4::double precision)
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool, secsAgo],
+    );
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(current, false);
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(stale, true);
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(current, true);
+  assert.deepEqual(await listed(), { polled: true, live: true });
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT last_polled_at IS NULL AS sessions FROM worker_pool
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool],
+    ),
+    [{ sessions: true }],
+  );
+  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
+  assert.deepEqual(await listed(), { polled: true, live: false });
+  await stamp("last_polled_at", 1);
+  assert.deepEqual(await listed(), { polled: true, live: true });
+  await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
+  assert.deepEqual(await listed(), { polled: true, live: false });
 });
 
 test("a pool's row keeps a runner only whole, and only in the header's grammar", async () => {
@@ -805,6 +878,127 @@ test("a pool's row keeps a runner only whole, and only in the header's grammar",
       refusal,
       `${String(runnerPackage)}/${String(version)}`,
     );
+});
+
+/** The capabilities a pool's row keeps, and the row version any write to it moves. */
+async function poolCapabilitiesRow(
+  partition: Partition,
+  pool: string,
+): Promise<{ readonly kept: readonly string[]; readonly written: string }> {
+  const [row] = (await rig.harness.query(
+    `SELECT capabilities,xmin::text AS written FROM worker_pool
+      WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [partition.tenant, partition.project, pool],
+  )) as { capabilities: string[]; written: string }[];
+  if (row === undefined)
+    throw new Error(`worker pool suite: ${pool} is not registered`);
+  return { kept: row.capabilities, written: row.written };
+}
+
+test("a pool's poll naming capabilities replaces what its registration declared, so what it claims follows the set named, and a poll naming none leaves it", async () => {
+  const project = await poolProject(
+    "pool-advertised",
+    1,
+    poolConfiguration("Codex"),
+  );
+  const { partition } = project;
+  const pool = "advertised";
+  const identity = await registered(partition, pool, [platform]);
+  const runners = postgresWorkerPoolRunners(planePool);
+  await poolAttempt(project, pool);
+  const before = handles("before");
+  assert.equal(
+    await assignments.claim(
+      identity,
+      terms,
+      before.assignment,
+      before.bearer,
+      [],
+    ),
+    undefined,
+    "a pool claims nothing whose capability its registration did not declare",
+  );
+  const advertised = [platform, "Agent:Codex"];
+  await runners.named(identity, undefined, advertised);
+  const named = await poolCapabilitiesRow(partition, pool);
+  assert.deepEqual(named.kept, advertised);
+  assert.deepEqual(
+    (await postgresWorkerPoolDirectory(apiPool).listed(partition)).pools.map(
+      (listed) => listed.capabilities,
+    ),
+    [advertised],
+  );
+  await runners.named(identity, undefined, advertised);
+  await runners.named(identity, undefined, undefined);
+  assert.deepEqual(
+    await poolCapabilitiesRow(partition, pool),
+    named,
+    "the same set again, or none, writes nothing",
+  );
+  await runners.named(
+    identity,
+    { package: "chuggy-linux", version: "0.14.0" },
+    undefined,
+  );
+  assert.deepEqual(
+    (await poolCapabilitiesRow(partition, pool)).kept,
+    advertised,
+    "a poll naming a runner and no set keeps the set",
+  );
+  const after = handles("after");
+  assert.notEqual(
+    await assignments.claim(
+      identity,
+      terms,
+      after.assignment,
+      after.bearer,
+      [],
+    ),
+    undefined,
+    "a pool claims what the set its poll named runs",
+  );
+});
+
+test("a pool's poll naming a memory ceiling keeps it for the scheduler to read, writes nothing where it names the same, and a poll naming none leaves it", async () => {
+  const { partition } = await poolProject("pool-ceiling");
+  const pool = "ceiling";
+  const identity = await registered(partition, pool, [platform]);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const ceilings = async () =>
+    (await postgresWorkerPoolRoster(rig.pool).registered(partition)).pools.map(
+      (registered) => registered.memoryCeilingMib,
+    );
+  assert.deepEqual(await ceilings(), [undefined]);
+  await runners.named(identity, undefined, undefined, 8_192);
+  assert.deepEqual(await ceilings(), [8_192]);
+  const named = await poolCapabilitiesRow(partition, pool);
+  await runners.named(identity, undefined, undefined, 8_192);
+  await runners.named(identity, undefined, undefined, undefined);
+  assert.deepEqual(
+    await poolCapabilitiesRow(partition, pool),
+    named,
+    "the same ceiling again, or none, writes nothing",
+  );
+  assert.deepEqual(await ceilings(), [8_192]);
+  await runners.named(identity, undefined, undefined, 0);
+  assert.deepEqual(await ceilings(), [0]);
+  await runners.named(identity, undefined, undefined, Number.MAX_SAFE_INTEGER);
+  assert.deepEqual(await ceilings(), [Number.MAX_SAFE_INTEGER]);
+});
+
+test("a pool's poll naming a set that no longer runs what it holds keeps what it holds", async () => {
+  const { project, identity, drawn } = await poolClaimed("narrowed");
+  await postgresWorkerPoolRunners(planePool).named(identity, undefined, []);
+  assert.deepEqual(
+    (await poolCapabilitiesRow(project.partition, "narrowed")).kept,
+    [],
+  );
+  assert.equal(await assignments.held(identity, drawn.assignment), true);
+  assert.equal(
+    await assignments.renew(identity, drawn.assignment, leaseSecs),
+    true,
+  );
+  assert.equal(await assignments.release(identity, drawn.assignment), true);
 });
 
 test("deregistration names the client the row holds, goes with that client alone, and leaves the work it held", async () => {

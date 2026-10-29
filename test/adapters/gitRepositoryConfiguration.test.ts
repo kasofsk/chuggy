@@ -21,9 +21,13 @@ import { gitCommitAncestry } from "../../src/adapters/git/gitCommitAncestry.ts";
 import {
   gitRepositoryConfiguration,
   gitRepositoryConfigurationReadsInFlightMax,
+  gitRepositoryConfigurationRemoteFailedWords,
+  type GitRepositoryConfigurationOptions,
+  type GitRepositoryConfigurationRemoteFailed,
 } from "../../src/adapters/git/gitRepositoryConfiguration.ts";
 import {
   gitCredentialHelperText,
+  gitRunRedacted,
   type GitEnvironment,
 } from "../../src/adapters/git/gitRun.ts";
 import {
@@ -48,6 +52,7 @@ import {
   repositoryDeclarationsMax,
 } from "../../src/interpreter/repositoryDeclaration.ts";
 import {
+  gitStandInEchoed,
   gitStandInFaulted,
   gitStandInLines,
   gitStandInMarker,
@@ -133,11 +138,18 @@ function fixtureScratch(fixture: Fixture): string {
   return join(fixture.directory, "scratch");
 }
 
+/** What a port may be told of its failed remote reads with and how it retries them, none of which a port is given unless a test says so. */
+type FixtureReader = Pick<
+  GitRepositoryConfigurationOptions,
+  "remoteFailed" | "remoteRetry" | "monotonicNowMs"
+>;
+
 function fixturePort(
   fixture: Fixture,
   resolved: CredentialResolved | RepositoryCredentialPort = fixtureCredential,
   environment: GitEnvironment = process.env,
   remoteTimeoutSecsMax?: number,
+  reader: FixtureReader = {},
 ) {
   return gitRepositoryConfiguration({
     scratchDirectory: fixtureScratch(fixture),
@@ -146,6 +158,7 @@ function fixturePort(
     credentials:
       "resolved" in resolved ? fixtureCredentials(resolved) : resolved,
     ...(remoteTimeoutSecsMax === undefined ? {} : { remoteTimeoutSecsMax }),
+    ...reader,
   });
 }
 
@@ -575,6 +588,283 @@ test("what git wrote when it failed reaches nothing the read answers", async (t)
     });
     assert.equal(JSON.stringify(answer).includes(gitStandInMarker), false);
   }
+});
+
+/** A port whose calls of one verb take each fault named in turn, with every remote read that failed told to the list it answers beside it. */
+function fixtureTold(
+  fixture: Fixture,
+  verb: string,
+  faults: readonly [GitStandInFault, ...GitStandInFault[]],
+  reader: Omit<FixtureReader, "remoteFailed"> = {},
+) {
+  const standIn = join(fixture.directory, "stand-in");
+  const path = gitStandInOpen(standIn, [verb]);
+  gitStandInFaulted(standIn, verb, ...faults);
+  const told: GitRepositoryConfigurationRemoteFailed[] = [];
+  const port = fixturePort(
+    fixture,
+    undefined,
+    { ...process.env, PATH: path },
+    undefined,
+    {
+      ...reader,
+      remoteFailed: (failed) => {
+        told.push(failed);
+      },
+    },
+  );
+  const calls = () =>
+    gitStandInLines(standIn).filter((line) => line === verb).length;
+  return { port, told, calls };
+}
+
+/** The retries a retrying port is given unless a test says otherwise: a pause too short to wait on, and room for every retry a test makes. */
+const fixtureRetry = { pauseMs: 1, elapsedMsMax: 60_000 };
+
+/** One commit declaring one configuration, and the snapshot a read of it answers. */
+function fixtureDeclared(fixture: Fixture) {
+  fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
+  return {
+    commit: asGitObjectId(fixtureCommit(fixture, "one")),
+    snapshot: {
+      read: "Snapshot",
+      files: [
+        {
+          path: `${repositoryConfigurationRoot}work.json`,
+          kind: "File",
+          content: "one\n",
+        },
+      ],
+    },
+  };
+}
+
+test("a remote read that failed is told by its command and code, with the first line git wrote and the credential it held redacted", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const { port, told } = fixtureTold(fixture, "ls-remote", ["Echoed"]);
+  const repository = fixtureBinding(fixture.remote);
+
+  await port.defaultBranch(repository);
+  assert.deepEqual(told, [
+    {
+      repository,
+      git: "ls-remote",
+      exited: 128,
+      retrying: false,
+      said: `${gitStandInEchoed} ${gitRunRedacted}`,
+    },
+  ]);
+  const credential =
+    fixtureCredential.resolved === "Credential"
+      ? fixtureCredential.credential
+      : "";
+  assert.equal(JSON.stringify(told).includes(credential), false);
+  assert.equal(
+    told.map(gitRepositoryConfigurationRemoteFailedWords).join("\n"),
+    `git ls-remote exited 128: ${gitStandInEchoed} ${gitRunRedacted}`,
+  );
+});
+
+test("each remote read a snapshot makes is told by its own command where it fails", async (t) => {
+  for (const verb of ["ls-remote", "fetch", "cat-file"] as const) {
+    const fixture = fixtureOpen(t);
+    const { commit } = fixtureDeclared(fixture);
+    const { port, told } = fixtureTold(fixture, verb, ["Echoed"]);
+    const repository = fixtureBinding(fixture.remote);
+
+    await port.snapshot({ repository, commit });
+    assert.deepEqual(
+      told.map(({ git, exited, said }) => ({ git, exited, said })),
+      [
+        {
+          git: verb,
+          exited: 128,
+          said: `${gitStandInEchoed} ${gitRunRedacted}`,
+        },
+      ],
+      verb,
+    );
+  }
+});
+
+test("a remote read git died on is tried once more after its pause, and answers what that try found", async (t) => {
+  for (const verb of ["ls-remote", "fetch", "cat-file"] as const) {
+    const fixture = fixtureOpen(t);
+    const { commit, snapshot } = fixtureDeclared(fixture);
+    const { port, told, calls } = fixtureTold(
+      fixture,
+      verb,
+      ["Said", "Whole"],
+      {
+        remoteRetry: fixtureRetry,
+      },
+    );
+    const repository = fixtureBinding(fixture.remote);
+
+    assert.deepEqual(
+      await port.snapshot({ repository, commit }),
+      snapshot,
+      verb,
+    );
+    assert.deepEqual(
+      told.map(({ git, retrying }) => ({ git, retrying })),
+      [{ git: verb, retrying: true }],
+      verb,
+    );
+    assert.equal(calls(), 2, verb);
+  }
+});
+
+test("a retry is made only once its pause has passed", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const pauseMs = 300;
+  const { port, calls } = fixtureTold(fixture, "ls-remote", ["Said", "Whole"], {
+    remoteRetry: { ...fixtureRetry, pauseMs },
+  });
+  const begunMs = performance.now();
+
+  assert.equal(
+    (await port.defaultBranch(fixtureBinding(fixture.remote))).read,
+    "Branch",
+  );
+  const tookMs = performance.now() - begunMs;
+  assert.equal(calls(), 2);
+  assert.ok(
+    tookMs >= pauseMs - 1,
+    `the read answered after ${String(tookMs)}ms, before its retry's pause had passed`,
+  );
+});
+
+test("a head read git died on twice is told twice, and answers the second failure", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const { port, told, calls } = fixtureTold(fixture, "ls-remote", ["Said"], {
+    remoteRetry: fixtureRetry,
+  });
+
+  assert.deepEqual(await port.defaultBranch(fixtureBinding(fixture.remote)), {
+    read: "Unavailable",
+    evidence: { git: "ls-remote", exited: 128 },
+  });
+  assert.deepEqual(
+    told.map(({ retrying }) => retrying),
+    [true, false],
+  );
+  assert.equal(calls(), 2);
+});
+
+test("a remote read is tried once where it failed some other way, or where its reader was given no retry", async (t) => {
+  const refused = fixtureOpen(t);
+  fixtureDeclared(refused);
+  const declined = fixtureTold(refused, "ls-remote", ["Refused", "Whole"], {
+    remoteRetry: fixtureRetry,
+  });
+  const once = fixtureOpen(t);
+  fixtureDeclared(once);
+  const unretried = fixtureTold(once, "ls-remote", ["Said", "Whole"]);
+
+  for (const [fixture, { port, told, calls }, exited] of [
+    [refused, declined, 1],
+    [once, unretried, 128],
+  ] as const) {
+    assert.equal(
+      (await port.defaultBranch(fixtureBinding(fixture.remote))).read,
+      "Unavailable",
+    );
+    assert.deepEqual(
+      told.map(({ exited: code, retrying }) => ({ code, retrying })),
+      [{ code: exited, retrying: false }],
+    );
+    assert.equal(calls(), 1);
+  }
+});
+
+test("a head that names no commit is no failure, and is neither told nor tried again", async (t) => {
+  const fixture = fixtureOpen(t);
+  const { port, told, calls } = fixtureTold(fixture, "ls-remote", ["Whole"], {
+    remoteRetry: fixtureRetry,
+  });
+
+  assert.deepEqual(await port.defaultBranch(fixtureBinding(fixture.remote)), {
+    read: "Absent",
+  });
+  assert.deepEqual(told, []);
+  assert.equal(calls(), 1);
+});
+
+test("a reader's retries stop once what they took together leaves no room for another", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const tickMs = 1_000;
+  let nowMs = 0;
+  const { port, told, calls } = fixtureTold(fixture, "ls-remote", ["Said"], {
+    remoteRetry: { pauseMs: 1, elapsedMsMax: 2 * tickMs + tickMs / 2 },
+    monotonicNowMs: () => {
+      nowMs += tickMs;
+      return nowMs;
+    },
+  });
+  const repository = fixtureBinding(fixture.remote);
+
+  for (let read = 0; read < 3; read++) await port.defaultBranch(repository);
+  assert.deepEqual(
+    told.map(({ retrying }) => retrying),
+    [true, false, true, false, false],
+    "the first two reads each took a tick on their retry, which left the third no room",
+  );
+  assert.equal(calls(), 5);
+});
+
+test("a retry's pause counts against its reader's retries, in the room it needs and in what it took", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const pauseMs = 1_000;
+  const { port, told, calls } = fixtureTold(fixture, "ls-remote", ["Said"], {
+    remoteRetry: { pauseMs, elapsedMsMax: 2 * pauseMs + 700 },
+  });
+  const repository = fixtureBinding(fixture.remote);
+
+  for (let read = 0; read < 2; read++) await port.defaultBranch(repository);
+  assert.deepEqual(
+    told.map(({ retrying }) => retrying),
+    [true, false, false],
+    "the first retry's pause, once taken, leaves the second read too little room for its own pause and the shortest retry",
+  );
+  assert.equal(calls(), 3);
+});
+
+test("a retry runs under what its reader's retries have left, not under the read's own bound", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureDeclared(fixture);
+  const { port, calls } = fixtureTold(
+    fixture,
+    "ls-remote",
+    ["Said", "Stalled"],
+    {
+      remoteRetry: { pauseMs: 1, elapsedMsMax: 1_500 },
+    },
+  );
+
+  assert.deepEqual(await port.defaultBranch(fixtureBinding(fixture.remote)), {
+    read: "Unavailable",
+    evidence: { git: "ls-remote", stopped: "Timeout" },
+  });
+  assert.equal(calls(), 2);
+});
+
+test("a retry bound that is not a count of milliseconds is refused at construction", (t) => {
+  const fixture = fixtureOpen(t);
+  for (const remoteRetry of [
+    { pauseMs: -1, elapsedMsMax: 1 },
+    { pauseMs: 1, elapsedMsMax: 0.5 },
+  ])
+    assert.throws(
+      () =>
+        fixturePort(fixture, undefined, undefined, undefined, { remoteRetry }),
+      RangeError,
+    );
 });
 
 /** What the action directory holds at one commit of the fixture's remote. */

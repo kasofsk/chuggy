@@ -7,7 +7,7 @@ import {
   type PlacementRouteSource,
   type SessionRunnerStanding,
 } from "../contract/rosters.ts";
-import type { SessionKind } from "./agentSession.ts";
+import { memberScopeReserved, type SessionKind } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
 import {
   placementChoices,
@@ -65,9 +65,8 @@ export const sessionRunnerPolledSecsMax = 120;
 export const sessionPoolTurnDwellSecs = 30 * 60;
 
 /**
- * The runners a session would run on: the member's own personal runner,
- * allowlisting the project, for their thread; a pool the member registered for
- * their inquiry; and any of the project's pools for the lead.
+ * The runners a session would run on: the member's chat host for their thread
+ * and for their inquiry, and any of the project's pools for the lead.
  */
 export interface SessionRunners {
   readonly mine: SessionRunnerStanding;
@@ -195,8 +194,9 @@ export type SessionSpend =
 /**
  * The route a member may spend a turn of this kind on now: a hosted one under
  * the tenant's grant, and a runner one where a runner that would take it is
- * registered. The turn is stamped with this route, so both are asked of the
- * resolution the turn keeps.
+ * registered, the turn stamped with this route and so both asked of the
+ * resolution it keeps. A turn of a member's own session is never in cluster,
+ * whatever the site's routing says, and only their chat host takes it.
  */
 export async function sessionSpendRoute(
   access: ProjectAccess,
@@ -205,6 +205,13 @@ export async function sessionSpendRoute(
   partition: Partition,
   kind: SessionKind,
 ): Promise<SessionSpend> {
+  if (memberScopeReserved(partition))
+    return sessionRunnerServes(
+      "Pool",
+      (await routes.runners(partition, principal)).inquiry,
+    )
+      ? { spend: "Admitted", route: "Pool" }
+      : { spend: "NoRunner" };
   const { route } = await routes.route(partition, kind);
   if (!(await placementRouteGranted(access, principal, partition, route)))
     return { spend: "HostedRunsNotGranted" };

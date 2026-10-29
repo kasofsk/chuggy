@@ -184,6 +184,30 @@ test("a job lost on its runner says where, how often, and the attempt its worker
   });
 });
 
+/** The slot of a ticket whose work escalated at a failed step, to a reader offered the ticket's setup lines or not. */
+const parkedAtStep = (
+  failed: {
+    readonly evidence: "RunSetupFailed" | "RunPushFailed" | "RunDiskLow";
+    readonly execution: string;
+    readonly attempt: string;
+    readonly error?: { readonly bytes: number };
+  },
+  setupOverridable = true,
+) =>
+  ticketSlot(
+    reads({
+      ticket: ticket({
+        phase: "Escalated",
+        escalation: {
+          kind: "WorkFailureEscalated",
+          resumeAt: "ResumeWork",
+          failed,
+        },
+      }),
+      setupOverridable,
+    }),
+  );
+
 /**
  * A run stopped at its setup names the step, says where a wrong line is fixed
  * to a reader offered the ticket's setup lines, and reads the worker's own line
@@ -191,42 +215,20 @@ test("a job lost on its runner says where, how often, and the attempt its worker
  * them, keeps the wall's own line.
  */
 test("a run stopped at a failed step names the step, and the attempt its worker spoke for", () => {
-  const parked = (
-    failed: {
-      readonly evidence: "RunSetupFailed" | "RunPushFailed";
-      readonly execution: string;
-      readonly attempt: string;
-      readonly error?: { readonly bytes: number };
-    },
-    setupOverridable = true,
-  ) =>
-    ticketSlot(
-      reads({
-        ticket: ticket({
-          phase: "Escalated",
-          escalation: {
-            kind: "WorkFailureEscalated",
-            resumeAt: "ResumeWork",
-            failed,
-          },
-        }),
-        setupOverridable,
-      }),
-    );
   const setup = {
     evidence: "RunSetupFailed",
     execution: "execution-1",
     attempt: "attempt-3",
     error: { bytes: 61 },
   } as const;
-  expect(parked(setup)).toStrictEqual({
+  expect(parkedAtStep(setup)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
     step: undefined,
     more: "Fix it under Overrides · Setup, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
   });
-  expect(parked(setup, false)).toStrictEqual({
+  expect(parkedAtStep(setup, false)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
     step: undefined,
@@ -234,7 +236,7 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     reason: { execution: "execution-1", attempt: "attempt-3" },
   });
   expect(
-    parked({
+    parkedAtStep({
       evidence: "RunPushFailed",
       execution: "execution-1",
       attempt: "attempt-3",
@@ -244,6 +246,74 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
     detail: "Push failed",
     step: undefined,
     more: "Failed work is not reworked",
+    reason: undefined,
+  });
+});
+
+test("a run its runner stopped for low disk says that runner needs room, to any reader", () => {
+  expect(
+    parkedAtStep(
+      {
+        evidence: "RunDiskLow",
+        execution: "execution-1",
+        attempt: "attempt-3",
+        error: { bytes: 140 },
+      },
+      false,
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Disk low",
+    step: undefined,
+    more: "Free space on its runner, then Resume",
+    reason: { execution: "execution-1", attempt: "attempt-3" },
+  });
+});
+
+/**
+ * A landing whose push the repository declined, or whose pushed branch would
+ * not read, parks at the finalization wall once its hold has waited, and the
+ * card says what has to change before Resume gets it past; a workflow refusal
+ * leads to where Workflow files is set.
+ */
+test("a landing whose push was declined or would not read says what to change, and a workflow refusal leads to Repositories", () => {
+  const parked = (
+    evidence:
+      | "PromotionDeclined"
+      | "PromotionWorkflowsRefused"
+      | "ReconciliationUnreadable",
+  ) =>
+    ticketSlot(
+      reads({
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "FinalizationUnavailableEscalated",
+            evidence,
+            resumeAt: "ResumeFinalization",
+          },
+        }),
+      }),
+    );
+  expect(parked("PromotionWorkflowsRefused")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Workflow files refused",
+    step: "Repositories",
+    more: "Turn on Workflow files and the App's Workflows, then Resume",
+    reason: undefined,
+  });
+  expect(parked("PromotionDeclined")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Push declined",
+    step: undefined,
+    more: "Check the branch's rules and hooks, then Resume",
+    reason: undefined,
+  });
+  expect(parked("ReconciliationUnreadable")).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Reconciliation unreadable",
+    step: undefined,
+    more: "Restore the branch or the App's access, then Resume",
     reason: undefined,
   });
 });

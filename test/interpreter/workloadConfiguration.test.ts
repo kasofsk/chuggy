@@ -13,6 +13,7 @@ import {
   releaseConfigurationReadiness,
   ticketCommandedCheckStage,
   ticketConfigurationReadiness,
+  ticketProgramShort,
   type ReleaseAuthoring,
   type TicketConfiguration,
 } from "../../src/interpreter/authoring.ts";
@@ -188,12 +189,12 @@ test("a selection is resolved against the catalog, each absent name the default,
     );
 });
 
-test("a catalog takes no overrides, and a document takes no selection", () => {
+test("a catalog takes overrides of its workloads alone, and a document takes no selection and no workload overrides", () => {
   assert.deepEqual(
     draftReleaseReadiness(canonical, brief, undefined, {
       work: { instructions: ["Something else."] },
     }),
-    { readiness: "Incomplete", fault: "SelectionUnsupported" },
+    { readiness: "Incomplete", fault: "OverridesUnsupported" },
   );
   const document = canonicalConfigurationOf({
     version: 1,
@@ -214,14 +215,59 @@ test("a catalog takes no overrides, and a document takes no selection", () => {
     }),
     { readiness: "Incomplete", fault: "SelectionUnsupported" },
   );
+  assert.deepEqual(
+    draftReleaseReadiness(document, brief, undefined, {
+      workloads: { build: { practices: [] } },
+    }),
+    { readiness: "Incomplete", fault: "OverridesUnsupported" },
+  );
   assert.equal(
     draftReleaseReadiness(document, brief, undefined, undefined, {}).readiness,
     "Ready",
   );
 });
 
+test("a catalog ticket runs the workload its overrides make, each field in place of the catalog's", () => {
+  const readiness = ticketConfigurationReadiness(
+    canonical,
+    brief,
+    { workloads: { build: { prompt: { text: "Build it twice." } } } },
+    undefined,
+  );
+  if (readiness.readiness !== "Ready" || readiness.ticket.version !== 2)
+    throw new Error("the overridden ticket is not ready");
+  const work = readiness.ticket.selection.work.workload;
+  assert.deepEqual(work.runner === "Agent" ? work.prompt : undefined, {
+    text: "Build it twice.",
+  });
+  assert.deepEqual(
+    readiness.ticket.configuration.workloads["spike"],
+    ticketOf(undefined).configuration.workloads["spike"],
+  );
+});
+
+test("overrides naming a workload or a prompt file the catalog does not hold are refused under their own code", () => {
+  for (const workloads of [
+    { absent: { practices: [] } },
+    { build: { prompt: { path: ".chug/configurations/basic-coding.json" } } },
+  ])
+    assert.deepEqual(
+      draftReleaseReadiness(canonical, brief, undefined, { workloads }),
+      { readiness: "Incomplete", fault: "OverridesUnknown" },
+    );
+});
+
+test("overrides that leave a workload unready refuse the release as the catalog would", () => {
+  assert.notEqual(
+    draftReleaseReadiness(canonical, brief, undefined, {
+      workloads: { tests: { runner: "Agent" } },
+    }).readiness,
+    "Ready",
+  );
+});
+
 test("a brief's checks join the first evaluator the selected plan runs as commands, and a plan running none refuses them", () => {
-  const checked = { ...brief, checks: [asBriefCheckLine("npm run lint")] };
+  const checked = { ...brief, checks: [asBriefCheckLine("npm run lint", 0)] };
   assert.deepEqual(
     draftReleaseReadiness(canonical, checked, undefined, undefined),
     {
@@ -237,7 +283,8 @@ test("a brief's checks join the first evaluator the selected plan runs as comman
   );
   assert.equal(
     ticketCommandedCheckStage(ticketOf({ evaluation: "thorough" })),
-    0,
+    1,
+    "the stage is answered by its key, counted from one",
   );
 });
 
@@ -263,6 +310,56 @@ test("a program drawing a stage or an evaluator past the selected plan is refuse
   assert.equal(fault([[1, 3]]), "ProgramExceedsPlan");
   assert.equal(fault([[1], [2]]), "ProgramExceedsPlan");
   assert.equal(fault([[1], [1], [1]]), "ProgramExceedsPlan");
+});
+
+/** A program whose Nth stage draws the evaluator keys at N. */
+function programOf(stages: readonly (readonly number[])[]) {
+  return stages.map((evaluators, index) => ({
+    key: index + 1,
+    evaluators: evaluators.map((key) => ({ key })),
+  }));
+}
+
+test("a program runs less than its selected plan where it leaves out a stage, or an evaluator of a stage, each alone", () => {
+  const short = (stages: readonly (readonly number[])[]) =>
+    ticketProgramShort(ticketOf({ evaluation: "thorough" }), programOf(stages));
+  assert.equal(short([[1, 2], [1]]), false);
+  assert.equal(short([[2, 1], [1]]), false, "in whichever order it lists them");
+  assert.equal(short([[1, 2]]), true, "a stage left out");
+  assert.equal(short([[2], [1]]), true, "an evaluator left out");
+  assert.equal(short([[1, 2], []]), true, "a stage drawn with no evaluator");
+  assert.equal(short([]), true);
+});
+
+test("a program leaving out the evaluator a brief's checks join is refused under its own fault, short or not", () => {
+  const checked = { ...brief, checks: [asBriefCheckLine("npm run lint", 0)] };
+  const fault = (
+    stages: readonly (readonly number[])[],
+    carried: Parameters<typeof draftReleaseReadiness>[1] = checked,
+  ) => {
+    const readiness = draftReleaseReadiness(
+      canonical,
+      carried,
+      undefined,
+      undefined,
+      { evaluation: "thorough" },
+      programOf(stages),
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(fault([[1, 2], [1]]), "Ready");
+  assert.equal(
+    fault([[1]]),
+    "Ready",
+    "a short program running the commanded evaluator runs the checks",
+  );
+  assert.equal(fault([[2], [1]]), "ProgramSkipsBriefChecks");
+  assert.equal(fault([]), "ProgramSkipsBriefChecks");
+  assert.equal(
+    fault([[2], [1]], brief),
+    "Ready",
+    "a brief carrying no checks has nothing to leave out",
+  );
 });
 
 test("a draft starts from the selected plan's stages and every evaluator each holds", () => {

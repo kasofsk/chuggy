@@ -1,7 +1,7 @@
 /**
  * The configuration a repository declaring none starts on: that it is a
  * configuration at all, that a release would take it, and that the file it is
- * seeded as is one an import reads back.
+ * held as is one an import reads back.
  *
  * THE GENERATOR IS CHECKED THROUGH THE DOORS THAT WOULD TAKE IT rather than
  * against a remembered document. What matters about it is that the authoring
@@ -26,6 +26,7 @@ import {
   configurationImageGlibcVersionMin,
 } from "../../src/contract/configurationDocument.ts";
 import { nativeHttpRoutes } from "../../src/contract/http.ts";
+import { chuggyDocsIndex } from "../../src/contract/sessionTools.ts";
 import { workerRuntimeDirectory } from "../../src/contract/workerEnvironment.ts";
 import {
   asCanonicalConfiguration,
@@ -127,7 +128,7 @@ test("neither the configuration nor the one it tells its worker to declare lists
   for (const line of toldLines()) assert.doesNotMatch(line, /allowedTools/u);
 });
 
-test("the seeded file is a declaration an import reads back under its name", () => {
+test("the bootstrap as a file is a declaration an import reads back under its name", () => {
   const readiness = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -153,14 +154,14 @@ test("the seeded file is a declaration an import reads back under its name", () 
   );
 });
 
-test("the seeded file lives under the directory an import reads", () => {
+test("the bootstrap's file lives under the directory an import reads", () => {
   assert.ok(bootstrapConfigurationPath.startsWith(repositoryConfigurationRoot));
 });
 
 test("a ticket carrying check lines is not releasable against it", () => {
   const readiness = releaseConfigurationReadiness(
     bootstrapConfiguration({ repository, defaultBranch, image }),
-    { checks: [asBriefCheckLine("npm test")] },
+    { checks: [asBriefCheckLine("npm test", 0)] },
   );
   assert.deepEqual(readiness, {
     readiness: "Incomplete",
@@ -326,7 +327,7 @@ test("a declaration written to the shape its worker is told, at every bound it i
   assert.ok(declaration !== undefined);
   assert.equal(
     releaseConfigurationReadiness(declaration.canonical, {
-      checks: [asBriefCheckLine("npm test")],
+      checks: [asBriefCheckLine("npm test", 0)],
     }).readiness,
     "Ready",
   );
@@ -463,6 +464,7 @@ function briefed(
   const configuration = pinnedWorkloadTask(
     document,
     pin,
+    undefined,
     undefined,
     purpose === "Work"
       ? { taskKind: "Work" }
@@ -780,10 +782,7 @@ test("the worker is told where chuggy's docs on jobs start, for an agent to fetc
       (line) =>
         line.includes(
           "chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage",
-        ) &&
-        line.includes(
-          "start at https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt",
-        ),
+        ) && line.includes(`start at ${chuggyDocsIndex}`),
     ),
   );
 });
@@ -837,6 +836,29 @@ test("the worker and the published schema say which job a shell line runs in, an
   ])
     assert.ok(published.includes(said), said);
   assert.ok(!published.includes("always set"));
+});
+
+test("the worker and the published schema say how a setup line passes a variable on, and how far it reaches", () => {
+  assert.ok(
+    briefed("Work", "Prompt").some(
+      (line) =>
+        line.includes("appending NAME=value to the file CHUG_ENV names") &&
+        line.includes("the commands of its own job") &&
+        line.includes("each workload's job runs only its own setup") &&
+        line.includes("A NAME starting CHUG_ or CHUGGY_ is chuggy's"),
+    ),
+  );
+  const published = JSON.stringify(configurationDocumentJsonSchema());
+  for (const said of [
+    "appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER",
+    "the later value wins",
+    "A value reaches only this job's later setup lines, its agent's shells and its commands",
+    "one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n",
+    "more than the worker's bound on what setup passes",
+    "Nothing scrubs these values",
+    "has CHUG_ENV only where the runner installed there sets it",
+  ])
+    assert.ok(published.includes(said), said);
 });
 
 /** A published schema's object, as far as these fields are read from it. */
@@ -895,7 +917,7 @@ function declaredNames(
   return imported.declarations.map((declaration) => declaration.name);
 }
 
-test("no file may be left declaring the bootstrap's own name, which a seeded repository that kept its file would still declare, so the change is told to delete it", () => {
+test("no file may be left declaring the bootstrap's own name, which a repository that kept its file would still declare, so the change is told to delete it", () => {
   assert.ok(
     bootstrapBrief().acceptanceCriteria.some(
       (line) =>
@@ -904,7 +926,7 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
         line.includes("the change deletes that file"),
     ),
   );
-  const seeded = {
+  const kept = {
     path: bootstrapConfigurationPath,
     kind: "File" as const,
     content: bootstrapConfigurationFile({ repository, defaultBranch, image }),
@@ -914,7 +936,7 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
     kind: "File" as const,
     content: declaredFile(atEveryBound),
   };
-  assert.deepEqual(declaredNames([seeded, own]), [
+  assert.deepEqual(declaredNames([kept, own]), [
     bootstrapConfigurationName,
     "default",
   ]);
@@ -924,17 +946,17 @@ test("no file may be left declaring the bootstrap's own name, which a seeded rep
 /** A configuration asking its ticket for the repository's configuration, in a criterion's words or a work line's. */
 const writesConfiguration = /\bwrite the repository's\b.*\bconfiguration\b/u;
 
-test("the seeded document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
+test("the bootstrap document left under another name is one an import takes, so a criterion rules it out by what it asks of a ticket", () => {
   assert.ok(
     bootstrapBrief().acceptanceCriteria.some(
       (line) =>
         line.includes("under another name") && writesConfiguration.test(line),
     ),
   );
-  const seeded: unknown = JSON.parse(
+  const kept: unknown = JSON.parse(
     bootstrapConfigurationFile({ repository, defaultBranch, image }),
   );
-  assert.ok(typeof seeded === "object" && seeded !== null);
+  assert.ok(typeof kept === "object" && kept !== null);
   const imported = repositoryConfigurationImportReadiness({
     repository,
     commit,
@@ -942,7 +964,7 @@ test("the seeded document left under another name is one an import takes, so a c
       {
         path: declaredPath,
         kind: "File",
-        content: JSON.stringify({ ...seeded, name: "default" }),
+        content: JSON.stringify({ ...kept, name: "default" }),
       },
     ],
   });

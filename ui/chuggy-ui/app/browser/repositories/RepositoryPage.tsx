@@ -1,8 +1,9 @@
 /**
- * One bound repository: how a finished ticket in it lands, what runs after
- * evaluation, what it declares under `.chug/configurations`, and when that was
- * last imported. A retired binding, which the listing does not draw, says
- * Unbound beside its name and offers no import.
+ * One bound repository: how a finished ticket in it lands, whether its jobs
+ * may change its workflow files, what runs after evaluation, what it declares
+ * under `.chug/configurations`, and when that was last imported. A retired
+ * binding, which the listing does not draw, says Unbound beside its name and
+ * offers no import.
  *
  * Only what a reader can act on is drawn. A revision's digest, its parent, the
  * practices it names and the instructions it counts are the configuration's own
@@ -44,6 +45,7 @@ import {
 } from "./RepositoryImport.tsx";
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
 import { RepositoryLandingSection } from "./RepositoryLandingSection.tsx";
+import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
 
 /** This page's own address, which its reads take their partition from. */
 export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
@@ -143,6 +145,10 @@ export function RepositoryPage(): ReactNode {
       {binding === undefined ? null : (
         <>
           <RepositoryLandingSection partition={partition} binding={binding} />
+          <RepositoryWorkflowFilesSection
+            partition={partition}
+            binding={binding}
+          />
           <RepositoryDeclared partition={partition} binding={binding} />
         </>
       )}

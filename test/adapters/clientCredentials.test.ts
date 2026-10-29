@@ -93,6 +93,7 @@ function drivenTokenSource({
     responseReadsMax: 100,
     refreshMarginMs,
     mintCooldownMs,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, (attempt) =>
       grantResponse(`token-${String(attempt)}`, expiresInSeconds),
     ),
@@ -134,6 +135,7 @@ function grantedOnceTokenSource(): GrantedOnce {
     responseReadsMax: 100,
     refreshMarginMs: 60_000,
     mintCooldownMs: 5_000,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, (attempt) =>
       attempt === 1
         ? grantResponse("token-1", 900)
@@ -167,6 +169,7 @@ test("the grant is minted with basic authentication, audience and scope", async 
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, () => grantResponse("first", 900)),
   });
   assert.equal(await source.token(AbortSignal.timeout(1_000)), "first");
@@ -243,11 +246,11 @@ test("a refused mint is not held and the next caller mints again", async () => {
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, (attempt) =>
       attempt === 1
-        ? new Response("{}", {
+        ? new Response(JSON.stringify({ error: "invalid_client" }), {
             status: 401,
-            headers: { "content-length": "2" },
           })
         : grantResponse("recovered", 900),
     ),
@@ -282,6 +285,7 @@ test("a grant this client cannot bound or present is refused", async () => {
       responseReadsMax: 100,
       refreshMarginMs: 1_000,
       mintCooldownMs: 500,
+      refusalConfirmMs: 60_000,
       fetch: () => Promise.resolve(response),
     });
     await assert.rejects(source.token(AbortSignal.timeout(1_000)), expected);
@@ -299,6 +303,7 @@ test("a response longer than the byte bound is refused before it is parsed", asy
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
+    refusalConfirmMs: 60_000,
     fetch: () => Promise.resolve(grantResponse("token", 900)),
   });
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /byte bound/u);
@@ -326,6 +331,7 @@ test("a grant response of empty chunks, more of them than the read bound, is ref
     responseReadsMax: readsMax,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
+    refusalConfirmMs: 60_000,
     fetch: () => Promise.resolve(new Response(stream)),
   });
   await assert.rejects(source.token(AbortSignal.timeout(1_000)), /read bound/u);
@@ -436,6 +442,7 @@ test("a token endpoint that never answers is asked once per cooldown", async () 
     responseReadsMax: 100,
     refreshMarginMs: 60_000,
     mintCooldownMs: 5_000,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(
       minted,
       () =>
@@ -479,6 +486,7 @@ test("a cooldown as long as the refresh margin is refused, not accepted quietly"
           responseReadsMax: 100,
           refreshMarginMs: 60_000,
           mintCooldownMs,
+          refusalConfirmMs: 60_000,
         }),
       /shorter than its refresh margin/u,
     );
@@ -510,6 +518,7 @@ test("a joining caller's deadline does not cancel the mint the others wait on", 
     responseReadsMax: 100,
     refreshMarginMs: 1_000,
     mintCooldownMs: 500,
+    refusalConfirmMs: 60_000,
     fetch: (_input, init) =>
       new Promise<Response>((resolve, reject) => {
         grants += 1;
@@ -557,6 +566,7 @@ test("a source given no clock still enforces and then lifts its cooldown", async
     responseReadsMax: 100,
     refreshMarginMs: 400,
     mintCooldownMs: 200,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, () => new Response("{}", { status: 503 })),
   });
   await assert.rejects(source.token(bounded()), /returned 503/u);
@@ -597,6 +607,7 @@ test("a source given no clock does not measure its cooldown on the wall clock", 
       responseReadsMax: 100,
       refreshMarginMs: 400,
       mintCooldownMs: 200,
+      refusalConfirmMs: 60_000,
       fetch: mintingTransport(
         minted,
         () => new Response("{}", { status: 503 }),
@@ -631,6 +642,7 @@ test("a grant too short-lived to keep a cooldown around is refused, once per coo
     responseReadsMax: 100,
     refreshMarginMs: 60_000,
     mintCooldownMs: 59_000,
+    refusalConfirmMs: 60_000,
     fetch: (input, init) => {
       nowEpochMs += 6_000;
       elapsedMs += 6_000;
@@ -685,6 +697,7 @@ test("a failed attempt still waits the whole configured cooldown", async () => {
     responseReadsMax: 100,
     refreshMarginMs: 60_000,
     mintCooldownMs: 59_000,
+    refusalConfirmMs: 60_000,
     fetch: mintingTransport(minted, () => new Response("{}", { status: 503 })),
     monotonicMs: () => elapsedMs,
   });

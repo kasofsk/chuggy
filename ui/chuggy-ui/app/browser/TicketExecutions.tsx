@@ -147,7 +147,17 @@ function Artifact(props: {
   );
 }
 
-/** One row per run, which its number tells apart from the others. */
+type ExecutionAttempt = ExecutionResponse["attempts"][number];
+
+/** An attempt's state, a `Placing` one no runner has claimed read as waiting for one. */
+function attemptStateWord(attempt: ExecutionAttempt): string {
+  return attempt.state === "Placing" && attempt.claimedAt === undefined
+    ? "Waiting"
+    : attempt.state;
+}
+
+/** One row per run, which its number tells apart from the others. Ran is
+ * measured from a runner's claim where one claimed it, so a wait is not run time. */
 function ExecutionAttempts(props: {
   readonly execution: ExecutionResponse;
   readonly nowMs: number;
@@ -166,12 +176,17 @@ function ExecutionAttempts(props: {
         {props.execution.attempts.map((attempt) => (
           <tr key={attempt.attempt}>
             <th scope="row">{attempt.number}</th>
-            <td>{attempt.state}</td>
+            <td>{attemptStateWord(attempt)}</td>
             <td>
               <Figure figure={sinceFigure(attempt.openedAt, props.nowMs)} />
             </td>
             <td>
-              <Figure figure={ranFigure(attempt.openedAt, attempt.endedAt)} />
+              <Figure
+                figure={ranFigure(
+                  attempt.claimedAt ?? attempt.openedAt,
+                  attempt.endedAt,
+                )}
+              />
             </td>
           </tr>
         ))}

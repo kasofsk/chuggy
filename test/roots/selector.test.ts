@@ -99,6 +99,29 @@ test("the selector command parses every plain-data dependency", async () => {
   });
 });
 
+test("the source's token source confirms an issuer's invalid_client before it is a refusal", async () => {
+  const program = `
+    const root = await import('./src/roots/selector.ts');
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: 'invalid_client' }), { status: 401 });
+    const source = root.selectorSourceAccessToken(
+      root.selectorConfiguration(process.env).source,
+    );
+    await source.token(AbortSignal.timeout(1_000)).catch((failure) => {
+      process.stdout.write(failure.message);
+    });
+  `;
+  const found = await execute(
+    process.execPath,
+    ["--experimental-strip-types", "--input-type=module", "--eval", program],
+    { cwd: process.cwd(), env: validEnvironment },
+  );
+  assert.equal(
+    found.stdout,
+    "client credentials grant returned 401 invalid_client, a refusal being confirmed: 0s of 90s",
+  );
+});
+
 test("the wake bound defaults to the contract's own and may be lowered, not raised", async () => {
   const program = `
     const root = await import('./src/roots/selector.ts');

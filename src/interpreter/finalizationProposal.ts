@@ -24,6 +24,13 @@
  * this step names and decides none of it, which is what keeps the vocabulary in
  * one place.
  *
+ * A REWORK CARRIES ON IN ITS TICKET'S OWN PULL REQUEST. A request with no
+ * proposal of its own adopts the open one an earlier request of the same ticket
+ * recorded on the same head and base, which is already the proposal of the
+ * candidate this request promoted onto that head: its row is written as
+ * adopted, pinned at that candidate, and is continued from then on exactly as
+ * one this request opened.
+ *
  * THE BASE IS OBSERVED ONCE, AND ONLY TO ASK FOR THE PROPOSAL. A proposal is
  * opened into a branch, and a branch the remote does not hold is not one a
  * proposal can name — so an unreadable base holds the opening, and creating it
@@ -41,9 +48,10 @@
  * reopens waits again and one that stays closed escalates once the dwell is
  * spent.
  *
- * THE FINALIZER MERGES ONLY THE HEAD IT PROPOSED, AND A MERGE ANYBODY MADE
- * LANDS. Its own merge is conditional on the promoted candidate, so it never
- * merges a commit nobody evaluated; a merge the forge reports, by whoever made
+ * THE FINALIZER MERGES ONLY THE HEAD PINNED FOR IT, AND A MERGE ANYBODY MADE
+ * LANDS. Its own merge is conditional on the promoted candidate or on a head
+ * git proved is that candidate brought up to date with the base, so it never
+ * merges a change nobody evaluated; a merge the forge reports, by whoever made
  * it and at whatever head, is a person's decision at the forge and concludes
  * `FinalizationSucceeded`, and the landing's read names the head that was
  * merged wherever it is not the one proposed.
@@ -59,19 +67,23 @@ import type { BriefFinalizationMode } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
+  changeProposalAdoptionNext,
   changeProposalMergeNext,
   changeProposalAddressed,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
   proposalBodyCharsMax,
   proposalTitleCharsMax,
+  type ChangeProposalAdoptionGathered,
   type ChangeProposalCreated,
   type ChangeProposalCreationAnswer,
   type ChangeProposalEvidence,
+  type ChangeProposalIdentity,
   type ChangeProposalMerged,
   type ChangeProposalMergedStanding,
   type ChangeProposalMergeAnswer,
   type ChangeProposalMergeConcluded,
+  type ChangeProposalMergeGathered,
   type ChangeProposalMergeReconciled,
   type ChangeProposalMergeReconciliationAnswer,
   type ChangeProposalMergeRequest,
@@ -83,11 +95,17 @@ import {
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalRequest,
   type ChangeProposalRequestIdentity,
+  type ChangeProposalUpdated,
+  type ChangeProposalUpdating,
   type OpenedChangeProposalPublication,
   type ProposalMarker,
 } from "./changeProposal.ts";
 import { allClosingLifecycles } from "./finalizer.ts";
-import type { CommitPermitId, FinalizationClaim } from "./finalizer.ts";
+import type {
+  CommitPermitId,
+  FinalizationClaim,
+  GitObjectId,
+} from "./finalizer.ts";
 import type { FinalizationHoldKind } from "./finalizer.ts";
 import type { Lifecycle } from "./projectStore.ts";
 import {
@@ -102,7 +120,8 @@ const finalizationProposalMarkerSeparator = "\n\n";
 /**
  * Everything the step below reads of one proposal, absent where this deployment
  * could not build a request at all and where the base read for it turned out to
- * be the head it would be opened from.
+ * be the head it would be opened from. `adoption` is present only for a request
+ * with no row of its own whose ticket recorded a proposal on its head and base.
  */
 export type FinalizationProposalGathered =
   | {
@@ -110,6 +129,8 @@ export type FinalizationProposalGathered =
       readonly request: ChangeProposalRequest;
       readonly publication: ChangeProposalPublication;
       readonly merging: ChangeProposalMerging;
+      readonly merge: ChangeProposalMergeGathered;
+      readonly adoption?: ChangeProposalAdoptionGathered;
     }
   | { readonly gathered: "Unbound" }
   | { readonly gathered: "BaseUnreadable" }
@@ -130,6 +151,11 @@ export type FinalizationProposalDecision =
     }
   | { readonly decide: "RefuseProposalAttempt" }
   | {
+      readonly decide: "AdoptProposal";
+      readonly request: ChangeProposalRequest;
+      readonly evidence: ChangeProposalEvidence;
+    }
+  | {
       readonly decide: "MergeProposal";
       readonly request: ChangeProposalRequest;
       readonly merge: ChangeProposalMergeRequest;
@@ -139,6 +165,12 @@ export type FinalizationProposalDecision =
       readonly request: ChangeProposalRequest;
       readonly merge: ChangeProposalMergeRequest;
     }
+  | {
+      readonly decide: "UpdateProposal";
+      readonly request: ChangeProposalRequest;
+      readonly merge: ChangeProposalMergeRequest;
+    }
+  | { readonly decide: "AdoptProposalHead"; readonly head: GitObjectId }
   | { readonly decide: "RefuseMergeAttempt" }
   | { readonly decide: "WaitMergeAttempt"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "RecordMergeConflict" }
@@ -189,7 +221,9 @@ function finalizationProposalHeld(
 /**
  * The hold each reason a merge is held under is, named as this layer names it.
  * A proposal closed unmerged is held as one absent, because either is a merge
- * no reading can land and a resume replaces it with a proposal of its own.
+ * no reading can land and a resume replaces it with a proposal of its own; and
+ * updates spent are merges spent, an update being an act this request asks of
+ * the forge toward its merge and counted afresh by the same resume.
  */
 function finalizationProposalMergeHeld(
   reason: Extract<
@@ -199,6 +233,7 @@ function finalizationProposalMergeHeld(
 ): FinalizationHoldKind {
   switch (reason) {
     case "MergesExhausted":
+    case "UpdatesExhausted":
       return "ProposalMergesExhausted";
     case "Blocked":
       return "ProposalMergeBlocked";
@@ -237,7 +272,8 @@ function finalizationProposalMerged(
 function finalizationProposalAddressed(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
-  decide: "MergeProposal" | "ReconcileMerge",
+  head: GitObjectId,
+  decide: "MergeProposal" | "ReconcileMerge" | "UpdateProposal",
 ): FinalizationProposalDecision {
   const proposal = changeProposalAddressed(evidence.identity);
   if (proposal === undefined)
@@ -248,7 +284,7 @@ function finalizationProposalAddressed(
     repository: request.repository,
     proposal,
     marker: request.marker,
-    headCommit: request.head.commit,
+    headCommit: head,
   });
   return { decide, request, merge };
 }
@@ -265,18 +301,41 @@ function finalizationProposalMergeNext(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
   merging: ChangeProposalMerging,
+  merge: ChangeProposalMergeGathered,
   bounds: ChangeProposalMergingBounds,
 ): FinalizationProposalDecision {
   if (evidence.status === "Merged" && evidence.mergeCommit !== undefined)
     return { decide: "Conclude" };
-  const next = changeProposalMergeNext(request, merging, bounds);
+  const next = changeProposalMergeNext(request, merging, merge, bounds);
+  const closing = allClosingLifecycles.includes(finalization.lifecycle);
   switch (next.next) {
     case "Merge":
-      return allClosingLifecycles.includes(finalization.lifecycle)
+      return closing
         ? { decide: "Abort" }
-        : finalizationProposalAddressed(request, evidence, "MergeProposal");
+        : finalizationProposalAddressed(
+            request,
+            evidence,
+            merge.head,
+            "MergeProposal",
+          );
+    case "Update":
+      return closing
+        ? { decide: "Abort" }
+        : finalizationProposalAddressed(
+            request,
+            evidence,
+            merge.head,
+            "UpdateProposal",
+          );
+    case "Adopt":
+      return { decide: "AdoptProposalHead", head: next.head };
     case "ReadByNumber":
-      return finalizationProposalAddressed(request, evidence, "ReconcileMerge");
+      return finalizationProposalAddressed(
+        request,
+        evidence,
+        merge.head,
+        "ReconcileMerge",
+      );
     case "RefuseAttempt":
       return { decide: "RefuseMergeAttempt" };
     case "Wait":
@@ -292,6 +351,28 @@ function finalizationProposalMergeNext(
       return {
         decide: "Hold",
         hold: finalizationProposalMergeHeld(next.reason),
+      };
+    default:
+      return assertNever(next);
+  }
+}
+
+/** The one act reading an earlier request's proposal authorizes before this request opens one of its own. */
+function finalizationProposalAdoption(
+  request: ChangeProposalRequest,
+  adoption: ChangeProposalAdoptionGathered,
+): FinalizationProposalDecision {
+  const next = changeProposalAdoptionNext(request, adoption);
+  switch (next.next) {
+    case "Adopt":
+      return { decide: "AdoptProposal", request, evidence: next.evidence };
+    case "Create":
+      return { decide: "ProposeChange", request };
+    case "Held":
+      return {
+        decide: "Hold",
+        hold:
+          next.reason === "Denied" ? "ProposalDenied" : "ProposalUnavailable",
       };
     default:
       return assertNever(next);
@@ -325,7 +406,10 @@ export function finalizationProposalNext(
   );
   switch (next.next) {
     case "Create":
-      return { decide: "ProposeChange", request };
+      return gathered.publication.publication === "Unopened" &&
+        gathered.adoption !== undefined
+        ? finalizationProposalAdoption(request, gathered.adoption)
+        : { decide: "ProposeChange", request };
     case "Reconcile":
       return { decide: "ReconcileProposal", request };
     case "RefuseAttempt":
@@ -337,6 +421,7 @@ export function finalizationProposalNext(
             request,
             next.evidence,
             gathered.merging,
+            gathered.merge,
             bounds.merging,
           )
         : { decide: "Conclude" };
@@ -495,6 +580,37 @@ export function finalizationProposalMergeReadingRecording(
   }
 }
 
+/**
+ * What one update's answer is written down as. One the forge accepted, or
+ * answered nothing a row settles on, stands unread until a reading sees what
+ * became of it; one it refused is spent and read; and one it would not take
+ * is released unspent, the deployment holding as for any other decline.
+ */
+export type FinalizationProposalUpdateRecording =
+  | { readonly record: "Asked" | "Refused" }
+  | { readonly record: "Declined"; readonly hold: FinalizationHoldKind };
+
+/** The writes an answered update makes against the row. */
+export type ChangeProposalUpdateWrite = "Asked" | "Refused" | "Declined";
+
+export function finalizationProposalUpdateRecording(
+  updated: ChangeProposalUpdated,
+): FinalizationProposalUpdateRecording {
+  switch (updated.updated) {
+    case "Accepted":
+    case "Ambiguous":
+      return { record: "Asked" };
+    case "Refused":
+      return { record: "Refused" };
+    case "Unavailable":
+      return { record: "Declined", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Declined", hold: "ProposalDenied" };
+    default:
+      return assertNever(updated);
+  }
+}
+
 /** The longest prefix of a value that is at most `charsMax` and is still well formed. */
 function finalizationProposalBounded(value: string, charsMax: number): string {
   return textCodePointsCount(value) <= charsMax
@@ -591,11 +707,17 @@ export interface ChangeProposalMergeResult {
       };
 }
 
-/** One stored proposal whole: what it asked the forge for, and what has come back. */
+/**
+ * One stored proposal whole: what it asked the forge for, what has come back,
+ * the head adopted in place of the one it asked for where one has been, and how
+ * updating it stands beside the other proposals on its base.
+ */
 export interface StoredChangeProposal {
   readonly asked: ChangeProposalAsked;
   readonly publication: OpenedChangeProposalPublication;
   readonly merging: ChangeProposalMerging;
+  readonly adopted?: GitObjectId;
+  readonly updating: ChangeProposalUpdating;
 }
 
 /**
@@ -610,6 +732,21 @@ export interface FinalizerProposalStore {
   changeProposal(
     claim: FinalizationClaim,
   ): Promise<StoredChangeProposal | undefined>;
+
+  /**
+   * What the forge last said identifies the newest proposal an earlier request
+   * of the same ticket recorded on this head and base, absent where none did.
+   */
+  ticketChangeProposal(
+    claim: FinalizationClaim,
+    place: Pick<ChangeProposalRequest, "head" | "base">,
+  ): Promise<ChangeProposalIdentity | undefined>;
+
+  /** Starts the row as the adoption of a proposal read open, refused where the row already stands. */
+  adoptChangeProposal(
+    record: ChangeProposalRecord,
+    evidence: ChangeProposalEvidence,
+  ): Promise<ChangeProposalWritten>;
 
   /** Counts one attempt, refused where a create is already in flight or answered. */
   markChangeProposalAttempt(
@@ -654,5 +791,22 @@ export interface FinalizerProposalStore {
   /** Records one answer about merging against that row, the merge's being writable exactly once. */
   recordChangeProposalMerge(
     record: ChangeProposalMergeResult,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Counts one update of a waiting merge's branch, refused where one is unread on its base already. */
+  markChangeProposalUpdate(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records what the update in flight came to. */
+  recordChangeProposalUpdate(
+    claim: FinalizationClaim,
+    write: ChangeProposalUpdateWrite,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Pins the head the last reading found as the one merged at, a moved head's answer giving way to it. */
+  adoptChangeProposalHead(
+    claim: FinalizationClaim,
+    head: GitObjectId,
   ): Promise<ChangeProposalWritten>;
 }

@@ -33,6 +33,10 @@ import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { promisify } from "node:util";
 
+import {
+  apiRole,
+  selectorReviewRole,
+} from "../../src/adapters/postgres/schema.ts";
 import { fluxSignatureToleranceSecs } from "../../src/adapters/reporters/fluxSignature.ts";
 import { threadLiveLimitsDefault } from "../../src/interpreter/threadLive.ts";
 
@@ -61,7 +65,7 @@ function authenticationProgram(token: string): string {
         asked[named].push(statement.values);
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
-          kind: 'Lead', principal,
+          kind: 'Lead', principal, scope: 'Project',
         }] };
       },
     });
@@ -111,19 +115,30 @@ interface Authenticated {
 const leadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
   const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => ({
-    query: async (statement) => {
+  const pooled = (named) => {
+    const query = async (statement) => {
       asked[named].push(statement.text ?? String(statement));
       return { rows: [] };
-    },
-  });
+    };
+    return {
+      query,
+      connect: async () => ({
+        query,
+        on: () => undefined,
+        removeListener: () => undefined,
+        release: () => undefined,
+      }),
+    };
+  };
   const pools = {
     pool: pooled('pool'),
     selectorReviewPool: pooled('selectorReviewPool'),
   };
-  const ports = root.nativeLeadPorts(pools, {
-    readBatch: async () => ({ read: 'NotFound' }),
-  });
+  const ports = root.nativeLeadPorts(
+    pools,
+    { readBatch: async () => ({ read: 'NotFound' }) },
+    'https://issuer.example',
+  );
   const partition = { tenant: 'tenant', project: 'project' };
   await ports.leads.standing(partition, 1);
   await ports.leads.leadRefusal(partition);
@@ -139,6 +154,7 @@ const leadPortsProgram = `
   await ports.refusals.standing(partition, 1);
   await ports.refusals.ledger(partition, 1, 1);
   await ports.settings.projectSettings(partition).catch(() => undefined);
+  await ports.candidates.read(partition, { limit: 1 });
   process.stdout.write(JSON.stringify(asked));
 `;
 
@@ -169,7 +185,22 @@ test("the lead's reads stand on the API pool and never the review pool", async (
     [],
     "no lead read may reach the pool with no grant on 059's doors",
   );
-  assert.equal(asked.pool.length, 8, "every lead read was handed the API pool");
+  assert.equal(
+    asked.pool.length,
+    12,
+    "every lead read was handed the API pool, the dispatch view in its own transaction",
+  );
+});
+
+/** Whether a released ticket waits is the dispatch view the selector itself reads, over the API pool. */
+test("the lead's dispatch candidates are read over the API pool from the dispatch view", async () => {
+  const asked = await leadPortsAsked();
+  assert.ok(
+    asked.pool.some((statement) =>
+      statement.includes("LEFT JOIN dispatch_view v USING (tenant,project)"),
+    ),
+    "the dispatch view was not handed the API pool",
+  );
 });
 
 test("each lead read reaches the definer function the plan names for it", async () => {
@@ -212,12 +243,21 @@ test("the lead's selector mode is read over the API pool from the installation's
 const threadPortsProgram = `
   const root = await import('./src/roots/nativeHttp.ts');
   const asked = { pool: [], selectorReviewPool: [] };
-  const pooled = (named) => ({
-    query: async (statement) => {
+  const pooled = (named) => {
+    const query = async (statement) => {
       asked[named].push(statement.text ?? String(statement));
       return { rows: [] };
-    },
-  });
+    };
+    return {
+      query,
+      connect: async () => ({
+        query,
+        on: () => undefined,
+        removeListener: () => undefined,
+        release: () => undefined,
+      }),
+    };
+  };
   const pools = {
     pool: pooled('pool'),
     selectorReviewPool: pooled('selectorReviewPool'),
@@ -549,6 +589,110 @@ test("the app closing closes every hub it was stopped with and then the pools, a
   );
   assert.equal(signalled.code, 0, signalled.out);
   assert.deepEqual(JSON.parse(signalled.out), [...hubs, ...hubs, ...pools]);
+});
+
+/** What a pool answers its readiness check: the role row first and the applied migrations after, or a refused connection. */
+type ReadinessAnswer = Readonly<Record<string, unknown>> | "ConnectionRefused";
+
+/**
+ * The root's start-up check over two pools that each answer as one case says
+ * and record being closed. What it refused with, if anything, is printed beside
+ * the pools it closed.
+ */
+function databasesReadyProgram(
+  api: ReadinessAnswer,
+  review: ReadinessAnswer,
+): string {
+  return `
+  const root = await import('./src/roots/nativeHttp.ts');
+  const schema = await import('./src/adapters/postgres/runtimeSchema.ts');
+  const ended = [];
+  const pooled = (named, answer) => {
+    let queries = 0;
+    return {
+      query: async () => {
+        queries += 1;
+        if (answer === 'ConnectionRefused')
+          throw new Error('connect ECONNREFUSED 127.0.0.1:1');
+        return {
+          rows: queries === 1 ? [answer] : schema.currentRuntimeSchemaContract.required,
+        };
+      },
+      end: async () => {
+        ended.push(named);
+      },
+    };
+  };
+  const refusal = await root
+    .nativeDatabasesReady(
+      pooled('pool', ${JSON.stringify(api)}),
+      pooled('selectorReviewPool', ${JSON.stringify(review)}),
+    )
+    .then(() => null, (failure) => failure.message);
+  process.stdout.write(JSON.stringify({ refusal, ended }));
+`;
+}
+
+async function databasesReady(
+  api: ReadinessAnswer,
+  review: ReadinessAnswer,
+): Promise<{ readonly refusal: string | null; readonly ended: string[] }> {
+  const ran = await rootRead({}, databasesReadyProgram(api, review));
+  assert.equal(ran.code, 0, ran.out);
+  return JSON.parse(ran.out) as {
+    refusal: string | null;
+    ended: string[];
+  };
+}
+
+const apiAnswered = { current_role: apiRole, authorized: true };
+const reviewAnswered = {
+  current_role: selectorReviewRole,
+  review_feedback_readable: true,
+};
+const bothPools = ["pool", "selectorReviewPool"];
+
+test("a start refuses a database it could not reach under the connection's own failure, never as unmigrated, and closes both pools", async () => {
+  const api = await databasesReady("ConnectionRefused", reviewAnswered);
+  assert.equal(
+    api.refusal,
+    "the native HTTP database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
+  );
+  assert.deepEqual(api.ended, bothPools);
+  const review = await databasesReady(apiAnswered, "ConnectionRefused");
+  assert.equal(
+    review.refusal,
+    "the selector review database could not be reached or queried — connect ECONNREFUSED 127.0.0.1:1",
+  );
+  assert.deepEqual(review.ended, bothPools);
+});
+
+test("a start refuses a database that answered as the wrong role as one to migrate and connect as its own, and closes both pools", async () => {
+  const api = await databasesReady(
+    { current_role: selectorReviewRole, authorized: true },
+    reviewAnswered,
+  );
+  assert.equal(
+    api.refusal,
+    `the native HTTP database must be migrated and connect as ${apiRole}`,
+  );
+  assert.deepEqual(api.ended, bothPools);
+  const review = await databasesReady(apiAnswered, {
+    current_role: apiRole,
+    review_feedback_readable: true,
+  });
+  assert.equal(
+    review.refusal,
+    `the selector review database must connect as ${selectorReviewRole}`,
+  );
+  assert.deepEqual(review.ended, bothPools);
+});
+
+test("a start whose two databases both answered as their roles refuses nothing and closes neither pool", async () => {
+  assert.deepEqual(await databasesReady(apiAnswered, reviewAnswered), {
+    refusal: null,
+    ended: [],
+  });
 });
 
 /**
@@ -1107,6 +1251,7 @@ test("a session bearer is answered by this deployment's own session authority", 
       viaSession: {
         session: "session-pool",
         partition: { tenant: "tenant", project: "project" },
+        scope: "Project",
       },
     },
   });

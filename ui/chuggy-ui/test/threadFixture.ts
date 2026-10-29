@@ -16,8 +16,11 @@ import type {
   ThreadTranscriptResponse,
   ThreadTurnResponse,
 } from "../../../src/contract/responses.ts";
+import { threadHomeOf } from "../app/core/threadHome.ts";
 
 export const threadPartition = { tenant: "acme", project: "atlas" };
+
+export const threadHome = threadHomeOf(threadPartition);
 
 export const threadMineSession = "thread-geoff";
 export const threadOtherSession = "thread-ada";

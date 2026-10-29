@@ -152,6 +152,9 @@ export const ketoHarnessRoleKinds: readonly ProjectAccessKind[] = [
   "DispatchTicket",
   "ProposeDispatch",
   "ManageProjectSelector",
+  "OverrideTicketConfig",
+  "SkipPlannedEvaluations",
+  "ChatMetadata",
   "Execute",
   "Administer",
 ];
@@ -199,6 +202,7 @@ const ketoHarnessTenantRoleKinds: readonly TenantAccessKind[] = [
   "AdministerTenant",
   "ExecuteHosted",
   "RegisterPersonalRunner",
+  "OpenUnscopedChat",
 ];
 
 /** The kinds asked of a relation saying who may grant or manage, at each level. */

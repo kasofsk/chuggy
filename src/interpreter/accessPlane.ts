@@ -1,25 +1,31 @@
 /**
  * Who holds a role in a tenant and its projects, granting or removing one, and
- * giving or taking a tenant's hosted runs or personal runners, each asked of
- * the authority as the kind it needs.
+ * giving or taking a tenant's hosted runs, personal runners or unscoped chat,
+ * each asked of the authority as the kind it needs.
  *
  * A REQUEST REACHES A RELATION THROUGH ONE RECORD PER ROSTER, OR AS HOSTED
- * RUNS OR PERSONAL RUNNERS. The builders in `./projectGrant.ts` take any
- * relation the model declares, `agents`, `pools` and the `tenant` link
- * included, so these two records, `accessHostedRunsRelation` and
- * `accessPersonalRunnersRelation` are the whole of what a role change can
- * write, and `./accessAuthorityHolders.ts` holds the records an authority's
- * holders are written through: no string a request carries reaches a builder
- * any other way.
+ * RUNS, PERSONAL RUNNERS OR UNSCOPED CHAT. The builders in `./projectGrant.ts`
+ * take any relation the model declares, `agents`, `pools` and the `tenant`
+ * link included, so these records, `accessHostedRunsRelation`,
+ * `accessPersonalRunnersRelation` and `accessUnscopedChatRevokedRelation` are
+ * the whole of what a role change can write, and
+ * `./accessAuthorityHolders.ts` holds the records an authority's holders are
+ * written through: no string a request carries reaches a builder any other
+ * way.
+ *
+ * UNSCOPED CHAT IS GIVEN BY REMOVING A TUPLE AND TAKEN BY WRITING ONE. Every
+ * holder of a tenant role holds it unless `unscoped_chat_revoked` names them,
+ * so a person is listed as holding it where no such tuple does.
  *
  * A LIST IS ANSWERED TO WHOEVER HOLDS ONE OF ITS OWN KINDS, and a change asks
  * the kind granting its role, each in one record beside the role's relation,
- * `GrantHostedExecution` for hosted runs, or `GrantPersonalRunners` for
- * personal runners. A caller holding none of a list's kinds is answered as
- * absent, exactly as a tenant or project that does not exist, so nothing here
- * tells the two apart; one answered the list who lacks a change's kind is
- * refused it. The caller's own tenants, in `./accessCallerTenants.ts`, are the
- * one list answered to any caller, because it is about them alone.
+ * `GrantHostedExecution` for hosted runs, `GrantPersonalRunners` for personal
+ * runners, or `GrantUnscopedChat` for unscoped chat. A caller holding none of
+ * a list's kinds is answered as absent, exactly as a tenant or project that
+ * does not exist, so nothing here tells the two apart; one answered the list
+ * who lacks a change's kind is refused it. The caller's own tenants, in
+ * `./accessCallerTenants.ts`, are the one list answered to any caller, because
+ * it is about them alone.
  *
  * WHO A SUBJECT IS IS THE DIRECTORY'S, asked once per list about at most
  * `accessDirectorySubjectsMax` subjects. A plane with no directory lists
@@ -113,6 +119,7 @@ export const accessTenantListKinds: readonly TenantAccessKind[] = [
   "GrantMember",
   "GrantHostedExecution",
   "GrantPersonalRunners",
+  "GrantUnscopedChat",
   "ManageTenantAuthorities",
   "ManageSiteHeldAuthorities",
 ];
@@ -132,6 +139,10 @@ const accessHostedRunsRelation: TenantGrantRelation = "hosted_execution";
 
 /** The tenant relation a list reports as personal runners granted, and the one giving or taking them writes under `GrantPersonalRunners`. */
 const accessPersonalRunnersRelation: TenantGrantRelation = "personal_runners";
+
+/** The tenant relation a list reports as unscoped chat taken, and the one giving or taking it removes or writes under `GrantUnscopedChat`. */
+const accessUnscopedChatRevokedRelation: TenantGrantRelation =
+  "unscoped_chat_revoked";
 
 /**
  * Who one tuple names: a principal's text, or a subject set, which is no
@@ -277,6 +288,16 @@ export interface AccessPlane {
     tenant: TenantId,
     subject: string,
   ): Promise<AccessChange>;
+  tenantUnscopedChatGiven(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
+  tenantUnscopedChatTaken(
+    caller: Principal,
+    tenant: TenantId,
+    subject: string,
+  ): Promise<AccessChange>;
 }
 
 /** What one answer has spent of its bounds, and whether a bound cut it. */
@@ -362,6 +383,7 @@ const accessTenantRelationsListed: ReadonlySet<string> = new Set([
   ...Object.values(accessTenantRoleRelations),
   accessHostedRunsRelation,
   accessPersonalRunnersRelation,
+  accessUnscopedChatRevokedRelation,
 ]);
 
 const accessProjectRelationsListed: ReadonlySet<string> = new Set(
@@ -461,6 +483,7 @@ function accessTenantPerson(
     ),
     hostedRuns: holding.tenant.has(accessHostedRunsRelation),
     personalRunners: holding.tenant.has(accessPersonalRunnersRelation),
+    unscopedChat: !holding.tenant.has(accessUnscopedChatRevokedRelation),
     projects: [...holding.projects.entries()]
       .map(([project, relations]) => ({
         project,
@@ -801,6 +824,23 @@ function accessPersonalRunnersChanges(
   };
 }
 
+/** Giving and taking a person's unscoped chat, decided by holding `GrantUnscopedChat`: giving removes their revocation, and taking writes it. */
+function accessUnscopedChatChanges(
+  ports: AccessPlanePorts,
+  settings: AccessPlaneSettings,
+): Pick<AccessPlane, "tenantUnscopedChatGiven" | "tenantUnscopedChatTaken"> {
+  const changed = accessTenantGrantChange(
+    ports,
+    settings,
+    accessUnscopedChatRevokedRelation,
+    "GrantUnscopedChat",
+  );
+  return {
+    tenantUnscopedChatGiven: changed("remove"),
+    tenantUnscopedChatTaken: changed("write"),
+  };
+}
+
 function accessProjectChanges(
   ports: AccessPlanePorts,
   settings: AccessPlaneSettings,
@@ -860,5 +900,6 @@ export function accessPlane(
     ...accessProjectChanges(ports, settings),
     ...accessHostedRunsChanges(ports, settings),
     ...accessPersonalRunnersChanges(ports, settings),
+    ...accessUnscopedChatChanges(ports, settings),
   };
 }

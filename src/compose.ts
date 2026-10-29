@@ -21,6 +21,7 @@ import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
+  githubInstallationTokensSettled,
 } from "./adapters/forge/githubInstallationTokens.ts";
 import {
   mintedRepositoryCredentials,
@@ -63,14 +64,12 @@ import {
   githubForgeId,
   portalForgeApp,
   type ForgeAppKey,
-  type ForgeInstallationTokens,
   type ForgePermissionSet,
   type ForgeRepositoryTokens,
 } from "./interpreter/forgeInstallation.ts";
 import {
   repositoryOnboarding,
   type RepositoryConfigurationsPorts,
-  type RepositoryCreationPorts,
   type RepositoryOnboarding,
   type RepositoryOnboardingAuthorization,
   type RepositoryOnboardingForgeApp,
@@ -87,9 +86,18 @@ import {
 } from "./adapters/postgres/repositoryBinding.ts";
 import { postgresNotifications } from "./adapters/postgres/notifications.ts";
 import { postgresDispatchViews } from "./adapters/postgres/dispatchViews.ts";
-import { postgresProjectInventory } from "./adapters/postgres/projectInventory.ts";
+import {
+  postgresMemberChatProjects,
+  postgresProjectInventory,
+} from "./adapters/postgres/projectInventory.ts";
+import { memberChat, type MemberChat } from "./interpreter/memberChat.ts";
 import { postgresExecutionPlacement } from "./adapters/postgres/executionPlacement.ts";
 import { postgresProjectOwnerFallback } from "./adapters/postgres/projectOwnerFallback.ts";
+import { postgresThreadLimits } from "./adapters/postgres/threadLimit.ts";
+import {
+  threadLimitAdministration,
+  type ThreadLimitAdministration,
+} from "./interpreter/threadLimit.ts";
 import {
   projectOwnerFallbackAdministration,
   type ProjectOwnerFallbackAdministration,
@@ -316,6 +324,19 @@ export function composeProjectOwnerFallback(
   );
 }
 
+/** Wires how many threads each member may hold open to API-role credentials and the access that gates setting it. */
+export function composeThreadLimits(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  issuer: string,
+): ThreadLimitAdministration {
+  return threadLimitAdministration(
+    access,
+    postgresThreadLimits(apiPool),
+    issuer,
+  );
+}
+
 /** Wires where a project's executions run to API-role credentials and the access that gates choosing it. */
 export function composeExecutionPlacement(
   apiPool: pg.Pool,
@@ -371,9 +392,14 @@ export interface RepositoryCredentialComposition {
 
 /** The minting half of one process's credentials, absent where it holds no app key. */
 export interface RepositoryCredentialMinting {
-  readonly installationTokens: ForgeInstallationTokens;
   readonly tokens: ForgeRepositoryTokens;
 }
+
+/**
+ * Whether a process answers a token the forge has just made once it has
+ * settled or at once, which `githubInstallationTokens.ts` says the reason for.
+ */
+export type ForgeTokenSettling = "Settled" | "Immediate";
 
 /** The files half of one process's credentials, which is what a precondition holds to a path. */
 export function repositoryCredentialFileOptions(
@@ -388,26 +414,30 @@ export function repositoryCredentialFileOptions(
 }
 
 /**
- * What a process mints with, over the pool it owns and the key it holds. The
+ * What a process mints with, over the pool it owns and the key it holds, which
+ * is also where the binding allowing a set its pipeline definitions is read. The
  * permission is not here: one process mints under one key for several acts, and
  * each act's composition is what says how much it may ask for.
  */
 export function composeForgeRepositoryMinting(
   pool: pg.Pool,
   forge: ForgeAppKey | undefined,
+  settling: ForgeTokenSettling,
 ): RepositoryCredentialMinting | undefined {
   if (forge === undefined) return undefined;
-  const installationTokens = githubInstallationTokens(
-    githubInstallationTokensOptions(forge),
-  );
+  const options = githubInstallationTokensOptions(forge);
   return {
-    installationTokens,
     tokens: mintedRepositoryTokens({
       forge: githubForgeId,
       app: portalForgeApp,
       repositoryHost: githubRepositoryHost,
       installations: postgresForgeInstallations(pool),
-      tokens: installationTokens,
+      tokens: githubInstallationTokens(
+        settling === "Settled"
+          ? githubInstallationTokensSettled(options)
+          : options,
+      ),
+      bindings: postgresProjectRepositoryLanding(pool),
     }),
   };
 }
@@ -534,7 +564,6 @@ export interface RepositoryOnboardingComposition {
     RepositoryDefaultBranchPort;
   readonly bootstrapImage?: string;
   readonly publicOrigin?: string;
-  readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
@@ -572,6 +601,7 @@ export function composeRepositoryOnboarding(
     access: composition.access,
     forgeApps: composition.forgeApps,
     credentials: composition.credentials,
+    installations: postgresForgeInstallations(composition.apiPool),
     recording: postgresForgeInstallationRecording(composition.apiPool),
     claims: postgresForgeInstallationClaims(composition.apiPool),
     bindings: postgresProjectRepositoryBindings(composition.apiPool),
@@ -592,9 +622,6 @@ export function composeRepositoryOnboarding(
             composition.repositories,
           ),
         }),
-    ...(composition.creation === undefined
-      ? {}
-      : { creation: composition.creation }),
     ...(composition.authorization === undefined
       ? {}
       : { authorization: composition.authorization }),
@@ -775,7 +802,7 @@ export function composeFinalizerRuntime(
     service: (pool) =>
       finalizerServiceRuntime(
         settings,
-        composeForgeRepositoryMinting(pool, settings.forge),
+        composeForgeRepositoryMinting(pool, settings.forge, "Settled"),
         credentialOptions,
         forgeOptions,
       ),
@@ -882,6 +909,20 @@ export function composeNativeWeb(
     postgresSessionRouteReads(apiPool),
     outputContents,
     projectArtifactMinting(),
+  );
+}
+
+/** A member's own chat over the API pool, through the ports a project's threads are served through. */
+export function composeMemberChat(
+  apiPool: pg.Pool,
+  access: ProjectAccess,
+  threads: NativeThreadPorts,
+): MemberChat {
+  return memberChat(
+    access,
+    threads,
+    postgresSessionRouteReads(apiPool),
+    postgresMemberChatProjects(apiPool),
   );
 }
 

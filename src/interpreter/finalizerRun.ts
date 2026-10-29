@@ -17,6 +17,17 @@
  * attempt may proceed, and an unreadable ref is a durable hold. None of the
  * three expires the permit or authorizes a second promotion.
  *
+ * A DECLINE IS KEPT WITH THE READING THAT FOLLOWS IT, UNTIL ONE CONCLUDES. A
+ * push the repository would not take for a reason of its own — a rule, a hook,
+ * a protected branch, a credential that may not change a workflow file — is as
+ * ambiguous as any other, so the reading records the decline beside whatever
+ * the ref proves short of the candidate, an unreadable ref included, and a
+ * re-reading carries it to the verdict that concludes. A ref the remote does
+ * not hold proves the candidate absent only beside a decline, the repository's
+ * own word that it created nothing, and is unreadable without one. A workflow
+ * refusal holds there, since what preparing again builds the same repository
+ * refuses; any other decline is prepared again while restarts remain.
+ *
  * A REFUSED UPDATE IS INFORMATION. The ref did not advance and the observed
  * value says what it holds instead, so the revision fence restarts preparation
  * from the newly observed immutable target under `preparationRestartsMax` and
@@ -98,6 +109,14 @@
  * Exhausting the ceiling is an operational hold, so a finalizer's own
  * re-preparations spend nothing and stay invisible to `TicketGraph`.
  *
+ * A CANDIDATE IS ASKED WHETHER IT HAS ANYTHING TO LAND BEFORE IT IS INTEGRATED.
+ * The target it lands on — the base, where the brief proposes — is asked
+ * whether it already holds the candidate, and one that does is recorded as
+ * `Landed` with no merge commit written, nothing promoted and nothing proposed.
+ * A pull request merged by hand and a ticket resumed after it are that case:
+ * integrating again would write a merge commit that changes nothing and open a
+ * proposal nobody can merge.
+ *
  * ONLY CONCLUSIVE EVIDENCE IS WRITTEN DOWN. A storage outage, an unreadable
  * remote and a git call that could not answer leave no attempt at all and are
  * counted as holds; what becomes a `PreparationFailed` or a `MergeConflict` is
@@ -149,6 +168,12 @@
  * accept — so an unreadable base is a hold, and making that branch is nobody's
  * job here.
  *
+ * A HEAD IS ADOPTED ON GIT'S PROOF, GATHERED BEFORE THE STEP DECIDES. Where the
+ * last reading of a waiting merge found the proposal at a head other than the
+ * one pinned for it, git is asked whether that head is the pinned one brought
+ * up to date with the base before the pure step runs, so the step reads the
+ * answer and never asks for it.
+ *
  * A MERGE WAITING ON THE FORGE IS ASKED AGAIN ON A CADENCE, NEVER EVERY PASS.
  * The request is redrawn whenever its claim lapses, as every held one is, and
  * the store ages the wait by the database's clock, so a pass that finds it read
@@ -185,11 +210,17 @@ import {
 import { assertNever } from "../domain/assertNever.ts";
 import {
   asChangeProposalRequestIdentity,
+  changeProposalAddressed,
+  changeProposalMergeRequest,
   changeProposalRequest,
   proposalMarkerOf,
   reconcileChangeProposal,
   reconcileChangeProposalMerge,
+  changeProposalUpdatingNone,
+  type ChangeProposalAdoptionGathered,
   type ChangeProposalForges,
+  type ChangeProposalMergeGathered,
+  type ChangeProposalMerging,
   type ChangeProposalRequest,
   type ForgeBinding,
 } from "./changeProposal.ts";
@@ -202,6 +233,7 @@ import {
   finalizationProposalNext,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
+  finalizationProposalUpdateRecording,
   type FinalizationProposalDecision,
   type FinalizationProposalGathered,
   type FinalizationProposalMergeRecording,
@@ -213,6 +245,7 @@ import {
 import {
   checkedFinalizerConfig,
   finalizationNext,
+  promotionDeclineOf,
   type AncestryProved,
   type CandidateFile,
   type CandidateIntegrated,
@@ -227,6 +260,7 @@ import {
   type FinalizerConfig,
   type FinalizerOwnerId,
   type FinalizerStore,
+  type GitEvidence,
   type GitObjectId,
   type GitPromotionPort,
   type GitRefName,
@@ -236,8 +270,8 @@ import {
   type InputBundleId,
   type InputBundleReference,
   type ObservedTarget,
+  type PromotionDecline,
   type RepositoryBinding,
-  type RepositoryId,
   type TargetObserved,
   inputBundleReferencesMax,
   repositoryBindingNarrowed,
@@ -340,7 +374,7 @@ const finalizerStrategy: IntegrationStrategy = "Merge";
 /** What one reading of the target ref records, an unreadable ref among the answers. */
 type FinalizerReading = Pick<
   FinalizationReconciliation,
-  "verdict" | "observed"
+  "verdict" | "observed" | "declined"
 >;
 
 /** Everything a reading needs to name the permit it settles. */
@@ -414,15 +448,28 @@ export async function finalizerFence(
   return stale + lapsed;
 }
 
-/** What one ancestry proof says the reconciliation records. */
-function finalizerReadingOf(proved: AncestryProved): FinalizerReading {
+/**
+ * What one ancestry proof says the reconciliation records, beside the decline
+ * the push met wherever the ref holds no candidate. An absent ref is not
+ * promoted beside a decline or where `baseRef` says the attempt found it unheld.
+ */
+function finalizerReadingOf(
+  proved: AncestryProved,
+  baseRef: GitRefName | undefined,
+  declined?: PromotionDecline,
+): FinalizerReading {
+  const kept = declined === undefined ? {} : { declined };
   switch (proved.proved) {
     case "Ancestor":
       return { verdict: "Promoted", observed: proved.observed };
     case "NotAncestor":
-      return { verdict: "NotPromoted", observed: proved.observed };
+      return { verdict: "NotPromoted", observed: proved.observed, ...kept };
+    case "Absent":
+      return declined === undefined && baseRef === undefined
+        ? { verdict: "Unreadable" }
+        : { verdict: "NotPromoted", ...kept };
     case "Unreadable":
-      return { verdict: "Unreadable" };
+      return { verdict: "Unreadable", ...kept };
     default:
       return assertNever(proved);
   }
@@ -453,7 +500,7 @@ async function finalizerRecordReading(
     finalizerHold(service, tally, "ReconciliationUnrecorded");
 }
 
-/** Re-proves the readings that could not settle, so a hold ends where the ref becomes readable. */
+/** Re-proves the readings that could not settle, each beside the decline it kept, so a hold ends where the ref becomes readable. */
 async function finalizerReadHolds(
   service: FinalizerService,
   epoch: RecoveryEpoch,
@@ -480,7 +527,7 @@ async function finalizerReadHolds(
         candidate: permit.candidate,
         target: permit.target,
       },
-      finalizerReadingOf(proved),
+      finalizerReadingOf(proved, permit.baseRef, permit.declined),
       tally,
     );
   }
@@ -665,12 +712,13 @@ function finalizerSubjectOf(
   };
 }
 
-/** Proves what the target ref holds about the candidate, and records what it proved. */
+/** Proves what the target ref holds about the candidate, and records what it proved beside the decline the push met, where it met one. */
 async function finalizerProve(
   service: FinalizerService,
   view: FinalizationView,
   permit: CommitPermitId,
   tally: FinalizerTally,
+  declined?: PromotionDecline,
 ): Promise<void> {
   const pinned = finalizerCandidateOf(view);
   const proved = await service.git.proveCandidateAncestry({
@@ -681,7 +729,7 @@ async function finalizerProve(
   await finalizerRecordReading(
     service,
     finalizerSubjectOf(view, permit),
-    finalizerReadingOf(proved),
+    finalizerReadingOf(proved, pinned.target.baseRef, declined),
     tally,
   );
 }
@@ -737,7 +785,13 @@ async function finalizerPromote(
       );
       return;
     case "Ambiguous":
-      await finalizerProve(service, view, permit, tally);
+      await finalizerProve(
+        service,
+        view,
+        permit,
+        tally,
+        promotionDeclineOf(promoted.evidence),
+      );
       return;
     default:
       return assertNever(promoted);
@@ -989,6 +1043,92 @@ function finalizerIntegrationTarget(
     : undefined;
 }
 
+/**
+ * Where one candidate would land: the target it is integrated against, or the
+ * base a proposing brief opens into, since a proposal's head is only the way
+ * there. A branch the remote does not hold yet holds nothing, so nothing is
+ * asked of it; a base that could not be read is `undefined`.
+ */
+async function finalizerLandingTarget(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+): Promise<ObservedTarget | "Unheld" | undefined> {
+  const { view } = subject;
+  if (!briefFinalizationProposes(view.finalizationMode))
+    return target.baseRef === undefined ? target : "Unheld";
+  const brief = await service.ticketBriefs.brief(
+    view.claim.partition,
+    view.claim.ticket,
+  );
+  return finalizerProposalBaseObserved(
+    service,
+    view,
+    subject.repository,
+    briefFinalizationTarget(brief?.finalization),
+  );
+}
+
+/**
+ * Records a candidate the target it lands on already holds, which concludes
+ * with nothing promoted and nothing proposed. The attempt pins that target,
+ * because it is the commit the ticket's work stands in.
+ */
+async function finalizerLanded(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  landing: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(subject, landing),
+      outcome: "Landed",
+      candidate,
+    }),
+    tally,
+  );
+}
+
+/**
+ * Whether one candidate still has anything to land, answered before it is
+ * integrated: `true` where it has, and `false` where the attempt is already
+ * recorded as landed or the pass is held.
+ */
+async function finalizerUnlanded(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<boolean> {
+  const landing = await finalizerLandingTarget(service, subject, target);
+  if (landing === "Unheld") return true;
+  if (landing === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return false;
+  }
+  const held = await service.git.proveCandidateHeld({
+    repository: subject.repository,
+    target: landing,
+    candidate,
+  });
+  switch (held) {
+    case "Unheld":
+      return true;
+    case "Held":
+      await finalizerLanded(service, subject, landing, candidate, tally);
+      return false;
+    case "Unread":
+      finalizerHold(service, tally, "IntegrationUnanswered");
+      return false;
+    default:
+      return assertNever(held);
+  }
+}
+
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
 async function finalizerIntegratePrepared(
   service: FinalizerService,
@@ -1004,6 +1144,8 @@ async function finalizerIntegratePrepared(
     finalizerHold(service, tally, "TargetUnobserved");
     return;
   }
+  if (!(await finalizerUnlanded(service, subject, target, candidate, tally)))
+    return;
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
     target,
@@ -1037,11 +1179,52 @@ async function finalizerBuildSource(
     commit: source.source.commit,
     base: source.source.base,
   });
-  if (prepared.prepared !== "Candidate") {
-    finalizerHold(service, tally, "CandidateUnbuilt");
-    return;
+  switch (prepared.prepared) {
+    case "Candidate":
+      await finalizerIntegratePrepared(
+        service,
+        subject,
+        prepared.candidate,
+        tally,
+      );
+      return;
+    case "Undescended":
+      await finalizerPreparationFailed(service, subject, subject.target, tally);
+      return;
+    case "Failed":
+      finalizerHold(
+        service,
+        tally,
+        finalizerBuildSourceHold(prepared.evidence),
+      );
+      return;
+    default:
+      return assertNever(prepared);
   }
-  await finalizerIntegratePrepared(service, subject, prepared.candidate, tally);
+}
+
+/**
+ * What a source that could not be proved is held at. A remote that could not
+ * be reached or would not authorize the read is the repository the target is
+ * read from, which is `TargetUnreadable` and is recorded like it; a ref that
+ * is gone, moved or unfetched says nothing the roster names, so it stays an
+ * operational hold.
+ */
+function finalizerBuildSourceHold(evidence: GitEvidence): FinalizerHoldReason {
+  switch (evidence) {
+    case "RemoteUnreachable":
+    case "RemoteDenied":
+      return "TargetUnreadable";
+    case "RefUnreadable":
+    case "ObjectMissing":
+    case "IntegrationFailed":
+    case "PromotionTimedOut":
+    case "RemoteDeclined":
+    case "WorkflowsRefused":
+      return "CandidateUnbuilt";
+    default:
+      return assertNever(evidence);
+  }
 }
 
 /**
@@ -1178,19 +1361,40 @@ async function finalizerAwaitApproval(
  * observed for it: a proposal already opened is not re-derived from a remote
  * that has moved on since.
  */
-function finalizerStoredProposal(
+async function finalizerStoredProposal(
+  service: FinalizerService,
   binding: ForgeBinding,
   partition: Partition,
-  repository: RepositoryId,
+  repository: RepositoryBinding,
   stored: StoredChangeProposal,
-): FinalizationProposalGathered {
+): Promise<FinalizationProposalGathered> {
   const { asked } = stored;
+  const head = stored.adopted ?? asked.head.commit;
+  const read = finalizerProposalReadHead(stored.merging);
+  const adoption =
+    read === undefined || read === head
+      ? undefined
+      : {
+          head: read,
+          adoption: await service.git.proveHeadAdoptable({
+            repository,
+            pinned: head,
+            head: read,
+            headRef: asked.head.ref,
+            baseRef: asked.base.ref,
+          }),
+        };
+  const merge: ChangeProposalMergeGathered = {
+    head,
+    updating: stored.updating,
+    ...(adoption === undefined ? {} : { adoption }),
+  };
   return {
     gathered: "Request",
     request: changeProposalRequest({
       binding,
       partition,
-      repository,
+      repository: repository.repository,
       request: asked.request,
       headRef: asked.head.ref,
       headCommit: asked.head.commit,
@@ -1201,7 +1405,23 @@ function finalizerStoredProposal(
     }),
     publication: stored.publication,
     merging: stored.merging,
+    merge,
   };
+}
+
+/**
+ * The head the last reading of a waiting merge found an open proposal at,
+ * which is the only head a merge is ever pinned to in place of its own.
+ */
+function finalizerProposalReadHead(
+  merging: ChangeProposalMerging,
+): GitObjectId | undefined {
+  if (merging.merging !== "Waiting" && merging.merging !== "Moved")
+    return undefined;
+  const reading = merging.reading;
+  return reading?.reconciled === "Unmerged"
+    ? reading.evidence.head.commit
+    : undefined;
 }
 
 /**
@@ -1218,6 +1438,20 @@ async function finalizerProposalBase(
     repositoryBindingNarrowed(repositoryBindingWidened(binding), target),
   );
   return observed.observed === "Target" ? observed.target : undefined;
+}
+
+/** The base a proposal opens into, read where the gathering did not already read it. */
+async function finalizerProposalBaseObserved(
+  service: FinalizerService,
+  view: FinalizationView,
+  binding: RepositoryBinding,
+  named: GitRefName | undefined,
+): Promise<ObservedTarget | undefined> {
+  const carried = named === undefined ? view.proposalBase : undefined;
+  return (
+    (carried?.observed === "Target" ? carried.target : undefined) ??
+    (await finalizerProposalBase(service, binding, named))
+  );
 }
 
 /**
@@ -1246,33 +1480,72 @@ async function finalizerOpeningProposal(
       "finalizer proposal: a proposal was authorized by no brief that opens one",
     );
   }
-  const named = briefFinalizationTarget(finalization);
-  const carried = named === undefined ? view.proposalBase : undefined;
-  const observed =
-    (carried?.observed === "Target" ? carried.target : undefined) ??
-    (await finalizerProposalBase(service, pinned.repository, named));
+  const observed = await finalizerProposalBaseObserved(
+    service,
+    view,
+    pinned.repository,
+    briefFinalizationTarget(finalization),
+  );
   if (observed === undefined) return { gathered: "BaseUnreadable" };
   if (observed.ref === pinned.target.ref) return { gathered: "BaseIsHead" };
   const identity = asChangeProposalRequestIdentity(
     service.digestOf(canonicalChangeProposalRequest(view.claim)),
   );
+  const request = changeProposalRequest({
+    binding,
+    partition: view.claim.partition,
+    repository: pinned.repository.repository,
+    request: identity,
+    headRef: pinned.target.ref,
+    headCommit: pinned.candidate,
+    baseRef: observed.ref,
+    baseCommit: observed.commit,
+    title: finalizationProposalTitle(view.claim.ticket, brief),
+    body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
+  });
+  const adoption = await finalizerGatherAdoption(service, view, request);
   return {
     gathered: "Request",
-    request: changeProposalRequest({
-      binding,
-      partition: view.claim.partition,
-      repository: pinned.repository.repository,
-      request: identity,
-      headRef: pinned.target.ref,
-      headCommit: pinned.candidate,
-      baseRef: observed.ref,
-      baseCommit: observed.commit,
-      title: finalizationProposalTitle(view.claim.ticket, brief),
-      body: finalizationProposalBody(brief.intent, proposalMarkerOf(identity)),
-    }),
+    request,
     publication: { publication: "Unopened" },
     merging: { merging: "Unasked" },
+    merge: { head: pinned.candidate, updating: changeProposalUpdatingNone },
+    ...(adoption === undefined ? {} : { adoption }),
   };
+}
+
+/**
+ * The proposal an earlier request of the same ticket recorded on this
+ * request's head and base, read by the number its row recorded, so the step
+ * can adopt it rather than ask the forge for a second one it would refuse. A
+ * proposal no number addresses, or one on another forge, is nothing to read.
+ */
+async function finalizerGatherAdoption(
+  service: FinalizerService,
+  view: FinalizationView,
+  request: ChangeProposalRequest,
+): Promise<ChangeProposalAdoptionGathered | undefined> {
+  const recorded = await service.store.ticketChangeProposal(
+    view.claim,
+    request,
+  );
+  const proposal =
+    recorded === undefined ? undefined : changeProposalAddressed(recorded);
+  if (proposal === undefined || proposal.forge !== request.binding.forge)
+    return undefined;
+  const port = service.forges.selector.select(request.binding.forge);
+  if (port === undefined) return { proposal, read: { read: "Denied" } };
+  const read = await port.readByNumber(
+    changeProposalMergeRequest({
+      binding: request.binding,
+      partition: request.partition,
+      repository: request.repository,
+      proposal,
+      marker: request.marker,
+      headCommit: request.head.commit,
+    }),
+  );
+  return { proposal, read };
 }
 
 /**
@@ -1286,16 +1559,16 @@ async function finalizerGatherProposal(
   view: FinalizationView,
 ): Promise<FinalizationProposalGathered> {
   const pinned = finalizerCandidateOf(view);
-  const repository = pinned.repository.repository;
-  const binding = service.forges.bindingOf(repository);
+  const binding = service.forges.bindingOf(pinned.repository.repository);
   if (binding === undefined) return { gathered: "Unbound" };
   const stored = await service.store.changeProposal(view.claim);
   return stored === undefined
     ? finalizerOpeningProposal(service, view, pinned, binding)
     : finalizerStoredProposal(
+        service,
         binding,
         view.claim.partition,
-        repository,
+        pinned.repository,
         stored,
       );
 }
@@ -1394,6 +1667,32 @@ async function finalizerProposeChange(
     finalizationProposalCreationRecording(created),
     tally,
   );
+}
+
+/**
+ * Writes this request's row as the adoption of the proposal an earlier request
+ * opened, under the permit that promoted this request's candidate onto its
+ * head, which is the head the row pins.
+ */
+async function finalizerAdoptProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "AdoptProposal" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const permit = view.permit;
+  if (permit === undefined) {
+    throw new Error(
+      "finalizer proposal: an adoption named no permit that landed its head",
+    );
+  }
+  tally.proposals += 1;
+  const wrote = await service.store.adoptChangeProposal(
+    { claim: view.claim, permit: permit.permit, request: decision.request },
+    decision.evidence,
+  );
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
 }
 
 /** Reads back whether the forge holds the proposal this request's marker names. */
@@ -1557,6 +1856,54 @@ async function finalizerReconcileProposalMerge(
 }
 
 /**
+ * Asks the forge to bring the proposal up to date with its base, over an update
+ * counted and committed before it is asked — so a crash between the two leaves
+ * an update no reading has seen, which the next reading settles rather than a
+ * second update.
+ */
+async function finalizerUpdateProposal(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "UpdateProposal" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(decision.request.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  const marked = await service.store.markChangeProposalUpdate(view.claim);
+  if (marked.wrote !== "Row") {
+    finalizerHold(service, tally, "ProposalUnattempted");
+    return;
+  }
+  tally.proposals += 1;
+  const recording = finalizationProposalUpdateRecording(
+    await port.updateBranch(decision.merge),
+  );
+  const wrote = await service.store.recordChangeProposalUpdate(
+    view.claim,
+    recording.record,
+  );
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+  else if (recording.record === "Declined")
+    finalizerHold(service, tally, recording.hold);
+}
+
+/** Pins the head git proved adoptable as the one this proposal is merged at. */
+async function finalizerAdoptProposalHead(
+  service: FinalizerService,
+  view: FinalizationView,
+  head: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const wrote = await service.store.adoptChangeProposalHead(view.claim, head);
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+}
+
+/**
  * Prices one preparation this pass, or refuses it the budget. An attempt row
  * reached out of a proposal costs what one reached out of a preparation costs,
  * so both are counted against the one ceiling and neither can starve the other.
@@ -1666,6 +2013,9 @@ async function finalizerProposalDecided(
     case "ProposeChange":
       await finalizerProposeChange(service, view, decision.request, tally);
       return;
+    case "AdoptProposal":
+      await finalizerAdoptProposal(service, view, decision, tally);
+      return;
     case "ReconcileProposal":
       await finalizerReconcileProposal(service, view, decision.request, tally);
       return;
@@ -1674,6 +2024,12 @@ async function finalizerProposalDecided(
       return;
     case "ReconcileMerge":
       await finalizerReconcileProposalMerge(service, view, decision, tally);
+      return;
+    case "UpdateProposal":
+      await finalizerUpdateProposal(service, view, decision, tally);
+      return;
+    case "AdoptProposalHead":
+      await finalizerAdoptProposalHead(service, view, decision.head, tally);
       return;
     case "RefuseMergeAttempt":
     case "WaitMergeAttempt":
@@ -1714,6 +2070,7 @@ async function finalizerProposal(
       merging: {
         mergesMax: config.proposalMergesMax,
         readingsMax: config.proposalMergeReadingsMax,
+        updatesMax: config.proposalUpdatesMax,
       },
     },
   );
@@ -1807,7 +2164,8 @@ async function finalizerRecordHold(
  * Advances one claimed request by at most one decision, or by none at all, and
  * leaves the request holding what that advance found. A pass that reached a
  * result records nothing: the request is answered, and the columns it carries
- * are the evidence of what answered it.
+ * are the evidence of what answered it, though the sink is told either way
+ * which request this was and the hold it was left at, if any.
  */
 async function finalizerAdvance(
   service: FinalizerService,
@@ -1823,6 +2181,10 @@ async function finalizerAdvance(
   else await finalizerAdvanceDecided(service, gathered.view, tally);
   if (tally.conclusions === spent)
     await finalizerRecordHold(service, claim, tally);
+  const held = tally.conclusions === spent ? tally.heldReason : undefined;
+  recordFinalizer(service.metrics, (metrics) => {
+    metrics.advanced(claim.request, held);
+  });
 }
 
 /** Performs the one move the pure pass named, every arm of it a durable move or a hold. */

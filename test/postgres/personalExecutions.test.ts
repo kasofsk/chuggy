@@ -23,6 +23,7 @@ import {
 import {
   postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
+  postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
@@ -63,6 +64,8 @@ const personalRegistry = postgresPersonalRunnerRegistry(apiPool);
 const fallbacks = postgresProjectOwnerFallback(apiPool);
 
 const leaseSecs = 300;
+/** The size a claim reads an execution naming no memory as. */
+const memoryMibDefault = 4_096;
 const platform = "Platform:Linux:Amd64";
 
 type Runner = PersonalRunnerIdentity & { readonly kind: "Personal" };
@@ -233,7 +236,7 @@ async function claimed(
   const assignment = `assignment-${randomUUID()}`;
   const taken = await assignments.claimPersonal(
     runner,
-    { leaseSecs, heldMax },
+    { leaseSecs, heldMax, memoryMibDefault },
     assignment,
     `bearer-${randomUUID()}`,
     projects.map((project) => project.project),
@@ -353,19 +356,63 @@ test("a project's fallback is written through its door by the API alone, and abs
   );
 });
 
-test("a runner's claim returns the runtime its attempt was opened under", async () => {
+test("a runner's claim returns the runtime its attempt was opened under, and stamps when it claimed an attempt that waited unleased", async () => {
   const member = principal("member");
   const project = await ownedProject("runtime", member, "Strict", 1);
-  await opened(project);
+  const attempt = await opened(project);
+  const standing = async () =>
+    (await rig.harness.query(
+      `SELECT lease_owner IS NULL AS unleased, claimed_at IS NOT NULL AS claimed
+         FROM execution_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [project.partition.tenant, project.partition.project, attempt],
+    )) as readonly { unleased: boolean; claimed: boolean }[];
+  assert.deepEqual(await standing(), [{ unleased: true, claimed: false }]);
   const runner = await runnerOf(project.partition, member);
   const taken = await assignments.claimPersonal(
     runner,
-    { leaseSecs, heldMax: 4 },
+    { leaseSecs, heldMax: 4, memoryMibDefault },
     `assignment-${randomUUID()}`,
     `bearer-${randomUUID()}`,
     [project.partition.project],
   );
   assert.equal(taken?.runtime, schedulerRuntime);
+  assert.deepEqual(await standing(), [{ unleased: false, claimed: true }]);
+});
+
+test("a runner's claim returns the project of the attempt it took, across every project it serves", async () => {
+  const member = principal("member");
+  const first = await ownedProject("named-one", member, "Strict", 1);
+  const second = await ownedProject("named-two", member, "Strict", 1, {
+    tenant: first.partition.tenant,
+    project: asProjectId(`named-two-${randomUUID()}`),
+  });
+  await opened(first);
+  await opened(second);
+  const runner = await runnerOf(first.partition, member, [
+    first.partition,
+    second.partition,
+  ]);
+  const named: string[] = [];
+  for (let claim = 0; claim < 2; claim += 1) {
+    const assignment = `assignment-${randomUUID()}`;
+    const taken = await assignments.claimPersonal(
+      runner,
+      { leaseSecs, heldMax: 4, memoryMibDefault },
+      assignment,
+      `bearer-${randomUUID()}`,
+      [first.partition.project, second.partition.project],
+    );
+    const [row] = (await rig.harness.query(
+      `SELECT project FROM execution_attempt WHERE assignment=$1`,
+      [assignment],
+    )) as readonly { project: string }[];
+    assert.equal(taken?.project, row?.project);
+    named.push(String(taken?.project));
+  }
+  assert.deepEqual(
+    named.toSorted(),
+    [first.partition.project, second.partition.project].toSorted(),
+  );
 });
 
 test("a runner renews, settles and pulls the image of what it claimed, and another member's runner reaches none of it", async () => {
@@ -569,14 +616,24 @@ test("a pool's claim is held back while any one of the owner's runners could tak
     const poolClaimed = async () =>
       (await assignments.claim(
         pool,
-        { leaseSecs, heldMax: 4 },
+        { leaseSecs, heldMax: 4, memoryMibDefault },
         `assignment-${randomUUID()}`,
         `bearer-${randomUUID()}`,
         [],
       )) !== undefined;
     await runnerOf(project.partition, member);
     const polling = await runnerOf(project.partition, member, []);
-    await assignments.polled(polling);
+    await assignments.polled(polling, false);
+    assert.equal(
+      await assignments.waiting(
+        pool,
+        { leaseSecs, heldMax: 4, memoryMibDefault },
+        [],
+      ),
+      fallback === "Preferred",
+      `${fallback}: a poll with no room for an execution held a pool back`,
+    );
+    await assignments.polled(polling, true);
     assert.equal(await poolClaimed(), false, fallback);
     assert.equal(
       await personalRegistry.deregister(
@@ -587,6 +644,49 @@ test("a pool's claim is held back while any one of the owner's runners could tak
     );
     assert.equal(await poolClaimed(), fallback === "Preferred", fallback);
   }
+});
+
+test("a runner's poll naming capabilities replaces what it registered with, so what it claims and what a pool defers to it follow the set named", async () => {
+  const member = principal("member");
+  const project = await ownedProject("advertised", member, "Strict", 2);
+  await opened(project);
+  await opened(project);
+  const runner = await runnerOf(project.partition, member);
+  const runners = postgresWorkerPoolRunners(planePool);
+  await runners.named(runner, undefined, []);
+  assert.equal(
+    await claimed(runner, [project.partition]),
+    undefined,
+    "a runner claims nothing its poll's set does not run",
+  );
+  const pool = {
+    kind: "Dedicated",
+    partition: project.partition,
+    pool: "pool-advertised",
+    principal: principal("pool"),
+  } as const;
+  assert.equal(
+    await postgresWorkerPoolRegistry(apiPool).register({
+      ...pool,
+      capabilities: [platform],
+      class: "Dedicated",
+      clientId: `chuggy-pool-${randomUUID()}`,
+    }),
+    true,
+  );
+  assert.notEqual(
+    await assignments.claim(
+      pool,
+      { leaseSecs, heldMax: 4, memoryMibDefault },
+      `assignment-${randomUUID()}`,
+      `bearer-${randomUUID()}`,
+      [],
+    ),
+    undefined,
+    "a pool defers to no runner whose set does not run the work",
+  );
+  await runners.named(runner, undefined, [platform]);
+  assert.notEqual(await claimed(runner, [project.partition]), undefined);
 });
 
 /** The order a rotation draws `owners` in, as the window's digest orders them. */
@@ -681,26 +781,28 @@ test("a pool registered again fences none of a runner's attempts, even under a n
   );
 });
 
-test("a runner's poll for executions is stamped under its own registration alone, apart from its sessions' and from another runner of its owner's", async () => {
+test("a runner's poll is stamped under its own registration alone, and as one for executions only where it could take one, apart from another runner of its owner's", async () => {
   const member = principal("member");
   const project = await ownedProject("polled", member, "Preferred", 1);
   const runner = await runnerOf(project.partition, member);
   const stamps = async () =>
     (await rig.harness.query(
-      `SELECT executions_polled_at IS NOT NULL AS executions,
-              last_polled_at IS NOT NULL AS sessions
+      `SELECT last_polled_at IS NOT NULL AS polled,
+              executions_polled_at IS NOT NULL AS executions
          FROM personal_runner WHERE tenant=$1 AND owner=$2
         ORDER BY principal=$3 DESC`,
       [runner.tenant, runner.owner, runner.principal],
-    )) as readonly { executions: boolean; sessions: boolean }[];
-  await assignments.polled({ ...runner, principal: principal("stale") });
-  assert.deepEqual(await stamps(), [{ executions: false, sessions: false }]);
-  await assignments.polled(runner);
-  assert.deepEqual(await stamps(), [{ executions: true, sessions: false }]);
+    )) as readonly { polled: boolean; executions: boolean }[];
+  await assignments.polled({ ...runner, principal: principal("stale") }, true);
+  assert.deepEqual(await stamps(), [{ polled: false, executions: false }]);
+  await assignments.polled(runner, false);
+  assert.deepEqual(await stamps(), [{ polled: true, executions: false }]);
+  await assignments.polled(runner, true);
+  assert.deepEqual(await stamps(), [{ polled: true, executions: true }]);
   await runnerOf(project.partition, member, []);
   assert.deepEqual(await stamps(), [
-    { executions: true, sessions: false },
-    { executions: false, sessions: false },
+    { polled: true, executions: true },
+    { polled: false, executions: false },
   ]);
 });
 

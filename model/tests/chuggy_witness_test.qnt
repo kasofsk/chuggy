@@ -316,7 +316,10 @@ module chuggy_witness_gate_test {
   action release(j:int):bool=releaseOn(j, Set())
   action update(j:int,stages:List[StageDefinition]):bool=all{
     revisableTickets.contains(j), validPlans.contains(stages),
-    take(updateOf(tickets.get(j), stages), unaskedDisposition)}
+    take(updateOf(tickets.get(j), tickets.get(j).definition.dependencies,
+      stages), unaskedDisposition)}
+  action doRevoke(j:int):bool=all{revocableTickets.contains(j),
+    take(RevokeTicket(j), unaskedDisposition)}
   action doDispatch(j:int):bool=
     nondet source = dispatchSources.oneOf()
     all{readyTickets.contains(j),
@@ -430,9 +433,6 @@ module chuggy_witness_gate_test {
     .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
       definition:revisedTicketOf(2,3,Set(),defaultPlan)})))
     .expect(refusedWith(TicketIdentityMismatch(1)))
-    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
-      definition:revisedTicketOf(1,3,Set(2),defaultPlan)})))
-    .expect(refusedWith(TicketDependenciesChanged(1)))
     .then(refuseWith(CreateTicket(releasedTicketOf(1,Set(),defaultPlan))))
     .expect(refusedWith(TicketAlreadyExists(1)))
     .then(refuseWith(CreateTicket(releasedTicketOf(2,Set(2),defaultPlan))))
@@ -444,8 +444,17 @@ module chuggy_witness_gate_test {
     .then(refuseWith(ResumeTicket(1)))
     .expect(refusedWith(TicketNotResumable(1)))
     .then(releaseOn(2,Set(1)))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
+      definition:revisedTicketOf(1,3,Set(2),defaultPlan)})))
+    .expect(refusedWith(DependencyCycle({ticket:1,dependencies:Set(2)})))
     .then(refuseWith(DispatchTicket({ticket:2,source:aDispatchSource})))
     .expect(refusedWith(DependenciesIncomplete({ticket:2,dependencies:Set(1)})))
+    .then(doRevoke(2))
+    .then(refuseWith(CreateTicket(releasedTicketOf(3,Set(2),defaultPlan))))
+    .expect(refusedWith(DependenciesRevoked({ticket:3,dependencies:Set(2)})))
+    .then(refuseWith(UpdateTicket({ticket:1,expectedRevision:2,
+      definition:revisedTicketOf(1,3,Set(2),defaultPlan)})))
+    .expect(refusedWith(DependenciesRevoked({ticket:1,dependencies:Set(2)})))
     .then(doDispatch(1))
     .then(refuseWith(DispatchTicket({ticket:1,source:aDispatchSource})))
     .expect(refusedWith(TicketNotPending(1)))
@@ -470,4 +479,17 @@ module chuggy_witness_dependency_test {
     .then(take(CreateTicket(releasedTicketOf(4, Set(), p)), unaskedDisposition))
     .then(take(CreateTicket(releasedTicketOf(1, Set(4), p)), unaskedDisposition))
     .expect(and{tickets.keys()==Set(1,4),tickets.get(1).definition.dependencies==Set(4),isBlocked(1),allInvariants})
+
+  /// A DEPENDENT STRANDED BEHIND A TOMBSTONE IS ITS AUTHOR'S TO RE-POINT: an
+  /// update that drops the tombstone lands, and the ticket is Ready.
+  run strandedDependentRepointedWitness=init
+    .then(take(CreateTicket(releasedTicketOf(4, Set(), p)), unaskedDisposition))
+    .then(take(CreateTicket(releasedTicketOf(1, Set(4), p)), unaskedDisposition))
+    .then(take(RevokeTicket(4), unaskedDisposition))
+    .expect(and{isBlocked(1),not(readyTickets.contains(1)),
+      redependableIn(graph,1)==Set(4),allInvariants})
+    .then(take(updateOf(tickets.get(1), Set(), p), unaskedDisposition))
+    .expect(and{lastEvent=="TicketUpdated",
+      tickets.get(1).definition.dependencies==Set(),tickets.get(1).revision==2,
+      readyTickets.contains(1),allInvariants})
 }

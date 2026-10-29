@@ -6,9 +6,10 @@
  * a case asserting which one answered is asserting the routing rather than the
  * answer.
  *
- * THE TENANT ASKING IS WHAT THE MINT IS ASKED UNDER. The caller's partition
- * carries it, so a binding that reached across tenants cannot widen what the
- * mint is allowed to look at.
+ * THE PARTITION ASKING IS WHAT THE MINT IS ASKED UNDER. It carries the tenant,
+ * so a binding that reached across tenants cannot widen what the mint is
+ * allowed to look at, and the project whose binding allows a set its pipeline
+ * definitions.
  *
  * THE REFUSALS ARE ASSERTED APART. A caller without the permit and a repository
  * the project does not bind are both not found, and a forge that could not be
@@ -63,7 +64,7 @@ import {
 import {
   asProjectId,
   asTenantId,
-  type TenantId,
+  type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -128,6 +129,7 @@ function fixtureBindings(
               repository: bound,
               boundAt: "2026-10-01T00:00:00Z",
               landing: asRepositoryLanding("Push"),
+              pipelinesWritable: false,
               ...(retiredAt === undefined ? {} : { retiredAt }),
             }
           : undefined,
@@ -138,12 +140,12 @@ function fixtureBindings(
 function fixtureTokens(
   minted: ForgeTokenMinted,
   asked: RepositoryId[] = [],
-  askedTenants: TenantId[] = [],
+  askedPartitions: Partition[] = [],
 ): ForgeRepositoryTokens {
   return {
-    token: (repository, tenant) => {
+    token: (repository, partition) => {
       asked.push(repository);
-      askedTenants.push(tenant);
+      askedPartitions.push(partition);
       return Promise.resolve(minted);
     },
   };
@@ -209,16 +211,16 @@ test("a minted token is held to the bound of the credential it becomes", async (
 
 test("the host a repository names selects its forge credential source too", async () => {
   const asked: RepositoryId[] = [];
-  const askedTenants: TenantId[] = [];
+  const askedPartitions: Partition[] = [];
   const askedPermissions: ForgePermissionSet[] = [];
   const source = forgeCredentialsByHost(
     [
       {
         repositoryHost: "github.com",
         tokens: {
-          token: (repository, tenant, permissions) => {
+          token: (repository, partition, permissions) => {
             asked.push(repository);
-            askedTenants.push(tenant);
+            askedPartitions.push(partition);
             askedPermissions.push(permissions);
             return Promise.resolve({
               minted: "Token" as const,
@@ -245,7 +247,11 @@ test("the host a repository names selects its forge credential source too", asyn
     credential: "files",
   });
   assert.deepEqual(asked, [fixtureRepository]);
-  assert.deepEqual(askedTenants, [fixturePartition.tenant]);
+  assert.deepEqual(
+    askedPartitions,
+    [fixturePartition],
+    "the proposal's own partition is what the mint is asked under",
+  );
   assert.deepEqual(
     askedPermissions,
     ["propose"],
@@ -341,17 +347,17 @@ test("two forge sources for one host are refused at composition too", () => {
   );
 });
 
-test("minting asks the execute permit and answers the token for the bound repository under the caller's own tenant", async () => {
+test("minting asks the execute permit and answers the token for the bound repository under the caller's own partition", async () => {
   const kinds: ProjectAccessKind[] = [];
   const asked: RepositoryId[] = [];
-  const askedTenants: TenantId[] = [];
+  const askedPartitions: Partition[] = [];
   const minted = await forgeCredentialMinting(
     fixtureAccess("Authorized", kinds),
     fixtureBindings(fixtureRepository),
     fixtureTokens(
       { minted: "Token", token: fixtureToken, expiresAtMs: 1_000 },
       asked,
-      askedTenants,
+      askedPartitions,
     ),
   ).mint(fixturePrincipal, fixturePartition, {
     repository: fixtureRepository,
@@ -360,8 +366,8 @@ test("minting asks the execute permit and answers the token for the bound reposi
   assert.deepEqual(kinds, ["Execute"]);
   assert.deepEqual(asked, [fixtureRepository]);
   assert.deepEqual(
-    askedTenants,
-    [fixturePartition.tenant],
+    askedPartitions,
+    [fixturePartition],
     "the caller's partition is what the mint is asked under, not the binding's",
   );
   assert.deepEqual(minted, {

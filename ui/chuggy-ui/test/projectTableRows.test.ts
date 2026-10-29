@@ -9,17 +9,10 @@ import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
-import {
-  executionOutcomes,
-  executionStatuses,
-} from "../../../src/contract/rosters.ts";
-import { projectExecutionIndexOf } from "../app/core/projectExecutionIndex.ts";
 import type { ProjectExecutionKnown } from "../app/core/projectExecutionIndex.ts";
 import {
-  projectTableExecutionPhrase,
   projectTableRow,
   projectTableRows,
-  projectTableRowsIn,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -76,15 +69,14 @@ const tickets: readonly TicketResponse[] = [
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },
 ];
 
-test("a running ticket's row carries its status and what it runs on", () => {
+test("a running ticket's row carries its verdict and what it runs on", () => {
   const row = projectTableRow(working, known(container), false);
-  expect(row.executionStatus).toBe("Running");
+  expect(row.executionVerdict).toBe("Running");
   expect(row.runsOn).toEqual({
     text: "worker:1",
     title: "registry/worker:1",
   });
   expect(row.activityAt).toBe(ticketInstants.changedAt);
-  expect(row.section).toBe("InProgress");
 });
 
 test("a row names the worker the wire named", () => {
@@ -111,11 +103,19 @@ test("a row's title is the ticket's own, and absent where the wire names none", 
   expect(projectTableRow(working, undefined, false).title).toBeUndefined();
 });
 
+test("a row names the repository the ticket works in, and none where the wire names none", () => {
+  const repository = "https://github.com/acme/widgets.git";
+  expect(
+    projectTableRow({ ...working, repository }, undefined, false).repository,
+  ).toBe(repository);
+  expect(projectTableRow(working, undefined, false).repository).toBeUndefined();
+});
+
 test("a row names the member who filed the ticket, and nobody where the wire names none", () => {
   const creator = "23:https://issuer.example/user-0123456789abcdef0123";
   expect(
     projectTableRow({ ...working, creator }, undefined, false).creator,
-  ).toEqual({ text: "user-0123456…ef0123", title: creator });
+  ).toBe(creator);
   expect(projectTableRow(working, undefined, false).creator).toBeUndefined();
 });
 
@@ -125,7 +125,7 @@ test("a ticket running nothing states no execution rather than a blank one", () 
     undefined,
     false,
   );
-  expect(row.executionStatus).toBeUndefined();
+  expect(row.executionVerdict).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
@@ -140,7 +140,7 @@ const failedOlder: ExecutionSummary = {
 test("a terminal execution older than the ticket's own last move reads as the ticket's", () => {
   const row = projectTableRow(working, known(failedOlder), false);
   expect(row.activityAt).toBe(ticketInstants.changedAt);
-  expect(row.executionOutcome).toBe("Failed");
+  expect(row.executionVerdict).toBe("Failed");
 });
 
 const failedNewer: ExecutionSummary = {
@@ -200,8 +200,7 @@ test("an execution a truncated walk left may be superseded, so the row is not jo
 
 test("a row that is not joined draws none of the execution it holds", () => {
   const row = projectTableRow(working, known(failedOlder, false), true);
-  expect(row.executionOutcome).toBeUndefined();
-  expect(row.executionStatus).toBeUndefined();
+  expect(row.executionVerdict).toBeUndefined();
   expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
@@ -260,51 +259,4 @@ test("what a task runs on is its worker, capability or driver, by the mode it na
       },
     }),
   ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
-});
-
-test("the rows of one section are that section's and in the order read", () => {
-  const rows = projectTableRows(tickets, projectExecutionIndexOf([container]));
-  expect(
-    projectTableRowsIn(rows, "InProgress").map((row) => row.ticket),
-  ).toStrictEqual([1]);
-  expect(
-    projectTableRowsIn(rows, "NeedsYou").map((row) => row.badge),
-  ).toStrictEqual(["rework budget spent"]);
-  expect(
-    projectTableRowsIn(rows, "UpNext").map((row) => row.ticket),
-  ).toStrictEqual([3]);
-  expect(projectTableRowsIn(rows, "Done")).toStrictEqual([]);
-});
-
-test("the execution cell is the outcome where one exists, and the status where none does", () => {
-  const running = projectTableRow(working, known(container), false);
-  expect(projectTableExecutionPhrase(running)).toBe("Running");
-  const finished = { ...running, executionStatus: "Terminal" } as const;
-  expect(
-    projectTableExecutionPhrase({ ...finished, executionOutcome: "Passed" }),
-  ).toBe("Passed");
-  expect(
-    projectTableExecutionPhrase({
-      ...finished,
-      executionOutcome: "ProcessFailed",
-    }),
-  ).toBe("Stopped");
-  expect(
-    projectTableExecutionPhrase({ ...running, executionStatus: undefined }),
-  ).toBeUndefined();
-});
-
-/** Derived from both rosters, so a status or an outcome the wire grows is a
- * pair this case asks about. */
-test("no execution cell says Terminal", () => {
-  const running = projectTableRow(working, known(container), false);
-  for (const executionStatus of executionStatuses)
-    for (const executionOutcome of [undefined, ...executionOutcomes])
-      expect(
-        projectTableExecutionPhrase({
-          ...running,
-          executionStatus,
-          executionOutcome,
-        }),
-      ).not.toContain("Terminal");
 });

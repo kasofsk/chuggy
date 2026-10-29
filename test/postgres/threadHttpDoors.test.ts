@@ -23,10 +23,13 @@ import {
   nativeHttpMediaType,
   sessionStorePageBatchesMax,
   threadMessageCharsMax,
+  threadsOpenDefault,
+  threadsOpenMax,
 } from "../../src/contract/http.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   threadEntryResponseSchema,
+  threadLimitResponseSchema,
   threadMessageAcceptedSchema,
   threadResponseSchema,
   threadTranscriptResponseSchema,
@@ -37,13 +40,19 @@ import {
   asSessionId,
   asSessionStoreStream,
 } from "../../src/interpreter/agentSession.ts";
-import { oidcPrincipal } from "../../src/interpreter/principal.ts";
+import {
+  asPrincipal,
+  oidcPrincipal,
+  oidcPrincipalSubject,
+} from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
 import { sessionRigAttempt } from "./sessionHarness.ts";
 import {
   threadRigApp,
   threadRigIssuer,
+  threadRigKey,
+  threadRigLimit,
   threadRigMember,
   threadRigOpen,
   threadRigProject,
@@ -52,6 +61,9 @@ import {
   type ThreadRig,
   type ThreadRigMember,
 } from "./threadHarness.ts";
+
+/** A reader who holds no thread, so a page they read is ordered as the project's threads alone are. */
+const onlooker = asPrincipal("onlooker");
 
 let rig: ThreadRig;
 
@@ -97,26 +109,28 @@ async function readableMember(
   return { partition, member };
 }
 
-/** Opens the caller's thread through the door, refusing anything but the entry. */
+/** Opens a thread of the caller's through the door under a key, refusing anything but the entry. */
 async function openedThread(
   app: ReturnType<typeof threadApp>,
   partition: Partition,
+  key: string = randomUUID(),
 ) {
   const opened = await app.inject({
     method: "POST",
     url: pathOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key },
   });
   assert.equal(opened.statusCode, 201, opened.body);
   return threadEntryResponseSchema.parse(opened.json());
 }
 
-test("opening my thread answers the entry, and opening again answers the same one", async () => {
+test("opening a thread answers the entry, and opening under its key again answers the same one", async () => {
   const { partition, member } = await readableMember("open");
   await using app = threadApp(member.principal);
+  const key = randomUUID();
 
-  const entry = await openedThread(app, partition);
+  const entry = await openedThread(app, partition, key);
   assert.equal(entry.mine, true);
   assert.equal(entry.owner, member.authority.subject);
   assert.equal(entry.state, "Open");
@@ -126,13 +140,99 @@ test("opening my thread answers the entry, and opening again answers the same on
     method: "POST",
     url: pathOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key },
   });
   assert.equal(again.statusCode, 200, again.body);
   assert.equal(
     threadEntryResponseSchema.parse(again.json()).session,
     entry.session,
   );
+
+  const another = await openedThread(app, partition);
+  assert.notEqual(another.session, entry.session);
+
+  const keyless = await app.inject({
+    method: "POST",
+    url: pathOf(partition),
+    headers: versioned,
+    payload: {},
+  });
+  assert.equal(keyless.statusCode, 400, keyless.body);
+});
+
+test("an open past the member's limit is refused with the limit, and nothing is opened", async () => {
+  const { partition, member } = await readableMember("limit");
+  await threadRigLimit(rig, partition, member, 1);
+  await using app = threadApp(member.principal);
+  await openedThread(app, partition);
+
+  const refused = await app.inject({
+    method: "POST",
+    url: pathOf(partition),
+    headers: versioned,
+    payload: { key: randomUUID() },
+  });
+  assert.equal(refused.statusCode, 409, refused.body);
+  const body = refused.json<HttpErrorEnvelope & { threadsMax: number }>();
+  assert.equal(body.error.code, "ThreadLimitReached");
+  assert.equal(body.threadsMax, 1);
+  assert.equal((await rig.threads.threads(partition, onlooker, 64)).length, 1);
+});
+
+/** Where one member's limit is read and written, under the project the route names. */
+function limitPathOf(partition: Partition, member: ThreadRigMember): string {
+  const subject = oidcPrincipalSubject(threadRigIssuer, member.principal);
+  assert.ok(subject !== undefined);
+  return `/api/v1/tenants/${partition.tenant}/projects/${partition.project}/thread-limits/${encodeURIComponent(subject)}`;
+}
+
+test("an administrator sets a member's limit, which reads as the default until they do", async () => {
+  const { partition, member } = await readableMember("limitdoor");
+  const administrator = threadRigMember(rig, partition, "http-limitdoor-admin");
+  rig.sessions.harness.access.grant({
+    partition,
+    principal: administrator.principal,
+    access: new Set(["Read", "Mutate", "Administer"]),
+  });
+  await using memberApp = threadApp(member.principal);
+  await using adminApp = threadApp(administrator.principal);
+  const path = limitPathOf(partition, member);
+
+  const unset = await memberApp.inject({ url: path, headers: authorized });
+  assert.equal(unset.statusCode, 200, unset.body);
+  assert.deepEqual(threadLimitResponseSchema.parse(unset.json()), {
+    threadsMax: threadsOpenDefault,
+    administers: false,
+  });
+
+  const refused = await memberApp.inject({
+    method: "PUT",
+    url: path,
+    headers: versioned,
+    payload: { threadsMax: 3 },
+  });
+  assert.equal(refused.statusCode, 404, refused.body);
+
+  const set = await adminApp.inject({
+    method: "PUT",
+    url: path,
+    headers: versioned,
+    payload: { threadsMax: 3 },
+  });
+  assert.equal(set.statusCode, 200, set.body);
+  assert.deepEqual(threadLimitResponseSchema.parse(set.json()), {
+    threadsMax: 3,
+    administers: true,
+  });
+  assert.equal(await rig.limits.limit(partition, member.principal), 3);
+
+  const over = await adminApp.inject({
+    method: "PUT",
+    url: path,
+    headers: versioned,
+    payload: { threadsMax: threadsOpenMax + 1 },
+  });
+  assert.equal(over.statusCode, 400, over.body);
 });
 
 test("the listing answers every thread the project holds, mine marked", async () => {
@@ -144,9 +244,11 @@ test("the listing answers every thread the project holds, mine marked", async ()
     partition,
     principal: other.principal,
     session: rig.minting.session(),
+    key: threadRigKey(),
     systemPrompt: "theirs",
     credentialSlot: threadRigSlot,
   });
+  assert.ok(theirs.opened === "Opened");
 
   const listed = await app.inject({
     url: pathOf(partition),
@@ -265,9 +367,11 @@ test("the door refuses another member's mailbox and an ownerless one", async () 
     partition,
     principal: other.principal,
     session: rig.minting.session(),
+    key: threadRigKey(),
     systemPrompt: "theirs",
     credentialSlot: threadRigSlot,
   });
+  assert.ok(theirs.opened === "Opened");
   await using app = threadApp(member.principal);
   const mine = await openedThread(app, partition);
 
@@ -421,7 +525,7 @@ test("a project the caller is not a member of answers nothing on any route", asy
       method,
       url,
       headers: method === "POST" ? versioned : authorized,
-      ...(method === "POST" ? { payload: {} } : {}),
+      ...(method === "POST" ? { payload: { key: randomUUID() } } : {}),
     });
     assert.equal(refused.statusCode, 404, `${method} ${url}`);
   }

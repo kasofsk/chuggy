@@ -477,7 +477,7 @@ export const ticketCommandTags = [
   "ReportFinalizationResult",
 ] as const;
 
-export type IncompleteDependencies = {
+export type RefusedDependencies = {
   readonly ticket: number;
   readonly dependencies: ReadonlySet<number>;
 };
@@ -503,17 +503,21 @@ export type TicketRefusal =
   | { readonly type: "TicketAlreadyExists"; readonly value: number }
   | {
       readonly type: "DependenciesNotFound";
-      readonly value: IncompleteDependencies;
+      readonly value: RefusedDependencies;
     }
+  | {
+      readonly type: "DependenciesRevoked";
+      readonly value: RefusedDependencies;
+    }
+  | { readonly type: "DependencyCycle"; readonly value: RefusedDependencies }
   | { readonly type: "SelfDependency"; readonly value: number }
   | { readonly type: "TicketNotFound"; readonly value: number }
   | { readonly type: "TicketNotPending"; readonly value: number }
   | { readonly type: "TicketIdentityMismatch"; readonly value: number }
   | { readonly type: "TicketRevisionStale"; readonly value: StaleRevision }
-  | { readonly type: "TicketDependenciesChanged"; readonly value: number }
   | {
       readonly type: "DependenciesIncomplete";
-      readonly value: IncompleteDependencies;
+      readonly value: RefusedDependencies;
     }
   | { readonly type: "TicketNotRevocable"; readonly value: number }
   | { readonly type: "TicketNotResumable"; readonly value: number }
@@ -525,12 +529,13 @@ export type TicketRefusal =
 export const ticketRefusalTags = [
   "TicketAlreadyExists",
   "DependenciesNotFound",
+  "DependenciesRevoked",
+  "DependencyCycle",
   "SelfDependency",
   "TicketNotFound",
   "TicketNotPending",
   "TicketIdentityMismatch",
   "TicketRevisionStale",
-  "TicketDependenciesChanged",
   "DependenciesIncomplete",
   "TicketNotRevocable",
   "TicketNotResumable",

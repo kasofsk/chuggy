@@ -27,6 +27,7 @@ import {
   type OperationInbox,
   type Submission,
 } from "../../src/interpreter/operationInbox.ts";
+import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import {
   asProjectId,
@@ -46,7 +47,9 @@ import {
   type AuthoringStore,
   type CanonicalConfiguration,
   type DraftResource,
+  type DraftRevisionPlan,
 } from "../../src/interpreter/authoring.ts";
+import type { ProjectAccessKind } from "../../src/interpreter/projectAccess.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { id } from "../domain/fixtures.ts";
 import type { NotificationStore } from "../../src/interpreter/notifications.ts";
@@ -94,6 +97,7 @@ import {
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
+import { repositoryConfigurationWorkFile } from "./repositoryConfigurationFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -180,6 +184,10 @@ function authoringStore(
     drafts: (_partition, query) => {
       calls.push(`read:drafts:${String(query.limit)}`);
       return Promise.resolve({ partition, drafts: [], more: false });
+    },
+    draftRevision: () => {
+      calls.push("read:draftRevision");
+      return Promise.resolve(undefined);
     },
     createConfiguration: () => Promise.resolve({ created: "ParentNotFound" }),
     createDraft: () => {
@@ -434,6 +442,7 @@ function repositoryImportLanding(
         repository,
         boundAt: "2026-10-01T00:00:00Z",
         landing: asRepositoryLanding("Push"),
+        pipelinesWritable: false,
         ...(retiredAt === undefined ? {} : { retiredAt }),
       });
     },
@@ -496,37 +505,7 @@ function repositoryImportPorts(
         calls.push(`snapshot:${commit}`);
         return Promise.resolve({
           read: "Snapshot",
-          files: [
-            {
-              path: [".chug", "configurations", "work.json"].join("/"),
-              kind: "File",
-              content: JSON.stringify({
-                version: 1,
-                name: "work",
-                configuration: {
-                  version: 1,
-                  image: "worker:v1",
-                  practices: [],
-                  brief: {
-                    motivation: ["Do the work."],
-                    acceptanceCriteria: ["The work is done."],
-                    constraints: [],
-                  },
-                  work: { instructions: [] },
-                  review: { instructions: [] },
-                  worker: {
-                    mode: {
-                      type: "SingleAgent",
-                      agent: "Claude",
-                      arguments: [],
-                    },
-                    setup: [],
-                    files: [],
-                  },
-                },
-              }),
-            },
-          ],
+          files: [repositoryConfigurationWorkFile],
         });
       },
     },
@@ -673,33 +652,7 @@ test("draft pages authorize and enforce their bound before reading", async () =>
   );
 });
 
-test("repository imports authorize, pin one snapshot, then persist ready declarations", async () => {
-  const calls: string[] = [];
-  const subject = boundary(
-    true,
-    openExecutionBacklogGuard,
-    repositoryImportPorts(calls),
-  );
-  const commit = asGitObjectId("a".repeat(40));
-  const repository = asRepositoryId("repository-named");
-  assert.deepEqual(
-    await subject.web.importRepositoryConfigurations(principal, partition, {
-      repository,
-      commit,
-    }),
-    { result: "Imported", declarations: 1 },
-  );
-  assert.deepEqual(subject.calls, ["authorize:Mutate"]);
-  assert.deepEqual(calls, [
-    `landing:${repository}`,
-    `binding:${repository}`,
-    `snapshot:${commit}`,
-    "import:1",
-    `kept:Imported@${commit}`,
-  ]);
-});
-
-test("a repository import naming no commit imports at the default branch's head, and keeps it", async () => {
+test("a repository import authorizes, then imports at the default branch's head and keeps it", async () => {
   const calls: string[] = [];
   const subject = boundary(
     true,
@@ -730,7 +683,7 @@ test("a repository import naming no commit imports at the default branch's head,
  * absent, an unreadable one as unavailable, the credential named where only
  * the credential answered.
  */
-test("a repository import naming no commit at a head naming none keeps the attempt with no commit", async () => {
+test("a repository import at a head naming no commit keeps the attempt with no commit", async () => {
   for (const [read, answered] of [
     [{ read: "Absent" }, { result: "SnapshotAbsent", absent: "Commit" }],
     [
@@ -794,7 +747,6 @@ test("a repository import naming a repository this project retired is answered a
   assert.deepEqual(
     await subject.web.importRepositoryConfigurations(principal, partition, {
       repository,
-      commit: asGitObjectId("a".repeat(40)),
     }),
     { result: "RepositoryAbsent" },
   );
@@ -815,7 +767,6 @@ test("repository imports conceal denial before reading any outer port", async ()
   assert.deepEqual(
     await subject.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "NotFound" },
   );
@@ -828,7 +779,6 @@ test("repository imports are unavailable when their infrastructure is not compos
   assert.deepEqual(
     await allowed.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "Unavailable", unavailable: "Repository" },
   );
@@ -838,11 +788,68 @@ test("repository imports are unavailable when their infrastructure is not compos
   assert.deepEqual(
     await denied.web.importRepositoryConfigurations(principal, partition, {
       repository: asRepositoryId("repository"),
-      commit: asGitObjectId("b".repeat(40)),
     }),
     { result: "NotFound" },
   );
   assert.deepEqual(denied.calls, ["authorize:Mutate"]);
+});
+
+test("a repository's head is read for a member who may read the project, at its default branch, and stored nowhere", async () => {
+  const calls: string[] = [];
+  const subject = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  const repository = asRepositoryId("repository-read");
+  const head = await subject.web.repositoryConfigurationHead(
+    principal,
+    partition,
+    repository,
+  );
+  assert.equal(head.result, "Read");
+  if (head.result !== "Read") throw new Error("unreachable");
+  assert.equal(head.commit, repositoryImportHead);
+  assert.equal(head.read.result, "Ready");
+  assert.deepEqual(subject.calls, ["authorize:Read"]);
+  assert.deepEqual(calls, [
+    `landing:${repository}`,
+    `binding:${repository}`,
+    `head:${repository}`,
+    `snapshot:${repositoryImportHead}`,
+  ]);
+});
+
+test("a repository head read conceals denial, and reads nothing of a retired binding", async () => {
+  const calls: string[] = [];
+  const denied = boundary(
+    false,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls),
+  );
+  assert.deepEqual(
+    await denied.web.repositoryConfigurationHead(
+      principal,
+      partition,
+      asRepositoryId("repository"),
+    ),
+    { result: "NotFound" },
+  );
+  const retired = boundary(
+    true,
+    openExecutionBacklogGuard,
+    repositoryImportPorts(calls, "2026-10-14T00:00:00Z"),
+  );
+  const repository = asRepositoryId("repository-retired");
+  assert.deepEqual(
+    await retired.web.repositoryConfigurationHead(
+      principal,
+      partition,
+      repository,
+    ),
+    { result: "RepositoryAbsent" },
+  );
+  assert.deepEqual(calls, [`landing:${repository}`]);
 });
 
 test("repository imports refuse invalid declarations without writing", async () => {
@@ -872,14 +879,15 @@ test("repository imports refuse invalid declarations without writing", async () 
   const result = await subject.web.importRepositoryConfigurations(
     principal,
     partition,
-    { repository, commit: asGitObjectId("c".repeat(40)) },
+    { repository },
   );
   assert.equal(result.result, "DeclarationsRefused");
   assert.deepEqual(calls, [
     `landing:${repository}`,
     `binding:${repository}`,
+    `head:${repository}`,
     "snapshot:invalid",
-    `kept:DeclarationsRefused@${"c".repeat(40)}`,
+    `kept:DeclarationsRefused@${repositoryImportHead}`,
   ]);
 });
 
@@ -1110,6 +1118,308 @@ function createDraftNaming(web: NativeWeb, brief: DraftBrief) {
     brief,
   });
 }
+
+test("a draft naming overrides asks for OverrideTicketConfig", async () => {
+  const { web, calls } = boundary(false);
+  const brief = briefNamingImages([]);
+  await createDraftNaming(web, brief);
+  await web.createDraft(principal, {
+    partition,
+    configurationRevision: asConfigurationRevisionId("revision"),
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 0,
+    authoring: noAuthoring,
+    brief,
+    overrides: { workloads: { build: { practices: [] } } },
+  });
+  assert.deepEqual(calls, [
+    "authorize:Mutate",
+    "authorize:OverrideTicketConfig",
+  ]);
+});
+
+function authorizations(calls: readonly string[]): string[] {
+  return calls.filter((call) => call.startsWith("authorize:"));
+}
+
+const storedOverrides = { workloads: { build: { practices: [] } } };
+
+/** A revision of ticket 1, fenced on version 1, naming the overrides a case gives. */
+function reviseNamingOverrides(
+  web: NativeWeb,
+  overrides: ConfigurationOverrides | undefined,
+) {
+  return web.reviseDraft(principal, {
+    partition,
+    ticket: asTicketId(1),
+    expectedVersion: 1,
+    configurationRevision: asConfigurationRevisionId("revision"),
+    authoring: noAuthoring,
+    brief: briefNamingImages([]),
+    ...(overrides === undefined ? {} : { overrides }),
+  });
+}
+
+test("a revision asks for OverrideTicketConfig only where its overrides differ from the draft it is fenced on", async () => {
+  const holding = (calls: string[]): AuthoringStore => ({
+    ...authoringStore(calls),
+    draft: () =>
+      Promise.resolve({
+        partition,
+        ticket: asTicketId(1),
+        authoringVersion: 1,
+        state: "Draft",
+        configurationRevision: asConfigurationRevisionId("revision"),
+        authoring: noAuthoring,
+        overrides: storedOverrides,
+      }),
+  });
+  const kept = boundary(
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    holding,
+  );
+  await reviseNamingOverrides(kept.web, storedOverrides);
+  assert.deepEqual(authorizations(kept.calls), ["authorize:Mutate"]);
+  const changed = boundary(
+    true,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    holding,
+  );
+  await reviseNamingOverrides(changed.web, {
+    workloads: { build: { practices: ["RegressionCoverage"] } },
+  });
+  assert.deepEqual(authorizations(changed.calls), [
+    "authorize:OverrideTicketConfig",
+  ]);
+});
+
+test("submitting a change of a ticket's overrides asks for OverrideTicketConfig where it names any", async () => {
+  const changing = (overrides: ConfigurationOverrides): ProjectCommand => ({
+    version: 1,
+    command: "ChangeTicketOverrides",
+    ticket: id(1),
+    action: "action",
+    authorizingSeq: 1,
+    overrides,
+  });
+  const named = boundary(true);
+  await named.web.submit(principal, submissionOf(changing(storedOverrides)));
+  assert.equal(named.calls[0], "authorize:OverrideTicketConfig");
+  const cleared = boundary(true);
+  await cleared.web.submit(principal, submissionOf(changing({})));
+  assert.equal(cleared.calls[0], "authorize:Mutate");
+});
+
+/** A catalog whose one plan runs commands then a review in its first stage, and a review in its second. */
+const plannedCatalog = canonicalConfigurationOf({
+  version: 2,
+  image: "worker:catalog",
+  workloads: {
+    tests: { runner: "Commands", commands: ["npm test"] },
+    build: {
+      runner: "Agent",
+      prompt: { text: "Build it." },
+      worker: {
+        mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+        setup: [],
+        files: [],
+      },
+    },
+  },
+  plans: {
+    thorough: [
+      { name: "checks", evaluators: ["tests", "build"] },
+      { name: "second", evaluators: ["build"] },
+    ],
+  },
+  defaults: { work: "build", evaluation: "thorough" },
+});
+
+/** A program whose Nth stage draws the evaluator keys at N. */
+function programOf(stages: readonly (readonly number[])[]) {
+  return stages.map((evaluators, index) => ({
+    key: index + 1,
+    evaluators: evaluators.map((key) => ({ key })),
+  }));
+}
+
+const releaseOf = (
+  command: "ReleaseDraft" | "UpdateTicket" = "ReleaseDraft",
+): ProjectCommand =>
+  command === "ReleaseDraft"
+    ? {
+        version: 1,
+        command,
+        ticket: id(1),
+        authoringVersion: 2,
+        configurationRevision: "revision",
+      }
+    : {
+        version: 1,
+        command,
+        ticket: id(1),
+        expectedRevision: 1,
+        authoringVersion: 2,
+        configurationRevision: "revision",
+      };
+
+/** A boundary holding `held` alone, whose store retains `revision` at every key a release names. */
+function releasing(
+  held: readonly ProjectAccessKind[],
+  revision: DraftRevisionPlan | undefined,
+) {
+  const calls: string[] = [];
+  const access: ProjectAccess = {
+    authorize: (_principal, _partition, kind) => {
+      calls.push(`authorize:${kind}`);
+      return Promise.resolve(held.includes(kind) ? authority : undefined);
+    },
+    authorizeTenant: () => Promise.resolve(undefined),
+    authorizeSite: projectAccessSiteRefused,
+  };
+  const inbox: OperationInbox = {
+    accept: () => {
+      calls.push("accept");
+      return Promise.resolve({ accepted: "IdempotencyConflict" });
+    },
+    cancel: () => Promise.resolve({ cancelled: "Unknown" }),
+    operation: () => Promise.resolve(undefined),
+  };
+  const authoring: AuthoringStore = {
+    ...authoringStore(calls),
+    draftRevision: (_partition, named) => {
+      calls.push(
+        `read:draftRevision:${String(named.ticket)}/${String(named.authoringVersion)}/${named.configurationRevision}`,
+      );
+      return Promise.resolve(revision);
+    },
+  };
+  const web = nativeWeb(
+    access,
+    readStore(calls),
+    inbox,
+    authoring,
+    { read: () => Promise.reject(new Error("not read")) },
+    openExecutionBacklogGuard,
+  );
+  return { web, calls };
+}
+
+const revisionRead = "read:draftRevision:1/2/revision";
+
+test("a release or an update whose program leaves out a stage or an evaluator of its plan asks SkipPlannedEvaluations, and without it nothing is accepted", async () => {
+  for (const command of ["ReleaseDraft", "UpdateTicket"] as const)
+    for (const stages of [[[1, 2]], [[1], [1]]]) {
+      const revision = {
+        canonical: plannedCatalog,
+        program: programOf(stages),
+      };
+      const refused = releasing(["Mutate"], revision);
+      assert.deepEqual(
+        await refused.web.submit(principal, submissionOf(releaseOf(command))),
+        { result: "ProgramSkipsPlannedEvaluations" },
+        `${command} ${JSON.stringify(stages)}`,
+      );
+      assert.deepEqual(refused.calls, [
+        "authorize:Mutate",
+        revisionRead,
+        "authorize:SkipPlannedEvaluations",
+      ]);
+      const permitted = releasing(
+        ["Mutate", "SkipPlannedEvaluations"],
+        revision,
+      );
+      await permitted.web.submit(principal, submissionOf(releaseOf(command)));
+      assert.deepEqual(permitted.calls, [
+        "authorize:Mutate",
+        revisionRead,
+        "authorize:SkipPlannedEvaluations",
+        "accept",
+      ]);
+    }
+});
+
+test("a release running its whole plan asks what a release asks and nothing more", async () => {
+  for (const command of ["ReleaseDraft", "UpdateTicket"] as const) {
+    const { web, calls } = releasing(["Mutate"], {
+      canonical: plannedCatalog,
+      selection: { evaluation: "thorough" },
+      program: programOf([[2, 1], [1]]),
+    });
+    assert.deepEqual(
+      await web.submit(principal, submissionOf(releaseOf(command))),
+      { result: "Authorized", acceptance: { accepted: "IdempotencyConflict" } },
+    );
+    assert.deepEqual(calls, ["authorize:Mutate", revisionRead, "accept"]);
+  }
+});
+
+test("a document's release asks SkipPlannedEvaluations for a stage of its evaluations left out, and never for one listing none", async () => {
+  const parsed = JSON.parse(
+    asCanonicalConfiguration(
+      '{"brief":{"acceptanceCriteria":["It works."],"constraints":[],"motivation":["It matters."]},"image":"worker:v1","practices":[],"review":{"instructions":[]},"version":1,"work":{"instructions":[]},"worker":{"files":[],"mode":{"agent":"Claude","arguments":[],"type":"SingleAgent"},"setup":[]}}',
+    ),
+  ) as Record<string, unknown>;
+  const evaluated = canonicalConfigurationOf({
+    ...parsed,
+    evaluations: [
+      { instructions: ["Review."], practices: [] },
+      { instructions: ["Test."], practices: [] },
+    ],
+  });
+  const short = releasing(["Mutate"], {
+    canonical: evaluated,
+    program: programOf([[1, 2]]),
+  });
+  assert.deepEqual(
+    await short.web.submit(principal, submissionOf(releaseOf())),
+    { result: "ProgramSkipsPlannedEvaluations" },
+  );
+  for (const revision of [
+    { canonical: evaluated, program: programOf([[1], [3]]) },
+    { canonical: canonicalConfigurationOf(parsed), program: programOf([[1]]) },
+  ]) {
+    const { web, calls } = releasing(["Mutate"], revision);
+    await web.submit(principal, submissionOf(releaseOf()));
+    assert.deepEqual(calls, ["authorize:Mutate", revisionRead, "accept"]);
+  }
+});
+
+test("a release naming a revision the project does not retain is refused as acceptance refuses it, without reaching the inbox or asking the permit", async () => {
+  const { web, calls } = releasing(
+    ["Mutate", "SkipPlannedEvaluations"],
+    undefined,
+  );
+  assert.deepEqual(await web.submit(principal, submissionOf(releaseOf())), {
+    result: "Authorized",
+    acceptance: { accepted: "InvalidCommand" },
+  });
+  assert.deepEqual(calls, ["authorize:Mutate", revisionRead]);
+});
+
+test("a release refused Mutate reads no revision", async () => {
+  const { web, calls } = releasing([], {
+    canonical: plannedCatalog,
+    program: programOf([[1]]),
+  });
+  assert.deepEqual(await web.submit(principal, submissionOf(releaseOf())), {
+    result: "NotFound",
+  });
+  assert.deepEqual(calls, ["authorize:Mutate"]);
+});
 
 /** A project artifact port that rejects if either method is called. */
 function unreachableProjectArtifacts(): ProjectArtifactPort {
@@ -1474,22 +1784,22 @@ const gatedCatalog = catalogPlanned({
   gated: [...reviewPlan, { name: "tests", evaluators: ["tests"] }],
 });
 
-/** Each configuration and selection an initialization reads, the stage it answers and the note beside it. */
+/** Each configuration and selection an initialization reads, the stage key it answers and the note beside it. */
 const checkStageNoteCases = [
   {
     canonical: checkedConfiguration,
-    stage: 1,
+    stage: 2,
     note: "A brief's checks run in evaluation stage 2, counted from one, after the commands this configuration runs there.",
   },
   {
     canonical: catalogConfiguration,
-    stage: 1,
+    stage: 2,
     note: 'Under plan "standard", a brief\'s checks run in evaluation stage 2, counted from one, named "verify", after the commands the plan runs there.',
   },
   {
     canonical: gatedCatalog,
     selection: { evaluation: "gated" },
-    stage: 1,
+    stage: 2,
     note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "tests", after the commands the plan runs there.',
   },
   {
@@ -1547,6 +1857,13 @@ test("draft initialization says in words which stage a brief's checks run in, un
       },
       { stage: each.stage, note: each.note },
     );
+    if (initialized?.commandedCheckStage !== undefined)
+      assert.ok(
+        initialized.commandedCheckStageNote.includes(
+          `evaluation stage ${String(initialized.commandedCheckStage)}, counted from one`,
+        ),
+        "the stage answered is the one its note names",
+      );
   }
 });
 

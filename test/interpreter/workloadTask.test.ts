@@ -22,6 +22,8 @@ import {
 } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
+  catalogNamedWorkloadTask,
+  catalogWorkloadTask,
   pinnedWorkloadTask,
   type WorkloadTaskPosition,
 } from "../../src/interpreter/workloadTask.ts";
@@ -79,7 +81,7 @@ const catalog = {
 const ticketBrief = asDraftBrief({
   intent: "Import rows without dropping any.",
   links: [],
-  checks: [asBriefCheckLine("npm run lint")],
+  checks: [asBriefCheckLine("npm run lint", 0)],
   repository: asRepositoryId("repository-one"),
 });
 
@@ -89,7 +91,13 @@ function viewOf(
   position: WorkloadTaskPosition,
   selection?: ConfigurationSelection,
 ): BriefingView {
-  const configuration = pinnedWorkloadTask(catalog, pin, selection, position);
+  const configuration = pinnedWorkloadTask(
+    catalog,
+    pin,
+    undefined,
+    selection,
+    position,
+  );
   assert.ok(configuration !== undefined, "the catalog names no such workload");
   return {
     purpose,
@@ -165,7 +173,7 @@ test("a workload narrows by its own authority and by none another workload names
 
 test("a position or a selection the catalog does not hold names no workload", () => {
   assert.equal(
-    pinnedWorkloadTask(catalog, pin, undefined, {
+    pinnedWorkloadTask(catalog, pin, undefined, undefined, {
       taskKind: "Evaluation",
       stage: 2,
       evaluator: 1,
@@ -173,7 +181,75 @@ test("a position or a selection the catalog does not hold names no workload", ()
     undefined,
   );
   assert.equal(
-    pinnedWorkloadTask(catalog, pin, { work: "absent" }, { taskKind: "Work" }),
+    pinnedWorkloadTask(
+      catalog,
+      pin,
+      undefined,
+      { work: "absent" },
+      {
+        taskKind: "Work",
+      },
+    ),
     undefined,
+  );
+});
+
+test("a task of a catalog runs its workload as the ticket's overrides leave it", () => {
+  const task = pinnedWorkloadTask(
+    catalog,
+    pin,
+    {
+      workloads: { review: { runner: "Commands", commands: ["npm run lint"] } },
+    },
+    undefined,
+    { taskKind: "Evaluation", stage: 1, evaluator: 1 },
+  );
+  assert.deepEqual(task?.workload, {
+    runner: "Commands",
+    commands: ["npm run lint"],
+  });
+});
+
+test("a task of a catalog is named by its workload's key, and an evaluator by its stage's name too", () => {
+  const named = (position: WorkloadTaskPosition) => {
+    const task = catalogNamedWorkloadTask(
+      catalog,
+      undefined,
+      undefined,
+      position,
+    );
+    return task === undefined
+      ? undefined
+      : { name: task.name, stage: task.stage, runner: task.workload.runner };
+  };
+  assert.deepEqual(named({ taskKind: "Work" }), {
+    name: "build",
+    stage: undefined,
+    runner: "Agent",
+  });
+  assert.deepEqual(named({ taskKind: "Evaluation", stage: 0, evaluator: 1 }), {
+    name: "tests",
+    stage: "checks",
+    runner: "Commands",
+  });
+  assert.deepEqual(named({ taskKind: "Evaluation", stage: 1, evaluator: 1 }), {
+    name: "review",
+    stage: "review",
+    runner: "Agent",
+  });
+  assert.equal(
+    named({ taskKind: "Evaluation", stage: 2, evaluator: 1 }),
+    undefined,
+  );
+  assert.deepEqual(
+    Object.keys(
+      catalogWorkloadTask(catalog, undefined, undefined, {
+        taskKind: "Evaluation",
+        stage: 1,
+        evaluator: 2,
+      }) ?? {},
+    ).sort(),
+    ["ticketChecks", "workload"],
+    "the unnamed read carries no name into what a pin spreads",
   );
 });

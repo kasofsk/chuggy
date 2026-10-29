@@ -12,19 +12,18 @@ import { expect, test } from "vitest";
 import { accessInviteLinkStates } from "../../../src/contract/accessPlane.ts";
 import { allActionReaches } from "../../../src/contract/actionReach.ts";
 import {
-  executionOutcomes,
-  executionStatuses,
   phaseRoster,
+  threadStandings,
   ticketLandingStates,
 } from "../../../src/contract/rosters.ts";
 import {
   actionReachArm,
   conversationStandingArm,
-  executionTone,
   inviteLinkStateTone,
   pillTones,
   phaseTone,
   stageArm,
+  threadStandingTone,
   ticketLandingTone,
   verdictTone,
 } from "../app/core/tones.ts";
@@ -54,6 +53,14 @@ test("every landing state draws a tone the pill knows, a failure in the failure'
   expect(ticketLandingTone("Running")).toBe("live");
 });
 
+test("every standing of a thread draws a tone the pill knows, and one held by a member who is gone is not retired", () => {
+  for (const standing of threadStandings)
+    expect(pillTones).toContain(threadStandingTone(standing));
+  expect(threadStandingTone("Open")).toBe("live");
+  expect(threadStandingTone("Closed")).toBe("retired");
+  expect(threadStandingTone("Orphaned")).toBe("parked");
+});
+
 test("every state of an invite link draws a tone the pill knows, an open one live and a used one passed", () => {
   for (const state of accessInviteLinkStates)
     expect(pillTones).toContain(inviteLinkStateTone(state));
@@ -77,7 +84,6 @@ test("the machine's own meanings keep their own hues", () => {
   expect(verdictTone("Running")).toBe("live");
   expect(verdictTone("Blocked")).toBe("parked");
   expect(verdictTone("Cancelled")).toBe("retired");
-  expect(executionTone("Terminal", "Blocked")).toBe("parked");
 });
 
 test("each arm a stage has without evaluators is its own word and its own tone", () => {
@@ -103,13 +109,6 @@ test("each arm a stage has without evaluators is its own word and its own tone",
       span: { from: undefined, to: undefined },
     }),
   ).toEqual({ word: "Failed", tone: "fail" });
-});
-
-test("every execution status and every outcome draws a tone the pill knows", () => {
-  for (const status of executionStatuses)
-    expect(pillTones).toContain(executionTone(status, undefined));
-  for (const outcome of executionOutcomes)
-    expect(pillTones).toContain(executionTone("Terminal", outcome));
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {

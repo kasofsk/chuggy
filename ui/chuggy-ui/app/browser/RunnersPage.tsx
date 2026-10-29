@@ -35,7 +35,7 @@ import { RunnerAskForm } from "./RunnerAsk.tsx";
 import { RunnerSteps } from "./RunnerSteps.tsx";
 import { RunnerVersion } from "./RunnerVersion.tsx";
 import { useNowMs } from "./Freshness.tsx";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -141,9 +141,8 @@ function RunnersSection(props: {
         <RunnerAskForm
           mint={mint}
           onMint={setMint}
-          minted={(capabilities) =>
+          minted={() =>
             apiMintWorkerPoolToken(ports, partition, {
-              capabilities: [...capabilities],
               lifetimeSecs: runnerTokenLifetimeSecs,
             })
           }
@@ -200,9 +199,7 @@ export function RunnersPage(): ReactNode {
   );
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">Runners</h1>
-      </TopBarSlot>
+      <ScreenTitle>Runners</ScreenTitle>
       <RunnersSection
         partition={partition}
         roster={pools}

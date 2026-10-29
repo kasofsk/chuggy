@@ -20,19 +20,15 @@
  * fewer unredeemed tokens than its bound. A token is redeemed once, by whoever
  * holds it, for a pool's credentials; every token and every credential handed
  * out is kept, so a suite can search what a run printed for any of them. The
- * caller's own runners in a workspace are answered likewise: whether the
+ * caller's chat host in a workspace is answered likewise: whether the
  * workspace lets them register one, the mint of a token for one, which only a
- * caller it lets is answered, its redemption, which adds a runner to theirs
- * while they hold fewer than a member may, and a project added to what they
- * serve. Where their chats in a project run on runners, the session placement
- * says theirs as they stand for that project.
+ * caller it lets is answered, and its redemption, which makes a new host
+ * theirs in place of any they held. Where their chats in a project run on
+ * runners, the session placement says their chat host as it stands.
  */
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
-import {
-  personalRunnersMax,
-  projectRepositoriesAnsweredMax,
-} from "../../../src/contract/http.ts";
+import { projectRepositoriesAnsweredMax } from "../../../src/contract/http.ts";
 import type {
   DraftResponse,
   ExecutionPlacementResponse,
@@ -106,24 +102,18 @@ export type SetupSiteRead =
   | "drafts"
   | "landings";
 
-/** The caller's principal, which their own runner is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
+/** The caller's principal, which their chat host is registered under: their issuer's length and their issuer, then their subject, as the site derives one. */
 export const setupSiteMember =
   "20:https://auth.example0b9c6f1e-4c55-4f3a-9a40-6a1b2c3d4e5f";
 
-/** What only `runner` asks, which a case moves likewise; `mint`, `ownMint` and `serves` are writes. */
+/** What only `runner` asks, which a case moves likewise; `mint` and `chatMint` are writes. */
 export type SetupSiteRunnerAsk =
-  "abilities" | "pools" | "mint" | "permit" | "own" | "ownMint" | "serves";
+  "abilities" | "pools" | "mint" | "permit" | "chat" | "chatMint";
 
-/** One of the caller's own runners: the id it is listed by, and whether it has polled lately, which is what the site sees as live. */
-export interface SetupSiteOwnRunner {
+/** The caller's chat host in a workspace: the id it is held by, and whether it has polled lately, which is what the site sees as live. */
+export interface SetupSiteChatHost {
   readonly id: string;
   live: boolean;
-}
-
-/** The caller's own runners in a workspace, oldest first, and the projects every one of them serves. */
-export interface SetupSiteOwn {
-  projects: string[];
-  runners: SetupSiteOwnRunner[];
 }
 
 /** How a read is answered where a case says other than what the site holds. */
@@ -142,14 +132,14 @@ export interface SetupSite {
   fates: Map<SetupSiteRead | SetupSiteRunnerAsk, SetupSiteFate>;
   /** Every registration token and every runner credential the site handed out, in order. */
   readonly secrets: string[];
-  /** The caller's subject, which a runner of their own is registered under. */
+  /** The caller's subject, which their chat host is registered under. */
   readonly member: string;
-  /** Whether each workspace lets the caller register a runner of their own, where a case says one does not. */
+  /** Whether each workspace lets the caller register a chat host, where a case says one does not. */
   readonly withheld: Set<string>;
-  /** The caller's own runners, by workspace, the tokens minted for one that nobody has redeemed, each with its workspace, and how many were ever registered. */
-  readonly own: Map<string, SetupSiteOwn>;
-  readonly ownTokens: Map<string, string>;
-  ownMade: number;
+  /** The caller's chat host, by workspace, the tokens minted for one that nobody has redeemed, each with its workspace, and how many were ever registered. */
+  readonly chat: Map<string, SetupSiteChatHost>;
+  readonly chatTokens: Map<string, string>;
+  chatMade: number;
   /** What each mint that was answered asked for. */
   readonly mints: SetupSiteMint[];
   /** The letters the site draws a token from, which a case changes to draw one nothing knows by its shape, or one no command line carries whole. */
@@ -157,7 +147,6 @@ export interface SetupSite {
 }
 
 export interface SetupSiteMint {
-  readonly capabilities: readonly string[];
   readonly lifetimeSecs: number;
 }
 
@@ -208,9 +197,9 @@ export function setupSiteEmpty(): SetupSite {
     secrets: [],
     member: setupSiteMember,
     withheld: new Set(),
-    own: new Map(),
-    ownTokens: new Map(),
-    ownMade: 0,
+    chat: new Map(),
+    chatTokens: new Map(),
+    chatMade: 0,
     mints: [],
     letters: "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_",
   };
@@ -323,10 +312,7 @@ export function setupSiteAt(stage: SetupSiteStage): SetupSite {
       configured: reached("Configured"),
     });
   if (reached("Offline")) project.runner = reached("Live") ? "Live" : "Offline";
-  if (reached("Live")) {
-    setupSiteOwnAdded(site, setupSiteWorkspace, true);
-    site.own.get(setupSiteWorkspace)?.projects.push(setupSiteProjectName);
-  }
+  if (reached("Live")) setupSiteChatAdded(site, setupSiteWorkspace, true);
   if (stage === "Draft") project.drafts.push(1);
   if (stage === "Moving") project.tickets.push({ ticket: 1, phase: "Work" });
   if (stage === "Landed") project.tickets.push({ ticket: 1, phase: "Done" });
@@ -451,6 +437,7 @@ function binding(
     repository: repository.repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "Push" },
+    pipelinesWritable: false,
     ...(repository.retired === true
       ? { retiredAt: "2026-08-27T00:00:00Z" }
       : {}),
@@ -480,15 +467,14 @@ function bindings(
   return [...held, ...padding];
 }
 
-/** The caller's own runners as a project's session placement says them: registered only where they serve the project, and live where any one is. */
+/** The caller's chat host as a project's session placement says it: registered where they hold one in the workspace, and live where it is. */
 function mine(
   site: SetupSite,
   project: SetupSiteProject,
 ): SessionRunnerStanding {
-  const own = site.own.get(project.tenant);
-  if (own === undefined || !own.projects.includes(project.project))
-    return "Unregistered";
-  return own.runners.some((runner) => runner.live) ? "Live" : "Offline";
+  const host = site.chat.get(project.tenant);
+  if (host === undefined) return "Unregistered";
+  return host.live ? "Live" : "Offline";
 }
 
 function placement(
@@ -603,43 +589,33 @@ export function setupSiteRedeemed(
   };
 }
 
-/** One more of the caller's own runners in a workspace, a new id of its own, polling where `live`; the id is answered. */
-export function setupSiteOwnAdded(
+/** The caller's chat host in a workspace made a new one, of an id of its own, polling where `live`, in place of any they held; the id is answered. */
+export function setupSiteChatAdded(
   site: SetupSite,
   tenant: string,
   live: boolean,
 ): string {
-  site.ownMade += 1;
-  const id = `chuggy-personal-${String(site.ownMade)}`;
-  const own = site.own.get(tenant) ?? { projects: [], runners: [] };
-  own.runners.push({ id, live });
-  site.own.set(tenant, own);
+  site.chatMade += 1;
+  const id = `chuggy-chat-${String(site.chatMade)}`;
+  site.chat.set(tenant, { id, live });
   return id;
 }
 
-/** A redemption of a token minted for the caller's own runner: one more runner of theirs in its workspace, which has not polled, while they hold fewer than a member may, and the token kept for another try where they hold that many. */
-export function setupSiteOwnRedeemed(
+/** A redemption of a token minted for the caller's chat host: a new host of theirs in its workspace, which has not polled, in place of any they held. */
+export function setupSiteChatRedeemed(
   site: SetupSite,
   token: string,
 ): SetupSiteAnswer {
-  const tenant = site.ownTokens.get(token);
+  const tenant = site.chatTokens.get(token);
   if (tenant === undefined) return refused();
-  if ((site.own.get(tenant)?.runners.length ?? 0) >= personalRunnersMax)
-    return {
-      status: 409,
-      body: {
-        error: { code: "RunnerLimitReached", message: "At its bound." },
-      },
-    };
-  site.ownTokens.delete(token);
-  const clientId = setupSiteOwnAdded(site, tenant, false);
+  site.chatTokens.delete(token);
+  const clientId = setupSiteChatAdded(site, tenant, false);
   return {
     status: 201,
     body: {
-      kind: "Personal",
+      kind: "ChatHost",
       tenant,
       owner: site.member,
-      capabilities: ["Platform:Linux:Amd64"],
       tokenUrl: "https://auth.example/oauth2/token",
       audience: "https://chuggy.example/pool",
       planeUrl: "https://pool.chuggy.example/",
@@ -649,61 +625,39 @@ export function setupSiteOwnRedeemed(
   };
 }
 
-/** A token for the caller's own runner in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
-function ownMinted(
+/** A token for the caller's chat host in a workspace, to a caller it lets register one and while it holds fewer than the bound. */
+function chatMinted(
   site: SetupSite,
   tenant: string,
   body: string | undefined,
 ): SetupSiteAnswer {
-  const fate = fated(site, "ownMint");
+  const fate = fated(site, "chatMint");
   if (fate !== undefined) return fate;
   if (site.withheld.has(tenant)) return refused();
-  const held = [...site.ownTokens.values()].filter((of) => of === tenant);
+  const held = [...site.chatTokens.values()].filter((of) => of === tenant);
   if (held.length >= setupSiteTokensMax)
     return {
       status: 409,
       body: { error: { code: "TokenLimitReached", message: "At its bound." } },
     };
   site.mints.push(JSON.parse(body ?? "{}") as SetupSiteMint);
-  const token = drawn(site, "ownregistration");
-  site.ownTokens.set(token, tenant);
+  const token = drawn(site, "chatregistration");
+  site.chatTokens.set(token, tenant);
   return { status: 201, body: { token, expiresAtMs: 4_102_444_800_000 } };
 }
 
-/** A project added to what the caller's own runners serve, where they have one and are shown the project. */
-function served(
-  site: SetupSite,
-  tenant: string,
-  named: string | undefined,
-): SetupSiteAnswer {
-  const fate = fated(site, "serves");
-  if (fate !== undefined) return fate;
-  const own = site.own.get(tenant);
-  const project = projectOf(site, tenant, named);
-  if (own === undefined || own.runners.length === 0 || project === undefined)
-    return refused();
-  if (!own.projects.includes(project.project))
-    own.projects.push(project.project);
-  return { status: 204, body: undefined };
-}
-
-/** The caller's own runners in a workspace as their read answers them, or not found where they have none. */
-function ownAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
-  const own = site.own.get(tenant);
+/** The caller's chat host in a workspace as its read answers it, or not found where they hold none. */
+function chatAnswered(site: SetupSite, tenant: string): SetupSiteAnswer {
+  const host = site.chat.get(tenant);
   return (
-    fated(site, "own") ??
-    (own === undefined || own.runners.length === 0
+    fated(site, "chat") ??
+    (host === undefined
       ? refused()
       : answered({
-          runners: own.runners.map((runner) => ({
-            id: runner.id,
-            capabilities: ["Platform:Linux:Amd64"],
-            registeredAt: "2026-10-09T00:00:00Z",
-            ...(runner.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
-            live: runner.live,
-            executionsLive: runner.live,
-          })),
-          projects: own.projects.toSorted(),
+          id: host.id,
+          registeredAt: "2026-10-09T00:00:00Z",
+          ...(host.live ? { polledAt: "2026-10-09T00:01:00Z" } : {}),
+          live: host.live,
         }))
   );
 }
@@ -717,6 +671,7 @@ function pools(site: SetupSite, project: SetupSiteProject): SetupSiteAnswer {
         pool,
         capabilities: ["Platform:Linux:Amd64"],
         registeredAt: "2026-10-09T00:00:00Z",
+        live: false,
       })),
       truncated: cut(site, "pools"),
     })
@@ -731,9 +686,12 @@ function abilities(
   return (
     fated(site, "abilities") ??
     answered({
+      principal: setupSiteMember,
       mutate: true,
       dispatch: true,
       manageSelector: administer,
+      overrideTicketConfig: administer,
+      skipPlannedEvaluations: administer,
       administer,
     })
   );
@@ -778,8 +736,9 @@ function landings(
 
 const mintPath = "/worker-pool-registration-tokens";
 const redeemPath = "/api/v1/worker-pool-registrations";
-const ownMintPath = "/personal-runner-registration-tokens";
-const ownRedeemPath = "/api/v1/personal-runner-registrations";
+const chatMintPath = "/chat-host-registration-tokens";
+/** Where a chat host's token is redeemed, which is where a member's runner's is. */
+const chatRedeemPath = "/api/v1/personal-runner-registrations";
 
 function projectAnswered(
   site: SetupSite,
@@ -873,18 +832,15 @@ function projectOf(
   );
 }
 
-/** A write within a workspace: the mint for a project the caller is shown, the mint for a runner of their own, a project added to what theirs serves, or nothing the site answers. */
+/** A write within a workspace: the mint for a project the caller is shown, the mint for their chat host, or nothing the site answers. */
 function tenantWritten(
   site: SetupSite,
   tenant: string,
   rest: string,
   sent: SetupSiteSent,
 ): SetupSiteAnswer | undefined {
-  if (sent.method === "POST" && rest === ownMintPath)
-    return ownMinted(site, tenant, sent.body);
-  const serving = /^\/personal-runner\/projects\/([^/]+)$/u.exec(rest);
-  if (sent.method === "PUT" && serving !== null)
-    return served(site, tenant, serving[1]);
+  if (sent.method === "POST" && rest === chatMintPath)
+    return chatMinted(site, tenant, sent.body);
   const within = /^\/projects\/([^/]+)(\/.*)$/u.exec(rest);
   if (sent.method !== "POST" || within?.[2] !== mintPath) return undefined;
   const project = projectOf(site, tenant, within[1]);
@@ -904,7 +860,7 @@ function tenantAnswered(
     return (
       fated(site, "permit") ?? answered({ granted: !site.withheld.has(tenant) })
     );
-  if (rest === "/personal-runner") return ownAnswered(site, tenant);
+  if (rest === "/chat-host") return chatAnswered(site, tenant);
   const listing = /^\/forge-installations\/([^/]+)\/repositories$/u.exec(rest);
   if (listing !== null)
     return administers
@@ -972,8 +928,8 @@ export function setupSiteAnswered(
   const url = new URL(target, "http://site.invalid");
   if (sent.method === "POST" && url.pathname === redeemPath)
     return redeemed(site, sent.body);
-  if (sent.method === "POST" && url.pathname === ownRedeemPath)
-    return setupSiteOwnRedeemed(
+  if (sent.method === "POST" && url.pathname === chatRedeemPath)
+    return setupSiteChatRedeemed(
       site,
       (JSON.parse(sent.body ?? "{}") as { readonly token?: string }).token ??
         "",

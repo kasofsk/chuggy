@@ -105,7 +105,7 @@ test("a thread's owner is the principal a tuple in the authority admits", async 
     method: "POST",
     url: pathOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key: randomUUID() },
   });
   assert.equal(opened.statusCode, 201, opened.body);
   const entry = threadEntryResponseSchema.parse(opened.json());
@@ -130,7 +130,7 @@ test("a thread whose principal the authority no longer admits stands orphaned", 
     method: "POST",
     url: pathOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key: randomUUID() },
   });
   assert.equal(opened.statusCode, 201, opened.body);
   const entry = threadEntryResponseSchema.parse(opened.json());
@@ -178,7 +178,7 @@ test("a viewer reads the project's threads and is answered on opening one what a
     method: "POST",
     url: pathOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key: randomUUID() },
   });
   assert.equal(opened.statusCode, 201, opened.body);
   const { session } = threadEntryResponseSchema.parse(opened.json());
@@ -207,7 +207,7 @@ test("a viewer reads the project's threads and is answered on opening one what a
       method: "POST",
       url: pathOf(partition),
       headers: versioned,
-      payload: {},
+      payload: { key: randomUUID() },
     });
     refusals.push([refused.statusCode, refused.json<HttpErrorEnvelope>()]);
   }

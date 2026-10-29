@@ -22,6 +22,11 @@
             "npm ci"
           ],
           "files": []
+        },
+        "authority": {
+          "credentials": [
+            "claude-code"
+          ]
         }
       },
       "ci": {
@@ -34,6 +39,9 @@
             "npm ci"
           ],
           "files": []
+        },
+        "authority": {
+          "credentials": []
         }
       },
       "review": {
@@ -54,6 +62,11 @@
             "npm ci"
           ],
           "files": []
+        },
+        "authority": {
+          "credentials": [
+            "claude-code"
+          ]
         }
       }
     },

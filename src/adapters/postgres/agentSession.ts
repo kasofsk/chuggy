@@ -4,10 +4,10 @@
  * those three wrote.
  *
  * EVERY MOVE IS ONE SERVER FUNCTION AND THIS FILE DECIDES NOTHING. A session's
- * uniqueness rules — one lead per project, one open thread per member, an
- * inquiry's parent — are partial indexes and a boundary body, so an adapter
- * that checked them first would be a second opinion racing the first. The
- * account and cluster a session draws are not arguments either: the server
+ * admission rules — one lead per project, a member's open threads within their
+ * limit, an inquiry's parent — are a partial index and a boundary body, so an
+ * adapter that checked them first would be a second opinion racing the first.
+ * The account and cluster a session draws are not arguments either: the server
  * takes them from the project's own capacity account, because a caller naming
  * them could name another project's.
  *
@@ -50,8 +50,8 @@ interface AgentSessionStoredRow {
   readonly agent_reference: string | null;
   readonly capabilities: string[];
   readonly credential_slot: string;
-  readonly account: string;
-  readonly cluster: string;
+  readonly account: string | null;
+  readonly cluster: string | null;
   readonly state: string;
 }
 

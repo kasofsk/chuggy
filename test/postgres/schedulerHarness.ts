@@ -633,6 +633,19 @@ export async function schedulerPlacedAttempt(
   project: SchedulerProject,
   label: string,
 ) {
+  const opened = await schedulerOpenedAttempt(rig, project, label);
+  const placement = asPlacementId(`placement-${label}-${randomUUID()}`);
+  if (!(await rig.store.attemptPlaced(opened.attempt, placement)))
+    throw new Error(`scheduler harness: ${label} could not place its attempt`);
+  return opened;
+}
+
+/** The project's next execution admitted and its first attempt opened, which no fabric has placed. */
+export async function schedulerOpenedAttempt(
+  rig: SchedulerRig,
+  project: SchedulerProject,
+  label: string,
+) {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
     throw new Error(`scheduler harness: ${label} admitted no execution`);
@@ -647,9 +660,6 @@ export async function schedulerPlacedAttempt(
   });
   if (opened.opened !== "Opened")
     throw new Error(`scheduler harness: ${label} opened no attempt`);
-  const placement = asPlacementId(`placement-${label}-${randomUUID()}`);
-  if (!(await rig.store.attemptPlaced(opened.attempt, placement)))
-    throw new Error(`scheduler harness: ${label} could not place its attempt`);
   return { execution: admitted.execution, attempt: opened.attempt };
 }
 

@@ -36,7 +36,7 @@ import {
   pinnedWorkloadTask,
   workloadTaskPositionOf,
 } from "../../interpreter/workloadTask.ts";
-import { configurationRevisionDigest } from "./digest.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 
 /** One pinned revision, with the overrides and the selection its ticket holds. */
@@ -68,6 +68,7 @@ function postgresPinnedWorkloadTask(
       : pinnedWorkloadTask(
           document,
           pin,
+          storedOverridesOf(row.overrides),
           storedSelectionOf(row.selection),
           position,
         );

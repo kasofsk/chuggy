@@ -19,7 +19,7 @@
  */
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -38,6 +38,7 @@ import {
 } from "../../src/adapters/git/gitRun.ts";
 import {
   scratchDigestOf,
+  scratchPushFailed,
   scratchRemoteArguments,
 } from "../../src/adapters/git/gitScratch.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -52,6 +53,7 @@ import {
   type CredentialResolved,
   type GitObjectId,
   type GitPromotionPort,
+  type HeadAdoption,
   type ObservedTarget,
   type RepositoryBinding,
   type RepositoryCredentialPort,
@@ -61,6 +63,10 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  gitDeclineByProcReceive,
+  gitDeclineWorkflowsReason,
+} from "./gitDeclineFixtures.ts";
 
 /** The secret the fixture's credential port hands out, which must never reach an argument. */
 const fixtureSecret = "fixture-secret-a1b2c3";
@@ -133,9 +139,10 @@ const fixtureGranted: CredentialResolved = {
 function fixturePort(
   fixture: Fixture,
   resolved: CredentialResolved = fixtureGranted,
+  scratch = "scratch",
 ): GitPromotionPort {
   return gitPromotion({
-    scratchDirectory: join(fixture.directory, "scratch"),
+    scratchDirectory: join(fixture.directory, scratch),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
     credentials: fixtureCredentials(resolved),
@@ -143,8 +150,8 @@ function fixturePort(
 }
 
 /** Where the adapter's own bare repository for one remote is, so a suite can read what it wrote. */
-function fixtureScratch(fixture: Fixture): string {
-  return join(fixture.directory, "scratch", scratchDigestOf(fixture.remote));
+function fixtureScratch(fixture: Fixture, scratch = "scratch"): string {
+  return join(fixture.directory, scratch, scratchDigestOf(fixture.remote));
 }
 
 function fixtureBinding(remote: string): RepositoryBinding {
@@ -454,6 +461,178 @@ test("a worker source is accepted only at the commit its remote ref names", asyn
   );
 });
 
+/** Commits one file on whatever the seed has checked out, pushing nothing, and answers the commit. */
+function fixtureSeedCommit(fixture: Fixture, path: string): string {
+  writeFileSync(join(fixture.seed, path), `${path}\n`);
+  fixtureGit(fixture.seed, "add", "-A");
+  fixtureGit(fixture.seed, "-c", "commit.gpgsign=false", "commit", "-qm", path);
+  return fixtureGit(fixture.seed, "rev-parse", "HEAD");
+}
+
+/** Publishes what the seed has checked out under one attempt's source ref, which the marker names. */
+function fixtureSourceRef(fixture: Fixture, marker: string): string {
+  const ref = `refs/heads/chuggy/tickets/1/attempts/${marker.repeat(64)}`;
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, `HEAD:${ref}`);
+  return ref;
+}
+
+test("a worker source squashed past the base it declares is undescended, not missing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const target = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const earlier = fixtureSeedCommit(fixture, "earlier.txt");
+  fixtureSourceRef(fixture, "a");
+  fixtureSeedCommit(fixture, "later.txt");
+  fixtureGit(fixture.seed, "reset", "-q", "--soft", target);
+  const squashed = fixtureSeedCommit(fixture, "squashed.txt");
+  const ref = fixtureSourceRef(fixture, "b");
+  const port = fixturePort(fixture);
+
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(squashed),
+      base: asGitObjectId(earlier),
+    }),
+    { prepared: "Undescended" },
+    "a base the scratch never fetched is still an answer once the history is read",
+  );
+});
+
+test("a worker source rebased past the base it declares is undescended, not missing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const target = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "work");
+  const earlier = fixtureSeedCommit(fixture, "earlier.txt");
+  const earlierRef = fixtureSourceRef(fixture, "a");
+  fixtureSeedCommit(fixture, "later.txt");
+  fixtureGit(fixture.seed, "checkout", "-q", "main");
+  fixtureCommit(fixture, "moved.txt", "moved\n", "moved");
+  fixtureGit(fixture.seed, "checkout", "-q", "work");
+  fixtureGit(
+    fixture.seed,
+    "-c",
+    "commit.gpgsign=false",
+    "rebase",
+    "-q",
+    "main",
+  );
+  const rebased = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const ref = fixtureSourceRef(fixture, "b");
+  const port = fixturePort(fixture);
+
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(earlierRef),
+      commit: asGitObjectId(earlier),
+      base: asGitObjectId(target),
+    }),
+    { prepared: "Candidate", candidate: earlier },
+    "the scratch now holds the base the rebase left behind",
+  );
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(rebased),
+      base: asGitObjectId(earlier),
+    }),
+    { prepared: "Undescended" },
+  );
+});
+
+test("a target that reaches the candidate holds it, even after reverting it", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const base = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  const work = fixtureSeedCommit(fixture, "work.txt");
+  const ref = fixtureSourceRef(fixture, "a");
+  assert.deepEqual(
+    await port.prepareSource({
+      repository: binding,
+      ref: asGitRefName(ref),
+      commit: asGitObjectId(work),
+      base: asGitObjectId(base),
+    }),
+    { prepared: "Candidate", candidate: work },
+  );
+  const candidate = asGitObjectId(work);
+  fixtureCommit(
+    fixture,
+    "later.txt",
+    "later\n",
+    "merged by a person, then more",
+  );
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Held",
+  );
+  fixtureGit(fixture.seed, "rm", "-q", "work.txt");
+  fixtureCommit(fixture, "later.txt", "reverted\n", "revert the work");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Held",
+    "a change the target has since reverted did land",
+  );
+});
+
+test("a target whose merge with the candidate is its own tree holds it, and one gaining a change does not", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.equal(
+    await port.proveCandidateHeld({ repository: binding, target, candidate }),
+    "Unheld",
+    "the target it was built over holds none of its change",
+  );
+  fixtureCommit(fixture, "other.txt", "other\n", "other");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Unheld",
+    "a target that moved on still lacks the candidate's change",
+  );
+  fixtureCommit(fixture, "new.txt", "new\n", "the same change, squashed");
+  const squashed = await fixtureTarget(port, binding);
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: squashed,
+      candidate,
+    }),
+    "Held",
+  );
+  fixtureCommit(fixture, "new.txt", "changed\n", "conflicting");
+  assert.equal(
+    await port.proveCandidateHeld({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Unheld",
+    "a conflicting target does not hold it",
+  );
+});
+
 test("a target the candidate already contains integrates to the candidate itself", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
@@ -712,6 +891,52 @@ test("what the ref proves about a candidate is read back from the remote", async
   });
 });
 
+/**
+ * A scratch begun afresh holds no candidate, so the tip's history read whole
+ * proves one the remote never took not promoted and one it took promoted. A
+ * history the scratch cannot walk to its end proves nothing.
+ */
+test("a candidate the scratch never held is proved from the tip's history alone", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  const proof = { repository: binding, ref: target.ref, candidate };
+  const fresh = fixturePort(fixture, fixtureGranted, "fresh");
+  assert.deepEqual(await fresh.proveCandidateAncestry(proof), {
+    proved: "NotAncestor",
+    observed: target.commit,
+  });
+  const parent = fixtureGit(fixture.remote, "rev-parse", `${target.commit}^`);
+  rmSync(
+    join(
+      fixtureScratch(fixture, "fresh"),
+      "objects",
+      parent.slice(0, 2),
+      parent.slice(2),
+    ),
+  );
+  assert.deepEqual(await fresh.proveCandidateAncestry(proof), {
+    proved: "Unreadable",
+    evidence: "ObjectMissing",
+  });
+  await port.promoteCandidate({
+    repository: binding,
+    permit: asCommitPermitId("permit-1"),
+    target,
+    candidate,
+  });
+  assert.deepEqual(
+    await fixturePort(fixture, fixtureGranted, "after").proveCandidateAncestry(
+      proof,
+    ),
+    { proved: "Ancestor", observed: candidate },
+  );
+});
+
 test("a ref another ref's tail repeats is read as itself and never as the shadow", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
@@ -741,7 +966,7 @@ test("a ref another ref's tail repeats is read as itself and never as the shadow
   );
 });
 
-test("a push the receiving repository declined is ambiguous and never a refusal", async (t) => {
+test("a push the receiving repository declined is ambiguous, says so, and is never a refusal", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -760,12 +985,172 @@ test("a push the receiving repository declined is ambiguous and never a refusal"
   });
   assert.deepEqual(promoted, {
     promoted: "Ambiguous",
-    evidence: "RemoteUnreachable",
+    evidence: "RemoteDeclined",
   });
   assert.equal(
     fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
     target.commit,
   );
+});
+
+test("a push GitHub declined for a workflow file is told apart from every other decline", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    [".github/workflows/ci.yml", "on: push\n"],
+  ]);
+  gitDeclineByProcReceive(fixture.remote, gitDeclineWorkflowsReason);
+  const promoted = await port.promoteCandidate({
+    repository: binding,
+    permit: asCommitPermitId("permit-1"),
+    target,
+    candidate,
+  });
+  assert.deepEqual(promoted, {
+    promoted: "Ambiguous",
+    evidence: "WorkflowsRefused",
+  });
+  assert.equal(
+    fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
+    target.commit,
+  );
+});
+
+/**
+ * What the porcelain line says is read field by field: a remote that failed to
+ * report on the ref is not one that declined it, and a declined reason is
+ * carried whole with only the parentheses around it removed.
+ */
+test("a push's porcelain summary is refused, declined with its reason, or unknown", () => {
+  const line = (summary: string) =>
+    `To origin\n!\tabc:refs/heads/main\t${summary}\nDone\n`;
+  assert.deepEqual(scratchPushFailed(line("[rejected] (fetch first)")), {
+    pushed: "Refused",
+  });
+  assert.deepEqual(
+    scratchPushFailed(line("[remote rejected] (protected (by rule))")),
+    { pushed: "Declined", reason: "protected (by rule)" },
+  );
+  assert.deepEqual(scratchPushFailed(line("[remote rejected]")), {
+    pushed: "Declined",
+    reason: "",
+  });
+  assert.deepEqual(
+    scratchPushFailed(
+      line("[remote failure] (remote failed to report status)"),
+    ),
+    { pushed: "Unknown" },
+  );
+  assert.deepEqual(scratchPushFailed("fatal: the remote end hung up\n"), {
+    pushed: "Unknown",
+  });
+});
+
+/** The ref prefix a fixture's receive-pack reports under another name, and the name it reports it under. */
+const fixtureUnreported = {
+  sent: "refs/heads/unreported/",
+  reported: "refs/heads/unreportee/",
+} as const;
+
+/**
+ * Points every push to the fixture's remote, addressed as a URL, through a
+ * receive-pack that applies the update and reports it on another ref's name.
+ * This is how git on disk is made to print `[remote failure]`, a status the
+ * remote failed to report on the ref the client sent.
+ */
+function fixtureMisreporting(fixture: Fixture): {
+  readonly url: string;
+  readonly environment: NodeJS.ProcessEnv;
+} {
+  const url = `file://${fixture.remote}`;
+  const wrapper = join(fixture.directory, "receive-pack");
+  writeFileSync(
+    wrapper,
+    [
+      `#!${process.execPath}`,
+      'const { spawn } = require("node:child_process");',
+      `const needle = Buffer.from(${JSON.stringify(fixtureUnreported.sent)});`,
+      `const other = Buffer.from(${JSON.stringify(fixtureUnreported.reported)});`,
+      'const child = spawn("git", ["receive-pack", ...process.argv.slice(2)], { stdio: ["inherit", "pipe", "inherit"] });',
+      "let held = Buffer.alloc(0);",
+      'child.stdout.on("data", (chunk) => {',
+      "  const data = Buffer.concat([held, chunk]);",
+      "  for (let at = data.indexOf(needle); at >= 0; at = data.indexOf(needle, at)) other.copy(data, at);",
+      "  let keep = Math.min(needle.length - 1, data.length);",
+      "  while (keep > 0 && !needle.subarray(0, keep).equals(data.subarray(data.length - keep))) keep -= 1;",
+      "  held = Buffer.from(data.subarray(data.length - keep));",
+      "  process.stdout.write(data.subarray(0, data.length - keep));",
+      "});",
+      'child.stdout.on("end", () => process.stdout.write(held));',
+      'child.on("exit", (code) => { process.exitCode = code ?? 1; });',
+      "",
+    ].join("\n"),
+  );
+  chmodSync(wrapper, 0o700);
+  return {
+    url,
+    environment: {
+      ...process.env,
+      GIT_CONFIG_COUNT: "1",
+      GIT_CONFIG_KEY_0: `remote.${url}.receivepack`,
+      GIT_CONFIG_VALUE_0: wrapper,
+    },
+  };
+}
+
+/**
+ * A remote that took the update and failed to report on it is unknown to the
+ * push and never a decline, which is what git's `[remote failure]` line says
+ * and why: the ref did move.
+ */
+test("a remote that failed to report on the ref is read as unknown and never as a decline", async (t) => {
+  const fixture = fixtureOpen(t);
+  const { url, environment } = fixtureMisreporting(fixture);
+  const said = spawnSync(
+    "git",
+    [
+      "-C",
+      fixture.seed,
+      "push",
+      "--porcelain",
+      "--atomic",
+      url,
+      `HEAD:${fixtureUnreported.sent}seed`,
+    ],
+    { encoding: "utf8", env: environment },
+  );
+  assert.equal(said.status, 1, said.stderr);
+  assert.match(said.stdout, /^!\t\S+\t\[remote failure\]/mu);
+  assert.deepEqual(scratchPushFailed(said.stdout), { pushed: "Unknown" });
+
+  const binding = fixtureBinding(url);
+  const port = gitPromotion({
+    scratchDirectory: join(fixture.directory, "scratch"),
+    identity: { name: "chug", email: "chug@example.test" },
+    environment,
+    credentials: fixtureCredentials(fixtureGranted),
+  });
+  const base = await fixtureTarget(port, binding);
+  const target: ObservedTarget = {
+    ref: asGitRefName(`${fixtureUnreported.sent}candidate`),
+    commit: base.commit,
+    baseRef: base.ref,
+  };
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.deepEqual(
+    await port.promoteCandidate({
+      repository: binding,
+      permit: asCommitPermitId("permit-1"),
+      target,
+      candidate,
+    }),
+    { promoted: "Ambiguous", evidence: "RemoteUnreachable" },
+  );
+  assert.equal(fixtureGit(fixture.remote, "rev-parse", target.ref), candidate);
 });
 
 test("a remote reaches git as a path and never as an option", () => {
@@ -775,7 +1160,7 @@ test("a remote reaches git as a path and never as an option", () => {
   );
 });
 
-test("an unreadable ref and an unreachable remote are each their own answer", async (t) => {
+test("a ref the remote does not hold and an unreachable remote are each their own answer", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -789,7 +1174,7 @@ test("an unreadable ref and an unreachable remote are each their own answer", as
       ref: asGitRefName("refs/heads/absent"),
       candidate,
     }),
-    { proved: "Unreadable", evidence: "RefUnreadable" },
+    { proved: "Absent" },
   );
   rmSync(fixture.remote, { recursive: true, force: true });
   assert.deepEqual(
@@ -916,4 +1301,164 @@ test("a git too old to write merge trees is refused by the floor", () => {
   assert.equal(gitVersionAdmits("git version 2.38.0"), true);
   assert.equal(gitVersionAdmits("git version 3.0.1"), true);
   assert.equal(gitVersionAdmits("no version at all"), false);
+});
+
+/** A branch the finalizer pinned, with the base moved past it since, the way a proposal behind its base stands. */
+interface FixtureBehind {
+  readonly fixture: Fixture;
+  readonly pinned: string;
+  readonly base: string;
+}
+
+function fixtureBehind(t: TestContext): FixtureBehind {
+  const fixture = fixtureOpen(t);
+  fixtureGit(fixture.seed, "config", "commit.gpgsign", "false");
+  fixtureGit(fixture.seed, "checkout", "-q", "-b", "topic");
+  writeFileSync(join(fixture.seed, "topic.txt"), "topic\n");
+  fixtureGit(fixture.seed, "add", "-A");
+  fixtureGit(fixture.seed, "commit", "-qm", "topic");
+  const pinned = fixtureGit(fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(fixture.seed, "push", "-q", fixture.remote, "topic:topic");
+  fixtureGit(fixture.seed, "checkout", "-q", "main");
+  const base = fixtureCommit(fixture, "other.txt", "other\n", "other");
+  return { fixture, pinned, base };
+}
+
+/** Pushes whatever commit the seed's HEAD stands at as the proposal's branch, which is how a head moves. */
+function fixtureHeadPushed(behind: FixtureBehind): string {
+  const head = fixtureGit(behind.fixture.seed, "rev-parse", "HEAD");
+  fixtureGit(
+    behind.fixture.seed,
+    "push",
+    "-qf",
+    behind.fixture.remote,
+    `${head}:refs/heads/topic`,
+  );
+  return head;
+}
+
+function fixtureAdoptable(
+  behind: FixtureBehind,
+  head: string,
+): Promise<HeadAdoption> {
+  return fixturePort(behind.fixture).proveHeadAdoptable({
+    repository: fixtureBinding(behind.fixture.remote),
+    pinned: asGitObjectId(behind.pinned),
+    head: asGitObjectId(head),
+    headRef: asGitRefName("refs/heads/topic"),
+    baseRef: asGitRefName("refs/heads/main"),
+  });
+}
+
+test("a head that is the pinned one with its base merged in cleanly is adoptable", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "main",
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Adoptable");
+  fixtureCommit(behind.fixture, "later.txt", "later\n", "later");
+  assert.equal(
+    await fixtureAdoptable(behind, head),
+    "Adoptable",
+    "a second parent the base has since moved past is still on it",
+  );
+});
+
+test("a merge carrying anything but the clean merge of its parents is refused", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "main",
+  );
+  writeFileSync(join(behind.fixture.seed, "smuggled.txt"), "unreviewed\n");
+  fixtureGit(behind.fixture.seed, "add", "-A");
+  fixtureGit(behind.fixture.seed, "commit", "-q", "--amend", "--no-edit");
+  const head = fixtureHeadPushed(behind);
+  assert.equal(
+    fixtureGit(behind.fixture.seed, "rev-list", "--parents", "-n", "1", head)
+      .split(" ")
+      .slice(1)
+      .join(" "),
+    `${behind.pinned} ${behind.base}`,
+    "the parents are the ones an update would have",
+  );
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a merge with its parents swapped is refused, whatever its tree", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "--detach", "main");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    behind.pinned,
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a rebase onto the base is refused, being no merge at all", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(behind.fixture.seed, "rebase", "-q", "main");
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a merge of a commit the base never held is refused", async (t) => {
+  const behind = fixtureBehind(t);
+  fixtureGit(
+    behind.fixture.seed,
+    "checkout",
+    "-q",
+    "-b",
+    "elsewhere",
+    "main~1",
+  );
+  writeFileSync(join(behind.fixture.seed, "elsewhere.txt"), "elsewhere\n");
+  fixtureGit(behind.fixture.seed, "add", "-A");
+  fixtureGit(behind.fixture.seed, "commit", "-qm", "elsewhere");
+  fixtureGit(behind.fixture.seed, "checkout", "-q", "topic");
+  fixtureGit(
+    behind.fixture.seed,
+    "merge",
+    "-q",
+    "--no-ff",
+    "--no-edit",
+    "elsewhere",
+  );
+  const head = fixtureHeadPushed(behind);
+  assert.equal(await fixtureAdoptable(behind, head), "Unadoptable");
+});
+
+test("a head the remote cannot give is unread rather than refused", async (t) => {
+  const behind = fixtureBehind(t);
+  assert.equal(await fixtureAdoptable(behind, "9".repeat(40)), "Unread");
+  assert.equal(
+    await fixturePort(behind.fixture, {
+      resolved: "Unavailable",
+    }).proveHeadAdoptable({
+      repository: fixtureBinding(behind.fixture.remote),
+      pinned: asGitObjectId(behind.pinned),
+      head: asGitObjectId(behind.base),
+      headRef: asGitRefName("refs/heads/topic"),
+      baseRef: asGitRefName("refs/heads/main"),
+    }),
+    "Unread",
+  );
 });

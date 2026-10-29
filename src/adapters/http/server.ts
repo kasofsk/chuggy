@@ -18,9 +18,11 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
+  memberScopePartition,
   type SessionBearerIdentity,
   type SessionId,
 } from "../../interpreter/agentSession.ts";
+import type { MemberChat } from "../../interpreter/memberChat.ts";
 import type { InstallationAuthorityRead } from "../../interpreter/installationAuthority.ts";
 import { phaseTags, type Phase } from "../../domain/phase.ts";
 import {
@@ -29,7 +31,10 @@ import {
 } from "../../interpreter/executionScheduler.ts";
 import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
 import type { Principal } from "../../interpreter/nativeWeb.ts";
-import type { ExecutionListQuery } from "../../interpreter/operationsView.ts";
+import {
+  executionSelectionRefused,
+  type ExecutionListQuery,
+} from "../../interpreter/operationsView.ts";
 import {
   asProjectId,
   asTenantId,
@@ -92,19 +97,19 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseForgeAuthorization,
   parseForgeCredentialRequest,
   parseForgeInstallationId,
   parseProjectCreation,
   parseProjectRepositoryBind,
-  parseProjectRepositoryCreate,
   parseProjectRepositoryLanding,
   parseExecutionPlacement,
   parseProjectOwnerFallback,
+  parseThreadLimit,
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
+  parseRepositoryConfigurationHead,
   parseRepositoryConfigurationImport,
   parseConfigurationSelection,
   parseDraftCreation,
@@ -116,14 +121,15 @@ import {
   parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
+  parseThreadOpen,
   parseThreadRename,
   parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
-  parseWorkerPoolTokenRequest,
+  parseRegistrationTokenRequest,
 } from "./contract.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
   configurationResponse,
   configurationsResponse,
@@ -145,7 +151,6 @@ import {
   projectCreationResponse,
   projectRepositoryBindResponse,
   projectRepositoryConfigureResponse,
-  projectRepositoryCreateResponse,
   projectRepositoryLandingResponse,
   projectRepositoryRetirementResponse,
   inventoryResponse,
@@ -188,6 +193,11 @@ import {
   hideThreadResponse,
   renameThreadResponse,
   openThreadResponse,
+  chatAbilitiesResponse,
+  chatProjectsResponse,
+  chatThreadsResponse,
+  chatThreadMessageResponse,
+  openChatThreadResponse,
   threadMessageResponse,
   threadResponse,
   threadTurnStopResponse,
@@ -204,8 +214,11 @@ import {
   personalRunnerRedemptionResponse,
   personalRunnerResponse,
   personalRunnerTokenResponse,
+  chatHostDeregisteredResponse,
+  chatHostResponse,
   executionPlacementBody,
   ownerFallbackBody,
+  threadLimitBody,
   placementReadResponse,
   placementWriteResponse,
   sessionPlacementBody,
@@ -223,16 +236,23 @@ import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegi
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
+import type { ThreadLimitAdministration } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementAdministration } from "../../interpreter/sessionPlacement.ts";
 import type { ProjectCreation } from "../../interpreter/projectCreation.ts";
-import { sessionBearerAdmission } from "./sessionBearerScope.ts";
+import {
+  sessionBearerAdmission,
+  type SessionBearerConfinement,
+} from "./sessionBearerScope.ts";
 
 /** Who the bearer is, and when it stops saying so, for a route that outlives one request. */
 export interface AuthenticatedBearer {
   readonly principal: Principal;
   readonly expiresAtMs?: number | undefined;
-  /** The session a session bearer carried, which a command records, and the partition it is confined to. */
-  readonly viaSession?: Pick<SessionBearerIdentity, "partition" | "session">;
+  /** The session a session bearer carried, which a command records, and the partition and scope it is confined to. */
+  readonly viaSession?: Pick<
+    SessionBearerIdentity,
+    "partition" | "session" | "scope"
+  >;
 }
 
 /**
@@ -271,8 +291,8 @@ type InitialNativeWeb = Pick<
   | "cancel"
   | "configuration"
   | "configurations"
-  | "createConfiguration"
   | "importRepositoryConfigurations"
+  | "repositoryConfigurationHead"
   | "createDraft"
   | "initializeDraft"
   | "deleteDraft"
@@ -457,6 +477,7 @@ export async function nativeHttpBearerAuthenticated(
 function registerAuthentication(
   app: FastifyInstance,
   authentication: PrincipalAuthentication,
+  chat?: MemberChat,
 ): void {
   app.decorateRequest("principal");
   app.decorateRequest("bearerExpiresAtMs");
@@ -472,7 +493,10 @@ function registerAuthentication(
     const session = authenticated.viaSession;
     if (
       session !== undefined &&
-      !registerAuthenticationSession(request, reply, session)
+      !(await registerAuthenticationSession(request, reply, chat, {
+        ...session,
+        principal: authenticated.principal,
+      }))
     )
       return reply;
     request.principal = authenticated.principal;
@@ -484,23 +508,32 @@ function registerAuthentication(
 
 /**
  * Whether a session bearer may reach the route this request matched, having
- * answered it when it may not: another partition as an unauthorized read is
+ * answered it when it may not: another partition, or a member's own session
+ * whose owner may no longer open unscoped chat, as an unauthorized read is
  * answered, and a route no session may reach as `insufficient_scope`.
  */
-function registerAuthenticationSession(
+async function registerAuthenticationSession(
   request: FastifyRequest,
   reply: FastifyReply,
-  session: Pick<SessionBearerIdentity, "partition">,
-): boolean {
+  chat: MemberChat | undefined,
+  session: SessionBearerConfinement,
+): Promise<boolean> {
   const admission = sessionBearerAdmission(
-    session.partition,
+    session,
     request.method,
     request.routeOptions.url,
     request.params,
   );
   switch (admission) {
     case "Admitted":
-      return true;
+      if (
+        session.scope === "Project" ||
+        (chat !== undefined &&
+          (await chat.opens(session.principal, session.partition.tenant)))
+      )
+        return true;
+      nativeHttpSend(reply, notFound());
+      return false;
     case "OtherPartition":
       nativeHttpSend(reply, notFound());
       return false;
@@ -1215,7 +1248,7 @@ function registerWorkerPools(
           await pools.mint(
             principalOf(request),
             partitionOf(request),
-            parseWorkerPoolTokenRequest(request.body),
+            parseRegistrationTokenRequest(request.body),
           ),
         ),
       );
@@ -1303,7 +1336,7 @@ function registerPersonalRunners(
           await runners.mint(
             principalOf(request),
             tenantOf(request),
-            parseWorkerPoolTokenRequest(request.body),
+            parseRegistrationTokenRequest(request.body),
           ),
         ),
       );
@@ -1339,6 +1372,52 @@ function registerPersonalRunners(
   });
   registerPersonalRunnerProjects(app, runners);
   registerPersonalRunnerRemovals(app, runners);
+  registerChatHost(app, runners);
+}
+
+/**
+ * A member's chat host: the token they mint for it, redeemed at the same
+ * public route a runner's is, the caller's own host read, and its removal.
+ */
+function registerChatHost(
+  app: FastifyInstance,
+  runners: PersonalRunnerService,
+): void {
+  app.post(
+    nativeHttpRoutes.chatHostRegistrationTokens,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      nativeHttpSend(
+        reply,
+        personalRunnerTokenResponse(
+          await runners.mintChatHost(
+            principalOf(request),
+            tenantOf(request),
+            parseRegistrationTokenRequest(request.body),
+          ),
+        ),
+      );
+    },
+  );
+  app.get(nativeHttpRoutes.chatHost, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      chatHostResponse(
+        await runners.chatHost(principalOf(request), tenantOf(request)),
+      ),
+    );
+  });
+  app.delete(nativeHttpRoutes.chatHost, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      chatHostDeregisteredResponse(
+        await runners.deregisterChatHost(
+          principalOf(request),
+          tenantOf(request),
+        ),
+      ),
+    );
+  });
 }
 
 /**
@@ -1488,6 +1567,50 @@ function registerPlacement<Routes, View>(
   );
 }
 
+/**
+ * How many threads one member may hold open in a project: read under `Read`
+ * and written whole under `Administer`, the member named by their subject.
+ */
+function registerThreadLimits(
+  app: FastifyInstance,
+  limits: ThreadLimitAdministration,
+): void {
+  const subjectOf = (request: FastifyRequest) =>
+    textField(record(request.params), "subject");
+  app.get(nativeHttpRoutes.threadLimit, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      placementReadResponse(
+        await limits.read(
+          principalOf(request),
+          partitionOf(request),
+          subjectOf(request),
+        ),
+        threadLimitBody,
+      ),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.threadLimit,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const threadsMax = parseThreadLimit(request.body);
+      nativeHttpSend(
+        reply,
+        placementWriteResponse(
+          await limits.write(
+            principalOf(request),
+            partitionOf(request),
+            subjectOf(request),
+            threadsMax,
+          ),
+          threadLimitBody,
+        ),
+      );
+    },
+  );
+}
+
 function tenantOf(request: FastifyRequest): TenantId {
   return asTenantId(textField(record(request.params), "tenant"));
 }
@@ -1607,27 +1730,6 @@ function registerProjectRepositories(
       );
     },
   );
-  app.post(
-    "/api/v1/tenants/:tenant/projects/:project/repositories/new",
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const partition = partitionOf(request);
-      const key = request.headers["idempotency-key"];
-      if (typeof key !== "string")
-        throw new TypeError("idempotency key is absent");
-      nativeHttpSend(
-        reply,
-        projectRepositoryCreateResponse(
-          partition,
-          await onboarding.createRepository(
-            principalOf(request),
-            partition,
-            parseProjectRepositoryCreate(request.body, key),
-          ),
-        ),
-      );
-    },
-  );
   app.get(
     "/api/v1/tenants/:tenant/projects/:project/repositories",
     async (request, reply) => {
@@ -1664,9 +1766,7 @@ function registerProjectRepositoryLanding(
           await onboarding.setLanding(
             principalOf(request),
             partitionOf(request),
-            written.repository,
-            written.expected,
-            written.landing,
+            written,
           ),
         ),
       );
@@ -1704,7 +1804,8 @@ function registerProjectRepositoryRetirement(
 /**
  * One binding's configuration step asked for again. It is a PUT for the reason
  * retirement is: a caller repeating it is answered what the first one left,
- * and the bootstrap it may author is one revision however many ask.
+ * and the bootstrap it may author is the repository's one revision however
+ * many ask.
  */
 function registerProjectRepositoryConfigurations(
   app: FastifyInstance,
@@ -1762,15 +1863,13 @@ function executionSelection(value: unknown): {
     throw new TypeError("state is not text");
   if (values.length === 1 && values[0] === "NonTerminal")
     return { selection: { selection: "NonTerminal" } };
-  if (
-    values.length < 1 ||
-    values.some(
-      (state) =>
-        state === "NonTerminal" ||
-        !allExecutionStatuses.includes(state as ExecutionStatus),
-    )
-  )
-    throw new RangeError("execution state selection is invalid");
+  if (values.length < 1) throw executionSelectionRefused(undefined);
+  const refused = (values as readonly string[]).find(
+    (state) =>
+      state === "NonTerminal" ||
+      !allExecutionStatuses.includes(state as ExecutionStatus),
+  );
+  if (refused !== undefined) throw executionSelectionRefused(refused);
   return {
     selection: {
       selection: "Selected",
@@ -1856,14 +1955,21 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
+function registerConfigurationsLatest(value: unknown): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new TypeError("latest is not true or false");
+}
+
 function registerConfigurations(
   app: FastifyInstance,
   web: InitialNativeWeb,
 ): void {
   const root = "/api/v1/tenants/:tenant/projects/:project/configurations";
   app.get(root, async (request, reply) => {
-    const query = fieldsOnly(request.query, ["cursor", "limit"]);
+    const query = fieldsOnly(request.query, ["cursor", "latest", "limit"]);
     const cursor = query["cursor"];
+    const latest = query["latest"];
     const partition = partitionOf(request);
     const result = await web.configurations(principalOf(request), partition, {
       ...(cursor === undefined
@@ -1875,20 +1981,12 @@ function registerConfigurations(
             ),
           }),
       limit: integerField(query, "limit", 50),
+      ...(latest === undefined
+        ? {}
+        : { latest: registerConfigurationsLatest(latest) }),
     });
     nativeHttpSend(reply, configurationsResponse(result));
   });
-  app.post(
-    root,
-    { preValidation: requireVersionedJson },
-    async (request, reply) => {
-      const result = await web.createConfiguration(principalOf(request), {
-        partition: partitionOf(request),
-        ...parseConfigurationCreation(request.body),
-      });
-      nativeHttpSend(reply, configurationCreationResponse(result));
-    },
-  );
   app.post(
     `${root}/imports`,
     { preValidation: requireVersionedJson },
@@ -1900,6 +1998,17 @@ function registerConfigurations(
       );
       nativeHttpSend(reply, repositoryConfigurationImportResponse(result));
     },
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.configurationHead,
+    (request, principal, partition) =>
+      web.repositoryConfigurationHead(
+        principal,
+        partition,
+        parseRepositoryConfigurationHead(request.query),
+      ),
+    repositoryConfigurationHeadResponse,
   );
   app.get(`${root}/:revision`, async (request, reply) => {
     const params = record(request.params);
@@ -1953,9 +2062,11 @@ function registerDrafts(app: FastifyInstance, web: InitialNativeWeb): void {
     root,
     { preValidation: requireVersionedJson },
     async (request, reply) => {
+      const session = request.viaSession;
       const result = await web.createDraft(principalOf(request), {
         partition: partitionOf(request),
         ...parseDraftCreation(request.body),
+        ...(session === undefined ? {} : { originSession: session }),
       });
       nativeHttpSend(reply, draftCreationResponse(result));
     },
@@ -2130,10 +2241,8 @@ function registerThreadWrites(
   registerEndpoint(
     app,
     nativeHttpEndpoints.openThread,
-    (request, principal, partition) => {
-      nativeHttpEndpoints.openThread.body.parse(request.body);
-      return web.openThread(principal, partition);
-    },
+    (request, principal, partition) =>
+      web.openThread(principal, partition, parseThreadOpen(request.body)),
     (result, partition) => openThreadResponse(partition, result),
   );
   registerEndpoint(
@@ -2379,6 +2488,227 @@ async function serveThreadLive(
   opened.connection.begin(threadLiveSocket(reply));
 }
 
+/**
+ * A tenant-level door of a member's own chat, which `registerEndpoint` is for a
+ * project's: the tenant the path names, and the caller, are all it is given.
+ */
+function registerChatEndpoint<Value>(
+  app: FastifyInstance,
+  endpoint: {
+    readonly method: "GET" | "POST";
+    readonly path: string;
+    readonly body?: z.ZodType;
+  },
+  read: (
+    request: FastifyRequest,
+    principal: Principal,
+    tenant: TenantId,
+  ) => Promise<Value>,
+  respond: (value: Value, tenant: TenantId) => NativeHttpResponse,
+): void {
+  app.route({
+    method: endpoint.method,
+    url: endpoint.path,
+    ...(endpoint.body === undefined
+      ? {}
+      : { preValidation: requireVersionedJson }),
+    handler: async (request, reply) => {
+      const tenant = tenantOf(request);
+      nativeHttpSend(
+        reply,
+        respond(await read(request, principalOf(request), tenant), tenant),
+      );
+    },
+  });
+}
+
+function registerChatReads(app: FastifyInstance, chat: MemberChat): void {
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatAbilities,
+    (_request, principal, tenant) => chat.abilities(principal, tenant),
+    chatAbilitiesResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatProjects,
+    (request, principal, tenant) => {
+      const query = nativeHttpEndpoints.chatProjects.query.parse(request.query);
+      return chat.projects(principal, tenant, {
+        ...(query.after === undefined
+          ? {}
+          : { after: asProjectId(query.after) }),
+        limit: query.limit,
+      });
+    },
+    chatProjectsResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatThreads,
+    (_request, principal, tenant) => chat.threads(principal, tenant),
+    chatThreadsResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatThread,
+    (request, principal, tenant) => {
+      const query = nativeHttpEndpoints.chatThread.query.parse(request.query);
+      return chat.thread(principal, tenant, registerEndpointSession(request), {
+        ...(query.before === undefined ? {} : { before: query.before }),
+        limit: query.limit,
+      });
+    },
+    threadResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatThreadTranscript,
+    (request, principal, tenant) => {
+      const query = nativeHttpEndpoints.chatThreadTranscript.query.parse(
+        request.query,
+      );
+      return chat.threadTranscript(
+        principal,
+        tenant,
+        registerEndpointSession(request),
+        {
+          ...(query.stream === undefined
+            ? {}
+            : { stream: asSessionStoreStream(query.stream) }),
+          after: query.after,
+          limit: query.limit,
+        },
+      );
+    },
+    leadTranscriptResponse,
+  );
+}
+
+function registerChatWrites(app: FastifyInstance, chat: MemberChat): void {
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.openChatThread,
+    (request, principal, tenant) =>
+      chat.openThread(principal, tenant, parseThreadOpen(request.body)),
+    (result, tenant) => openChatThreadResponse(tenant, result),
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.sendChatThreadMessage,
+    (request, principal, tenant) =>
+      chat.sendThreadMessage(principal, tenant, {
+        session: registerEndpointSession(request),
+        ...parseThreadMessage(request.body),
+      }),
+    chatThreadMessageResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.stopChatThreadTurn,
+    (request, principal, tenant) => {
+      nativeHttpEndpoints.stopChatThreadTurn.body.parse(request.body);
+      return chat.stopThreadTurn(principal, tenant, {
+        session: registerEndpointSession(request),
+        turn: asSessionTurnId(textField(record(request.params), "turn")),
+      });
+    },
+    threadTurnStopResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.closeChatThread,
+    (request, principal, tenant) => {
+      nativeHttpEndpoints.closeChatThread.body.parse(request.body);
+      return chat.closeThread(
+        principal,
+        tenant,
+        registerEndpointSession(request),
+      );
+    },
+    closeThreadResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.renameChatThread,
+    (request, principal, tenant) =>
+      chat.renameThread(principal, tenant, {
+        session: registerEndpointSession(request),
+        ...parseThreadRename(request.body),
+      }),
+    renameThreadResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.hideChatThread,
+    (request, principal, tenant) =>
+      chat.hideThread(principal, tenant, {
+        session: registerEndpointSession(request),
+        ...parseThreadHide(request.body),
+      }),
+    hideThreadResponse,
+  );
+}
+
+/**
+ * A member's own thread is listened to as a project's is, admitted by the
+ * read of it, which is its owner's alone, and keyed by the partition reserved
+ * for them.
+ */
+async function serveChatThreadLive(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  chat: MemberChat,
+  hub: ThreadLiveHub,
+): Promise<void> {
+  const tenant = tenantOf(request);
+  const session = registerEndpointSession(request);
+  const listening: { connection?: ThreadLiveConnection; abandoned: boolean } = {
+    abandoned: false,
+  };
+  request.raw.on("close", () => {
+    listening.abandoned = true;
+    listening.connection?.close();
+  });
+  const principal = principalOf(request);
+  const read = () => chat.thread(principal, tenant, session, { limit: 1 });
+  const standing = await read();
+  if (standing.result !== "Found") {
+    nativeHttpSend(reply, threadResponse(standing));
+    return;
+  }
+  if (listening.abandoned) return;
+  const opened = hub.open({
+    partition: memberScopePartition(tenant, principal),
+    session,
+    expiresAtMs: request.bearerExpiresAtMs,
+    admitted: async () => (await read()).result === "Found",
+  });
+  if (opened.opened === "AtCapacity") {
+    await serverBusy(reply);
+    return;
+  }
+  listening.connection = opened.connection;
+  reply.hijack();
+  opened.connection.begin(threadLiveSocket(reply));
+}
+
+/** Every door of a member's own chat, its live stream where threads are streamed. */
+function registerMemberChat(
+  app: FastifyInstance,
+  chat: MemberChat,
+  hub: ThreadLiveHub | undefined,
+): void {
+  registerChatReads(app, chat);
+  registerChatWrites(app, chat);
+  if (hub !== undefined)
+    app.get(
+      nativeHttpRoutes.chatThreadLive,
+      { config: { streaming: true } },
+      (request, reply) => serveChatThreadLive(request, reply, chat, hub),
+    );
+}
+
 function registerThreadLive(
   app: FastifyInstance,
   web: InitialNativeWeb,
@@ -2497,11 +2827,13 @@ export function createNativeHttpApp(
   landings?: TicketLandingReads,
   personalRunners?: PersonalRunnerService,
   ownerFallback?: ProjectOwnerFallbackAdministration,
+  threadLimits?: ThreadLimitAdministration,
+  chat?: MemberChat,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
-  registerAuthentication(app, authentication);
+  registerAuthentication(app, authentication, chat);
   registerHealth(app, readiness);
   registerContract(app);
   registerInstallation(app, authority);
@@ -2530,6 +2862,8 @@ export function createNativeHttpApp(
   registerThreadReads(app, web);
   if (threadLive !== undefined) registerThreadLive(app, web, threadLive);
   registerThreadWrites(app, web);
+  if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
+  if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerLeadInquiries(app, web);
   registerDispatchView(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);

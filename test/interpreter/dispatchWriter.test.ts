@@ -87,6 +87,7 @@ import type { TicketId } from "../../src/domain/ids.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
+  journaledEventOf,
   plainDefinitionOf,
   plainPolicy,
   refinementInstance,
@@ -559,7 +560,11 @@ function twoReleasedMemory(): ProjectMemory {
       state,
       createTicketCommand(plainDefinitionOf(ticket)),
     );
-    for (const row of projectionChanges(before, memoryGraph(state)))
+    for (const row of projectionChanges(
+      before,
+      memoryGraph(state),
+      journaledEventOf(state),
+    ))
       ticketVersions.set(row.ticket, index + 1);
   }
   return {
@@ -1264,30 +1269,61 @@ function releaseInput(ticket: number): DecisionInput {
   };
 }
 
+/** A memory that also holds the contract a release of this ticket dispatches under. */
+function contractedFor(memory: ProjectMemory, ticket: number): ProjectMemory {
+  return {
+    ...memory,
+    dispatchContracts: new Map([
+      ...(memory.dispatchContracts ?? []),
+      [
+        id(ticket),
+        {
+          configurationRevision: "revision",
+          configurationDigest: "digest",
+          configurationCanonical: '{"worker":"one"}',
+        },
+      ],
+    ]),
+  };
+}
+
 /**
  * The deployment's release room is the writer's to refuse, since `decide`
- * does not know it: a full fleet, or an id past the universe, is refused
- * before `decide` and journals nothing, while a held id is still `decide`'s.
+ * does not know it: a release past the tickets a project holds unfinished is
+ * refused before `decide` and journals nothing, while a held id is still
+ * `decide`'s.
  */
-test("a release outside the room is refused TicketCapacityReached and journals nothing", async () => {
+test("a release past the project's unfinished tickets is refused TicketCapacityReached and journals nothing", async () => {
   const full = { config: { ...refinementInstance, nTickets: 1 } };
-  const past = refinementInstance.nTickets * 2 + 1;
-  for (const [ticket, policy] of [
-    [2, full],
-    [past, {}],
-  ] as const) {
+  const memories = new Map([
+    ...unparkedMemories(),
+    ["Escalated", workWalledMemory()],
+  ]);
+  for (const [phase, memory] of memories) {
     const { offered } = await decidedWith(
-      releasedMemory(),
-      releaseInput(ticket),
+      contractedFor(memory, 2),
+      releaseInput(2),
       readableSources,
       unbriefedTickets,
-      policy,
+      full,
     );
-    assert.deepEqual(offered?.outcome, {
-      outcome: "Refused",
-      refusal: { type: "TicketCapacityReached" },
-    });
+    if (phase === "Done" || phase === "Revoked")
+      assert.equal(offered?.outcome.outcome, "Journaled", phase);
+    else
+      assert.deepEqual(
+        offered?.outcome,
+        { outcome: "Refused", refusal: { type: "TicketCapacityReached" } },
+        phase,
+      );
   }
+  const past = refinementInstance.nTickets * 2 + 1;
+  const { offered: unbounded } = await decidedWith(
+    contractedFor(releasedMemory(), past),
+    releaseInput(past),
+    readableSources,
+    unbriefedTickets,
+  );
+  assert.equal(unbounded?.outcome.outcome, "Journaled");
   const { offered } = await decidedWith(
     releasedMemory(),
     releaseInput(1),
@@ -1659,7 +1695,11 @@ function dependentMemory(): ProjectMemory {
   for (const [index, step] of steps.entries()) {
     const before = memoryGraph(state);
     state = stepped(refinementInstance, state, step);
-    for (const row of projectionChanges(before, memoryGraph(state)))
+    for (const row of projectionChanges(
+      before,
+      memoryGraph(state),
+      journaledEventOf(state),
+    ))
       ticketVersions.set(row.ticket, index + 1);
   }
   return {

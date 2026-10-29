@@ -103,6 +103,13 @@ export function lastEventOf(
     : last.value.event.type;
 }
 
+/** The event the last row a state journaled took. */
+export function journaledEventOf(state: ActorState): TicketEvent {
+  const entry = state.journal.at(-1);
+  if (entry === undefined) throw new Error("the state has journaled nothing");
+  return entry.event;
+}
+
 /**
  * The per-step gate: the domain bundle green on the carried view, and the
  * refinement obligations' failures exactly `failed` — empty on a disciplined

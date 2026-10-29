@@ -13,9 +13,10 @@
  * repository the caller named, so a member of one project cannot mint for
  * another's repository, nor for one their own project retired and another may
  * since have bound; a bound repository whose owner no installation covers is
- * `NotFound` rather than an outage. The caller's own tenant goes to the mint
- * beside the repository, so a binding that reached across tenants mints nothing
- * even though the binding itself stands.
+ * `NotFound` rather than an outage. The caller's own partition goes to the
+ * mint beside the repository, so a binding that reached across tenants mints
+ * nothing even though the binding itself stands, and the project's binding is
+ * what allows a set the forge's pipeline definitions.
  *
  * AN OUTAGE IS ITS OWN ANSWER. A forge that could not be reached is
  * `Unavailable`, which the boundary answers 503 with; a refusal is `NotFound`
@@ -103,7 +104,7 @@ async function mintedForgeCredential(
   request: ChangeProposalCredentialRequest,
 ): Promise<ForgeCredentialResolved> {
   const minted = await host.tokens
-    .token(request.repository, request.partition.tenant, host.permissions)
+    .token(request.repository, request.partition, host.permissions)
     .catch((): ForgeTokenMinted => ({ minted: "Unavailable" }));
   switch (minted.minted) {
     case "Token":
@@ -195,7 +196,7 @@ export function forgeCredentialMinting(
         return { result: "NotFound" };
       const minted = await tokens.token(
         bound.repository,
-        partition.tenant,
+        partition,
         request.permissions,
       );
       switch (minted.minted) {

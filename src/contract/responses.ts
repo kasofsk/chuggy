@@ -9,7 +9,10 @@
  * rather than a browser's.
  */
 
-import { configurationRequirementCapabilitiesMax } from "./configurationDocument.ts";
+import {
+  configurationReferencePathSchema,
+  configurationRequirementCapabilitiesMax,
+} from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
 import { z } from "zod";
 
@@ -23,7 +26,6 @@ import {
   cursorSchema,
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
-  forgeRefusalMessageCharsMax,
   proposalMergeStateCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
@@ -67,6 +69,7 @@ import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import {
   briefFinalizationResponseSchema,
+  briefRepositorySchema,
   briefResponseSchema,
   briefTitleCharsMax,
 } from "./brief.ts";
@@ -135,7 +138,9 @@ import {
   selectorModes,
   agenticRefusalEvents,
   sessionRunnerStandings,
+  sessionScopes,
   sessionStates,
+  projectLifecycles,
   sessionTurnFailures,
   sessionTurnInputKinds,
   sessionTurnStates,
@@ -153,6 +158,7 @@ import {
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "./rosters.ts";
+import { accessProjectRoles } from "./accessPlane.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
   z.array(item).max(nativeHttpPageItemsMax);
@@ -318,10 +324,11 @@ export const configurationVersionSchema = z.strictObject({
 });
 
 /**
- * A ticket as the project table and its own read both carry it. The title is
- * the one field of the brief the table carries, because a table of documents
- * needs a heading; the rest of the brief is the ticket's own read alone, an
- * intent being a paragraph and a page of them a page of documents.
+ * A ticket as the project table and its own read both carry it. The table
+ * carries the brief's title, because a table of documents needs a heading, and
+ * its repository, because a project spans several; the rest of the brief is
+ * the ticket's own read alone, an intent being a paragraph and a page of them
+ * a page of documents.
  */
 export const ticketResponseSchema = z.object({
   ticket: ticketNumberSchema,
@@ -330,6 +337,8 @@ export const ticketResponseSchema = z.object({
    * of its intent where the brief named none.
    */
   title: z.string().max(briefTitleCharsMax).optional(),
+  /** The repository the released brief names, absent where that brief names none. */
+  repository: briefRepositorySchema.optional(),
   /** Which revision of its definition the ticket is at, which an update names as the one it expects. */
   revision: ticketNumberSchema,
   /**
@@ -357,8 +366,8 @@ export const ticketResponseSchema = z.object({
   /**
    * Which of this ticket's dependencies their own authors revoked, ascending.
    * It is empty for every ticket but a Pending one waiting on such a
-   * dependency: nothing ever completes that dependency, so the wait is over
-   * and the only exit is revoking this ticket too.
+   * dependency: nothing ever completes that dependency, so the wait ends only
+   * when an update drops it or this ticket is revoked too.
    */
   revokedDependencies: page(ticketNumberSchema),
   /**
@@ -396,6 +405,12 @@ export const ticketResponseSchema = z.object({
    * own read carries it, and only where a draft revision records it.
    */
   program: authoringResponseSchema.shape.program.optional(),
+  /**
+   * The dependencies that same release or update named, ascending, which its
+   * draft may since have been revised past. Only the ticket's own read carries
+   * it, and only where a draft revision records it.
+   */
+  dependencies: page(ticketNumberSchema).optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
@@ -669,6 +684,10 @@ export const executionSummarySchema = z.object({
       memoryMib: countSchema.optional(),
     })
     .optional(),
+  /**
+   * `Running` once the open attempt's run has started, though a runner's
+   * placement stores it `Launching` until it ends.
+   */
   status: z.enum(executionStatuses),
   outcome: z.enum(executionOutcomes).optional(),
   retriesSpent: countSchema,
@@ -744,8 +763,15 @@ const executionAttemptSchema = z.object({
   attempt: identitySchema,
   number: countSchema,
   generation: countSchema,
+  /** `Running` once its run has started, though a runner's attempt is stored `Placing` until it ends. */
   state: z.enum(attemptStates),
   openedAt: instantSchema,
+  /**
+   * When a runner claimed it, absent where none has: a `Placing` attempt
+   * without one is still waiting for a runner. Absent too on an attempt that
+   * ended before claims were recorded.
+   */
+  claimedAt: instantSchema.optional(),
   endedAt: instantSchema.optional(),
   evidence: z.enum(attemptEvidences).optional(),
   run: executionRunSchema.optional(),
@@ -874,6 +900,14 @@ const ticketRefusalValueSchemas = {
     ticket: ticketNumberSchema,
     dependencies: page(ticketNumberSchema).min(1),
   }),
+  DependenciesRevoked: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
+  DependencyCycle: z.strictObject({
+    ticket: ticketNumberSchema,
+    dependencies: page(ticketNumberSchema).min(1),
+  }),
   SelfDependency: ticketNumberSchema,
   TicketNotFound: ticketNumberSchema,
   TicketNotPending: ticketNumberSchema,
@@ -883,7 +917,6 @@ const ticketRefusalValueSchemas = {
     expected: ticketNumberSchema,
     current: ticketNumberSchema,
   }),
-  TicketDependenciesChanged: ticketNumberSchema,
   DependenciesIncomplete: z.strictObject({
     ticket: ticketNumberSchema,
     dependencies: page(ticketNumberSchema).min(1),
@@ -930,12 +963,13 @@ function operationTicketRefusedSchema<Code extends OperationTicketRefusalCode>(
 const operationRefusedResponseSchema = z.discriminatedUnion("code", [
   operationTicketRefusedSchema("TicketAlreadyExists"),
   operationTicketRefusedSchema("DependenciesNotFound"),
+  operationTicketRefusedSchema("DependenciesRevoked"),
+  operationTicketRefusedSchema("DependencyCycle"),
   operationTicketRefusedSchema("SelfDependency"),
   operationTicketRefusedSchema("TicketNotFound"),
   operationTicketRefusedSchema("TicketNotPending"),
   operationTicketRefusedSchema("TicketIdentityMismatch"),
   operationTicketRefusedSchema("TicketRevisionStale"),
-  operationTicketRefusedSchema("TicketDependenciesChanged"),
   operationTicketRefusedSchema("DependenciesIncomplete"),
   operationTicketRefusedSchema("TicketNotRevocable"),
   operationTicketRefusedSchema("TicketNotResumable"),
@@ -1024,6 +1058,12 @@ export const configurationResponseSchema = z.object({
   canonical: z.string().min(1),
   digest: z.string().min(1),
   version: configurationVersionSchema.optional(),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional()
+    .describe(
+      "The repository file each catalog workload named by path was read from, by the name the catalog holds it under. Absent for an authored revision, and for one imported before imports kept it.",
+    ),
 });
 export type ConfigurationResponse = z.infer<typeof configurationResponseSchema>;
 
@@ -1078,6 +1118,11 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
 ]);
 export type ConfigurationSummary = z.infer<typeof configurationSummarySchema>;
 
+/**
+ * A page of a project's configuration revisions, newest first. Asked with
+ * `latest=true`, it holds only the newest revision of each repository and name,
+ * beside each revision imported from no repository, a bootstrap among them.
+ */
 export const configurationsResponseSchema = z.object({
   configurations: page(configurationSummarySchema),
   nextCursor: cursorSchema.optional(),
@@ -1128,6 +1173,65 @@ export const repositoryConfigurationRefusalsSchema = z.object({
 });
 export type RepositoryConfigurationRefusals = z.infer<
   typeof repositoryConfigurationRefusalsSchema
+>;
+
+/** One configuration a repository's head declares, as an import of it would store it. */
+export const repositoryConfigurationHeadDeclarationSchema = z.object({
+  name: identitySchema,
+  path: configurationReferencePathSchema,
+  revision: identitySchema,
+  canonical: z.string().min(1),
+  digest: z.string().min(1),
+  workloadPaths: z
+    .record(z.string().min(1), configurationReferencePathSchema)
+    .optional(),
+});
+
+export type RepositoryConfigurationHeadDeclaration = z.infer<
+  typeof repositoryConfigurationHeadDeclarationSchema
+>;
+
+const repositoryConfigurationHeadAt = {
+  branch: identitySchema,
+  commit: identitySchema,
+};
+
+/**
+ * What a repository's default branch declares where it points now, read as an
+ * import would and stored nowhere: the configurations an import would store,
+ * or what it would be refused with.
+ */
+export const repositoryConfigurationHeadResponseSchema = z.object({
+  head: z.discriminatedUnion("state", [
+    z.object({ state: z.literal("BranchAbsent") }),
+    z.object({
+      state: z.literal("CommitAbsent"),
+      ...repositoryConfigurationHeadAt,
+    }),
+    z.object({
+      state: z.literal("ConfigurationsAbsent"),
+      ...repositoryConfigurationHeadAt,
+      ...repositoryConfigurationIgnoredShape,
+    }),
+    z.object({
+      state: z.literal("SnapshotRefused"),
+      ...repositoryConfigurationHeadAt,
+      refused: z.enum(["Credential", "Snapshot"]),
+    }),
+    z.object({
+      state: z.literal("ConfigurationsRefused"),
+      ...repositoryConfigurationHeadAt,
+      faults: page(repositoryConfigurationRefusalSchema),
+    }),
+    z.object({
+      state: z.literal("Ready"),
+      ...repositoryConfigurationHeadAt,
+      configurations: z.array(repositoryConfigurationHeadDeclarationSchema),
+    }),
+  ]),
+});
+export type RepositoryConfigurationHeadResponse = z.infer<
+  typeof repositoryConfigurationHeadResponseSchema
 >;
 
 export const draftResponseSchema = z.object({
@@ -1194,9 +1298,11 @@ export const draftInitializationResponseSchema = z.object({
     programStagesMax: countSchema,
     evaluatorsMax: countSchema,
   }),
+  /** The newest dependable tickets, newest first; truncated where older ones are left out. */
   dependencyCandidates: page(ticketNumberSchema),
   dependencyCandidatesTruncated: z.boolean(),
-  commandedCheckStage: countSchema.optional(),
+  /** The program stage key a brief's checks join, counted from one, absent where no stage takes them. */
+  commandedCheckStage: ticketNumberSchema.optional(),
   /**
    * Where a brief's checks run, in words, naming the plan for a catalog, or
    * that they are refused. It is absent from a server that predates it.
@@ -1338,11 +1444,13 @@ export type LeadResponse = z.infer<typeof leadResponseSchema>;
 
 /**
  * Why a project holds no lead: `Paused` while its selector is paused, by the
- * project or the whole installation, ahead of any refusal it keeps, and
+ * project or the whole installation, then `SelectorNotGranted` while the site's
+ * selector may not read the project, each ahead of any refusal it keeps, and
  * otherwise the admission refusal the last cycle that needed a lead met, which
- * has been the answer since `since`. `NotNeeded` where neither holds, because no
- * selector cycle has needed a lead or the last refused one was followed by one
- * admitted or with nothing to decide.
+ * has been the answer since `since`. Where none holds and a released ticket
+ * waits on a dispatch decision, `AwaitingSelector`, or `SelectorUnnamed` where
+ * the API names no selector to say whether one reaches the project; `NotNeeded`
+ * where none waits.
  */
 export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.enum(leadAbsencesUntimed) }),
@@ -1483,7 +1591,7 @@ export type SelectorProposalReviewResponse = z.infer<
  * member acts under and absent where the project no longer admits them — a
  * thread its owner must still see and close rather than one to hide. `mine` is
  * computed against the request's own principal, which is what lets a browser
- * name "my thread" without ever decoding a token.
+ * name a thread as its reader's own without ever decoding a token.
  */
 export const threadEntryResponseSchema = z.object({
   session: identitySchema,
@@ -1510,6 +1618,23 @@ export const threadsResponseSchema = z.object({
   threads: z.array(threadEntryResponseSchema).max(threadsAnsweredMax),
 });
 export type ThreadsResponse = z.infer<typeof threadsResponseSchema>;
+
+/**
+ * One of a member's threads as their own chat lists it: whose it is, and the
+ * project it is kept in, which a thread of their own scope has none of.
+ */
+export const chatThreadEntryResponseSchema = threadEntryResponseSchema.extend({
+  scope: z.enum(sessionScopes),
+  project: identitySchema.optional(),
+});
+export type ChatThreadEntryResponse = z.infer<
+  typeof chatThreadEntryResponseSchema
+>;
+
+export const chatThreadsResponseSchema = z.object({
+  threads: z.array(chatThreadEntryResponseSchema).max(threadsAnsweredMax),
+});
+export type ChatThreadsResponse = z.infer<typeof chatThreadsResponseSchema>;
 
 /**
  * One turn of a thread's mailbox, carrying its `input` and its `result` where
@@ -1760,13 +1885,15 @@ export type ForgeInstallationPermissionsResponse = z.infer<
   typeof forgeInstallationPermissionsResponseSchema
 >;
 
-/**
- * The name a bootstrap configuration is declared under. It is also the revision
- * an authored one is created at: a project authors one bootstrap per revision
- * identity, and a second repository that needs one is authored under a revision
- * its author chooses.
- */
+/** The name a bootstrap configuration is declared under. */
 export const bootstrapConfigurationName = "bootstrap";
+
+/**
+ * What the revision of every bootstrap authored for a repository begins with.
+ * The rest is the hex SHA-256 of the repository it was authored for, so each
+ * repository's bootstrap is its own revision.
+ */
+export const bootstrapConfigurationRevisionPrefix = `${bootstrapConfigurationName}:`;
 
 const projectRepositoryImportedSchema = z.object({
   result: z.literal("Imported"),
@@ -1813,6 +1940,29 @@ export type ProjectRepositoryConfigurationsResponse = z.infer<
 >;
 
 /**
+ * Why the worker App cannot be said to reach a bound repository: the
+ * installation on its owner does not select it, beside the forge's page where an
+ * owner changes that; no installation of the worker App is claimed on its
+ * owner; or the forge could not say. It is beside the binding and not part of
+ * it, and is read afresh on every answer.
+ */
+export const projectRepositoryWorkerReachSchema = z.discriminatedUnion(
+  "reach",
+  [
+    z.object({
+      reach: z.literal("Unselected"),
+      installationId: identitySchema,
+      settingsUrl: z.string().min(1),
+    }),
+    z.object({ reach: z.literal("Unclaimed"), account: identitySchema }),
+    z.object({ reach: z.literal("Unknown") }),
+  ],
+);
+export type ProjectRepositoryWorkerReachResponse = z.infer<
+  typeof projectRepositoryWorkerReachSchema
+>;
+
+/**
  * What binding one repository came to. It names the repository and what it
  * carries: the binding privileges no repository over another, so an answer
  * carrying a position or a count would be saying something the row does not.
@@ -1821,6 +1971,8 @@ export const projectRepositoryBoundSchema = z.object({
   repository: z.string().min(1),
   landing: repositoryLandingSchema,
   configurations: projectRepositoryConfigurationsSchema,
+  /** Absent where the worker App reaches the repository, or this deployment holds no worker App key to ask with. */
+  workerReach: projectRepositoryWorkerReachSchema.optional(),
 });
 export type ProjectRepositoryBoundResponse = z.infer<
   typeof projectRepositoryBoundSchema
@@ -1835,54 +1987,16 @@ export type ProjectRepositoryAlreadyBoundResponse = z.infer<
 >;
 
 /**
- * What reserving a created repository's default branch came to. A refusal
- * carries the forge's own account of it and leaves the repository standing,
- * unprotected and usable; `Skipped` is a repository with no branch to reserve.
- */
-export const projectRepositoryRulesetSchema = z.discriminatedUnion("result", [
-  z.object({ result: z.literal("Created") }),
-  z.object({
-    result: z.literal("Refused"),
-    message: z.string().max(forgeRefusalMessageCharsMax),
-  }),
-  z.object({ result: z.literal("Skipped") }),
-  z.object({ result: z.literal("Unavailable") }),
-]);
-export type ProjectRepositoryRulesetResponse = z.infer<
-  typeof projectRepositoryRulesetSchema
->;
-
-/**
- * What creating one repository came to: the repository the forge made, whether
- * a first commit was written into it, whether its default branch is reserved,
- * and what the binding that followed found. Every part of it is reported
- * because a step that did not take leaves a repository that stands.
- */
-export const projectRepositoryCreatedSchema = z.object({
-  repository: z.string().min(1),
-  landing: repositoryLandingSchema,
-  created: z.object({
-    account: identitySchema,
-    name: identitySchema,
-    url: z.string().min(1),
-  }),
-  seeded: z.boolean(),
-  ruleset: projectRepositoryRulesetSchema,
-  configurations: projectRepositoryConfigurationsSchema,
-});
-export type ProjectRepositoryCreatedResponse = z.infer<
-  typeof projectRepositoryCreatedSchema
->;
-
-/**
- * One repository a project binds, when it was bound, and how a ticket in it
- * lands. `retiredAt` is present only on a binding that has been retired, which
- * is one no longer bound or elected, kept so its history reads by name.
+ * One repository a project binds, when it was bound, how a ticket in it lands,
+ * and whether its jobs may write its pipeline definitions. `retiredAt` is
+ * present only on a binding that has been retired, which is one no longer
+ * bound or elected, kept so its history reads by name.
  */
 export const projectRepositoryResponseSchema = z.object({
   repository: z.string().min(1),
   boundAt: instantSchema,
   landing: repositoryLandingSchema,
+  pipelinesWritable: z.boolean(),
   retiredAt: instantSchema.optional(),
 });
 export type ProjectRepositoryResponse = z.infer<
@@ -1924,6 +2038,8 @@ export const projectRepositoryListedSchema =
     configurationsHeld: projectRepositoryConfigurationsHeldSchema.optional(),
     /** Absent on a binding no import was attempted of. */
     lastImport: repositoryConfigurationImportAttemptSchema.optional(),
+    /** Absent on a retired binding, and as at the bind. */
+    workerReach: projectRepositoryWorkerReachSchema.optional(),
   });
 export type ProjectRepositoryListedResponse = z.infer<
   typeof projectRepositoryListedSchema
@@ -1993,8 +2109,8 @@ export type ExecutionPlacementResponse = z.infer<
 /**
  * Where a project's threads and its lead run and what decided each, the routes
  * this caller may choose, and the runners each would run on: the caller's own
- * for their thread, a pool they registered for their inquiry, and any of the
- * project's for the lead.
+ * for their thread, their chat host for their inquiry, and any of the
+ * project's pools for the lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
@@ -2022,6 +2138,13 @@ export type ProjectOwnerFallbackResponse = z.infer<
   typeof projectOwnerFallbackResponseSchema
 >;
 
+/** How many threads one member may hold open in the project, and whether this caller may change it. */
+export const threadLimitResponseSchema = z.strictObject({
+  threadsMax: z.number().int().min(1),
+  administers: z.boolean(),
+});
+export type ThreadLimitResponse = z.infer<typeof threadLimitResponseSchema>;
+
 /** Whether the project's tenant grants the caller the hosted runs a thread or an inquiry spends in cluster. */
 export const hostedRunsResponseSchema = z.strictObject({
   granted: z.boolean(),
@@ -2030,14 +2153,44 @@ export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
 /** Which of a project's doors its reader may press, each by the kind that door asks. */
 export const projectAbilitiesResponseSchema = z.strictObject({
+  /** The reader's own principal, encoded as a ticket's `creator` is. */
+  principal: identitySchema,
   mutate: z.boolean(),
   dispatch: z.boolean(),
   manageSelector: z.boolean(),
+  overrideTicketConfig: z.boolean(),
+  skipPlannedEvaluations: z.boolean(),
   administer: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<
   typeof projectAbilitiesResponseSchema
 >;
+
+/** What a member may do in their tenant, as their own chat is told it, each read live. */
+export const chatAbilitiesResponseSchema = z.strictObject({
+  /** The reader's own principal, encoded as a ticket's `creator` is. */
+  principal: identitySchema,
+  openUnscopedChat: z.boolean(),
+  executeHosted: z.boolean(),
+  registerPersonalRunner: z.boolean(),
+  administerTenant: z.boolean(),
+});
+export type ChatAbilitiesResponse = z.infer<typeof chatAbilitiesResponseSchema>;
+
+/** One project a member's own chat may see, how it stands, and the strongest role they hold on it. */
+export const chatProjectResponseSchema = z.object({
+  project: identitySchema,
+  lifecycle: z.enum(projectLifecycles),
+  role: z.enum(accessProjectRoles),
+});
+export type ChatProjectResponse = z.infer<typeof chatProjectResponseSchema>;
+
+/** A page of those projects, and the project an older page is asked after, absent at the last. */
+export const chatProjectsResponseSchema = z.object({
+  projects: page(chatProjectResponseSchema),
+  nextAfter: identitySchema.optional(),
+});
+export type ChatProjectsResponse = z.infer<typeof chatProjectsResponseSchema>;
 
 /** What a registration-token mint answers: the token, once, and the instant it stops being redeemable. */
 export const workerPoolTokenResponseSchema = z.object({
@@ -2107,7 +2260,13 @@ export const runnerListedSchema = workerRunnerSchema.extend({
 });
 export type RunnerListedResponse = z.infer<typeof runnerListedSchema>;
 
-/** A project's registered pools in name order, `truncated` where it holds more than one read answers, each with its runner where its newest poll named one. */
+/**
+ * A project's registered pools in name order, `truncated` where it holds more
+ * than one read answers, each with its runner where its newest poll named one.
+ * `polledAt` is a pool's newest poll, absent until it polls, and `live` whether
+ * that poll is recent enough for the pool to be taking work, as a member's
+ * runner's is.
+ */
 export const workerPoolsResponseSchema = z.object({
   pools: z
     .array(
@@ -2115,6 +2274,8 @@ export const workerPoolsResponseSchema = z.object({
         pool: identitySchema,
         capabilities: z.array(z.string().min(1)),
         registeredAt: instantSchema,
+        polledAt: instantSchema.optional(),
+        live: z.boolean(),
         runner: runnerListedSchema.optional(),
       }),
     )
@@ -2170,6 +2331,41 @@ export const personalRunnerResponseSchema = z.strictObject({
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
+
+/**
+ * What redeeming a chat host's token answers, once: a runner's file with no
+ * capabilities, since a chat host takes sessions alone, and `kind` telling it
+ * apart from a runner's.
+ */
+export const chatHostCredentialsSchema = z.strictObject({
+  kind: z.literal("ChatHost"),
+  tenant: identitySchema,
+  owner: identitySchema,
+  tokenUrl: workerPoolEndpointSchema,
+  audience: z.string().min(1),
+  planeUrl: workerPoolEndpointSchema,
+  registryHost: workerPoolRegistryHostSchema.optional(),
+  clientId: z.string().min(1),
+  clientSecret: z.string().min(1),
+});
+export type ChatHostCredentialsResponse = z.infer<
+  typeof chatHostCredentialsSchema
+>;
+
+/**
+ * A member's chat host in one tenant, named by `id`, the client its
+ * registration made. `polledAt` is its newest poll, absent until it polls, and
+ * `live` whether that poll is recent enough for the host to be taking chats.
+ */
+export const chatHostResponseSchema = z.strictObject({
+  id: identitySchema,
+  registeredAt: instantSchema,
+  polledAt: instantSchema.optional(),
+  live: z.boolean(),
+  /** What its newest poll named, absent where it named none. */
+  runner: runnerListedSchema.optional(),
+});
+export type ChatHostResponse = z.infer<typeof chatHostResponseSchema>;
 
 /** Whether a tenant permits the caller to register a personal runner there. */
 export const personalRunnerPermitResponseSchema = z.strictObject({

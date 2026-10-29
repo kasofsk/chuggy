@@ -10,7 +10,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
+import panelSheet from "../app/browser/ui/Panel.css?raw";
 import { Panel } from "../app/browser/ui/Panel.tsx";
+import tokenSheet from "../app/styles/tokens.css?raw";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 afterEach(cleanup);
@@ -79,4 +82,30 @@ test("a collapsible panel starts closed when its prop says so", () => {
   ).toBe("false");
   expect(screen.queryByText("None")).toBeNull();
   styleless();
+});
+
+/** A panel is as narrow as the column it stands in, and the line about the
+ * region is read before the meta is. */
+test("a panel too narrow for its names beside its meta puts the meta under them", () => {
+  render(
+    <Panel title="Accounts" about="The forge accounts" meta="Connect">
+      <p>gdoteof</p>
+    </Panel>,
+  );
+  const rules = sheetRules(panelSheet, []);
+  const region = screen.getByRole("region", { name: "Accounts" });
+  const head = region.querySelector(".panel-head");
+  const named = region.querySelector(".panel-named");
+  if (head === null || named === null) throw new Error("no head was drawn");
+  expect(sheetDeclared(rules, head, "flex-wrap")).toBe("wrap");
+  expect(sheetDeclared(rules, named, "flex")).toBe(
+    "1 1 var(--width-panel-named)",
+  );
+  expect(
+    sheetDeclared(
+      sheetRules(tokenSheet, []),
+      document.documentElement,
+      "--width-panel-named",
+    ),
+  ).toMatch(/rem$/u);
 });

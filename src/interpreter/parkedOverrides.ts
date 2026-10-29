@@ -16,11 +16,11 @@ import {
   draftReleaseReadiness,
   draftReleaseRefusalCode,
   type CanonicalConfiguration,
+  type ConfigurationRepository,
   type DraftReleaseRefusalCode,
   type ReleaseAuthoring,
   type ReleaseConfigurationFault,
 } from "./authoring.ts";
-import type { RepositoryId } from "./finalizer.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
 import {
   materialDigest,
@@ -30,7 +30,7 @@ import {
 /** What one escalated ticket is resolved from, less the overrides. */
 export interface ParkedTicketResolution {
   readonly configuration: CanonicalConfiguration;
-  readonly configurationRepository: RepositoryId | undefined;
+  readonly configurationRepository: ConfigurationRepository | undefined;
   readonly authoring: ReleaseAuthoring;
   readonly brief: DraftBrief | undefined;
   readonly selection?: ConfigurationSelection | undefined;
@@ -59,6 +59,7 @@ function parkedOverridesDefinitionDigest(
     ticket.configurationRepository,
     overrides,
     ticket.selection,
+    ticket.authoring.prog,
   );
   if (readiness.readiness === "Incomplete")
     return { resolved: "Unready", fault: readiness.fault };

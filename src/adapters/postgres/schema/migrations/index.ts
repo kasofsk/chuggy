@@ -69,6 +69,34 @@ import { migration068 } from "./068-lead-fetches-images.ts";
 import { migration069 } from "./069-runner-versions.ts";
 import { migration070 } from "./070-many-personal-runners.ts";
 import { migration071 } from "./071-run-step-failure.ts";
+import { migration072 } from "./072-lead-reads-run-errors.ts";
+import { migration073 } from "./073-workload-paths.ts";
+import { migration074 } from "./074-override-refusals.ts";
+import { migration075 } from "./075-run-disk-low.ts";
+import { migration076 } from "./076-pipelines-writable.ts";
+import { migration077 } from "./077-tokens-carry-no-capabilities.ts";
+import { migration078 } from "./078-polls-name-capabilities.ts";
+import { migration079 } from "./079-lead-reads-ticket-landings.ts";
+import { migration080 } from "./080-program-skips-brief-checks.ts";
+import { migration081 } from "./081-promotion-declined.ts";
+import { migration082 } from "./082-decline-kept-unread.ts";
+import { migration083 } from "./083-attempt-base-ref.ts";
+import { migration084 } from "./084-thread-dispatch.ts";
+import { migration085 } from "./085-dependencies-change.ts";
+import { migration086 } from "./086-several-threads.ts";
+import { migration087 } from "./087-memory-ceiling.ts";
+import { migration088 } from "./088-lead-reads-docs.ts";
+import { migration089 } from "./089-lead-reads-abilities.ts";
+import { migration090 } from "./090-chat-host.ts";
+import { migration091 } from "./091-metrics-plane.ts";
+import { migration092 } from "./092-proposal-updates.ts";
+import { migration093 } from "./093-adopted-proposals.ts";
+import { migration094 } from "./094-unscoped-chat.ts";
+import { migration095 } from "./095-pool-execution-polls.ts";
+import { migration096 } from "./096-metrics-plane-session-scope.ts";
+import { migration097 } from "./097-personal-runners-take-no-sessions.ts";
+import { migration098 } from "./098-personal-runners-hold-no-sessions.ts";
+import { migration099 } from "./099-attempt-claimed-at.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -143,4 +171,32 @@ export const migrations: readonly Migration[] = [
   migration069,
   migration070,
   migration071,
+  migration072,
+  migration073,
+  migration074,
+  migration075,
+  migration076,
+  migration077,
+  migration078,
+  migration079,
+  migration080,
+  migration081,
+  migration082,
+  migration083,
+  migration084,
+  migration085,
+  migration086,
+  migration087,
+  migration088,
+  migration089,
+  migration090,
+  migration091,
+  migration092,
+  migration093,
+  migration094,
+  migration095,
+  migration096,
+  migration097,
+  migration098,
+  migration099,
 ];

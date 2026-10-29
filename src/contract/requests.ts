@@ -24,7 +24,10 @@ import {
   selectorSettingsTextCharsMax,
   threadMessageCharsMax,
   threadMessageImagesMax,
+  threadOpenKeyCharsMax,
+  threadOpenKeyPattern,
   threadTitleCharsMax,
+  threadsOpenMax,
   ticketNumberSchema,
 } from "./http.ts";
 import { authoringSchema } from "./authoring.ts";
@@ -35,7 +38,6 @@ import {
   briefFinalizationModes,
   forgeCredentialPermissions,
   forgeIds,
-  forgeRepositoryVisibilities,
   nativeActionResolutions,
   ownerFallbacks,
   placementRoutes,
@@ -119,16 +121,9 @@ export const publicMutationSchema = z.discriminatedUnion("mutation", [
 
 export type PublicMutation = z.infer<typeof publicMutationSchema>;
 
-export const configurationCreationSchema = z.strictObject({
-  revision: bodyIdentitySchema,
-  parent: bodyIdentitySchema.optional(),
-  canonical: bodyIdentitySchema,
-});
-
-/** An import at `commit`, or at where the repository's default branch points now where it names none. */
+/** An import at where the repository's default branch points now, which is what the repository has checked in. */
 export const repositoryConfigurationImportSchema = z.strictObject({
   repository: bodyIdentitySchema,
-  commit: bodyIdentitySchema.optional(),
 });
 
 export const forgeCredentialRequestSchema = z.strictObject({
@@ -201,29 +196,25 @@ export const projectRepositoryBindSchema = z.strictObject({
   repository: bodyIdentitySchema,
 });
 
-/**
- * One repository to create: whose account it is made under, what it is called,
- * and whether it is that account's alone to read. The forge is not named
- * because a deployment creates through the one its creation half is composed
- * for, and the project is the path's.
- */
-export const projectRepositoryCreateSchema = z.strictObject({
-  account: bodyIdentitySchema,
-  name: bodyIdentitySchema,
-  visibility: z.enum(forgeRepositoryVisibilities),
-});
-
 /** How a finished ticket lands: the mode alone today, the reference it lands on staying the brief's. */
 export const repositoryLandingSchema = z.strictObject({
   mode: z.enum(briefFinalizationModes),
 });
 export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
 
-/** A repository's landing default, written against the one the writer read so two administrators cannot cross. */
+/**
+ * A repository's landing default and whether its jobs may write its pipeline
+ * definitions, each written against the value the writer read so two
+ * administrators cannot cross.
+ */
 export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
   expected: repositoryLandingSchema,
   landing: repositoryLandingSchema,
+  pipelinesWritable: z.strictObject({
+    expected: z.boolean(),
+    wanted: z.boolean(),
+  }),
 });
 
 /** Where a project's work and its evaluations run, both written whole. */
@@ -243,6 +234,11 @@ export const projectOwnerFallbackSchema = z.strictObject({
   fallback: z.enum(ownerFallbacks).optional(),
 });
 
+/** How many threads one member may hold open in the project, written whole by an administrator. */
+export const threadLimitSchema = z.strictObject({
+  threadsMax: z.number().int().min(1).max(threadsOpenMax),
+});
+
 /**
  * One binding retired. It carries the repository and nothing else: retirement
  * is one-way and names its own row, so there is no value for a second writer
@@ -255,7 +251,7 @@ export const projectRepositoryRetirementSchema = z.strictObject({
 /**
  * One binding's configuration step asked for again. It carries the repository
  * and nothing else: the step reads the repository at its own head, and what it
- * may author is the project's one bootstrap.
+ * may author is that repository's own bootstrap.
  */
 export const projectRepositoryConfigureSchema = z.strictObject({
   repository: bodyIdentitySchema,
@@ -349,6 +345,15 @@ export const threadMessageSchema = z.strictObject({
   images: z.array(bodyIdentitySchema).max(threadMessageImagesMax).optional(),
 });
 
+/**
+ * What a member's client opens a thread under: a key it mints once per thread
+ * it means to open, so a retried open answers the thread the first one opened
+ * rather than a second one.
+ */
+export const threadOpenSchema = z.strictObject({
+  key: z.string().min(1).max(threadOpenKeyCharsMax).regex(threadOpenKeyPattern),
+});
+
 /** What a member calls their own thread, over the title derived from its
  * first message; a title that trims to nothing clears the override. */
 export const threadRenameRequestSchema = z.strictObject({
@@ -384,6 +389,25 @@ export const personalRunnerRedemptionSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
 });
 
+/**
+ * What an owner asks a registration token for, a pool's or their own runner's:
+ * how long it stands. A token permits registering and nothing about what the
+ * runner declares, so capabilities a request still names are ignored.
+ */
+export const registrationTokenRequestSchema = z.strictObject({
+  lifetimeSecs: z.number().int().positive().safe(),
+  capabilities: workerPoolCapabilitiesSchema.optional().meta({
+    deprecated: true,
+    description:
+      "Ignored. A runner declares its capabilities when it redeems the token.",
+  }),
+});
+
 export type PersonalRunnerRedemptionRequest = z.infer<
   typeof personalRunnerRedemptionSchema
+>;
+/** What a mint asks for, once the ignored field is dropped. */
+export type RegistrationTokenRequest = Omit<
+  z.infer<typeof registrationTokenRequestSchema>,
+  "capabilities"
 >;

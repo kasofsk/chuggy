@@ -1,8 +1,13 @@
-/* Ledger: the journal in its own structure — groups, blocks and ruled rows. */
+/* Ledger: the journal in its own structure — groups, blocks and ruled rows.
+   Every level is one column no wider than the ledger, and a row lays itself
+   out by the ledger's own width rather than the page's, so a row with every
+   expander and a long report line stays inside the card it is drawn in. */
 
 @layer ui {
   .ledger {
+    container-type: inline-size;
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
   }
 
@@ -12,6 +17,7 @@
 
   .ledger-group {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
     padding-left: var(--space-4);
     border-left: var(--rail) dashed var(--edge-strong);
@@ -57,6 +63,7 @@
 
   .ledger-block {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ledger-eyebrow {
@@ -68,6 +75,7 @@
 
   .ledger-rows {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .ledger-row {
@@ -110,6 +118,7 @@
     color: var(--ink-3);
     font-size: var(--text-sm);
     min-width: 0;
+    overflow-wrap: anywhere;
   }
 
   .ledger-note strong {
@@ -138,12 +147,14 @@
 
   .ledger-expands {
     display: flex;
+    flex-wrap: wrap;
     justify-content: end;
     gap: var(--space-2);
   }
 
   .ledger-detail {
     grid-column: 1 / -1;
+    min-width: 0;
     padding: var(--space-2) 0 var(--space-3);
   }
 
@@ -166,15 +177,51 @@
     }
   }
 
-  @container (max-width: 60em) {
+  /* The wide row's fixed columns, its gaps and three expanders. Under
+     that, the row is its label and verdict, then what ran and what it
+     spent, then when, its note and its expanders, each line as wide as
+     the row. */
+  @container (max-width: 78em) {
     .ledger-row {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: var(--space-1);
     }
 
-    .ledger-note,
-    .ledger-when,
+    .ledger-label {
+      grid-area: 1 / 1;
+    }
+
+    .ledger-pill {
+      grid-area: 1 / 2;
+    }
+
+    .ledger-identity {
+      grid-area: 2 / 1;
+    }
+
     .ledger-spent {
-      grid-column: 1 / -1;
+      grid-area: 2 / 2;
+      text-align: end;
+    }
+
+    .ledger-when {
+      grid-area: 3 / 1 / auto / -1;
+    }
+
+    .ledger-note {
+      grid-area: 4 / 1 / auto / -1;
+    }
+
+    .ledger-expands {
+      grid-area: 5 / 1 / auto / -1;
+      justify-content: start;
+    }
+
+    .ledger-note:empty,
+    .ledger-identity:empty,
+    .ledger-spent:empty,
+    .ledger-when:empty {
+      display: none;
     }
   }
 }

@@ -45,11 +45,23 @@ test("a refusal is final and anything else is an outage", async () => {
   ] as const)
     assert.equal(
       await poolSessionPlaneClient({ timeoutMs: 1_000 }, () =>
-        Promise.resolve(new Response("{}", { status })),
+        Promise.resolve(
+          new Response("{}", {
+            status,
+            headers: { [workerContractHeader]: workerContractRelease },
+          }),
+        ),
       ).end(ended),
       answer,
       String(status),
     );
+  assert.equal(
+    await poolSessionPlaneClient({ timeoutMs: 1_000 }, () =>
+      Promise.resolve(new Response("404 page not found\n", { status: 404 })),
+    ).end(ended),
+    "Unavailable",
+    "a proxy's own 404",
+  );
   assert.equal(
     await poolSessionPlaneClient({ timeoutMs: 1_000 }, () =>
       Promise.reject(new TypeError("fetch failed")),

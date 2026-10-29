@@ -6,7 +6,7 @@
  * here rather than in one suite that happened to be updated.
  */
 
-import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
+import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
   DraftInitializationResponse,
@@ -15,6 +15,7 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
 import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
+import { configurationCatalogInitialization } from "../app/core/configurationCatalog.ts";
 import {
   creationConfigurationName,
   creationFormFrom,
@@ -124,8 +125,17 @@ export function creationBinding(
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
+}
+
+/**
+ * A stand-in for the revision a repository's bootstrap is authored at, which
+ * the server names for the repository and the console reads as given.
+ */
+export function creationBootstrapRevision(repository: string): string {
+  return `${bootstrapConfigurationRevisionPrefix}${repository}`;
 }
 
 /**
@@ -143,7 +153,10 @@ export function creationListed(
     configurationsHeld:
       held === "Imported"
         ? { result: "Imported", count: 2 }
-        : { result: "Bootstrapped", revision: bootstrapConfigurationName },
+        : {
+            result: "Bootstrapped",
+            revision: creationBootstrapRevision(binding.repository),
+          },
   };
 }
 
@@ -251,5 +264,32 @@ export function creationCatalogOffer(
         canonical: creationCatalogCanonical,
       },
     },
+  };
+}
+
+/**
+ * An offer of the same catalog defaulting to its plan of a two-evaluator stage
+ * and a one-evaluator stage, initialized as the API answers under that default.
+ */
+export function creationGatedOffer(
+  listed: ConfigurationSummary = creationSummary("c1", "Ready"),
+): CreationOffer {
+  const offer = creationCatalogOffer(listed);
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    defaults: Record<string, string>;
+  };
+  catalog.defaults["evaluation"] = "gated";
+  return {
+    ...offer,
+    initialization: configurationCatalogInitialization(
+      {
+        ...offer.initialization,
+        configuration: {
+          ...offer.initialization.configuration,
+          canonical: JSON.stringify(catalog),
+        },
+      },
+      undefined,
+    ),
   };
 }

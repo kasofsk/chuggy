@@ -1,9 +1,8 @@
-import {
-  apiRole,
-  projectThreadsReadFunction,
-} from "../adapters/postgres/schema.ts";
+import { apiRole, selectorReviewRole } from "../adapters/postgres/schema.ts";
+import { postgresApiReady } from "../adapters/postgres/apiReadiness.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresInstallationAuthority } from "../adapters/postgres/installationAuthority.ts";
+import { postgresDispatchViews } from "../adapters/postgres/dispatchViews.ts";
 import {
   ketoProjectAccess,
   ketoReadiness,
@@ -55,6 +54,8 @@ import {
   composeNativeWeb,
   composeExecutionPlacement,
   composeProjectOwnerFallback,
+  composeThreadLimits,
+  composeMemberChat,
   composeProjectCreation,
   composeRepositoryOnboarding,
   composeSelectorProjectSettings,
@@ -82,10 +83,10 @@ import {
 } from "../contract/http.ts";
 import type { SessionStoreReadPort } from "../interpreter/sessionStore.ts";
 import {
-  currentRuntimeSchemaContract,
-  postgresRuntimeSchema,
-} from "../adapters/postgres/runtimeSchema.ts";
-import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+  runtimePreconditionAnswer,
+  runtimePreconditionUndecided,
+  type RuntimePreconditionVerdict,
+} from "../interpreter/serviceRuntime.ts";
 import {
   checkedProjectAccessSettings,
   projectAccessTimeoutMsDefault,
@@ -97,7 +98,6 @@ import {
   postgresSelectorResolvedSettings,
 } from "../adapters/postgres/selector.ts";
 import { selectorOperationalContextRead } from "../interpreter/selectorOperationalContext.ts";
-import { selectorReviewRole } from "../adapters/postgres/schema.ts";
 import { postgresSelectorContextReady } from "../adapters/postgres/selectorContextReadiness.ts";
 import { pathToFileURL } from "node:url";
 import { gitRepositoryConfiguration } from "../adapters/git/gitRepositoryConfiguration.ts";
@@ -109,8 +109,8 @@ import {
   githubInstallationTokens,
   githubInstallationTokensOptions,
   githubInstallationTokensPrecondition,
-  type GithubInstallationTokensOptions,
 } from "../adapters/forge/githubInstallationTokens.ts";
+import { githubRepositoryAddressOf } from "../adapters/forge/githubAddress.ts";
 import {
   githubApps,
   githubInstallationDirectory,
@@ -136,27 +136,22 @@ import {
 import type { ForgeCredentialMinting } from "../interpreter/forgeCredentials.ts";
 import type { RepositoryCredentialPort } from "../interpreter/finalizer.ts";
 import {
-  asForgeAccount,
-  asForgeRepositoryName,
   forgeAppKeyOf,
   githubForgeId,
   portalForgeApp,
   type ForgeApp,
   type ForgeAppKey,
-  type ForgeInstallationTokens,
 } from "../interpreter/forgeInstallation.ts";
-import type { ForgeTemplateRepository } from "../interpreter/forgeRepositoryCreation.ts";
-import { githubRepositoryCreation } from "../adapters/forge/githubRepositoryCreation.ts";
 import type {
   RepositoryConfigurationSnapshotPort,
   RepositoryDefaultBranchPort,
 } from "../interpreter/repositoryConfiguration.ts";
-import type { RepositoryCreationPorts } from "../interpreter/repositoryOnboarding.ts";
 import type { ProjectAccess } from "../interpreter/projectAccess.ts";
 import { oidcPrincipal, type Principal } from "../interpreter/principal.ts";
 import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
+import { postgresChatHostRegistry } from "../adapters/postgres/chatHost.ts";
 import {
   postgresPersonalRunnerRegistrationTokens,
   postgresPersonalRunnerRegistry,
@@ -278,15 +273,12 @@ const forgeRepositoriesMaxVariable = "CHUG_API_FORGE_REPOSITORIES_MAX";
  */
 const forgeClientSecretFileVariable = "CHUG_API_FORGE_APP_CLIENT_SECRET_FILE";
 /**
- * The worker image a bootstrap configuration commands, and the repository a
- * personal account's is copied from. Both are optional and each withholds one
- * thing — a deployment naming no image authors no bootstrap, and one naming no
- * template creates for organizations only — and the image is held only to the
+ * The worker image a bootstrap configuration commands. It is optional and a
+ * deployment naming none authors no bootstrap, and it is held only to the
  * reference grammar here, so an image chuggy's runtime cannot run in fails
  * where every other such image does, when its job starts.
  */
 const bootstrapWorkerImageVariable = "CHUG_API_BOOTSTRAP_WORKER_IMAGE";
-const forgeTemplateRepositoryVariable = "CHUG_API_FORGE_TEMPLATE_REPOSITORY";
 /**
  * The origin this API is publicly reached at, which a bootstrap configuration
  * names the configuration schema under because a job is told no origin of its
@@ -411,6 +403,7 @@ function nativePersonalRunners(
     },
     ports: {
       registry: postgresPersonalRunnerRegistry(pool),
+      chatHosts: postgresChatHostRegistry(pool),
       clients: nativeRunnerClients(),
       clientId: () => `chuggy-personal-${randomUUID()}`,
     },
@@ -537,31 +530,37 @@ function oidcConfig(): OidcAuthenticationConfig {
   };
 }
 
-async function apiDatabaseReady(
+/**
+ * What one pool's check answered: refused under `refused` where its database
+ * answered no, and undecided under the failure's own message where it could
+ * not be reached or queried.
+ */
+function nativeDatabaseVerdict(
+  answered: Promise<boolean>,
+  refused: string,
+): Promise<RuntimePreconditionVerdict> {
+  return answered.then(
+    (met) => runtimePreconditionAnswer(met, refused),
+    runtimePreconditionUndecided,
+  );
+}
+
+function apiDatabaseReady(
   pool: ReturnType<typeof postgresPool>,
-): Promise<boolean> {
-  try {
-    const found = await pool.query<{
-      current_role: string;
-      authorized: boolean;
-    }>(
-      `SELECT current_user AS current_role,
-         has_function_privilege(
-           current_user,'${projectThreadsReadFunction}(text,text,bigint)','EXECUTE') AS authorized`,
-    );
-    const row = found.rows[0];
-    if (row?.current_role !== apiRole || !row.authorized) return false;
-    return (
-      (
-        await schemaCompatibilityPrecondition(
-          postgresRuntimeSchema(pool),
-          currentRuntimeSchemaContract,
-        ).check(new AbortController().signal)
-      ).met === "Met"
-    );
-  } catch {
-    return false;
-  }
+): Promise<RuntimePreconditionVerdict> {
+  return nativeDatabaseVerdict(
+    postgresApiReady(pool),
+    `must be migrated and connect as ${apiRole}`,
+  );
+}
+
+function selectorReviewDatabaseReady(
+  selectorReviewPool: ReturnType<typeof postgresPool>,
+): Promise<RuntimePreconditionVerdict> {
+  return nativeDatabaseVerdict(
+    postgresSelectorContextReady(selectorReviewPool),
+    `must connect as ${selectorReviewRole}`,
+  );
 }
 
 function selectorContextSource(
@@ -616,8 +615,8 @@ function nativeReadiness(
 ) {
   return {
     ready: async () =>
-      (await apiDatabaseReady(pool)) &&
-      (await postgresSelectorContextReady(selectorReviewPool)) &&
+      (await apiDatabaseReady(pool)).met === "Met" &&
+      (await selectorReviewDatabaseReady(selectorReviewPool)).met === "Met" &&
       (await ketoReadiness(access).ready()),
   };
 }
@@ -832,33 +831,25 @@ async function forgeKeyUnusable(
     : `${keyFileVariable}: ${verdict.why}`;
 }
 
-/** The onboarding half for one app, which reads as that app and mints only to enumerate. */
-function forgeAppHalf(
-  app: ForgeApp,
-  options: GithubInstallationTokensOptions,
-  tokens: ForgeInstallationTokens,
-): RepositoryOnboardingForgeApp {
+/**
+ * The onboarding half for one app, which reads as that app and mints only to
+ * enumerate. A listing mints for itself every time, so its token is answered at
+ * once rather than every listing waiting out a settling.
+ */
+function forgeAppHalf(pair: ForgeAppPair): RepositoryOnboardingForgeApp {
+  const options = githubInstallationTokensOptions(pair.key);
   return {
     forge: githubForgeId,
-    app,
+    app: pair.app,
+    addressOf: githubRepositoryAddressOf,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({
       ...options,
-      tokens,
+      tokens: githubInstallationTokens(options),
       repositoriesMax: forgeRepositoriesMax(),
     }),
   };
-}
-
-/** The onboarding halves for every app but the portal's, each minting only to enumerate. */
-function otherForgeAppHalves(
-  pairs: readonly ForgeAppPair[],
-): readonly RepositoryOnboardingForgeApp[] {
-  return pairs.map((pair) => {
-    const options = githubInstallationTokensOptions(pair.key);
-    return forgeAppHalf(pair.app, options, githubInstallationTokens(options));
-  });
 }
 
 /**
@@ -939,41 +930,6 @@ export function nativePublicOrigin(): string | undefined {
 }
 
 /**
- * The repository a personal account's is copied from, named `owner/name`. A
- * setting this side cannot read as one repository is refused where it is read
- * rather than at the forge that would answer the request it composes.
- */
-function forgeTemplateRepository(): ForgeTemplateRepository | undefined {
-  const named = process.env[forgeTemplateRepositoryVariable];
-  if (named === undefined || named.length === 0) return undefined;
-  const parts = named.split("/");
-  const [account, name] = parts;
-  if (parts.length !== 2 || account === undefined || name === undefined)
-    throw new Error(`${forgeTemplateRepositoryVariable} must be owner/name`);
-  return {
-    account: asForgeAccount(account),
-    name: asForgeRepositoryName(name),
-  };
-}
-
-/** The three acts creating a repository is, under the portal app this process signs as. */
-function forgeRepositoryCreation(
-  portal: GithubInstallationTokensOptions,
-  tokens: ForgeInstallationTokens,
-): RepositoryCreationPorts {
-  const template = forgeTemplateRepository();
-  return {
-    forge: githubForgeId,
-    repositories: githubRepositoryCreation({
-      ...portal,
-      tokens,
-      appId: portal.appId,
-    }),
-    ...(template === undefined ? {} : { template }),
-  };
-}
-
-/**
  * The forge this process talks to: the credential source its own reads take,
  * the minting route's service, onboarding's, and the one adapter that reads a
  * repository — composed once because it opens one scratch, and handed to the
@@ -1003,15 +959,19 @@ async function nativeForge(
   const pairs = forgeAppPairs();
   await forgeKeysReady(pairs, pools);
   const portal = pairs.find((pair) => pair.app === portalForgeApp);
-  const others = otherForgeAppHalves(
-    pairs.filter((pair) => pair.app !== portalForgeApp),
-  );
+  const others = pairs
+    .filter((pair) => pair.app !== portalForgeApp)
+    .map(forgeAppHalf);
   const image = bootstrapWorkerImage();
   const publicOrigin = nativePublicOrigin();
-  const minting = composeForgeRepositoryMinting(pools.pool, portal?.key);
+  const minting = composeForgeRepositoryMinting(
+    pools.pool,
+    portal?.key,
+    "Settled",
+  );
   const credentials = nativeRepositoryCredentials(minting);
   const repositories = repositoryConfigurationSnapshots(credentials);
-  const half = nativePortalHalf(portal, minting);
+  const half = portal === undefined ? undefined : forgeAppHalf(portal);
   const authorization = await nativeForgeAuthorization(portal, half, pools);
   return {
     credentials,
@@ -1024,11 +984,10 @@ async function nativeForge(
       apiPool: pools.pool,
       access,
       credentials,
-      forgeApps: half === undefined ? others : [half.onboarding, ...others],
+      forgeApps: half === undefined ? others : [half, ...others],
       ...(repositories === undefined ? {} : { repositories }),
       ...(image === undefined ? {} : { bootstrapImage: image }),
       ...(publicOrigin === undefined ? {} : { publicOrigin }),
-      ...(half === undefined ? {} : { creation: half.creation }),
       ...(authorization === undefined ? {} : { authorization }),
     }),
   };
@@ -1075,7 +1034,7 @@ export async function forgeClientSecretSetting<T>(
 /** The redemption of a person's authorization of the portal app, where this deployment names its client secret. */
 async function nativeForgeAuthorization(
   portal: ForgeAppPair | undefined,
-  half: NativePortalHalf | undefined,
+  half: RepositoryOnboardingForgeApp | undefined,
   pools: NativePools,
 ): Promise<RepositoryOnboardingAuthorization | undefined> {
   const secret = await forgeClientSecretSetting(
@@ -1094,35 +1053,13 @@ async function nativeForgeAuthorization(
         app: portalForgeApp,
         user: githubUserAuthorization({
           ...githubInstallationTokensOptions(secret.portal.key),
-          app: secret.portal.half.onboarding.apps,
+          app: secret.portal.half.apps,
           clientSecretPath: secret.path,
         }),
       };
     default:
       return assertNever(secret);
   }
-}
-
-/** What the portal app answers for, and nothing where this deployment holds no portal key. */
-interface NativePortalHalf {
-  readonly onboarding: RepositoryOnboardingForgeApp;
-  readonly creation: RepositoryCreationPorts;
-}
-
-function nativePortalHalf(
-  portal: ForgeAppPair | undefined,
-  minting: RepositoryCredentialMinting | undefined,
-): NativePortalHalf | undefined {
-  if (portal === undefined || minting === undefined) return undefined;
-  const options = githubInstallationTokensOptions(portal.key);
-  return {
-    onboarding: forgeAppHalf(
-      portalForgeApp,
-      options,
-      minting.installationTokens,
-    ),
-    creation: forgeRepositoryCreation(options, minting.installationTokens),
-  };
 }
 
 function streamNoteText(note: ProjectStreamNote): string {
@@ -1445,45 +1382,67 @@ async function nativeAuthenticationStarted(
   return nativeAuthentication(oidc, pools);
 }
 
+/** What a start refuses one database's verdict with, or nothing where it was met. */
+function nativeDatabaseRefusal(
+  database: string,
+  verdict: RuntimePreconditionVerdict,
+): string | undefined {
+  switch (verdict.met) {
+    case "Met":
+      return undefined;
+    case "Refused":
+      return `${database} ${verdict.why}`;
+    case "Undecided":
+      return `${database} could not be reached or queried — ${verdict.why}`;
+    default:
+      return assertNever(verdict);
+  }
+}
+
 /**
- * Refuses to start on either pool this process must have, naming which one, and
- * leaves neither open behind the refusal.
+ * Refuses to start on either pool this process must have, naming which one and
+ * whether its database answered, and leaves neither open behind the refusal.
  */
-async function nativeDatabasesReady(
+export async function nativeDatabasesReady(
   pool: ReturnType<typeof postgresPool>,
   selectorReviewPool: ReturnType<typeof postgresPool>,
 ): Promise<void> {
-  if (!(await apiDatabaseReady(pool))) {
-    await closePools(pool, selectorReviewPool);
-    throw new Error(
-      `the native HTTP database must be migrated and connect as ${apiRole}`,
+  const refusal =
+    nativeDatabaseRefusal(
+      "the native HTTP database",
+      await apiDatabaseReady(pool),
+    ) ??
+    nativeDatabaseRefusal(
+      "the selector review database",
+      await selectorReviewDatabaseReady(selectorReviewPool),
     );
-  }
-  if (!(await postgresSelectorContextReady(selectorReviewPool))) {
-    await closePools(pool, selectorReviewPool);
-    throw new Error(
-      `the selector review database must connect as ${selectorReviewRole}`,
-    );
-  }
+  if (refusal === undefined) return;
+  await closePools(pool, selectorReviewPool);
+  throw new Error(refusal);
 }
 
 /**
  * The lead's read side over the API pool and the artifact volume, taking both
  * pools and choosing for the reason `nativeAuthentication` does: only the API
  * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
- * observe which pool was reached.
+ * observe which pool was reached. The site's selector is named under `issuer`
+ * where this deployment names one, so a read can say it may not read a project.
  */
 export function nativeLeadPorts(
   pools: NativePools,
   artifacts: SessionStoreReadPort,
+  issuer: string,
 ): NativeLeadPorts {
   const leads = postgresLeadReads(pools.pool);
+  const selector = nativeSelectorPrincipal(issuer);
   return {
     leads,
     store: artifacts,
     refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
+    candidates: postgresDispatchViews(pools.pool),
+    ...(selector === undefined ? {} : { selector }),
   };
 }
 
@@ -1508,6 +1467,16 @@ export function nativeThreadPorts(
   };
 }
 
+/** Listens where the environment names, the loopback on the default port where it names nowhere. */
+function nativeListening(
+  app: ReturnType<typeof createNativeHttpApp>,
+): Promise<string> {
+  return app.listen({
+    host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
+    port: positiveEnvironment("CHUG_API_PORT", 3_000),
+  });
+}
+
 async function main(): Promise<void> {
   const keying = idempotencyKeying();
   const authenticationConfig = oidcConfig();
@@ -1522,9 +1491,9 @@ async function main(): Promise<void> {
   const accessSettings = ketoConfig();
   const access = ketoProjectAccess(accessSettings);
   const grants = nativeProjectGrants();
-  const { artifacts, uploadBytesMax: artifactUploadBytesMax } =
-    nativeArtifacts();
+  const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
+  const threads = nativeThreadPorts(pools, artifacts);
   const web = composeNativeWeb(
     pool,
     keying,
@@ -1536,8 +1505,8 @@ async function main(): Promise<void> {
     artifacts,
     selectorContextSource(pool, selectorReviewPool),
     forge.repositories,
-    nativeLeadPorts(pools, artifacts),
-    nativeThreadPorts(pools, artifacts),
+    nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
+    threads,
   );
   const hub = nativeStreamHub(pool, web);
   const threadLive = nativeThreadLiveHub();
@@ -1548,7 +1517,7 @@ async function main(): Promise<void> {
     postgresInstallationAuthority(pool),
     {
       ...nativeHttpLimitsDefault,
-      projectArtifactUploadBytesMax: artifactUploadBytesMax,
+      projectArtifactUploadBytesMax: uploadBytesMax,
     },
     hub,
     composeSelectorProjectSettings(pool, access),
@@ -1571,12 +1540,11 @@ async function main(): Promise<void> {
     nativeTicketLandings(pools, access, artifacts),
     nativePersonalRunners(pool, access),
     composeProjectOwnerFallback(pool, access),
+    composeThreadLimits(pool, access, authenticationConfig.issuer),
+    composeMemberChat(pool, access, threads),
   );
   nativeStopping(app, pools, [hub, threadLive]);
-  await app.listen({
-    host: process.env["CHUG_API_HOST"] ?? "127.0.0.1",
-    port: positiveEnvironment("CHUG_API_PORT", 3_000),
-  });
+  await nativeListening(app);
 }
 
 if (

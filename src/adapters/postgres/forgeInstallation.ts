@@ -26,7 +26,6 @@ import {
   type ForgeInstallationStore,
 } from "../../interpreter/forgeInstallation.ts";
 import type {
-  ForgeInstallationAccountQuery,
   ForgeInstallationClaim,
   ForgeInstallationClaimed,
   ForgeInstallationClaims,
@@ -36,6 +35,7 @@ import type {
 } from "../../interpreter/forgeInstallationClaim.ts";
 import { allForgeInstallationRecorded } from "../../interpreter/forgeInstallationClaim.ts";
 import type { TenantId } from "../../interpreter/projectStore.ts";
+import { projectRowInstant } from "./rows.ts";
 
 /** The installation a tenant claimed for one account, read as the branded row it is. */
 export function postgresForgeInstallations(
@@ -73,7 +73,7 @@ interface ForgeInstallationRow {
   account: string;
   account_kind: string;
   installation_id: string;
-  claimed_at: string;
+  claimed_at: string | null;
 }
 
 /** One row as the interpreter reads it, every identity narrowed where it is read. */
@@ -86,7 +86,7 @@ function forgeInstallationClaimed(
     account: asForgeAccount(row.account),
     accountKind: asForgeAccountKind(row.account_kind),
     installationId: asForgeInstallationId(row.installation_id),
-    claimedAt: row.claimed_at,
+    claimedAt: projectRowInstant(row.claimed_at, "claim time"),
   };
 }
 
@@ -103,10 +103,10 @@ async function forgeInstallationClaimsPage(
 ): Promise<ForgeInstallationClaimsPage> {
   const found = await pool.query<ForgeInstallationRow>(
     sql`SELECT forge,app,account,account_kind,installation_id,
-               claimed_at::text AS claimed_at
+               to_char(claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at
           FROM forge_installation
           WHERE tenant = ${tenant}
-          ORDER BY claimed_at,forge,app,account
+          ORDER BY forge_installation.claimed_at,forge,app,account
           LIMIT ${forgeInstallationsAnsweredMax + 1}`,
   );
   return {
@@ -130,34 +130,11 @@ async function forgeInstallationClaim(
 ): Promise<ForgeInstallationClaimed | undefined> {
   const found = await pool.query<ForgeInstallationRow>(
     sql`SELECT forge,app,account,account_kind,installation_id,
-               claimed_at::text AS claimed_at
+               to_char(claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at
           FROM forge_installation
           WHERE tenant = ${tenant} AND installation_id = ${installationId}
           ORDER BY forge,app,account
           LIMIT 1`,
-  );
-  const row = found.rows[0];
-  return row === undefined ? undefined : forgeInstallationClaimed(row);
-}
-
-/**
- * The one claim a tenant holds of one app on one account, which is the whole
- * key and the tenant. It answers the account's kind as well as its existence,
- * so a caller deciding which of a forge's collections to make a repository in
- * asks once rather than reading the row and then the forge.
- */
-async function forgeInstallationAccountClaim(
-  pool: pg.Pool,
-  query: ForgeInstallationAccountQuery,
-): Promise<ForgeInstallationClaimed | undefined> {
-  const found = await pool.query<ForgeInstallationRow>(
-    sql`SELECT forge,app,account,account_kind,installation_id,
-               claimed_at::text AS claimed_at
-          FROM forge_installation
-          WHERE forge = ${query.forge}
-            AND app = ${query.app}
-            AND account = ${query.account}
-            AND tenant = ${query.tenant}`,
   );
   const row = found.rows[0];
   return row === undefined ? undefined : forgeInstallationClaimed(row);
@@ -171,7 +148,6 @@ export function postgresForgeInstallationClaims(
     claims: (tenant) => forgeInstallationClaimsPage(pool, tenant),
     claim: (tenant, installationId) =>
       forgeInstallationClaim(pool, tenant, installationId),
-    accountClaim: (query) => forgeInstallationAccountClaim(pool, query),
   };
 }
 

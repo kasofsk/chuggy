@@ -12,9 +12,11 @@ import {
   encodeDraftAuthoring,
   parseDraftAuthoring,
   type AuthoringStore,
+  type CanonicalConfiguration,
   type ConfigurationPage,
   type ConfigurationPageQuery,
   type ConfigurationCreated,
+  type ConfigurationRevisionId,
   type ConfigurationRevisionResource,
   type DraftCreated,
   type DraftDeleted,
@@ -22,6 +24,7 @@ import {
   type DraftPageQuery,
   type DraftResource,
   type DraftRevised,
+  type DraftRevisionPlan,
   type DraftState,
   type ConfigurationRevisionProvenance,
 } from "../../interpreter/authoring.ts";
@@ -39,7 +42,6 @@ import {
   storedOverridesText,
 } from "./ticketBrief.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
-import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
   type RepositoryConfigurationsImported,
   type RepositoryConfigurationStore,
@@ -53,12 +55,16 @@ import type {
   RepositoryConfigurationsHeld,
   RepositoryConfigurationsHeldRead,
 } from "../../interpreter/repositoryOnboarding.ts";
-import { projectRowCounter } from "./rows.ts";
+import {
+  projectRowCounter,
+  projectRowInstant,
+  projectRowLifecycle,
+} from "./rows.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
-import { configurationRevisionDigest } from "./digest.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import { postgresWorkerCatalog } from "./workerCatalog.ts";
 import { domainConfigurationOf } from "../../interpreter/domainConfiguration.ts";
 
@@ -92,12 +98,17 @@ interface ConfigurationRow extends ConfigurationVersionRow {
   readonly digest: string;
 }
 
+/** A revision's row, with the file each of its workloads was read from as one JSON object. */
+interface ConfigurationReadRow extends ConfigurationRow {
+  readonly workload_paths: string | null;
+}
+
 interface ConfigurationPageRow extends ConfigurationVersionRow {
   readonly revision: string;
   readonly parent: string | null;
   readonly canonical: string;
   readonly digest: string;
-  readonly created_at: string;
+  readonly created_at: string | null;
   readonly repository: string | null;
   readonly commit: string | null;
   readonly path: string | null;
@@ -143,7 +154,7 @@ function configurationPageSummary(row: ConfigurationPageRow) {
       : { parent: asConfigurationRevisionId(row.parent) }),
     canonical: asCanonicalConfiguration(row.canonical),
     digest: row.digest,
-    createdAt: asPublicInstant(row.created_at),
+    createdAt: projectRowInstant(row.created_at, "creation time"),
     provenance: configurationPageProvenance(row),
     ...(version === undefined ? {} : { version }),
   });
@@ -155,19 +166,24 @@ async function readConfigurations(
   query: ConfigurationPageQuery,
 ): Promise<ConfigurationPage> {
   const found = await pool.query<ConfigurationPageRow>(
-    sql`SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at::text AS created_at,
-               p.repository,p.repository_commit AS commit,p.path,p.name,
-               v.name AS version_name,v.number::text AS version_number
-          FROM configuration_revision c
-          LEFT JOIN repository_configuration_provenance p
-            USING (tenant,project,revision)
-          LEFT JOIN repository_configuration_version v
-            ON v.tenant=c.tenant AND v.project=c.project
-           AND v.name=p.name AND v.digest=p.digest
-         WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}
+    sql`SELECT r.revision,r.parent,r.canonical,r.digest,to_char(r.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS created_at,
+               r.repository,r.commit,r.path,r.name,r.version_name,r.version_number
+          FROM (SELECT c.revision,c.parent,c.canonical,c.digest,c.created_at,
+                       p.repository,p.repository_commit AS commit,p.path,p.name,
+                       v.name AS version_name,v.number::text AS version_number,
+                       row_number() OVER (PARTITION BY p.repository,p.name
+                                          ORDER BY c.created_at DESC,c.revision DESC) AS newest
+                  FROM configuration_revision c
+                  LEFT JOIN repository_configuration_provenance p
+                    USING (tenant,project,revision)
+                  LEFT JOIN repository_configuration_version v
+                    ON v.tenant=c.tenant AND v.project=c.project
+                   AND v.name=p.name AND v.digest=p.digest
+                 WHERE c.tenant=${partition.tenant} AND c.project=${partition.project}) r
+         WHERE (NOT ${query.latest ?? false}::boolean OR r.repository IS NULL OR r.newest=1)
            AND (${query.after?.createdAt ?? null}::timestamptz IS NULL
-                OR (c.created_at,c.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
-         ORDER BY c.created_at DESC,c.revision DESC
+                OR (r.created_at,r.revision) < (${query.after?.createdAt ?? null}::timestamptz,${query.after?.revision ?? null}))
+         ORDER BY r.created_at DESC,r.revision DESC
          LIMIT ${query.limit + 1}`,
   );
   const rows = found.rows.slice(0, query.limit);
@@ -189,7 +205,7 @@ async function readConfigurations(
       ? {}
       : {
           nextAfter: {
-            createdAt: asPublicInstant(last.created_at),
+            createdAt: projectRowInstant(last.created_at, "creation time"),
             revision: asConfigurationRevisionId(last.revision),
           },
         }),
@@ -234,6 +250,40 @@ async function readDraft(
   );
   const row = found.rows[0];
   return row === undefined ? undefined : draftResourceOf(partition, row);
+}
+
+/** The revision one release names, read at the keys the release pins. */
+async function readDraftRevision(
+  pool: pg.Pool,
+  partition: Partition,
+  revision: Parameters<AuthoringStore["draftRevision"]>[1],
+): Promise<DraftRevisionPlan | undefined> {
+  const found = await pool.query<{
+    authoring: string;
+    overrides: string | null;
+    selection: string | null;
+    canonical: string;
+  }>(
+    sql`SELECT r.authoring,r.overrides::text AS overrides,r.selection::text AS selection,c.canonical
+       FROM draft_revision r
+       JOIN configuration_revision c
+         ON c.tenant=r.tenant AND c.project=r.project
+        AND c.revision=r.configuration_revision
+      WHERE r.tenant=${partition.tenant} AND r.project=${partition.project}
+        AND r.ticket=${revision.ticket}
+        AND r.authoring_version=${revision.authoringVersion}
+        AND r.configuration_revision=${revision.configurationRevision}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  const overrides = storedOverridesOf(row.overrides);
+  const selection = storedSelectionOf(row.selection);
+  return {
+    canonical: asCanonicalConfiguration(row.canonical),
+    ...(overrides === undefined ? {} : { overrides }),
+    ...(selection === undefined ? {} : { selection }),
+    program: parseDraftAuthoring(row.authoring).prog,
+  };
 }
 
 /** One draft row as the resource both the single read and the page answer. */
@@ -338,14 +388,31 @@ async function readDrafts(
   };
 }
 
+/** The file each workload was read from, as the read aggregated them. */
+function workloadPathsOf(stored: string): Readonly<Record<string, string>> {
+  const parsed: unknown = JSON.parse(stored);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some((path) => typeof path !== "string")
+  )
+    throw new Error("configuration workload paths are not names to paths");
+  return parsed as Readonly<Record<string, string>>;
+}
+
 async function readConfiguration(
   pool: pg.Pool,
   partition: Partition,
   revision: string,
 ): Promise<ConfigurationRevisionResource | undefined> {
-  const found = await pool.query<ConfigurationRow>(
+  const found = await pool.query<ConfigurationReadRow>(
     sql`SELECT c.parent,c.canonical,c.digest,
-               v.name AS version_name,v.number::text AS version_number
+               v.name AS version_name,v.number::text AS version_number,
+               (SELECT jsonb_object_agg(w.workload,w.path)
+                  FROM repository_configuration_workload_path w
+                 WHERE w.tenant=c.tenant AND w.project=c.project
+                   AND w.revision=c.revision)::text AS workload_paths
           FROM configuration_revision c
           LEFT JOIN repository_configuration_provenance p
             USING (tenant,project,revision)
@@ -367,6 +434,9 @@ async function readConfiguration(
     canonical,
     digest: row.digest,
     ...(version === undefined ? {} : { version }),
+    ...(row.workload_paths === null
+      ? {}
+      : { workloadPaths: workloadPathsOf(row.workload_paths) }),
   };
   return row.parent === null
     ? resource
@@ -417,7 +487,7 @@ async function initializeDraft(
       sql`SELECT ticket FROM ticket_projection
         WHERE tenant=${partition.tenant} AND project=${partition.project}
           AND dependable=true
-        ORDER BY ticket LIMIT ${dependencyCandidatesMax + 1}`,
+        ORDER BY ticket DESC LIMIT ${dependencyCandidatesMax + 1}`,
     );
     await client.query("COMMIT");
     return initializedDraftOf({
@@ -535,7 +605,7 @@ async function importRepositoryConfigurations(
     for (const declaration of input.declarations) {
       const digest = configurationRevisionDigest(declaration.canonical);
       const imported = await client.query<{ result: string | null }>(
-        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${input.binding.repository},${input.binding.recoveryEpoch},${declaration.revision},${declaration.canonical},${digest},${declaration.commit},${declaration.path},${declaration.name},${input.authority.kind},${input.authority.subject})::text AS result`,
+        sql`SELECT import_repository_configuration(${input.partition.tenant},${input.partition.project},${input.binding.repository},${input.binding.recoveryEpoch},${declaration.revision},${declaration.canonical},${digest},${declaration.commit},${declaration.path},${declaration.name},${JSON.stringify(declaration.workloadPaths)},${input.authority.kind},${input.authority.subject})::text AS result`,
       );
       const result = imported.rows[0]?.result;
       if (result === "StaleBinding") {
@@ -589,7 +659,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -598,13 +668,39 @@ async function createDraft(
     return { created: "RepositoryNotBound" };
   if (row?.result === "LandingUnbranched")
     return { created: "LandingUnbranched" };
-  if (row?.result === "Stale") return { created: "Stale" };
+  if (row?.result === "Stale") return createDraftStale(pool, input.partition);
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");
   return {
     created: "Created",
     draft: await requiredDraft(pool, input.partition, Number(row.ticket)),
   };
+}
+
+/**
+ * Why the head fence missed, read after it did: a project that is not Active
+ * mints no ticket at any head, and an Active one answers the head it holds now.
+ */
+async function createDraftStale(
+  pool: pg.Pool,
+  partition: Partition,
+): Promise<DraftCreated> {
+  const found = await pool.query<{ head: string; lifecycle: string }>(
+    sql`SELECT head,lifecycle FROM project WHERE tenant=${partition.tenant} AND project=${partition.project}`,
+  );
+  const standing = found.rows[0];
+  if (standing === undefined)
+    throw new Error("draft creation found no project behind its fence");
+  const lifecycle = projectRowLifecycle(standing.lifecycle);
+  return lifecycle === "Active"
+    ? {
+        created: "Stale",
+        currentProjectSequence: projectRowCounter(
+          standing.head,
+          "project head",
+        ),
+      }
+    : { created: "NotActive", lifecycle };
 }
 
 async function reviseDraft(
@@ -627,8 +723,6 @@ async function reviseDraft(
     return { revised: "RepositoryNotBound" };
   if (row.result === "LandingUnbranched")
     return { revised: "LandingUnbranched" };
-  if (row.result === "DependenciesLocked")
-    return { revised: "DependenciesLocked" };
   if (row.result === "Stale") {
     if (row.authoring_version === null)
       throw new Error("draft revision returned Stale with no current version");
@@ -698,6 +792,8 @@ export function postgresAuthoring(
       readConfiguration(pool, partition, revision),
     draft: (partition, ticket) => readDraft(pool, partition, ticket),
     drafts: (partition, query) => readDrafts(pool, partition, query),
+    draftRevision: (partition, revision) =>
+      readDraftRevision(pool, partition, revision),
     createConfiguration: (input) => createConfiguration(pool, input),
     importRepositoryConfigurations: (input) =>
       importRepositoryConfigurations(pool, input),
@@ -713,7 +809,7 @@ type HeldConfigurationsQuery = Parameters<
 
 /**
  * How many names each repository asked about declared into the project, and
- * the bootstrap revision's text where the project holds one. Both are the
+ * the text of each bootstrap revision asked about that it holds. Both are the
  * tables the configurations listing already reads, so this is that listing's
  * question asked of one project's rows rather than of every page of them.
  */
@@ -728,12 +824,11 @@ async function readConfigurationsHeld(
            AND p.repository=ANY(${[...query.repositories]}::text[])
          GROUP BY p.repository`,
   );
-  const bootstrap = await pool.query<{ canonical: string }>(
-    sql`SELECT c.canonical FROM configuration_revision c
+  const bootstraps = await pool.query<{ revision: string; canonical: string }>(
+    sql`SELECT c.revision,c.canonical FROM configuration_revision c
           WHERE c.tenant=${query.partition.tenant} AND c.project=${query.partition.project}
-            AND c.revision=${query.bootstrap}`,
+            AND c.revision=ANY(${[...query.bootstraps]}::text[])`,
   );
-  const canonical = bootstrap.rows[0]?.canonical;
   return {
     declared: new Map<RepositoryId, number>(
       declared.rows.map((row) => [
@@ -741,8 +836,12 @@ async function readConfigurationsHeld(
         projectRowCounter(row.names, "declared configuration names"),
       ]),
     ),
-    bootstrap:
-      canonical === undefined ? undefined : asCanonicalConfiguration(canonical),
+    bootstraps: new Map<ConfigurationRevisionId, CanonicalConfiguration>(
+      bootstraps.rows.map((row) => [
+        asConfigurationRevisionId(row.revision),
+        asCanonicalConfiguration(row.canonical),
+      ]),
+    ),
   };
 }
 

@@ -52,6 +52,7 @@ export const blockedReasons = [
   "ExecutionProfileUnavailable",
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
+  "RequiredMemoryUnavailable",
 ] as const;
 export type BlockedReason = (typeof blockedReasons)[number];
 
@@ -59,11 +60,12 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * Which finalization holds the machine reports `FinalizationResultUnavailable`
  * for — the ones a resume could clear, re-running the same operation against
  * the same pinned input, reaching the repository, the target, the proposal or
- * its base a second time and counting the finalizer's own budgets afresh; the
- * wire owns the list outright as `notificationKinds` is owned here, so the
- * finalizer recording a hold, the door admitting a result and the desk reading
- * one all name the same thirteen, and `test/contract/rosters.test.ts` holds it
- * against the interpreter's `allFinalizationHoldKinds` as
+ * its base a second time and counting the finalizer's own budgets afresh, a
+ * push the repository declined among them once its rules or settings allow
+ * it; the wire owns the list outright as `notificationKinds` is owned here, so
+ * the finalizer recording a hold, the door admitting a result and the desk
+ * reading one all name the same kinds, and `test/contract/rosters.test.ts`
+ * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/migration.test.ts` holds it against the column that mirrors
  * it. The five left out stay holds, each for its own reason:
  * `ApprovalDeclined` is a human's answer, which a resume would put to the same
@@ -89,6 +91,8 @@ export const finalizationUnavailableKinds = [
   "PreparationRestartsExhausted",
   "ProposalCreationsExhausted",
   "ProposalMergesExhausted",
+  "PromotionDeclined",
+  "PromotionWorkflowsRefused",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -107,6 +111,8 @@ export const gitEvidences = [
   "ObjectMissing",
   "IntegrationFailed",
   "PromotionTimedOut",
+  "RemoteDeclined",
+  "WorkflowsRefused",
 ] as const;
 export type GitEvidenceLabel = (typeof gitEvidences)[number];
 
@@ -200,14 +206,16 @@ export const attemptEvidences = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
   ...workerImageFaults,
 ] as const;
 export type AttemptEvidence = (typeof attemptEvidences)[number];
 
 /**
  * The labels a run ends under when one of its own steps failed, or it was
- * killed at its deadline: a failure another attempt would repeat, so the work
- * waits for a person rather than being resumed.
+ * killed at its deadline or because its runner's disk ran low: a failure
+ * another attempt would repeat, so the work waits for a person rather than
+ * being resumed.
  */
 export const runStepEvidences = [
   "RunCloneFailed",
@@ -215,6 +223,7 @@ export const runStepEvidences = [
   "RunCommitFailed",
   "RunPushFailed",
   "RunTimedOut",
+  "RunDiskLow",
 ] as const;
 export type RunStepEvidence = (typeof runStepEvidences)[number];
 
@@ -274,12 +283,13 @@ export type OperationState = (typeof operationStates)[number];
 export const operationTicketRefusalCodes = [
   "TicketAlreadyExists",
   "DependenciesNotFound",
+  "DependenciesRevoked",
+  "DependencyCycle",
   "SelfDependency",
   "TicketNotFound",
   "TicketNotPending",
   "TicketIdentityMismatch",
   "TicketRevisionStale",
-  "TicketDependenciesChanged",
   "DependenciesIncomplete",
   "TicketNotRevocable",
   "TicketNotResumable",
@@ -303,6 +313,9 @@ export const operationBoundaryRefusalCodes = [
   "SelectionUnknown",
   "SelectionUnsupported",
   "ProgramExceedsPlan",
+  "ProgramSkipsBriefChecks",
+  "OverridesUnsupported",
+  "OverridesUnknown",
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",
@@ -381,11 +394,6 @@ export type ForgeAppClaimName = (typeof forgeAppClaims)[number];
 export const forgeInstallationPermissions = ["Current", "Behind"] as const;
 export type ForgeInstallationPermissionsName =
   (typeof forgeInstallationPermissions)[number];
-
-/** Whether a repository this tree creates is its account's alone to read. */
-export const forgeRepositoryVisibilities = ["private", "public"] as const;
-export type ForgeRepositoryVisibilityName =
-  (typeof forgeRepositoryVisibilities)[number];
 
 /** Why a bound repository came away from the configuration step with no configurations of its own. */
 export const projectRepositoryConfigurationDeferrals = [
@@ -489,7 +497,11 @@ export const ticketLandingStates = [
 export type TicketLandingState = (typeof ticketLandingStates)[number];
 
 /** What one finalization attempt came to, restating the interpreter's `allFinalizationAttemptOutcomes`. */
-export const finalizationAttemptOutcomes = ["Prepared", "Failed"] as const;
+export const finalizationAttemptOutcomes = [
+  "Prepared",
+  "Failed",
+  "Landed",
+] as const;
 
 /** Why one finalization attempt failed, restating the interpreter's `allFinalizationFailureKinds`. */
 export const finalizationFailureKinds = [
@@ -503,6 +515,7 @@ export const changeProposalCreations = [
   "AlreadyExists",
   "Contradictory",
   "Unstorable",
+  "Adopted",
 ] as const;
 
 /** What a stored change proposal says its merge came to, restating `allChangeProposalMergeAnswers`. */
@@ -531,6 +544,7 @@ export const changeProposalMergeabilities = [
   "Mergeable",
   "Conflicting",
   "Blocked",
+  "Behind",
   "Unknown",
 ] as const;
 
@@ -622,9 +636,25 @@ export const sessionCapabilities = [
   "ProjectRead",
   "DraftAuthor",
   "DraftOriginate",
+  "TicketDispatch",
   "LeadDecision",
+  "MemberRead",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
+
+/** Whose a session is: a project's, or its member's own, opened with no project selected. */
+export const sessionScopes = ["Project", "Member"] as const;
+export type SessionScope = (typeof sessionScopes)[number];
+
+/** A project's operational availability, as a member's own chat lists it. */
+export const projectLifecycles = [
+  "Active",
+  "Suspended",
+  "IntegrityBlocked",
+  "Deleting",
+  "Retention",
+] as const;
+export type ProjectLifecycle = (typeof projectLifecycles)[number];
 
 /** Whether a session still takes turns, which is the whole of its lifecycle. */
 export const sessionStates = ["Open", "Closed"] as const;
@@ -644,11 +674,9 @@ export type ThreadStanding = (typeof threadStandings)[number];
  * and never through the operation resource's `Refused` arm, so a member put
  * there would widen every operation's wire enum and its total switches for a
  * code that never arrives. It is a roster rather than literals at each end
- * because a reader's behaviour turns on one of them — a `NotYourThread` is
- * settled against the mailbox rather than reported, the door having resolved
- * that mailbox before it compared the URL — so a door that renamed the code
- * while a console compared the old spelling would report a message as refused
- * for a turn the mailbox already holds.
+ * because a console words each of them for the member, so a door that renamed
+ * a code while a console compared the old spelling would tell the member
+ * nothing of why their message was refused.
  */
 export const threadMessageRefusalCodes = [
   "NotYourThread",
@@ -659,6 +687,13 @@ export const threadMessageRefusalCodes = [
 ] as const;
 export type ThreadMessageRefusalCode =
   (typeof threadMessageRefusalCodes)[number];
+
+/**
+ * What the open door refuses a member at their limit with. It is named once
+ * because a console tells the member so in words of its own, rather than
+ * reporting a failure.
+ */
+export const threadLimitReachedCode = "ThreadLimitReached";
 
 /**
  * Where a project's executions or sessions run, and what decided it: the
@@ -693,9 +728,20 @@ export const leadAdmissionRefusals = [
 ] as const;
 export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
 
-/** Why a project holds no lead where no refusal stands to date it: no cycle has
- * needed one, or its selector is paused. */
-export const leadAbsencesUntimed = ["NotNeeded", "Paused"] as const;
+/**
+ * Why a project holds no lead where no refusal stands to date it: nothing waits
+ * on a dispatch decision, its selector is paused, the site's selector may not
+ * read it and so never sweeps it, a released ticket waits for a selector pass
+ * that has not yet taken it up, or one waits where the API names no selector
+ * and so cannot say whether any sweeps it.
+ */
+export const leadAbsencesUntimed = [
+  "NotNeeded",
+  "Paused",
+  "SelectorNotGranted",
+  "AwaitingSelector",
+  "SelectorUnnamed",
+] as const;
 export type LeadAbsenceUntimed = (typeof leadAbsencesUntimed)[number];
 
 /**
@@ -712,6 +758,15 @@ export type OwnerFallback = (typeof ownerFallbacks)[number];
  * so the code is shared rather than spelled at each end.
  */
 export const hostedRunsNotGrantedCode = "HostedRunsNotGranted";
+
+/**
+ * What a release or an update answers a caller whose draft runs less than its
+ * configuration plans — a stage or an evaluator of the plan left out — where
+ * the caller does not hold the project permit to skip planned evaluations. A
+ * console says which permit the release lacked, so the code is shared.
+ */
+export const programSkipsPlannedEvaluationsCode =
+  "ProgramSkipsPlannedEvaluations";
 
 /**
  * What the project-artifact routes answer while the store cannot, and what the

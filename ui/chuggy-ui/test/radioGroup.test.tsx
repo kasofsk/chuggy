@@ -13,9 +13,9 @@ import { afterEach, expect, test } from "vitest";
 import { RadioGroup } from "../app/browser/ui/RadioGroup.tsx";
 import { styleless } from "./styleless.ts";
 
-const visibilities = [
-  { value: "private", text: "Private" },
-  { value: "public", text: "Public" },
+const roles = [
+  { value: "Admin", text: "Admin" },
+  { value: "Member", text: "Member" },
 ];
 
 const landings = [
@@ -46,17 +46,19 @@ afterEach(cleanup);
 test("every option is a radio named by its own label, one of them checked", () => {
   render(
     <RadioGroup
-      label="Visibility"
-      value="private"
-      options={visibilities}
+      label="Workspace role"
+      value="Member"
+      options={roles}
       onChoose={() => undefined}
     />,
   );
-  expect(screen.getByRole("radiogroup", { name: "Visibility" })).toBeTruthy();
-  const chosen = screen.getByRole("radio", { name: "Private" });
+  expect(
+    screen.getByRole("radiogroup", { name: "Workspace role" }),
+  ).toBeTruthy();
+  const chosen = screen.getByRole("radio", { name: "Member" });
   expect(chosen.getAttribute("aria-checked")).toBe("true");
   expect(
-    screen.getByRole("radio", { name: "Public" }).getAttribute("aria-checked"),
+    screen.getByRole("radio", { name: "Admin" }).getAttribute("aria-checked"),
   ).toBe("false");
   styleless();
 });
@@ -65,14 +67,14 @@ test("pressing an option answers the value the roster gave it", () => {
   const chosen: string[] = [];
   render(
     <RadioGroup
-      label="Visibility"
-      value="private"
-      options={visibilities}
+      label="Workspace role"
+      value="Member"
+      options={roles}
       onChoose={(value) => chosen.push(value)}
     />,
   );
-  fireEvent.click(screen.getByRole("radio", { name: "Public" }));
-  expect(chosen).toStrictEqual(["public"]);
+  fireEvent.click(screen.getByRole("radio", { name: "Admin" }));
+  expect(chosen).toStrictEqual(["Admin"]);
 });
 
 test("a described option is described, by a reference that resolves", () => {
@@ -91,19 +93,19 @@ test("a described option is described, by a reference that resolves", () => {
   styleless();
 });
 
-/** The undescribed roster is what `CreateRepository` draws, and it must not
- * gain an empty second line under each label. */
+/** The undescribed roster is what a workspace invite's role choice draws, and
+ * it must not gain an empty second line under each label. */
 test("a roster describing nothing draws no description at all", () => {
   render(
     <RadioGroup
-      label="Visibility"
-      value="private"
-      options={visibilities}
+      label="Workspace role"
+      value="Member"
+      options={roles}
       onChoose={() => undefined}
     />,
   );
-  expect(describedText("Private")).toBe(undefined);
-  expect(describedText("Public")).toBe(undefined);
+  expect(describedText("Admin")).toBe(undefined);
+  expect(describedText("Member")).toBe(undefined);
   expect(document.querySelectorAll(".radio-about").length).toBe(0);
 });
 

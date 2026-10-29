@@ -12,9 +12,8 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { Landing } from "../app/browser/routes.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   answer,
   apiDouble,
@@ -80,7 +79,7 @@ function mount(children: ReactNode): void {
 test("the shell around a project draws no footer, in its bar or anywhere", async () => {
   mount(<Shell partition={atlas} />);
   await settled();
-  expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
   expect(screen.queryByText(footerText)).toBeNull();
 });
 

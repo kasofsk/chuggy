@@ -94,6 +94,7 @@ test("a row whose run stopped at a failed step names the step", () => {
   for (const [evidence, badge] of [
     ["RunPushFailed", "push failed"],
     ["RunTimedOut", "timed out"],
+    ["RunDiskLow", "disk low"],
   ] as const)
     expect(
       ticketBadgeLabel("Escalated", {

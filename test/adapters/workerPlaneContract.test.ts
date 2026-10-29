@@ -81,7 +81,11 @@ import {
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
-import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
+import {
+  asForgeInstallationId,
+  asForgeInstallationToken,
+} from "../../src/interpreter/forgeInstallation.ts";
+import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
@@ -529,18 +533,41 @@ const credentialsMinted: Readonly<
   Unavailable: { minted: "Unavailable" },
 };
 
+/** Each refusal met past the address: an installation that does not select the repository, one the forge refused, and none claimed. */
+const credentialsUnreached: readonly WorkerPlaneCredentialMinted[] = [
+  ...(["Unselected", "Refused"] as const).map((reach) => ({
+    minted: "NotFound" as const,
+    unreached: {
+      reach,
+      repository: asRepositoryId(credentialRepository),
+      app: "worker" as const,
+      installationId: asForgeInstallationId("156786211"),
+    },
+  })),
+  {
+    minted: "NotFound",
+    unreached: {
+      reach: "Unclaimed",
+      repository: asRepositoryId(credentialRepository),
+      app: "worker",
+    },
+  },
+];
+
 /** Every answer the minting can give, through whichever of its two doors the route calls. */
 const credentialCases: readonly WorkerPlaneCase[] = [
   { name: "a plane that mints nothing" },
-  ...Object.values(credentialsMinted).map((minted) => ({
-    name: `a mint answering ${minted.minted}`,
-    service: {
-      credentials: {
-        attempt: () => Promise.resolve(minted),
-        session: () => Promise.resolve(minted),
+  ...[...Object.values(credentialsMinted), ...credentialsUnreached].map(
+    (minted) => ({
+      name: `a mint answering ${JSON.stringify(minted)}`,
+      service: {
+        credentials: {
+          attempt: () => Promise.resolve(minted),
+          session: () => Promise.resolve(minted),
+        },
       },
-    },
-  })),
+    }),
+  ),
 ];
 
 const bothAnswers = [true, false] as const;

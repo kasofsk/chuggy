@@ -21,6 +21,7 @@ import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { poolClientTokens } from "../adapters/http/poolTokens.ts";
+import { poolJobPlaneClient } from "../adapters/http/poolJobPlaneClient.ts";
 import { poolPlaneClient } from "../adapters/http/poolPlaneClient.ts";
 import { kubernetesPoolBackend } from "../adapters/kubernetes/poolPlacement.ts";
 import {
@@ -47,6 +48,7 @@ export async function poolClientMain(
     {
       tokens: poolClientTokens(config.tokens),
       plane: poolPlaneClient(config.plane),
+      jobs: poolJobPlaneClient({ timeoutMs: config.plane.settleTimeoutMs }),
       backend: poolClientBackend(config.site),
       settings: checkedWorkerPoolClientSettings(config.client),
     },

@@ -26,6 +26,7 @@ import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts"
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
 import {
+  repositoryAddHow,
   repositoryRosterPolledMs,
   repositoryRosterRereadsMax,
 } from "../app/core/projectRepositories.ts";
@@ -141,8 +142,8 @@ function without(app: string): typeof installations {
   };
 }
 
-/** A second account holding both apps, which is what makes the create dialog's
- * account a choice rather than the only row. */
+/** The second account's worker claim as well, so every account holds both
+ * apps. */
 const twoAccounts: typeof installations = {
   truncated: false,
   installations: [
@@ -189,6 +190,7 @@ const bindings = {
       repository: boundUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
       configured: true,
     },
   ],
@@ -399,6 +401,63 @@ test("a retired binding is not listed, and a project with only retired ones read
   expect(within(section).queryAllByRole("rowheader")).toStrictEqual([]);
   expect(within(section).getByText("No repository bound")).toBeDefined();
   expect(addButtons()).toHaveLength(2);
+});
+
+/** The worker app's installation on kasofsk, whose page on GitHub is where its selection changes. */
+const workerSettingsUrl =
+  "https://github.com/organizations/kasofsk/settings/installations/156786211";
+
+/**
+ * A binding the worker app's installation does not select says so on its row,
+ * with that installation's page on GitHub; one it reaches says nothing.
+ */
+test("a binding the worker app's installation does not select is marked on its row, with the installation's page", async () => {
+  await drawPage({
+    bound: {
+      repositories: [
+        {
+          ...bindings.repositories[0],
+          workerReach: {
+            reach: "Unselected",
+            installationId: "156786211",
+            settingsUrl: workerSettingsUrl,
+          },
+        },
+      ],
+    },
+  });
+  const row = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: /^kasofsk\/chuggy/u,
+  });
+  expect(within(row).getByText("Worker app missing")).toBeDefined();
+  expect(
+    within(row)
+      .getByRole("link", { name: "Review on GitHub" })
+      .getAttribute("href"),
+  ).toBe(workerSettingsUrl);
+});
+
+test("a binding the worker app reaches carries no mark, and one GitHub said nothing of is unread", async () => {
+  await drawPage();
+  const reached = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: "kasofsk/chuggy",
+  });
+  expect(within(reached).queryByText("Worker app missing")).toBeNull();
+  cleanup();
+  await drawPage({
+    bound: {
+      repositories: [
+        { ...bindings.repositories[0], workerReach: { reach: "Unknown" } },
+      ],
+    },
+  });
+  const unread = within(sectionOf("Repositories")).getByRole("rowheader", {
+    name: /^kasofsk\/chuggy/u,
+  });
+  expect(within(unread).getByText("Worker app unread")).toBeDefined();
+  expect(
+    within(unread).queryByRole("link", { name: "Review on GitHub" }),
+  ).toBeNull();
 });
 
 /** A binding is a row and a page, and the row is the only way to the page. */
@@ -1696,6 +1755,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
           repository: freeUrl,
           boundAt: "2026-10-01T00:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           configured: true,
         },
       ],
@@ -1748,119 +1808,6 @@ test("a binding that already stood draws the repository's name and the one word 
   expect(statusesOf()).toStrictEqual(["gdoteof/scratch · Already bound"]);
 });
 
-/** A create makes the repository through one app's installation and leaves the
- * work to the other's, so an account holding one of them is not offered. */
-test("the create dialog offers only an account holding both apps", async () => {
-  await drawPage();
-  fireEvent.click(screen.getByRole("button", { name: "Create" }));
-  await settled();
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Account / }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  expect(
-    screen.getAllByRole("menuitemradio").map((one) => one.textContent),
-  ).toStrictEqual(["kasofsk"]);
-});
-
-test("a tenant holding no account with both apps cannot open the create dialog", async () => {
-  await drawPage({ claimed: without("worker") });
-  expect(
-    screen.getByRole<HTMLButtonElement>("button", { name: "Create" }).disabled,
-  ).toBe(true);
-});
-
-const madeUrl = "https://forge.test/kasofsk/scratch";
-
-const made = {
-  repository: madeUrl,
-  landing: { mode: "Push" },
-  created: { account: "kasofsk", name: "scratch", url: madeUrl },
-  seeded: true,
-  ruleset: { result: "Refused", message: "no branch yet" },
-  configurations: { result: "Deferred", reason: "StepFailed" },
-};
-
-async function typeCreate(
-  sent: readonly Sent[],
-  visibility: string | null = "Public",
-): Promise<Sent | undefined> {
-  fireEvent.click(screen.getByRole("button", { name: "Create" }));
-  await settled();
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-    target: { value: "scratch" },
-  });
-  if (visibility !== null)
-    fireEvent.click(screen.getByRole("radio", { name: visibility }));
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }),
-  );
-  await settled();
-  return sent.find((one) => one.url.includes("/repositories/new"));
-}
-
-test("a create names what it asked for and draws every step it took", async () => {
-  const sent = await drawPage({ posted: () => answer(made, 201) });
-  const posted = await typeCreate(sent);
-  expect(posted?.body).toStrictEqual({
-    account: "kasofsk",
-    name: "scratch",
-    visibility: "public",
-  });
-  expect(posted?.key).toBeTruthy();
-  const rows = within(screen.getByRole("dialog")).getByRole("status");
-  expect(rows.textContent).toBe(
-    "Repositoryscratch" +
-      "SeedSeeded" +
-      "RulesetRefused · no branch yet" +
-      "ConfigurationsStep failed",
-  );
-  expect(
-    within(rows).getByRole<HTMLAnchorElement>("link", { name: "scratch" }).href,
-  ).toBe(madeUrl);
-});
-
-/** A create that left a configuration offers the first ticket from its row, as
- * a bind that did offers it from the picker. */
-test("a create that configured its repository says so and links a new ticket", async () => {
-  const sent = await drawPage({
-    posted: () =>
-      answer(
-        {
-          ...made,
-          configurations: { result: "Bootstrapped", revision: "bootstrap" },
-        },
-        201,
-      ),
-  });
-  await typeCreate(sent);
-  const rows = within(screen.getByRole("dialog")).getByRole("status");
-  expect(rows.textContent).toContain(
-    "ConfigurationsDefault configuration added · New ticket",
-  );
-  expect(
-    within(rows).getByRole("link", { name: "New ticket" }).getAttribute("href"),
-  ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/tickets/new`);
-});
-
-test("a create the route refuses is the one line it refused with", async () => {
-  const sent = await drawPage({
-    posted: () =>
-      answer(
-        {
-          error: {
-            code: "InstallationMissing",
-            message:
-              "This tenant has claimed no worker installation on the account.",
-          },
-        },
-        422,
-      ),
-  });
-  await typeCreate(sent);
-  expect(statusesOf()).toStrictEqual(["Missing: worker"]);
-});
-
 /**
  * One installation that will not answer takes the whole roster down, because a
  * repository the reader cannot find may be in the part that was not answered
@@ -1906,13 +1853,6 @@ test("a bind stales the bindings the page drew", async () => {
   expect(raised).toStrictEqual([bindingsKey]);
 });
 
-test("a create stales the bindings the page drew", async () => {
-  const sent = await drawPage({ posted: () => answer(made, 201) });
-  const raised = invalidationsAfterDraw();
-  await typeCreate(sent);
-  expect(raised).toStrictEqual([bindingsKey]);
-});
-
 /** Nothing was bound, so there is nothing to re-read: a refusal that staled the
  * key would send the page back to the API on every failed attempt. */
 test("a refused bind stales nothing", async () => {
@@ -1933,49 +1873,6 @@ test("a refused bind stales nothing", async () => {
   expect(raised).toStrictEqual([]);
 });
 
-/** Private is what the dialog opens on, so a create nobody thought about does
- * not put a repository on the open internet. */
-test("a create nobody chose a visibility for asks for a private one", async () => {
-  const sent = await drawPage({ posted: () => answer(made, 201) });
-  const posted = await typeCreate(sent, null);
-  expect(posted?.body).toStrictEqual({
-    account: "kasofsk",
-    name: "scratch",
-    visibility: "private",
-  });
-});
-
-/** The account is where the repository is made, so a choice that did not reach
- * the body would make it under whichever account happened to be first. */
-test("the account chosen is the account the create is asked under", async () => {
-  const sent = await drawPage({
-    claimed: twoAccounts,
-    posted: () => answer(made, 201),
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Create" }));
-  await settled();
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Account / }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  fireEvent.click(screen.getByRole("menuitemradio", { name: "gdoteof" }));
-  await settled();
-  fireEvent.change(screen.getByRole("textbox", { name: "Name" }), {
-    target: { value: "scratch" },
-  });
-  fireEvent.click(
-    within(screen.getByRole("dialog")).getByRole("button", { name: "Create" }),
-  );
-  await settled();
-  expect(
-    sent.find((one) => one.url.includes("/repositories/new"))?.body,
-  ).toStrictEqual({
-    account: "gdoteof",
-    name: "scratch",
-    visibility: "private",
-  });
-});
-
 const retiredUrl = "https://forge.test/kasofsk/old";
 
 /** A live binding the project holds nothing for, beside one it holds and one retired. */
@@ -1986,12 +1883,14 @@ const unconfigured = {
       repository: freeUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
       configured: true,
     },
     {
       repository: retiredUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
       configured: false,
       retiredAt: "2026-09-14T00:00:00Z",
     },
@@ -2098,7 +1997,7 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   expect(raised).toStrictEqual([bindingsKey]);
 });
 
-/** The line drawn under Add and Create, which is none where nothing is missing. */
+/** The line drawn under Add, which is none where nothing is missing. */
 function offersLine(): string | null | undefined {
   return sectionOf("Repositories").querySelector(".notice")?.textContent;
 }
@@ -2132,7 +2031,7 @@ const noAccount: typeof installations = { truncated: false, installations: [] };
 
 test("a reader the accounts are withheld from is told who adds repositories, and offered no step", async () => {
   await drawAtProjectListing(() => answer({}, 404));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offered("Add")).toBe(false);
   expect(offersLine()).toBe("A workspace admin adds repositories");
   expect(offersSteps()).toStrictEqual(noStep);
 });
@@ -2148,7 +2047,7 @@ test("a listing that failed says the accounts did not load, and offers no step",
 /** A new project's creator lands here, so the press returns here, where Add is. */
 test("with no account, the page offers Connect GitHub under its line, returning to itself", async () => {
   await drawAtProject(noAccount);
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offered("Add")).toBe(false);
   expect(offersLine()).toBe("Connect a GitHub account first");
   const { connect, install } = offersSteps();
   expect(install).toBeNull();
@@ -2198,16 +2097,16 @@ test("with no account on a deployment that cannot authorize, the page says who c
 
 test("with no portal claim, the page says no account has the portal app, and offers no step", async () => {
   await drawAtProject(without("portal"));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([false, false]);
+  expect(offered("Add")).toBe(false);
   expect(offersLine()).toBe("No account has the portal app");
   expect(offersSteps()).toStrictEqual(noStep);
 });
 
 /** Add is offered from an account like this one, and the first job on what it
  * binds would find no worker app to mint a credential under. */
-test("an account without the worker app is named under Add and Create, with its install returning here", async () => {
+test("an account without the worker app is named under Add, with its install returning here", async () => {
   await drawAtProject(without("worker"));
-  expect([offered("Add"), offered("Create")]).toStrictEqual([true, false]);
+  expect(offered("Add")).toBe(true);
   expect(offersLine()).toBe("Worker app missing · kasofsk");
   const { connect, install } = offersSteps();
   expect(connect).toBeNull();
@@ -2229,7 +2128,7 @@ test("an account without the worker app is named under Add and Create, with its 
 
 test("an account without the worker app is named where another holds both and nothing is withheld", async () => {
   await drawAtProject();
-  expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
+  expect(offered("Add")).toBe(true);
   expect(offersLine()).toBe("Worker app missing · gdoteof");
   expect(offersSteps().install).not.toBeNull();
 });
@@ -2277,9 +2176,10 @@ test("a return that failed is drawn as a failure", async () => {
   expect(word.classList.contains("notice-danger")).toBe(true);
 });
 
-test("a workspace whose accounts all hold both apps is offered Add and Create, no line and no step", async () => {
+test("a workspace whose accounts all hold both apps is offered Add, no line and no step, and nothing that makes a repository", async () => {
   await drawAtProject(twoAccounts);
-  expect([offered("Add"), offered("Create")]).toStrictEqual([true, true]);
+  expect(offered("Add")).toBe(true);
+  expect(screen.queryByRole("button", { name: "Create" })).toBeNull();
   expect(offersLine()).toBeUndefined();
   expect(offersSteps()).toStrictEqual(noStep);
 });
@@ -2392,25 +2292,6 @@ test("a bind that left no configuration offers no step, runner or none", async (
   expect(dialogSteps()).toStrictEqual([]);
 });
 
-test("a create in a project with no runner leads to adding one from its row", async () => {
-  const sent = await drawPage({
-    posted: () =>
-      answer(
-        {
-          ...made,
-          configurations: { result: "Bootstrapped", revision: "bootstrap" },
-        },
-        201,
-      ),
-    over: workRunnerOver({ runners: "Unregistered" }),
-  });
-  await typeCreate(sent);
-  expect(
-    within(screen.getByRole("dialog")).getByRole("status").textContent,
-  ).toContain(`Configurations${configured} · Add runner`);
-  expect(dialogSteps()).toStrictEqual([["Add runner", runnersPath]]);
-});
-
 const unbound = { repositories: [] };
 
 function addButtons(): readonly HTMLButtonElement[] {
@@ -2432,10 +2313,11 @@ function pickerDrawn(): unknown {
 
 /**
  * A workspace that has connected GitHub and bound nothing has one thing left
- * to do here, so the roster's empty line carries the control that does it.
- * It is the head's own dialog it opens, and a row chosen there binds.
+ * to do here, so the roster's empty line carries the control that does it,
+ * under the line saying where a repository Add lists comes from. It is the
+ * head's own dialog it opens, and a row chosen there binds.
  */
-test("an empty roster carries Add under its line, and it opens the dialog the head's Add opens", async () => {
+test("an empty roster carries Add under its line and how a repository comes to be listed, and it opens the dialog the head's Add opens", async () => {
   const sent = await drawPage({
     claimed: twoAccounts,
     bound: unbound,
@@ -2445,7 +2327,10 @@ test("an empty roster carries Add under its line, and it opens the dialog the he
   if (head === undefined || body === undefined) throw new Error("one Add");
   expect(more).toStrictEqual([]);
   expect(body.classList.contains("btn-primary")).toBe(true);
-  expect(body.previousElementSibling?.textContent).toBe("No repository bound");
+  expect(body.previousElementSibling?.textContent).toBe(repositoryAddHow);
+  expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
+    "No repository bound",
+  );
 
   fireEvent.click(head);
   await settled();
@@ -2505,6 +2390,7 @@ const liveAndRetired = {
       repository: retiredUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
       configured: true,
       retiredAt,
     },
@@ -2597,6 +2483,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
           repository: boundUrl,
           boundAt: "2026-09-11T00:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           retiredAt,
         },
       }),

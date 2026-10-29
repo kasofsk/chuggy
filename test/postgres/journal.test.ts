@@ -24,6 +24,8 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import type pg from "pg";
+
 import {
   replayGraph,
   storedJournalLegalOn,
@@ -35,7 +37,12 @@ import {
   journalChainGenesis,
   journalEnvelopeDigest,
 } from "../../src/adapters/postgres/digest.ts";
-import { postgresJournalLegality } from "../../src/adapters/postgres/journal.ts";
+import {
+  postgresJournalDispatchContracts,
+  postgresJournalLegality,
+  postgresJournalLoad,
+} from "../../src/adapters/postgres/journal.ts";
+import { ticketServiceRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { decisionSemanticsVersionCurrent } from "../../src/actor/decisionSemantics.ts";
@@ -47,6 +54,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessCommitted,
   postgresHarnessProject,
+  postgresHarnessRolePool,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -310,6 +318,74 @@ test("load re-verifies the retained configuration content", async () => {
   assert.equal(loaded.parsed, "Refused");
   assert.ok(loaded.parsed === "Refused");
   assert.match(loaded.why, /integrity verification/);
+});
+
+/** A writer pool that keeps every value its queries answered, so a case can count what a read was sent. */
+function journalRecordingPool(): {
+  readonly pool: pg.Pool;
+  readonly answered: unknown[];
+} {
+  const pool = postgresHarnessRolePool(ticketServiceRole);
+  const answered: unknown[] = [];
+  pool.on("connect", (client) => {
+    const query = client.query.bind(client);
+    Object.assign(client, {
+      query: async (text: string | pg.QueryConfig, values?: unknown[]) => {
+        const result = await query<Record<string, unknown>>(text, values);
+        for (const row of result.rows) answered.push(...Object.values(row));
+        return result;
+      },
+    });
+  });
+  return { pool, answered };
+}
+
+test("a load and the dispatch contracts read a configuration once, however many rows name it", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-once",
+  );
+  const memory = await postgresHarnessHistory(
+    harness,
+    partition,
+    "writer",
+    postgresHarnessJournal().length,
+  );
+  const named = (await harness.query(
+    `SELECT c.canonical FROM journal_entry j JOIN configuration_revision c
+        ON c.tenant=j.tenant AND c.project=j.project
+       AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
+      WHERE j.tenant=$1 AND j.project=$2`,
+    [partition.tenant, partition.project],
+  )) as readonly { canonical: string }[];
+  const canonical = named[0]?.canonical;
+  assert.ok(canonical !== undefined);
+  assert.ok(named.length > 1);
+  assert.ok(named.every((row) => row.canonical === canonical));
+
+  const recording = journalRecordingPool();
+  try {
+    assert.equal(
+      (await postgresJournalLoad(recording.pool, memory.lease)).parsed,
+      "Ok",
+    );
+    assert.equal(
+      recording.answered.filter((value) => value === canonical).length,
+      1,
+    );
+    recording.answered.length = 0;
+    const contracts = await postgresJournalDispatchContracts(
+      recording.pool,
+      memory.lease,
+    );
+    assert.equal(contracts.get(1)?.configurationCanonical, canonical);
+    assert.equal(
+      recording.answered.filter((value) => value === canonical).length,
+      1,
+    );
+  } finally {
+    await recording.pool.end();
+  }
 });
 
 test("a load under a fenced lease is refused, not served the prefix it would replay", async () => {

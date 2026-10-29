@@ -3,10 +3,11 @@
  * the row it leaves behind says so without a reload.
  *
  * A revoke transitions its own ticket and nothing else, so the dependent stays
- * Pending on a dependency that will never be Done, and revoking it too is the
- * only exit. Nothing is parked on the desk for it: the badge is read before and
- * asserted unmoved after the stranded row has arrived, rather than on a timer,
- * because a badge that has not moved yet looks exactly like one that will not.
+ * Pending on a dependency that will never be Done until an update drops it or
+ * the dependent is revoked too. Nothing is parked on the desk for it: the
+ * badge is read before and asserted unmoved after the stranded row has
+ * arrived, rather than on a timer, because a badge that has not moved yet
+ * looks exactly like one that will not.
  */
 
 import { expect } from "@playwright/test";

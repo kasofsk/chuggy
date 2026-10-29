@@ -24,8 +24,8 @@
 import { useMemo, useRef, useState } from "react";
 
 import { threadBacklogMax } from "../../../../../src/contract/http.ts";
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiStopThreadTurn } from "../../core/apiRoutes.ts";
+import { apiStopThreadTurnAt } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import {
   threadStopFrom,
   threadStoppingWith,
@@ -69,13 +69,13 @@ async function threadStopFlown(
 }
 
 export function useThreadStop(input: {
-  readonly partition: PartitionIdentity;
+  readonly home: ThreadHome;
   /** Told the turn each time the door refuses to stop one, and the word for
    * the cause where a member can act on it. */
   readonly onRefused: (turn: string, cause: string | undefined) => void;
 }): ThreadStopHeld {
   const ports = useApiPorts();
-  const { partition, onRefused } = input;
+  const { home, onRefused } = input;
   const flights = useRef(new Map<string, ThreadStopFlight>());
   const [stopping, setStopping] = useState<readonly string[]>([]);
   const [takenBack, setTakenBack] = useState(0);
@@ -90,7 +90,7 @@ export function useThreadStop(input: {
       return;
     }
     const stop = threadStopFrom(
-      await apiStopThreadTurn(ports, partition, session, turn),
+      await apiStopThreadTurnAt(ports, home, session, turn),
     );
     if (stop.stop === "Ended") return;
     back(turn);

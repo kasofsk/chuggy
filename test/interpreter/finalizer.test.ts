@@ -21,12 +21,14 @@ import {
   allFinalizationHoldKinds,
   allFinalizationRequestStates,
   allGitObjectIdChars,
+  allPromotionDeclines,
   allReconciliationVerdicts,
   asCommitPermitId,
   asFinalizationAttemptId,
   asFinalizerOwnerId,
   asGitObjectId,
   asGitRefName,
+  asRepositoryCredential,
   asRepositoryId,
   checkedFinalizerConfig,
   finalizationNext,
@@ -41,7 +43,9 @@ import {
   type FinalizationReconciliation,
   type FinalizationView,
   type FinalizerConfig,
+  type GitObjectId,
   type ObservedTarget,
+  type PromotionDecline,
   type ReconciliationVerdict,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -231,6 +235,21 @@ test("an identity past its column width, empty, or unpaired is refused", () => {
   );
 });
 
+test("a repository credential holding a line break or any other control character is refused", () => {
+  assert.equal(asRepositoryCredential("ghs_a1-b2.c3"), "ghs_a1-b2.c3");
+  for (const bad of [
+    "first\nsecond",
+    "first\r\nsecond",
+    "tab\there",
+    "\u001b[31m",
+  ])
+    assert.throws(
+      () => asRepositoryCredential(bad),
+      RangeError,
+      JSON.stringify(bad),
+    );
+});
+
 test("a ref name's bound counts code points, matching the column it protects", () => {
   const value = "😀".repeat(200);
   assert.equal(asGitRefName(value), value);
@@ -339,6 +358,50 @@ test("a failed attempt concludes as the one priced failure, carrying its kind", 
       },
     );
   }
+});
+
+test("an attempt whose target already held its candidate succeeds with nothing promoted", () => {
+  const landed: FinalizationAttempt = { ...prepared, outcome: "Landed" };
+  for (const lifecycle of ["Active", ...allClosingLifecycles] as const)
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          lifecycle,
+          attempt: landed,
+          observedTarget: { ...target, commit: moved },
+          approval: "Declined",
+          attemptsMade: 1,
+        }),
+      ),
+      {
+        decide: "Conclude",
+        conclusion: { outcome: "FinalizationSucceeded" },
+      },
+      `${lifecycle}: no target since read and no approval asked changes it`,
+    );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          attempt: landed,
+          permit: permitIn("Granted"),
+          attemptsMade: 1,
+        }),
+      ),
+    RangeError,
+  );
+  const { candidate: pinned, ...unpinned } = landed;
+  assert.equal(pinned, candidate);
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ attempt: unpinned, attemptsMade: 1 }),
+      ),
+    RangeError,
+  );
 });
 
 test("a closing project aborts every finalization that holds no permit", () => {
@@ -590,7 +653,7 @@ test("a granted permit with no reconciliation reads the ref rather than acting a
   );
 });
 
-test("a concluded reconciliation promotes or restarts, and nothing else", () => {
+test("a concluded reconciliation promotes or restarts where no decline is kept", () => {
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,
@@ -615,6 +678,335 @@ test("a concluded reconciliation promotes or restarts, and nothing else", () => 
     ),
     { decide: "Prepare", target, restartsSpent: 0 },
   );
+});
+
+/** The reading a declined push over a ref holding `observed` records. */
+function declinedOver(
+  declined: PromotionDecline,
+  observed: GitObjectId,
+): FinalizationReconciliation {
+  return { ...reconciliationOf("NotPromoted"), observed, declined };
+}
+
+/** A prepared attempt whose permit concluded, the view a reading is decided over. */
+const concluded = {
+  attempt: prepared,
+  attemptsMade: 1,
+  permit: permitIn("Concluded"),
+};
+
+/**
+ * A workflow refusal over a target that did not move is held at once, since
+ * preparing again builds what the same repository refuses again; any other
+ * decline is prepared again until the restarts are spent, then held as
+ * declined; a moved target is the information a restart needs.
+ */
+test("a push the repository declined holds under its own kind, at once for a workflow refusal and once restarts are spent for any other, unless the target moved", () => {
+  assert.deepEqual(
+    ["RemoteDeclined", "WorkflowsRefused"],
+    [...allPromotionDeclines],
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: declinedOver("WorkflowsRefused", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Prepare", target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+  for (const declined of allPromotionDeclines) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          ...concluded,
+          reconciliation: declinedOver(declined, moved),
+        }),
+      ),
+      { decide: "Prepare", target, restartsSpent: 0 },
+      declined,
+    );
+  }
+});
+
+test("a decline over a target that cannot be read waits for it, and one the reading proved unmoved is held however the target moved since", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        observedTarget: undefined,
+        reconciliation: declinedOver("RemoteDeclined", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "TargetUnreadable" },
+    "a decline over a target that cannot be read waits for the target",
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        observedTarget: { ...target, commit: moved },
+        reconciliation: declinedOver("WorkflowsRefused", target.commit),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+    "a target observed to move after the reading is the attempt's to judge",
+  );
+});
+
+test("a closing project aborts whatever the push met, and a decline beside a promotion is refused", () => {
+  for (const declined of populated(
+    allPromotionDeclines,
+    "allPromotionDeclines",
+  )) {
+    for (const lifecycle of populated(
+      allClosingLifecycles,
+      "allClosingLifecycles",
+    )) {
+      assert.deepEqual(
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({
+            ...concluded,
+            lifecycle,
+            reconciliation: declinedOver(declined, target.commit),
+          }),
+        ),
+        { decide: "Abort", target },
+        lifecycle,
+      );
+    }
+    assert.throws(
+      () =>
+        finalizationNext(
+          finalizerDefaults,
+          viewWith({
+            ...concluded,
+            reconciliation: { ...reconciliationOf("Promoted"), declined },
+          }),
+        ),
+      /a declined push is read as promoted/u,
+    );
+  }
+});
+
+/** The reading a ref proving the candidate absent by being absent itself records, beside the decline the push met. */
+function readAbsent(declined?: PromotionDecline): FinalizationReconciliation {
+  return {
+    permit: permitId,
+    candidate,
+    target: target.ref,
+    verdict: "NotPromoted",
+    ...(declined === undefined ? {} : { declined }),
+  };
+}
+
+/**
+ * A decline that left the ref absent is held as one over a target that did not
+ * move, whatever the base the branch would be created from has done since; a
+ * ref read as absent beside no decline is no reading this machine concludes.
+ */
+test("a push declined onto a branch the remote does not hold holds as one declined over an unmoved target", () => {
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        observedTarget: { ...target, commit: moved },
+        reconciliation: readAbsent("WorkflowsRefused"),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionWorkflowsRefused" },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        reconciliation: readAbsent("RemoteDeclined"),
+      }),
+    ),
+    { decide: "Prepare", target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...concluded,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: readAbsent("RemoteDeclined"),
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...concluded, reconciliation: readAbsent() }),
+      ),
+    /a ref read as absent concludes with no decline beside it/u,
+  );
+});
+
+/** A prepared attempt whose target the remote did not hold, its commit read from the binding's own branch. */
+const preparedUnheld: FinalizationAttempt = {
+  ...prepared,
+  target: {
+    ref: asGitRefName("refs/heads/chuggy/unheld"),
+    commit: base,
+    baseRef: target.ref,
+  },
+};
+
+/**
+ * A ref read absent beside no decline, onto a target the attempt found unheld,
+ * goes where any reading that is not promoted and kept no decline goes: the
+ * revision fence, a restart while restarts remain, then the restarts held.
+ */
+test("a ref still absent onto a target nobody held at preparation is prepared again, then held once restarts are spent", () => {
+  const unheld = {
+    ...concluded,
+    attempt: preparedUnheld,
+    observedTarget: preparedUnheld.target,
+  };
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ ...unheld, reconciliation: readAbsent() }),
+    ),
+    { decide: "Prepare", target: preparedUnheld.target, restartsSpent: 0 },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...unheld,
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+        reconciliation: readAbsent(),
+      }),
+    ),
+    { decide: "Hold", hold: "PreparationRestartsExhausted" },
+  );
+  for (const lifecycle of populated(
+    allClosingLifecycles,
+    "allClosingLifecycles",
+  )) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...unheld, lifecycle, reconciliation: readAbsent() }),
+      ),
+      { decide: "Abort", target: preparedUnheld.target },
+      lifecycle,
+    );
+  }
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        ...unheld,
+        reconciliation: readAbsent("RemoteDeclined"),
+        attemptsMade: finalizerDefaults.preparationRestartsMax + 1,
+      }),
+    ),
+    { decide: "Hold", hold: "PromotionDeclined" },
+  );
+});
+
+/**
+ * A request whose ticket's earlier permit is held under an unread reading holds
+ * as that reading does, before anything is built or a permit asked for, while a
+ * recorded failure and a closing project still decide first.
+ */
+test("a request beside its ticket's unsettled permit holds as the reading does and is never promoted", () => {
+  const heldPermit = asCommitPermitId("permit-earlier");
+  for (const varied of [
+    {},
+    { attempt: prepared, attemptsMade: 1 },
+    { attempt: prepared, attemptsMade: 1, approval: "Granted" as const },
+  ]) {
+    assert.deepEqual(
+      finalizationNext(finalizerDefaults, viewWith({ ...varied, heldPermit })),
+      { decide: "Hold", hold: "ReconciliationUnreadable" },
+      JSON.stringify(varied),
+    );
+  }
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({ lifecycle: "Deleting", heldPermit }),
+    ),
+    { decide: "Abort", target },
+  );
+  assert.deepEqual(
+    finalizationNext(
+      finalizerDefaults,
+      viewWith({
+        attempt: attemptFailed("MergeConflict"),
+        attemptsMade: 1,
+        heldPermit,
+      }),
+    ),
+    {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationNeedsWork", kind: "MergeConflict" },
+    },
+  );
+  assert.throws(
+    () =>
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({ ...concluded, heldPermit: permitId }),
+      ),
+    /the permit an earlier request holds is this request's own/u,
+  );
+});
+
+test("a decline kept beside a ref that could not be read waits on the reading under its permit", () => {
+  for (const declined of populated(
+    allPromotionDeclines,
+    "allPromotionDeclines",
+  )) {
+    assert.deepEqual(
+      finalizationNext(
+        finalizerDefaults,
+        viewWith({
+          attempt: prepared,
+          attemptsMade: 1,
+          permit: permitIn("Granted"),
+          reconciliation: { ...reconciliationOf("Unreadable"), declined },
+        }),
+      ),
+      { decide: "Hold", hold: "ReconciliationUnreadable" },
+      declined,
+    );
+  }
 });
 
 test("a promoted candidate whose brief proposes is not concluded by the promotion", () => {

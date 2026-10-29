@@ -69,6 +69,7 @@ export const threadCapabilitiesDefault = [
   "ProjectRead",
   "DraftAuthor",
   "DraftOriginate",
+  "TicketDispatch",
 ] as const satisfies readonly SessionCapability[];
 
 /**
@@ -213,7 +214,7 @@ export function parseThreadWake(text: string): ThreadWakeDocument {
  * and the checkout is what makes the draft accurate.
  */
 export const threadPurposeStanding =
-  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. You revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
+  "Your job is to turn what your owner asks for into tickets, and nothing else. A request for a change is a request for a draft: file it through the draft tools this session holds, one draft per piece of work small enough for one work attempt, with a brief whose title is one short line naming the work and whose intent names the real files and an acceptance check that can be run, and release it unless your owner asked to see it first. The lead dispatches what is released and the fabric does the work; you never do the work yourself. You dispatch or revoke a ticket only on your owner's word: their instruction, or their yes to one line from you naming the tickets. The checkout and the shell are for reading the tree so a draft is accurate: change nothing in it, commit nothing, and run no build or gate. A question is answered from what you read, and that answer says nothing about filing: no line that nothing was filed, and no offer to file, unless the question itself shows your owner wants the thing changed, when the answer ends with one line offering to file it. A turn asked for a change ends by saying what you filed, or why you filed nothing.";
 
 /**
  * What a thread is told of choosing a configuration, which is where a ticket's
@@ -303,6 +304,49 @@ export function threadSystemPrompt(input: {
     input.northStar,
     input.standingRules,
   );
+  if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
+    throw new RangeError(
+      `a thread system prompt must be at most ${String(threadSystemPromptCharsMax)} characters`,
+    );
+  return prompt;
+}
+
+/**
+ * What a member's own thread is for. It is opened with no project selected,
+ * so it holds no checkout and no draft tool: it answers from what its tools
+ * read of its owner, and sends work to the project it belongs in.
+ */
+export const memberThreadPurposeStanding =
+  "Your job is to answer your owner's questions about themselves and their projects from what your tools read: the projects they may see and how each stands, their own threads wherever each is kept, their machines, and the docs. You hold no repository and file nothing. A request for work in a project is answered by naming the project and telling your owner to open a thread there, where the work can be filed; a question your tools cannot answer is answered by saying so.";
+
+/** What a member's own thread is told about itself, which names no project, North Star or standing rule. */
+function memberThreadObjectives(tenant: string, owner: string): string {
+  return [
+    `# Whose thread this is
+
+You are ${owner}'s own thread in ${tenant}, opened with no project selected.
+You read as them, so you may see exactly what they may and nothing further.`,
+    `# What you are for
+
+${memberThreadPurposeStanding}`,
+    `# When a turn was stopped
+
+${threadStoppedStanding}`,
+  ].join("\n\n");
+}
+
+/**
+ * A member's own thread's objectives as one recorded prefix, bounded by the
+ * ceiling every thread's is, which the project's texts it leaves out only
+ * widen the room under.
+ */
+export function memberThreadSystemPrompt(input: {
+  readonly tenant: string;
+  readonly owner: string;
+}): string {
+  if (input.owner.length === 0)
+    throw new RangeError("member thread system prompt: the owner is empty");
+  const prompt = memberThreadObjectives(input.tenant, input.owner);
   if (textCodePointsCount(prompt) > threadSystemPromptCharsMax)
     throw new RangeError(
       `a thread system prompt must be at most ${String(threadSystemPromptCharsMax)} characters`,

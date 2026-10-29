@@ -6,11 +6,13 @@
  * retired one is not listed, and its page is reached only by its address. A
  * binding is added from what those installations grant rather than from a
  * typed address. A binding the project holds no configuration for
- * is drawn as deferred, with its configuration step offered again on its row.
+ * is drawn as deferred, with its configuration step offered again on its row,
+ * and one the worker app cannot be said to reach says why on its row, with the
+ * installation's page on GitHub where its selection is what is missing.
  * Each binding offers Unbind unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
- * The line under Add and Create says why either is withheld, or that a
- * connected account lacks the worker app. The accounts are the tenant's, and
+ * The line under Add says why it is withheld, or that a connected account
+ * lacks the worker app. The accounts are the tenant's, and
  * the step that line names is taken from here where this reader can take it:
  * Connect GitHub where the workspace holds no account, and the worker app's
  * install where one it holds lacks that app, each returning to this page. A
@@ -26,8 +28,10 @@
  * reads its roster again.
  *
  * ADD IS DRAWN A SECOND TIME UNDER AN EMPTY ROSTER'S LINE, where adding is the
- * one thing left to do, and opens the dialog the one in the head opens.
- * `ui/chuggy-ui/app/core/projectRepositories.ts` decides when.
+ * one thing left to do, and opens the dialog the one in the head opens. The
+ * line over it says how a repository comes to be listed there: made on GitHub
+ * and granted to both apps. `ui/chuggy-ui/app/core/projectRepositories.ts`
+ * decides when.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -53,6 +57,7 @@ import type { ForgeReturnWord } from "../core/forgeReturn.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   repositoryAddClosedPath,
+  repositoryAddHow,
   repositoryAddLeads,
   repositoryAddOpened,
   repositoryLabel,
@@ -73,8 +78,8 @@ import {
   projectRepositoriesResource,
 } from "./repositories/AddRepository.tsx";
 import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx";
+import { BindingWorkerReach } from "./repositories/BindingWorkerReach.tsx";
 import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
-import { CreateRepository } from "./repositories/CreateRepository.tsx";
 import {
   ForgeReturned,
   useForgeReturned,
@@ -88,7 +93,7 @@ import {
 } from "./repositories/UnbindRepository.tsx";
 import type { RepositoryUnbinding } from "./repositories/UnbindRepository.tsx";
 import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
-import { TopBarSlot } from "./shell/slots.tsx";
+import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Figure } from "./ui/Figure.tsx";
@@ -126,6 +131,9 @@ function BindingRow(props: {
               partition={props.partition}
               repository={binding.repository}
             />
+          )}
+          {binding.workerReach === undefined ? null : (
+            <BindingWorkerReach reach={binding.workerReach} />
           )}
         </span>
       </th>
@@ -174,6 +182,7 @@ function BindingTable(props: {
     ) : (
       <div className="grid justify-items-start gap-3">
         <EmptyState label="No repository bound" />
+        <Notice tone="info" inline detail={repositoryAddHow} />
         {props.action}
       </div>
     );
@@ -303,23 +312,16 @@ function RepositoriesSection(props: {
       title="Repositories"
       about="What this project binds. A ticket names one of these."
       meta={
-        <span className="flex items-center gap-2">
-          <AddRepository
-            partition={props.partition}
-            installations={forgePortalInstallations(props.installations)}
-            workers={forgeWorkerInstallations(props.installations)}
-            bound={bindings ?? []}
-            runner={props.runner}
-            open={picker.open}
-            onOpenChange={picker.opened}
-            onBound={picker.bound}
-          />
-          <CreateRepository
-            partition={props.partition}
-            installations={props.installations}
-            runner={props.runner}
-          />
-        </span>
+        <AddRepository
+          partition={props.partition}
+          installations={forgePortalInstallations(props.installations)}
+          workers={forgeWorkerInstallations(props.installations)}
+          bound={bindings ?? []}
+          runner={props.runner}
+          open={picker.open}
+          onOpenChange={picker.opened}
+          onBound={picker.bound}
+        />
       }
     >
       <ForgeReturned word={props.returned} />
@@ -375,11 +377,7 @@ export function RepositoriesPage(): ReactNode {
   const runner = useWorkRunner(partition, "Reader");
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
-      <TopBarSlot>
-        <h1 className="text-md font-strong text-ink-1 truncate">
-          Repositories
-        </h1>
-      </TopBarSlot>
+      <ScreenTitle>Repositories</ScreenTitle>
       <RepositoriesSection
         partition={partition}
         installations={

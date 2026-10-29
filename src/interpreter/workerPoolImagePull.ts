@@ -4,11 +4,13 @@
  *
  * The registry's front forwards the method and address of every request it
  * receives, and a request is allowed only where it is exactly a pull of an
- * image or a runtime an assignment the pool holds names: a manifest by that
- * reference's digest, or a blob of its repository. What an image is called on
- * the cluster and what a pool off it pulls it by differ only in the host, so
- * the digest a pool is handed is the one its execution pinned or its attempt
- * was opened under.
+ * image or a runtime an assignment the pool holds names, or, for a chat host,
+ * of the image its poll is answered with: a manifest or a blob of that
+ * reference's repository, each by digest, so an index's platform manifests
+ * are pulled as its blobs are. What an image is called on the
+ * cluster and what a pool off it pulls it by differ only in the host, so the
+ * digest a pool is handed is the one its execution pinned, its attempt was
+ * opened under, or its site publishes for sessions.
  */
 import { textCodePointsCount } from "../contract/http.ts";
 import { workerImageCharsMax } from "../contract/workerPool.ts";
@@ -71,7 +73,8 @@ export function workerPoolImagePullRequested(
 
 /**
  * Whether a pool holding assignments that name `held`, each an image or a
- * runtime, may make `pull`. Only a reference on an internal host counts,
+ * runtime, may make `pull`: a manifest or a blob by any digest in a held
+ * reference's repository. Only a reference on an internal host counts,
  * because that is the registry the front serves.
  */
 export function workerPoolImagePullAllowed(
@@ -84,10 +87,7 @@ export function workerPoolImagePullAllowed(
     const pinned = workerPoolImageReference.exec(image)?.groups;
     if (pinned?.["host"] === undefined || !hosts.has(pinned["host"]))
       return false;
-    return (
-      pinned["repository"] === pull.repository &&
-      (pull.pull === "Blob" || pinned["digest"] === pull.digest)
-    );
+    return pinned["repository"] === pull.repository;
   });
 }
 

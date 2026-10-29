@@ -1,27 +1,44 @@
 /**
  * The chat pane's history: which threads it offers, in what order, and what
- * choosing one hands back. And the actions offered on the thread the pane
- * holds: Rename and Close, beside its own header controls.
+ * choosing one hands back. And the menu of what is done to the thread the
+ * pane holds: Open, Copy link, Rename and Close.
  *
  * It is the whole of what the Threads page used to be, so the cases that page
  * carried about ordering are here instead.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
   ChatPaneHistory,
   ChatPaneThreadActions,
 } from "../app/browser/shell/ChatPaneHistory.tsx";
-import { holderDouble } from "./screenHarness.tsx";
+import type { ChatPaneThreadActionsAt } from "../app/browser/shell/ChatPaneHistory.tsx";
+import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
+import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
+import { Routed } from "./routed.tsx";
+import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { holderDouble, settled, turned } from "./screenHarness.tsx";
 import {
   threadEntry,
+  threadHome,
   threadMineSession,
   threadOtherSession,
   threadPartition,
 } from "./threadFixture.ts";
+
+beforeEach(() => {
+  resizeObserverStubbed();
+});
 
 afterEach(() => {
   cleanup();
@@ -193,63 +210,97 @@ test("the History trigger names itself again as a tooltip on focus", async () =>
   expect((await screen.findByRole("tooltip")).textContent).toBe("History");
 });
 
-function renderedActions(thread: Parameters<typeof threadEntry>[0]) {
-  return render(
+/** The actions as a header draws them, once the router around them has
+ * drawn its first page. */
+async function renderedActions(
+  thread: Parameters<typeof threadEntry>[0],
+  drawn: {
+    readonly at?: ChatPaneThreadActionsAt;
+    readonly viewOnly?: boolean;
+    readonly write?: CopyWrite;
+  } = {},
+): Promise<void> {
+  render(
     <SessionProvider holder={holderDouble()}>
-      <ChatPaneThreadActions
-        partition={threadPartition}
-        thread={threadEntry(thread)}
-      />
+      <CopyProvider write={drawn.write ?? (() => Promise.resolve(true))}>
+        <Routed>
+          <ChatPaneThreadActions
+            home={threadHome}
+            thread={threadEntry(thread)}
+            viewOnly={drawn.viewOnly ?? false}
+            at={drawn.at ?? "Pane"}
+          />
+        </Routed>
+      </CopyProvider>
     </SessionProvider>,
   );
+  await settled();
 }
 
-/** The header draws Rename and Close as plain buttons rather than behind a
- * menu that has to be opened first, so a reader with no pointer reaches them
- * by role and name alone — each now sits inside its own tooltip trigger too,
- * which is a focus stop of its own before the button, asserted below. */
-test("the header offers Rename and Close with no hover", () => {
-  renderedActions({ session: threadMineSession, mine: true });
-  const rename = screen.getByRole("button", { name: "Rename" });
-  const close = screen.getByRole("button", { name: "Close" });
-  expect(rename.tagName).toBe("BUTTON");
-  expect(close.tagName).toBe("BUTTON");
+/** The thread's page as the router addresses it, which is what both its link
+ * and its copied address are built from. */
+function threadPageHref(session: string): string {
+  return `/${threadPartition.tenant}/${threadPartition.project}/threads/${session}`;
+}
+
+/** The thread's menu, opened from the one control beside its title. */
+async function threadMenuOpened(): Promise<HTMLElement> {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Thread actions" }), {
+    key: "ArrowDown",
+  });
+  return screen.findByRole("menu");
+}
+
+/** The names of what the thread's menu offers, in its order. */
+async function threadMenuOffers(): Promise<readonly string[]> {
+  const menu = await threadMenuOpened();
+  return within(menu)
+    .getAllByRole("menuitem")
+    .map((item) => item.textContent);
+}
+
+/** One control stands beside the title, so the title keeps the row's room,
+ * and its name is said again as a tooltip on focus. */
+test("what is done to the thread is one control beside its title, named again on focus", async () => {
+  await renderedActions({ session: threadMineSession, mine: true });
+  expect(screen.getAllByRole("button")).toHaveLength(1);
+  const button = screen.getByRole("button", { name: "Thread actions" });
+  const trigger = button.closest('[tabindex="0"]') ?? button;
+  fireEvent.focus(trigger);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "Thread actions",
+  );
 });
 
-/** Rename and Close double their hidden name as a tooltip on focus — the same
- * string spoken once, not stated a second way under a second word. */
-test("Rename and Close name themselves again as a tooltip on focus", async () => {
-  renderedActions({ session: threadMineSession, mine: true });
-  for (const name of ["Rename", "Close"]) {
-    const button = screen.getByRole("button", { name });
-    const trigger = button.closest('[tabindex="0"]');
-    if (trigger === null) throw new Error(`no tooltip trigger around ${name}`);
-    fireEvent.focus(trigger);
-    expect((await screen.findByRole("tooltip")).textContent).toBe(name);
-    fireEvent.blur(trigger);
-  }
+test("the reader's own thread offers Open, Copy link, Rename and Close, and neither Hide nor Show", async () => {
+  await renderedActions({ session: threadMineSession, mine: true });
+  expect(await threadMenuOffers()).toStrictEqual([
+    "Open",
+    "Copy link",
+    "Rename",
+    "Close",
+  ]);
 });
 
-test("neither Hide nor Show is offered anywhere", () => {
-  renderedActions({ session: threadMineSession, mine: true });
-  expect(screen.queryByText("Hide")).toBeNull();
-  expect(screen.queryByText("Show")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull();
-  expect(screen.queryByText("…")).toBeNull();
-});
-
-test("a stranger's thread offers Close alone", () => {
-  renderedActions({ session: threadOtherSession, mine: false });
-  expect(screen.getByRole("button", { name: "Close" }).tagName).toBe("BUTTON");
-  expect(screen.queryByRole("button", { name: "Rename" })).toBeNull();
+test("a stranger's thread offers no Rename", async () => {
+  await renderedActions({ session: threadOtherSession, mine: false });
+  expect(await threadMenuOffers()).toStrictEqual([
+    "Open",
+    "Copy link",
+    "Close",
+  ]);
 });
 
 /** Closing cannot be undone, so Close asks first and Cancel sends nothing. */
-test("Close asks what closing does before it closes", () => {
+test("Close asks what closing does before it closes", async () => {
   const fetched = vi.fn();
   vi.stubGlobal("fetch", fetched);
-  renderedActions({ session: threadOtherSession, mine: false });
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  await renderedActions({ session: threadOtherSession, mine: false });
+  const menu = await threadMenuOpened();
+  await turned(() => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Close" }));
+  });
+  expect(screen.queryByRole("menu")).toBeNull();
   const asked = screen.getByRole("group", { name: "Close this thread?" });
   expect(asked.textContent).toContain("cannot be undone");
   expect(asked.textContent).toContain("not yours");
@@ -260,13 +311,90 @@ test("Close asks what closing does before it closes", () => {
   expect(fetched).not.toHaveBeenCalled();
 });
 
-/** A rename the reader walked away from is one they did not mean to save. */
-test("leaving the title editor abandons the rename", () => {
-  renderedActions({ session: threadMineSession, mine: true });
-  fireEvent.click(screen.getByRole("button", { name: "Rename" }));
+/** Rename opens the editor in the title's place, and a rename the reader
+ * walked away from is one they did not mean to save. */
+test("Rename puts the editor in the title's place, and leaving it abandons the rename", async () => {
+  await renderedActions({ session: threadMineSession, mine: true });
+  const menu = await threadMenuOpened();
+  await turned(() => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Rename" }));
+  });
+  await settled();
   const editor = screen.getByRole("textbox", { name: "Thread title" });
+  expect(document.activeElement).toBe(editor);
+  expect(screen.queryByRole("heading")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull();
   fireEvent.change(editor, { target: { value: "never saved" } });
   fireEvent.blur(editor);
   expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Rename" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Thread actions" })).toBeDefined();
+});
+
+/** A real anchor is what lets a reader open the page in a tab of its own,
+ * or copy its address from the browser's own menu. */
+test("Open is a link to the thread's own page", async () => {
+  await renderedActions({ session: threadMineSession, mine: true });
+  const open = within(await threadMenuOpened()).getByRole("menuitem", {
+    name: "Open",
+  });
+  expect(open.tagName).toBe("A");
+  expect(open.getAttribute("href")).toBe(threadPageHref(threadMineSession));
+});
+
+/** The address is the router's own, so it is the one the link goes to,
+ * written whole for a reader pasting it anywhere else; the menu stays open on
+ * the item to say so. */
+test("Copy link writes the whole address of the page Open goes to, and says it did", async () => {
+  const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
+  await renderedActions({ session: "thread a/b", mine: true }, { write });
+  const menu = await threadMenuOpened();
+  const href =
+    within(menu).getByRole("menuitem", { name: "Open" }).getAttribute("href") ??
+    "";
+  await act(async () => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+    await Promise.resolve();
+  });
+  expect(href).toBe(threadPageHref(encodeURIComponent("thread a/b")));
+  expect(write).toHaveBeenCalledWith(`${location.origin}${href}`);
+  expect(screen.getByRole("menu")).toBe(menu);
+  expect(within(menu).getByRole("menuitem", { name: "Copied" })).toBeDefined();
+  expect(screen.getByRole("status").textContent).toBe("Copied");
+});
+
+test("a write the browser refused claims nothing", async () => {
+  const write = vi.fn<CopyWrite>(() => Promise.resolve(false));
+  await renderedActions({ session: threadMineSession, mine: true }, { write });
+  const menu = await threadMenuOpened();
+  await act(async () => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+    await Promise.resolve();
+  });
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(within(menu).queryByRole("menuitem", { name: "Copied" })).toBeNull();
+  expect(screen.getByRole("status").textContent).toBe("");
+});
+
+/** Reading a thread is not changing it, so a reader who may change nothing
+ * still reaches its page and its address. */
+test("a reader who may change nothing is still offered Open and Copy link", async () => {
+  await renderedActions(
+    { session: threadMineSession, mine: true },
+    { viewOnly: true },
+  );
+  expect(await threadMenuOffers()).toStrictEqual(["Open", "Copy link"]);
+});
+
+/** On the page itself the title is the page's, its standing is said beside
+ * it, and a link to where the reader already is would go nowhere. */
+test("over the thread's own page the title heads the page, with its standing, and Open is not offered", async () => {
+  await renderedActions(
+    { session: threadOtherSession, title: "theirs", state: "Closed" },
+    { at: "Page" },
+  );
+  expect(
+    screen.getByRole("heading", { level: 1, name: "theirs" }),
+  ).toBeDefined();
+  expect(screen.getByText("Closed")).toBeDefined();
+  expect(await threadMenuOffers()).toStrictEqual(["Copy link"]);
 });

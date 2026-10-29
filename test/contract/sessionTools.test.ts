@@ -12,13 +12,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { nativeHttpBodyBytesMax } from "../../src/contract/http.ts";
+import {
+  configurationCanonicalCharsMax,
+  dispatchViewSchemaVersion,
+  nativeHttpBodyBytesMax,
+} from "../../src/contract/http.ts";
+import * as authoring from "../../src/contract/authoring.ts";
+import * as brief from "../../src/contract/brief.ts";
+import * as configurationSelection from "../../src/contract/configurationSelection.ts";
 import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import {
   allChuggyTools,
   allDependentRelations,
   builtInToolCapabilities,
   chuggyToolCapabilities,
+  chuggyDocsIndex,
+  chuggyToolDispatchViewResponseBytesMax,
+  chuggyToolDocsResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
@@ -39,17 +49,21 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "read_decision_log",
     "read_refusals",
     "read_ticket_refusals",
+    "read_ticket_landings",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
     "read_execution",
     "read_run_transcript",
+    "read_run_error",
     "read_operation",
     "list_threads",
     "read_thread",
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
+    "read_abilities",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
@@ -57,12 +71,20 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "release_draft",
     "create_draft",
     "revoke_ticket",
+    "update_ticket",
+    "dispatch_ticket",
     "dispatch",
     "refuse",
     "lift",
     "set_attention",
     "set_handoff_note",
     "set_planning_intent",
+    "read_my_abilities",
+    "list_projects",
+    "list_my_threads",
+    "read_my_thread",
+    "list_my_runners",
+    "read_chat_host",
   ]);
 });
 
@@ -80,7 +102,8 @@ test("no tool re-authors a released ticket, whatever roster holds it", () => {
     );
 });
 
-test("every capability is mapped and every tool is gated by exactly one", () => {
+/** `read_docs` reaches no route, so the one tool both reading scopes hold is it. */
+test("every capability is mapped and every tool is gated by exactly one, but the docs both reading scopes hold", () => {
   assert.deepEqual(
     Object.keys(chuggyToolCapabilities).sort(),
     [...sessionCapabilities].sort(),
@@ -90,8 +113,14 @@ test("every capability is mapped and every tool is gated by exactly one", () => 
     for (const tool of chuggyToolCapabilities[capability])
       gates.set(tool, (gates.get(tool) ?? 0) + 1);
   for (const tool of allChuggyTools)
-    assert.equal(gates.get(tool), 1, `${tool} is gated once`);
+    assert.equal(
+      gates.get(tool),
+      tool === "read_docs" ? 2 : 1,
+      `${tool} is gated as often as it should be`,
+    );
   assert.equal(gates.size, allChuggyTools.length);
+  assert.ok(chuggyToolCapabilities.ProjectRead.includes("read_docs"));
+  assert.ok(chuggyToolCapabilities.MemberRead.includes("read_docs"));
 });
 
 test("each capability admits the tools the roster gives it and no other", () => {
@@ -105,17 +134,21 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "read_decision_log",
     "read_refusals",
     "read_ticket_refusals",
+    "read_ticket_landings",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
     "read_execution",
     "read_run_transcript",
+    "read_run_error",
     "read_operation",
     "list_threads",
     "read_thread",
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
+    "read_abilities",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",
@@ -127,7 +160,9 @@ test("each capability admits the tools the roster gives it and no other", () => 
   assert.deepEqual(chuggyToolCapabilities.DraftOriginate, [
     "create_draft",
     "revoke_ticket",
+    "update_ticket",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
     "dispatch",
     "refuse",
@@ -146,7 +181,9 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     ProjectRead: [],
     DraftAuthor: [],
     DraftOriginate: [],
+    TicketDispatch: [],
     LeadDecision: [],
+    MemberRead: [],
   });
 });
 
@@ -204,9 +241,83 @@ test("every bound a tool call is held to is named, an unnamed one being unbounde
   assert.equal(chuggyToolResponseBytesMax, nativeHttpBodyBytesMax);
   assert.equal(chuggyToolTimeoutMs, 30_000);
   assert.equal(chuggyToolPagesMax, 1);
+  assert.equal(chuggyToolDocsResponseBytesMax, 65_536);
+});
+
+test("read_docs reads the public docs' own index, which a bootstrap worker is pointed at too", () => {
+  assert.equal(
+    chuggyDocsIndex,
+    "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt",
+  );
 });
 
 test("a dependent may be a follow-up and may not be a prerequisite", () => {
   assert.deepEqual(allDependentRelations, ["FollowUp", "Prerequisite"]);
   assert.deepEqual(dependentRelationsAdmitted, ["FollowUp"]);
+});
+
+/**
+ * A candidate pinned to the longest canonical configuration, each of its code
+ * units the heaviest one UTF-8 encodes alone, is past an ordinary answer's
+ * bound, so
+ * `dispatch_ticket` reading its page under that bound could never dispatch it.
+ */
+test("a dispatch view page of the heaviest candidate is under the bound dispatch_ticket reads it with", () => {
+  const page = JSON.stringify({
+    result: "Page",
+    token: {
+      tenant: "t".repeat(64),
+      project: "p".repeat(64),
+      recoveryEpoch: "e".repeat(64),
+      schemaVersion: dispatchViewSchemaVersion,
+      watermark: Number.MAX_SAFE_INTEGER,
+      digest: "d".repeat(64),
+    },
+    candidates: [
+      {
+        ticket: Number.MAX_SAFE_INTEGER,
+        ticketVersion: Number.MAX_SAFE_INTEGER,
+        dependencies: [],
+        program: [],
+        configurationRevision: "r".repeat(64),
+        configurationDigest: "c".repeat(64),
+        configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
+      },
+    ],
+    nextAfter: Number.MAX_SAFE_INTEGER,
+    notificationCursor: Number.MAX_SAFE_INTEGER,
+  });
+  const bytes = Buffer.byteLength(page);
+  assert.ok(bytes > nativeHttpBodyBytesMax);
+  assert.ok(bytes <= chuggyToolDispatchViewResponseBytesMax);
+});
+
+test("the request shapes a drafting tool publishes, and their bounds, are the package entry's own", async () => {
+  const entry =
+    (await import("@chuggy/worker-contract/sessionTools")) as Record<
+      string,
+      unknown
+    >;
+  const published = {
+    authoringSchema: authoring.authoringSchema,
+    evaluatorDefinitionSchema: authoring.evaluatorDefinitionSchema,
+    programStageSchema: authoring.programStageSchema,
+    briefSchema: brief.briefSchema,
+    briefLinkSchema: brief.briefLinkSchema,
+    briefBranchSchema: brief.briefBranchSchema,
+    briefRepositorySchema: brief.briefRepositorySchema,
+    briefCheckSchema: brief.briefCheckSchema,
+    briefTitleCharsMax: brief.briefTitleCharsMax,
+    briefIntentCharsMax: brief.briefIntentCharsMax,
+    briefLinksMax: brief.briefLinksMax,
+    briefImagesMax: brief.briefImagesMax,
+    briefChecksMax: brief.briefChecksMax,
+    briefBranchCharsMax: brief.briefBranchCharsMax,
+    briefRepositoryCharsMax: brief.briefRepositoryCharsMax,
+    briefLineCharsMax: brief.briefLineCharsMax,
+    configurationSelectionSchema:
+      configurationSelection.configurationSelectionSchema,
+  };
+  for (const [name, value] of Object.entries(published))
+    assert.equal(entry[name], value, name);
 });

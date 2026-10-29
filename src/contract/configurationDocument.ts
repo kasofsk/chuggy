@@ -313,7 +313,12 @@ export const configurationWorkerModeSchema = z.discriminatedUnion("agent", [
 ]);
 
 const configurationWorkerFields = {
-  setup: z.array(z.string()).max(workerEntriesMax),
+  setup: z
+    .array(z.string())
+    .max(workerEntriesMax)
+    .describe(
+      "Lines run in order before the workload, each under /bin/sh -eu at the repository root with the variables a command line finds; a line that fails fails the setup step. A line passes a variable on by appending to the file CHUG_ENV names either NAME=value on one line or NAME<<DELIMITER, the value's lines and DELIMITER alone on a line, as echo \"PATH=$HOME/.tool/bin:$PATH\" >> \"$CHUG_ENV\" does; where a name is set twice the later value wins. A value reaches only this job's later setup lines, its agent's shells and its commands. A NAME is letters, digits and _, not starting with a digit; one starting CHUG_ or CHUGGY_, GIT_CONFIG_COUNT, GIT_CONFIG_KEY_n, GIT_CONFIG_VALUE_n and any other name the worker reserves are chuggy's. Setting one of chuggy's fails the setup step, as do a line neither form reads and more than the worker's bound on what setup passes. Nothing scrubs these values, so read a secret from where it is kept rather than writing it here. A job on its runner's own host has CHUG_ENV only where the runner installed there sets it, and a line writing to it stops under -u where it is unset.",
+    ),
   files: z
     .array(
       z.object({
@@ -425,7 +430,7 @@ export const configurationImageSchema = z
     ),
   )
   .describe(
-    `A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's other repositories), glibc ${configurationImageGlibcVersionMin} or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in ${workerWorkspaceDirectory}, with the repository its ticket names checked out at ${workerRepositoryDirectory}; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins.`,
+    `A container image reference: an optional registry host and port, lowercase path components, an optional tag and an optional @sha256: digest. Any image works that holds what chuggy's runtime needs of it, since chuggy mounts the runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD: /bin/sh, git on PATH (2.31 or later to read the project's repositories past the clone), glibc ${configurationImageGlibcVersionMin} or later with libstdc++, and a HOME, workspace and temporary directory that uid 1000 can write. chuggy's node runs under an init the runtime ships, so the image needs none, and a process a job orphans is reaped when it exits. A job run in the image works in ${workerWorkspaceDirectory}, with the repository its ticket names checked out at ${workerRepositoryDirectory}; a job that names no image and runs on its runner's own host works in a directory of that host's instead. A digest is recommended and not required. chuggy holds none of the project's registry logins.`,
   );
 
 const configurationPlatformShape = {
@@ -477,7 +482,7 @@ export const executionRequirementsSchema = z
         executionRequirementSchema,
       )
       .describe(
-        "The requirement a task runs under in place of ticketDefault, or of platformDefault without one, by the kind of task. Work is the work task's. Where evaluations is absent, Evaluation is every evaluation stage's and an Evaluation:N key is unused; where evaluations is listed, Evaluation:N is the Nth stage's, counting from one, and Evaluation is unused.",
+        "The requirement a task runs under in place of ticketDefault, or of platformDefault without one, by the kind of task. Work is the work task's. Where evaluations is absent, Evaluation is every evaluation stage's and an Evaluation:N key is unused; where evaluations is listed, Evaluation:N is the Nth stage's, counting from one, and Evaluation and an Evaluation:N past the last stage are unused. An unused key is accepted and changes nothing.",
       )
       .optional(),
   })
@@ -704,6 +709,36 @@ export const workloadSchema = z.discriminatedUnion("runner", [
   agentWorkloadSchema,
   commandsWorkloadSchema,
 ]);
+
+/** A prompt one ticket names in place of a workload's: its text, or the path of a prompt file its catalog's import read. */
+export const workloadPromptOverrideSchema = z
+  .union([
+    z.strictObject({ text: configurationPromptTextSchema }),
+    z.strictObject({ path: configurationReferencePathSchema }),
+  ])
+  .describe(
+    "A path is read as the text the catalog's import stored beside it, so it names a prompt file some workload of the catalog names.",
+  );
+
+/** What one ticket replaces of one workload: any of its fields, each in place of the workload's whole. */
+export const workloadOverrideSchema = z
+  .strictObject({
+    runner: z.enum(["Agent", "Commands"]).optional(),
+    purpose: agentWorkloadSchema.shape.purpose,
+    prompt: workloadPromptOverrideSchema.optional(),
+    worker: z
+      .union([configurationModeWorkerSchema, configurationPreparationSchema])
+      .optional(),
+    authority: configurationAuthoritySchema.optional(),
+    framing: agentWorkloadSchema.shape.framing,
+    practices: configurationPracticesSchema.optional(),
+    brief: configurationBriefSchema.optional(),
+    commands: configurationCommandLinesSchema.optional(),
+    ...workloadPlacementShape,
+  })
+  .describe(
+    "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema.",
+  );
 
 /** Whether a map holds no more entries than a catalog map may. */
 function configurationCatalogBounded(map: Readonly<Record<string, unknown>>) {

@@ -32,12 +32,16 @@
  * in the box.
  *
  * A READER WITH NO THREAD STILL HAS A COMPOSER. Their first press opens one and
- * sends to it, and a press after a failed send reaches the thread that press
- * opened rather than opening another.
+ * sends to it, under one key the composer holds for as long as it is mounted,
+ * so a press after a failed open reaches the thread that one may have opened;
+ * once an open answers, a press after a failed send reaches the thread it
+ * opened without opening again.
  *
  * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. On runners the door
  * asks for a runner of the reader's own instead, so the box takes a message
- * whatever the grant and says when no runner of theirs could take the turn.
+ * whatever the grant and says when no runner of theirs could take the turn. A
+ * member's own chat runs on their chat host alone, so its door is that host's
+ * read, and it carries no images, which only a project keeps.
  *
  * A MESSAGE CAN BE STOPPED FROM ITS PRESS. Each send on its way is handed to
  * the thread's stops for one to follow, so the button is Stop before the door
@@ -68,13 +72,22 @@ import {
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import {
   apiHostedRuns,
-  apiOpenThread,
   apiUploadProjectArtifact,
 } from "../../core/apiRoutes.ts";
 import type { ConversationAttachment } from "../../core/conversationAttachments.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import { memberChatDoor } from "../../core/memberChat.ts";
+import {
+  projectResourceKey,
+  tenantResourceKey,
+} from "../../core/projectQueryKeys.ts";
+import { apiOpenThreadAt, threadHomeOf } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
+  threadLimitWord,
+  threadOpenAtLimit,
+  threadOpenKeyBytesCount,
+  threadOpenKeyMinted,
   threadRefusalCause,
   threadRefusalLine,
   threadSendingWith,
@@ -95,18 +108,21 @@ import type {
   ThreadSending,
 } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
-import { useApiPorts, usePanelResource } from "../api.ts";
+import type { SessionRunnerShort } from "../../core/sessionRunners.ts";
+import { useApiPorts, usePanelAnswers, usePanelResource } from "../api.ts";
 import type {
   ConversationComposerProps,
   ConversationSent,
 } from "../conversation/Conversation.tsx";
 import { drawBytes } from "../ports.ts";
 import {
+  ChatHostNotice,
   SessionRunnerNotice,
   useSessionPlacement,
   useSessionPlacementReads,
   useSessionPlacementStale,
 } from "../sessionPlacement.tsx";
+import { chatHostResource, useChatHost } from "../settings/MyChatHost.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useThreadStop } from "./threadStop.ts";
 import type { ThreadStopHeld } from "./threadStop.ts";
@@ -116,6 +132,10 @@ import type { ThreadStopHeld } from "./threadStop.ts";
 interface ThreadHeld extends ThreadPressed {
   readonly turn: string;
 }
+
+/** What a press carrying images is refused as where no project would keep
+ * them, which a composer offering none never meets. */
+const threadImagesUnhomed = "Images are kept by a project";
 
 /** What each image the project took answered, and which project took it. */
 type ThreadUploaded = WeakMap<
@@ -127,10 +147,13 @@ type ThreadUploaded = WeakMap<
  * project has not taken, in order, and the refusal of the first that fails. */
 async function threadSendUploaded(
   ports: ReturnType<typeof useApiPorts>,
-  partition: PartitionIdentity,
+  home: ThreadHome,
   attached: readonly ConversationAttachment[],
   uploaded: ThreadUploaded,
 ): Promise<readonly string[] | ThreadSend> {
+  if (attached.length === 0) return [];
+  if (home.scope === "Member") return threadSendRefused(threadImagesUnhomed);
+  const { partition } = home;
   const project = partitionPath(partition);
   const images: string[] = [];
   for (const attachment of attached) {
@@ -178,17 +201,20 @@ export function useHostedRuns(partition: PartitionIdentity): {
   };
 }
 
+/** A thread door as the reads that say stand, and where its refusals go. */
+export interface ThreadDoorHeld {
+  readonly door: ThreadDoor;
+  readonly learnt: (granted: boolean) => void;
+  readonly refused: () => Promise<ThreadSend & { readonly send: "Unhosted" }>;
+}
+
 /**
  * What the reader's own thread door asks of them, from the reads that say, and
  * where a door's refusal goes once it is newer than those reads: the grant as
  * `useHostedRuns` says, and the placement is read again rather than waiting on
  * the next poll, the refusal counting the reads before it.
  */
-export function useThreadDoor(partition: PartitionIdentity): {
-  readonly door: ThreadDoor;
-  readonly learnt: (granted: boolean) => void;
-  readonly refused: () => Promise<ThreadSend & { readonly send: "Unhosted" }>;
-} {
+export function useThreadDoor(partition: PartitionIdentity): ThreadDoorHeld {
   const hosted = useHostedRuns(partition);
   const placement = useSessionPlacement(partition);
   const reads = useSessionPlacementReads(partition);
@@ -206,6 +232,22 @@ export function useThreadDoor(partition: PartitionIdentity): {
   };
 }
 
+/** The door of the reader's own chat at their tenant: their chat host as its
+ * read stands. No grant is asked of it, so none is learnt and none refuses:
+ * the server answers a member's own turn as admitted or as wanting a runner,
+ * never as unhosted. */
+export function useMemberThreadDoor(tenant: string): ThreadDoorHeld {
+  const host = useChatHost(tenant);
+  const reads = usePanelAnswers(tenantResourceKey(tenant, chatHostResource));
+  return {
+    door: memberChatDoor(host, reads),
+    learnt: () => undefined,
+    refused: () => {
+      throw new Error("a member's own chat was refused a grant it never asks");
+    },
+  };
+}
+
 /** What a thread door refused for the tenant's hosted grant is drawn as,
  * whether the grant's read, the open or a send met it, and who gives it. */
 export function ThreadUnhostedNotice(): ReactNode {
@@ -216,10 +258,28 @@ export function ThreadUnhostedNotice(): ReactNode {
   );
 }
 
+/** Why no runner can take a thread's turn now: a project's thread waits on
+ * the reader's runners there, and their own chat on their chat host. */
+export function ThreadRunnerNotice(props: {
+  readonly home: ThreadHome;
+  readonly short: SessionRunnerShort;
+}): ReactNode {
+  const { home } = props;
+  return home.scope === "Project" ? (
+    <SessionRunnerNotice
+      partition={home.partition}
+      session="Thread"
+      short={props.short}
+    />
+  ) : (
+    <ChatHostNotice tenant={home.tenant} short={props.short} />
+  );
+}
+
 /** The one line a press is reported as, and nothing while it has not been
  * pressed: a composer that narrated its own idleness would be prose. */
 function ThreadSendNote(props: {
-  readonly partition: PartitionIdentity;
+  readonly home: ThreadHome;
   readonly send: ThreadSend;
 }): ReactNode {
   const send = props.send;
@@ -232,16 +292,9 @@ function ThreadSendNote(props: {
       return <ThreadUnhostedNotice />;
     case "NoRunner":
     case "RunnerOffline":
-      return (
-        <SessionRunnerNotice
-          partition={props.partition}
-          session="Thread"
-          short={send.send}
-        />
-      );
+      return <ThreadRunnerNotice home={props.home} short={send.send} />;
     case "Waiting":
     case "Ended":
-    case "Unsettled":
       return <Notice tone="parked" inline detail={send.why} />;
     case "Refused":
       return <Notice tone="danger" inline detail={threadRefusalLine(send)} />;
@@ -262,15 +315,17 @@ export interface ThreadSendHeld {
 /** The thread a first press opens, or what the door refused opening one as. */
 async function threadSendOpened(
   ports: ReturnType<typeof useApiPorts>,
-  partition: PartitionIdentity,
-  door: ReturnType<typeof useThreadDoor>,
+  home: ThreadHome,
+  door: ThreadDoorHeld,
+  key: string,
 ): Promise<{ readonly session: string } | ThreadSend> {
-  const open = await apiOpenThread(ports, partition);
+  const open = await apiOpenThreadAt(ports, home, key);
   if (threadUnhosted(open)) {
     door.learnt(false);
     return door.refused();
   }
   if (sessionRefusedNoRunner(open)) return { send: "NoRunner" };
+  if (threadOpenAtLimit(open)) return threadSendRefused(threadLimitWord);
   if (open.outcome !== "Ok") return threadSendRefused(threadRefusalCause(open));
   return { session: open.value.session };
 }
@@ -279,14 +334,14 @@ async function threadSendOpened(
  * hosted grant being told to the door's own reads first. */
 async function threadSendAnswered(
   ports: ReturnType<typeof useApiPorts>,
-  partition: PartitionIdentity,
-  door: ReturnType<typeof useThreadDoor>,
+  home: ThreadHome,
+  door: ThreadDoorHeld,
   sent: {
     readonly session: string;
     readonly images: readonly string[];
   } & ThreadSending,
 ): Promise<ThreadSend> {
-  const answered = await threadMessageSent(ports, partition, sent.session, {
+  const answered = await threadMessageSent(ports, home, sent.session, {
     turn: sent.turn,
     message: sent.text,
     ...(sent.images.length === 0 ? {} : { images: [...sent.images] }),
@@ -380,9 +435,8 @@ const threadSendAttaches = {
   mediaTypes: imageMediaTypes,
 };
 
-/** What one thread's composer is made from. */
-export interface ThreadSendInput {
-  readonly partition: PartitionIdentity;
+/** What one thread's composer is made from, wherever the thread is kept. */
+interface ThreadSendMade {
   /** Absent where the reader has no thread, which the first press opens. */
   readonly session: string | undefined;
   readonly takes: boolean;
@@ -393,20 +447,33 @@ export interface ThreadSendInput {
   readonly ended?: readonly string[];
   /** The thread a first press opened, once its message is sent. */
   readonly onStarted?: (session: string) => void;
+  /** Any message the door took, which a thread no frame names is read again
+   * on. */
+  readonly onSent?: () => void;
   /** What is kept for the thread while it is not drawn. */
   readonly away?: ThreadKeptAway | undefined;
+}
+
+/** What one project thread's composer is made from. */
+export interface ThreadSendInput extends ThreadSendMade {
+  readonly partition: PartitionIdentity;
+}
+
+/** What one thread of the reader's own chat hands its composer. */
+export interface MemberThreadSendInput extends ThreadSendMade {
+  readonly tenant: string;
 }
 
 /** The thread's stops, with one the door refused said in the composer's line
  * until the turn it was about has ended. */
 function useThreadStopSaid(
-  partition: PartitionIdentity,
+  home: ThreadHome,
   said: readonly [ThreadSend, (send: ThreadSend) => void],
   ended: readonly string[] | undefined,
 ): ThreadStopHeld {
   const [send, setSend] = said;
   const stops = useThreadStop({
-    partition,
+    home,
     onRefused: (turn, cause) => {
       setSend({
         send: "Refused",
@@ -431,8 +498,9 @@ function useThreadStopSaid(
  * an upload that fails opens no thread and sends nothing.
  */
 function useThreadSendPressed(
-  input: ThreadSendInput,
-  door: ReturnType<typeof useThreadDoor>,
+  input: ThreadSendMade,
+  home: ThreadHome,
+  door: ThreadDoorHeld,
   away: ReturnType<typeof useThreadKeptAway>,
   set: {
     readonly setSend: (send: ThreadSend) => void;
@@ -443,8 +511,10 @@ function useThreadSendPressed(
   readonly opened: string | undefined;
 } {
   const ports = useApiPorts();
-  const { partition } = input;
   const [opened, setOpened] = useState<string | undefined>(undefined);
+  const [key] = useState(() =>
+    threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount)),
+  );
   const uploaded = useRef<ThreadUploaded>(new WeakMap());
   const pressed = async (sent: ThreadHeld): Promise<string | undefined> => {
     const said = (send: ThreadSend): void => {
@@ -454,7 +524,7 @@ function useThreadSendPressed(
     };
     const images = await threadSendUploaded(
       ports,
-      partition,
+      home,
       sent.attached,
       uploaded.current,
     );
@@ -464,7 +534,7 @@ function useThreadSendPressed(
     }
     let session = input.session ?? opened;
     if (session === undefined) {
-      const open = await threadSendOpened(ports, partition, door);
+      const open = await threadSendOpened(ports, home, door, key);
       if ("send" in open) {
         set.setSend(open);
         return undefined;
@@ -473,12 +543,13 @@ function useThreadSendPressed(
       setOpened(session);
     }
     const to = { session, images, ...sent };
-    const answered = await threadSendAnswered(ports, partition, door, to);
+    const answered = await threadSendAnswered(ports, home, door, to);
     if (answered.send === "Refused")
       for (const attachment of sent.attached)
         uploaded.current.delete(attachment);
     said(answered);
     if (answered.send !== "Sent") return undefined;
+    input.onSent?.();
     if (input.session === undefined) input.onStarted?.(session);
     return session;
   };
@@ -494,14 +565,36 @@ function useThreadSendPressed(
  * that says runners, and holds any text it handed back, read-only.
  */
 export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
-  const { partition } = input;
+  return useThreadSendAt(
+    input,
+    threadHomeOf(input.partition),
+    useThreadDoor(input.partition),
+  );
+}
+
+/** The composer of one thread of the reader's own chat, whose door is their
+ * chat host and whose messages carry no images. */
+export function useMemberThreadSend(
+  input: MemberThreadSendInput,
+): ThreadSendHeld {
+  return useThreadSendAt(
+    input,
+    { scope: "Member", tenant: input.tenant },
+    useMemberThreadDoor(input.tenant),
+  );
+}
+
+function useThreadSendAt(
+  input: ThreadSendMade,
+  home: ThreadHome,
+  door: ThreadDoorHeld,
+): ThreadSendHeld {
   const [held, setHeld] = useState<ThreadHeld | undefined>(undefined);
   const [send, setSend] = useState<ThreadSend>({ send: "Idle" });
   const sends = useThreadSendSending(input.listed ?? threadSendNothingListed);
-  const stops = useThreadStopSaid(partition, [send, setSend], input.ended);
-  const door = useThreadDoor(partition);
+  const stops = useThreadStopSaid(home, [send, setSend], input.ended);
   const away = useThreadKeptAway(input.away, { setSend, setHeld });
-  const { pressed, opened } = useThreadSendPressed(input, door, away, {
+  const { pressed, opened } = useThreadSendPressed(input, home, door, away, {
     setSend,
     setHeld,
   });
@@ -510,7 +603,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     takes:
       input.takes && standing.send !== "Ended" && standing.send !== "Unhosted",
     charsMax: threadMessageCharsMax,
-    attaches: threadSendAttaches,
+    ...(home.scope === "Project" ? { attaches: threadSendAttaches } : {}),
     onSend: async (text, attached): Promise<ConversationSent> => {
       const turn =
         threadTurnRetained(held, { text, attached }) ??
@@ -533,7 +626,7 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
       )
         setSend({ send: "Idle" });
     },
-    note: <ThreadSendNote partition={partition} send={standing} />,
+    note: <ThreadSendNote home={home} send={standing} />,
     holds: standing.send === "Unhosted",
     ...(away.back === undefined ? {} : { back: away.back }),
   };

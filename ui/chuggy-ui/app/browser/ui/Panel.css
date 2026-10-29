@@ -1,10 +1,15 @@
 /* Panel: the head with its meta slot, the body, and the trigger the
    collapsible form opens from. The frame is utilities on the root, so the
-   quiet variant drops it by not asking for it. */
+   quiet variant drops it by not asking for it. The head's names and the body
+   are one column no wider than the panel, so a long identifier or a line of
+   output wraps or scrolls inside it rather than widening the page, and a
+   panel too narrow to hold its names beside its meta puts the meta under
+   them rather than squeezing the line about the region a word to a line. */
 
 @layer ui {
   .panel-head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
     justify-content: space-between;
     gap: var(--space-3);
@@ -13,6 +18,8 @@
 
   .panel-named {
     display: grid;
+    flex: 1 1 var(--width-panel-named);
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-1);
     min-width: 0;
   }
@@ -20,6 +27,7 @@
   .panel-title {
     font-size: var(--text-md);
     font-weight: var(--weight-medium);
+    overflow-wrap: anywhere;
   }
 
   .panel-about {
@@ -59,6 +67,7 @@
   .panel-body {
     padding: 0 var(--space-4) var(--space-4);
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
   }
 

@@ -35,6 +35,7 @@ import {
   completableIn,
   quietIn,
   readiesIn,
+  redependableIn,
   refusedCommandsIn,
   releasableIdsIn,
   retryablesIn,
@@ -174,19 +175,34 @@ const releaseTicket: WalkAction = {
   },
 };
 
-/** The update draws a Pending ticket and then the plan it replaces the old one with. */
+/** The update draws a Pending ticket, and then the dependencies and the plan it replaces the old ones with. */
 const updateDefinition: WalkAction = {
   action: "updateDefinition",
   enabledIn: (_config, graph) => revisablesIn(graph).length > 0,
-  drawIn: (config, graph, _ledgers, random) => ({
-    ticket: pickFrom(random, revisablesIn(graph)),
-    stages: pickFrom(random, validPlansIn(config)),
-  }),
-  permitsIn: (config, graph, _ledgers, drawn) =>
-    drawn.ticket !== undefined &&
-    drawn.stages !== undefined &&
-    revisablesIn(graph).includes(drawn.ticket) &&
-    isValidPlan(config, drawn.stages),
+  drawIn: (config, graph, _ledgers, random) => {
+    const ticket = pickFrom(random, revisablesIn(graph));
+    return {
+      ticket,
+      dependencies: subsetFrom(random, redependableIn(graph, ticket)),
+      stages: pickFrom(random, validPlansIn(config)),
+    };
+  },
+  permitsIn: (config, graph, _ledgers, drawn) => {
+    const { ticket, dependencies, stages } = drawn;
+    if (
+      ticket === undefined ||
+      dependencies === undefined ||
+      stages === undefined
+    ) {
+      return false;
+    }
+    return (
+      revisablesIn(graph).includes(ticket) &&
+      dependencies.every((d) => redependableIn(graph, ticket).includes(d)) &&
+      new Set(dependencies).size === dependencies.length &&
+      isValidPlan(config, stages)
+    );
+  },
 };
 
 /**

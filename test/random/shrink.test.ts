@@ -17,9 +17,9 @@
  * it pin the defect once fixed.
  */
 
-import { test } from "node:test";
+import { test, type TestContext } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDeepStrictEqual } from "node:util";
@@ -148,9 +148,18 @@ test("a clean trace refuses to shrink rather than inventing a counterexample", (
   );
 });
 
-test("the written counterexample is a corpus: its states are what its own steps replay", () => {
+/** A directory the test writes into, removed once it ends. */
+function scratchDirectory(t: TestContext): string {
+  const made = mkdtempSync(join(tmpdir(), "chuggy-shrink-"));
+  t.after(() => {
+    rmSync(made, { recursive: true, force: true });
+  });
+  return made;
+}
+
+test("the written counterexample is a corpus: its states are what its own steps replay", (t) => {
   const { seed, shrunk } = found();
-  const directory = mkdtempSync(join(tmpdir(), "chuggy-shrink-"));
+  const directory = scratchDirectory(t);
   const written = writeCounterexample(
     directory,
     config,

@@ -29,9 +29,11 @@ import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
   canonicalConfigurationOf,
+  type ConfigurationPage,
   type ConfigurationRevisionId,
   type ReleaseAuthoring,
 } from "../../src/interpreter/authoring.ts";
+import { bootstrapConfigurationRevision } from "../../src/interpreter/authoring.ts";
 import {
   asGitObjectId,
   asRepositoryId,
@@ -314,6 +316,101 @@ test("draft creation rejects a stale initialization fence", async () => {
     "UPDATE project SET head=head+1 WHERE tenant=$1 AND project=$2",
     [partition.tenant, partition.project],
   );
+  const creation = (expectedProjectSequence: number) =>
+    store.createDraft({
+      partition,
+      authority,
+      configurationRevision: revision,
+      configurationDigest: initialized.configuration.digest,
+      expectedProjectSequence,
+      authoring: plainAuthoring,
+      brief: postgresHarnessBrief,
+    });
+  const stale = await creation(initialized.projectSequence);
+  assert.deepEqual(stale, {
+    created: "Stale",
+    currentProjectSequence: initialized.projectSequence + 1,
+  });
+  if (stale.created !== "Stale") throw new Error("the fence did not miss");
+  assert.equal(
+    (await creation(stale.currentProjectSequence)).created,
+    "Created",
+    "the head a stale creation answers is one a creation is taken at",
+  );
+});
+
+test("draft initialization answers the newest dependable tickets, newest first", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "draft-initialization-candidates",
+  );
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const ticketsDependable = [1, 2, 3, 4, 5];
+  for (const ticket of ticketsDependable)
+    await harness.query(
+      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+       VALUES($1,$2,$3,'Pending',1)`,
+      [partition.tenant, partition.project, ticket],
+    );
+  await harness.query(
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,dependable)
+     VALUES($1,$2,6,'Pending',1,false)`,
+    [partition.tenant, partition.project],
+  );
+  const candidates = async (dependencyCandidatesMax: number) => {
+    const initialized = await store.initializeDraft(
+      partition,
+      revision,
+      dependencyCandidatesMax,
+    );
+    if (initialized === undefined || initialized === "PolicyUnavailable")
+      throw new Error("draft was not initialized");
+    return {
+      candidates: initialized.dependencyCandidates,
+      truncated: initialized.dependencyCandidatesTruncated,
+    };
+  };
+  assert.deepEqual(await candidates(3), {
+    candidates: [5, 4, 3],
+    truncated: true,
+  });
+  assert.deepEqual(await candidates(5), {
+    candidates: [5, 4, 3, 2, 1],
+    truncated: false,
+  });
+  assert.deepEqual(await candidates(100), {
+    candidates: [5, 4, 3, 2, 1],
+    truncated: false,
+  });
+});
+
+test("draft creation in a project that is not Active is refused as that, not as stale", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "draft-creation-not-active",
+  );
+  const store = postgresAuthoring(pool);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  await store.createConfiguration({
+    partition,
+    authority,
+    revision,
+    canonical: postgresHarnessConfiguration,
+  });
+  const initialized = await store.initializeDraft(partition, revision, 100);
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("draft was not initialized");
+  await harness.query(
+    "UPDATE project SET lifecycle='Suspended' WHERE tenant=$1 AND project=$2",
+    [partition.tenant, partition.project],
+  );
   assert.deepEqual(
     await store.createDraft({
       partition,
@@ -324,7 +421,7 @@ test("draft creation rejects a stale initialization fence", async () => {
       authoring: plainAuthoring,
       brief: postgresHarnessBrief,
     }),
-    { created: "Stale" },
+    { created: "NotActive", lifecycle: "Suspended" },
   );
 });
 
@@ -512,6 +609,142 @@ test("repository configuration imports are idempotent and expose provenance", as
     ),
     [{ count: 1 }],
   );
+});
+
+/** A project holding a bootstrap, then two imports of one repository declaring two names, oldest first. */
+async function configurationLatestProject() {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "configuration-latest",
+  );
+  const binding = await repositoryBinding(partition);
+  const bootstrap = bootstrapConfigurationRevision(binding.repository);
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision: bootstrap,
+    canonical: postgresHarnessConfiguration,
+  });
+  for (const commit of ["d".repeat(40), "e".repeat(40)])
+    await harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations: repositoryDeclarations(commit, ["review", "work"]),
+    });
+  await harness.query(
+    `UPDATE configuration_revision c SET created_at=CASE
+       (SELECT p.repository_commit FROM repository_configuration_provenance p
+         WHERE p.tenant=c.tenant AND p.project=c.project AND p.revision=c.revision)
+       WHEN $3 THEN '2026-08-22T00:00:00Z'::timestamptz
+       WHEN $4 THEN '2026-08-23T00:00:00Z'::timestamptz
+       ELSE '2026-08-21T00:00:00Z'::timestamptz END
+      WHERE c.tenant=$1 AND c.project=$2`,
+    [partition.tenant, partition.project, "d".repeat(40), "e".repeat(40)],
+  );
+  return { partition, bootstrap };
+}
+
+test("the latest configurations are the newest revision of each repository name, beside a bootstrap, paged as narrowed", async () => {
+  const { partition, bootstrap } = await configurationLatestProject();
+  const listed = (page: ConfigurationPage) =>
+    page.configurations.map(({ provenance }) =>
+      provenance.source === "Repository"
+        ? `${provenance.name}@${provenance.commit.slice(0, 1)}`
+        : "bootstrap",
+    );
+  const sorted = (rows: readonly string[]) => [...rows].sort();
+  assert.deepEqual(
+    sorted(
+      listed(await harness.authoring.configurations(partition, { limit: 10 })),
+    ),
+    ["bootstrap", "review@d", "review@e", "work@d", "work@e"],
+  );
+  const latest = await harness.authoring.configurations(partition, {
+    limit: 10,
+    latest: true,
+  });
+  assert.deepEqual(listed(latest).slice(2), ["bootstrap"]);
+  assert.deepEqual(sorted(listed(latest).slice(0, 2)), ["review@e", "work@e"]);
+  assert.equal(latest.configurations.at(-1)?.revision, bootstrap);
+  assert.equal(latest.nextAfter, undefined);
+  const first = await harness.authoring.configurations(partition, {
+    limit: 2,
+    latest: true,
+  });
+  assert.deepEqual(sorted(listed(first)), ["review@e", "work@e"]);
+  assert.ok(first.nextAfter !== undefined);
+  const second = await harness.authoring.configurations(partition, {
+    after: first.nextAfter,
+    limit: 2,
+    latest: true,
+  });
+  assert.deepEqual(listed(second), ["bootstrap"]);
+  assert.equal(second.nextAfter, undefined);
+  assert.deepEqual(
+    sorted(
+      listed(
+        await harness.authoring.configurations(partition, {
+          limit: 10,
+          latest: false,
+        }),
+      ),
+    ),
+    ["bootstrap", "review@d", "review@e", "work@d", "work@e"],
+  );
+});
+
+test("an import keeps the file each workload was read from beside its revision, and a different file is a conflict", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-configuration-workload-paths",
+  );
+  const binding = await repositoryBinding(partition);
+  const [declared] = repositoryDeclarations("b".repeat(40), ["work"]);
+  if (declared === undefined) throw new Error("declaration fixture is absent");
+  const workloadPaths = { review: ".chug/workloads/review.json" };
+  const importing = (paths: Readonly<Record<string, string>>) =>
+    harness.authoring.importRepositoryConfigurations({
+      partition,
+      binding,
+      authority,
+      declarations: [{ ...declared, workloadPaths: paths }],
+    });
+  assert.equal((await importing(workloadPaths)).imported, "Imported");
+  assert.equal((await importing(workloadPaths)).imported, "Imported");
+  const read = await harness.authoring.configuration(
+    partition,
+    declared.revision,
+  );
+  assert.deepEqual(read?.workloadPaths, workloadPaths);
+  assert.equal(read?.version?.number, 1);
+  assert.equal(
+    (await importing({ review: ".chug/workloads/ci.json" })).imported,
+    "IdentityConflict",
+  );
+});
+
+test("a revision whose workloads were all written inline names no file", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "repository-configuration-inline-workloads",
+  );
+  const binding = await repositoryBinding(partition);
+  const declarations = repositoryDeclarations("c".repeat(40), ["work"]);
+  await harness.authoring.importRepositoryConfigurations({
+    partition,
+    binding,
+    authority,
+    declarations,
+  });
+  const [declared] = declarations;
+  if (declared === undefined) throw new Error("declaration fixture is absent");
+  const read = await harness.authoring.configuration(
+    partition,
+    declared.revision,
+  );
+  assert.ok(read !== undefined);
+  assert.equal("workloadPaths" in read, false);
 });
 
 /** One single-name snapshot imported, and the version its revision came back with. */
@@ -2263,20 +2496,22 @@ test("an update naming a draft revision its author has since moved past is refus
   );
 });
 
-test("a released draft's dependencies are locked at the door", async () => {
+test("a released draft's dependencies are revised at the door like the rest of it", async () => {
   const fixture = await draftFixture();
-  await releaseFixtureDraft(fixture, "dependencies-locked");
+  await releaseFixtureDraft(fixture, "dependencies-revised");
+  const revised = await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: 1,
+    configurationRevision: fixture.revision,
+    authoring: { ...plainAuthoring, deps: new Set([7]) },
+    brief: postgresHarnessBriefIn(fixture.repository),
+  });
+  assert.equal(revised.revised, "Revised");
   assert.deepEqual(
-    await fixture.store.reviseDraft({
-      partition: fixture.partition,
-      authority,
-      ticket: fixture.draft.ticket,
-      expectedVersion: 1,
-      configurationRevision: fixture.revision,
-      authoring: { ...plainAuthoring, deps: new Set([7]) },
-      brief: postgresHarnessBriefIn(fixture.repository),
-    }),
-    { revised: "DependenciesLocked" },
+    revised.revised === "Revised" ? revised.draft.authoring.deps : undefined,
+    new Set([7]),
   );
 });
 
@@ -2310,6 +2545,44 @@ test("a brief's title is what the listing and the ticket's own read call it", as
   assert.deepEqual(
     read?.brief,
     briefAsStored({ ...titledBrief, repository: fixture.repository }),
+  );
+});
+
+/** The repository each list order and the ticket's own read carry for the fixture's one ticket. */
+async function readRepositories(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+): Promise<readonly (string | undefined)[]> {
+  const reads = postgresNativeReads(pool);
+  const listed = await Promise.all(
+    (["Identity", "RecentActivity"] as const).map(async (order) => {
+      const found = await reads.project(fixture.partition, { limit: 2, order });
+      assert.equal(found.result, "Found");
+      return found.result === "Found"
+        ? found.project.tickets[0]?.repository
+        : undefined;
+    }),
+  );
+  const read = await reads.ticket(fixture.partition, fixture.draft.ticket);
+  return [...listed, read?.repository];
+}
+
+test("the listing and the ticket's own read carry the repository its released brief names", async () => {
+  const fixture = await draftFixture();
+  await releaseFixtureDraft(fixture, "brief-repository");
+  assert.deepEqual(await readRepositories(fixture), [
+    fixture.repository,
+    fixture.repository,
+    fixture.repository,
+  ]);
+  await pool.query(
+    `UPDATE ticket_definition SET brief=brief-'repository'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [fixture.partition.tenant, fixture.partition.project, fixture.draft.ticket],
+  );
+  assert.deepEqual(
+    await readRepositories(fixture),
+    [undefined, undefined, undefined],
+    "a released brief naming no repository reads it absent",
   );
 });
 
@@ -2844,6 +3117,7 @@ test("a released ticket that lands nothing still hands release a brief", async (
 async function configurationsHeldNeighbours(
   partition: Partition,
   repository: RepositoryId,
+  revision: ConfigurationRevisionId,
 ): Promise<void> {
   const neighbours: readonly Partition[] = [
     { ...partition, project: asProjectId(`project-held-${randomUUID()}`) },
@@ -2854,20 +3128,21 @@ async function configurationsHeldNeighbours(
     await harness.authoring.createConfiguration({
       partition: neighbour,
       authority,
-      revision: asConfigurationRevisionId("bootstrap"),
+      revision,
       canonical: postgresHarnessConfiguration,
     });
     await harness.query(
       `INSERT INTO repository_configuration_provenance
          (tenant,project,revision,digest,repository,repository_commit,path,name)
        SELECT tenant,project,revision,digest,$3,$4,$5,'older'
-         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision='bootstrap'`,
+         FROM configuration_revision WHERE tenant=$1 AND project=$2 AND revision=$6`,
       [
         neighbour.tenant,
         neighbour.project,
         repository,
         "c".repeat(40),
         [".chug", "configurations", "older.json"].join("/"),
+        revision,
       ],
     );
   }
@@ -2883,15 +3158,13 @@ test("what a project holds from the configuration step is read per repository an
   const asApi = postgresHarnessRolePool(apiRole);
   t.after(() => asApi.end());
   const held = postgresRepositoryConfigurationsHeld(asApi);
-  const bootstrap = asConfigurationRevisionId("bootstrap");
-  const query = {
-    partition,
-    repositories: [declaring.repository, silent.repository],
-    bootstrap,
-  };
+  const repositories = [declaring.repository, silent.repository];
+  const bootstraps = repositories.map(bootstrapConfigurationRevision);
+  const bootstrap = bootstrapConfigurationRevision(silent.repository);
+  const query = { partition, repositories, bootstraps };
   assert.deepEqual(await held.held(query), {
     declared: new Map(),
-    bootstrap: undefined,
+    bootstraps: new Map(),
   });
   for (const commit of ["a", "b"])
     await harness.authoring.importRepositoryConfigurations({
@@ -2903,14 +3176,24 @@ test("what a project holds from the configuration step is read per repository an
         "review",
       ]),
     });
-  await configurationsHeldNeighbours(partition, declaring.repository);
+  await configurationsHeldNeighbours(
+    partition,
+    declaring.repository,
+    bootstrap,
+  );
+  await harness.authoring.createConfiguration({
+    partition,
+    authority,
+    revision: asConfigurationRevisionId("bootstrap"),
+    canonical: postgresHarnessConfiguration,
+  });
   assert.deepEqual(await held.held(query), {
     declared: new Map([[declaring.repository, 2]]),
-    bootstrap: undefined,
+    bootstraps: new Map(),
   });
   assert.deepEqual(
     await held.held({ ...query, repositories: [silent.repository] }),
-    { declared: new Map(), bootstrap: undefined },
+    { declared: new Map(), bootstraps: new Map() },
   );
   const authoringAsApi = postgresAuthoring(asApi);
   const raced = await Promise.all(
@@ -2927,9 +3210,9 @@ test("what a project holds from the configuration step is read per repository an
     "AlreadyExists",
     "Created",
   ]);
-  assert.equal(
-    (await held.held(query)).bootstrap,
-    postgresHarnessConfiguration,
+  assert.deepEqual(
+    (await held.held(query)).bootstraps,
+    new Map([[bootstrap, postgresHarnessConfiguration]]),
   );
 });
 
@@ -3051,6 +3334,61 @@ test("a draft's selection is written with its revision and read back, and a cata
       [partition.tenant, partition.project, draft.ticket],
     ),
     [{ selection: { evaluation: "tested" } }],
+  );
+});
+
+test("a release's revision is read at the keys it pins, as it was written whatever the draft is revised to, and none is read at keys no revision holds", async () => {
+  const overrides = { workloads: { build: { practices: [] } } };
+  const fixture = await draftFixture(
+    catalogConfiguration,
+    postgresHarnessBrief,
+    overrides,
+    { evaluation: "tested" },
+  );
+  const { partition, store, draft, revision, repository } = fixture;
+  const keys = {
+    ticket: draft.ticket,
+    authoringVersion: draft.authoringVersion,
+    configurationRevision: revision,
+  };
+  const written = {
+    canonical: catalogConfiguration,
+    overrides,
+    selection: { evaluation: "tested" },
+    program: plainAuthoring.prog,
+  };
+  assert.deepEqual(await store.draftRevision(partition, keys), written);
+  const revised = await store.reviseDraft({
+    partition,
+    authority,
+    ticket: draft.ticket,
+    expectedVersion: draft.authoringVersion,
+    configurationRevision: revision,
+    authoring: { deps: new Set(), prog: [] },
+    brief: { ...postgresHarnessBrief, repository },
+  });
+  assert.equal(revised.revised, "Revised");
+  assert.deepEqual(await store.draftRevision(partition, keys), written);
+  assert.deepEqual(
+    await store.draftRevision(partition, {
+      ...keys,
+      authoringVersion: draft.authoringVersion + 1,
+    }),
+    { canonical: catalogConfiguration, program: [] },
+  );
+  assert.equal(
+    await store.draftRevision(partition, {
+      ...keys,
+      authoringVersion: draft.authoringVersion + 2,
+    }),
+    undefined,
+  );
+  assert.equal(
+    await store.draftRevision(partition, {
+      ...keys,
+      configurationRevision: `config-${randomUUID()}`,
+    }),
+    undefined,
   );
 });
 

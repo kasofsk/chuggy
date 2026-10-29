@@ -15,9 +15,8 @@
  *
  * A PERMISSION SET IS NAMED HERE AND SPELLED BY THE ADAPTER. The sets this tree
  * asks for are the vocabulary of what an act needs — read a snapshot, push a
- * branch, open a change proposal, make a repository and reserve its default
- * branch — and the forge's own spelling of each is the adapter's, so a second
- * forge names the same ones.
+ * branch, open a change proposal — and the forge's own spelling of each is the
+ * adapter's, so a second forge names the same ones.
  *
  * A TOKEN IS A VALUE AND IS NEVER PART OF AN IDENTITY. It reaches one header
  * and one credential brand; no refusal here carries a message, so a mint that
@@ -30,7 +29,7 @@ import {
   repositoryCredentialCharsMax,
   type RepositoryId,
 } from "./finalizer.ts";
-import type { TenantId } from "./projectStore.ts";
+import type { Partition, TenantId } from "./projectStore.ts";
 import type { CredentialMintEvidence } from "./repositoryReadEvidence.ts";
 
 declare const forgeIdBrand: unique symbol;
@@ -101,41 +100,22 @@ export const allForgeAccountKinds = ["User", "Organization"] as const;
 
 export type ForgeAccountKind = (typeof allForgeAccountKinds)[number];
 
-/** Every permission set a credential request may name. */
-export const allForgeCredentialPermissionSets = [
-  "read",
-  "write",
-  "propose",
-] as const;
-
-/**
- * Every permission set an act in this tree asks a forge for. `administer` is
- * not among the requestable ones above: it makes repositories and reserves
- * their default branches, which this tree does on a project's behalf rather
- * than on anybody's word.
- */
-export const allForgePermissionSets = [
-  ...allForgeCredentialPermissionSets,
-  "administer",
-] as const;
+/** Every permission set an act in this tree asks a forge for. */
+export const allForgePermissionSets = ["read", "write", "propose"] as const;
 
 export type ForgePermissionSet = (typeof allForgePermissionSets)[number];
 
-/**
- * What one minted token may do to the repository it is scoped to.
- * `administration` is what makes a repository and what reserves its default
- * branch, and it is the one permission a token minted before a repository
- * exists is for, so it is named apart from what a token does to contents.
- */
+/** What one minted token may do to the repository it is scoped to. */
 export interface ForgeRepositoryPermissions {
   readonly contents: "read" | "write";
   readonly changeProposals?: "write";
-  readonly administration?: "write";
   /**
-   * Writing the definitions a forge runs on its own, which is asked for only as
-   * far as the installation grants it: its owner's acceptance on the forge is
-   * what admits this tree to write them. An installation that has not granted
-   * it is answered with a token without it rather than a refused mint.
+   * Writing the definitions a forge runs on its own, which a set naming it asks
+   * for only where the repository's binding allows it, and then only as far as
+   * the installation grants it: the binding is its project's own choice, and
+   * the owner's acceptance on the forge is what admits this tree to write them.
+   * Where either withholds it, the mint is answered with a token without it
+   * rather than refused.
    */
   readonly pipelines?: "write";
 }
@@ -151,7 +131,6 @@ export const forgePermissionSets: Readonly<
   read: { contents: "read" },
   write: { contents: "write", pipelines: "write" },
   propose: { contents: "write", changeProposals: "write", pipelines: "write" },
-  administer: { contents: "write", administration: "write" },
 };
 
 /** The segments a forge addresses an account or a repository by. */
@@ -320,11 +299,33 @@ export interface ForgeTokenRequest {
   readonly repositories?: readonly ForgeRepositoryName[] | undefined;
   readonly permissions: ForgePermissionSet;
   /**
+   * The repository's binding allows this mint the forge's pipeline
+   * definitions. It widens only a set naming `pipelines`, and only as far as
+   * the installation grants them; absent, the token carries none.
+   */
+  readonly pipelinesAllowed?: true;
+  /**
    * The token is minted for this request: none minted before it was asked for
    * answers it, and the one it mints answers no later request.
    */
   readonly unheld?: true;
 }
+
+/**
+ * Which refusal a mint for one repository met, and the app it was asked of.
+ * `Unselected` is the forge saying the installation on the repository's owner
+ * does not select it; `Refused` is the forge refusing that installation or the
+ * app itself, for its key, a suspension or a permission its owner has not
+ * accepted; `Unclaimed` is no installation of the app claimed on the owner, so
+ * the forge was never asked.
+ */
+export type ForgeMintUnreached =
+  | {
+      readonly reach: "Unselected" | "Refused";
+      readonly app: ForgeApp;
+      readonly installationId: ForgeInstallationId;
+    }
+  | { readonly reach: "Unclaimed"; readonly app: ForgeApp };
 
 /** What minting came to, a refusal kept apart from an outage all the way out. */
 export type ForgeTokenMinted =
@@ -336,6 +337,10 @@ export type ForgeTokenMinted =
   | {
       readonly minted: "Denied";
       readonly evidence?: CredentialMintEvidence;
+      /** The forge said the installation does not select a repository the mint named. */
+      readonly unselected?: true;
+      /** Absent where the refusal came before any installation was looked for. */
+      readonly unreached?: ForgeMintUnreached;
     }
   | {
       readonly minted: "Unavailable";
@@ -351,12 +356,14 @@ export interface ForgeInstallationTokens {
  * A token for one repository, which is what every caller in this tree wants:
  * the owner in the repository's own address is what selects the installation,
  * so nothing above this names an account or an installation identity. The
- * tenant is the one asking, not the one the account turns out to belong to.
+ * partition's tenant is the one asking, not the one the account turns out to
+ * belong to, and its project's live binding of the repository is what allows a
+ * set naming `pipelines` the forge's pipeline definitions.
  */
 export interface ForgeRepositoryTokens {
   token(
     repository: RepositoryId,
-    tenant: TenantId,
+    partition: Partition,
     permissions: ForgePermissionSet,
   ): Promise<ForgeTokenMinted>;
 }

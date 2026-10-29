@@ -7,7 +7,7 @@
  * and what is pressed there, and the checklist is read again only once the
  * person says the step is done. The runner's step changes the machine, so it
  * is offered and never run unasked: the person is told what `runner` would
- * put here, a service for the project's work and one for their own chats or
+ * put here, a service for the project's work and one for their chat host or
  * whichever of the two is lacking, and the command is named under a rule that
  * waits on their yes; where the machine could not take a runner, they are
  * told that instead.
@@ -30,7 +30,11 @@ import {
   repositoryGrantLines,
   repositoryLabel,
 } from "./projectRepositories.ts";
-import { runnerPackageOffered, runnerPackages } from "./runners.ts";
+import {
+  runnerPackageOffered,
+  runnerPackages,
+  runnerRegisterCommand,
+} from "./runners.ts";
 import { selectorSettingsSection } from "./selectorSettingsForm.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
@@ -63,7 +67,7 @@ export const setupPressed = {
   add: "Add",
   retry: "Retry",
   runner: "Add runner",
-  myRunner: "Register runner",
+  chatHost: "Register chat host",
   ticket: "Create ticket",
   dispatch: "Dispatch",
 } as const;
@@ -199,9 +203,9 @@ const setupRunnerIs =
 
 const setupRunnerRunning = "once the person says the runner is running";
 
-/** What `runner` also does where the person's own runner is lacking beside the project's. */
-const setupOwnToo =
-  " Your own chats run only on a runner of your own, so I will also make this machine one of yours, as a second service of yours, serving this project.";
+/** What `runner` also does where the person's chat host is lacking beside the project's runner. */
+const setupChatToo =
+  " Your chats run only on your chat host, a machine of yours, so I will also make this machine it, as a second service of yours.";
 
 /** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
 const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I install its latest release first.`;
@@ -217,11 +221,11 @@ function setupRunsOn(claude: SetupClaudeKind | undefined): string {
 function setupRunnerLiveMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
-  own: boolean,
+  chat: boolean,
 ): SetupThing {
   return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine ${setupRunsOn(here.claude)}.${setupPackageNewer}${own ? setupOwnToo : ""} Tell me yes to go ahead.`,
+        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine ${setupRunsOn(here.claude)}.${setupPackageNewer}${chat ? setupChatToo : ""} Tell me yes to go ahead.`,
         at,
       )
     : setupHand(
@@ -230,53 +234,71 @@ function setupRunnerLiveMend(
       );
 }
 
-/** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's own where that is lacking too. */
+/** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's chat host where that is lacking too. */
 function setupRunnerPut(
-  own: boolean,
+  chat: boolean,
   claude: SetupClaudeKind | undefined,
 ): string {
   const put = `That puts here the runner package, ${runnerPackageOffered.program}, and`;
-  return own
-    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, which run only on a runner of your own. Both run on this machine ${setupRunsOn(claude)}.`
+  return chat
+    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine ${setupRunsOn(claude)}.`
     : `${put} a background service of yours that starts when you log in; work on your tickets then runs on this machine ${setupRunsOn(claude)}.`;
 }
 
+/** How a chat host is registered on a machine `runner` does not set one up on, by each runner package's own commands, with the token the console's page shows in place of `<token>`. */
+function setupChatByHand(at: SetupAt): string {
+  const token = "<token>";
+  const linux = runnerRegisterCommand(
+    runnerPackages.linux,
+    at.site,
+    token,
+    "ChatHost",
+  );
+  const darwin = runnerRegisterCommand(
+    runnerPackages.darwin,
+    at.site,
+    token,
+    "ChatHost",
+  );
+  return `open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.chatHost} and copy the token it shows. Then, with the runner package installed there, on Linux run ${linux}, which starts its service where it can and otherwise prints what is left, and on a Mac run ${darwin}, then ${runnerPackages.darwin.program} install-agent --pool with the file it wrote, and load the agent as that prints`;
+}
+
 /**
- * The person's own runner lacking where the project's work has what it needs.
- * `runner` makes this machine one of theirs, serving the project, which every
- * runner of theirs then serves; it registers this machine for the project's
+ * The person's chat host lacking where the project's work has what it needs.
+ * `runner` makes this machine their chat host, which takes their chats in
+ * every project of the workspace; it registers this machine for the project's
  * work too where the work goes to runners and this machine holds no
  * registration of the project, and the person is told so.
  */
-function setupOwnMend(
-  lack: Extract<SetupLack, { readonly lacks: "Own" | "OwnLive" }>,
+function setupChatMend(
+  lack: Extract<SetupLack, { readonly lacks: "ChatHost" | "ChatHostLive" }>,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
 ): SetupThing {
   const named = `${at.workspace}/${at.project}`;
-  const chats = `Your chats in ${named} run only on a runner of your own`;
+  const chats = `Your chats in ${named} run only on your chat host, one machine of yours`;
   const besides =
     lack.pooled && here?.held !== true
       ? ` The work on ${named} has a runner elsewhere, and this machine is made one of it too, a second service of yours.`
       : "";
-  if (lack.lacks === "OwnLive")
-    return here?.own === true
+  if (lack.lacks === "ChatHostLive")
+    return here?.chat === true
       ? setupOffer(
-          `${chats}, and none of yours that serves it is running, and this machine holds a registration of one. With your yes I will start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
+          `${chats}, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the site holds.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
           at,
         )
       : setupHand(
-          `${chats}, and none of yours that serves it is running. Start one on its machine and tell me once it is running.`,
-          "once the person says their own runner is running",
+          `${chats}, which is registered and not running. Start it on its machine and tell me once it is running.`,
+          "once the person says their chat host is running",
         );
   if (here?.room.room === "Open")
     return setupOffer(
-      `${chats}, and none of yours serves it yet. I can make this machine one of yours: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}. Any runner of yours on another machine is kept, and serves ${named} too.${besides} Tell me yes to go ahead.`,
+      `${chats}, and you have none yet. I can make this machine it: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}.${besides} Tell me yes to go ahead.`,
       at,
     );
   return setupHand(
-    `${chats}, and none of yours serves it yet${here === undefined ? "" : "; chuggy setup cannot make this machine one"}. On a machine that can be one, open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.myRunner} and do what it shows; where you already have one, add ${at.project} to the projects on that page. Tell me once it is running.`,
-    "once the person says their own runner is running and serves the project",
+    `${chats}, and you have none yet${here === undefined ? "" : "; chuggy setup cannot make this machine it"}. On the machine that will be it, ${setupChatByHand(at)}. Tell me once it is running.`,
+    "once the person says their chat host is running",
   );
 }
 
@@ -288,15 +310,15 @@ function setupOwnMend(
 function setupRunnerMend(
   lack: Extract<
     SetupLack,
-    { readonly lacks: "Runner" | "RunnerLive" | "Own" | "OwnLive" }
+    { readonly lacks: "Runner" | "RunnerLive" | "ChatHost" | "ChatHostLive" }
   >,
   at: SetupAt,
   here: SetupRunnerHere | undefined,
 ): SetupThing {
-  if (lack.lacks === "Own" || lack.lacks === "OwnLive")
-    return setupOwnMend(lack, at, here);
+  if (lack.lacks === "ChatHost" || lack.lacks === "ChatHostLive")
+    return setupChatMend(lack, at, here);
   if (lack.lacks === "RunnerLive")
-    return setupRunnerLiveMend(at, here, lack.own);
+    return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, navRoutes.runners);
   const pressed = `press ${setupPressed.runner}`;
   const elsewhere = `Open ${page} and ${pressed}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`;
@@ -307,7 +329,7 @@ function setupRunnerMend(
       return setupHand(elsewhere, setupRunnerRunning);
     case "Open":
       return setupOffer(
-        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.own, here?.claude)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
+        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.chat, here?.claude)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
         at,
       );
     case "Mac":
@@ -431,8 +453,8 @@ function setupMend(
       return setupRepositoryMend(lack, at, mine);
     case "Runner":
     case "RunnerLive":
-    case "Own":
-    case "OwnLive":
+    case "ChatHost":
+    case "ChatHostLive":
       return setupRunnerMend(lack, at, here);
     case "Ticket":
     case "Release":
@@ -500,8 +522,8 @@ function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
 const setupRunnerLacks: readonly SetupLack["lacks"][] = [
   "Runner",
   "RunnerLive",
-  "Own",
-  "OwnLive",
+  "ChatHost",
+  "ChatHostLive",
 ];
 
 /** The project whose runner step is the one next, which is when the machine is looked at before the next thing is named. */

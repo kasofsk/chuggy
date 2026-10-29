@@ -21,6 +21,13 @@
  * promote, and holding it for an unbound repository would park a ticket over a
  * binding its work never needed.
  *
+ * SO DOES A CANDIDATE THE TARGET ALREADY HOLDS. Where the target the ticket
+ * lands on reaches the candidate, or merging the two gives the target's own
+ * tree, landing it would change nothing: the attempt records it as `Landed`
+ * and concludes `FinalizationSucceeded` with no permit, no promotion and no
+ * proposal. A change the target has since reverted reads the same way, because
+ * it did land.
+ *
  * EVERY REFUSAL IS A VALUE, as elsewhere in this layer. A non-zero git exit is
  * an outcome `GitPromotionPort` returns and a caller must handle; the one thing
  * that raises is git being unable to run at all, which is the answer no caller
@@ -75,6 +82,7 @@ import {
   type BriefFinalizationMode,
   type FinalizationUnavailableKind,
 } from "../contract/rosters.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
 import type {
@@ -246,13 +254,19 @@ export function asGitObjectId(value: string): GitObjectId {
   return value as GitObjectId;
 }
 
-/** Brands a repository credential, which is refused the same two shapes any other bounded text is. */
+/** A control character, which no forge's token holds. */
+const repositoryCredentialControl = /\p{Cc}/u;
+
+/** Brands a repository credential, refused the shapes any other bounded text is and any control character, a line break among them. */
 export function asRepositoryCredential(value: string): RepositoryCredential {
-  return asBoundedText(
+  const bounded = asBoundedText(
     value,
     "repository credential",
     repositoryCredentialCharsMax,
-  ) as RepositoryCredential;
+  );
+  if (repositoryCredentialControl.test(bounded))
+    throw new RangeError("repository credential: holds a control character");
+  return bounded as RepositoryCredential;
 }
 
 /** The states I3 gave a focused finalization request, in the order its CHECK declares them. */
@@ -283,12 +297,16 @@ export const allIntegrationStrategies: readonly IntegrationStrategy[] = [
   "Merge",
 ];
 
-/** What one preparation produced, which the attempt records once and never revises. */
-export type FinalizationAttemptOutcome = "Prepared" | "Failed";
+/**
+ * What one preparation produced, which the attempt records once and never
+ * revises. `Landed` is a candidate the target the ticket lands on already
+ * holds, so there is nothing to promote and nothing to propose.
+ */
+export type FinalizationAttemptOutcome = "Prepared" | "Failed" | "Landed";
 
 /** Every attempt outcome, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome[] =
-  ["Prepared", "Failed"];
+  ["Prepared", "Failed", "Landed"];
 
 /**
  * An integration answered by a conflict and a preparation that produced no
@@ -379,7 +397,9 @@ export type GitEvidence =
   | "RefUnreadable"
   | "ObjectMissing"
   | "IntegrationFailed"
-  | "PromotionTimedOut";
+  | "PromotionTimedOut"
+  | "RemoteDeclined"
+  | "WorkflowsRefused";
 
 /** Every evidence label, so a suite and a database CHECK iterate rather than restate. */
 export const allGitEvidence: readonly GitEvidence[] = [
@@ -389,7 +409,32 @@ export const allGitEvidence: readonly GitEvidence[] = [
   "ObjectMissing",
   "IntegrationFailed",
   "PromotionTimedOut",
+  "RemoteDeclined",
+  "WorkflowsRefused",
 ];
+
+/**
+ * A promotion the receiving repository would not take for a reason of its own,
+ * GitHub refusing a credential that may not change a workflow file apart from
+ * every other rule, hook or protection that declines a push.
+ */
+export type PromotionDecline = Extract<
+  GitEvidence,
+  "RemoteDeclined" | "WorkflowsRefused"
+>;
+
+/** Every decline, so a suite and a database CHECK iterate rather than restate. */
+export const allPromotionDeclines: readonly PromotionDecline[] = [
+  "RemoteDeclined",
+  "WorkflowsRefused",
+];
+
+/** The decline a git act's evidence names, or nothing where it names anything else. */
+export function promotionDeclineOf(
+  evidence: GitEvidence,
+): PromotionDecline | undefined {
+  return allPromotionDeclines.find((declined) => declined === evidence);
+}
 
 /** The authority kind every finalizer-submitted result is scoped and audited under. */
 export const finalizerAuthorityKind = "Finalizer";
@@ -514,13 +559,20 @@ export interface CommitPermit {
   readonly state: CommitPermitState;
 }
 
-/** What the target ref proved about the candidate, recorded per permit and never absent for a hold. */
+/**
+ * What the target ref proved about the candidate, recorded per permit and never
+ * absent for a hold. `declined` is kept from the first reading of a push the
+ * repository declined, on every verdict but `Promoted`, and `observed` is absent
+ * on `NotPromoted` only where the ref was absent after that decline or onto a
+ * target the attempt found unheld.
+ */
 export interface FinalizationReconciliation {
   readonly permit: CommitPermitId;
   readonly candidate: GitObjectId;
   readonly target: GitRefName;
   readonly verdict: ReconciliationVerdict;
   readonly observed?: GitObjectId;
+  readonly declined?: PromotionDecline;
 }
 
 /**
@@ -585,6 +637,8 @@ export interface FinalizationView {
   readonly approval: ApprovalStanding;
   readonly permit?: CommitPermit;
   readonly reconciliation?: FinalizationReconciliation;
+  /** A permit an earlier request of this ticket holds under a reading the held re-read of this epoch settles, which no later promotion of the ticket is granted beside. */
+  readonly heldPermit?: CommitPermitId;
   readonly attemptsMade: number;
 }
 
@@ -607,7 +661,9 @@ export type FinalizationHoldKind =
   | "ProposalHeadMoved"
   | "ProposalMergeBlocked"
   | "ProposalMergesExhausted"
-  | "ProposalUnaddressed";
+  | "ProposalUnaddressed"
+  | "PromotionDeclined"
+  | "PromotionWorkflowsRefused";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -629,6 +685,8 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalMergeBlocked",
   "ProposalMergesExhausted",
   "ProposalUnaddressed",
+  "PromotionDeclined",
+  "PromotionWorkflowsRefused",
 ];
 
 /**
@@ -677,7 +735,7 @@ export type FinalizationDecision =
 
 /** Refuses a view whose durable rows contradict each other, which no later branch then has to re-ask. */
 function finalizationNextAssertView(view: FinalizationView): void {
-  const { attempt, permit, reconciliation, attemptsMade } = view;
+  const { attempt, permit, attemptsMade } = view;
   if (!Number.isSafeInteger(attemptsMade) || attemptsMade < 0) {
     throw new RangeError("finalization view: attemptsMade is not a count");
   }
@@ -693,10 +751,10 @@ function finalizationNextAssertView(view: FinalizationView): void {
   }
   if (
     attempt !== undefined &&
-    (attempt.outcome === "Prepared") !== (attempt.candidate !== undefined)
+    (attempt.outcome === "Failed") === (attempt.candidate !== undefined)
   ) {
     throw new RangeError(
-      "finalization view: a prepared attempt pins no candidate, or a failed one pins one",
+      "finalization view: a prepared or landed attempt pins no candidate, or a failed one pins one",
     );
   }
   if (
@@ -714,6 +772,17 @@ function finalizationNextAssertView(view: FinalizationView): void {
   ) {
     throw new RangeError("finalization view: the permit names another attempt");
   }
+  if (permit !== undefined && attempt?.outcome === "Landed") {
+    throw new RangeError(
+      "finalization view: a permit was granted for an attempt that landed nothing",
+    );
+  }
+  finalizationNextAssertReading(view);
+}
+
+/** Refuses a view whose reading contradicts its permit or its attempt, or whose held permit is its own. */
+function finalizationNextAssertReading(view: FinalizationView): void {
+  const { attempt, permit, reconciliation } = view;
   if (permit === undefined && reconciliation !== undefined) {
     throw new RangeError(
       "finalization view: a reconciliation is present with no permit to conclude",
@@ -726,6 +795,29 @@ function finalizationNextAssertView(view: FinalizationView): void {
   ) {
     throw new RangeError(
       "finalization view: the reconciliation concludes another permit",
+    );
+  }
+  if (
+    reconciliation?.declined !== undefined &&
+    reconciliation.verdict === "Promoted"
+  ) {
+    throw new RangeError(
+      "finalization view: a declined push is read as promoted",
+    );
+  }
+  if (
+    reconciliation?.verdict === "NotPromoted" &&
+    reconciliation.observed === undefined &&
+    reconciliation.declined === undefined &&
+    attempt?.target.baseRef === undefined
+  ) {
+    throw new RangeError(
+      "finalization view: a ref read as absent concludes with no decline beside it over a target that was held",
+    );
+  }
+  if (view.heldPermit !== undefined && view.heldPermit === permit?.permit) {
+    throw new RangeError(
+      "finalization view: the permit an earlier request holds is this request's own",
     );
   }
 }
@@ -745,6 +837,43 @@ function finalizationNextRestart(
     return { decide: "Hold", hold: "PreparationRestartsExhausted" };
   }
   return { decide: "Prepare", target, restartsSpent };
+}
+
+/**
+ * What a candidate the ref proved absent leads to: over a target the reading
+ * found unmoved, or found absent, a workflow refusal is held, since
+ * preparing again builds what the same repository refuses again, and any other
+ * decline is prepared again while restarts remain, a repository taking the next
+ * time what it declined once, then held as declined. Anything else is the
+ * revision fence's, a target that moved being the information a restart needs.
+ */
+function finalizationNextNotPromoted(
+  config: FinalizerConfig,
+  view: FinalizationView,
+  reconciliation: FinalizationReconciliation,
+): FinalizationDecision {
+  const declined = reconciliation.declined;
+  if (
+    declined === undefined ||
+    allClosingLifecycles.includes(view.lifecycle) ||
+    (reconciliation.observed !== undefined &&
+      reconciliation.observed !== view.attempt?.target.commit)
+  ) {
+    return finalizationNextRestart(config, view);
+  }
+  switch (declined) {
+    case "WorkflowsRefused":
+      return { decide: "Hold", hold: "PromotionWorkflowsRefused" };
+    case "RemoteDeclined": {
+      const next = finalizationNextRestart(config, view);
+      return next.decide === "Hold" &&
+        next.hold === "PreparationRestartsExhausted"
+        ? { decide: "Hold", hold: "PromotionDeclined" }
+        : next;
+    }
+    default:
+      return assertNever(declined);
+  }
 }
 
 /**
@@ -785,7 +914,7 @@ function finalizationNextUnderPermit(
     if (reconciliation.verdict === "Promoted") {
       return finalizationNextPromoted(view);
     }
-    return finalizationNextRestart(config, view);
+    return finalizationNextNotPromoted(config, view, reconciliation);
   }
   if (reconciliation === undefined) {
     return { decide: "Reconcile", permit: permit.permit };
@@ -798,16 +927,22 @@ function finalizationNextUnderPermit(
 
 /**
  * What a finalization that has obtained no permit may do next, the revision
- * fence and the closure abort included. A failure already recorded is concluded
- * before anything is read of the remote, because the evidence is the rows, and
- * a proposal with nothing to open between is held before the branch it would
- * be opened from is built or pushed.
+ * fence and the closure abort included. A recorded failure concludes, and so
+ * does a candidate the target already held; an earlier request's unsettled
+ * reading holds this one under it, and a proposal with nothing to open between
+ * is held before anything is built or pushed.
  */
 function finalizationNextBeforePermit(
   config: FinalizerConfig,
   view: FinalizationView,
 ): FinalizationDecision {
   const attempt = view.attempt;
+  if (attempt?.outcome === "Landed") {
+    return {
+      decide: "Conclude",
+      conclusion: { outcome: "FinalizationSucceeded" },
+    };
+  }
   if (attempt?.outcome === "Failed" && attempt.failureKind !== undefined) {
     return {
       decide: "Conclude",
@@ -822,6 +957,9 @@ function finalizationNextBeforePermit(
     return aborting === undefined
       ? { decide: "Hold", hold: "TargetUnreadable" }
       : { decide: "Abort", target: aborting };
+  }
+  if (view.heldPermit !== undefined) {
+    return { decide: "Hold", hold: "ReconciliationUnreadable" };
   }
   const base = view.proposalBase;
   if (base !== undefined) {
@@ -928,6 +1066,15 @@ export type CandidatePrepared =
   | { readonly prepared: "Candidate"; readonly candidate: GitObjectId }
   | { readonly prepared: "Failed"; readonly evidence: GitEvidence };
 
+/**
+ * What proving a worker's source found. `Undescended` is a commit the remote
+ * holds at its ref whose history, read to its end, does not hold the base it
+ * declared: an answer about those immutable commits, which no later read
+ * changes, where a failure is the read itself not finishing.
+ */
+export type CandidateSourcePrepared =
+  CandidatePrepared | { readonly prepared: "Undescended" };
+
 /** One integration against exactly one observed target, which is what bounded means here. */
 export interface CandidateIntegration {
   readonly repository: RepositoryBinding;
@@ -981,11 +1128,48 @@ export interface AncestryProof {
   readonly candidate: GitObjectId;
 }
 
-/** What the ref proved, an unreadable ref kept apart from a ref that proved the candidate absent. */
+/** What the ref proved, a ref the remote does not hold and an unreadable ref each kept apart from a ref that proved the candidate absent. */
 export type AncestryProved =
   | { readonly proved: "Ancestor"; readonly observed: GitObjectId }
   | { readonly proved: "NotAncestor"; readonly observed: GitObjectId }
+  | { readonly proved: "Absent" }
   | { readonly proved: "Unreadable"; readonly evidence: GitEvidence };
+
+/** One question of whether the target a ticket lands on already holds its candidate. */
+export interface CandidateHeldQuestion {
+  readonly repository: RepositoryBinding;
+  readonly target: ObservedTarget;
+  readonly candidate: GitObjectId;
+}
+
+/**
+ * What git proved of that target. `Held` is a candidate the target already
+ * reaches, or one whose clean merge with the target is the target's own tree;
+ * `Unheld` is any other; and `Unread` is a remote or a scratch that could not
+ * answer.
+ */
+export type CandidateHeld = "Held" | "Unheld" | "Unread";
+
+/**
+ * One head a proposal was read at that is not the head pinned for it, and the
+ * two branches it stands between. Adopting it is asking whether it is the
+ * pinned head brought up to date with the base and nothing more.
+ */
+export interface HeadAdoptionQuestion {
+  readonly repository: RepositoryBinding;
+  readonly pinned: GitObjectId;
+  readonly head: GitObjectId;
+  readonly headRef: GitRefName;
+  readonly baseRef: GitRefName;
+}
+
+/**
+ * What git proved of such a head. `Adoptable` is a merge whose first parent is
+ * the pinned head, whose second is a commit on the base, and whose tree is the
+ * one a clean merge of those two gives; `Unadoptable` is any other commit; and
+ * `Unread` is a remote or a scratch that could not answer.
+ */
+export type HeadAdoption = "Adoptable" | "Unadoptable" | "Unread";
 
 /**
  * Git, behind a typed port so the durable state machine can be driven without a
@@ -1004,7 +1188,10 @@ export interface GitPromotionPort {
   /** Fetches a worker source ref and proves its exact commit descends from its declared base. */
   prepareSource(
     preparation: CandidateSourcePreparation,
-  ): Promise<CandidatePrepared>;
+  ): Promise<CandidateSourcePrepared>;
+
+  /** Reads whether the target a ticket lands on already holds its candidate, so landing it would change nothing. */
+  proveCandidateHeld(question: CandidateHeldQuestion): Promise<CandidateHeld>;
 
   /** Integrates one candidate against one observed target, deterministically. */
   integrateCandidate(
@@ -1016,6 +1203,9 @@ export interface GitPromotionPort {
 
   /** Reads back whether the target ref proves the candidate reached it. */
   proveCandidateAncestry(proof: AncestryProof): Promise<AncestryProved>;
+
+  /** Reads whether a proposal's head is its pinned head brought up to date with its base. */
+  proveHeadAdoptable(question: HeadAdoptionQuestion): Promise<HeadAdoption>;
 }
 
 /** What resolving a repository credential found, a denial kept apart from an outage. */
@@ -1068,6 +1258,7 @@ export interface FinalizerConfig {
   readonly proposalReconciliationsMax: number;
   readonly proposalMergesMax: number;
   readonly proposalMergeReadingsMax: number;
+  readonly proposalUpdatesMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -1085,6 +1276,7 @@ export const finalizerDefaults: FinalizerConfig = {
   proposalReconciliationsMax: 3,
   proposalMergesMax: 3,
   proposalMergeReadingsMax: 3,
+  proposalUpdatesMax: 3,
 };
 
 /**
@@ -1160,13 +1352,16 @@ export type Reconciled =
   | { readonly recorded: "Held" }
   | { readonly recorded: "Refused" };
 
-/** One permit a reading could not settle, carrying everything a re-reading needs. */
+/** One permit a reading could not settle, carrying everything a re-reading needs, the decline its push met among it. */
 export interface HeldPermit {
   readonly partition: Partition;
   readonly permit: CommitPermitId;
   readonly repository: RepositoryBinding;
   readonly target: GitRefName;
+  /** The ref the attempt's target commit was read from, present only where the remote did not hold the target at preparation. */
+  readonly baseRef?: GitRefName;
   readonly candidate: GitObjectId;
+  readonly declined?: PromotionDecline;
 }
 
 /**

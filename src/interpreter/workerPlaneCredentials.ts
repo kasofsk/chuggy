@@ -3,23 +3,27 @@
  * durable row names, or a read of another its project binds.
  *
  * A POD MAY ASK FOR A READ OF ANY REPOSITORY ITS PROJECT BINDS, AND NEVER FOR
- * MORE. An attempt's own repository is the one its input bundle pinned, and its
- * permission set follows from the task kind the scheduler recorded, so a pod
- * cannot obtain a push by asking for one. Every other repository an attempt
- * names, and every one a session names, is held to the project's live bindings
- * before anything is minted, and is minted `read`: a ticket delivers to its one
- * repository, and reads whichever of the others its work needs.
+ * MORE. An attempt's own repository is the one its input bundle pinned. Asked
+ * for with no name, it is minted what the task kind the scheduler recorded
+ * needs, so a pod cannot obtain a push by asking for one; asked for by name, it
+ * is minted `read`. Every other repository an attempt names, and every one a
+ * session names, is held to the project's live bindings before anything is
+ * minted, and is minted `read`: a ticket delivers to its one repository, and
+ * reads whichever of the others its work needs.
  *
  * LEAST PRIVILEGE PER MINT. A work attempt pushes its branch, so its own
- * repository is minted `write`; an evaluation attempt reads it, so it is
- * minted `read`.
+ * repository asked for with no name is minted `write`; an evaluation attempt
+ * reads it, so it is minted `read`. Asked for by name, it is a read whatever
+ * the kind, so a pod that only reads it need hold no more.
  *
  * A REFUSAL IS NOT AN OUTAGE. A repository no claim of this tenant's covers, a
  * repository the project does not bind or has retired, and a forge that refused
  * this app are all `NotFound`, settled for as long as the claim is absent: a
  * pod falls back from it to its launcher's mount for the repository it works
  * in, and holds no credential for any other it named. A forge or a store that
- * could not be reached is `Unavailable`, and may be asked again.
+ * could not be reached is `Unavailable`, and may be asked again. A refusal met
+ * past the address names the repository, the app and which refusal it was, so
+ * the pod can say what to change before it falls back.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -27,6 +31,7 @@ import type { ExecutionTaskKind } from "./executionRequirement.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import type {
   ForgeInstallationToken,
+  ForgeMintUnreached,
   ForgePermissionSet,
   ForgeRepositoryTokens,
 } from "./forgeInstallation.ts";
@@ -55,15 +60,24 @@ export interface WorkerPlaneCredential {
   readonly expiresAtMs: number;
 }
 
+/** A refusal met past the address, and the repository it was met for. */
+export type WorkerPlaneCredentialUnreached = ForgeMintUnreached & {
+  readonly repository: RepositoryId;
+};
+
 /** What minting for a pod came to, a refusal kept apart from an outage. */
 export type WorkerPlaneCredentialMinted =
   | { readonly minted: "Credential"; readonly value: WorkerPlaneCredential }
-  | { readonly minted: "NotFound" }
+  | {
+      readonly minted: "NotFound";
+      /** Absent where the refusal was the binding's, or came before any installation was looked for. */
+      readonly unreached?: WorkerPlaneCredentialUnreached;
+    }
   | { readonly minted: "Unavailable" };
 
 /** Mints the credential one pod needs, each half answering only its own bearer. */
 export interface WorkerPlaneCredentialMinting {
-  /** The attempt's own repository where `repository` names none or names it, and otherwise a read of the one it names. */
+  /** The attempt's own repository, minted for its task kind where `repository` names none and `read` where it names it, and otherwise a read of the one it names. */
   attempt(
     authority: WorkerAttemptAuthority,
     repository?: RepositoryId,
@@ -110,7 +124,7 @@ async function workerPlaneCredentialMinted(
   permissions: ForgePermissionSet,
 ): Promise<WorkerPlaneCredentialMinted> {
   const minted = await tokens
-    .token(repository, partition.tenant, permissions)
+    .token(repository, partition, permissions)
     .catch(() => ({ minted: "Unavailable" }) as const);
   switch (minted.minted) {
     case "Token":
@@ -123,7 +137,12 @@ async function workerPlaneCredentialMinted(
         },
       };
     case "Denied":
-      return { minted: "NotFound" };
+      return minted.unreached === undefined
+        ? { minted: "NotFound" }
+        : {
+            minted: "NotFound",
+            unreached: { ...minted.unreached, repository },
+          };
     case "Unavailable":
       return { minted: "Unavailable" };
     default:
@@ -183,16 +202,23 @@ export function workerPlaneCredentialMinting(
   return {
     attempt: async (authority, named) => {
       const own = workerPlaneCredentialRepository(authority);
-      if (named !== undefined && named !== own)
-        return workerPlaneCredentialRead(options, authority.partition, named);
-      return own === undefined
-        ? { minted: "NotFound" }
-        : workerPlaneCredentialMinted(
+      if (named === undefined)
+        return own === undefined
+          ? { minted: "NotFound" }
+          : workerPlaneCredentialMinted(
+              options.tokens,
+              own,
+              authority.partition,
+              workerPlaneCredentialPermissions[authority.taskKind],
+            );
+      return named === own
+        ? workerPlaneCredentialMinted(
             options.tokens,
             own,
             authority.partition,
-            workerPlaneCredentialPermissions[authority.taskKind],
-          );
+            "read",
+          )
+        : workerPlaneCredentialRead(options, authority.partition, named);
     },
     session: (partition, repository) =>
       workerPlaneCredentialRead(options, partition, repository),

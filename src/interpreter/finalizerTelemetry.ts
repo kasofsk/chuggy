@@ -15,6 +15,12 @@
  * one opaque number. `FinalizerHoldReason` is the closed set every site counting
  * a hold emits alongside it, which is what keeps the count and the reasons in
  * agreement.
+ *
+ * ONE OBSERVATION NAMES ITS REQUEST, AND NONE NAMES ANYTHING ELSE. Every other
+ * observation is closed and identifier-free; `advanced` carries the request
+ * one advance was about beside the hold it was left at, because a request held
+ * on every pass is one an operator has to be able to find, and its identity is
+ * neither ticket text nor a credential.
  */
 
 import type { ApprovalAsked } from "./finalizerPreparation.ts";
@@ -62,7 +68,7 @@ export type FinalizerHoldReason =
   | "ProposalUnrecorded"
   | "ProposalUnbranched";
 
-/** Closed, identifier-free observations emitted by the finalizer. */
+/** The finalizer's observations, `advanced` the one naming its request. */
 export interface FinalizerMetrics {
   claiming(claims: number, ceiling: number): void;
   reopening(scope: FinalizerReopenScope, requests: number): void;
@@ -81,6 +87,7 @@ export interface FinalizerMetrics {
     submitted: FinalizationSubmitted["submitted"],
   ): void;
   holding(reason: FinalizerHoldReason): void;
+  advanced(request: string, held: FinalizerHoldReason | undefined): void;
 }
 
 /** Emits nothing, which is what a caller that supplies no telemetry gets. */
@@ -96,6 +103,7 @@ export const silentFinalizerMetrics: FinalizerMetrics = {
   reconciliation: () => undefined,
   conclusion: () => undefined,
   holding: () => undefined,
+  advanced: () => undefined,
 };
 
 /**
@@ -133,3 +141,55 @@ export function recordFinalizer(
 export const silentFinalizerTelemetry: FinalizerTelemetry = finalizerTelemetry(
   silentFinalizerMetrics,
 );
+
+/** The most requests a hold log remembers, and the bound it is built under where none is named. */
+export const finalizerHoldLogRequestsMax = 1_024;
+
+/** What a hold log remembers of one request: where its advances have been left, how many in a row, and at which count it writes next. */
+interface FinalizerHoldLogged {
+  readonly reason: FinalizerHoldReason;
+  readonly advances: number;
+  readonly writesAt: number;
+}
+
+/**
+ * A sink that writes a line for a request held where it was found, on the
+ * first advance of a run held at one reason and again each time that run
+ * doubles, and nothing for any other observation. A request moved, held
+ * somewhere else, or forgotten as the longest remembered once the bound on
+ * requests is reached starts its run again.
+ */
+export function finalizerHoldLog(
+  write: (line: string) => void,
+  requestsMax: number = finalizerHoldLogRequestsMax,
+): FinalizerTelemetry {
+  if (!Number.isSafeInteger(requestsMax) || requestsMax < 1) {
+    throw new RangeError("finalizer hold log: requestsMax must be positive");
+  }
+  const logged = new Map<string, FinalizerHoldLogged>();
+  return finalizerTelemetry({
+    ...silentFinalizerMetrics,
+    advanced: (request, held) => {
+      const prior = logged.get(request);
+      logged.delete(request);
+      if (held === undefined) return;
+      const run = prior?.reason === held ? prior : { advances: 0, writesAt: 1 };
+      const advances = run.advances + 1;
+      const writes = advances === run.writesAt;
+      if (logged.size >= requestsMax) {
+        const first = logged.keys().next();
+        if (first.done !== true) logged.delete(first.value);
+      }
+      logged.set(request, {
+        reason: held,
+        advances,
+        writesAt: writes ? run.writesAt * 2 : run.writesAt,
+      });
+      if (writes) {
+        write(
+          `finalizer: request ${JSON.stringify(request)} held at ${held}, ${String(advances)} advances in a row\n`,
+        );
+      }
+    },
+  });
+}

@@ -14,11 +14,12 @@
  * fallback, which is the only thing that makes its forward direction bite.
  */
 
-import type {
-  EscalationKind,
-  NativeActionKind,
-  OperationBoundaryRefusalCode,
-  OperationState,
+import {
+  programSkipsPlannedEvaluationsCode,
+  type EscalationKind,
+  type NativeActionKind,
+  type OperationBoundaryRefusalCode,
+  type OperationState,
 } from "../../../../src/contract/rosters.ts";
 import type {
   OperationResponse,
@@ -111,6 +112,12 @@ function operationRefusalTicketSentence(
       return `${operationRefusalTicket(refused.value)} already exists, so there is nothing left to release`;
     case "DependenciesNotFound":
       return `${operationRefusalTicket(refused.value.ticket)} depends on ${operationRefusalTickets(refused.value.dependencies)}, which the project has no ticket for`;
+    case "DependenciesRevoked":
+      return `${operationRefusalTicket(refused.value.ticket)} cannot come to depend on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "was" : "were"} revoked and will never be done; depend on a ticket that is still open`;
+    case "DependencyCycle":
+      return refused.value.dependencies.length === 1
+        ? `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already waits on it, so neither could ever start`
+        : `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already wait on it, so none of them could ever start`;
     case "SelfDependency":
       return `${operationRefusalTicket(refused.value)} names itself as a dependency; revise it to depend only on other tickets`;
     case "TicketNotFound":
@@ -121,8 +128,6 @@ function operationRefusalTicketSentence(
       return `what was submitted describes a different ticket from ${operationRefusalTicket(refused.value)}`;
     case "TicketRevisionStale":
       return `this was written against revision ${String(refused.value.expected)} of ${operationRefusalTicket(refused.value.ticket)}, which is at revision ${String(refused.value.current)} now`;
-    case "TicketDependenciesChanged":
-      return `what ${operationRefusalTicket(refused.value)} depends on cannot change once it is released`;
     case "DependenciesIncomplete":
       return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "is" : "are"} not done yet`;
     case "TicketNotRevocable":
@@ -161,11 +166,17 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
     case "SelectionUnknown":
       return "the draft selects a workload, plan or finalizer the configuration's catalog does not hold";
     case "SelectionUnsupported":
-      return "only a version 2 configuration takes a selection, and it takes no overrides; revise the draft to ask the configuration for what it holds";
+      return "only a version 2 configuration takes a selection; revise the draft to ask the configuration for what it holds";
     case "ProgramExceedsPlan":
       return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
+    case "ProgramSkipsBriefChecks":
+      return "the program leaves out the stage or evaluator the brief's checks run in; restore it, or remove the brief's checks";
+    case "OverridesUnsupported":
+      return "a catalog takes overrides only of its workloads, and a version 1 configuration takes none of workloads; revise the draft's overrides to fit its configuration";
+    case "OverridesUnknown":
+      return "the overrides name a workload, or a prompt file, the configuration's catalog does not hold";
     case "TicketCapacityReached":
-      return "the project has no room for this ticket: it holds as many as its configuration allows, or the number is past the ones it offers";
+      return "the project has no room for this ticket: it holds as many unfinished tickets as this deployment allows, so finish or revoke one to make room";
     case "FinalizationRequestClosed":
       return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
     case "OverridesMoveDefinition":
@@ -185,6 +196,7 @@ export const mutationRefusalCodes = [
   "InvalidMutation",
   "MutationNotAdmitted",
   "OperationNotPending",
+  programSkipsPlannedEvaluationsCode,
 ] as const;
 export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
 
@@ -198,19 +210,18 @@ export function mutationRefusalSentence(code: MutationRefusalCode): string {
       return "the project is not admitting this kind of mutation at the moment";
     case "OperationNotPending":
       return "that operation had already been decided, so there was nothing left to call off";
+    case "ProgramSkipsPlannedEvaluations":
+      return "the program leaves out part of its plan, which your role may not release; draw the whole plan, or ask an administrator";
   }
 }
 
 /**
  * The conflicts the draft door answers a revision with. `DraftChanged` is the
- * version fence and `DraftNotEditable` a draft whose ticket has left Pending;
- * `DependenciesLocked` is a revision of a released draft that moves what its
- * ticket depends on, which the update it would release is refused for anyway.
+ * version fence and `DraftNotEditable` a draft whose ticket has left Pending.
  */
 export const draftRevisionRefusalCodes = [
   "DraftChanged",
   "DraftNotEditable",
-  "DependenciesLocked",
 ] as const;
 export type DraftRevisionRefusalCode =
   (typeof draftRevisionRefusalCodes)[number];
@@ -223,8 +234,6 @@ export function draftRevisionRefusalSentence(
       return "the draft changed while this form was open — it has been read again, so submitting now revises the current one";
     case "DraftNotEditable":
       return "the draft is closed to revision: only a pending ticket's draft can be revised";
-    case "DependenciesLocked":
-      return "what this ticket depends on cannot change once it is released";
   }
 }
 

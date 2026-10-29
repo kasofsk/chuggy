@@ -13,6 +13,7 @@ import {
   type WorkerPoolClientSettings,
   type WorkerPoolEndAnswer,
   type WorkerPoolHeld,
+  type WorkerPoolJobEnd,
   type WorkerPoolJobRefused,
   type WorkerPoolOffer,
   type WorkerPoolPlacement,
@@ -62,6 +63,7 @@ const idle: WorkerPoolBackend = {
   stop: () => Promise.resolve<WorkerPoolStopped>({ stopped: "Stopped" }),
   held: () => Promise.resolve([]),
   ended: () => Promise.resolve([]),
+  clear: () => Promise.reject(new Error("no job ended in this case")),
 };
 
 /** A plane with nothing to say, answered by the poll that says so. */
@@ -90,6 +92,9 @@ function client(
       invalidate: () => undefined,
     },
     plane: quiet,
+    jobs: {
+      end: () => Promise.reject(new Error("no job was killed in this case")),
+    },
     backend: idle,
     settings,
     ...parts,
@@ -505,14 +510,48 @@ test("an issuer that refused the grant stops the run and one that faltered does 
 });
 
 test("a run refuses a bound that is not a positive whole number", async () => {
-  await assert.rejects(
-    () =>
-      workerPoolClientRun(
-        client({ settings: { ...settings, concurrencyMax: 0 } }),
-        () => Promise.resolve(),
-      ),
-    RangeError,
+  for (const name of ["outageBackoffMs", "passesMax"] as const)
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, [name]: 0 } }),
+          () => Promise.resolve(),
+        ),
+      new RegExp(`${name} must be a positive safe integer`, "u"),
+    );
+});
+
+test("a run refuses a job ceiling that is not a whole number of zero or more", async () => {
+  for (const concurrencyMax of [-1, 1.5, Number.NaN])
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, concurrencyMax, sessionsMax: 1 } }),
+          () => Promise.resolve(),
+        ),
+      /concurrencyMax must be a safe integer of zero or more$/u,
+      String(concurrencyMax),
+    );
+});
+
+test("a run takes a job ceiling of 0 beside a session ceiling, and refuses one beside none", async () => {
+  const passed = await workerPoolClientRun(
+    client({
+      settings: { ...settings, concurrencyMax: 0, sessionsMax: 1 },
+      sessions: endings().sessions,
+    }),
+    () => Promise.resolve(),
   );
+  assert.equal(passed.passed, "Reconciled");
+  for (const none of [{}, { sessionsMax: 0 }])
+    await assert.rejects(
+      () =>
+        workerPoolClientRun(
+          client({ settings: { ...settings, concurrencyMax: 0, ...none } }),
+          () => Promise.resolve(),
+        ),
+      /concurrencyMax is 0 and sessionsMax is 0 or absent, so the pool would take no work/u,
+    );
 });
 
 /** A session plane recording each end it is told of and answering each as `answer` says. */
@@ -621,6 +660,43 @@ test("a session offer is placed as a session against its own ceiling, and never 
   });
 });
 
+test("a pool whose job ceiling is 0 asks for no job and places none it is offered, while it takes sessions", async () => {
+  const asked: [number, number][] = [];
+  const placed: string[] = [];
+  const posted: string[] = [];
+  await workerPoolClientPass(
+    client({
+      settings: { ...settings, concurrencyMax: 0, sessionsMax: 1 },
+      sessions: endings().sessions,
+      backend: {
+        ...idle,
+        place: (offer) => {
+          placed.push(`${offer.assignment.assignment}:${offer.kind}`);
+          return Promise.resolve<WorkerPoolPlacement>({ placed: "Placed" });
+        },
+      },
+      plane: {
+        poll: (_token, _held, wanted, wantedSessions) => {
+          asked.push([wanted, wantedSessions]);
+          return Promise.resolve<WorkerPoolPolled>({
+            polled: "Reconciled",
+            assignments: [assignment("job")],
+            sessions: [session("session")],
+            stop: [],
+          });
+        },
+        settle: (_token, named, outcome) => {
+          posted.push(`${named}:${outcome.outcome}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(asked, [[0, 1]]);
+  assert.deepEqual(placed, ["session:Session"]);
+  assert.deepEqual(posted, ["job:Unavailable", "session:Accepted"]);
+});
+
 test("a session whose container ended is reported on the session plane before the poll, and only a taken end counts", async () => {
   const order: string[] = [];
   const ended = (named: string): WorkerPoolSessionEnd => ({
@@ -658,7 +734,7 @@ test("a session whose container ended is reported on the session plane before th
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
 });
 
-test("a job its backend refused is settled refused under its fault before the poll, with no session plane, and only a taken refusal counts", async () => {
+test("a job its backend refused is settled refused under its fault before the poll, with no session plane, cleared once the plane answered, and only a taken refusal counts", async () => {
   const order: string[] = [];
   const posted: [string, string, unknown][] = [];
   const tokens = counting();
@@ -671,19 +747,20 @@ test("a job its backend refused is settled refused under its fault before the po
   const answers: Readonly<Record<string, WorkerPoolSettled>> = {
     taken: "Settled",
     gone: "Lost",
+    denied: "Denied",
     stale: "Stale",
   };
+  const named = ["taken", "gone", "denied", "stale", "unreached"];
   const passed = await workerPoolClientPass(
     client({
       tokens: tokens.tokens,
       backend: {
         ...idle,
-        ended: () =>
-          Promise.resolve([
-            refused("taken"),
-            refused("gone"),
-            refused("stale"),
-          ]),
+        ended: () => Promise.resolve(named.map(refused)),
+        clear: (assignment) => {
+          order.push(`clear:${assignment}`);
+          return Promise.resolve();
+        },
       },
       plane: {
         poll: (...asked) => {
@@ -700,23 +777,97 @@ test("a job its backend refused is settled refused under its fault before the po
   );
   assert.deepEqual(order, [
     "settle:taken",
+    "clear:taken",
     "settle:gone",
+    "clear:gone",
+    "settle:denied",
+    "clear:denied",
     "settle:stale",
+    "settle:unreached",
     "poll",
   ]);
   assert.deepEqual(
     posted,
-    ["taken", "gone", "stale"].map((named) => [
+    named.map((one) => [
       "pool-token-1",
-      named,
+      one,
       {
         outcome: "Refused",
-        evidence: `no git for ${named}`,
+        evidence: `no git for ${one}`,
         fault: "ImageLacksGit",
       },
     ]),
   );
   assert.deepEqual(tokens.invalidated, ["pool-token-1"]);
+  assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
+});
+
+test("a job its backend killed at its deadline is ended on the job plane before the poll, settling nothing, cleared once the plane answered, and only a taken end counts", async () => {
+  const order: string[] = [];
+  const told: WorkerPoolJobEnd[] = [];
+  const killed = (named: string): WorkerPoolJobEnd => ({
+    kind: "Job",
+    job: {
+      assignment: named,
+      callbackUrl: "https://plane.invalid/v1/ticket-execution",
+      bearer: `bearer-${named}`,
+    },
+    text: `${named} passed its deadline`,
+    killed: "Deadline",
+  });
+  const answers: Readonly<Record<string, WorkerPoolEndAnswer>> = {
+    taken: "Ended",
+    reported: "Refused",
+  };
+  const passed = await workerPoolClientPass(
+    client({
+      jobs: {
+        end: (ended) => {
+          order.push(`end:${ended.job.assignment}`);
+          told.push(ended);
+          return Promise.resolve(
+            answers[ended.job.assignment] ?? "Unavailable",
+          );
+        },
+      },
+      backend: {
+        ...idle,
+        ended: () =>
+          Promise.resolve([
+            killed("taken"),
+            killed("reported"),
+            killed("unreached"),
+          ]),
+        clear: (assignment) => {
+          order.push(`clear:${assignment}`);
+          return Promise.resolve();
+        },
+      },
+      plane: {
+        poll: (...asked) => {
+          order.push("poll");
+          return quiet.poll(...asked);
+        },
+        settle: (_token, named) => {
+          order.push(`settle:${named}`);
+          return Promise.resolve<WorkerPoolSettled>("Settled");
+        },
+      },
+    }),
+  );
+  assert.deepEqual(order, [
+    "end:taken",
+    "clear:taken",
+    "end:reported",
+    "clear:reported",
+    "end:unreached",
+    "poll",
+  ]);
+  assert.deepEqual(told, [
+    killed("taken"),
+    killed("reported"),
+    killed("unreached"),
+  ]);
   assert.equal(passed.passed === "Reconciled" ? passed.ended : -1, 1);
 });
 

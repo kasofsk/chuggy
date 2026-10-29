@@ -6,7 +6,7 @@
  *
  * The revision is round-tripped through `draftRevisionSchema` by the assembler
  * itself, so what is checked here is its content: the version it is written
- * against and the dependencies it carries whatever the form holds.
+ * against and the dependencies the form holds.
  */
 
 import { expect, test } from "vitest";
@@ -27,6 +27,7 @@ import {
 } from "../app/core/ticketEdit.ts";
 import {
   creationBinding,
+  creationCatalogOffer,
   creationDeclared,
   creationDraft,
   creationInitialization,
@@ -82,6 +83,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     landingMode: "PullRequest",
     overrides: {},
     selection: {},
+    workloads: {},
   });
   const commanding = [creationOffer(undefined, { commandedCheckStage: 1 })];
   const again = creationBodyFrom(commanding, form, [
@@ -201,9 +203,40 @@ test("the revision sends the overrides the form holds, not the draft's", () => {
   expect(given.assembled === "Body" && "overrides" in given.body).toBe(false);
 });
 
-/** The screen draws no dependency picker, and the revision does not trust that
- * it did not: a form holding other dependencies still sends the draft's. */
-test("the revision carries the draft's own dependencies whatever the form holds", () => {
+/** A reader who may override and may not skip planned evaluations. */
+const nonholder = { mayOverride: true, maySkipPlanned: false };
+
+test("a draft already holding a program shorter than its plan revises only to the whole plan for a reader who may not skip it", () => {
+  const offers = [creationCatalogOffer(creationSummary("c1", "Ready"))];
+  const short: DraftResponse = {
+    ...released,
+    configurationRevision: "c1",
+    selection: { evaluation: "gated" },
+    authoring: {
+      dependencies: [],
+      program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
+    },
+  };
+  const form = {
+    ...editFormFrom(short, [], offers[0]?.name ?? ""),
+    repository,
+  };
+  const refused = editRevisionFrom(short, offers, form, [], nonholder);
+  expect(
+    refused.assembled === "Faults" &&
+      refused.faults.map((fault) => fault.field),
+  ).toStrictEqual(["authoring"]);
+  expect(editRevisionFrom(short, offers, form, []).assembled).toBe("Body");
+  const whole = {
+    ...form,
+    program: [...form.program, { key: 2, evaluators: [{ key: 1 }] }],
+  };
+  expect(editRevisionFrom(short, offers, whole, [], nonholder).assembled).toBe(
+    "Body",
+  );
+});
+
+test("the revision carries the dependencies the form holds", () => {
   const form = {
     ...editFormFrom(released, [creationBinding(repository)], "r3"),
     dependencies: [8],
@@ -213,7 +246,24 @@ test("the revision carries the draft's own dependencies whatever the form holds"
   ]);
   expect(
     assembled.assembled === "Body" && assembled.body.authoring.dependencies,
-  ).toStrictEqual([7]);
+  ).toStrictEqual([8]);
+});
+
+/** Ticket 3 is held though the project no longer offers it, which is what a
+ * revoked dependency looks like, and ticket 12 is the one being edited. */
+test("an edit offers what creation does less the ticket itself, and every dependency its draft holds", () => {
+  const holding = {
+    ...released,
+    authoring: { ...released.authoring, dependencies: [3, 7] },
+  };
+  const offered = creationOffer(undefined, {
+    dependencyCandidates: [7, 8, 12],
+  });
+  const edit = editOffersFrom(holding, [offered], undefined);
+  expect(
+    edit.offers.map((offer) => offer.initialization.dependencyCandidates),
+  ).toStrictEqual([[3, 7, 8]]);
+  expect(offered.initialization.dependencyCandidates).toStrictEqual([7, 8, 12]);
 });
 
 test("a form fault stops the revision, named as creation names it", () => {
@@ -412,4 +462,54 @@ test("the short label counts what the sentence spells out", () => {
     draftUnreleasedLabel(draftReleaseOf({ ...released, authoringVersion: 7 })),
   ).toBe("2 unreleased");
   expect(draftUnreleasedLabel(draftReleaseOf(unbriefed))).toBe("Not recorded");
+});
+
+/** A reader who may not override revises the draft's overrides only as they stand. */
+test("a reader who may not override keeps the draft's overrides in any key order, and is refused a change", () => {
+  const draft: DraftResponse = {
+    ...released,
+    overrides: { worker: { setup: ["npm ci"] }, practices: ["Kept"] },
+  };
+  const bound = [creationBinding(repository)];
+  const form = editFormFrom(draft, bound, "r3");
+  const shuffled = {
+    "worker.setup": ["npm ci"],
+    practices: ["Kept"],
+  } as const;
+  const kept = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: shuffled },
+    bound,
+    { mayOverride: false },
+  );
+  expect(kept.assembled === "Body" && kept.body.overrides).toStrictEqual(
+    draft.overrides,
+  );
+  const changed = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: { ...shuffled, practices: ["Other"] } },
+    bound,
+    { mayOverride: false },
+  );
+  const faults = changed.assembled === "Faults" ? changed.faults : [];
+  expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
+  expect(faults[0]?.reason).toMatch(/may not override/u);
+  const admin = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: { ...shuffled, practices: ["Other"] } },
+    bound,
+    { mayOverride: true },
+  );
+  expect(admin.assembled).toBe("Body");
+  const removed = editRevisionFrom(
+    draft,
+    creationOffers,
+    { ...form, overrides: {} },
+    bound,
+    { mayOverride: false },
+  );
+  expect(removed.assembled).toBe("Body");
 });

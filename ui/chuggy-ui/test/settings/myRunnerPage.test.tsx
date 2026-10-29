@@ -3,7 +3,8 @@
  * is told why and offered nothing; one it has is handed the personal command;
  * and a member with runners sees a row for each, registers another while under
  * the bound, gives them projects they read, takes them away, and takes one
- * runner off at a time.
+ * runner off at a time; and their chat host is drawn, registered with a token
+ * and taken off.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -96,6 +97,17 @@ interface Drawing {
   held?: Promise<Response> | undefined;
   /** Where set, the status a runner's removal is answered with. */
   removal?: number;
+  /** The chat host every read answers; absent where the reader has none. */
+  host?: unknown;
+}
+
+/** A chat host of the reader's whose id ends in `tail`, never polled. */
+function hostListed(tail: string): unknown {
+  return {
+    id: `chuggy-personal-${tail}-0000-4000-8000-000000000000`,
+    registeredAt: "2026-10-01T00:00:00Z",
+    live: false,
+  };
 }
 
 let drawing: Drawing = { granted: true, runner: undefined };
@@ -128,6 +140,14 @@ async function drawMyRunner(): Promise<readonly SentRequest[]> {
         ? answer(undefined, 204)
         : answer({ error: { code: "NotFound" } }, drawing.removal);
     if (path === `${nativeHttpBasePath}/projects`) return answer(inventory);
+    if (path === `${tenantPath}/chat-host`) {
+      if (request.method !== "GET") return answer(undefined, 204);
+      return drawing.host === undefined
+        ? answer({ error: { code: "NotFound" } }, 404)
+        : answer(drawing.host);
+    }
+    if (path === `${tenantPath}/chat-host-registration-tokens`)
+      return answer({ token: "tok_host-1", expiresAtMs: 1_800_000_000_000 });
     if (path === `${tenantPath}/personal-runner-registration-tokens`)
       return answer({ token: "tok_en-1", expiresAtMs: 1_800_000_000_000 });
     if (path.startsWith(`${tenantPath}/personal-runner/projects/`))
@@ -149,6 +169,9 @@ test("a member the workspace has not let register a runner is told why and offer
   await drawMyRunner();
   expect(screen.getByText(myRunnerWithheld)).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Register chat host" }),
+  ).toBeNull();
 });
 
 test("a member the workspace lets register one asks what it is for, and is handed the personal command for their token", async () => {
@@ -161,13 +184,7 @@ test("a member the workspace lets register one asks what it is for, and is hande
       .filter((one) => one.method === "POST")
       .map((one) => [one.url.slice(tenantPath.length), one.body]),
   ).toStrictEqual([
-    [
-      "/personal-runner-registration-tokens",
-      {
-        capabilities: ["Platform:Linux:Amd64", "Platform:Linux:Arm64"],
-        lifetimeSecs: 3600,
-      },
-    ],
+    ["/personal-runner-registration-tokens", { lifetimeSecs: 3600 }],
   ]);
   const steps = screen.getByRole("list", { name: "Register runner" });
   expect(
@@ -355,4 +372,60 @@ test("taking the last runner off says the projects go with it, and leaves none l
   expect(screen.getByText("0 runners")).toBeTruthy();
   expect(screen.queryByRole("table", { name: "Runners" })).toBeNull();
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
+});
+
+test("a member with no chat host is handed a token that replaces nothing", async () => {
+  const sent = await drawMyRunner();
+  expect(screen.getByText("No chat host yet")).toBeTruthy();
+  await press("Register chat host");
+  expect(written(sent)).toStrictEqual(["POST /chat-host-registration-tokens"]);
+  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(screen.queryByText(/replaces chat host/u)).toBeNull();
+});
+
+test("a member's chat host is drawn with whether it has polled, and registering another hands over a token said to replace it and end its sessions", async () => {
+  drawing = { granted: true, runner: undefined, host: hostListed("5be0d7aa") };
+  const sent = await drawMyRunner();
+  const row = within(screen.getByRole("table", { name: "Chat host" }))
+    .getAllByRole("row")
+    .slice(1);
+  expect(row).toHaveLength(1);
+  expect(row[0]?.textContent).toContain("5be0d7aa");
+  expect(row[0]?.textContent).toContain("Never");
+  expect(row[0]?.textContent).toContain("Offline");
+  await press("Register chat host");
+  expect(
+    sent
+      .filter((one) => one.method === "POST")
+      .map((one) => [one.url.slice(tenantPath.length), one.body]),
+  ).toStrictEqual([["/chat-host-registration-tokens", { lifetimeSecs: 3600 }]]);
+  expect(screen.getByText("tok_host-1")).toBeTruthy();
+  expect(
+    screen.getByText(
+      "Registering with it replaces chat host 5be0d7aa and ends the sessions it is running.",
+    ),
+  ).toBeTruthy();
+  await press("Done");
+  expect(screen.queryByText("tok_host-1")).toBeNull();
+});
+
+test("a chat host is drawn though its owner may no longer register one, and taking it off is asked first, then sent, and leaves none", async () => {
+  drawing = { granted: false, runner: undefined, host: hostListed("5be0d7aa") };
+  const sent = await drawMyRunner();
+  expect(
+    screen.queryByRole("button", { name: "Register chat host" }),
+  ).toBeNull();
+  await press("Remove chat host 5be0d7aa");
+  expect(written(sent)).toStrictEqual([]);
+  expect(
+    screen.getByRole("group", { name: "Remove chat host 5be0d7aa?" })
+      .textContent,
+  ).toContain(
+    "Chat host 5be0d7aa stops taking your chats and questions in this workspace, and the sessions it is running now end.",
+  );
+  drawing.host = undefined;
+  await press("Remove");
+  expect(written(sent)).toStrictEqual(["DELETE /chat-host"]);
+  expect(screen.queryByRole("table", { name: "Chat host" })).toBeNull();
+  expect(screen.getByText("No chat host yet")).toBeTruthy();
 });

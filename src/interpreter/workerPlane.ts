@@ -1,4 +1,5 @@
 import {
+  workerContractMemoryRoom,
   workerContractRelease,
   workerContractUnnamed,
   workerContractVersionOf,
@@ -58,6 +59,36 @@ export const workerContractProjectReads: WorkerContractRange = {
 /** The versions in which a poll's answer may name the release pinned for its runner, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerReleases: WorkerContractRange = {
   min: { major: 1, minor: 11 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a session's facts may name `TicketDispatch`, a capability a pod of an earlier one refuses its whole answer over. */
+export const workerContractTicketDispatch: WorkerContractRange = {
+  min: { major: 1, minor: 20 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a personal runner's job assignment may name its project, a field a pool of an earlier one refuses its whole answer over. */
+export const workerContractRunnerProjects: WorkerContractRange = {
+  min: { major: 1, minor: 15 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a poll's answer may say whether a job its runner fits is waiting, a field a pool of an earlier one refuses its whole answer over. */
+export const workerContractRunnerJobsWaiting: WorkerContractRange = {
+  min: workerContractMemoryRoom,
+  max: workerContractAccepted.max,
+};
+
+/** The versions a member's chat host polls in, which is where a poll may name its sessions' idle bound and an answer names the image its sessions run in; a host of an earlier one is refused every pool plane route. */
+export const workerContractChatHost: WorkerContractRange = {
+  min: { major: 1, minor: 27 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a chat host runs its member's own sessions, which name `MemberRead`, a capability a host of an earlier one refuses its whole answer over. */
+export const workerContractUnscopedChat: WorkerContractRange = {
+  min: { major: 1, minor: 29 },
   max: workerContractAccepted.max,
 };
 

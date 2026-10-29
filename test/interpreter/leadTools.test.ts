@@ -41,12 +41,24 @@ const settings = (
  * own roster is what does not admit it. Asserting membership of the thread's
  * roster rather than absence from the whole is the point — a `create_draft`
  * silently dropped from every capability would pass an absence check — and
- * revoking is held the same way, by the same capability.
+ * revoking and updating are held the same way, by the same capability, and
+ * dispatching by `TicketDispatch`, which a lead is not opened with either.
  */
-test("origination and revoking are admitted for a thread's roster and refused for a lead's", () => {
-  const memberOnly = ["create_draft", "revoke_ticket"] as const;
+test("origination, revoking, updating and dispatching are admitted for a thread's roster and refused for a lead's", () => {
+  const memberOnly = [
+    "create_draft",
+    "revoke_ticket",
+    "update_ticket",
+    "dispatch_ticket",
+  ] as const;
 
-  assert.deepEqual(chuggyToolCapabilities.DraftOriginate, memberOnly);
+  assert.deepEqual(
+    [
+      ...chuggyToolCapabilities.DraftOriginate,
+      ...chuggyToolCapabilities.TicketDispatch,
+    ],
+    memberOnly,
+  );
   for (const tool of memberOnly) {
     const named = `${chuggyToolPrefix}${tool}`;
     assert.ok(
@@ -55,16 +67,32 @@ test("origination and revoking are admitted for a thread's roster and refused fo
     );
     assert.ok(!chuggyToolNames(leadSessionCapabilities).includes(named), tool);
   }
+  const projectTools = new Set<string>(
+    Object.entries(chuggyToolCapabilities)
+      .filter(([capability]) => capability !== "MemberRead")
+      .flatMap(([, tools]) => tools),
+  );
   assert.deepEqual(
     chuggyToolNames(leadSessionCapabilities),
     allChuggyTools
-      .filter((tool) => !(memberOnly as readonly string[]).includes(tool))
+      .filter(
+        (tool) =>
+          projectTools.has(tool) &&
+          !(memberOnly as readonly string[]).includes(tool),
+      )
       .map((tool) => `${chuggyToolPrefix}${tool}`),
   );
 });
 
-test("a lead and a thread both list the project's repositories and read its images, and a lead's decision may report either", () => {
-  for (const tool of ["list_repositories", "fetch_image"]) {
+test("a lead and a thread both list the project's repositories, read its images, a run's error text, a ticket's landings, the docs and their own abilities, and a lead's decision may report any of them", () => {
+  for (const tool of [
+    "list_repositories",
+    "fetch_image",
+    "read_run_error",
+    "read_ticket_landings",
+    "read_docs",
+    "read_abilities",
+  ]) {
     const named = `${chuggyToolPrefix}${tool}`;
     assert.ok(chuggyToolNames(leadSessionCapabilities).includes(named), tool);
     assert.ok(chuggyToolNames(threadCapabilitiesDefault).includes(named), tool);

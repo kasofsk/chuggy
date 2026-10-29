@@ -4,8 +4,8 @@
  *
  * EACH VERDICT IS ASKED OF THE IMPORT, never restated here: a case is one file
  * put both to the importer and to the published schema, and the two answers are
- * compared. The files are this tree's own declarations, the file a bootstrap
- * seeds, a file of each shape the format admits, and seeded mutations of them.
+ * compared. The files are this tree's own declarations, the bootstrap as a
+ * file, a file of each shape the format admits, and seeded mutations of them.
  *
  * A RULE THE SCHEMA CANNOT STATE IS THE ONE DISAGREEMENT ALLOWED: the schema
  * takes a file the import refuses, and only for a fault naming such a rule.
@@ -304,7 +304,7 @@ const treeFiles = readdirSync(repositoryConfigurationRoot)
   .filter((name) => name.endsWith(".json"))
   .map((name) => readFileSync(`${repositoryConfigurationRoot}${name}`, "utf8"));
 
-/** The file a bootstrap seeds a repository with. */
+/** The bootstrap configuration as the file a repository would hold it in. */
 const bootstrapFile = bootstrapConfigurationFile({
   repository,
   defaultBranch,
@@ -316,7 +316,7 @@ test("the published schema is one a strict validator compiles", () => {
   assert.equal(schemaTakes.errors ?? null, null);
 });
 
-test("every declaration this tree makes, and the file a bootstrap seeds, the import and the schema both take", () => {
+test("every declaration this tree makes, and the bootstrap as a file, the import and the schema both take", () => {
   assert.ok(treeFiles.length > 0);
   for (const content of [...treeFiles, bootstrapFile]) {
     assert.equal(imported(content), "Ready", content);

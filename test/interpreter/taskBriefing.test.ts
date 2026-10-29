@@ -1194,7 +1194,7 @@ function briefAppending(checks: readonly string[]): DraftBrief {
     intent: asBriefIntent("Fix the importer."),
     links: [],
     images: [],
-    checks: checks.map(asBriefCheckLine),
+    checks: checks.map((check, index) => asBriefCheckLine(check, index)),
   };
 }
 

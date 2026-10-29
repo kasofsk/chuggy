@@ -841,6 +841,13 @@ test("revisionsAccounted rejects a definition that moved without its revision", 
   assert.equal(update.type, "TicketDecided");
   const updated = evolve(pending, update.value.event);
   assert.ok(revisionsAccounted(config, stepFrom(pending, updated)));
+  assert.ok(
+    revisionsAccounted(
+      config,
+      stepFrom(pending, but(updated, {}, new Set([2]))),
+    ),
+    "an update moves the dependencies with its revision",
+  );
   const working = { state: workState(held), workCyclesStarted: 1 };
   const defects: readonly (readonly [string, TicketGraph, TicketGraph])[] = [
     [
@@ -867,11 +874,6 @@ test("revisionsAccounted rejects a definition that moved without its revision", 
       "an update landing on a ticket that had left Pending",
       but(pending, working),
       updated,
-    ],
-    [
-      "an update that changed the dependencies",
-      pending,
-      but(updated, {}, new Set([2])),
     ],
     [
       "a revision that moved under a definition that did not",

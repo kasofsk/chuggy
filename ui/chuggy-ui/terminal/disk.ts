@@ -1,7 +1,7 @@
 /**
- * Paths outside the setup program's own directory: what is at one, the names
- * in one, a file's text, a file made where there was nothing, and whether a
- * directory is this user's to write.
+ * Paths outside the setup program's own directory: what is at one, whether
+ * one is itself a link, the names in one, a file's text, a file made where
+ * there was nothing, and whether a directory is this user's to write.
  *
  * Every path is the caller's, whole, and nothing here knows whose it is. A
  * probe the system would not answer is answered as nothing there, since a
@@ -18,6 +18,7 @@ import {
   constants,
   fsyncSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   openSync,
   readSync,
@@ -39,6 +40,14 @@ function kind(path: string): SetupDiskKind {
     return found.isDirectory() ? "Directory" : "Other";
   } catch {
     return "None";
+  }
+}
+
+function linked(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
   }
 }
 
@@ -110,4 +119,11 @@ function writable(directory: string): boolean {
   }
 }
 
-export const disk: SetupDiskPort = { kind, names, text, make, writable };
+export const disk: SetupDiskPort = {
+  kind,
+  linked,
+  names,
+  text,
+  make,
+  writable,
+};

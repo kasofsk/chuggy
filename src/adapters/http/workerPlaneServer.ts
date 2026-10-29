@@ -56,6 +56,7 @@ import {
   asSessionStoreStream,
   asSessionTurnId,
   type SessionBearerSecret,
+  type SessionCapability,
   type SessionStoreStream,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
@@ -107,6 +108,7 @@ import {
 import type {
   WorkerPlaneCredentialMinted,
   WorkerPlaneCredentialMinting,
+  WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
 import {
   artifactPathRejection,
@@ -122,6 +124,8 @@ import {
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
+  workerContractTicketDispatch,
+  workerContractUnscopedChat,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -1008,6 +1012,24 @@ const workerCredentialNotMinted: WorkerCredentialAbsent = {
   reason: "NotMinted",
 };
 
+/** A refusal met past the address, saying which it was and what a person would change. */
+function workerCredentialUnreached(
+  unreached: WorkerPlaneCredentialUnreached,
+): WorkerCredentialAbsent {
+  const met = { repository: unreached.repository, app: unreached.app };
+  return {
+    ...workerCredentialNotMinted,
+    unreached:
+      unreached.reach === "Unclaimed"
+        ? { reach: unreached.reach, ...met }
+        : {
+            reach: unreached.reach,
+            ...met,
+            installation: unreached.installationId,
+          },
+  };
+}
+
 /**
  * One minted credential, or a refusal. A not-found carries no `action`, unlike
  * every other refusal here: the pod neither stops nor retries on it, but uses
@@ -1022,7 +1044,13 @@ function workerCredentialAnswered(
     case "Credential":
       return reply.code(200).send(minted.value);
     case "NotFound":
-      return reply.code(404).send(workerCredentialNotMinted);
+      return reply
+        .code(404)
+        .send(
+          minted.unreached === undefined
+            ? workerCredentialNotMinted
+            : workerCredentialUnreached(minted.unreached),
+        );
     case "Unavailable":
       return workerPlaneRefused(reply, {
         status: 503,
@@ -1059,10 +1087,10 @@ function workerCredentialNamed(
 /**
  * The credential one attempt works under. A pod may ask for a read of any
  * repository its project binds and never for more: its own repository is the
- * one its input bundle pinned, whose permission set follows from the kind of
- * task the scheduler recorded, and any other it names is held to the project's
- * live bindings and minted a read, so nothing a pod names widens what it may
- * push to.
+ * one its input bundle pinned, minted what the kind of task the scheduler
+ * recorded needs where the pod names none and a read where it names it, and
+ * any other it names is held to the project's live bindings and minted a read,
+ * so nothing a pod names widens what it may push to.
  */
 function workerCredentialRoute(
   register: WorkerJobRegistrar,
@@ -1181,14 +1209,33 @@ function sessionSettled(
     : reply.code(204).send();
 }
 
+/**
+ * The capabilities a session's facts name to the pod asking: all of them, or
+ * none of `TicketDispatch` and `MemberRead` to a pod whose release predates
+ * the one, which holds no tool it admits.
+ */
+function sessionFactsCapabilities(
+  request: FastifyRequest,
+  capabilities: readonly SessionCapability[],
+): readonly SessionCapability[] {
+  const offered = workerContractOffered(request);
+  return capabilities.filter(
+    (capability) =>
+      (capability !== "TicketDispatch" ||
+        contractVersionAccepted(workerContractTicketDispatch, offered)) &&
+      (capability !== "MemberRead" ||
+        contractVersionAccepted(workerContractUnscopedChat, offered)),
+  );
+}
+
 function sessionFactsRoute(register: SessionRegistrar): void {
-  register("facts", (_request, _reply, { identity }) =>
+  register("facts", (request, _reply, { identity }) =>
     Promise.resolve({
       tenant: identity.partition.tenant,
       project: identity.partition.project,
       session: identity.session,
       kind: identity.kind,
-      capabilities: identity.capabilities,
+      capabilities: sessionFactsCapabilities(request, identity.capabilities),
       credentialSlot: identity.credentialSlot,
       ...(identity.agentReference === undefined
         ? {}

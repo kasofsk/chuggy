@@ -1,8 +1,8 @@
 /**
  * The middle of the shell: the page scrolling in its own region, and what a
- * page says about itself beside it. At the desk width the details are an aside
- * with the page still beside them; under it there is room for one, so the
- * toggle swaps the middle rather than squeezing it.
+ * page says about itself beside it. Where the pages' column holds a page and
+ * the details side by side, the details are an aside; under that there is room
+ * for one, so the toggle swaps the middle rather than squeezing it.
  *
  * The page's region is the container a page's sheets query, not the viewport,
  * so a page the chat pane narrows lays itself out as narrow. A page that takes
@@ -19,7 +19,7 @@ import {
   useShellSlotHolder,
   useShellSlotsFilled,
 } from "./slots.tsx";
-import { useViewportAtLeastEm, viewportDeskEm } from "./viewport.ts";
+import { useViewportColumnAside } from "./viewport.ts";
 
 export function DetailsToggle(): ReactNode {
   const filled = useShellSlotsFilled();
@@ -43,13 +43,13 @@ export function DetailsPane(props: {
 }): ReactNode {
   const filled = useShellSlotsFilled();
   const holdDetails = useShellSlotHolder("details");
-  const desk = useViewportAtLeastEm(viewportDeskEm);
+  const beside = useViewportColumnAside();
   const open = filled.details && filled.detailsOpen;
   const columns =
-    open && desk
+    open && beside
       ? "grid-cols-[minmax(0,1fr)_auto_var(--width-aside)]"
       : "grid-cols-1";
-  const scrollerHidden = open && !desk;
+  const scrollerHidden = open && !beside;
   return (
     <div className={`grid min-h-0 ${columns}`}>
       <div
@@ -66,7 +66,7 @@ export function DetailsPane(props: {
       </div>
       {open ? (
         <>
-          {desk ? (
+          {beside ? (
             <Separator.Root
               decorative
               orientation="vertical"

@@ -9,17 +9,20 @@
  * which is `owner_fallback` named; its owner is the runner's, which a NULL
  * owner never is; its project is on the runner's allowlist, which also holds
  * it to the runner's tenant; the runner's row names the poll's principal, so
- * it is enabled and current; its capabilities run the requirement; and what
- * that registration holds, across every project it serves, is the slot, apart
- * from what any other runner of the owner's holds. The owner's fallback
- * refuses a personal runner nothing. Its permit was asked when its poll was
- * admitted, and its owner's `Read` of each project before the claim, which
- * names only the projects that answered.
+ * it is enabled and current; its capabilities run the requirement, and the
+ * execution's size is at or under its memory ceiling where a poll named one,
+ * as a pool's is; and what that registration holds, across every project it
+ * serves, is the slot, apart from what any other runner of the owner's holds.
+ * The owner's fallback refuses a personal runner nothing. Its permit was asked
+ * when its poll was admitted, and its owner's `Read` of each project before
+ * the claim, which names only the projects that answered. The claim takes no
+ * execution larger than the room the terms name, which chooses among what
+ * that allows as the order does rather than being a term of it.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
  * runner's current one and its project to be on the allowlist, so a project
- * taken off stops what the runner holds there, as its sessions do.
+ * taken off stops what the runner holds there.
  */
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
@@ -31,6 +34,7 @@ import type {
   WorkerPoolClaimed,
   WorkerPoolClaimTerms,
   WorkerPoolExecutionHolds,
+  WorkerPoolPersonalClaimed,
 } from "../../interpreter/workerPool.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 
@@ -41,13 +45,14 @@ export interface PersonalExecutionClaim {
   readonly projects: readonly ProjectId[];
 }
 
-/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners. */
+/** One unplaced attempt of the owner's, taken for one of their runners where `workerPoolCanAssign` would take it, serialized with every other claim and fence of their runners, and the project it is in. */
 export async function personalExecutionClaimed(
   client: pg.PoolClient,
   identity: PersonalRunnerIdentity,
   terms: WorkerPoolClaimTerms,
   claim: PersonalExecutionClaim,
-): Promise<WorkerPoolClaimed | undefined> {
+): Promise<WorkerPoolPersonalClaimed | undefined> {
+  const room = terms.memoryRoomMib ?? null;
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
           'personal-runner-claim:' || ${identity.tenant} || '/' || ${identity.owner}, 0))::text AS locked`,
@@ -57,13 +62,15 @@ export async function personalExecutionClaimed(
     runtime: string | null;
     cpu_millis: number | null;
     memory_mib: number | null;
+    project: string;
   }>(
     sql`UPDATE execution_attempt a SET
         pool=${identity.owner},pool_principal=${identity.principal},
         personal=true,assignment=${claim.assignment},pool_refusal=NULL,
         capability_secret_digest=${claim.digest},
         lease_owner=${identity.owner},
-        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision)
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
+        claimed_at=now()
       FROM execution e
       WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
         AND (a.tenant,a.project,a.execution,a.attempt) IN (
@@ -82,6 +89,10 @@ export async function personalExecutionClaimed(
           AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
           AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
           AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND (r.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
           AND (SELECT count(*) FROM execution_attempt h
                 WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
                   AND h.pool_principal=r.principal
@@ -90,10 +101,58 @@ export async function personalExecutionClaimed(
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
         ORDER BY q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
-      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib`,
+      RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib, a.project`,
   );
   const row = found.rows[0];
-  return row === undefined ? undefined : workerPoolClaimedRow(row);
+  return row === undefined
+    ? undefined
+    : { ...workerPoolClaimedRow(row), project: asProjectId(row.project) };
+}
+
+/**
+ * Whether `personalExecutionClaimed` on the same terms would take an attempt
+ * now: its choice of attempt, with no lock, no order and nothing taken. The
+ * predicate is written twice, here and there, and
+ * `test/postgres/workerPoolClaim.test.ts` holds the two to one answer over
+ * every case it asks the claim.
+ */
+export async function personalExecutionWaiting(
+  pool: pg.Pool,
+  identity: PersonalRunnerIdentity,
+  terms: WorkerPoolClaimTerms,
+  projects: readonly ProjectId[],
+): Promise<boolean> {
+  const room = terms.memoryRoomMib ?? null;
+  const found = await pool.query<{ waiting: boolean }>(
+    sql`SELECT EXISTS(
+        SELECT 1
+        FROM execution_attempt q
+        JOIN execution x
+          ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+        JOIN personal_runner r ON r.tenant=q.tenant
+        JOIN personal_runner_project l
+          ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
+        WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
+          AND r.principal=${identity.principal}
+          AND q.project=ANY(${[...projects] as string[]}::text[])
+          AND q.state='Placing' AND q.pool IS NULL AND q.invoked
+          AND x.placement='Pool' AND x.status='Launching'
+          AND x.owner_fallback IS NOT NULL AND x.owner=r.owner
+          AND q.recovery_epoch=(SELECT e.epoch FROM recovery_epoch e ORDER BY e.ordinal DESC LIMIT 1)
+          AND worker_pool_inventory_matches(x.requirement_value,r.capabilities)
+          AND (r.memory_ceiling_mib IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=r.memory_ceiling_mib)
+          AND (${room}::bigint IS NULL
+               OR COALESCE(x.memory_mib,${terms.memoryMibDefault}::bigint)<=${room}::bigint)
+          AND (SELECT count(*) FROM execution_attempt h
+                WHERE h.tenant=q.tenant AND h.personal AND h.pool=r.owner
+                  AND h.pool_principal=r.principal
+                  AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
+          AND EXISTS(SELECT 1 FROM project p
+            WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+      ) AS waiting`,
+  );
+  return found.rows[0]?.waiting === true;
 }
 
 /** What a claim's returned row says: its execution's requirement and size, and the runtime its attempt kept where it kept one. */
@@ -141,13 +200,16 @@ export async function personalExecutionsAllowlisted(
   return found.rows.map((row) => asProjectId(row.project));
 }
 
-/** Stamps the runner's poll as one that could take an execution, while this registration is one of its member's runners. */
+/** Stamps the runner's poll, and as one that could take an execution where `executions` says it could, while this registration is one of its member's runners. */
 export async function personalExecutionsPolled(
   pool: pg.Pool,
   identity: PersonalRunnerIdentity,
+  executions: boolean,
 ): Promise<void> {
   await pool.query(
-    sql`UPDATE personal_runner r SET executions_polled_at=now()
+    sql`UPDATE personal_runner r SET last_polled_at=now(),
+          executions_polled_at=CASE WHEN ${executions}::boolean THEN now()
+                                    ELSE r.executions_polled_at END
           WHERE r.tenant=${identity.tenant} AND r.owner=${identity.owner}
             AND r.principal=${identity.principal}`,
   );

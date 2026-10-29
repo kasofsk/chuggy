@@ -10,10 +10,10 @@
  * than assumed: `asSafeInteger` refuses anything outside the range JavaScript
  * represents exactly, and every value entering the domain from a trace or a
  * boundary passes through it. The alternative — `bigint` throughout — buys
- * exactness this domain does not need: a ticket id and a stage index come
- * from universes `Config` bounds (`nTickets`, `maxStages`), and a task's wire
- * number counts one ticket's tasks, which no deployment brings near the exact
- * range — and pays for it at every arithmetic site.
+ * exactness this domain does not need: a ticket id counts its project's
+ * releases, a stage index comes from the universe `maxStages` bounds, and a
+ * task's wire number counts one ticket's tasks, none of which a deployment
+ * brings near the exact range — and pays for it at every arithmetic site.
  */
 
 declare const ticketIdBrand: unique symbol;
@@ -21,7 +21,7 @@ declare const taskIdBrand: unique symbol;
 declare const stageIndexBrand: unique symbol;
 declare const installationIdBrand: unique symbol;
 
-/** A ticket's identity: supplied at release from a bounded universe, sparse, never reused. */
+/** A ticket's identity: supplied at release from its project's counter, sparse, never reused. */
 export type TicketId = number & { readonly [ticketIdBrand]: true };
 
 /**

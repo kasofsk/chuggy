@@ -85,6 +85,7 @@ export const schedulerRole = "chuggy_scheduler";
 export const workerPlaneRole = "chuggy_worker_plane";
 export const poolPlaneRole = "chuggy_pool_plane";
 export const accessPlaneRole = "chuggy_access_plane";
+export const metricsPlaneRole = "chuggy_metrics_plane";
 export const workerPoolFenceFunction = "fence_worker_pool_attempts";
 export const workerPoolReleaseFunction = "release_worker_pool_assignment";
 export const poolSessionsAwaitingFunction = "pool_sessions_awaiting_claim";
@@ -110,6 +111,20 @@ export const personalSessionReleaseFunction =
   "release_personal_session_attempt";
 export const personalSessionImagesFunction = "personal_session_images";
 export const personalRunnerFenceFunction = "fence_personal_runner_attempts";
+export const chatHostSessionsAwaitingFunction =
+  "chat_host_sessions_awaiting_claim";
+export const chatHostSessionOpenFunction = "open_chat_host_session_attempt";
+export const chatHostSessionAssignmentsFunction =
+  "chat_host_session_assignments";
+export const chatHostSessionHoldingFunction =
+  "chat_host_session_attempt_holding";
+export const chatHostSessionRenewFunction = "renew_chat_host_session_attempt";
+export const chatHostSessionHeldFunction = "chat_host_session_attempt_held";
+export const chatHostSessionRefuseFunction = "refuse_chat_host_session_attempt";
+export const chatHostSessionReleaseFunction =
+  "release_chat_host_session_attempt";
+export const chatHostSessionImagesFunction = "chat_host_session_images";
+export const chatHostFenceFunction = "fence_chat_host_attempts";
 export const personalExecutionReleaseFunction =
   "release_personal_execution_assignment";
 /** Whether the capabilities a runner declares run an execution's requirement. */
@@ -213,6 +228,12 @@ export const projectThreadsReadFunction = "read_project_threads";
 export const threadStandingReadFunction = "read_thread_standing";
 export const threadWakeCandidatesFunction = "thread_wake_candidates";
 export const threadWakeCursorAdvanceFunction = "advance_thread_wake_cursor";
+export const threadLimitFunction = "member_thread_limit";
+export const threadLimitSetFunction = "set_member_thread_limit";
+/** A member's own reserved partition: `@member-` and the hex digest of their principal. */
+export const memberScopeProjectFunction = "member_scope_project";
+export const unscopedThreadOpenFunction = "open_unscoped_thread";
+export const memberThreadsReadFunction = "read_member_threads";
 export const leadInquiryOpenFunction = "open_lead_inquiry";
 export const leadInquiriesReadFunction = "read_lead_inquiries";
 export const leadInquiryReadFunction = "read_lead_inquiry";
@@ -250,6 +271,8 @@ export const runnerLostTicketsFunction = "runner_lost_tickets";
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
 /** The failed run step an escalated ticket's work or evaluation stopped at. */
 export const ticketRunStepFailureFunction = "ticket_run_step_failure";
+/** The dependencies a ticket's last update named. */
+export const ticketUpdatedDependenciesFunction = "ticket_updated_dependencies";
 export const approvalRequestFunction = "request_finalization_approval";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";

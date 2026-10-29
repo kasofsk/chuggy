@@ -3,8 +3,9 @@
  * admits each, the bounds one call runs under, and the public API routes the
  * tools reach. The image registers the tools and the control plane names them
  * in allowlists, so the names belong to neither side and both read them here.
- * The tool input schemas are not here: they are the zod raw shapes the agent
- * runtime's own `tool()` takes, and they live in the image beside the handlers.
+ * The request shapes a tool publishes are exported here too, while its input
+ * schemas are not: those are the zod raw shapes the agent runtime's own
+ * `tool()` takes, and they live in the image beside the handlers.
  *
  * TWO CHANNELS, TOLD APART BY WHAT THEY WRITE. A project tool is a command a
  * console user has: it goes over HTTP to the API presenting the pod's session
@@ -15,8 +16,8 @@
  * another project's routes 404 and a tenant's or the site's 403. A decision
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
- * fence, so the runtime remains the single writer of a dispatch and of the
- * refusal ledger.
+ * fence, so the runtime remains the single writer of a lead's dispatch and of
+ * the refusal ledger.
  *
  * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
  * by the agent runtime inside the pod, and the pod is the thing being
@@ -32,23 +33,35 @@
  * dependent is filed against a parent that already exists, and a roster holding
  * only it cannot originate work. `create_draft` is admitted by `DraftOriginate`
  * alone, so whether a session may originate work is decided by the
- * capabilities it is opened with rather than by a sentence in a description. No
- * capability admits a tool that re-authors a released ticket — merge, split,
- * supersede, re-point a dependency — because a released ticket's dependencies
- * are immutable in `model/domain.qnt`, which names re-authoring machinery as
- * deliberately absent.
+ * capabilities it is opened with rather than by a sentence in a description.
+ * A released ticket is re-authored only by `update_ticket`, which
+ * `DraftOriginate` alone admits and which the machine refuses once the ticket
+ * is past Pending.
  */
 
+import { actionReportLinkCharsMax } from "./actionReport.ts";
 import {
+  configurationCanonicalCharsMax,
+  jsonStringChars,
+  jsonTextBytes,
+  leadObservedCandidateFixedCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
+  proposalMergeStateCharsMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptPageBatchesMax,
+  ticketLandingConflictBytesMax,
+  ticketLandingRefCharsMax,
+  ticketLandingsAnsweredMax,
+  workerPlaneUploadBytesMax,
 } from "./http.ts";
 import type { SessionCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
   agenticRefusalsAnsweredMax,
+  leadRefusalsPerDecisionMax,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpPageItemsMax,
@@ -58,8 +71,39 @@ export {
 } from "./http.ts";
 export { briefLineCharsMax } from "./brief.ts";
 
+/** The request shapes a drafting tool publishes as its arguments' schemas, and the bounds they hold an argument to. */
+export {
+  authoringSchema,
+  evaluatorDefinitionSchema,
+  programStageSchema,
+} from "./authoring.ts";
+export {
+  briefBranchCharsMax,
+  briefBranchSchema,
+  briefCheckSchema,
+  briefChecksMax,
+  briefImagesMax,
+  briefIntentCharsMax,
+  briefLinkSchema,
+  briefLinksMax,
+  briefRepositoryCharsMax,
+  briefRepositorySchema,
+  briefSchema,
+  briefTitleCharsMax,
+} from "./brief.ts";
+export { configurationSelectionSchema } from "./configurationSelection.ts";
+
 /** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
 export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
+
+/** What `read_run_transcript`'s route answers one page of: at most this many batches, each at most this many bytes. */
+export {
+  runTranscriptBatchBytesMax,
+  runTranscriptPageBatchesMax,
+} from "./http.ts";
+
+/** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
+export { ticketLandingsAnsweredMax } from "./http.ts";
 
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
@@ -76,11 +120,112 @@ export const chuggyToolResponseBytesMax = nativeHttpBodyBytesMax;
 export const chuggyToolImageResponseBytesMax =
   Math.ceil(projectArtifactUploadBytesMax / 3) * 4 + nativeHttpBodyBytesMax;
 
+/**
+ * What `read_run_error`'s route may answer: the largest error text a worker
+ * uploads, as a JSON string that escapes every byte of it, and an ordinary
+ * answer's bound for the fields around it. JSON escapes only one-byte
+ * characters, each to no more than `jsonStringChars` allows a character, so
+ * that of a byte count bounds the string in bytes.
+ */
+export const chuggyToolRunErrorResponseBytesMax =
+  jsonStringChars(workerPlaneUploadBytesMax) + nativeHttpBodyBytesMax;
+
+/**
+ * What `read_run_transcript`'s route may answer: a page of the largest
+ * batches, each as a JSON string that escapes every byte of it, and an
+ * ordinary answer's bound for the fields around them.
+ */
+export const chuggyToolRunTranscriptResponseBytesMax =
+  runTranscriptPageBatchesMax * jsonStringChars(runTranscriptBatchBytesMax) +
+  nativeHttpBodyBytesMax;
+
+/**
+ * What one landing weighs beside its texts: its counts, codes, commits and
+ * instants, and the names and brackets around them all. It is a ceiling rather
+ * than a measurement, and the plane's suite is what holds the heaviest landing
+ * under it.
+ */
+const chuggyToolTicketLandingFieldsBytesMax = 1_280;
+
+/**
+ * What one landing `read_ticket_landings`'s route answers may weigh: its
+ * target's, head's and base's reference names and its merge state, each
+ * escaping every character; its link, visible ASCII that JSON escapes to at
+ * most two bytes a character; its conflict's paths, and the commas between
+ * them, fewer than the lightest paths its bound holds; and the rest of it.
+ */
+export const chuggyToolTicketLandingBytesMax =
+  3 * jsonStringChars(ticketLandingRefCharsMax) +
+  2 * (actionReportLinkCharsMax + 1) +
+  jsonStringChars(proposalMergeStateCharsMax) +
+  ticketLandingConflictBytesMax +
+  Math.floor(ticketLandingConflictBytesMax / jsonTextBytes("x")) +
+  chuggyToolTicketLandingFieldsBytesMax;
+
+/**
+ * What `read_ticket_landings`'s route may answer: as many landings as one read
+ * answers, each at its heaviest, and an ordinary answer's bound for the fields
+ * around them.
+ */
+export const chuggyToolTicketLandingsResponseBytesMax =
+  ticketLandingsAnsweredMax * chuggyToolTicketLandingBytesMax +
+  nativeHttpBodyBytesMax;
+
+/**
+ * What one UTF-16 code unit of an embedded canonical may weigh in UTF-8,
+ * escaping included: a code point's heaviest encoding, which no single code
+ * unit and no escaped character reaches.
+ */
+const chuggyToolCharBytesMax = 4;
+
+/**
+ * What `dispatch_ticket`'s read of the dispatch view may answer: a page of one
+ * candidate, its canonical configuration at its longest with every character
+ * at its heaviest, and an ordinary answer's bound for the page around it.
+ */
+export const chuggyToolDispatchViewResponseBytesMax =
+  leadObservedCandidateFixedCharsMax +
+  jsonStringChars(0) +
+  configurationCanonicalCharsMax * chuggyToolCharBytesMax +
+  nativeHttpBodyBytesMax;
+
+/**
+ * The public index that lists each page of chuggy's docs as its Markdown, which
+ * `read_docs` called with no argument answers verbatim, sending no bearer
+ * because the docs are public. Called with `page`, one page's URL as the index
+ * lists it, it answers that page's Markdown verbatim, and it refuses a URL
+ * outside the index's own directory.
+ */
+export const chuggyDocsIndex =
+  "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt";
+
+/**
+ * What one `read_docs` answer may weigh. A page is written to be read whole,
+ * so the bound holds the heaviest page the docs have published several times
+ * over and is still an answer an agent takes in one read rather than pages.
+ */
+export const chuggyToolDocsResponseBytesMax = 65_536;
+
 /** A wall-clock bound per tool call, because the runtime's own default is effectively unbounded. */
 export const chuggyToolTimeoutMs = 30_000;
 
 /** How many pages one tool call may walk, so a tool answers a page and names its cursor. */
 export const chuggyToolPagesMax = 1;
+
+/**
+ * What a member's own session reads of them and of nothing else: who they are
+ * in their tenant, the projects they may list, their own threads wherever each
+ * is kept, and their own machines. `read_docs` is held beside these, a tool
+ * that reaches no route and so names neither scope.
+ */
+const chuggyToolMemberReads = [
+  "read_my_abilities",
+  "list_projects",
+  "list_my_threads",
+  "read_my_thread",
+  "list_my_runners",
+  "read_chat_host",
+] as const;
 
 /**
  * Which capability admits which tool, written once and read both ways round. A
@@ -102,17 +247,21 @@ const chuggyToolRoster = {
     "read_decision_log",
     "read_refusals",
     "read_ticket_refusals",
+    "read_ticket_landings",
     "read_lead",
     "read_lead_transcript",
     "list_executions",
     "read_execution",
     "read_run_transcript",
+    "read_run_error",
     "read_operation",
     "list_threads",
     "read_thread",
     "read_thread_transcript",
     "list_repositories",
     "fetch_image",
+    "read_docs",
+    "read_abilities",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -124,12 +273,19 @@ const chuggyToolRoster = {
   /**
    * What a thread does on its member's own word, which no lead roster carries:
    * it files the draft its owner asked for, against no parent, because the
-   * member asking is where the work came from, and it revokes the ticket its
-   * owner said to end. Neither tool is in `DraftAuthor`, for the reason
-   * `DraftAuthor` exists, and `revoke_ticket` is here because a thread holds
-   * this capability and a lead does not.
+   * member asking is where the work came from; it revokes the ticket its owner
+   * said to end; and it releases the revision of a Pending ticket's draft its
+   * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
+   * exists, and `revoke_ticket` and `update_ticket` are here because a thread
+   * holds this capability and a lead does not.
    */
-  DraftOriginate: ["create_draft", "revoke_ticket"],
+  DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
+  /**
+   * Dispatching one released ticket on the member's own word, as the member's
+   * `ManualDispatch`: the API authorizes it as that member's dispatch, so a
+   * session holding this may dispatch exactly what its owner may.
+   */
+  TicketDispatch: ["dispatch_ticket"],
   LeadDecision: [
     "dispatch",
     "refuse",
@@ -138,17 +294,21 @@ const chuggyToolRoster = {
     "set_handoff_note",
     "set_planning_intent",
   ],
+  MemberRead: [...chuggyToolMemberReads, "read_docs"],
 } as const satisfies Readonly<Record<SessionCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
- * session may see of the project, what it may author, and what it may decide.
+ * session may see of the project, what it may author, what it may decide, and
+ * what a member's own session reads of them, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
   ...chuggyToolRoster.DraftAuthor,
   ...chuggyToolRoster.DraftOriginate,
+  ...chuggyToolRoster.TicketDispatch,
   ...chuggyToolRoster.LeadDecision,
+  ...chuggyToolMemberReads,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -185,22 +345,21 @@ export const builtInToolCapabilities: Readonly<
   ProjectRead: [],
   DraftAuthor: [],
   DraftOriginate: [],
+  TicketDispatch: [],
   LeadDecision: [],
+  MemberRead: [],
 };
 
 /**
  * The relation a filed dependent may carry, and the one it may not. A follow-up
  * points from the new draft to the existing ticket and changes nothing already
- * released; a prerequisite points the other way, which would re-author a
- * released ticket's dependencies, so it is admitted by the schema only so that
- * its refusal can name the reason.
+ * released; a prerequisite points the other way, which would update the
+ * existing ticket, so it is admitted by the schema only so that its refusal can
+ * name the reason.
  */
 export const allDependentRelations = ["FollowUp", "Prerequisite"] as const;
 export type DependentRelation = (typeof allDependentRelations)[number];
 export const dependentRelationsAdmitted = ["FollowUp"] as const;
-
-/** How many tickets one decision may refuse, and how many it may lift. */
-export const leadRefusalsPerDecisionMax = 16;
 
 /** The public API routes the project tools call; each is the route table's own entry. */
 export const chuggyToolRoutes = {
@@ -208,16 +367,19 @@ export const chuggyToolRoutes = {
   ticket: nativeHttpRoutes.ticket,
   draft: nativeHttpRoutes.draft,
   drafts: nativeHttpRoutes.drafts,
+  dispatchView: nativeHttpRoutes.dispatchView,
   configurations: nativeHttpRoutes.configurations,
   configuration: nativeHttpRoutes.configuration,
   selectorHistory: nativeHttpRoutes.selectorHistory,
   agenticRefusals: nativeHttpRoutes.agenticRefusals,
   ticketAgenticRefusals: nativeHttpRoutes.ticketAgenticRefusals,
+  ticketLandings: nativeHttpRoutes.ticketLandings,
   lead: nativeHttpRoutes.lead,
   leadTranscript: nativeHttpRoutes.leadTranscript,
   executions: nativeHttpRoutes.executions,
   execution: nativeHttpRoutes.execution,
   runTranscript: nativeHttpRoutes.runTranscript,
+  runError: nativeHttpRoutes.runError,
   operation: nativeHttpRoutes.operation,
   threads: nativeHttpRoutes.threads,
   thread: nativeHttpRoutes.thread,
@@ -226,4 +388,25 @@ export const chuggyToolRoutes = {
   projectArtifact: nativeHttpRoutes.projectArtifact,
   draftInitialization: nativeHttpRoutes.draftInitialization,
   operations: nativeHttpRoutes.operations,
+  /**
+   * What `read_abilities` answers, taking nothing: the principal the session
+   * acts as, encoded as a ticket's `creator` is, and which permits it holds on
+   * this project, read live. An agent asks it once before acting rather than
+   * learning a permit from a refusal.
+   */
+  abilities: nativeHttpRoutes.abilities,
+  /**
+   * What a member's own session reads, each at its tenant and none at a
+   * project: `read_my_abilities` the tenant's questions, `list_projects` the
+   * projects its chat may see, `list_my_threads` its owner's threads wherever
+   * each is kept, a project's by its metadata alone, `read_my_thread` one of
+   * its owner's own, and `list_my_runners` and `read_chat_host` its owner's
+   * machines.
+   */
+  chatAbilities: nativeHttpRoutes.chatAbilities,
+  chatProjects: nativeHttpRoutes.chatProjects,
+  chatThreads: nativeHttpRoutes.chatThreads,
+  chatThread: nativeHttpRoutes.chatThread,
+  personalRunner: nativeHttpRoutes.personalRunner,
+  chatHost: nativeHttpRoutes.chatHost,
 } as const;

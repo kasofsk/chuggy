@@ -56,8 +56,8 @@ import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import {
   postgresHarnessDrain,
+  postgresHarnessResume,
   postgresHarnessRolePool,
-  postgresHarnessSubmission,
 } from "./harness.ts";
 import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
@@ -225,7 +225,11 @@ async function claimed(
   assert.notEqual(
     await assignments.claim(
       pool,
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       bearer,
       [],
@@ -310,23 +314,10 @@ async function resumedByScheduler(routed: Routed): Promise<number> {
 /** A member answers the ticket's open escalation with a resume, and the writer decides it. */
 async function resumedByPerson(routed: Routed, label: string): Promise<void> {
   const { partition, ticket } = routed.project;
-  const [desk] = (await rig.harness.query(
-    `SELECT action, authorizing_seq::int AS seq FROM native_action
-      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
-    [partition.tenant, partition.project, ticket],
-  )) as readonly { action: string; seq: number }[];
-  assert.ok(desk !== undefined);
-  const accepted = await rig.harness.inbox.accept({
-    ...postgresHarnessSubmission(partition, label),
-    command: {
-      version: 1,
-      command: "ResolveNativeAction",
-      action: desk.action,
-      authorizingSeq: desk.seq,
-      resolution: "Resume",
-    },
-  });
-  assert.equal(accepted.accepted, "Accepted");
+  assert.equal(
+    await postgresHarnessResume(rig.harness, partition, ticket, label),
+    "Accepted",
+  );
   await drained(routed);
 }
 
@@ -393,6 +384,7 @@ const stepReports = {
   RunCommitFailed: "The commit failed.",
   RunPushFailed: "The push failed.",
   RunTimedOut: "The run passed its deadline.",
+  RunDiskLow: "Its runner stopped the run because its disk ran low.",
 } as const;
 
 const workLost = { phase: "Escalated", escalation: "WorkFailureEscalated" };
@@ -583,7 +575,11 @@ test("a ticket read names the member whose own runner a job was lost on", async 
   assert.notEqual(
     await assignments.claimPersonal(
       { ...key, principal },
-      { leaseSecs: service.config.attemptLeaseSecs, heldMax: 1 },
+      {
+        leaseSecs: service.config.attemptLeaseSecs,
+        heldMax: 1,
+        memoryMibDefault: service.poolMemoryMib,
+      },
       `assignment-${randomUUID()}`,
       bearer,
       [partition.project],
@@ -717,10 +713,11 @@ test("work whose lease lapsed on its runner is still resumed, as is work whose r
   assert.equal((await standing(routed))?.["phase"], "Work");
 });
 
-test("work whose push failed in the cluster concludes at once, and work whose run failed there is opened again", async () => {
-  for (const [evidence, opened] of [
-    ["RunPushFailed", "StepFailed"],
-    ["RunFailed", "Opened"],
+test("work whose push failed or whose run passed its deadline in the cluster concludes at once, and work whose run failed there is opened again", async () => {
+  for (const [evidence, opened, report] of [
+    ["RunPushFailed", "StepFailed", stepReports.RunPushFailed],
+    ["RunTimedOut", "StepFailed", stepReports.RunTimedOut],
+    ["RunFailed", "Opened", undefined],
   ] as const) {
     const label = `step-in-cluster-${evidence}`;
     const project = await schedulerProject(rig, label, { tasks: 1 });
@@ -762,7 +759,7 @@ test("work whose push failed in the cluster concludes at once, and work whose ru
     assert.equal(settled.outcome, "ProcessFailed");
     await drained(routed);
     assert.deepEqual(await standing(routed), workLost);
-    assert.equal(await settledReport(routed, execution), "The push failed.");
+    assert.equal(await settledReport(routed, execution), report, evidence);
     assert.deepEqual(await readFailed(routed), {
       evidence,
       execution,

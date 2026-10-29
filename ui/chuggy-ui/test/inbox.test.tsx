@@ -208,13 +208,14 @@ test("revoke asks before it is sent, and only the ask's own button sends it", as
   ).toBe(true);
 });
 
-test("the top bar names how many the inbox holds", async () => {
+/** The bar's current entry already says Inbox and how many it holds, so the
+ * page draws no row of its own saying either. */
+test("the inbox names itself only for a reader who does not see the bar", async () => {
   drawInbox(served);
   await settled();
-  const count = screen.getByRole("heading", {
-    name: "Inbox",
-  }).nextElementSibling;
-  expect(count?.textContent).toBe("1");
+  const heading = screen.getByRole("heading", { name: "Inbox" });
+  expect(heading.className).toBe("visually-hidden");
+  expect(heading.nextElementSibling?.textContent).not.toBe("1");
 });
 
 test("an answer's button still opens the sentence it sends", async () => {
@@ -294,6 +295,26 @@ test("a row says how its last run ended, and never Terminal", async () => {
   await settled();
   expect(screen.getByText("Failed").className).toContain("pill-fail");
   expect(document.body.textContent).not.toContain("Terminal");
+});
+
+/** The escalated ticket's run admitted again and not yet begun, which its
+ * ticket page draws as Starting rather than as the status the wire sends. */
+const admittedRun = {
+  ...failedRun,
+  status: "Admitted",
+  outcome: undefined,
+  terminalAt: undefined,
+};
+
+test("a row draws a run still waiting for its worker as its ticket page does", async () => {
+  drawInbox((url) =>
+    url.includes("/executions")
+      ? answer({ executions: [admittedRun] })
+      : served(url),
+  );
+  await settled();
+  expect(screen.getByText("Starting").className).toBe("pill pill-queued");
+  expect(document.body.textContent).not.toContain("Admitted");
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {

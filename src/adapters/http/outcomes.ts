@@ -2,7 +2,6 @@ import { z } from "zod";
 
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
-  ConfigurationCreated,
   ConfigurationPage,
   ConfigurationRevisionResource,
   DraftInitializationRead,
@@ -76,7 +75,9 @@ import {
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   noRunnerCode,
+  programSkipsPlannedEvaluationsCode,
   selectorProposalNotHeldCode,
+  threadLimitReachedCode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
@@ -108,11 +109,15 @@ import type {
   ProjectRepositoriesResult,
   ProjectRepositoryBindResult,
   ProjectRepositoryConfigureResult,
-  ProjectRepositoryCreateResult,
   ProjectRepositoryLandingResult,
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
+import type {
+  MemberChatProjectsRead,
+  MemberChatThreadsRead,
+} from "../../interpreter/memberChat.ts";
 import type {
   ProjectCreationField,
   ProjectCreationResult,
@@ -124,6 +129,8 @@ import {
 import type { DraftBrief } from "../../interpreter/ticketBrief.ts";
 import {
   repositoryConfigurationIgnoredField,
+  type RepositoryConfigurationDeclaration,
+  type RepositoryConfigurationHeadOutcome,
   type RepositoryConfigurationImportOutcome,
 } from "../../interpreter/repositoryConfiguration.ts";
 import {
@@ -161,19 +168,28 @@ import type {
   PersonalRunnerRead,
   PersonalRunnerTokenRedeemed,
 } from "../../interpreter/personalRunnerRegistration.ts";
+import type {
+  ChatHostCredentials,
+  ChatHostDeregistered,
+  ChatHostRead,
+} from "../../interpreter/chatHostRegistration.ts";
 import type { ExecutionPlacementView } from "../../interpreter/executionPlacement.ts";
 import type {
   PlacementRead,
   PlacementWritten,
 } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFallback.ts";
+import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
+  ChatHostCredentialsResponse,
+  ChatHostResponse,
   ExecutionPlacementResponse,
   PersonalRunnerCredentialsResponse,
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
   ProjectOwnerFallbackResponse,
+  ThreadLimitResponse,
   RunnerListedResponse,
   SessionPlacementResponse,
   WorkerPoolCredentialsResponse,
@@ -186,8 +202,10 @@ import type { ActionReported } from "../../interpreter/actionReport.ts";
 import type { TicketActionReachResponse } from "../../contract/actionReach.ts";
 import type {
   ProjectAbilitiesResponse,
+  RepositoryConfigurationHeadDeclaration,
   TicketLandingsResponse,
 } from "../../contract/responses.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import type { TicketLandings } from "../../interpreter/ticketLandings.ts";
 import type {
   ActionReachRead,
@@ -408,6 +426,14 @@ export function submissionResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Backlogged":
       return retry(429, result.retryAfterSeconds, "DispatchBacklog");
+    case "ProgramSkipsPlannedEvaluations":
+      return response(
+        403,
+        nativeHttpError(
+          programSkipsPlannedEvaluationsCode,
+          "The draft's program runs less than its configuration plans: it leaves out a stage, or an evaluator of a stage, the plan has. Releasing it needs the project's skip_planned_evaluations permit, which its administrators hold. Revise the program to run the whole plan, or have someone holding the permit release it.",
+        ),
+      );
     case "Authorized":
       return acceptedResponse(partition, result.acceptance);
     default:
@@ -886,6 +912,7 @@ function briefBody(brief: DraftBrief): unknown {
     ...(brief.title === undefined ? {} : { title: brief.title }),
     intent: brief.intent,
     links: [...brief.links],
+    images: [...brief.images],
     checks: [...brief.checks],
     ...(brief.repository === undefined ? {} : { repository: brief.repository }),
     ...(brief.branch === undefined ? {} : { branch: brief.branch }),
@@ -942,39 +969,6 @@ export function configurationsResponse(
               ),
             }),
       });
-}
-
-function configurationCreated(value: ConfigurationCreated): NativeHttpResponse {
-  switch (value.created) {
-    case "Created":
-      return response(201, value.revision, {
-        location: resourcePath(
-          value.revision.partition,
-          "configurations",
-          value.revision.revision,
-        ),
-      });
-    case "AlreadyExists":
-      return response(200, value.revision);
-    case "IdentityConflict":
-      return response(
-        409,
-        nativeHttpError(
-          "ConfigurationIdentityConflict",
-          "The configuration identity conflicts.",
-        ),
-      );
-    case "ParentNotFound":
-      return response(404, nativeHttpError("NotFound", "Resource not found."));
-  }
-}
-
-export function configurationCreationResponse(
-  result: AuthorizedResult<ConfigurationCreated>,
-): NativeHttpResponse {
-  return result.result === "NotFound"
-    ? response(404, nativeHttpError("NotFound", "Resource not found."))
-    : configurationCreated(result.value);
 }
 
 /**
@@ -1076,6 +1070,10 @@ export function workerPoolsResponse(
           pool: listed.pool,
           capabilities: [...listed.capabilities],
           registeredAt: listed.registeredAt,
+          ...(listed.polledAt === undefined
+            ? {}
+            : { polledAt: listed.polledAt }),
+          live: listed.live,
           ...runnerListedBody(listed.runner),
         })),
         truncated: result.value.truncated,
@@ -1168,25 +1166,13 @@ export function placementWriteResponse<View>(
   }
 }
 
-/**
- * A redemption, answered with the pool file once, the client's secret in it.
- * A capability the token does not permit is named rather than folded into
- * `NotFound`, because it is the one refusal here an operator can act on.
- */
+/** A redemption, answered with the pool file once, the client's secret in it. */
 export function workerPoolRedemptionResponse(
   result: WorkerPoolTokenRedeemed,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
       return response(404, nativeHttpError("NotFound", "Resource not found."));
-    case "CapabilityNotPermitted":
-      return response(
-        403,
-        nativeHttpError(
-          "CapabilityNotPermitted",
-          "The registration token does not permit every capability declared.",
-        ),
-      );
     case "Registered":
       return response(201, workerPoolCredentialsBody(result.value));
     default:
@@ -1236,13 +1222,12 @@ function personalRunnerCredentialsBody(
   };
 }
 
-/** A personal redemption, answered with the runner's file once, naming its capability refusal as a pool's does, and its bound with the token given back. */
+/** A personal redemption, answered with the runner's file once, and its bound with the token given back. */
 export function personalRunnerRedemptionResponse(
   result: PersonalRunnerTokenRedeemed,
 ): NativeHttpResponse {
   switch (result.result) {
     case "NotFound":
-    case "CapabilityNotPermitted":
       return workerPoolRedemptionResponse(result);
     case "LimitReached":
       return response(
@@ -1254,6 +1239,60 @@ export function personalRunnerRedemptionResponse(
       );
     case "Registered":
       return response(201, personalRunnerCredentialsBody(result.value));
+    case "HostRegistered":
+      return response(201, chatHostCredentialsBody(result.value));
+    default:
+      return assertNever(result);
+  }
+}
+
+function chatHostCredentialsBody(
+  credentials: ChatHostCredentials,
+): ChatHostCredentialsResponse {
+  return {
+    kind: "ChatHost",
+    tenant: credentials.tenant,
+    owner: credentials.owner,
+    tokenUrl: credentials.tokenUrl,
+    audience: credentials.audience,
+    planeUrl: credentials.planeUrl,
+    ...(credentials.registryHost === undefined
+      ? {}
+      : { registryHost: credentials.registryHost }),
+    clientId: credentials.clientId,
+    clientSecret: credentials.clientSecret,
+  };
+}
+
+/** The caller's own chat host, or the miss a member with none is answered. */
+export function chatHostResponse(result: ChatHostRead): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+      return notFound();
+    case "Found":
+      return response(200, {
+        id: result.value.id,
+        registeredAt: result.value.registeredAt,
+        ...(result.value.polledAt === undefined
+          ? {}
+          : { polledAt: result.value.polledAt }),
+        live: result.value.live,
+        ...runnerListedBody(result.value.runner),
+      } satisfies ChatHostResponse);
+    default:
+      return assertNever(result);
+  }
+}
+
+/** A chat host taken off, or none there the caller may take. */
+export function chatHostDeregisteredResponse(
+  result: ChatHostDeregistered,
+): NativeHttpResponse {
+  switch (result) {
+    case "Deregistered":
+      return noContent();
+    case "NotFound":
+      return notFound();
     default:
       return assertNever(result);
   }
@@ -1290,6 +1329,10 @@ export function personalRunnerPermitResponse(
   granted: boolean,
 ): NativeHttpResponse {
   return response(200, { granted } satisfies PersonalRunnerPermitResponse);
+}
+
+export function threadLimitBody(view: ThreadLimitView): ThreadLimitResponse {
+  return { threadsMax: view.threadsMax, administers: view.administers };
 }
 
 export function ownerFallbackBody(
@@ -1721,6 +1764,9 @@ export function projectRepositoryBindResponse(
           repository: result.repository,
           landing: result.landing,
           configurations: result.configurations,
+          ...(result.workerReach === undefined
+            ? {}
+            : { workerReach: result.workerReach }),
         },
         {
           location: resourcePath(partition, "repositories", result.repository),
@@ -1763,78 +1809,6 @@ export function projectRepositoryBindResponse(
   }
 }
 
-/**
- * A creation. A repository the forge made and then refused something about is
- * the request's own fault and not a missing resource: the caller may see the
- * project and the account both, the refusal names how far it got so the bind
- * route can finish what this one started, and a name already taken is a
- * conflict pointing at that same route.
- */
-export function projectRepositoryCreateResponse(
-  partition: Partition,
-  result: ProjectRepositoryCreateResult,
-): NativeHttpResponse {
-  switch (result.result) {
-    case "Created":
-      return response(
-        201,
-        {
-          repository: result.repository,
-          landing: result.landing,
-          created: result.created,
-          seeded: result.seeded,
-          ruleset: result.ruleset,
-          configurations: result.configurations,
-        },
-        {
-          location: resourcePath(partition, "repositories", result.repository),
-        },
-      );
-    case "InstallationMissing":
-      return response(
-        422,
-        nativeHttpError(
-          "InstallationMissing",
-          `This tenant has claimed no ${result.app} installation on the account.`,
-        ),
-      );
-    case "PersonalAccountCreatesOnGitHub":
-      return response(
-        422,
-        nativeHttpError(
-          "PersonalAccountCreatesOnGitHub",
-          "Create the repository on the forge and bind it here.",
-        ),
-      );
-    case "RepositoryExists":
-      return response(
-        409,
-        nativeHttpError(
-          "RepositoryExists",
-          "The account already has a repository of that name; bind it here instead.",
-        ),
-      );
-    case "ForgeRefused":
-      return response(
-        422,
-        nativeHttpError(
-          "ForgeRefused",
-          `The forge refused the ${result.step}: ${result.message}`,
-        ),
-      );
-    case "BindRefused":
-      return projectRepositoryBindResponse(partition, result.bind);
-    case "NotConfigured":
-      return forgeNotConfigured();
-    case "NotFound":
-      return notFound();
-    case "Unavailable":
-      return retry(503, authorityRetryAfterSeconds, "ForgeUnavailable");
-    default:
-      return assertNever(result);
-  }
-}
-
 /** Every repository one project binds, oldest first, which privileges none of them. */
 export function projectRepositoriesResponse(
   result: ProjectRepositoriesResult,
@@ -1845,10 +1819,10 @@ export function projectRepositoriesResponse(
 }
 
 /**
- * One landing moved. A conflict answers the binding as it stands rather than a
- * bare code, because the writer's next act is to read it again; a repository
- * this project does not bind is the same miss as a project the caller may not
- * see, which is what every refused permit here answers.
+ * One binding's settings written. A conflict answers the binding as it stands
+ * rather than a bare code, because the writer's next act is to read it again;
+ * a repository this project does not bind is the same miss as a project the
+ * caller may not see, which is what every refused permit here answers.
  */
 export function projectRepositoryLandingResponse(
   result: ProjectRepositoryLandingResult,
@@ -1860,7 +1834,7 @@ export function projectRepositoryLandingResponse(
       return response(409, {
         ...nativeHttpError(
           "RepositoryLandingMoved",
-          "The repository's landing is not the one this write was made against.",
+          "The repository's settings are not the ones this write was made against.",
         ),
         repository: result.repository,
       });
@@ -1998,6 +1972,80 @@ export function repositoryConfigurationImportResponse(
   }
 }
 
+/** What the head declares, each configuration as an import of it would store it. */
+function repositoryConfigurationHeadDeclarations(
+  declarations: readonly RepositoryConfigurationDeclaration[],
+): readonly RepositoryConfigurationHeadDeclaration[] {
+  return declarations.map((declaration) => ({
+    name: declaration.name,
+    path: declaration.path,
+    revision: declaration.revision,
+    canonical: declaration.canonical,
+    digest: configurationRevisionDigest(declaration.canonical),
+    ...(Object.keys(declaration.workloadPaths).length === 0
+      ? {}
+      : { workloadPaths: declaration.workloadPaths }),
+  }));
+}
+
+/** A head that could be read is answered whatever it declares, since what an import would refuse is what the reader asked to see. */
+export function repositoryConfigurationHeadResponse(
+  result: RepositoryConfigurationHeadOutcome,
+): NativeHttpResponse {
+  switch (result.result) {
+    case "NotFound":
+    case "RepositoryAbsent":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
+    case "Unavailable":
+      return retry(503, 1, "RepositoryUnavailable");
+    case "BranchAbsent":
+      return response(200, { head: { state: "BranchAbsent" } });
+    case "Read": {
+      const at = { branch: result.branch, commit: result.commit };
+      const { read } = result;
+      switch (read.result) {
+        case "SnapshotAbsent":
+          return response(200, {
+            head:
+              read.absent === "Commit"
+                ? { state: "CommitAbsent", ...at }
+                : {
+                    state: "ConfigurationsAbsent",
+                    ...at,
+                    ...repositoryConfigurationIgnoredField(read.ignored),
+                  },
+          });
+        case "SnapshotRefused":
+          return response(200, {
+            head: { state: "SnapshotRefused", ...at, refused: read.refused },
+          });
+        case "DeclarationsRefused":
+          return response(200, {
+            head: {
+              state: "ConfigurationsRefused",
+              ...at,
+              faults: read.faults,
+            },
+          });
+        case "Ready":
+          return response(200, {
+            head: {
+              state: "Ready",
+              ...at,
+              configurations: repositoryConfigurationHeadDeclarations(
+                read.declarations,
+              ),
+            },
+          });
+        default:
+          return assertNever(read);
+      }
+    }
+    default:
+      return assertNever(result);
+  }
+}
+
 export function draftResponse(
   resource: DraftResource | undefined,
 ): NativeHttpResponse {
@@ -2109,13 +2157,21 @@ function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
     case "Stale":
-      return response(
-        409,
-        nativeHttpError(
+      return response(409, {
+        ...nativeHttpError(
           "DraftInitializationStale",
           "The draft initialization is stale.",
         ),
-      );
+        currentProjectSequence: value.currentProjectSequence,
+      });
+    case "NotActive":
+      return response(409, {
+        ...nativeHttpError(
+          "ProjectNotActive",
+          "The project is not active, so it takes no new draft.",
+        ),
+        lifecycle: value.lifecycle,
+      });
   }
 }
 
@@ -2150,14 +2206,6 @@ function draftRevised(value: NativeDraftRevised): NativeHttpResponse {
         ...nativeHttpError("DraftNotEditable", "The draft is not editable."),
         state: value.state,
       });
-    case "DependenciesLocked":
-      return response(
-        409,
-        nativeHttpError(
-          "DependenciesLocked",
-          "A released ticket's dependencies cannot change.",
-        ),
-      );
   }
 }
 
@@ -2423,8 +2471,97 @@ export function openThreadResponse(
     return response(404, nativeHttpError("NotFound", "Resource not found."));
   if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
   if (result.result === "NoRunner") return noRunnerRefused();
+  if (result.result === "ThreadLimitReached")
+    return response(409, {
+      ...nativeHttpError(
+        threadLimitReachedCode,
+        "You hold as many open threads in this project as your limit allows.",
+      ),
+      threadsMax: result.threadsMax,
+    });
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
+  });
+}
+
+/** What a member may do in their tenant, which every caller is answered, each question read live. */
+export function chatAbilitiesResponse(
+  abilities: ChatAbilitiesResponse,
+): NativeHttpResponse {
+  return response(200, abilities);
+}
+
+/** A member's own threads across their tenant, each naming the scope it is in. */
+export function chatThreadsResponse(
+  result: MemberChatThreadsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { threads: result.threads });
+}
+
+/** The projects a member's own chat may see, and the project the next page is asked after. */
+export function chatProjectsResponse(
+  result: MemberChatProjectsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        projects: result.projects,
+        ...(result.nextAfter === undefined
+          ? {}
+          : { nextAfter: result.nextAfter }),
+      });
+}
+
+/** What a member's own chat answers a caller with no chat host to run its turn. */
+function chatNoHostRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      noRunnerCode,
+      "This caller has registered no chat host in the tenant.",
+    ),
+  );
+}
+
+/** A message to a member's own thread answers as one to a project's, refused for want of a chat host. */
+export function chatThreadMessageResponse(
+  result: ThreadMessageSent,
+): NativeHttpResponse {
+  return result.result === "NoRunner"
+    ? chatNoHostRefused()
+    : threadMessageResponse(result);
+}
+
+/**
+ * Opening one of a member's own threads answers as opening a project's does,
+ * located at their tenant's chat, and refused for want of a chat host rather
+ * than a runner on a project.
+ */
+export function openChatThreadResponse(
+  tenant: TenantId,
+  result: ThreadOpening,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
+  if (result.result === "NoRunner") return chatNoHostRefused();
+  if (result.result === "ThreadLimitReached")
+    return response(409, {
+      ...nativeHttpError(
+        threadLimitReachedCode,
+        "You hold as many open threads of your own as your limit allows.",
+      ),
+      threadsMax: result.threadsMax,
+    });
+  return response(result.result === "Opened" ? 201 : 200, result.thread, {
+    location: [
+      "/api/v1/tenants",
+      encodeURIComponent(tenant),
+      "chat/threads",
+      encodeURIComponent(result.thread.session),
+    ].join("/"),
   });
 }
 

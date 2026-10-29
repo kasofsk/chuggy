@@ -2,12 +2,12 @@
  * The console's chat pane: every thread the reader can reach, beside every page
  * rather than on one.
  *
- * A THREAD IS READ HERE AND NOWHERE ELSE. There is no screen for one, so the
- * pane holds the reader's own open thread by default and its history is how any
- * other is reached — a listing that was a page of its own while a thread was
- * also a page, and is a control now that neither is. Collapsing it leaves the
- * strip its own control expands, rather than nothing — a pane that vanished
- * would leave the reader hunting the bar for where it went.
+ * The pane holds the reader's own open thread that moved last by default, and
+ * its history is how any other is reached, their own open ones among them.
+ * Each thread also has a page of its own, which the pane links to and which
+ * draws no pane, so no thread is drawn twice.
+ * Collapsing it leaves the strip its own control expands, rather than nothing —
+ * a pane that vanished would leave the reader hunting the bar for where it went.
  *
  * THE COLLAPSED PANE READS NOTHING. The strip mounts none of the reads, so a
  * reader who put the chat away is not paying for a thread they cannot see on
@@ -22,13 +22,9 @@ import type {
   ThreadEntryResponse,
   ThreadsResponse,
 } from "../../../../../src/contract/responses.ts";
+import { apiOpenThread, apiThreads } from "../../core/apiRoutes.ts";
 import {
-  apiCloseThread,
-  apiOpenThread,
-  apiThread,
-  apiThreads,
-} from "../../core/apiRoutes.ts";
-import {
+  chatPaneChosenIn,
   chatPaneFilled,
   chatPaneHeaderDoor,
   chatPaneHolding,
@@ -37,28 +33,22 @@ import {
   chatPaneToggled,
   chatPaneUnhosted,
 } from "../../core/chatPane.ts";
-import type {
-  ChatPaneHeaderDoor,
-  ChatPaneStart,
-  ChatPaneState,
-} from "../../core/chatPane.ts";
+import type { ChatPaneHeaderDoor, ChatPaneState } from "../../core/chatPane.ts";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
 } from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { leadSessionNamed } from "../../core/leadTranscript.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import { projectListReread } from "../../core/projectQueryKeys.ts";
 import {
-  projectListReread,
-  projectListRereadNamed,
-} from "../../core/projectQueryKeys.ts";
-import {
-  threadAnswering,
   threadKeptClosed,
   threadKeptWith,
   threadKeptWithout,
-  threadMine,
+  threadLimitWord,
+  threadOpenAtLimit,
+  threadOpenKeyBytesCount,
+  threadOpenKeyMinted,
   threadTurnsEnded,
   threadUnhosted,
 } from "../../core/threads.ts";
@@ -68,7 +58,9 @@ import type {
   ThreadSend,
 } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
+import { threadHomeOf } from "../../core/threadHome.ts";
 import { useApiPorts, usePanelList } from "../api.ts";
+import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
@@ -83,43 +75,14 @@ import type { ThreadKeptAway } from "../thread/threadSend.tsx";
 import { threadsListName, useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import { useChatPane } from "./chatPaneHeld.tsx";
-import { ChatPaneHeaderRow, ChatPaneIconButton } from "./chatPaneIcons.tsx";
+import {
+  ChatPaneHeaderRow,
+  ChatPaneIcon,
+  ChatPaneIconButton,
+} from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
-
-/** The list entry the pane keeps its answering read under, distinct from the
- * thread read's own so the two never share a cache slot over different
- * shapes. */
-function chatPaneAnsweringListName(session: string): string {
-  return `chat-answering-${session}`;
-}
-
-/** Whether the reader's own open thread has a turn the mailbox has not
- * settled, which is what starting another is withheld for. */
-function useChatPaneAnswering(
-  partition: PartitionIdentity,
-  session: string | undefined,
-): boolean {
-  const state = usePanelList(
-    projectListRereadNamed<boolean>(
-      partition,
-      "Session",
-      session === undefined
-        ? "chat-answering"
-        : chatPaneAnsweringListName(session),
-      (change) =>
-        session !== undefined && leadSessionNamed(change.resource) === session,
-    ),
-    async (ports) => {
-      if (session === undefined) return { outcome: "Ok", value: false };
-      const result = await apiThread(ports, partition, session);
-      return result.outcome === "Ok"
-        ? { outcome: "Ok", value: threadAnswering(result.value) }
-        : result;
-    },
-  );
-  return state.state === "Ready" && state.value;
-}
 
 function useChatPaneThreads(
   partition: PartitionIdentity,
@@ -157,50 +120,33 @@ function ChatPaneStartDoor(props: {
 }
 
 /**
- * The offer to start a thread: opened where the reader has none, closed and
- * reopened where they have one — the open asked first, which answers that
- * thread, so the hosted grant or the runner a close does not ask refuses before
- * anything is closed — and withheld while the one they have is still answering.
- *
- * IT NAVIGATES NOWHERE — the pane is where a thread is read, so opening one and
- * then going to its page would draw the same conversation twice, once under the
- * bar and once beside it; the open writes a `Session` frame, the frame stales
- * the listing this pane holds, and the pane answers the new thread.
+ * The offer to start a thread beside those the reader holds, opened under a key
+ * held until an open answers, so a press after one that failed reaches the
+ * thread that one may have opened. It navigates nowhere: the open's `Session`
+ * frame stales the listing this pane holds, and the pane answers the thread.
  */
 function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
-  readonly start: ChatPaneStart;
   readonly onOpened: (session: string) => void;
   readonly onRefused: (answer: "Unhosted" | "NoRunner") => void;
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
-  const start = props.start;
   const ports = useApiPorts();
   const [busy, setBusy] = useState(false);
   const [refused, setRefused] = useState<string | undefined>(undefined);
-  if (start.start === "Unknown") return null;
+  const [key, setKey] = useState(chatPaneOpenKey);
   return (
     <>
       <ChatPaneIconButton
         glyph="new"
-        label={start.start === "Answering" ? "Answering" : "New"}
+        label="New"
         busy={busy}
-        disabled={start.start === "Answering" || busy}
+        disabled={busy}
         onClick={() => {
           setBusy(true);
           setRefused(undefined);
-          const closes = start.start === "Offered" ? start.closes : undefined;
-          const opened = apiOpenThread(ports, props.partition).then((asked) =>
-            closes === undefined || asked.outcome !== "Ok"
-              ? asked
-              : apiCloseThread(ports, props.partition, closes).then((closed) =>
-                  closed.outcome === "Ok"
-                    ? apiOpenThread(ports, props.partition)
-                    : closed,
-                ),
-          );
-          void opened.then((result) => {
+          void apiOpenThread(ports, props.partition, key).then((result) => {
             setBusy(false);
             if (threadUnhosted(result)) {
               props.onRefused("Unhosted");
@@ -211,9 +157,14 @@ function ChatPaneStartControl(props: {
               return;
             }
             if (result.outcome !== "Ok") {
-              setRefused(panelReason(result));
+              setRefused(
+                threadOpenAtLimit(result)
+                  ? threadLimitWord
+                  : panelReason(result),
+              );
               return;
             }
+            setKey(chatPaneOpenKey());
             props.onOpened(result.value.session);
           });
         }}
@@ -228,10 +179,17 @@ function ChatPaneStartControl(props: {
   );
 }
 
+/** A key no open has been asked under. */
+function chatPaneOpenKey(): string {
+  return threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount));
+}
+
 /** How much of the frame the pane takes, which is the move a reader makes
  * while reading. Where it sits is set once and lives in the bar's settings
  * menu instead. */
-function ChatPaneControls(): ReactNode {
+function ChatPaneControls(props: {
+  readonly placement: ChatPanePlacement;
+}): ReactNode {
   const held = useChatPane();
   const state = held.state;
   return (
@@ -254,7 +212,7 @@ function ChatPaneControls(): ReactNode {
         />
       )}
       <ChatPaneIconButton
-        glyph="collapse"
+        glyph={`collapse${props.placement}`}
         label="Collapse"
         onClick={() => {
           held.moveTo(chatPaneToggled(state));
@@ -420,19 +378,30 @@ function ChatPaneFirst(props: {
   );
 }
 
-/** The collapsed pane: the one control that brings it back, and nothing that
- * reads. */
-function ChatPaneStrip(): ReactNode {
+/** The collapsed pane: the one control that brings it back, named on its
+ * face, and nothing that reads. */
+function ChatPaneStrip(props: {
+  readonly placement: ChatPanePlacement;
+}): ReactNode {
   const held = useChatPane();
   return (
-    <div className="grid content-start justify-center bg-surface-1 py-2">
-      <ChatPaneIconButton
-        glyph="chat"
-        label="Expand chat"
+    <div
+      className="chat-strip bg-surface-1"
+      data-placement={props.placement.toLowerCase()}
+    >
+      <Button
+        variant="quiet"
+        size="sm"
+        expanded={false}
         onClick={() => {
           held.moveTo(chatPaneToggled(held.state));
         }}
-      />
+      >
+        <ChatPaneIcon glyph={`expand${props.placement}`} label="Expand chat" />
+        <span aria-hidden="true" className="chat-strip-name">
+          Chat
+        </span>
+      </Button>
     </div>
   );
 }
@@ -518,13 +487,14 @@ function useChatPaneDoor(partition: PartitionIdentity): {
 }
 
 /**
- * Which thread the open pane draws: the one the reader chose or the pane holds
- * for them, kept off the screen while a first message is being sent and until
- * the thread that message opened has been read.
+ * Which thread the open pane draws: the one the reader chose, which the shell
+ * holds so it outlives the pane, or the one the pane holds for them, kept off
+ * the screen while a first message is being sent and until the thread that
+ * message opened has been read.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
-  readonly holding: ReturnType<typeof chatPaneHolding>;
+  readonly holding: string | undefined;
   readonly named: boolean;
   readonly starting: boolean;
   /** The thread a first message opened, while its read is awaited. */
@@ -536,23 +506,24 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly read: () => void;
 } {
   const threads = useChatPaneThreads(partition);
-  const mine = threads === undefined ? undefined : threadMine(threads);
-  const answering = useChatPaneAnswering(partition, mine?.session);
-  const [chosen, setChosen] = useState<string | undefined>(undefined);
+  const [named, setNamed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [opening, setOpening] = useState<string | undefined>(undefined);
   const read = useCallback(() => {
     setStarting(false);
     setOpening(undefined);
   }, []);
+  const { chosen: picked, choose } = useChatPane();
+  const chosen = chatPaneChosenIn(picked, partition);
   return {
     threads,
-    holding: chatPaneHolding(threads, answering, chosen),
-    named: chosen !== undefined,
+    holding: chatPaneHolding(threads, chosen),
+    named,
     starting,
     opening,
     chose: (session) => {
-      setChosen(session);
+      choose({ partition, session });
+      setNamed(true);
       read();
     },
     began: () => {
@@ -562,7 +533,8 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
       setStarting(false);
     },
     sent: (session) => {
-      setChosen(session);
+      choose({ partition, session });
+      setNamed(true);
       setOpening(session);
     },
     read,
@@ -579,25 +551,26 @@ function ChatPaneHeld(props: {
   if (props.thread === undefined) return <span className="flex-1" />;
   return (
     <ChatPaneThreadActions
-      partition={props.partition}
+      home={threadHomeOf(props.partition)}
       thread={props.thread}
       viewOnly={props.viewOnly}
+      at="Pane"
     />
   );
 }
 
 function ChatPaneOpen(props: {
   readonly partition: PartitionIdentity;
-  /** Whether the pane has the whole frame, and so sets its conversation as a
-   * column to read. */
-  readonly reading: boolean;
+  /** Where the pane is drawn, and whether it has the whole frame and so sets
+   * its conversation as a column to read. */
+  readonly chat: ChatPaneState;
 }): ReactNode {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
   const { threads, holding } = pane;
   const kept = useChatPaneKept(threads);
-  const held = threads?.find((thread) => thread.session === holding.session);
-  const drawn = chatPaneThreadDrawn(holding.session, pane.starting);
+  const held = threads?.find((thread) => thread.session === holding);
+  const drawn = chatPaneThreadDrawn(holding, pane.starting);
   const viewOnly = projectAbilityRefused(
     useProjectAbilities(props.partition),
     "mutate",
@@ -605,7 +578,7 @@ function ChatPaneOpen(props: {
   return (
     <section
       aria-label="Chat"
-      className={`bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
+      className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
     >
       <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
         <ChatPaneHeld
@@ -616,7 +589,6 @@ function ChatPaneOpen(props: {
         {viewOnly ? null : (
           <ChatPaneStartControl
             partition={props.partition}
-            start={holding.start}
             onOpened={(session) => {
               pane.chose(session);
               door.opened();
@@ -631,16 +603,16 @@ function ChatPaneOpen(props: {
         {threads === undefined ? null : (
           <ChatPaneHistory
             threads={threads}
-            session={holding.session}
+            session={holding}
             onChoose={pane.chose}
           />
         )}
-        <ChatPaneControls />
+        <ChatPaneControls placement={props.chat.placement} />
       </header>
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <ChatPaneBody
           partition={props.partition}
-          session={holding.session}
+          session={holding}
           named={pane.named}
           starting={pane.starting}
           viewOnly={viewOnly}
@@ -664,29 +636,8 @@ export function ChatPane(props: {
   readonly chat: ChatPaneState;
 }): ReactNode {
   return chatPaneStripped(props.chat) ? (
-    <ChatPaneStrip />
+    <ChatPaneStrip placement={props.chat.placement} />
   ) : (
-    <ChatPaneOpen
-      partition={props.partition}
-      reading={props.chat.presentation === "Full"}
-    />
-  );
-}
-
-/** What puts the pane away and brings it back, drawn in the bar above every
- * page. */
-export function ChatPaneToggle(): ReactNode {
-  const held = useChatPane();
-  return (
-    <Button
-      variant="quiet"
-      size="sm"
-      pressed={held.state.presentation !== "Collapsed"}
-      onClick={() => {
-        held.moveTo(chatPaneToggled(held.state));
-      }}
-    >
-      Chat
-    </Button>
+    <ChatPaneOpen partition={props.partition} chat={props.chat} />
   );
 }

@@ -6,6 +6,7 @@ import {
 } from "../../src/contract/endpoints.ts";
 import {
   sessionStorePageBatchesMax,
+  threadOpenKeyCharsMax,
   threadTurnsAnsweredMax,
 } from "../../src/contract/http.ts";
 
@@ -60,9 +61,23 @@ test("endpoint queries retain canonical integer and unknown-field refusals", () 
   );
 });
 
+test("opening a thread takes the key its client minted, and nothing else", () => {
+  const open = nativeHttpEndpoints.openThread.body;
+  assert.deepEqual(open.parse({ key: "a1-B_2" }), { key: "a1-B_2" });
+  for (const body of [
+    undefined,
+    null,
+    {},
+    { key: "" },
+    { key: "has space" },
+    { key: "k".repeat(threadOpenKeyCharsMax + 1) },
+    { key: "a", extra: true },
+  ])
+    assert.throws(() => open.parse(body));
+});
+
 test("bodyless thread commands retain empty and null-body compatibility", () => {
   for (const endpoint of [
-    nativeHttpEndpoints.openThread,
     nativeHttpEndpoints.closeThread,
     nativeHttpEndpoints.stopThreadTurn,
   ]) {

@@ -282,6 +282,7 @@ function executionRowWorkloadCapability(
       ? undefined
       : catalogWorkloadTask(
           configuration,
+          storedOverridesOf(row.configuration_overrides),
           storedSelectionOf(row.configuration_selection),
           position,
         );

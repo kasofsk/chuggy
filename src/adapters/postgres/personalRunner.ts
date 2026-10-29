@@ -25,6 +25,7 @@ import {
   personalRunnersMax,
 } from "../../contract/http.ts";
 import {
+  allRegistrationTokenKinds,
   personalRunnerTokensLiveMax,
   type PersonalRunnerAllowed,
   type PersonalRunnerKey,
@@ -34,6 +35,7 @@ import {
   type PersonalRunnerRegistry,
   type PersonalRunnerTokenTerms,
   type PersonalRunnerWritten,
+  type RegistrationTokenKind,
 } from "../../interpreter/personalRunnerRegistration.ts";
 import { asPrincipal, type Principal } from "../../interpreter/principal.ts";
 import {
@@ -164,7 +166,7 @@ async function personalRunnerProjectInserted(
   return "Allowed";
 }
 
-/** A member's runners, oldest first, each with its newest poll of either kind and the runner that poll named. */
+/** A member's runners, oldest first, each with its newest poll, its newest that could take an execution and the runner its newest poll named. */
 async function personalRunnersListed(
   pool: pg.Pool,
   key: PersonalRunnerKey,
@@ -179,8 +181,8 @@ async function personalRunnersListed(
     runner_package: string | null;
     runner_version: string | null;
   }>(sql`SELECT r.client_id,r.capabilities,r.registered_at,r.runner_package,r.runner_version,
-      greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
-      greatest(r.last_polled_at,r.executions_polled_at)
+      r.last_polled_at AS polled_at,
+      r.last_polled_at
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
       r.executions_polled_at
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS executions_live
@@ -282,14 +284,24 @@ export function postgresPersonalRunnerPlaneRegistry(
 /** One personal token's terms as every statement returns them. */
 function personalRunnerTokenTerms(row: {
   tenant: string;
-  capabilities: string[];
   minted_by: string;
+  kind: string;
 }): PersonalRunnerTokenTerms {
   return {
     tenant: asTenantId(row.tenant),
-    capabilities: row.capabilities,
     mintedBy: asPrincipal(row.minted_by),
+    kind: registrationTokenKindOf(row.kind),
   };
+}
+
+/** A token's kind as its row keeps it, which its constraint holds to the kinds this code knows. */
+function registrationTokenKindOf(kind: string): RegistrationTokenKind {
+  const found = allRegistrationTokenKinds.find((known) => known === kind);
+  if (found === undefined)
+    throw new Error(
+      `registration token kind ${kind} is not one this code knows`,
+    );
+  return found;
 }
 
 /**
@@ -302,9 +314,9 @@ async function personalRunnerTokenMinted(
   client: pg.PoolClient,
   tenant: TenantId,
   digest: string,
-  capabilities: readonly string[],
   expiresAtMs: number,
   mintedBy: Principal,
+  kind: RegistrationTokenKind,
 ): Promise<WorkerPoolTokenWritten> {
   await client.query<{ locked: string | null }>(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(
@@ -320,8 +332,8 @@ async function personalRunnerTokenMinted(
   );
   if ((counted.rows[0]?.live ?? 0) >= personalRunnerTokensLiveMax)
     return "LimitReached";
-  await client.query(sql`INSERT INTO personal_runner_registration_token(token_digest,tenant,minted_by,capabilities,expires_at)
-    VALUES(${digest},${tenant as string},${mintedBy as string},${[...capabilities]}::text[],to_timestamp(${expiresAtMs}::double precision/1000))`);
+  await client.query(sql`INSERT INTO personal_runner_registration_token(token_digest,tenant,minted_by,expires_at,kind)
+    VALUES(${digest},${tenant as string},${mintedBy as string},to_timestamp(${expiresAtMs}::double precision/1000),${kind})`);
   return "Minted";
 }
 
@@ -330,16 +342,16 @@ export function postgresPersonalRunnerRegistrationTokens(
   pool: pg.Pool,
 ): PersonalRunnerRegistrationTokens {
   return {
-    mint: async (tenant, digest, capabilities, expiresAtMs, mintedBy) => {
+    mint: async (tenant, digest, expiresAtMs, mintedBy, kind) => {
       try {
         return await postgresTransaction(pool, (client) =>
           personalRunnerTokenMinted(
             client,
             tenant,
             digest,
-            capabilities,
             expiresAtMs,
             mintedBy,
+            kind,
           ),
         );
       } catch (failure) {
@@ -356,9 +368,9 @@ export function postgresPersonalRunnerRegistrationTokens(
     permitted: async (digest) => {
       const found = await pool.query<{
         tenant: string;
-        capabilities: string[];
         minted_by: string;
-      }>(sql`SELECT t.tenant,t.capabilities,t.minted_by
+        kind: string;
+      }>(sql`SELECT t.tenant,t.minted_by,t.kind
         FROM personal_runner_registration_token t
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()`);
       const row = found.rows[0];
@@ -367,11 +379,11 @@ export function postgresPersonalRunnerRegistrationTokens(
     consume: async (digest) => {
       const spent = await pool.query<{
         tenant: string;
-        capabilities: string[];
         minted_by: string;
+        kind: string;
       }>(sql`UPDATE personal_runner_registration_token t SET redeemed_at=now()
         WHERE t.token_digest=${digest} AND t.redeemed_at IS NULL AND t.expires_at>now()
-        RETURNING t.tenant,t.capabilities,t.minted_by`);
+        RETURNING t.tenant,t.minted_by,t.kind`);
       const row = spent.rows[0];
       return row === undefined ? undefined : personalRunnerTokenTerms(row);
     },

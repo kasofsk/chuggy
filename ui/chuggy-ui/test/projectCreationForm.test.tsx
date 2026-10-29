@@ -19,6 +19,7 @@ import {
   projectSwitcherCreateText,
 } from "../app/browser/shell/ProjectSwitcher.tsx";
 import { lastProjectRead } from "../app/core/lastProject.ts";
+import { memberChatRoutes } from "../app/core/memberChat.ts";
 import {
   projectCreationRoutePath,
   projectNameRule,
@@ -92,7 +93,6 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(screen.getByText("No projects")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Workspace" })).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Project" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByRole("navigation", { name: "Console" })).toBeNull();
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
     key: "ArrowDown",
@@ -100,7 +100,9 @@ test("a reader with no project meets the form, under a bar that signs out and se
   expect(
     await screen.findByRole("menuitemradio", { name: "Dark" }),
   ).toBeDefined();
+  expect(screen.getByRole("menuitem", { name: "Sign out" })).toBeDefined();
   expect(screen.queryByText("Chat position")).toBeNull();
+  expect(screen.queryByRole("menuitem", { name: "Runners" })).toBeNull();
 });
 
 test("the rule both names are held to stands under each field before anything is typed", async () => {
@@ -195,6 +197,55 @@ test("a press repeated after no answer spends the same identity, and an edit dra
   expect(keys).toHaveLength(3);
   expect(keys[1]).toBe(keys[0]);
   expect(keys[2]).not.toBe(keys[0]);
+});
+
+/** The projects as `served` answers them, and the workspace's chat abilities
+ * answering whether the reader may chat outside a project. */
+function chatServed(opens: boolean): void {
+  served([partition], () => Promise.resolve(answer(partition, 201)));
+  const projects = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) =>
+    url.endsWith(`/tenants/${partition.tenant}/chat/abilities`)
+      ? Promise.resolve(
+          answer({
+            principal: "geoff",
+            openUnscopedChat: opens,
+            executeHosted: false,
+            registerPersonalRunner: false,
+            administerTenant: false,
+          }),
+        )
+      : projects(url, init),
+  );
+}
+
+async function switcherOffers(): Promise<readonly (string | null)[]> {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Project / }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  return screen.getAllByRole("menuitemradio").map((one) => one.textContent);
+}
+
+test("the switcher offers the workspace shown with no project where it lets the reader chat outside one, and that opens their own chat", async () => {
+  chatServed(true);
+  await drawn(<ProjectSwitcher partition={partition} />);
+  expect(await switcherOffers()).toEqual([
+    "vteng / No project",
+    "vteng / chuggy",
+  ]);
+  fireEvent.click(
+    screen.getByRole("menuitemradio", { name: "vteng / No project" }),
+  );
+  expect(held.went).toStrictEqual([
+    { to: memberChatRoutes.chat, params: { tenant: partition.tenant } },
+  ]);
+});
+
+test("the switcher offers no project only where the workspace lets the reader chat outside one", async () => {
+  chatServed(false);
+  await drawn(<ProjectSwitcher partition={partition} />);
+  expect(await switcherOffers()).toEqual(["vteng / chuggy"]);
 });
 
 test("the switcher offers a new project beside every project, and it opens the form in the workspace of the project shown", async () => {

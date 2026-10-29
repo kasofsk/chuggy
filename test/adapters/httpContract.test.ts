@@ -20,13 +20,13 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
-  parseConfigurationCreation,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
   parsePartition,
   parseSubmission,
 } from "../../src/adapters/http/contract.ts";
+import { failureResponse } from "../../src/adapters/http/outcomes.ts";
 import { asTaskId } from "../../src/domain/ids.ts";
 import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
 import { checkedExecutionListQuery } from "../../src/interpreter/operationsView.ts";
@@ -79,10 +79,10 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/events",
   "/api/v1/tenants/:tenant/projects/:project/configurations",
   "/api/v1/tenants/:tenant/projects/:project/configurations/imports",
+  "/api/v1/tenants/:tenant/projects/:project/configurations/imports/head",
   "/api/v1/tenants/:tenant/projects/:project/configurations/:revision",
   "/api/v1/tenants/:tenant/projects/:project/forge-credentials",
   "/api/v1/tenants/:tenant/projects/:project/repositories",
-  "/api/v1/tenants/:tenant/projects/:project/repositories/new",
   "/api/v1/tenants/:tenant/projects/:project/repositories/landing",
   "/api/v1/tenants/:tenant/projects/:project/repositories/retirement",
   "/api/v1/tenants/:tenant/projects/:project/repositories/configurations",
@@ -101,12 +101,26 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/personal-runner/projects/:project",
   "/api/v1/tenants/:tenant/personal-runner/runners/:runner",
   "/api/v1/tenants/:tenant/personal-runners/:subject",
+  "/api/v1/tenants/:tenant/chat-host-registration-tokens",
+  "/api/v1/tenants/:tenant/chat-host",
+  "/api/v1/tenants/:tenant/chat/abilities",
+  "/api/v1/tenants/:tenant/chat/projects",
+  "/api/v1/tenants/:tenant/chat/threads",
+  "/api/v1/tenants/:tenant/chat/threads/:session",
+  "/api/v1/tenants/:tenant/chat/threads/:session/transcript",
+  "/api/v1/tenants/:tenant/chat/threads/:session/messages",
+  "/api/v1/tenants/:tenant/chat/threads/:session/close",
+  "/api/v1/tenants/:tenant/chat/threads/:session/rename",
+  "/api/v1/tenants/:tenant/chat/threads/:session/hide",
+  "/api/v1/tenants/:tenant/chat/threads/:session/live",
+  "/api/v1/tenants/:tenant/chat/threads/:session/turns/:turn/stop",
   "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
   "/api/v1/tenants/:tenant/projects/:project/drafts",
   "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
   "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
   "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
   "/api/v1/tenants/:tenant/projects/:project/threads",
+  "/api/v1/tenants/:tenant/projects/:project/thread-limits/:subject",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/transcript",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/messages",
@@ -148,40 +162,23 @@ const brief = {
   finalization: { mode: "PullRequest", target: "refs/heads/main" },
 } as const;
 
-test("an import names the repository it reads and the commit in it", () => {
+test("an import names the repository it reads and no commit in it", () => {
   assert.deepEqual(
-    parseRepositoryConfigurationImport({
-      repository: "repository",
-      commit: "a".repeat(40),
-    }),
-    { repository: "repository", commit: "a".repeat(40) },
+    parseRepositoryConfigurationImport({ repository: "repository" }),
+    { repository: "repository" },
   );
-  assert.throws(
-    () => parseRepositoryConfigurationImport({ commit: "a".repeat(40) }),
-    /repository/u,
-  );
+  assert.throws(() => parseRepositoryConfigurationImport({}), /repository/u);
   assert.throws(
     () =>
       parseRepositoryConfigurationImport({
         repository: "repository",
         commit: "a".repeat(40),
-        branch: "untrusted",
       }),
     /[Uu]nrecognized key/u,
   );
 });
 
 test("authoring DTOs translate into existing application types", () => {
-  assert.deepEqual(
-    parseConfigurationCreation({
-      revision: "revision",
-      canonical: '{"image":"worker:v1","version":1}',
-    }),
-    {
-      revision: "revision",
-      canonical: '{"image":"worker:v1","version":1}',
-    },
-  );
   assert.deepEqual(
     parseDraftCreation({
       configurationRevision: "revision",
@@ -232,19 +229,21 @@ test("authoring DTOs reject duplicates, unknown fields, and noncanonical config"
       authoring: { ...authoring, hidden: true },
     }),
   );
-  assert.throws(() =>
-    parseConfigurationCreation({
-      revision: "revision",
-      canonical: '{"version":1,"image":"worker:v1"}',
-    }),
-  );
 });
 
-test("partition identities remain opaque strings", () => {
+test("partition identities remain opaque strings, but for the reserved one a member's own is", () => {
   assert.deepEqual(parsePartition("tenant/one", "project two"), {
     tenant: "tenant/one",
     project: "project two",
   });
+  assert.deepEqual(parsePartition("tenant", "project@one"), {
+    tenant: "tenant",
+    project: "project@one",
+  });
+  assert.throws(
+    () => parsePartition("tenant", "@member-one"),
+    /an identity beginning @ is reserved/u,
+  );
 });
 
 test("inventory cursors are opaque, canonical, and round trip", () => {
@@ -491,6 +490,51 @@ test("a brief the interpreter would refuse never reaches a draft", () => {
     }).brief.checks,
     ["npm test"],
     "the lines a brief appends reach the interpreter branded and in order",
+  );
+});
+
+test("a refused check line is answered by its position and the rule it breaks", () => {
+  const refused = (() => {
+    try {
+      parseDraftCreation({
+        configurationRevision: "revision",
+        configurationDigest: "a".repeat(64),
+        expectedProjectSequence: 7,
+        authoring,
+        brief: { ...brief, checks: ["npm test", "npm\ttest"] },
+      });
+    } catch (failure) {
+      return failureResponse(failure);
+    }
+    assert.fail("a check holding a tab reached a draft");
+  })();
+  assert.equal(refused.status, 400);
+  assert.match(
+    (refused.body as { error: { message: string } }).error.message,
+    /^brief\.checks\.1: .*a tab/u,
+  );
+});
+
+test("the images a brief carries cross the door on creation and on revision", () => {
+  const carrying = { ...brief, images: ["artifact-1", "artifact-2"] };
+  assert.deepEqual(
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+      brief: carrying,
+    }).brief.images,
+    ["artifact-1", "artifact-2"],
+  );
+  assert.deepEqual(
+    parseDraftRevision({
+      expectedVersion: 3,
+      configurationRevision: "revision",
+      authoring,
+      brief: carrying,
+    }).brief.images,
+    ["artifact-1", "artifact-2"],
   );
 });
 

@@ -20,15 +20,17 @@ import { randomUUID } from "node:crypto";
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
+import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
 import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
-import { composeNativeWeb } from "../../src/compose.ts";
+import { composeNativeWeb, composeThreadLimits } from "../../src/compose.ts";
 import { threadSessionMint } from "../../src/adapters/crypto/threadSessionMint.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
+import { postgresThreadLimits } from "../../src/adapters/postgres/threadLimit.ts";
 import {
   postgresThreadWakes,
   postgresThreads,
@@ -47,11 +49,14 @@ import {
   asProjectId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
-import type {
-  ThreadSeedingRead,
-  ThreadSessionMint,
-  ThreadStore,
+import {
+  asThreadOpenKey,
+  type ThreadOpenKey,
+  type ThreadSeedingRead,
+  type ThreadSessionMint,
+  type ThreadStore,
 } from "../../src/interpreter/threadRead.ts";
+import type { ThreadLimitStore } from "../../src/interpreter/threadLimit.ts";
 import type { ThreadLiveHub } from "../../src/interpreter/threadLive.ts";
 import type { ThreadWakeStore } from "../../src/interpreter/threadWake.ts";
 import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
@@ -64,6 +69,7 @@ export interface ThreadRig extends LeadRig {
   readonly minting: ThreadSessionMint;
   readonly seeding: ThreadSeedingRead;
   readonly wakes: ThreadWakeStore;
+  readonly limits: ThreadLimitStore;
 }
 
 export async function threadRigOpen(): Promise<ThreadRig> {
@@ -76,6 +82,7 @@ export async function threadRigOpen(): Promise<ThreadRig> {
     minting: threadSessionMint(),
     seeding: postgresThreadSeeding(lead.apiPool),
     wakes: postgresThreadWakes(lead.selectorPool),
+    limits: postgresThreadLimits(lead.apiPool),
   };
 }
 
@@ -187,23 +194,47 @@ export function threadRigRevoke(
 export const threadRigPrompt = "you are a member's thread";
 export const threadRigSlot = "claude-code";
 
-/** Opens one member's thread, refusing anything but the arm the case expected. */
+/** An open key no other case is using. */
+export function threadRigKey(): ThreadOpenKey {
+  return asThreadOpenKey(randomUUID());
+}
+
+/** Opens a member's thread under a key, refusing anything but the arm the case expected. */
 export async function threadRigThread(
   rig: ThreadRig,
   partition: Partition,
   member: ThreadRigMember,
   expected: "Opened" | "AlreadyOpen" = "Opened",
+  key: ThreadOpenKey = threadRigKey(),
 ) {
   const opened = await rig.threads.open({
     partition,
     principal: member.principal,
     session: rig.minting.session(),
+    key,
     systemPrompt: threadRigPrompt,
     credentialSlot: threadRigSlot,
   });
   if (opened.opened !== expected)
     throw new Error(`thread rig: opening answered ${opened.opened}`);
   return opened.thread;
+}
+
+/** Sets how many threads a member may hold open, through the API's door, as an administrator would. */
+export async function threadRigLimit(
+  rig: ThreadRig,
+  partition: Partition,
+  member: ThreadRigMember,
+  threadsMax: number,
+): Promise<void> {
+  const written = await rig.limits.write(
+    partition,
+    member.principal,
+    threadsMax,
+    memberAuthority(oidcPrincipal(threadRigIssuer, "administrator")),
+  );
+  if (written === "NotFound")
+    throw new Error("thread rig: the limit's project is not there");
 }
 
 /** A turn identity no other case is using. */
@@ -267,6 +298,7 @@ export function threadRigApp(input: {
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
       settings: postgresSelectorResolvedSettings(pool),
+      candidates: postgresDispatchViews(pool),
     },
     {
       threads: postgresThreads(pool, {
@@ -301,5 +333,11 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     input.threadLive,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    composeThreadLimits(pool, input.access, threadRigIssuer),
   );
 }

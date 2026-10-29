@@ -15,6 +15,7 @@ import type {
   ProjectRepositoryConfigurationsResponse,
   ProjectRepositoryConfiguredResponse,
   ProjectRepositoryResponse,
+  ProjectRepositoryWorkerReachResponse,
   RepositoryConfigurationIgnoredResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
@@ -147,6 +148,38 @@ export const repositoriesTruncated = "More than shown";
 /** What the page and the picker both call a job's app not being where the work is. */
 export const repositoryWorkerMissing = "Worker app missing";
 
+/** What a bound row says of the worker app's reach, why, and the forge's page an owner changes it on where it names one. */
+export interface RepositoryWorkerReachLine {
+  readonly status: string;
+  readonly detail: string;
+  readonly settingsUrl?: string;
+}
+
+/** The line a bound row draws for the reason the worker app cannot be said to reach it. */
+export function repositoryWorkerReachLine(
+  reach: ProjectRepositoryWorkerReachResponse,
+): RepositoryWorkerReachLine {
+  switch (reach.reach) {
+    case "Unselected":
+      return {
+        status: repositoryWorkerMissing,
+        detail: `The worker app's installation ${reach.installationId} does not select this repository.`,
+        settingsUrl: reach.settingsUrl,
+      };
+    case "Unclaimed":
+      return {
+        status: repositoryWorkerMissing,
+        detail: `No worker app installation is connected on ${reach.account}.`,
+      };
+    case "Unknown":
+      return {
+        status: "Worker app unread",
+        detail:
+          "GitHub did not say whether the worker app reaches this repository.",
+      };
+  }
+}
+
 /** A line under the picker's roster, and what its link to the forge says. */
 export interface RepositoryGrantLine {
   readonly status: string;
@@ -245,13 +278,18 @@ export const forgeAccountsWithheld =
 
 const repositoryOffersNotConfigured = "GitHub not configured · ask an operator";
 
+/** How a repository comes to be one Add lists, drawn over Add on an empty
+ * roster. */
+export const repositoryAddHow =
+  "Create one on GitHub, install both apps on it, then Add";
+
 /** What this reader takes from the page itself, under the line that names it. */
 export const repositoryOffersSteps = ["Connect", "InstallWorker"] as const;
 
 export type RepositoryOffersStep = (typeof repositoryOffersSteps)[number];
 
-/** The one line drawn under Add and Create, and the step drawn under it where
- * the page offers one. */
+/** The one line drawn under Add, and the step drawn under it where the page
+ * offers one. */
 export interface RepositoryOffersLine {
   readonly status: string;
   readonly step: RepositoryOffersStep | undefined;
@@ -262,10 +300,10 @@ function repositoryOffersSaid(status: string): RepositoryOffersLine {
 }
 
 /**
- * The line under Add and Create: why they are not both offered, or that a
- * connected account lacks the worker app, and nothing where neither is so or a
- * read the answer turns on is in flight. It names what is missing or who
- * supplies it, and carries a step only where this reader can take that step.
+ * The line under Add: why it is not offered, or that a connected account lacks
+ * the worker app, and nothing where neither is so or a read the answer turns on
+ * is in flight. It names what is missing or who supplies it, and carries a step
+ * only where this reader can take that step.
  */
 export function repositoryOffersLine(
   accounts: PanelState<ForgeInstallationsResponse>,
@@ -402,9 +440,8 @@ export const repositoryDeferrals: Readonly<
   StepFailed: { status: "Step failed", retry: true },
 };
 
-/** The line a bind or a create leaves, whether it offers a first ticket as
- * the next step, and the line under it naming what under `.chug/` the step
- * read none of. */
+/** The line a bind leaves, whether it offers a first ticket as the next step,
+ * and the line under it naming what under `.chug/` the step read none of. */
 export interface RepositoryNote {
   readonly status: string;
   readonly ticketOffered: boolean;
@@ -413,7 +450,7 @@ export interface RepositoryNote {
 
 /** What the entries a configuration step read none of are called wherever
  * they are drawn. */
-export const repositoryIgnoredLabel = "Not configurations";
+const repositoryIgnoredLabel = "Not configurations";
 
 /** The entries a configuration step read none of as a line's detail: the
  * first it names, and how many more there are. */
@@ -440,7 +477,7 @@ function repositoryConfigurationsNoteIgnored(
 
 /** What a repository's configuration step came to as a line, which offers a
  * ticket once the project holds a configuration to file it against. */
-export function repositoryConfigurationsNote(
+function repositoryConfigurationsNote(
   configurations: ProjectRepositoryConfigurationsResponse,
 ): RepositoryNote {
   switch (configurations.result) {

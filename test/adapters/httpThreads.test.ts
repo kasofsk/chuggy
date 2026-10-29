@@ -16,6 +16,7 @@ import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   hostedRunsNotGrantedCode,
   noRunnerCode,
+  threadLimitReachedCode,
   threadMessageRefusalCodes,
 } from "../../src/contract/rosters.ts";
 import {
@@ -188,8 +189,8 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
           : { read: "Unavailable", retryAfterSeconds: 2 },
       );
     },
-    openThread: () => {
-      held.calls.push("open");
+    openThread: (_principal, _partition, key) => {
+      held.calls.push(`open:${key}`);
       return Promise.resolve(
         held.opening ??
           (found
@@ -450,7 +451,7 @@ test("a stream the branding refuses never reaches the walk", async () => {
   assert.deepEqual(held.calls, []);
 });
 
-test("opening my thread is created once and answered again after that", async () => {
+test("opening a thread under a key is created once and answered again after that", async () => {
   const opened: ThreadCase = { calls: [] };
   const already: ThreadCase = { calls: [], found: false };
   await using first = appOf(opened);
@@ -460,19 +461,19 @@ test("opening my thread is created once and answered again after that", async ()
     method: "POST",
     url: root,
     headers: versioned,
-    payload: {},
+    payload: { key: "key-1" },
   });
   const again = await second.inject({
     method: "POST",
     url: root,
     headers: versioned,
-    payload: {},
+    payload: { key: "key-1" },
   });
 
   assert.equal(created.statusCode, 201);
   assert.equal(again.statusCode, 200);
   assert.equal(threadEntryResponseSchema.parse(created.json()).mine, true);
-  assert.deepEqual(opened.calls, ["open"]);
+  assert.deepEqual(opened.calls, ["open:key-1"]);
   for (const answer of [created, again])
     assert.equal(answer.headers["location"], `${root}/${mine}`);
 });
@@ -489,12 +490,32 @@ test("a caller without what the thread's route needs is refused a thread by that
       method: "POST",
       url: root,
       headers: versioned,
-      payload: {},
+      payload: { key: "key-1" },
     });
 
     assert.equal(refused.statusCode, 403, result);
     assert.equal(refused.json<HttpErrorEnvelope>().error.code, code);
   }
+});
+
+test("a member at their limit is refused a thread with the limit they are at", async () => {
+  const held: ThreadCase = {
+    calls: [],
+    opening: { result: "ThreadLimitReached", threadsMax: 4 },
+  };
+  await using app = appOf(held);
+
+  const refused = await app.inject({
+    method: "POST",
+    url: root,
+    headers: versioned,
+    payload: { key: "key-1" },
+  });
+
+  assert.equal(refused.statusCode, 409);
+  const body = refused.json<HttpErrorEnvelope & { threadsMax: number }>();
+  assert.equal(body.error.code, threadLimitReachedCode);
+  assert.equal(body.threadsMax, 4);
 });
 
 /**
@@ -503,13 +524,15 @@ test("a caller without what the thread's route needs is refused a thread by that
  * roster and was silently overruled has been told the wrong thing about what
  * this door does.
  */
-test("opening a thread takes an empty body and refuses any other", async () => {
+test("opening a thread takes a key and refuses any other body", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
 
   for (const payload of [
-    { capabilities: ["RepositoryWrite"] },
-    { principal: "someone-else" },
+    {},
+    { key: "not a key" },
+    { key: "key-1", capabilities: ["RepositoryWrite"] },
+    { key: "key-1", principal: "someone-else" },
   ])
     assert.equal(
       (

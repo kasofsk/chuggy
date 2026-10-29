@@ -34,6 +34,27 @@ export function sheetRules(
   return rules;
 }
 
+/** The style rules a sheet holds under one kind of condition, whatever the
+ * condition says. */
+export function sheetConditioned(
+  text: string,
+  kind: typeof CSSContainerRule | typeof CSSMediaRule,
+): readonly CSSStyleRule[] {
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(text);
+  const held: CSSStyleRule[] = [];
+  const walk = (list: CSSRuleList, under: boolean): void => {
+    for (const rule of Array.from(list)) {
+      if (rule instanceof CSSStyleRule) {
+        if (under) held.push(rule);
+      } else if (rule instanceof CSSGroupingRule)
+        walk(rule.cssRules, under || rule instanceof kind);
+    }
+  };
+  walk(sheet.cssRules, false);
+  return held;
+}
+
 /**
  * What rules declare for one element: the last matching declaration in source
  * order, which is the cascade where every rule competing for a property is one

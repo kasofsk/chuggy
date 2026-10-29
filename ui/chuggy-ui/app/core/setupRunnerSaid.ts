@@ -12,8 +12,6 @@
  * evaluated.
  */
 
-import { personalRunnersMax } from "../../../../src/contract/http.ts";
-
 import type { ApiFailure } from "./apiRequest.ts";
 import { runnerPackages } from "./runners.ts";
 
@@ -109,14 +107,15 @@ export type SetupDockerBarred =
   | { readonly barred: "Named"; readonly settings: string }
   | { readonly barred: "Podmanless"; readonly answered: "No" | "Absent" };
 
-/** The things `runner` runs another program to do; `RegisterOwn` and `ServiceOwn` are of the person's own runner. */
+/** The things `runner` runs another program to do; `RegisterChat`, `CheckChat` and `ServiceChat` are of the person's chat host. */
 export type SetupRunnerAct =
   | "Install"
   | "Register"
   | "Check"
   | "Service"
-  | "RegisterOwn"
-  | "ServiceOwn"
+  | "RegisterChat"
+  | "CheckChat"
+  | "ServiceChat"
   | "Reload"
   | "Start"
   | "Restart";
@@ -209,17 +208,19 @@ export type SetupRunnerNote =
   | { readonly note: "Registered"; readonly path: string }
   /** `warned` is the first line of the check that passed with a warning, where one did. */
   | { readonly note: "Checked"; readonly warned: string | undefined }
+  | { readonly note: "ChatChecked"; readonly warned: string | undefined }
   | { readonly note: "Unit" | "UnitWritten"; readonly unit: string }
   | { readonly note: "ProjectLive" }
-  /** The project's work runs on the cluster, said where the person's own runner is set up all the same. */
+  /** The project's work runs on the cluster, said where the person's chat host is set up all the same. */
   | { readonly note: "Hosted" }
-  /** `OwnGone` is a registration this machine holds that the site does not list among the person's runners. */
+  /** `ChatHostGone` is a registration this machine holds that is not the chat host the site holds for the person. */
   | {
-      readonly note: "Own" | "OwnGone" | "OwnRegistered";
+      readonly note: "ChatHost" | "ChatHostGone" | "ChatHostRegistered";
       readonly path: string;
     }
-  | { readonly note: "OwnUnit" | "OwnUnitWritten"; readonly unit: string }
-  | { readonly note: "Serves" | "ServesAdded" | "OwnLive" }
+  | { readonly note: "ChatUnit" | "ChatUnitWritten"; readonly unit: string }
+  /** `ChatHostElsewhere` is the person's chat host live on another machine, which is left as it is. */
+  | { readonly note: "ChatHostLive" | "ChatHostElsewhere" }
   | { readonly note: "Linger" }
   | { readonly note: "LingerOn"; readonly read: boolean }
   /** `Enabled` is a service found running and set by this run to start at login, where `Started` is one this run started. */
@@ -243,6 +244,14 @@ export const setupRunnerChecks = {
   "pool token":
     "chuggy's sign-in server did not take this machine's registration",
   plane: "chuggy did not answer this machine as a runner",
+  "chat credential directory":
+    "the Claude credential is not alone in a directory of its own, which a chat host needs",
+  "chat settings": "the chat host's settings are not as it needs them",
+  "chat session users":
+    "the container engine cannot run each chat as a user of its own",
+  "chat supervisor":
+    "a container left from an earlier chat host is in the way of this one",
+  "chat image": "the image the chat host runs could not be found or pulled",
 } as const;
 
 export type SetupRunnerCheck = keyof typeof setupRunnerChecks;
@@ -271,7 +280,7 @@ export function setupCheckFirst(
 
 /** A read of the site `runner` makes, by what it is of. */
 export type SetupRunnerRead =
-  "work" | "threads" | "placement" | "pools" | "permit" | "own";
+  "work" | "threads" | "placement" | "pools" | "permit" | "chat";
 
 /** Why a run stopped short of a runner the site sees live. */
 export type SetupRunnerStop =
@@ -322,7 +331,7 @@ export type SetupRunnerStop =
   | {
       /** The package would not write its service over the unit already at `path`. */
       readonly stop: "ServiceRefused";
-      readonly act: "Service" | "ServiceOwn";
+      readonly act: "Service" | "ServiceChat";
       readonly path: string;
       readonly failed: Extract<SetupChildFailed, { readonly how: "Exit" }>;
     }
@@ -334,6 +343,8 @@ export type SetupRunnerStop =
     }
   | {
       readonly stop: "CheckFailed";
+      /** Whose file was checked: the project's runner's or the person's chat host's. */
+      readonly act: "Check" | "CheckChat";
       readonly check: SetupRunnerCheck | undefined;
       readonly line: string;
     }
@@ -356,22 +367,29 @@ export type SetupRunnerStop =
       readonly registered: boolean;
     }
   | {
-      /** The workspace does not let the person register a runner of their own; `work` is what the project's work has, said as set up. */
+      /** The workspace does not let the person register a chat host; `work` is what the project's work has, said as set up. */
       readonly stop: "PermitWithheld";
       readonly people: string;
       readonly work: "Runner" | "Cluster";
     }
   | {
-      readonly stop: "OwnMintRefused";
+      readonly stop: "ChatMintRefused";
       readonly outcome: ApiFailure["outcome"];
       readonly lapseMins: number;
     }
-  | { readonly stop: "ServesRefused"; readonly outcome: ApiFailure["outcome"] }
-  /** The person holds as many runners of their own as a member may, and none is this machine; `runners` is the page they are removed on. */
-  | { readonly stop: "OwnLimit"; readonly runners: string }
-  | { readonly stop: "OwnNotLive"; readonly waitedSecs: number };
+  /** The person's chat host is another machine, registered and not running, which registering this one would replace; `runners` is the page it is removed on. */
+  | { readonly stop: "ChatHostOffline"; readonly runners: string }
+  | {
+      /** The runner's credential cannot be handed to a chat host: it is a symbolic link, or it shares the directory the chat host is handed whole; `login` is where a Claude login of the runner's own is kept alone. */
+      readonly stop: "ChatLogin";
+      readonly how: "Linked" | "Shared";
+      readonly credential: SetupClaudeCredential;
+      readonly settings: string;
+      readonly login: string;
+    }
+  | { readonly stop: "ChatHostNotLive"; readonly waitedSecs: number };
 
-/** How a run of `runner` ended: the site sees live each runner the project's work and the person's chats in it run on, the cluster runs both, or it stopped. */
+/** How a run of `runner` ended: the site sees live the runner the project's work runs on and the chat host the person's chats in it run on, the cluster runs both, or it stopped. */
 export type SetupRunnerEnded =
   | { readonly ended: "Live" }
   | { readonly ended: "Hosted" }
@@ -444,26 +462,26 @@ function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
   }
 }
 
-type SetupOwnNote = Extract<
+type SetupChatNote = Extract<
   SetupRunnerNote,
   {
     readonly note:
       | "ProjectLive"
       | "Hosted"
-      | "Own"
-      | "OwnGone"
-      | "OwnRegistered"
-      | "OwnUnit"
-      | "OwnUnitWritten"
-      | "Serves"
-      | "ServesAdded"
-      | "OwnLive";
+      | "ChatHost"
+      | "ChatHostGone"
+      | "ChatHostRegistered"
+      | "ChatChecked"
+      | "ChatUnit"
+      | "ChatUnitWritten"
+      | "ChatHostLive"
+      | "ChatHostElsewhere";
   }
 >;
 
-/** What the site sees of the project's runner, and what a run found and did of the person's own. */
-function setupOwnNoteSaid(
-  note: SetupOwnNote,
+/** What the site sees of the project's runner, and what a run found and did of the person's chat host. */
+function setupChatNoteSaid(
+  note: SetupChatNote,
   project: string,
 ): SetupRunnerNoteSaid {
   switch (note.note) {
@@ -474,33 +492,41 @@ function setupOwnNoteSaid(
         "found",
         `chuggy's cluster runs the work of ${project}, so that work needs no runner`,
       ];
-    case "Own":
+    case "ChatHost":
       return [
         "found",
-        `this machine is registered as one of your own runners, in ${note.path}`,
+        `this machine is registered as your chat host, in ${note.path}`,
       ];
-    case "OwnGone":
+    case "ChatHostGone":
       return [
         "found",
-        `${note.path} registered this machine as your own runner, and the site no longer knows that registration`,
+        `${note.path} registered this machine as your chat host, and the site no longer knows that registration`,
       ];
-    case "OwnRegistered":
+    case "ChatHostRegistered":
       return [
         "did",
-        `registered this machine as one of your own runners, in ${note.path}`,
+        `registered this machine as your chat host, in ${note.path}`,
       ];
-    case "OwnUnit":
-      return ["found", `your own runner's service is installed: ${note.unit}`];
-    case "OwnUnitWritten":
-      return ["did", `installed your own runner's service, ${note.unit}`];
-    case "Serves":
-      return ["found", `your own runners serve ${project}`];
-    case "ServesAdded":
-      return ["did", `added ${project} to the projects your own runners serve`];
-    case "OwnLive":
+    case "ChatChecked":
       return [
         "found",
-        `the site sees this machine live as your own runner, so your chats in ${project} can run on it`,
+        note.warned === undefined
+          ? "the chat host's own check passed"
+          : `the chat host's own check passed, with a warning: ${note.warned}`,
+      ];
+    case "ChatUnit":
+      return ["found", `your chat host's service is installed: ${note.unit}`];
+    case "ChatUnitWritten":
+      return ["did", `installed your chat host's service, ${note.unit}`];
+    case "ChatHostLive":
+      return [
+        "found",
+        `the site sees this machine live as your chat host, so your chats in ${project} can run on it`,
+      ];
+    case "ChatHostElsewhere":
+      return [
+        "found",
+        `the site sees your chat host live on another machine, so your chats in ${project} run there`,
       ];
   }
 }
@@ -590,15 +616,15 @@ export function setupRunnerNoteSaid(
       return setupServiceNoteSaid(note);
     case "ProjectLive":
     case "Hosted":
-    case "Own":
-    case "OwnGone":
-    case "OwnRegistered":
-    case "OwnUnit":
-    case "OwnUnitWritten":
-    case "Serves":
-    case "ServesAdded":
-    case "OwnLive":
-      return setupOwnNoteSaid(note, project);
+    case "ChatHost":
+    case "ChatHostGone":
+    case "ChatHostRegistered":
+    case "ChatChecked":
+    case "ChatUnit":
+    case "ChatUnitWritten":
+    case "ChatHostLive":
+    case "ChatHostElsewhere":
+      return setupChatNoteSaid(note, project);
   }
 }
 
@@ -698,8 +724,8 @@ const setupReadsSaid: Readonly<Record<SetupRunnerRead, string>> = {
   threads: "where your chats in it run",
   placement: "how its runners stand",
   pools: "which runners it has",
-  permit: "whether you may register a runner of your own",
-  own: "whether you have a runner of your own",
+  permit: "whether you may register a chat host",
+  chat: "whether you have a chat host",
 };
 
 /** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
@@ -734,8 +760,9 @@ const setupActs: Readonly<Record<SetupRunnerAct, string>> = {
   Register: "registering this machine",
   Check: "the runner's own check",
   Service: "installing the runner's service",
-  RegisterOwn: "registering this machine as your own runner",
-  ServiceOwn: "installing your own runner's service",
+  RegisterChat: "registering this machine as your chat host",
+  CheckChat: "the chat host's own check",
+  ServiceChat: "installing your chat host's service",
   Reload: "reloading your services",
   Start: "starting the runner's service",
   Restart: "restarting the runner's service",
@@ -986,13 +1013,18 @@ function setupServiceSaid(
 ): SetupRunnerStopSaid {
   switch (stop.stop) {
     case "CheckFailed": {
+      const check = setupActs[stop.act];
       const meant =
         stop.check === undefined
-          ? "the runner's own check did not pass"
+          ? `${check} did not pass`
           : setupRunnerChecks[stop.check];
+      const what =
+        stop.act === "Check"
+          ? "The runner is installed and registered on this machine"
+          : "This machine is registered as your chat host";
       return {
-        found: `${meant}; the runner's own check said: ${stop.line}`,
-        tell: `The runner is installed and registered on this machine, and its own check did not pass: ${meant}. What it said is: ${stop.line}. Tell me once that is mended, or if you want me to try again.`,
+        found: `${meant}; ${check} said: ${stop.line}`,
+        tell: `${what}, and its own check did not pass: ${meant}. What it said is: ${stop.line}. Tell me once that is mended, or if you want me to try again.`,
         when: "once the person says it is mended or asks to try again",
         again: "Runner",
       };
@@ -1018,44 +1050,78 @@ function setupServiceSaid(
   }
 }
 
-/** A mint of the person's own registration token the site refused, by why. */
-function setupOwnMintSaid(
-  stop: Extract<SetupRunnerStop, { readonly stop: "OwnMintRefused" }>,
+/** A mint of the person's chat host registration token the site refused, by why. */
+function setupChatMintSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "ChatMintRefused" }>,
 ): SetupRunnerStopSaid {
-  const found = `the site made no registration token for your own runner (${stop.outcome})`;
+  const found = `the site made no registration token for your chat host (${stop.outcome})`;
   if (stop.outcome === "Absent")
     return {
       found,
-      tell: "The chuggy site would not make a registration for a runner of your own: the workspace lets only members it chooses register one. Tell me once a workspace admin has let you.",
-      when: "once the person says a workspace admin has let them register a runner of their own",
+      tell: "The chuggy site would not make a registration for a chat host of yours: the workspace lets only members it chooses register one. Tell me once a workspace admin has let you.",
+      when: "once the person says a workspace admin has let them register a chat host",
       again: "Runner",
     };
   if (stop.outcome === "Conflict")
     return {
       found,
-      tell: `chuggy already holds as many unused registrations for your own runner as it keeps at once, so it made no more. Each lapses by itself within ${String(stop.lapseMins)} minutes of being made. Tell me when you want me to try again.`,
+      tell: `chuggy already holds as many unused registrations of yours as it keeps at once, so it made no more. Each lapses by itself within ${String(stop.lapseMins)} minutes of being made. Tell me when you want me to try again.`,
       when: setupTryAgain,
       again: "Runner",
     };
   return {
     found,
-    tell: `The chuggy site did not make a registration for your own runner, so this machine is not your own runner yet. ${setupPickedUp}`,
+    tell: `The chuggy site did not make a registration for your chat host, so this machine is not your chat host yet. ${setupPickedUp}`,
     when: setupTryAgain,
     again: "Runner",
   };
 }
 
-/** Where the person's own runner stopped short: the workspace has not let them have one, they hold as many as a member may, the site would not register or serve it, or it is not seen live. */
-function setupOwnSaid(
+/** Restarts every runner service of this machine's, each of which reads the runner's settings only as it starts. */
+const setupRestartAll = `systemctl --user restart '${runnerPackages.linux.program}-*.service'`;
+
+/**
+ * A credential a chat host cannot be handed, and how a copy is put where it
+ * can be: a subscription's at the login's own place, any other in a directory
+ * of its own. A copy leaves the running services the file they were started
+ * on until they restart onto the settings that name it.
+ */
+function setupChatLoginSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "ChatLogin" }>,
+): SetupRunnerStopSaid {
+  const { kind, path } = stop.credential;
+  const { credential } = setupClaudeWords[kind];
+  const directory = stop.login.slice(0, stop.login.lastIndexOf("/"));
+  const why =
+    stop.how === "Linked"
+      ? `is handed the runner's ${credential} only as a file of its own, and ${path} is a symbolic link`
+      : `is handed the directory of the runner's ${credential} whole, and ${path} shares its directory with other files`;
+  const copy =
+    kind === "Subscription"
+      ? `Copy the token itself alone to ${stop.login}, readable only by you (mode 600), and set claudeTokenFile in ${stop.settings} to ${stop.login}.`
+      : `Copy it alone into a directory of its own, such as ${directory}, readable only by you, and change where ${stop.settings} names it to the copy.`;
+  return {
+    found:
+      stop.how === "Linked"
+        ? `the runner's ${credential}, ${path}, is a symbolic link, which your chat host is not handed`
+        : `the runner's ${credential}, ${path}, is not alone in its directory, which your chat host is handed whole`,
+    tell: `Your chat host ${why}, so this machine is not your chat host yet. ${copy} Then restart this machine's runner services, which read the settings only as they start: ${setupRestartAll}. The old one can go once they have. Tell me once they have restarted.`,
+    when: `once the person says the runner's ${credential} is copied alone into a directory of its own and its services have restarted`,
+    again: "Runner",
+  };
+}
+
+/** Where the person's chat host stopped short: the workspace has not let them have one, the site would not register it, theirs is another machine that is not running, this machine's credential cannot be handed to it, or it is not seen live. */
+function setupChatSaid(
   stop: Extract<
     SetupRunnerStop,
     {
       readonly stop:
         | "PermitWithheld"
-        | "OwnMintRefused"
-        | "ServesRefused"
-        | "OwnLimit"
-        | "OwnNotLive";
+        | "ChatMintRefused"
+        | "ChatHostOffline"
+        | "ChatLogin"
+        | "ChatHostNotLive";
     }
   >,
   project: string,
@@ -1063,31 +1129,26 @@ function setupOwnSaid(
   switch (stop.stop) {
     case "PermitWithheld":
       return {
-        found: "the workspace does not let you register a runner of your own",
-        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${stop.people}, with Edit on your row. Tell me once it is on.`,
+        found: "the workspace does not let you register a chat host",
+        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${stop.people}, with Edit on your row. Tell me once it is on.`,
         when: "once the person says Personal runners is on for them in the workspace",
         again: "Runner",
       };
-    case "OwnMintRefused":
-      return setupOwnMintSaid(stop);
-    case "ServesRefused":
+    case "ChatMintRefused":
+      return setupChatMintSaid(stop);
+    case "ChatHostOffline":
       return {
-        found: `the site did not add ${project} to the projects your own runners serve (${stop.outcome})`,
-        tell: `The chuggy site did not add ${project} to the projects your own runners serve, so your chats there have no runner yet. ${setupPickedUp}`,
-        when: setupTryAgain,
+        found: "your chat host is another machine, registered and not running",
+        tell: `Your chats in ${project} run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${stop.runners}, for this machine to be it instead. Tell me once you have done either.`,
+        when: "once the person says their chat host is running, or that they removed it",
         again: "Runner",
       };
-    case "OwnLimit":
+    case "ChatLogin":
+      return setupChatLoginSaid(stop);
+    case "ChatHostNotLive":
       return {
-        found: `you have ${String(personalRunnersMax)} runners of your own in the workspace, as many as a member may, and none is this machine`,
-        tell: `You already have ${String(personalRunnersMax)} runners of your own in this workspace, which is as many as a member may, so this machine cannot be one. Remove one you no longer use on your My runners page, ${stop.runners}. Tell me once you have.`,
-        when: "once the person says they removed a runner of their own",
-        again: "Runner",
-      };
-    case "OwnNotLive":
-      return {
-        found: `your own runner's service is running, and after ${String(stop.waitedSecs)} s the site still does not see this machine live as your own runner`,
-        tell: "Your own runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+        found: `your chat host's service is running, and after ${String(stop.waitedSecs)} s the site still does not see this machine live as your chat host`,
+        tell: "Your chat host is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
         when: setupLookAgain,
         again: "Runner",
       };
@@ -1139,11 +1200,11 @@ export function setupRunnerStopSaid(
     case "NotLive":
       return setupServiceSaid(stop, project);
     case "PermitWithheld":
-    case "OwnMintRefused":
-    case "ServesRefused":
-    case "OwnLimit":
-    case "OwnNotLive":
-      return setupOwnSaid(stop, project);
+    case "ChatMintRefused":
+    case "ChatHostOffline":
+    case "ChatLogin":
+    case "ChatHostNotLive":
+      return setupChatSaid(stop, project);
   }
 }
 
@@ -1160,7 +1221,8 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "Npmless":
     case "LingerAsks":
     case "PermitWithheld":
-    case "OwnLimit":
+    case "ChatHostOffline":
+    case "ChatLogin":
       return 0;
     case "Unread":
       return stop.outcome === "Refused" ? 0 : 1;
@@ -1174,9 +1236,8 @@ export function setupRunnerStopExit(stop: SetupRunnerStop): 0 | 1 | 2 {
     case "CheckFailed":
     case "Inactive":
     case "NotLive":
-    case "OwnMintRefused":
-    case "ServesRefused":
-    case "OwnNotLive":
+    case "ChatMintRefused":
+    case "ChatHostNotLive":
       return 1;
   }
 }

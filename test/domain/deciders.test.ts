@@ -28,6 +28,7 @@ import type {
   TicketEvent,
   TicketGraph,
   TicketLedger,
+  TicketRefusal,
 } from "../../src/domain/generated/modelTypes.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -827,6 +828,19 @@ test("a resume of a ticket that was never parked is refused, naming the ticket",
 /** Pending tickets side by side, each at its first revision and depending on nothing. */
 const twoPending: TicketGraph = graphOf([ticketOn(config), ticketOn(config)]);
 
+/** Ticket one Pending, ticket two Pending on it, and ticket three revoked. */
+const tangled: TicketGraph = graphOf([
+  ticketOn(config),
+  ticketOn(config, { dependencies: depsOf(1) }),
+  ticketOn(config, { state: "Revoked" }),
+]);
+
+/** A ticket refused: the decision every row of an ordering table expects. */
+const refusedWith = (value: TicketRefusal): TicketDecision => ({
+  type: "TicketRefused",
+  value,
+});
+
 /**
  * THE UPDATE'S REFUSALS COME IN THE PACKAGE'S ORDER. Each command fails every
  * check after the one it is named for as well, so only the order decides which
@@ -834,7 +848,8 @@ const twoPending: TicketGraph = graphOf([ticketOn(config), ticketOn(config)]);
  */
 test("an update failing several checks is refused by the first of them", () => {
   const wrongEverything = revisedTicketOf(2, 2, depsOf(2), plan);
-  const staleAndRewired = revisedTicketOf(1, 2, depsOf(2), plan);
+  const rewired = (...dependencies: number[]): ReleasedTicket =>
+    revisedTicketOf(1, 2, depsOf(...dependencies), plan);
   const refusal = (
     graph: TicketGraph,
     ticket: number,
@@ -844,36 +859,99 @@ test("an update failing several checks is refused by the first of them", () => {
     decideUpdate(graph, { ticket, expectedRevision, definition: revised });
   const cases: readonly [TicketDecision, TicketDecision][] = [
     [
-      refusal(twoPending, 9, 5, revisedTicketOf(9, 2, depsOf(2), plan)),
-      { type: "TicketRefused", value: { type: "TicketNotFound", value: 9 } },
+      refusal(tangled, 9, 5, revisedTicketOf(9, 2, depsOf(9), plan)),
+      refusedWith({ type: "TicketNotFound", value: 9 }),
     ],
     [
       refusal(workingFirst(), 1, 5, wrongEverything),
-      { type: "TicketRefused", value: { type: "TicketNotPending", value: 1 } },
+      refusedWith({ type: "TicketNotPending", value: 1 }),
     ],
     [
-      refusal(twoPending, 1, 5, wrongEverything),
-      {
-        type: "TicketRefused",
-        value: { type: "TicketIdentityMismatch", value: 1 },
-      },
+      refusal(tangled, 1, 5, wrongEverything),
+      refusedWith({ type: "TicketIdentityMismatch", value: 1 }),
     ],
     [
-      refusal(twoPending, 1, 5, staleAndRewired),
-      {
-        type: "TicketRefused",
-        value: {
-          type: "TicketRevisionStale",
-          value: { ticket: 1, expected: 5, current: 1 },
-        },
-      },
+      refusal(tangled, 1, 5, rewired(1, 9, 3, 2)),
+      refusedWith({
+        type: "TicketRevisionStale",
+        value: { ticket: 1, expected: 5, current: 1 },
+      }),
     ],
     [
-      refusal(twoPending, 1, 1, staleAndRewired),
-      {
-        type: "TicketRefused",
-        value: { type: "TicketDependenciesChanged", value: 1 },
-      },
+      refusal(tangled, 1, 1, rewired(1, 9, 3, 2)),
+      refusedWith({ type: "SelfDependency", value: 1 }),
+    ],
+    [
+      refusal(tangled, 1, 1, rewired(9, 3, 2)),
+      refusedWith({
+        type: "DependenciesNotFound",
+        value: { ticket: 1, dependencies: depsOf(9) },
+      }),
+    ],
+    [
+      refusal(tangled, 1, 1, rewired(3, 2)),
+      refusedWith({
+        type: "DependenciesRevoked",
+        value: { ticket: 1, dependencies: depsOf(3) },
+      }),
+    ],
+    [
+      refusal(tangled, 1, 1, rewired(2)),
+      refusedWith({
+        type: "DependencyCycle",
+        value: { ticket: 1, dependencies: depsOf(2) },
+      }),
+    ],
+  ];
+  for (const [decided, expected] of cases) assert.deepEqual(decided, expected);
+});
+
+/** Only what an update adds is weighed, so a revoked dependency it keeps and one it drops are both taken. */
+test("an update weighs only the dependencies it adds", () => {
+  const stranded = graphOf([
+    ticketOn(config, { state: "Revoked" }),
+    ticketOn(config, { dependencies: depsOf(1) }),
+    ticketOn(config),
+  ]);
+  const update = (...dependencies: number[]): TicketDecision =>
+    decideUpdate(stranded, {
+      ticket: 2,
+      expectedRevision: 1,
+      definition: revisedTicketOf(2, 2, depsOf(...dependencies), plan),
+    });
+  for (const kept of [[1], [], [3], [1, 3]]) {
+    const taken = take(stranded, update(...kept));
+    assert.equal(taken.decision.event.type, "TicketUpdated", String(kept));
+    assert.deepEqual(
+      ticketAt(taken.post, id(2)).definition.dependencies,
+      depsOf(...kept),
+    );
+  }
+});
+
+/** A release meets the same dependency checks in the same order, after its own. */
+test("a release failing several checks is refused by the first of them", () => {
+  const release = (...dependencies: number[]): TicketDecision =>
+    decideCreate(tangled, releasedTicketOf(4, depsOf(...dependencies), plan));
+  const cases: readonly [TicketDecision, TicketDecision][] = [
+    [
+      decideCreate(tangled, releasedTicketOf(1, depsOf(1, 9, 3), plan)),
+      refusedWith({ type: "TicketAlreadyExists", value: 1 }),
+    ],
+    [release(4, 9, 3), refusedWith({ type: "SelfDependency", value: 4 })],
+    [
+      release(9, 3),
+      refusedWith({
+        type: "DependenciesNotFound",
+        value: { ticket: 4, dependencies: depsOf(9) },
+      }),
+    ],
+    [
+      release(3, 1),
+      refusedWith({
+        type: "DependenciesRevoked",
+        value: { ticket: 4, dependencies: depsOf(3) },
+      }),
     ],
   ];
   for (const [decided, expected] of cases) assert.deepEqual(decided, expected);

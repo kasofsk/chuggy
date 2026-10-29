@@ -143,6 +143,9 @@
 --   CHUG_PG_FINALIZER_PASSWORD=... \
 --   CHUG_PG_WORKER_PLANE_PASSWORD=... \
 --   CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD=... \
+--   CHUG_PG_POOL_PLANE_PASSWORD=... \
+--   CHUG_PG_ACCESS_PLANE_PASSWORD=... \
+--   CHUG_PG_METRICS_PLANE_PASSWORD=... \
 --   psql -f deploy/rig/postgres/postgres-roles.sql
 
 \set ON_ERROR_STOP on
@@ -156,6 +159,7 @@
 \getenv configuration_importer_password CHUG_PG_CONFIGURATION_IMPORTER_PASSWORD
 \getenv pool_plane_password CHUG_PG_POOL_PLANE_PASSWORD
 \getenv access_plane_password CHUG_PG_ACCESS_PLANE_PASSWORD
+\getenv metrics_plane_password CHUG_PG_METRICS_PLANE_PASSWORD
 BEGIN;
 
 -- The group roles the migration would otherwise be first to create. A DO block
@@ -166,7 +170,8 @@ SELECT format('CREATE ROLE %I NOLOGIN', role_name)
                     'chuggy_selector_service', 'chuggy_selector_control',
                     'chuggy_selector_review', 'chuggy_scheduler',
                     'chuggy_finalizer', 'chuggy_worker_plane', 'chuggy_pool_plane',
-                    'chuggy_access_plane', 'chuggy_configuration_importer']) AS role_name
+                    'chuggy_access_plane', 'chuggy_configuration_importer',
+                    'chuggy_metrics_plane']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
@@ -176,7 +181,8 @@ SELECT format('CREATE ROLE %I LOGIN', role_name)
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
                     'chuggy_finalizer_login', 'chuggy_worker_plane_login',
                     'chuggy_pool_plane_login', 'chuggy_access_plane_login',
-                    'chuggy_configuration_importer_login']) AS role_name
+                    'chuggy_configuration_importer_login',
+                    'chuggy_metrics_plane_login']) AS role_name
  WHERE NOT EXISTS (SELECT FROM pg_roles WHERE rolname = role_name)
 \gexec
 
@@ -206,6 +212,8 @@ ALTER ROLE chuggy_access_plane WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCRE
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_configuration_importer WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
+ALTER ROLE chuggy_metrics_plane WITH NOLOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 PASSWORD NULL VALID UNTIL 'infinity';
 ALTER ROLE chuggy_owner WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB CREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_ticket_service_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
@@ -226,6 +234,8 @@ ALTER ROLE chuggy_access_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB N
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 ALTER ROLE chuggy_configuration_importer_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
   CONNECTION LIMIT -1 VALID UNTIL 'infinity';
+ALTER ROLE chuggy_metrics_plane_login WITH LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS
+  CONNECTION LIMIT -1 VALID UNTIL 'infinity';
 
 ALTER ROLE chuggy_owner PASSWORD :'owner_password';
 ALTER ROLE chuggy_ticket_service_login PASSWORD :'ticket_service_password';
@@ -237,6 +247,7 @@ ALTER ROLE chuggy_worker_plane_login PASSWORD :'worker_plane_password';
 ALTER ROLE chuggy_pool_plane_login PASSWORD :'pool_plane_password';
 ALTER ROLE chuggy_access_plane_login PASSWORD :'access_plane_password';
 ALTER ROLE chuggy_configuration_importer_login PASSWORD :'configuration_importer_password';
+ALTER ROLE chuggy_metrics_plane_login PASSWORD :'metrics_plane_password';
 
 -- A service holds its capability through the group and never directly, so
 -- widening one is an edit to the migration's grants and to nothing here.
@@ -249,11 +260,12 @@ GRANT chuggy_worker_plane TO chuggy_worker_plane_login;
 GRANT chuggy_pool_plane TO chuggy_pool_plane_login;
 GRANT chuggy_access_plane TO chuggy_access_plane_login;
 GRANT chuggy_configuration_importer TO chuggy_configuration_importer_login;
+GRANT chuggy_metrics_plane TO chuggy_metrics_plane_login;
 GRANT chuggy_selector_review TO chuggy_api_login;
 GRANT chuggy_boundary_owner, chuggy_ticket_service, chuggy_api, chuggy_selector_service,
       chuggy_selector_control, chuggy_selector_review, chuggy_scheduler,
       chuggy_finalizer, chuggy_worker_plane, chuggy_pool_plane,
-      chuggy_access_plane, chuggy_configuration_importer TO chuggy_owner;
+      chuggy_access_plane, chuggy_configuration_importer, chuggy_metrics_plane TO chuggy_owner;
 
 -- PUBLIC HOLDS CONNECT ON A STOCK DATABASE, AND EVERY ROLE ON THE SERVER IS
 -- PUBLIC. It is not a read of any relation — the grants below and the
@@ -273,7 +285,8 @@ SELECT format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_nam
                     'chuggy_selector_service_login', 'chuggy_scheduler_login',
                     'chuggy_finalizer_login', 'chuggy_worker_plane_login',
                     'chuggy_pool_plane_login', 'chuggy_access_plane_login',
-                    'chuggy_configuration_importer_login']) AS role_name
+                    'chuggy_configuration_importer_login',
+                    'chuggy_metrics_plane_login']) AS role_name
 \gexec
 
 GRANT USAGE, CREATE ON SCHEMA public TO chuggy_owner;
@@ -282,6 +295,7 @@ GRANT USAGE ON SCHEMA public TO chuggy_boundary_owner, chuggy_ticket_service, ch
                                 chuggy_selector_service, chuggy_selector_control,
                                 chuggy_selector_review, chuggy_scheduler, chuggy_finalizer,
                                 chuggy_worker_plane, chuggy_pool_plane,
-                                chuggy_access_plane, chuggy_configuration_importer;
+                                chuggy_access_plane, chuggy_configuration_importer,
+                                chuggy_metrics_plane;
 
 COMMIT;

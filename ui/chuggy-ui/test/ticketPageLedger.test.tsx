@@ -17,7 +17,7 @@ import {
   DetailsToggle,
 } from "../app/browser/shell/DetailsPane.tsx";
 import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
+import { ViewportColumnAsideProvider } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   apiDouble,
@@ -40,7 +40,7 @@ import { instantExactText } from "../app/core/figures.ts";
 import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -170,7 +170,11 @@ let routed: string[] = [];
 
 async function drawTicket(
   served: Served,
-  options: { readonly shell?: boolean } = {},
+  options: {
+    readonly shell?: boolean;
+    /** Whether the pages' column holds the details beside the page. */
+    readonly beside?: boolean;
+  } = {},
 ): Promise<Drawn> {
   routed = [];
   const api = apiDouble({
@@ -218,7 +222,13 @@ async function drawTicket(
       client={new QueryClient()}
       transport={openedStream().ports.fetch}
     >
-      {options.shell === true ? <ShellAroundPage /> : <TicketPage />}
+      {options.shell === true ? (
+        <ViewportColumnAsideProvider value={options.beside ?? false}>
+          <ShellAroundPage />
+        </ViewportColumnAsideProvider>
+      ) : (
+        <TicketPage />
+      )}
     </ScreenHarness>,
   );
   await settled();
@@ -496,6 +506,51 @@ test("the rows under the ledger are closed, and following an anchor opens its ro
   ).toBe("false");
 });
 
+/** Follows the Provenance anchor in the details pane, opened first. */
+async function provenanceFollowed(container: HTMLElement): Promise<void> {
+  fireEvent.click(
+    screen.getByRole("button", { name: "Details", pressed: false }),
+  );
+  const anchor = container.querySelector('nav.sections a[href="#provenance"]');
+  if (!(anchor instanceof HTMLElement)) throw new Error("no provenance anchor");
+  await turned(() => {
+    anchor.click();
+  });
+  await settled();
+}
+
+test("an anchor followed where the details share the page's place closes them first", async () => {
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true },
+  );
+  await provenanceFollowed(container);
+  expect(
+    screen.queryByRole("button", { name: "Details", pressed: true }),
+  ).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: /^Provenance/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+test("an anchor followed where the column holds the details beside the page leaves them open", async () => {
+  const { container } = await drawTicket(
+    { shapes: ticket21Parked, ticket: parkedTicket },
+    { shell: true, beside: true },
+  );
+  await provenanceFollowed(container);
+  expect(
+    screen.queryByRole("button", { name: "Details", pressed: true }),
+  ).not.toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: /^Provenance/u })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
 test("each closed row says what it holds on the right", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
@@ -524,6 +579,41 @@ test("the Brief row counts what the brief holds beside its intent", async () => 
   expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
     "1 link · 2 checks",
   );
+});
+
+/** The provenance summary's Repository cell: its value, and the address it
+ * keeps for hover. */
+function repositoryCell(): { text: string; title: string | null } {
+  const value = screen.getByText("Repository").nextElementSibling;
+  return {
+    text: value?.textContent ?? "",
+    title: value?.querySelector("[title]")?.getAttribute("title") ?? null,
+  };
+}
+
+test("the provenance summary names the repository by its label, the address on hover", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: [],
+        repository: "https://example.test/acme/atlas.git",
+      },
+    },
+  });
+  await sectionOpened("Provenance");
+  expect(repositoryCell()).toEqual({
+    text: "acme/atlas",
+    title: "https://example.test/acme/atlas.git",
+  });
+});
+
+test("a brief naming no repository leaves the summary's Repository cell absent", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  await sectionOpened("Provenance");
+  expect(repositoryCell()).toEqual({ text: "—", title: null });
 });
 
 test("the shell's top bar draws the ticket's own number and phase", async () => {

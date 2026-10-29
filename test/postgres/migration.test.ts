@@ -30,106 +30,35 @@ import { migration013 } from "../../src/adapters/postgres/schema/migrations/013-
 import { migration014 } from "../../src/adapters/postgres/schema/migrations/014-ticket-events.ts";
 import { migration015 } from "../../src/adapters/postgres/schema/migrations/015-ticket-commands.ts";
 import { migration016 } from "../../src/adapters/postgres/schema/migrations/016-ticket-update.ts";
-import { migration017 } from "../../src/adapters/postgres/schema/migrations/017-ticket-repin.ts";
-import { migration018 } from "../../src/adapters/postgres/schema/migrations/018-attempt-invocation.ts";
-import { migration019 } from "../../src/adapters/postgres/schema/migrations/019-session-invocation.ts";
-import { migration020 } from "../../src/adapters/postgres/schema/migrations/020-worker-pool-class.ts";
-import { migration021 } from "../../src/adapters/postgres/schema/migrations/021-scheduler-reads-pools.ts";
-import { migration022 } from "../../src/adapters/postgres/schema/migrations/022-worker-pool-fencing.ts";
-import { migration023 } from "../../src/adapters/postgres/schema/migrations/023-worker-pool-release-ends.ts";
-import { migration026 } from "../../src/adapters/postgres/schema/migrations/026-project-creation.ts";
-import { migration027 } from "../../src/adapters/postgres/schema/migrations/027-forge-claim-per-tenant.ts";
-import { migration028 } from "../../src/adapters/postgres/schema/migrations/028-binding-lands-by-pull-request.ts";
-import { migration029 } from "../../src/adapters/postgres/schema/migrations/029-project-execution-placement.ts";
-import { migration032 } from "../../src/adapters/postgres/schema/migrations/032-session-placement.ts";
-import { migration034 } from "../../src/adapters/postgres/schema/migrations/034-held-proposal-currency.ts";
-import { migration042 } from "../../src/adapters/postgres/schema/migrations/042-lead-succession.ts";
-import { migration043 } from "../../src/adapters/postgres/schema/migrations/043-parked-overrides.ts";
-import { migration045 } from "../../src/adapters/postgres/schema/migrations/045-selector-attempt-revision.ts";
-import { migration047 } from "../../src/adapters/postgres/schema/migrations/047-workspace-links.ts";
-import { migration052 } from "../../src/adapters/postgres/schema/migrations/052-retirement-releases-repository.ts";
-import { migration053 } from "../../src/adapters/postgres/schema/migrations/053-release-pairing-refusals.ts";
-import { migration055 } from "../../src/adapters/postgres/schema/migrations/055-lead-refusal.ts";
-import { migration056 } from "../../src/adapters/postgres/schema/migrations/056-pool-refusal-fault.ts";
-import { migration057 } from "../../src/adapters/postgres/schema/migrations/057-attempt-runtime.ts";
-import { migration058 } from "../../src/adapters/postgres/schema/migrations/058-project-reads.ts";
-import { migration059 } from "../../src/adapters/postgres/schema/migrations/059-execution-resources.ts";
-import { migration060 } from "../../src/adapters/postgres/schema/migrations/060-merge-waits.ts";
-import {
-  migration066,
-  toolAllowlistAt066,
-} from "../../src/adapters/postgres/schema/migrations/066-lead-lists-repositories.ts";
-import { migration068 } from "../../src/adapters/postgres/schema/migrations/068-lead-fetches-images.ts";
-import { migration069 } from "../../src/adapters/postgres/schema/migrations/069-runner-versions.ts";
-import { migration070 } from "../../src/adapters/postgres/schema/migrations/070-many-personal-runners.ts";
-import { migration067 } from "../../src/adapters/postgres/schema/migrations/067-configuration-import-attempts.ts";
-import { accessPlaneRole } from "../../src/adapters/postgres/schema/shared.ts";
-import { postgresInviteLinks } from "../../src/adapters/postgres/inviteLinks.ts";
-import {
-  postgresForgeInstallationClaims,
-  postgresForgeInstallations,
-} from "../../src/adapters/postgres/forgeInstallation.ts";
-import {
-  asForgeAccount,
-  asForgeApp,
-  asForgeId,
-  asForgeInstallationId,
-} from "../../src/interpreter/forgeInstallation.ts";
-import { asTenantId } from "../../src/interpreter/projectStore.ts";
-import {
-  baselineToolAllowlist,
-  leadDispatchesPerDecision,
-} from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
+import { migration085 } from "../../src/adapters/postgres/schema/migrations/085-dependencies-change.ts";
+import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
 import { test } from "node:test";
 import { promisify } from "node:util";
 import {
   acceptanceFunction,
   apiRole,
   boundaryOwnerRole,
-  leadCloseFunction,
-  leadRefusalReadFunction,
-  leadSessionFunction,
-  configurationImporterRole,
   draftCreateFunction,
   draftReleaseFunction,
   draftReviseFunction,
-  executionPlacementSetFunction,
   finalizationFunction,
   finalizerRole,
-  forgeInstallationRecordFunction,
   migrations,
   migrationLedger,
-  personalRunnerFenceFunction,
-  personalSessionOpenFunction,
-  poolPlaneRole,
   projectChangeAppendFunction,
-  projectCreateFunction,
-  projectCreationGrantsFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   repositoryBindingListFunction,
-  repositoryBindingReadFunction,
-  repositoryConfigurationImportRecordFunction,
   repositoryBindingWriteFunction,
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
   schedulerRole,
   selectorServiceRole,
-  sessionPlacementSetFunction,
-  sessionRouteFunction,
-  sessionRunnerStandingFunction,
-  sessionTaskReadFunction,
-  statusMoveFunction,
   ticketServiceRole,
-  workerPlaneRole,
-  workerPoolFenceFunction,
-  workerPoolReleaseFunction,
-  workerTaskReadFunction,
 } from "../../src/adapters/postgres/schema.ts";
 import {
   postgresMigrate,
@@ -160,15 +89,7 @@ import { allSessionAttemptEvidences } from "../../src/interpreter/sessionSchedul
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { allFinalizationHoldKinds } from "../../src/interpreter/finalizer.ts";
 import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
-import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
-import {
-  configurationCpusMax,
-  configurationMemoryMibMax,
-  configurationMemoryMibMin,
-} from "../../src/contract/configurationDocument.ts";
-import { workerImageCharsMax } from "../../src/contract/workerPool.ts";
 import { schemaCompatibilityPrecondition } from "../../src/interpreter/serviceRuntime.ts";
-import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
 import { postgresHarnessEpoch, postgresHarnessProject } from "./harness.ts";
 import { postgresProjectStore } from "../../src/adapters/postgres/projectStore.ts";
@@ -179,30 +100,39 @@ import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 import type { ProjectRead } from "../../src/interpreter/nativeWeb.ts";
 import { allRefusalCodes } from "../../src/interpreter/refusal.ts";
-
-function databaseUrl(database: string): string {
-  const url = new URL(postgresHarnessUrl());
-  url.pathname = `/${database}`;
-  return url.toString();
-}
-
-async function migrationDatabase(
-  label: string,
-  body: (subject: pg.Pool, url: string) => Promise<void>,
-): Promise<void> {
-  const database = `chuggy_${label}_${randomUUID().replaceAll("-", "")}`;
-  const admin = postgresPool(postgresHarnessUrl());
-  await admin.query(`CREATE DATABASE ${database}`);
-  const url = databaseUrl(database);
-  const subject = postgresPool(url);
-  try {
-    await body(subject, url);
-  } finally {
-    await subject.end();
-    await admin.query(`DROP DATABASE ${database} WITH (FORCE)`);
-    await admin.end();
-  }
-}
+import { parseStoredRefusal } from "../../src/interpreter/wire.ts";
+import {
+  assertDoorsStandOwned,
+  commandsBoundaryRefusals,
+  commandsRefusal,
+  commandsRefusals,
+  commandsRefusals085,
+  commandsRefusalsBefore085,
+  commandsRefuse,
+  commandsRetired085,
+  deletionJournalRow,
+  deletionPartition,
+  identityExecution,
+  installationAt,
+  installationBefore,
+  journalledRevocation,
+  migrationDatabase,
+  migrationDatabaseAt,
+  migrationHasFunction,
+  releasedEntry,
+  releasedEvaluatorDefinition,
+  releasedSecondDefinition,
+  releasedSeeded,
+  releasedTask,
+  releasedWhole,
+  releasedWorkDefinition,
+  renamedAttemptFailed,
+  renamedAttemptPrepared,
+  renamedFinalization,
+  seedLandinglessBinding,
+  tenantSeed,
+  ticketCreated,
+} from "./migrationHarness.ts";
 
 async function migrationCommandRun(
   url: string,
@@ -289,69 +219,75 @@ const projectChangeApiPrivileges = [
 ] as const;
 
 test("the baseline grants the change log's doors to the roles that reach them", async () => {
-  await migrationDatabase("project_change_grants", async (subject) => {
-    await postgresMigrate(subject);
-    for (const [role, signature, granted] of projectChangeExecutors) {
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-            [role, signature],
-          )
-        ).rows[0]?.granted,
-        granted,
-        `${role} may execute ${signature}`,
-      );
-    }
-    for (const [privilege, granted] of projectChangeApiPrivileges) {
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_table_privilege($1,'project_change',$2) AS granted",
-            [apiRole, privilege],
-          )
-        ).rows[0]?.granted,
-        granted,
-        `${apiRole} holds ${privilege} on the change log`,
-      );
-    }
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "project_change_grants",
+    async (subject) => {
+      for (const [role, signature, granted] of projectChangeExecutors) {
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+              [role, signature],
+            )
+          ).rows[0]?.granted,
+          granted,
+          `${role} may execute ${signature}`,
+        );
+      }
+      for (const [privilege, granted] of projectChangeApiPrivileges) {
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_table_privilege($1,'project_change',$2) AS granted",
+              [apiRole, privilege],
+            )
+          ).rows[0]?.granted,
+          granted,
+          `${apiRole} holds ${privilege} on the change log`,
+        );
+      }
+    },
+  );
 });
 
 test("the baseline opens the brief's doors to the roles that reach it and no others", async () => {
-  await migrationDatabase("ticket_brief_grants", async (subject) => {
-    await postgresMigrate(subject);
-    for (const [role, relation, privilege, granted] of [
-      [apiRole, "draft_brief", "SELECT", true],
-      [apiRole, "draft_brief", "INSERT", false],
-      [apiRole, "draft_brief", "UPDATE", false],
-      [apiRole, "draft_brief_link", "SELECT", true],
-      [apiRole, "draft_brief_link", "INSERT", false],
-      [apiRole, "draft_brief_image", "SELECT", true],
-      [apiRole, "draft_brief_image", "INSERT", false],
-      [ticketServiceRole, "draft_brief", "SELECT", true],
-      [ticketServiceRole, "draft_brief", "UPDATE", false],
-      [schedulerRole, "draft_brief", "SELECT", false],
-      [schedulerRole, "draft_brief_link", "SELECT", false],
-      [schedulerRole, "draft_brief_image", "SELECT", false],
-      [schedulerRole, "ticket_definition", "SELECT", true],
-      [finalizerRole, "draft_brief", "SELECT", false],
-      [finalizerRole, "ticket_definition", "SELECT", true],
-      [boundaryOwnerRole, "draft_brief", "INSERT", true],
-      [boundaryOwnerRole, "draft_brief_link", "DELETE", true],
-      [boundaryOwnerRole, "draft_brief_image", "DELETE", true],
-    ] as const)
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_table_privilege($1,$2,$3) AS granted",
-            [role, relation, privilege],
-          )
-        ).rows[0]?.granted,
-        granted,
-        `${role} holds ${privilege} on ${relation}`,
-      );
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "ticket_brief_grants",
+    async (subject) => {
+      for (const [role, relation, privilege, granted] of [
+        [apiRole, "draft_brief", "SELECT", true],
+        [apiRole, "draft_brief", "INSERT", false],
+        [apiRole, "draft_brief", "UPDATE", false],
+        [apiRole, "draft_brief_link", "SELECT", true],
+        [apiRole, "draft_brief_link", "INSERT", false],
+        [apiRole, "draft_brief_image", "SELECT", true],
+        [apiRole, "draft_brief_image", "INSERT", false],
+        [ticketServiceRole, "draft_brief", "SELECT", true],
+        [ticketServiceRole, "draft_brief", "UPDATE", false],
+        [schedulerRole, "draft_brief", "SELECT", false],
+        [schedulerRole, "draft_brief_link", "SELECT", false],
+        [schedulerRole, "draft_brief_image", "SELECT", false],
+        [schedulerRole, "ticket_definition", "SELECT", true],
+        [finalizerRole, "draft_brief", "SELECT", false],
+        [finalizerRole, "ticket_definition", "SELECT", true],
+        [boundaryOwnerRole, "draft_brief", "INSERT", true],
+        [boundaryOwnerRole, "draft_brief_link", "DELETE", true],
+        [boundaryOwnerRole, "draft_brief_image", "DELETE", true],
+      ] as const)
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_table_privilege($1,$2,$3) AS granted",
+              [role, relation, privilege],
+            )
+          ).rows[0]?.granted,
+          granted,
+          `${role} holds ${privilege} on ${relation}`,
+        );
+    },
+  );
 });
 
 const journalInstantsColumns = [
@@ -363,38 +299,41 @@ const journalInstantsColumns = [
 ];
 
 test("the baseline opens five journal columns to the API and leaves the rest shut", async () => {
-  await migrationDatabase("journal_instants_grants", async (subject) => {
-    await postgresMigrate(subject);
-    const columns = await subject.query<{ column: string; granted: boolean }>(
-      `SELECT a.attname AS column,
+  await migrationDatabaseAt(
+    "Migrated",
+    "journal_instants_grants",
+    async (subject) => {
+      const columns = await subject.query<{ column: string; granted: boolean }>(
+        `SELECT a.attname AS column,
               has_column_privilege($1,'journal_entry',a.attname,'SELECT') AS granted
          FROM pg_attribute a
         WHERE a.attrelid='journal_entry'::regclass
           AND a.attnum > 0 AND NOT a.attisdropped
         ORDER BY a.attnum`,
-      [apiRole],
-    );
-    assert.ok(
-      columns.rows.length > journalInstantsColumns.length,
-      "the journal has columns beyond the ones this grant opens",
-    );
-    assert.deepEqual(
-      columns.rows.filter((each) => each.granted).map((each) => each.column),
-      journalInstantsColumns,
-      `what ${apiRole} may read of journal_entry`,
-    );
-    for (const privilege of ["INSERT", "UPDATE", "DELETE"] as const)
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_table_privilege($1,'journal_entry',$2) AS granted",
-            [apiRole, privilege],
-          )
-        ).rows[0]?.granted,
-        false,
-        `${apiRole} holds ${privilege} on journal_entry`,
+        [apiRole],
       );
-  });
+      assert.ok(
+        columns.rows.length > journalInstantsColumns.length,
+        "the journal has columns beyond the ones this grant opens",
+      );
+      assert.deepEqual(
+        columns.rows.filter((each) => each.granted).map((each) => each.column),
+        journalInstantsColumns,
+        `what ${apiRole} may read of journal_entry`,
+      );
+      for (const privilege of ["INSERT", "UPDATE", "DELETE"] as const)
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_table_privilege($1,'journal_entry',$2) AS granted",
+              [apiRole, privilege],
+            )
+          ).rows[0]?.granted,
+          false,
+          `${apiRole} holds ${privilege} on journal_entry`,
+        );
+    },
+  );
 });
 
 const journalInstantsReleases = 400;
@@ -505,67 +444,70 @@ async function releaseIndexUse(
  * a case pinned behind it would ask the adapter for a field no row holds.
  */
 test("the release index is what answers every read of a ticket's release", async () => {
-  await migrationDatabase("journal_instants_index", async (subject, url) => {
-    await postgresMigrate(subject);
-    const store = postgresProjectStore(subject);
-    const epoch = await postgresHarnessEpoch(store);
-    const partition = await postgresHarnessProject(store, "journal-instants");
-    await seedReleasedTickets(subject, partition, epoch);
-    const single = postgresPool(url, {
-      connectionsMax: 1,
-      connectionWaitMs: 5_000,
-      statementTimeoutMs: 10_000,
-    });
-    const reads = postgresNativeReads(single);
-    try {
-      for (const [what, read] of [
-        [
-          "the ticket's own read",
-          async () => [(await reads.ticket(partition, asTicketId(1)))?.phase],
-        ],
-        [
-          "the page in identity order",
-          async () =>
-            releasedPage(await reads.project(partition, { limit: 10 })),
-        ],
-        [
-          "the page in recent-activity order",
-          async () =>
-            releasedPage(
-              await reads.project(partition, {
-                limit: 10,
-                order: "RecentActivity",
-              }),
-            ),
-        ],
-      ] as const) {
+  await migrationDatabaseAt(
+    "Migrated",
+    "journal_instants_index",
+    async (subject, url) => {
+      const store = postgresProjectStore(subject);
+      const epoch = await postgresHarnessEpoch(store);
+      const partition = await postgresHarnessProject(store, "journal-instants");
+      await seedReleasedTickets(subject, partition, epoch);
+      const single = postgresPool(url, {
+        connectionsMax: 1,
+        connectionWaitMs: 5_000,
+        statementTimeoutMs: 10_000,
+      });
+      const reads = postgresNativeReads(single);
+      try {
+        for (const [what, read] of [
+          [
+            "the ticket's own read",
+            async () => [(await reads.ticket(partition, asTicketId(1)))?.phase],
+          ],
+          [
+            "the page in identity order",
+            async () =>
+              releasedPage(await reads.project(partition, { limit: 10 })),
+          ],
+          [
+            "the page in recent-activity order",
+            async () =>
+              releasedPage(
+                await reads.project(partition, {
+                  limit: 10,
+                  order: "RecentActivity",
+                }),
+              ),
+          ],
+        ] as const) {
+          const before = await releaseIndexUse(subject);
+          const listed = await read();
+          assert.ok(listed.length >= 1, `${what} listed no ticket`);
+          for (const each of listed)
+            assert.ok(each !== undefined, `${what} left a ticket unread`);
+          await single.query("SELECT pg_stat_force_next_flush()");
+          assert.ok(
+            (await releaseIndexUse(subject)).scans > before.scans,
+            `${what} was answered without the index that exists for it`,
+          );
+        }
         const before = await releaseIndexUse(subject);
-        const listed = await read();
-        assert.ok(listed.length >= 1, `${what} listed no ticket`);
-        for (const each of listed)
-          assert.ok(each !== undefined, `${what} left a ticket unread`);
-        await single.query("SELECT pg_stat_force_next_flush()");
         assert.ok(
-          (await releaseIndexUse(subject)).scans > before.scans,
-          `${what} was answered without the index that exists for it`,
+          (await reads.ticket(partition, asTicketId(1)))?.releasedAt !==
+            undefined,
+          "the ticket read carries the release instant",
         );
+        await single.query("SELECT pg_stat_force_next_flush()");
+        const after = await releaseIndexUse(subject);
+        assert.ok(
+          after.tuples - before.tuples <= 1,
+          `one ticket's release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
+        );
+      } finally {
+        await single.end();
       }
-      const before = await releaseIndexUse(subject);
-      assert.ok(
-        (await reads.ticket(partition, asTicketId(1)))?.releasedAt !==
-          undefined,
-        "the ticket read carries the release instant",
-      );
-      await single.query("SELECT pg_stat_force_next_flush()");
-      const after = await releaseIndexUse(subject);
-      assert.ok(
-        after.tuples - before.tuples <= 1,
-        `one ticket's release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
-      );
-    } finally {
-      await single.end();
-    }
-  });
+    },
+  );
 });
 
 const leadSelectorDoorsPaged = "standing_agentic_refusals(text,text,bigint)";
@@ -600,31 +542,33 @@ async function migrationLeadDoorsAreStrangers(
 }
 
 test("the objectives column holds the widest ceiling any kind of session composes", async () => {
-  await migrationDatabase("lead_tool_prompt_bound", async (subject) => {
-    await postgresMigrate(subject);
-    const held = (
-      await subject.query<{ definition: string }>(
-        `SELECT pg_get_constraintdef(c.oid) AS definition
+  await migrationDatabaseAt(
+    "Migrated",
+    "lead_tool_prompt_bound",
+    async (subject) => {
+      const held = (
+        await subject.query<{ definition: string }>(
+          `SELECT pg_get_constraintdef(c.oid) AS definition
            FROM pg_constraint c
           WHERE c.conrelid = 'agent_session'::regclass
             AND c.conname = 'agent_session_prompt_is_bounded'`,
-      )
-    ).rows[0]?.definition;
-    for (const ceiling of sessionPromptCeilings)
+        )
+      ).rows[0]?.definition;
+      for (const ceiling of sessionPromptCeilings)
+        assert.ok(
+          ceiling <= agentSessionPromptCharsMax,
+          "the column holds every kind's own ceiling",
+        );
       assert.ok(
-        ceiling <= agentSessionPromptCharsMax,
-        "the column holds every kind's own ceiling",
+        held?.includes(String(agentSessionPromptCharsMax)),
+        "a kind with a wider ceiling widens this, and its migration replaces the check",
       );
-    assert.ok(
-      held?.includes(String(agentSessionPromptCharsMax)),
-      "a kind with a wider ceiling widens this, and its migration replaces the check",
-    );
-  });
+    },
+  );
 });
 
 test("the installed session constraints match the runtime", async () => {
-  await migrationDatabase("lead_composition", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "lead_composition", async (subject) => {
     const definition = async (relation: string, constraint: string) =>
       (
         await subject.query<{ definition: string }>(
@@ -685,72 +629,70 @@ test("the installed session constraints match the runtime", async () => {
   });
 });
 
-async function migrationHasFunction(
-  subject: pg.Pool,
-  signature: string,
-): Promise<boolean> {
-  const found = await subject.query<{ present: boolean }>(
-    `SELECT to_regprocedure($1) IS NOT NULL AS present`,
-    [signature],
-  );
-  return found.rows[0]?.present === true;
-}
-
 test("the baseline retires the lead-only store reads for the session-keyed pair", async () => {
-  await migrationDatabase("thread_store_reads", async (subject) => {
-    await postgresMigrate(subject);
-    const leadBatches = "read_lead_store(text,text,text,bigint,bigint)";
-    const leadStreams = "list_lead_store_streams(text,text,bigint)";
-    const sessionBatches =
-      "read_session_store_batches(text,text,text,text,bigint,bigint)";
-    const sessionStreams = "list_session_store_streams(text,text,text,bigint)";
+  await migrationDatabaseAt(
+    "Migrated",
+    "thread_store_reads",
+    async (subject) => {
+      const leadBatches = "read_lead_store(text,text,text,bigint,bigint)";
+      const leadStreams = "list_lead_store_streams(text,text,bigint)";
+      const sessionBatches =
+        "read_session_store_batches(text,text,text,text,bigint,bigint)";
+      const sessionStreams =
+        "list_session_store_streams(text,text,text,bigint)";
 
-    assert.equal(
-      await migrationHasFunction(subject, leadBatches),
-      false,
-      "a read kept beside its replacement is a read a fix lands in one of",
-    );
-    assert.equal(await migrationHasFunction(subject, leadStreams), false);
-    assert.equal(await migrationHasFunction(subject, sessionBatches), true);
-    assert.equal(await migrationHasFunction(subject, sessionStreams), true);
-  });
+      assert.equal(
+        await migrationHasFunction(subject, leadBatches),
+        false,
+        "a read kept beside its replacement is a read a fix lands in one of",
+      );
+      assert.equal(await migrationHasFunction(subject, leadStreams), false);
+      assert.equal(await migrationHasFunction(subject, sessionBatches), true);
+      assert.equal(await migrationHasFunction(subject, sessionStreams), true);
+    },
+  );
 });
 
 test("the baseline grants the ticket-set standing door to the selector alone", async () => {
-  await migrationDatabase("standing_among_grants", async (subject) => {
-    await postgresMigrate(subject);
-    const executes = migrationDoorExecutes(subject);
-    for (const door of leadSelectorDoorsAdded) {
-      assert.equal(await executes(selectorServiceRole, door), true, door);
-      assert.equal(await executes(apiRole, door), false, door);
-    }
-    await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "standing_among_grants",
+    async (subject) => {
+      const executes = migrationDoorExecutes(subject);
+      for (const door of leadSelectorDoorsAdded) {
+        assert.equal(await executes(selectorServiceRole, door), true, door);
+        assert.equal(await executes(apiRole, door), false, door);
+      }
+      await migrationLeadDoorsAreStrangers(executes, leadSelectorDoorsAdded);
+    },
+  );
 });
 
 test("the baseline takes the paged standing back off the selector", async () => {
-  await migrationDatabase("standing_paged_revoked", async (subject) => {
-    await postgresMigrate(subject);
-    const executes = migrationDoorExecutes(subject);
-    assert.equal(
-      await executes(selectorServiceRole, leadSelectorDoorsPaged),
-      false,
-      "no selector read opens it, and a grant nothing opens is one a check cannot tell from a grant something needs",
-    );
-    assert.equal(
-      await executes(
-        apiRole,
-        "read_standing_agentic_refusals(text,text,bigint)",
-      ),
-      true,
-      "the console still draws a project's standing refusals",
-    );
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "standing_paged_revoked",
+    async (subject) => {
+      const executes = migrationDoorExecutes(subject);
+      assert.equal(
+        await executes(selectorServiceRole, leadSelectorDoorsPaged),
+        false,
+        "no selector read opens it, and a grant nothing opens is one a check cannot tell from a grant something needs",
+      );
+      assert.equal(
+        await executes(
+          apiRole,
+          "read_standing_agentic_refusals(text,text,bigint)",
+        ),
+        true,
+        "the console still draws a project's standing refusals",
+      );
+    },
+  );
 });
 
 test("the table and the function project access was answered from are gone", async () => {
-  await migrationDatabase("i83", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i83", async (subject) => {
     const left = await subject.query<{
       readonly table_left: string | null;
       readonly function_left: string | null;
@@ -771,33 +713,11 @@ test("the table and the function project access was answered from are gone", asy
   });
 });
 
-/** A tenant's row where the schema has the relation, so a seed stands on either side of 026. */
-function tenantSeed(tenant: string): string {
-  return `DO $seed$ BEGIN
-    IF to_regclass('public.tenant') IS NOT NULL THEN
-      INSERT INTO tenant(tenant) VALUES('${tenant}') ON CONFLICT DO NOTHING;
-    END IF; END $seed$;`;
-}
-
-async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
-  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90')`);
-  await subject.query(tenantSeed("tenant-90"));
-  await subject.query(
-    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
-     VALUES('tenant-90','project-90','Active',0,1)`,
-  );
-  await subject.query(
-    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
-     VALUES('tenant-90','project-90','bound-90','epoch-90')`,
-  );
-}
-
 test("the landing doors migrate without exposing the relation they read", async () => {
-  await migrationDatabase("i90grants", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i90grants", async (subject) => {
     for (const signature of [
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
     ])
       assert.equal(
         (
@@ -833,8 +753,7 @@ test("the landing doors migrate without exposing the relation they read", async 
 });
 
 test("a landing no roster names is refused by the column's own constraint", async () => {
-  await migrationDatabase("i90roster", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i90roster", async (subject) => {
     await seedLandinglessBinding(subject);
     for (const mode of ["Push", "PullRequest", "PullRequestMerge"])
       await subject.query(
@@ -876,7 +795,7 @@ async function createdProposingDraft(subject: pg.Pool, branch: string | null) {
     await subject.query<{ result: string; ticket: string | null }>(
       `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring), branch],
     )
   ).rows;
@@ -887,7 +806,7 @@ async function createdUnboundDraft(subject: pg.Pool) {
     await subject.query<{ result: string }>(
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
-         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,NULL,'User','author')`,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,NULL,NULL,NULL,NULL,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring)],
     )
   ).rows;
@@ -908,10 +827,24 @@ async function createdProposingDraftBefore039(
   ).rows;
 }
 
+/** `createdProposingDraft`, called where the installation predates 086's origin session. */
+async function createdProposingDraftBefore086(
+  subject: pg.Pool,
+  branch: string | null,
+) {
+  return (
+    await subject.query<{ result: string; ticket: string | null }>(
+      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
+      [encodeDraftAuthoring(plainAuthoring), branch],
+    )
+  ).rows;
+}
+
 test("the draft door falls back to the landing this tree defaults to", async () => {
   assert.equal(briefFinalizationDefault.mode, "Push");
-  await migrationDatabase("i91fallback", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i91fallback", async (subject) => {
     await seedProposingBinding(subject);
     assert.deepEqual(await createdUnboundDraft(subject), [
       { result: "Created" },
@@ -928,8 +861,7 @@ test("the draft door falls back to the landing this tree defaults to", async () 
 });
 
 test("the baseline's door refuses the brief its own resolution left with no head", async () => {
-  await migrationDatabase("i91unbranched", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i91unbranched", async (subject) => {
     await seedProposingBinding(subject);
 
     assert.deepEqual(await createdProposingDraft(subject, null), [
@@ -948,8 +880,7 @@ test("the baseline's door refuses the brief its own resolution left with no head
 });
 
 test("a pull request may default its base but requires a distinct head", async () => {
-  await migrationDatabase("i91pairing", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i91pairing", async (subject) => {
     await seedProposingBinding(subject);
 
     const created = await createdProposingDraft(subject, "refs/heads/rt/work");
@@ -973,40 +904,10 @@ test("a pull request may default its base but requires a distinct head", async (
   });
 });
 
-async function assertDoorsStandOwned(
-  subject: pg.Pool,
-  signatures: readonly string[],
-): Promise<void> {
-  for (const signature of signatures) {
-    assert.equal(
-      (
-        await subject.query<{ granted: boolean }>(
-          "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-          [apiRole, signature],
-        )
-      ).rows[0]?.granted,
-      true,
-      signature,
-    );
-    assert.equal(
-      (
-        await subject.query<{ owner: string }>(
-          `SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc
-            WHERE oid = $1::regprocedure`,
-          [signature],
-        )
-      ).rows[0]?.owner,
-      boundaryOwnerRole,
-      signature,
-    );
-  }
-}
-
 test("the draft doors are owned and granted to their callers", async () => {
-  await migrationDatabase("i91grants", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
   });
@@ -1019,15 +920,14 @@ async function createdOverriddenDraft(subject: pg.Pool, overrides: string) {
       `SELECT result FROM ${draftCreateFunction}(
          'tenant-91','project-91','revision-91','digest-91',0,$1,
          NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-         NULL,NULL,'bound-91',$2,NULL,'User','author')`,
+         NULL,NULL,'bound-91',$2,NULL,'User','author',NULL)`,
       [encodeDraftAuthoring(plainAuthoring), overrides],
     )
   ).rows;
 }
 
 test("a draft revision holds its overrides as one object, and a released definition is granted them by column", async () => {
-  await migrationDatabase("overrides040", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "overrides040", async (subject) => {
     await seedProposingBinding(subject);
     await assert.rejects(
       createdOverriddenDraft(subject, '["practices"]'),
@@ -1064,15 +964,14 @@ test("a draft revision holds its overrides as one object, and a released definit
 });
 
 test("repository doors preserve their ownership and restricted grants", async () => {
-  await migrationDatabase("i94grants", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "i94grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
       `${repositoryRetirementWriteFunction}(text,text,text)`,
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
@@ -1214,8 +1113,7 @@ test("a failed baseline rolls back its objects and ledger and can be retried", a
 });
 
 test("fresh selector settings carry current controls and only their initial history", async () => {
-  await migrationDatabase("defaults", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "defaults", async (subject) => {
     const current = (
       await subject.query<{
         revision: string;
@@ -1343,64 +1241,70 @@ test("a fresh install records the handoff removal and keeps none of its objects"
 });
 
 test("every narrowed constraint a row can reach refuses the literal the handoff phases left it", async () => {
-  await migrationDatabase("nohandoff_checks", async (subject) => {
-    await installationAt(subject, migration006.version);
-    /**
-     * The pairing trigger runs before the row is checked and would refuse a
-     * handoff resolution first, so it stands aside for its own constraint.
-     */
-    await subject.query(
-      `ALTER TABLE native_action_resolution
+  await migrationDatabaseAt(
+    migration006.version,
+    "nohandoff_checks",
+    async (subject) => {
+      /**
+       * The pairing trigger runs before the row is checked and would refuse a
+       * handoff resolution first, so it stands aside for its own constraint.
+       */
+      await subject.query(
+        `ALTER TABLE native_action_resolution
        DISABLE TRIGGER native_action_resolution_pairs_with_its_kind`,
-    );
-    for (const [constraint, refused] of handoffLiterals)
-      await assert.rejects(
-        subject.query(refused),
-        new RegExp(constraint, "u"),
-        constraint,
       );
-  });
+      for (const [constraint, refused] of handoffLiterals)
+        await assert.rejects(
+          subject.query(refused),
+          new RegExp(constraint, "u"),
+          constraint,
+        );
+    },
+  );
 });
 
 test("the boundary admits neither a handoff outcome nor a handoff resolution", async () => {
-  await migrationDatabase("nohandoff_boundary", async (subject) => {
-    await postgresMigrate(subject);
-    await assert.rejects(
-      subject.query(
-        `SELECT * FROM ${finalizationFunction}(
+  await migrationDatabaseAt(
+    "Migrated",
+    "nohandoff_boundary",
+    async (subject) => {
+      await assert.rejects(
+        subject.query(
+          `SELECT * FROM ${finalizationFunction}(
            'tenant-3','project-3','request-3','attempt-3','PromotionAccepted',
            NULL,1,'epoch-3','operation-3','finalizer')`,
-      ),
-      /PromotionAccepted is not one this boundary submits/u,
-    );
-    const resolution = JSON.stringify({
-      version: 1,
-      command: "ResolveNativeAction",
-      action: "action-3",
-      authorizingSeq: 1,
-      resolution: "RetryHandoff",
-    });
-    assert.deepEqual(
-      (
-        await subject.query<{ admitted: boolean }>(
-          "SELECT public_ticket_command_is_valid($1::jsonb) AS admitted",
-          [resolution],
-        )
-      ).rows,
-      [{ admitted: false }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ result: string }>(
-          `SELECT result FROM ${acceptanceFunction}(
+        ),
+        /PromotionAccepted is not one this boundary submits/u,
+      );
+      const resolution = JSON.stringify({
+        version: 1,
+        command: "ResolveNativeAction",
+        action: "action-3",
+        authorizingSeq: 1,
+        resolution: "RetryHandoff",
+      });
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT public_ticket_command_is_valid($1::jsonb) AS admitted",
+            [resolution],
+          )
+        ).rows,
+        [{ admitted: false }],
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ result: string }>(
+            `SELECT result FROM ${acceptanceFunction}(
              'tenant-3','project-3','operation-3','User','author','v1',
              'key-3','payload-3','{}'::text[],'{}'::text[],$1,10,20,NULL)`,
-          [resolution],
-        )
-      ).rows,
-      [{ result: "InvalidCommand" }],
-    );
-  });
+            [resolution],
+          )
+        ).rows,
+        [{ result: "InvalidCommand" }],
+      );
+    },
+  );
 });
 
 test("a ticket still in a handoff phase refuses the migration untouched", async () => {
@@ -1528,26 +1432,28 @@ async function accountedInstallation(subject: pg.Pool): Promise<void> {
 }
 
 test("a fresh install records the accounts leaving and keeps none of their columns", async () => {
-  await migrationDatabase("noaccounts_install", async (subject) => {
-    await installationAt(subject, migration004.version);
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT version,name FROM schema_migration WHERE version=$1",
-          [migration004.version],
-        )
-      ).rows,
-      [
-        {
-          version: migration004.version,
-          name: "the accounts leave the schema",
-        },
-      ],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT table_name || '.' || column_name AS present
+  await migrationDatabaseAt(
+    migration004.version,
+    "noaccounts_install",
+    async (subject) => {
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT version,name FROM schema_migration WHERE version=$1",
+            [migration004.version],
+          )
+        ).rows,
+        [
+          {
+            version: migration004.version,
+            name: "the accounts leave the schema",
+          },
+        ],
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT table_name || '.' || column_name AS present
              FROM information_schema.columns
             WHERE table_schema = 'public'
               AND ((table_name = 'ticket_projection'
@@ -1555,68 +1461,75 @@ test("a fresh install records the accounts leaving and keeps none of their colum
                 OR (table_name = 'dispatch_candidate'
                     AND column_name IN ('rework_policy','finalization_pricing','resume_pricing','program')))
             ORDER BY present`,
-        )
-      ).rows,
-      [
-        { present: "dispatch_candidate.program" },
-        { present: "ticket_projection.reason" },
-      ],
-    );
-  });
+          )
+        ).rows,
+        [
+          { present: "dispatch_candidate.program" },
+          { present: "ticket_projection.reason" },
+        ],
+      );
+    },
+  );
 });
 
 test("every narrowed reason check refuses the literals the accounts left it", async () => {
-  await migrationDatabase("noaccounts_checks", async (subject) => {
-    await installationAt(subject, migration004.version);
-    for (const [constraint, refused] of accountLiterals)
-      await assert.rejects(
-        subject.query(refused),
-        new RegExp(constraint, "u"),
-        refused,
-      );
-  });
+  await migrationDatabaseAt(
+    migration004.version,
+    "noaccounts_checks",
+    async (subject) => {
+      for (const [constraint, refused] of accountLiterals)
+        await assert.rejects(
+          subject.query(refused),
+          new RegExp(constraint, "u"),
+          refused,
+        );
+    },
+  );
 });
 
 test("the release the boundary admits carries no pricing, and no blocked reason names an account", async () => {
-  await migrationDatabase("noaccounts_boundary", async (subject) => {
-    await installationAt(subject, migration004.version);
-    const admits = async (event: unknown): Promise<boolean | null> =>
-      (
-        await subject.query<{ admitted: boolean | null }>(
-          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-          [JSON.stringify(event)],
-        )
-      ).rows[0]?.admitted ?? null;
-    assert.equal(
-      await admits({
-        type: "ReleaseTicket",
-        value: {
-          ticket: 1,
-          deps: [],
-          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
-          workFanout: 1,
-          finalizer: "ManagedFinalizer",
-        },
-      }),
-      true,
-    );
-    assert.equal(
-      await admits({
-        type: "ExecutionBlocked",
-        value: { ticket: 1, reason: "WorkFailed" },
-      }),
-      true,
-    );
-    for (const reason of ["GasExhausted", "FinalizationBudgetExhausted"])
+  await migrationDatabaseAt(
+    migration004.version,
+    "noaccounts_boundary",
+    async (subject) => {
+      const admits = async (event: unknown): Promise<boolean | null> =>
+        (
+          await subject.query<{ admitted: boolean | null }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows[0]?.admitted ?? null;
+      assert.equal(
+        await admits({
+          type: "ReleaseTicket",
+          value: {
+            ticket: 1,
+            deps: [],
+            prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+            workFanout: 1,
+            finalizer: "ManagedFinalizer",
+          },
+        }),
+        true,
+      );
       assert.equal(
         await admits({
           type: "ExecutionBlocked",
-          value: { ticket: 1, reason },
+          value: { ticket: 1, reason: "WorkFailed" },
         }),
-        false,
-        reason,
+        true,
       );
-  });
+      for (const reason of ["GasExhausted", "FinalizationBudgetExhausted"])
+        assert.equal(
+          await admits({
+            type: "ExecutionBlocked",
+            value: { ticket: 1, reason },
+          }),
+          false,
+          reason,
+        );
+    },
+  );
 });
 
 /** Each relation the guard names, with a row it has to see there. */
@@ -1805,70 +1718,6 @@ test("the authoring policy loses the keys the accounts configured", async () => 
   });
 });
 
-/** Brings the subject to the schema a named migration left, and no further. */
-async function installationAt(
-  subject: pg.Pool,
-  migration: number,
-  what = `the schema migration ${String(migration)} left`,
-): Promise<void> {
-  const through = migrations
-    .filter(({ version }) => version <= migration)
-    .map(({ version, name }) => ({ version, name }));
-  const held = runtimeSchemaContract(through);
-  assert.equal(
-    (
-      await postgresMigrateCompatible(subject, {
-        current: held,
-        retainedPrevious: held,
-      })
-    ).migrated,
-    "Applied",
-    what,
-  );
-  assert.deepEqual(
-    await postgresRuntimeSchema(subject).applied(new AbortController().signal),
-    through,
-    what,
-  );
-}
-
-/** Brings the subject to the schema the migration under test is about to change. */
-async function installationBefore(
-  subject: pg.Pool,
-  migration: number,
-): Promise<void> {
-  await installationAt(subject, migration - 1);
-}
-
-/** What every row below hangs from: a project and an epoch. */
-const deletionPartition = `
-  ${tenantSeed("tenant-5")}
-  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-5','project-5','Active');
-  INSERT INTO recovery_epoch(epoch) VALUES('epoch-5');`;
-
-function deletionJournalRow(seq: number, entry: string): string {
-  const ordinal = String(seq);
-  return `INSERT INTO decision_input
-       (tenant,project,ordinal,input_kind,input_id,base_priority,
-        lifecycle_generation,state,decided_seq,terminal_at)
-     VALUES('tenant-5','project-5',${ordinal},'Operation','operation-${ordinal}','Ordinary',
-            1,'Journaled',${ordinal},now());
-     INSERT INTO journal_entry
-       (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
-        recovery_epoch,cause_kind,cause_id)
-     VALUES('tenant-5','project-5',${ordinal},$entry$${entry}$entry$,
-            'digest-${ordinal}','genesis','owner',1,'epoch-5','Operation','operation-${ordinal}')`;
-}
-
-/**
- * A row every journal admits, 014's included, where a case needs an entry to
- * hang a row from and not what the entry says.
- */
-const journalledRevocation = JSON.stringify({
-  seq: 1,
-  event: { type: "TicketRevoked", value: 1 },
-});
-
 function deletionReleaseEntry(
   finalizer: string,
   combinator: string,
@@ -1990,33 +1839,39 @@ const undeletedRows: readonly (readonly [string, string])[] = [
 
 test("a row the three deletions leave unreplayable refuses the migration untouched", async () => {
   for (const [relation, what, seeded] of deletedRows)
-    await migrationDatabase("threedeletions_guard", async (subject) => {
-      await installationBefore(subject, migration005.version);
-      await subject.query(`${deletionPartition}\n${seeded}`);
-      await assert.rejects(
-        postgresMigrate(subject),
-        new RegExp(`no longer admits remain in ${relation}`, "u"),
-        what,
-      );
-      assert.deepEqual(
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        ),
-        migrations
-          .slice(0, migration005.version - 1)
-          .map(({ version, name }) => ({ version, name })),
-        what,
-      );
-    });
+    await migrationDatabaseAt(
+      migration005.version - 1,
+      "threedeletions_guard",
+      async (subject) => {
+        await subject.query(`${deletionPartition}\n${seeded}`);
+        await assert.rejects(
+          postgresMigrate(subject),
+          new RegExp(`no longer admits remain in ${relation}`, "u"),
+          what,
+        );
+        assert.deepEqual(
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          ),
+          migrations
+            .slice(0, migration005.version - 1)
+            .map(({ version, name }) => ({ version, name })),
+          what,
+        );
+      },
+    );
 });
 
 test("a row each arm must not match migrates", async () => {
   for (const [what, seeded] of undeletedRows)
-    await migrationDatabase("threedeletions_admit", async (subject) => {
-      await installationBefore(subject, migration005.version);
-      await subject.query(`${deletionPartition}\n${seeded}`);
-      await installationAt(subject, migration005.version, what);
-    });
+    await migrationDatabaseAt(
+      migration005.version - 1,
+      "threedeletions_admit",
+      async (subject) => {
+        await subject.query(`${deletionPartition}\n${seeded}`);
+        await installationAt(subject, migration005.version, what);
+      },
+    );
 });
 
 test("a fresh install records the three leaving and keeps no finalizer column", async () => {
@@ -2063,19 +1918,22 @@ const settledDeskTask = `${deletionJournalRow(1, journalledRevocation)};
     WHERE tenant='tenant-5' AND project='project-5' AND action='action-5'`;
 
 test("a desk task settled at the parked reason migrates and stays what it recorded", async () => {
-  await migrationDatabase("threedeletions_settled", async (subject) => {
-    await installationBefore(subject, migration005.version);
-    await subject.query(`${deletionPartition}\n${settledDeskTask}`);
-    await installationAt(subject, migration005.version);
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT state,reason FROM native_action WHERE action='action-5'",
-        )
-      ).rows,
-      [{ state: "Resolved", reason: "DependencyRevoked" }],
-    );
-  });
+  await migrationDatabaseAt(
+    migration005.version - 1,
+    "threedeletions_settled",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${settledDeskTask}`);
+      await installationAt(subject, migration005.version);
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT state,reason FROM native_action WHERE action='action-5'",
+          )
+        ).rows,
+        [{ state: "Resolved", reason: "DependencyRevoked" }],
+      );
+    },
+  );
 });
 
 /** Each narrowed reason check, with a row it has to refuse once the migration has run. */
@@ -2096,16 +1954,19 @@ const parkedReasonRows: readonly (readonly [string, string])[] = [
 ];
 
 test("the narrowed reason checks refuse a live row at the parked reason", async () => {
-  await migrationDatabase("threedeletions_checks", async (subject) => {
-    await installationAt(subject, migration005.version);
-    await subject.query(deletionPartition);
-    for (const [constraint, refused] of parkedReasonRows)
-      await assert.rejects(
-        subject.query(refused),
-        new RegExp(constraint, "u"),
-        refused,
-      );
-  });
+  await migrationDatabaseAt(
+    migration005.version,
+    "threedeletions_checks",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      for (const [constraint, refused] of parkedReasonRows)
+        await assert.rejects(
+          subject.query(refused),
+          new RegExp(constraint, "u"),
+          refused,
+        );
+    },
+  );
 });
 
 /**
@@ -2124,97 +1985,105 @@ const rewrittenPrograms: readonly (readonly [number, string, string])[] = [
 ];
 
 test("a stored dispatch program is rewritten as the encoder without the combinator writes it", async () => {
-  await migrationDatabase("threedeletions_program", async (subject) => {
-    await installationBefore(subject, migration005.version);
-    await subject.query(`${deletionPartition}
+  await migrationDatabaseAt(
+    migration005.version - 1,
+    "threedeletions_program",
+    async (subject) => {
+      await subject.query(`${deletionPartition}
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
        VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
        INSERT INTO dispatch_view(tenant,project,recovery_epoch,watermark,schema_version,digest)
        VALUES('tenant-5','project-5','epoch-5',1,1,repeat('a',64));`);
-    for (const [ticket, stored] of rewrittenPrograms)
-      await subject.query(
-        `INSERT INTO dispatch_candidate
+      for (const [ticket, stored] of rewrittenPrograms)
+        await subject.query(
+          `INSERT INTO dispatch_candidate
            (tenant,project,ticket,ticket_version,work_fanout,program,finalizer,
             configuration_revision,configuration_digest,configuration_canonical)
          VALUES('tenant-5','project-5',$1,1,1,$2,'ManagedFinalizer',
                 'revision-5','digest-5','{}')`,
-        [ticket, stored],
+          [ticket, stored],
+        );
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration005.version),
       );
-    assert.ok((await postgresMigrate(subject)).includes(migration005.version));
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT ticket::text AS ticket,program FROM dispatch_candidate ORDER BY ticket",
-        )
-      ).rows,
-      rewrittenPrograms.map(([ticket, , program]) => ({
-        ticket: String(ticket),
-        program,
-      })),
-    );
-  });
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT ticket::text AS ticket,program FROM dispatch_candidate ORDER BY ticket",
+          )
+        ).rows,
+        rewrittenPrograms.map(([ticket, , program]) => ({
+          ticket: String(ticket),
+          program,
+        })),
+      );
+    },
+  );
 });
 
 test("the boundary admits the surviving spellings and the absent keys, and refuses the deleted ones", async () => {
-  await migrationDatabase("threedeletions_boundary", async (subject) => {
-    await installationAt(subject, migration005.version);
-    const admits = async (event: unknown): Promise<boolean | null> =>
-      (
-        await subject.query<{ admitted: boolean | null }>(
-          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-          [JSON.stringify(event)],
-        )
-      ).rows[0]?.admitted ?? null;
-    const release = (value: Record<string, unknown>): unknown => ({
-      type: "ReleaseTicket",
-      value: { ticket: 1, deps: [], workFanout: 1, ...value },
-    });
-    assert.equal(
-      await admits(
-        release({
-          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
-          finalizer: "ManagedFinalizer",
+  await migrationDatabaseAt(
+    migration005.version,
+    "threedeletions_boundary",
+    async (subject) => {
+      const admits = async (event: unknown): Promise<boolean | null> =>
+        (
+          await subject.query<{ admitted: boolean | null }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(event)],
+          )
+        ).rows[0]?.admitted ?? null;
+      const release = (value: Record<string, unknown>): unknown => ({
+        type: "ReleaseTicket",
+        value: { ticket: 1, deps: [], workFanout: 1, ...value },
+      });
+      assert.equal(
+        await admits(
+          release({
+            prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+            finalizer: "ManagedFinalizer",
+          }),
+        ),
+        true,
+        "the spellings a stored entry carries",
+      );
+      assert.equal(
+        await admits(release({ prog: [{ fanout: 1 }] })),
+        true,
+        "the keys this machine no longer writes",
+      );
+      assert.equal(
+        await admits(
+          release({
+            prog: [{ fanout: 1, combinator: "UnanimousPass" }],
+            finalizer: "NoFinalizer",
+          }),
+        ),
+        false,
+        "the finalizer this machine does not have",
+      );
+      assert.equal(
+        await admits(release({ prog: [{ fanout: 1, combinator: "AnyPass" }] })),
+        false,
+        "the combinator this machine does not have",
+      );
+      assert.equal(
+        await admits({
+          type: "ExecutionBlocked",
+          value: { ticket: 1, reason: "WorkFailed" },
         }),
-      ),
-      true,
-      "the spellings a stored entry carries",
-    );
-    assert.equal(
-      await admits(release({ prog: [{ fanout: 1 }] })),
-      true,
-      "the keys this machine no longer writes",
-    );
-    assert.equal(
-      await admits(
-        release({
-          prog: [{ fanout: 1, combinator: "UnanimousPass" }],
-          finalizer: "NoFinalizer",
+        true,
+      );
+      assert.equal(
+        await admits({
+          type: "ExecutionBlocked",
+          value: { ticket: 1, reason: "DependencyRevoked" },
         }),
-      ),
-      false,
-      "the finalizer this machine does not have",
-    );
-    assert.equal(
-      await admits(release({ prog: [{ fanout: 1, combinator: "AnyPass" }] })),
-      false,
-      "the combinator this machine does not have",
-    );
-    assert.equal(
-      await admits({
-        type: "ExecutionBlocked",
-        value: { ticket: 1, reason: "WorkFailed" },
-      }),
-      true,
-    );
-    assert.equal(
-      await admits({
-        type: "ExecutionBlocked",
-        value: { ticket: 1, reason: "DependencyRevoked" },
-      }),
-      false,
-    );
-  });
+        false,
+      );
+    },
+  );
 });
 
 /** A draft authoring of the shape an image that still had the finalizer wrote. */
@@ -2229,52 +2098,55 @@ function deletionFinalizerAuthoring(): string {
 }
 
 test("an authoring that still names the deleted finalizer no longer decides the landing", async () => {
-  await migrationDatabase("threedeletions_draft", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
-    assert.deepEqual(
-      (
-        await subject.query<{ result: string }>(
-          `SELECT result FROM ${draftCreateFunction}(
+  await migrationDatabaseAt(
+    "Migrated",
+    "threedeletions_draft",
+    async (subject) => {
+      await seedProposingBinding(subject);
+      assert.deepEqual(
+        (
+          await subject.query<{ result: string }>(
+            `SELECT result FROM ${draftCreateFunction}(
              'tenant-91','project-91','revision-91','digest-91',0,$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             NULL,NULL,'bound-91',NULL,NULL,'User','author')`,
-          [deletionFinalizerAuthoring()],
-        )
-      ).rows,
-      [{ result: "Created" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          "SELECT finalization_mode FROM draft_brief",
-        )
-      ).rows,
-      [{ finalization_mode: "PullRequest" }],
-      "the draft lands where its repository lands",
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ result: string }>(
-          `SELECT result FROM ${draftReviseFunction}(
+             NULL,NULL,'bound-91',NULL,NULL,'User','author',NULL)`,
+            [deletionFinalizerAuthoring()],
+          )
+        ).rows,
+        [{ result: "Created" }],
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ finalization_mode: string }>(
+            "SELECT finalization_mode FROM draft_brief",
+          )
+        ).rows,
+        [{ finalization_mode: "PullRequest" }],
+        "the draft lands where its repository lands",
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ result: string }>(
+            `SELECT result FROM ${draftReviseFunction}(
              'tenant-91','project-91',1,1,'revision-91',$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
              'Push',NULL,'bound-91',NULL,NULL,'User','author')`,
-          [deletionFinalizerAuthoring()],
-        )
-      ).rows,
-      [{ result: "Revised" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          "SELECT finalization_mode FROM draft_brief",
-        )
-      ).rows,
-      [{ finalization_mode: "Push" }],
-      "the revision lands where it says",
-    );
-  });
+            [deletionFinalizerAuthoring()],
+          )
+        ).rows,
+        [{ result: "Revised" }],
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ finalization_mode: string }>(
+            "SELECT finalization_mode FROM draft_brief",
+          )
+        ).rows,
+        [{ finalization_mode: "Push" }],
+        "the revision lands where it says",
+      );
+    },
+  );
 });
 
 /** The landing each roster has to take, and one neither may. */
@@ -2302,27 +2174,30 @@ const landingRosterRows: readonly (readonly [string, string, string])[] = [
 ];
 
 test("both landing rosters take the mode that lands nothing and no other new one", async () => {
-  await migrationDatabase("threedeletions_none", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
-    assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/rt/work"),
-      [{ result: "Created", ticket: "1" }],
-    );
-    for (const [constraint, mode, written] of landingRosterRows)
-      if (mode === "None")
-        assert.equal(
-          (await subject.query(written)).rowCount,
-          1,
-          `${constraint} takes ${mode}`,
-        );
-      else
-        await assert.rejects(
-          subject.query(written),
-          new RegExp(constraint, "u"),
-          `${constraint} refuses ${mode}`,
-        );
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "threedeletions_none",
+    async (subject) => {
+      await seedProposingBinding(subject);
+      assert.deepEqual(
+        await createdProposingDraft(subject, "refs/heads/rt/work"),
+        [{ result: "Created", ticket: "1" }],
+      );
+      for (const [constraint, mode, written] of landingRosterRows)
+        if (mode === "None")
+          assert.equal(
+            (await subject.query(written)).rowCount,
+            1,
+            `${constraint} takes ${mode}`,
+          );
+        else
+          await assert.rejects(
+            subject.query(written),
+            new RegExp(constraint, "u"),
+            `${constraint} refuses ${mode}`,
+          );
+    },
+  );
 });
 
 /** The two briefs a pre-005 image wrote: one that landed nothing, one that landed. */
@@ -2507,54 +2382,57 @@ test("a fresh install records the rename", async () => {
 });
 
 test("every stored spelling in a rewritten column becomes the package's", async () => {
-  await migrationDatabase("rename_rewrite", async (subject) => {
-    await installationBefore(subject, migration006.version);
-    await subject.query(`${deletionPartition}\n${renamedSeed}`);
-    await installationAt(subject, migration006.version);
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT ticket::text AS ticket,phase,reason,resume_at FROM ticket_projection ORDER BY ticket",
-        )
-      ).rows,
-      renamedProjection
-        .map(({ ticket, phase, reason, resume }) => ({
-          ticket: String(ticket),
-          phase: renamedPhases.find(([stored]) => stored === phase)?.[1],
-          reason: renamedReasons.find(([stored]) => stored === reason)?.[1],
-          resume_at:
-            resume === null
-              ? null
-              : renamedResumes.find(([stored]) => stored === resume)?.[1],
-        }))
-        .sort((left, right) => left.ticket.localeCompare(right.ticket)),
-      "the projection",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT reason,state FROM native_action ORDER BY action",
-        )
-      ).rows,
-      [
-        ...renamedReasons.map(([, held], index) => ({
-          reason: held,
-          state: index === 0 ? "Open" : "Withdrawn",
-        })),
-        { reason: "DependencyRevoked", state: "Withdrawn" },
-      ],
-      "the desk tasks, the one the revoke settled included",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT expected_phase FROM project_continuation ORDER BY continuation",
-        )
-      ).rows,
-      renamedPhases.map(([, held]) => ({ expected_phase: held })),
-      "the continuations",
-    );
-  });
+  await migrationDatabaseAt(
+    migration006.version - 1,
+    "rename_rewrite",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${renamedSeed}`);
+      await installationAt(subject, migration006.version);
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT ticket::text AS ticket,phase,reason,resume_at FROM ticket_projection ORDER BY ticket",
+          )
+        ).rows,
+        renamedProjection
+          .map(({ ticket, phase, reason, resume }) => ({
+            ticket: String(ticket),
+            phase: renamedPhases.find(([stored]) => stored === phase)?.[1],
+            reason: renamedReasons.find(([stored]) => stored === reason)?.[1],
+            resume_at:
+              resume === null
+                ? null
+                : renamedResumes.find(([stored]) => stored === resume)?.[1],
+          }))
+          .sort((left, right) => left.ticket.localeCompare(right.ticket)),
+        "the projection",
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT reason,state FROM native_action ORDER BY action",
+          )
+        ).rows,
+        [
+          ...renamedReasons.map(([, held], index) => ({
+            reason: held,
+            state: index === 0 ? "Open" : "Withdrawn",
+          })),
+          { reason: "DependencyRevoked", state: "Withdrawn" },
+        ],
+        "the desk tasks, the one the revoke settled included",
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT expected_phase FROM project_continuation ORDER BY continuation",
+          )
+        ).rows,
+        renamedPhases.map(([, held]) => ({ expected_phase: held })),
+        "the continuations",
+      );
+    },
+  );
 });
 
 /** Each restated check, with a row at the spelling its column left. */
@@ -2591,18 +2469,21 @@ const renamedAway: readonly (readonly [string, string])[] = [
 ];
 
 test("each rewritten column refuses the spelling it left", async () => {
-  await migrationDatabase("rename_checks", async (subject) => {
-    await installationAt(subject, migration006.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
-    );
-    for (const [constraint, refused] of renamedAway)
-      await assert.rejects(
-        subject.query(refused),
-        new RegExp(constraint, "u"),
-        refused,
+  await migrationDatabaseAt(
+    migration006.version,
+    "rename_checks",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
       );
-  });
+      for (const [constraint, refused] of renamedAway)
+        await assert.rejects(
+          subject.query(refused),
+          new RegExp(constraint, "u"),
+          refused,
+        );
+    },
+  );
 });
 
 /** An event at each spelling a stored row can carry and each one a new row will, and one that is neither. */
@@ -2688,65 +2569,70 @@ const renamedEvents: readonly (readonly [unknown, boolean])[] = [
 ];
 
 test("the boundary admits a stored event's spelling and the one it writes next", async () => {
-  await migrationDatabase("rename_boundary", async (subject) => {
-    await installationAt(subject, migration006.version);
-    for (const [event, admitted] of renamedEvents)
-      assert.equal(
-        (
-          await subject.query<{ admitted: boolean | null }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows[0]?.admitted,
-        admitted,
-        JSON.stringify(event),
-      );
-    for (const tag of ["ReleaseTicket", "CreateTicket"])
-      assert.equal(
-        (
-          await subject.query<{ admitted: boolean | null }>(
-            "SELECT public_ticket_command_is_valid($1::jsonb) AS admitted",
-            [
-              JSON.stringify({
-                version: 1,
-                command: "Decide",
-                event: {
-                  type: tag,
-                  value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
-                },
-              }),
-            ],
-          )
-        ).rows[0]?.admitted,
-        false,
-        `the public door admits ${tag}`,
-      );
-  });
+  await migrationDatabaseAt(
+    migration006.version,
+    "rename_boundary",
+    async (subject) => {
+      for (const [event, admitted] of renamedEvents)
+        assert.equal(
+          (
+            await subject.query<{ admitted: boolean | null }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows[0]?.admitted,
+          admitted,
+          JSON.stringify(event),
+        );
+      for (const tag of ["ReleaseTicket", "CreateTicket"])
+        assert.equal(
+          (
+            await subject.query<{ admitted: boolean | null }>(
+              "SELECT public_ticket_command_is_valid($1::jsonb) AS admitted",
+              [
+                JSON.stringify({
+                  version: 1,
+                  command: "Decide",
+                  event: {
+                    type: tag,
+                    value: { ticket: 1, deps: [], prog: [], workFanout: 1 },
+                  },
+                }),
+              ],
+            )
+          ).rows[0]?.admitted,
+          false,
+          `the public door admits ${tag}`,
+        );
+    },
+  );
 });
 
 /** How many entries under each release tag the index case seeds, enough that the planner prefers the index. */
 const renamedReleasesPerTag = 400;
 
 test("the release index answers a read at either tag", async () => {
-  await migrationDatabase("rename_index", async (subject) => {
-    await installationAt(subject, migration013.version);
-    await subject.query(deletionPartition);
-    const tags = ["ReleaseTicket", "CreateTicket"];
-    const tagged = tags
-      .map((tag, step) => `(${String(step)},'${tag}')`)
-      .join(",");
-    await subject.query("BEGIN");
-    await subject.query(
-      `INSERT INTO decision_input
+  await migrationDatabaseAt(
+    migration013.version,
+    "rename_index",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      const tags = ["ReleaseTicket", "CreateTicket"];
+      const tagged = tags
+        .map((tag, step) => `(${String(step)},'${tag}')`)
+        .join(",");
+      await subject.query("BEGIN");
+      await subject.query(
+        `INSERT INTO decision_input
          (tenant,project,ordinal,input_kind,input_id,base_priority,
           lifecycle_generation,state,decided_seq,terminal_at)
        SELECT 'tenant-5','project-5',k.step*$1+n,'Continuation',
               'entry-'||(k.step*$1+n),'Continuation',1,'Journaled',k.step*$1+n,now()
          FROM generate_series(1,$1::bigint) n, (VALUES ${tagged}) AS k(step,tag)`,
-      [renamedReleasesPerTag],
-    );
-    await subject.query(
-      `INSERT INTO journal_entry
+        [renamedReleasesPerTag],
+      );
+      await subject.query(
+        `INSERT INTO journal_entry
          (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
           recovery_epoch,cause_kind,cause_id)
        SELECT 'tenant-5','project-5',k.step*$1+n,
@@ -2755,109 +2641,85 @@ test("the release index answers a read at either tag", async () => {
          'digest-'||(k.step*$1+n),'previous-'||(k.step*$1+n),'owner',1,'epoch-5',
          'Continuation','entry-'||(k.step*$1+n)
          FROM generate_series(1,$1::bigint) n, (VALUES ${tagged}) AS k(step,tag)`,
-      [renamedReleasesPerTag],
-    );
-    await subject.query("COMMIT");
-    await subject.query("ANALYZE journal_entry");
-    for (const tag of tags) {
-      const before = await releaseIndexUse(subject);
-      const found = await subject.query(
-        `SELECT j.seq FROM journal_entry j
+        [renamedReleasesPerTag],
+      );
+      await subject.query("COMMIT");
+      await subject.query("ANALYZE journal_entry");
+      for (const tag of tags) {
+        const before = await releaseIndexUse(subject);
+        const found = await subject.query(
+          `SELECT j.seq FROM journal_entry j
           WHERE j.tenant='tenant-5' AND j.project='project-5'
             AND (CASE WHEN j.entry IS JSON OBJECT
                       THEN j.entry::jsonb->'event'->>'type' END)=$1
             AND (CASE WHEN j.entry IS JSON OBJECT
                       THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(1)`,
-        [tag],
-      );
-      assert.equal(found.rowCount, 1, `${tag} was not seeded`);
-      await subject.query("SELECT pg_stat_force_next_flush()");
-      assert.ok(
-        (await releaseIndexUse(subject)).scans > before.scans,
-        `a release at ${tag} was answered without the index that exists for it`,
-      );
-    }
-  });
+          [tag],
+        );
+        assert.equal(found.rowCount, 1, `${tag} was not seeded`);
+        await subject.query("SELECT pg_stat_force_next_flush()");
+        assert.ok(
+          (await releaseIndexUse(subject)).scans > before.scans,
+          `a release at ${tag} was answered without the index that exists for it`,
+        );
+      }
+    },
+  );
 });
-
-/** A claimed finalization request, and the attempt the cases below give an outcome to. */
-function renamedFinalization(attempt: string): string {
-  return `${deletionJournalRow(1, journalledRevocation)};
-  UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
-  INSERT INTO configuration_revision
-    (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-  VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
-  INSERT INTO input_bundle(tenant,project,bundle,digest)
-  VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
-  INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
-  VALUES('tenant-5','project-5','repository-5','epoch-5');
-  INSERT INTO finalization_request
-    (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
-     request_generation,state,claim_owner,claim_generation,claim_expires_at,
-     recovery_epoch,kind,work_cycle,finalization_generation)
-  VALUES('tenant-5','project-5','request-5',1,0,1,1,1,'Open','owner',1,now(),
-         'epoch-5','RunFinalizer',1,1);
-  INSERT INTO finalization_attempt
-    (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
-     target_ref,target_commit,strategy,configuration_revision,configuration_digest,
-     attempt_digest,approval_required,outcome,candidate_commit,failure_kind)
-  VALUES('tenant-5','project-5','attempt-5','request-5',1,'repository-5','bundle-5',
-         repeat('b',64),'refs/heads/main',repeat('c',40),'Merge','revision-5','digest-5',
-         repeat('d',64),${attempt})`;
-}
-
-/** The attempt each door below binds to: one that failed to prepare, and one prepared and awaiting approval. */
-const renamedAttemptFailed = "false,'Failed',NULL,'PreparationFailed'";
-const renamedAttemptPrepared = "true,'Prepared',repeat('c',40),NULL";
 
 test("the finalizer's door concludes at either spelling of the outcome it needs work under", async () => {
   for (const outcome of ["FinalizationFailed", "FinalizationNeedsWork"])
-    await migrationDatabase("rename_finalizer", async (subject) => {
-      await postgresMigrate(subject);
+    await migrationDatabaseAt(
+      "Migrated",
+      "rename_finalizer",
+      async (subject) => {
+        await subject.query(
+          `${deletionPartition}\n${renamedFinalization(renamedAttemptFailed)}`,
+        );
+        assert.deepEqual(
+          (
+            await subject.query(
+              `SELECT result,operation FROM submit_finalization_result
+               ('tenant-5','project-5','request-5','attempt-5',$1,'PreparationFailed',
+                1,'epoch-5','operation-5','subject-5')`,
+              [outcome],
+            )
+          ).rows,
+          [{ result: "Submitted", operation: "operation-5" }],
+          outcome,
+        );
+        assert.deepEqual(
+          (
+            await subject.query(
+              "SELECT command_tag FROM operation WHERE operation='operation-5'",
+            )
+          ).rows,
+          [{ command_tag: "ReportFinalizationResult" }],
+          outcome,
+        );
+      },
+    );
+  await migrationDatabaseAt(
+    "Migrated",
+    "rename_finalizer_refused",
+    async (subject) => {
       await subject.query(
         `${deletionPartition}\n${renamedFinalization(renamedAttemptFailed)}`,
       );
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT result,operation FROM submit_finalization_result
-               ('tenant-5','project-5','request-5','attempt-5',$1,'PreparationFailed',
-                1,'epoch-5','operation-5','subject-5')`,
-            [outcome],
-          )
-        ).rows,
-        [{ result: "Submitted", operation: "operation-5" }],
-        outcome,
-      );
-      assert.deepEqual(
-        (
-          await subject.query(
-            "SELECT command_tag FROM operation WHERE operation='operation-5'",
-          )
-        ).rows,
-        [{ command_tag: "ReportFinalizationResult" }],
-        outcome,
-      );
-    });
-  await migrationDatabase("rename_finalizer_refused", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptFailed)}`,
-    );
-    await assert.rejects(
-      subject.query(
-        `SELECT result FROM submit_finalization_result
+      await assert.rejects(
+        subject.query(
+          `SELECT result FROM submit_finalization_result
            ('tenant-5','project-5','request-5','attempt-5','FinalizationRefused',
             'PreparationFailed',1,'epoch-5','operation-5','subject-5')`,
-      ),
-      /is not one this boundary submits/u,
-    );
-  });
+        ),
+        /is not one this boundary submits/u,
+      );
+    },
+  );
 });
 
 test("the approval door binds to a ticket the projection holds at the renamed phase", async () => {
-  await migrationDatabase("rename_approval", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "rename_approval", async (subject) => {
     await subject.query(
       `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
        INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
@@ -2981,37 +2843,40 @@ test("a fresh install records the escalation a held finalization reaches", async
 });
 
 test("the two reason rosters admit the escalation and refuse a name neither has", async () => {
-  await migrationDatabase("unavailable_reasons", async (subject) => {
-    await installationAt(subject, migration007.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
-    );
-    for (const [ticket, reason, admitted] of [
-      [1, "FinalizationUnavailableEscalated", true],
-      [2, "FinalizationUnavailable", false],
-    ] as const) {
-      const projected = subject.query(
-        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
-         VALUES('tenant-5','project-5',${String(ticket)},'Escalated',1,'${reason}')`,
+  await migrationDatabaseAt(
+    migration007.version,
+    "unavailable_reasons",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
       );
-      const desk = subject.query(
-        `INSERT INTO native_action
+      for (const [ticket, reason, admitted] of [
+        [1, "FinalizationUnavailableEscalated", true],
+        [2, "FinalizationUnavailable", false],
+      ] as const) {
+        const projected = subject.query(
+          `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,reason)
+         VALUES('tenant-5','project-5',${String(ticket)},'Escalated',1,'${reason}')`,
+        );
+        const desk = subject.query(
+          `INSERT INTO native_action
            (tenant,project,action,authorizing_seq,effect_position,ticket,
             action_version,kind,reason,required_capability)
          VALUES('tenant-5','project-5','action-${String(ticket)}',1,${String(ticket)},
                 ${String(ticket)},1,'TicketEscalation','${reason}','ResolveTicket')`,
-      );
-      if (admitted) {
-        await projected;
-        await desk;
-      } else {
-        await Promise.all([
-          assert.rejects(projected, /ticket_projection_reason_is_known/u),
-          assert.rejects(desk, /native_action_reason_check/u),
-        ]);
+        );
+        if (admitted) {
+          await projected;
+          await desk;
+        } else {
+          await Promise.all([
+            assert.rejects(projected, /ticket_projection_reason_is_known/u),
+            assert.rejects(desk, /native_action_reason_check/u),
+          ]);
+        }
       }
-    }
-  });
+    },
+  );
 });
 
 /** The envelope the finalizer's door builds, as the mailbox grammar is asked about it. */
@@ -3042,124 +2907,132 @@ async function heldAdmits(
 }
 
 test("the two validators admit the outcome a held finalization reports and refuse a name neither has", async () => {
-  await migrationDatabase("unavailable_validators", async (subject) => {
-    await installationAt(subject, migration013.version);
-    for (const [outcome, kind, admitted] of [
-      ["FinalizationResultUnavailable", heldKind, true],
-      ["FinalizationUnavailable", heldKind, false],
-      ["FinalizationResultUnavailable", null, false],
-      ["FinalizationNeedsWork", heldKind, false],
-      ["FinalizationNeedsWork", null, true],
-    ] as const)
-      assert.equal(
-        await heldAdmits(
-          subject,
-          "ticket_command_is_valid",
-          heldEnvelope(outcome, kind),
-        ),
-        admitted,
-        `${outcome} carrying ${String(kind)}`,
-      );
-    for (const [outcome, admitted] of [
-      ["FinalizationResultUnavailable", true],
-      ["FinalizationUnavailable", false],
-    ] as const)
-      assert.equal(
-        await heldAdmits(
-          subject,
-          "decision_event_is_valid",
-          JSON.stringify({
-            type: "FinalizationResult",
-            value: { ticket: 1, out: outcome },
-          }),
-        ),
-        admitted,
-        `the event at ${outcome}`,
-      );
-  });
+  await migrationDatabaseAt(
+    migration013.version,
+    "unavailable_validators",
+    async (subject) => {
+      for (const [outcome, kind, admitted] of [
+        ["FinalizationResultUnavailable", heldKind, true],
+        ["FinalizationUnavailable", heldKind, false],
+        ["FinalizationResultUnavailable", null, false],
+        ["FinalizationNeedsWork", heldKind, false],
+        ["FinalizationNeedsWork", null, true],
+      ] as const)
+        assert.equal(
+          await heldAdmits(
+            subject,
+            "ticket_command_is_valid",
+            heldEnvelope(outcome, kind),
+          ),
+          admitted,
+          `${outcome} carrying ${String(kind)}`,
+        );
+      for (const [outcome, admitted] of [
+        ["FinalizationResultUnavailable", true],
+        ["FinalizationUnavailable", false],
+      ] as const)
+        assert.equal(
+          await heldAdmits(
+            subject,
+            "decision_event_is_valid",
+            JSON.stringify({
+              type: "FinalizationResult",
+              value: { ticket: 1, out: outcome },
+            }),
+          ),
+          admitted,
+          `the event at ${outcome}`,
+        );
+    },
+  );
 });
 
 test("the finalizer's door weighs the outcome it admits and refuses the name it has none of", async () => {
-  await migrationDatabase("unavailable_outcomes", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(`${deletionPartition}\n${heldRequest}`);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result FROM submit_finalization_result
+  await migrationDatabaseAt(
+    "Migrated",
+    "unavailable_outcomes",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${heldRequest}`);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result FROM submit_finalization_result
              ('tenant-5','project-5','request-5',NULL,'FinalizationResultUnavailable',
               '${heldKind}',1,'epoch-5','operation-5','subject-5')`,
-        )
-      ).rows,
-      [{ result: "BindingMismatch" }],
-      "the door weighs the outcome rather than refusing the name",
-    );
-    await assert.rejects(
-      subject.query(
-        `SELECT result FROM submit_finalization_result
+          )
+        ).rows,
+        [{ result: "BindingMismatch" }],
+        "the door weighs the outcome rather than refusing the name",
+      );
+      await assert.rejects(
+        subject.query(
+          `SELECT result FROM submit_finalization_result
            ('tenant-5','project-5','request-5',NULL,'FinalizationUnavailable',
             '${heldKind}',1,'epoch-5','operation-5','subject-5')`,
-      ),
-      /is not one this boundary submits/u,
-    );
-  });
+        ),
+        /is not one this boundary submits/u,
+      );
+    },
+  );
 });
 
 test("the hold column is the roster's one home and refuses every kind a resume cannot clear", async () => {
-  await migrationDatabase("unavailable_roster", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(`${deletionPartition}\n${heldRequest}`);
-    const installed = await heldRosterOf(
-      subject,
-      "finalization_request",
-      "finalization_request_hold_kind_is_known",
-    );
-    assert.deepEqual(
-      [...installed],
-      [...finalizationUnavailableKinds],
-      "the installed roster matches the runtime, member for member and in order",
-    );
-    for (const kind of installed)
-      assert.ok(
-        allFinalizationHoldKinds.some((held) => held === kind),
-        `${kind} is a hold the finalizer can reach`,
+  await migrationDatabaseAt(
+    "Migrated",
+    "unavailable_roster",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${heldRequest}`);
+      const installed = await heldRosterOf(
+        subject,
+        "finalization_request",
+        "finalization_request_hold_kind_is_known",
       );
-    const staying = allFinalizationHoldKinds.filter(
-      (kind) => !installed.includes(kind),
-    );
-    assert.ok(staying.length > 0, "a hold that stays a hold is left off");
-    for (const kind of [...staying, "NoHoldAtAll"])
-      await assert.rejects(
-        subject.query(
-          `UPDATE finalization_request
+      assert.deepEqual(
+        [...installed],
+        [...finalizationUnavailableKinds],
+        "the installed roster matches the runtime, member for member and in order",
+      );
+      for (const kind of installed)
+        assert.ok(
+          allFinalizationHoldKinds.some((held) => held === kind),
+          `${kind} is a hold the finalizer can reach`,
+        );
+      const staying = allFinalizationHoldKinds.filter(
+        (kind) => !installed.includes(kind),
+      );
+      assert.ok(staying.length > 0, "a hold that stays a hold is left off");
+      for (const kind of [...staying, "NoHoldAtAll"])
+        await assert.rejects(
+          subject.query(
+            `UPDATE finalization_request
               SET hold_kind=$1,hold_passes=1,held_since=now()
             WHERE request='request-5'`,
-          [kind],
-        ),
-        /finalization_request_hold_kind_is_known/u,
-        kind,
-      );
-    for (const [kind, passes, since] of [
-      [heldKind, 0, "now()"],
-      [heldKind, 1, "NULL"],
-      [null, 1, "NULL"],
-    ] as const)
-      await assert.rejects(
-        subject.query(
-          `UPDATE finalization_request
+            [kind],
+          ),
+          /finalization_request_hold_kind_is_known/u,
+          kind,
+        );
+      for (const [kind, passes, since] of [
+        [heldKind, 0, "now()"],
+        [heldKind, 1, "NULL"],
+        [null, 1, "NULL"],
+      ] as const)
+        await assert.rejects(
+          subject.query(
+            `UPDATE finalization_request
               SET hold_kind=$1,hold_passes=${String(passes)},held_since=${since}
             WHERE request='request-5'`,
-          [kind],
-        ),
-        /finalization_request_hold_is_whole/u,
-        `${String(kind)} at ${String(passes)}`,
-      );
-  });
+            [kind],
+          ),
+          /finalization_request_hold_is_whole/u,
+          `${String(kind)} at ${String(passes)}`,
+        );
+    },
+  );
 });
 
 test("a recorded hold counts its passes, restarts on another kind and clears on none", async () => {
-  await migrationDatabase("unavailable_hold", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "unavailable_hold", async (subject) => {
     await subject.query(`${deletionPartition}\n${heldRequest}`);
     assert.deepEqual(await heldRow(subject), {
       hold_kind: null,
@@ -3204,40 +3077,43 @@ test("a recorded hold counts its passes, restarts on another kind and clears on 
 });
 
 test("the hold is recorded by the pass holding the claim and by nothing else", async () => {
-  await migrationDatabase("unavailable_claim", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(`${deletionPartition}\n${heldRequest}`);
-    assert.deepEqual(
-      await heldRecord(
-        subject,
-        heldKind,
-        { owner: "owner-5", generation: 1 },
-        "request-6",
-      ),
-      [{ result: "UnknownRequest", hold_passes: null }],
-    );
-    for (const claim of [
-      { owner: "owner-6", generation: 1 },
-      { owner: "owner-5", generation: 2 },
-      { owner: null, generation: 1 },
-    ])
+  await migrationDatabaseAt(
+    "Migrated",
+    "unavailable_claim",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${heldRequest}`);
       assert.deepEqual(
-        await heldRecord(subject, heldKind, claim),
-        [{ result: "BindingMismatch", hold_passes: null }],
-        JSON.stringify(claim),
+        await heldRecord(
+          subject,
+          heldKind,
+          { owner: "owner-5", generation: 1 },
+          "request-6",
+        ),
+        [{ result: "UnknownRequest", hold_passes: null }],
       );
-    assert.deepEqual(await heldRow(subject), {
-      hold_kind: null,
-      hold_passes: 0,
-      held_since: null,
-    });
-    await subject.query(
-      "UPDATE finalization_request SET claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL WHERE request='request-5'",
-    );
-    assert.deepEqual(await heldRecord(subject, heldKind), [
-      { result: "BindingMismatch", hold_passes: null },
-    ]);
-  });
+      for (const claim of [
+        { owner: "owner-6", generation: 1 },
+        { owner: "owner-5", generation: 2 },
+        { owner: null, generation: 1 },
+      ])
+        assert.deepEqual(
+          await heldRecord(subject, heldKind, claim),
+          [{ result: "BindingMismatch", hold_passes: null }],
+          JSON.stringify(claim),
+        );
+      assert.deepEqual(await heldRow(subject), {
+        hold_kind: null,
+        hold_passes: 0,
+        held_since: null,
+      });
+      await subject.query(
+        "UPDATE finalization_request SET claim_owner=NULL,claim_expires_at=NULL,recovery_epoch=NULL WHERE request='request-5'",
+      );
+      assert.deepEqual(await heldRecord(subject, heldKind), [
+        { result: "BindingMismatch", hold_passes: null },
+      ]);
+    },
+  );
 });
 
 test("the door concludes unavailable on the recorded hold and on nothing else", async () => {
@@ -3262,100 +3138,106 @@ test("the door concludes unavailable on the recorded hold and on nothing else", 
       "BindingMismatch",
     ],
   ] as const)
-    await migrationDatabase("unavailable_door", async (subject) => {
-      await postgresMigrate(subject);
-      await subject.query(`${deletionPartition}\n${heldRequest}`);
-      if (recorded !== null) await heldRecord(subject, recorded);
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT result FROM submit_finalization_result
+    await migrationDatabaseAt(
+      "Migrated",
+      "unavailable_door",
+      async (subject) => {
+        await subject.query(`${deletionPartition}\n${heldRequest}`);
+        if (recorded !== null) await heldRecord(subject, recorded);
+        assert.deepEqual(
+          (
+            await subject.query(
+              `SELECT result FROM submit_finalization_result
                ('tenant-5','project-5','request-5',$1,'FinalizationResultUnavailable',
                 $2,1,'epoch-5','operation-5','subject-5')`,
-            [attempt, kind],
+              [attempt, kind],
+            )
+          ).rows,
+          [{ result }],
+          label,
+        );
+        if (result !== "Submitted") return;
+        const written = (
+          await subject.query<{ command_tag: string; command: string }>(
+            "SELECT command_tag,command FROM operation WHERE operation='operation-5'",
           )
-        ).rows,
-        [{ result }],
-        label,
-      );
-      if (result !== "Submitted") return;
-      const written = (
-        await subject.query<{ command_tag: string; command: string }>(
-          "SELECT command_tag,command FROM operation WHERE operation='operation-5'",
-        )
-      ).rows[0];
-      assert.equal(written?.command_tag, "ReportFinalizationResult");
-      assert.deepEqual(JSON.parse(written.command), {
-        version: 1,
-        command: "SubmitFinalizationResult",
-        request: "request-5",
-        requestGeneration: 1,
-        recoveryEpoch: "epoch-5",
-        outcome: "FinalizationResultUnavailable",
-        kind,
-      });
-      const kept = await heldRow(subject);
-      assert.equal(kept?.hold_kind, heldKind);
-      assert.equal(kept?.hold_passes, 1);
-      assert.ok(
-        kept.held_since instanceof Date,
-        "the request keeps its evidence",
-      );
-    });
+        ).rows[0];
+        assert.equal(written?.command_tag, "ReportFinalizationResult");
+        assert.deepEqual(JSON.parse(written.command), {
+          version: 1,
+          command: "SubmitFinalizationResult",
+          request: "request-5",
+          requestGeneration: 1,
+          recoveryEpoch: "epoch-5",
+          outcome: "FinalizationResultUnavailable",
+          kind,
+        });
+        const kept = await heldRow(subject);
+        assert.equal(kept?.hold_kind, heldKind);
+        assert.equal(kept?.hold_passes, 1);
+        assert.ok(
+          kept.held_since instanceof Date,
+          "the request keeps its evidence",
+        );
+      },
+    );
 });
 
 test("the finalizer records a hold the api role reads and cannot record itself", async () => {
-  await migrationDatabase("unavailable_roles", async (subject, url) => {
-    await postgresMigrate(subject);
-    await subject.query(`${deletionPartition}\n${heldRequest}`);
-    const finalizer = heldRolePool(url, finalizerRole);
-    const api = heldRolePool(url, apiRole);
-    try {
-      assert.deepEqual(await heldRecord(finalizer, heldKind), [
-        { result: "Recorded", hold_passes: 1 },
-      ]);
-      await assert.rejects(heldRecord(api, heldKind), /permission denied/u);
-      assert.deepEqual(
-        (
-          await api.query(
-            "SELECT hold_kind,hold_passes FROM finalization_request WHERE ticket=1",
-          )
-        ).rows,
-        [{ hold_kind: heldKind, hold_passes: 1 }],
-      );
-      await assert.rejects(
-        api.query("SELECT state FROM finalization_request"),
-        /permission denied/u,
-      );
-    } finally {
-      await finalizer.end();
-      await api.end();
-    }
-    for (const [role, granted] of [
-      [finalizerRole, true],
-      [apiRole, false],
-      ["public", false],
-    ] as const)
+  await migrationDatabaseAt(
+    "Migrated",
+    "unavailable_roles",
+    async (subject, url) => {
+      await subject.query(`${deletionPartition}\n${heldRequest}`);
+      const finalizer = heldRolePool(url, finalizerRole);
+      const api = heldRolePool(url, apiRole);
+      try {
+        assert.deepEqual(await heldRecord(finalizer, heldKind), [
+          { result: "Recorded", hold_passes: 1 },
+        ]);
+        await assert.rejects(heldRecord(api, heldKind), /permission denied/u);
+        assert.deepEqual(
+          (
+            await api.query(
+              "SELECT hold_kind,hold_passes FROM finalization_request WHERE ticket=1",
+            )
+          ).rows,
+          [{ hold_kind: heldKind, hold_passes: 1 }],
+        );
+        await assert.rejects(
+          api.query("SELECT state FROM finalization_request"),
+          /permission denied/u,
+        );
+      } finally {
+        await finalizer.end();
+        await api.end();
+      }
+      for (const [role, granted] of [
+        [finalizerRole, true],
+        [apiRole, false],
+        ["public", false],
+      ] as const)
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
+              [role, heldFunction],
+            )
+          ).rows[0]?.granted,
+          granted,
+          role,
+        );
       assert.equal(
         (
-          await subject.query<{ granted: boolean }>(
-            "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-            [role, heldFunction],
+          await subject.query<{ owner: string }>(
+            "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
+            [heldFunction],
           )
-        ).rows[0]?.granted,
-        granted,
-        role,
+        ).rows[0]?.owner,
+        boundaryOwnerRole,
       );
-    assert.equal(
-      (
-        await subject.query<{ owner: string }>(
-          "SELECT pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid = $1::regprocedure",
-          [heldFunction],
-        )
-      ).rows[0]?.owner,
-      boundaryOwnerRole,
-    );
-  });
+    },
+  );
 });
 
 /**
@@ -3385,32 +3267,35 @@ test("a fresh install records the reason and the resume becoming one escalation"
 });
 
 test("a journal with an entry in it refuses the migration and names the wipe", async () => {
-  await migrationDatabase("escalation_guard", async (subject) => {
-    await installationBefore(subject, migration008.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT column_name FROM information_schema.columns
+  await migrationDatabaseAt(
+    migration008.version - 1,
+    "escalation_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT column_name FROM information_schema.columns
            WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')
            ORDER BY column_name`,
+          )
+        ).rows,
+        [{ column_name: "reason" }, { column_name: "resume_at" }],
+        "the columns the guard refused over are the columns it left",
+      );
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
         )
-      ).rows,
-      [{ column_name: "reason" }, { column_name: "resume_at" }],
-      "the columns the guard refused over are the columns it left",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration008.version - 1,
-    );
-  });
+          .map(({ version }) => version)
+          .at(-1),
+        migration008.version - 1,
+      );
+    },
+  );
 });
 
 /** Every escalation a parked ticket may carry, and one the machine has never had. */
@@ -3426,148 +3311,162 @@ const escalationKinds = [
 const escalationUnknown = "ReworkBudgetExhausted";
 
 test("the projection carries one escalation and no name off its roster", async () => {
-  await migrationDatabase("escalation_projection", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(deletionPartition);
-    for (const [index, kind] of escalationKinds.entries())
-      await subject.query(
-        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
+  await migrationDatabaseAt(
+    "Migrated",
+    "escalation_projection",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      for (const [index, kind] of escalationKinds.entries())
+        await subject.query(
+          `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
          VALUES('tenant-5','project-5',$1,'Escalated',1,$2)`,
-        [index + 1, kind],
+          [index + 1, kind],
+        );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT escalation FROM ticket_projection ORDER BY ticket",
+          )
+        ).rows,
+        escalationKinds.map((escalation) => ({ escalation })),
       );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation FROM ticket_projection ORDER BY ticket",
-        )
-      ).rows,
-      escalationKinds.map((escalation) => ({ escalation })),
-    );
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
+      await assert.rejects(
+        subject.query(
+          `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq,escalation)
          VALUES('tenant-5','project-5',90,'Escalated',1,$1)`,
-        [escalationUnknown],
-      ),
-      /ticket_projection_escalation_is_known/u,
-    );
-    await subject.query(
-      `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+          [escalationUnknown],
+        ),
+        /ticket_projection_escalation_is_known/u,
+      );
+      await subject.query(
+        `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
        VALUES('tenant-5','project-5',94,'Pending',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
-        )
-      ).rows,
-      [{ escalation: "NoEscalation", escalation_evidence: null }],
-      "a ticket nothing parked carries the escalation that is none",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT count(*)::int AS held FROM information_schema.columns
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT escalation,escalation_evidence FROM ticket_projection WHERE ticket=94",
+          )
+        ).rows,
+        [{ escalation: "NoEscalation", escalation_evidence: null }],
+        "a ticket nothing parked carries the escalation that is none",
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT count(*)::int AS held FROM information_schema.columns
             WHERE table_name='ticket_projection' AND column_name IN ('reason','resume_at')`,
-        )
-      ).rows,
-      [{ held: 0 }],
-    );
-  });
+          )
+        ).rows,
+        [{ held: 0 }],
+      );
+    },
+  );
 });
 
 test("the projection admits evidence only beside an escalation, and the desk reads it", async () => {
-  await migrationDatabase("escalation_evidence", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(deletionPartition);
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO ticket_projection
+  await migrationDatabaseAt(
+    "Migrated",
+    "escalation_evidence",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      await assert.rejects(
+        subject.query(
+          `INSERT INTO ticket_projection
            (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
          VALUES('tenant-5','project-5',91,'Work',1,'NoEscalation','RuntimeVersionUnsupported')`,
-      ),
-      /ticket_projection_evidence_needs_an_escalation/u,
-    );
-    await subject.query(
-      `INSERT INTO ticket_projection
+        ),
+        /ticket_projection_evidence_needs_an_escalation/u,
+      );
+      await subject.query(
+        `INSERT INTO ticket_projection
          (tenant,project,ticket,phase,seq,escalation,escalation_evidence)
        VALUES('tenant-5','project-5',92,'Escalated',1,
               'WorkExecutionUnavailableEscalated','RuntimeVersionUnsupported'),
              ('tenant-5','project-5',93,'Escalated',1,
               'EvaluationFailureEscalated',NULL)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation_evidence FROM ticket_projection WHERE ticket IN (92,93) ORDER BY ticket",
-        )
-      ).rows,
-      [
-        { escalation_evidence: "RuntimeVersionUnsupported" },
-        { escalation_evidence: null },
-      ],
-      "evidence is what an escalation may carry, not what it must",
-    );
-    for (const [role, privilege, table, column] of [
-      [apiRole, "SELECT", "ticket_projection", "escalation"],
-      [apiRole, "SELECT", "ticket_projection", "escalation_evidence"],
-      [ticketServiceRole, "UPDATE", "ticket_projection", "escalation"],
-      [ticketServiceRole, "UPDATE", "ticket_projection", "escalation_evidence"],
-      [ticketServiceRole, "SELECT", "execution", "completion_operation"],
-      [ticketServiceRole, "SELECT", "execution", "blocked_reason"],
-    ] as const)
-      assert.equal(
-        (
-          await subject.query<{ granted: boolean }>(
-            `SELECT has_column_privilege($1,'public.${table}',$2,$3) AS granted`,
-            [role, column, privilege],
-          )
-        ).rows[0]?.granted,
-        true,
-        `${role} ${privilege} ${table}.${column}`,
       );
-  });
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT escalation_evidence FROM ticket_projection WHERE ticket IN (92,93) ORDER BY ticket",
+          )
+        ).rows,
+        [
+          { escalation_evidence: "RuntimeVersionUnsupported" },
+          { escalation_evidence: null },
+        ],
+        "evidence is what an escalation may carry, not what it must",
+      );
+      for (const [role, privilege, table, column] of [
+        [apiRole, "SELECT", "ticket_projection", "escalation"],
+        [apiRole, "SELECT", "ticket_projection", "escalation_evidence"],
+        [ticketServiceRole, "UPDATE", "ticket_projection", "escalation"],
+        [
+          ticketServiceRole,
+          "UPDATE",
+          "ticket_projection",
+          "escalation_evidence",
+        ],
+        [ticketServiceRole, "SELECT", "execution", "completion_operation"],
+        [ticketServiceRole, "SELECT", "execution", "blocked_reason"],
+      ] as const)
+        assert.equal(
+          (
+            await subject.query<{ granted: boolean }>(
+              `SELECT has_column_privilege($1,'public.${table}',$2,$3) AS granted`,
+              [role, column, privilege],
+            )
+          ).rows[0]?.granted,
+          true,
+          `${role} ${privilege} ${table}.${column}`,
+        );
+    },
+  );
 });
 
 test("the desk task takes the projection's roster and keeps the arm its settled rows are at", async () => {
-  await migrationDatabase("escalation_desk", async (subject) => {
-    await installationAt(subject, migration013.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
-    );
-    const task = async (
-      index: number,
-      escalation: string,
-      state: string,
-    ): Promise<unknown> =>
-      subject.query(
-        `INSERT INTO native_action
+  await migrationDatabaseAt(
+    migration013.version,
+    "escalation_desk",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
+      );
+      const task = async (
+        index: number,
+        escalation: string,
+        state: string,
+      ): Promise<unknown> =>
+        subject.query(
+          `INSERT INTO native_action
            (tenant,project,action,authorizing_seq,effect_position,ticket,
             action_version,kind,escalation,required_capability,state)
          VALUES('tenant-5','project-5',$1,1,$2,$3,1,'TicketEscalation',$4,'ResolveTicket',$5)`,
-        [`action-${String(index)}`, index, index + 1, escalation, state],
+          [`action-${String(index)}`, index, index + 1, escalation, state],
+        );
+      for (const [index, kind] of escalationKinds.entries())
+        await task(index, kind, "Withdrawn");
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT escalation FROM native_action ORDER BY effect_position",
+          )
+        ).rows,
+        escalationKinds.map((escalation) => ({ escalation })),
       );
-    for (const [index, kind] of escalationKinds.entries())
-      await task(index, kind, "Withdrawn");
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation FROM native_action ORDER BY effect_position",
-        )
-      ).rows,
-      escalationKinds.map((escalation) => ({ escalation })),
-    );
-    await task(90, "DependencyRevoked", "Withdrawn");
-    await assert.rejects(
-      task(91, "DependencyRevoked", "Open"),
-      /native_action_escalation_check/u,
-      "the settled arm is the settled rows' and no live row reaches it",
-    );
-    await assert.rejects(
-      task(92, escalationUnknown, "Withdrawn"),
-      /native_action_escalation_check/u,
-    );
-  });
+      await task(90, "DependencyRevoked", "Withdrawn");
+      await assert.rejects(
+        task(91, "DependencyRevoked", "Open"),
+        /native_action_escalation_check/u,
+        "the settled arm is the settled rows' and no live row reaches it",
+      );
+      await assert.rejects(
+        task(92, escalationUnknown, "Withdrawn"),
+        /native_action_escalation_check/u,
+      );
+    },
+  );
 });
 
 /**
@@ -3617,20 +3516,23 @@ const escalationEvents: readonly (readonly [string, unknown, boolean])[] = [
 ];
 
 test("the boundary admits a block that names only its ticket, and neither spelling the wipe retired", async () => {
-  await migrationDatabase("escalation_events", async (subject) => {
-    await installationAt(subject, migration008.version);
-    for (const [label, event, admitted] of escalationEvents)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows,
-        [{ admitted }],
-        label,
-      );
-  });
+  await migrationDatabaseAt(
+    migration008.version,
+    "escalation_events",
+    async (subject) => {
+      for (const [label, event, admitted] of escalationEvents)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+    },
+  );
 });
 
 /** A running work execution the scheduler's door can conclude, and the wall it concludes at. */
@@ -3662,84 +3564,90 @@ const escalationExecution = `${deletionJournalRow(1, journalledRevocation)};
 const escalationWall = "ExecutionProfileUnavailable";
 
 test("the scheduler's door journals a block naming its ticket and leaves the wall on the execution", async () => {
-  await migrationDatabase("escalation_block", async (subject) => {
-    await installationAt(subject, migration011.version);
-    await subject.query(`${deletionPartition}\n${escalationExecution}`);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,operation FROM submit_task_completion
+  await migrationDatabaseAt(
+    migration011.version,
+    "escalation_block",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${escalationExecution}`);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,operation FROM submit_task_completion
              ('tenant-5','project-5','execution-5',1,1,0,'Blocked',NULL,NULL,
               'WorkExecutionUnavailableEscalated','operation-escalated','subject-5')`,
-        )
-      ).rows,
-      [{ result: "BindingMismatch", operation: null }],
-      "the reason this door takes is a wall, not an escalation",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,operation FROM submit_task_completion
+          )
+        ).rows,
+        [{ result: "BindingMismatch", operation: null }],
+        "the reason this door takes is a wall, not an escalation",
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,operation FROM submit_task_completion
              ('tenant-5','project-5','execution-5',1,1,0,'Blocked',NULL,NULL,$1,
               'operation-blocked','subject-5')`,
-          [escalationWall],
-        )
-      ).rows,
-      [{ result: "Submitted", operation: "operation-blocked" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ event: unknown }>(
-          "SELECT (command::jsonb)->'event' AS event FROM operation WHERE operation='operation-blocked'",
-        )
-      ).rows,
-      [{ event: { type: "ExecutionBlocked", value: { ticket: 1 } } }],
-      "the event names the ticket and nothing else",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT status,outcome,blocked_reason FROM execution WHERE execution='execution-5'",
-        )
-      ).rows,
-      [
-        {
-          status: "Terminal",
-          outcome: "Blocked",
-          blocked_reason: escalationWall,
-        },
-      ],
-      "the wall stays evidence beside the execution",
-    );
-  });
+            [escalationWall],
+          )
+        ).rows,
+        [{ result: "Submitted", operation: "operation-blocked" }],
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ event: unknown }>(
+            "SELECT (command::jsonb)->'event' AS event FROM operation WHERE operation='operation-blocked'",
+          )
+        ).rows,
+        [{ event: { type: "ExecutionBlocked", value: { ticket: 1 } } }],
+        "the event names the ticket and nothing else",
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT status,outcome,blocked_reason FROM execution WHERE execution='execution-5'",
+          )
+        ).rows,
+        [
+          {
+            status: "Terminal",
+            outcome: "Blocked",
+            blocked_reason: escalationWall,
+          },
+        ],
+        "the wall stays evidence beside the execution",
+      );
+    },
+  );
 });
 
 test("the approval door writes a desk task at no escalation", async () => {
-  await migrationDatabase("escalation_approval", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(
-      `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
+  await migrationDatabaseAt(
+    "Migrated",
+    "escalation_approval",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${renamedFinalization(renamedAttemptPrepared)};
        INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
        VALUES('tenant-5','project-5',1,'Finalization',1)`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,action FROM request_finalization_approval
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,action FROM request_finalization_approval
              ('tenant-5','project-5','attempt-5','action-5','epoch-5')`,
-        )
-      ).rows,
-      [{ result: "Requested", action: "action-5" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT escalation FROM native_action WHERE action='action-5'",
-        )
-      ).rows,
-      [{ escalation: "NoEscalation" }],
-    );
-  });
+          )
+        ).rows,
+        [{ result: "Requested", action: "action-5" }],
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT escalation FROM native_action WHERE action='action-5'",
+          )
+        ).rows,
+        [{ escalation: "NoEscalation" }],
+      );
+    },
+  );
 });
 
 test("a fresh install records the work fan-out leaving the ticket", async () => {
@@ -3763,31 +3671,34 @@ test("a fresh install records the work fan-out leaving the ticket", async () => 
 });
 
 test("a journal with an entry in it refuses the fan-out leaving and names the wipe", async () => {
-  await migrationDatabase("fanout_guard", async (subject) => {
-    await installationBefore(subject, migration009.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT column_name FROM information_schema.columns
+  await migrationDatabaseAt(
+    migration009.version - 1,
+    "fanout_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT column_name FROM information_schema.columns
            WHERE table_name='dispatch_candidate' AND column_name='work_fanout'`,
+          )
+        ).rows,
+        [{ column_name: "work_fanout" }],
+        "the column the guard refused over is the column it left",
+      );
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
         )
-      ).rows,
-      [{ column_name: "work_fanout" }],
-      "the column the guard refused over is the column it left",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration009.version - 1,
-    );
-  });
+          .map(({ version }) => version)
+          .at(-1),
+        migration009.version - 1,
+      );
+    },
+  );
 });
 
 /** What a candidate hangs from: the project's dispatch view and the revision it was cut against. */
@@ -3807,8 +3718,7 @@ function fanoutCandidate(ticket: number, version: number): string {
 }
 
 test("a candidate publishes no width and keeps the floors that stood beside it", async () => {
-  await migrationDatabase("fanout_candidate", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "fanout_candidate", async (subject) => {
     await subject.query(`${deletionPartition}\n${fanoutDispatchView}`);
     await subject.query(fanoutCandidate(1, 1));
     assert.deepEqual(
@@ -3858,28 +3768,30 @@ const fanoutEvents: readonly (readonly [string, unknown, boolean])[] = [
 ];
 
 test("the boundary admits a release that names no fan-out and refuses one that names any", async () => {
-  await migrationDatabase("fanout_events", async (subject) => {
-    await installationAt(subject, migration012.version);
-    for (const [label, event, admitted] of fanoutEvents)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows,
-        [{ admitted }],
-        label,
-      );
-  });
+  await migrationDatabaseAt(
+    migration012.version,
+    "fanout_events",
+    async (subject) => {
+      for (const [label, event, admitted] of fanoutEvents)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+    },
+  );
 });
 
 /** The validator the fan-out left, named as the grants that govern it name it. */
 const fanoutValidator = "public.decision_event_is_valid(jsonb)";
 
 test("the validator replaced whole stays the boundary owner's and nobody's to execute", async () => {
-  await migrationDatabase("fanout_validator", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "fanout_validator", async (subject) => {
     for (const role of [apiRole, ticketServiceRole, "public"])
       assert.equal(
         (
@@ -3924,31 +3836,34 @@ test("a fresh install records the task identity arriving in columns", async () =
 });
 
 test("a journal with an entry in it refuses the identity arriving and names the wipe", async () => {
-  await migrationDatabase("identity_guard", async (subject) => {
-    await installationBefore(subject, migration010.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT count(*)::int AS held FROM information_schema.columns
+  await migrationDatabaseAt(
+    migration010.version - 1,
+    "identity_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT count(*)::int AS held FROM information_schema.columns
            WHERE table_name='execution_request_task' AND column_name='cycle'`,
+          )
+        ).rows,
+        [{ held: 0 }],
+        "the column the guard refused over is a column it never added",
+      );
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
         )
-      ).rows,
-      [{ held: 0 }],
-      "the column the guard refused over is a column it never added",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration010.version - 1,
-    );
-  });
+          .map(({ version }) => version)
+          .at(-1),
+        migration010.version - 1,
+      );
+    },
+  );
 });
 
 /** What a request task hangs from: a journalled decision, a revision and the request it authorized. */
@@ -4038,8 +3953,7 @@ const identityShapes: readonly (readonly [
 ];
 
 test("a request task carries a whole identity for its kind and no half of one", async () => {
-  await migrationDatabase("identity_columns", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "identity_columns", async (subject) => {
     await subject.query(`${deletionPartition}\n${identityRequest}`);
     for (const [
       order,
@@ -4075,8 +3989,7 @@ function identityRegistration(task: number, source: string): string {
 }
 
 test("an execution registered under a requirement a task named is refused", async () => {
-  await migrationDatabase("identity_sources", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "identity_sources", async (subject) => {
     await subject.query(`${deletionPartition}\n${identityRequest}`);
     await subject.query(identityTask(1, "kind,cycle", "'Work',1"));
     for (const evaluator of [1, 2, 3]) {
@@ -4115,8 +4028,7 @@ const identityColumns = [
 ];
 
 test("the api reads every column of the identity and writes none of them", async () => {
-  await migrationDatabase("identity_grants", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "identity_grants", async (subject) => {
     const columns = await subject.query<{ column: string; granted: boolean }>(
       `SELECT a.attname AS column,
               has_column_privilege($1,'execution_request_task',a.attname,'SELECT') AS granted
@@ -4204,107 +4116,61 @@ function identityCompletion(task: unknown): unknown {
 }
 
 test("the boundary admits a completion that names its task and refuses one that numbers it", async () => {
-  await migrationDatabase("identity_events", async (subject) => {
-    await installationAt(subject, migration010.version);
-    for (const [label, task, admitted] of identityEvents)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(identityCompletion(task))],
-          )
-        ).rows,
-        [{ admitted }],
-        label,
-      );
-    for (const [label, event] of [
-      [
-        "a completion naming the number and no identity",
-        {
-          type: "TaskDone",
-          value: {
-            ticket: 1,
-            tid: 1,
-            verdict: "Pass",
-            result: { manifest: 1, digest: 1, schema: 1 },
+  await migrationDatabaseAt(
+    migration010.version,
+    "identity_events",
+    async (subject) => {
+      for (const [label, task, admitted] of identityEvents)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(identityCompletion(task))],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+      for (const [label, event] of [
+        [
+          "a completion naming the number and no identity",
+          {
+            type: "TaskDone",
+            value: {
+              ticket: 1,
+              tid: 1,
+              verdict: "Pass",
+              result: { manifest: 1, digest: 1, schema: 1 },
+            },
           },
-        },
-      ],
-      [
-        "a completion naming both the identity and the number",
-        {
-          type: "TaskDone",
-          value: {
-            ticket: 1,
-            tid: 1,
-            task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
-            verdict: "Pass",
-            result: { manifest: 1, digest: 1, schema: 1 },
+        ],
+        [
+          "a completion naming both the identity and the number",
+          {
+            type: "TaskDone",
+            value: {
+              ticket: 1,
+              tid: 1,
+              task: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+              verdict: "Pass",
+              result: { manifest: 1, digest: 1, schema: 1 },
+            },
           },
-        },
-      ],
-    ] as const)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows,
-        [{ admitted: false }],
-        label,
-      );
-  });
+        ],
+      ] as const)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows,
+          [{ admitted: false }],
+          label,
+        );
+    },
+  );
 });
-
-/**
- * A running execution at an identity its request authorized, ready for the
- * scheduler's door, carrying the verdict a worker attested — or, at `null`, no
- * result at all, which is every execution the door is asked to block.
- */
-function identityExecution(
-  ordinal: number,
-  requestKind: string,
-  columns: string,
-  values: string,
-  verdict: "Pass" | "Fail" | null = "Pass",
-  digest: string = "repeat('d',64)",
-  ticket: number = 1,
-): string {
-  const at = String(ordinal);
-  const on = String(ticket);
-  return `
-  INSERT INTO execution_request
-    (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
-     kind,capacity_account,configuration_revision,configuration_digest,
-     input_bundle,input_bundle_digest)
-  SELECT 'tenant-5','project-5','request-${at}',1,${at},${on},1,'${requestKind}',a.account,
-         'revision-5','digest-5','bundle-5',repeat('b',64)
-    FROM capacity_account a
-   WHERE a.account=project_capacity_account('tenant-5','project-5');
-  INSERT INTO execution_request_task(tenant,project,request,task,${columns})
-  VALUES('tenant-5','project-5','request-${at}',${at},${values});
-  INSERT INTO execution
-    (tenant,project,execution,ticket,task,source_request,account,cluster,
-     configuration_revision,configuration_digest,status)
-  SELECT 'tenant-5','project-5','execution-${at}',${on},${at},'request-${at}',a.account,a.cluster,
-         'revision-5','digest-5','Running'
-    FROM capacity_account a
-   WHERE a.account=project_capacity_account('tenant-5','project-5');
-  INSERT INTO execution_attempt
-    (tenant,project,execution,attempt,attempt_number,recovery_epoch,
-     capability,capability_secret_digest,manifest)
-  VALUES('tenant-5','project-5','execution-${at}','attempt-${at}',1,'epoch-5',
-         'capability-${at}',repeat('c',64),'manifest-${at}');${
-           verdict === null
-             ? ""
-             : `
-  INSERT INTO execution_result
-    (tenant,project,manifest,execution,attempt,manifest_ordinal,schema_version,digest,verdict)
-  VALUES('tenant-5','project-5','manifest-${at}','execution-${at}','attempt-${at}',
-         ${at},1,${digest},'${verdict}')`
-         }`;
-}
 
 /** Each kind of task the door settles, the identity its row carries and the identity it journals. */
 const identityCompletions: readonly (readonly [
@@ -4337,53 +4203,56 @@ const identityCompletions: readonly (readonly [
 ];
 
 test("the scheduler's door journals the identity it read off the task it settled", async () => {
-  await migrationDatabase("identity_completion", async (subject) => {
-    await installationAt(subject, migration012.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
+  await migrationDatabaseAt(
+    migration012.version,
+    "identity_completion",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
        VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
        INSERT INTO input_bundle(tenant,project,bundle,digest)
        VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
-    );
-    for (const [
-      what,
-      ordinal,
-      requestKind,
-      columns,
-      values,
-      identity,
-    ] of identityCompletions) {
-      const at = String(ordinal);
-      await subject.query(
-        identityExecution(ordinal, requestKind, columns, values),
       );
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT result,operation FROM submit_task_completion
+      for (const [
+        what,
+        ordinal,
+        requestKind,
+        columns,
+        values,
+        identity,
+      ] of identityCompletions) {
+        const at = String(ordinal);
+        await subject.query(
+          identityExecution(ordinal, requestKind, columns, values),
+        );
+        assert.deepEqual(
+          (
+            await subject.query(
+              `SELECT result,operation FROM submit_task_completion
                ('tenant-5','project-5','execution-${at}',1,${at},${at},'Passed',
                 'manifest-${at}',repeat('d',64),NULL,'operation-done-${at}','subject-5')`,
-          )
-        ).rows,
-        [{ result: "Submitted", operation: `operation-done-${at}` }],
-        what,
-      );
-      assert.deepEqual(
-        (
-          await subject.query<{ task: unknown; numbered: boolean }>(
-            `SELECT (command::jsonb)#>'{event,value,task}' AS task,
+            )
+          ).rows,
+          [{ result: "Submitted", operation: `operation-done-${at}` }],
+          what,
+        );
+        assert.deepEqual(
+          (
+            await subject.query<{ task: unknown; numbered: boolean }>(
+              `SELECT (command::jsonb)#>'{event,value,task}' AS task,
                     ((command::jsonb)#>'{event,value}') ? 'tid' AS numbered
                FROM operation WHERE operation='operation-done-${at}'`,
-          )
-        ).rows,
-        [{ task: identity, numbered: false }],
-        what,
-      );
-    }
-  });
+            )
+          ).rows,
+          [{ task: identity, numbered: false }],
+          what,
+        );
+      }
+    },
+  );
 });
 
 /** The door replaced whole, named as the grants that govern it name it. */
@@ -4391,8 +4260,7 @@ const identityDoor =
   "public.submit_task_completion(text,text,text,bigint,bigint,integer,text,text,text,text,text,text)";
 
 test("the door replaced whole keeps its owner and the one role that may open it", async () => {
-  await migrationDatabase("identity_door", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "identity_door", async (subject) => {
     for (const [role, granted] of [
       [schedulerRole, true],
       [apiRole, false],
@@ -4501,48 +4369,54 @@ function evaluatorKeyRelease(prog: unknown): unknown {
 }
 
 test("a journal with an entry in it refuses the roster arriving and names the wipe", async () => {
-  await migrationDatabase("evaluatorkeys_guard", async (subject) => {
-    await installationBefore(subject, migration011.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query<{ admitted: boolean }>(
-          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-          [JSON.stringify(evaluatorKeyRelease([{ fanout: 1 }]))],
-        )
-      ).rows,
-      [{ admitted: true }],
-      "the shape the guard refused over is the shape it left admitted",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration011.version - 1,
-    );
-  });
-});
-
-test("the boundary admits a program that names its evaluators and refuses one that counts them", async () => {
-  await migrationDatabase("evaluatorkeys_events", async (subject) => {
-    await installationAt(subject, migration012.version);
-    for (const [label, prog, admitted] of evaluatorKeyPrograms)
+  await migrationDatabaseAt(
+    migration011.version - 1,
+    "evaluatorkeys_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
       assert.deepEqual(
         (
           await subject.query<{ admitted: boolean }>(
             "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(evaluatorKeyRelease(prog))],
+            [JSON.stringify(evaluatorKeyRelease([{ fanout: 1 }]))],
           )
         ).rows,
-        [{ admitted }],
-        label,
+        [{ admitted: true }],
+        "the shape the guard refused over is the shape it left admitted",
       );
-  });
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
+        )
+          .map(({ version }) => version)
+          .at(-1),
+        migration011.version - 1,
+      );
+    },
+  );
+});
+
+test("the boundary admits a program that names its evaluators and refuses one that counts them", async () => {
+  await migrationDatabaseAt(
+    migration012.version,
+    "evaluatorkeys_events",
+    async (subject) => {
+      for (const [label, prog, admitted] of evaluatorKeyPrograms)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(evaluatorKeyRelease(prog))],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+    },
+  );
 });
 
 /**
@@ -4551,43 +4425,46 @@ test("the boundary admits a program that names its evaluators and refuses one th
  * floor argued from it follows.
  */
 test("the roster arriving widens the mailbox bound and re-seeds the budget with it", async () => {
-  await migrationDatabase("evaluatorkeys_mailbox", async (subject) => {
-    await postgresMigrate(subject);
-    const bound = (
-      await subject.query<{ definition: string }>(
-        `SELECT pg_get_constraintdef(c.oid) AS definition
+  await migrationDatabaseAt(
+    "Migrated",
+    "evaluatorkeys_mailbox",
+    async (subject) => {
+      const bound = (
+        await subject.query<{ definition: string }>(
+          `SELECT pg_get_constraintdef(c.oid) AS definition
            FROM pg_constraint c
           WHERE c.conrelid = 'session_turn'::regclass
             AND c.conname = 'session_turn_text_is_bounded'`,
-      )
-    ).rows[0]?.definition;
-    assert.ok(bound !== undefined, "the mailbox bound was not found");
-    assert.ok(bound.includes(String(leadObservationTokensPerDecisionAt011)));
-    assert.ok(!bound.includes(String(leadObservationTokensPerDecisionAt009)));
-    for (const relation of [
-      "selector_runtime_settings",
-      "selector_runtime_settings_history",
-    ]) {
-      const rows = (
-        await subject.query<{ controls: string }>(
-          `SELECT controls FROM ${relation}`,
         )
-      ).rows;
-      assert.ok(rows.length >= 1, `${relation} is seeded`);
-      for (const { controls } of rows) {
-        assert.ok(
-          controls.includes(
-            `"tokensPerDecision":${String(leadObservationTokensPerDecisionAt011)}`,
-          ),
-          `${relation} carries the re-seeded budget`,
-        );
-        assert.ok(
-          !controls.includes(String(leadObservationTokensPerDecisionAt009)),
-          `${relation} no longer carries 009's`,
-        );
+      ).rows[0]?.definition;
+      assert.ok(bound !== undefined, "the mailbox bound was not found");
+      assert.ok(bound.includes(String(leadObservationTokensPerDecisionAt011)));
+      assert.ok(!bound.includes(String(leadObservationTokensPerDecisionAt009)));
+      for (const relation of [
+        "selector_runtime_settings",
+        "selector_runtime_settings_history",
+      ]) {
+        const rows = (
+          await subject.query<{ controls: string }>(
+            `SELECT controls FROM ${relation}`,
+          )
+        ).rows;
+        assert.ok(rows.length >= 1, `${relation} is seeded`);
+        for (const { controls } of rows) {
+          assert.ok(
+            controls.includes(
+              `"tokensPerDecision":${String(leadObservationTokensPerDecisionAt011)}`,
+            ),
+            `${relation} carries the re-seeded budget`,
+          );
+          assert.ok(
+            !controls.includes(String(leadObservationTokensPerDecisionAt009)),
+            `${relation} no longer carries 009's`,
+          );
+        }
       }
-    }
-  });
+    },
+  );
 });
 
 test("a fresh install records the completion carrying a report", async () => {
@@ -4803,59 +4680,65 @@ const taskReportRefused: readonly (readonly [string, unknown])[] = [
 ];
 
 test("a journal with an entry in it refuses the report arriving and names the wipe", async () => {
-  await migrationDatabase("taskreport_guard", async (subject) => {
-    await installationBefore(subject, migration012.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query<{ admitted: boolean }>(
-          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-          [JSON.stringify(attestedCompletion)],
+  await migrationDatabaseAt(
+    migration012.version - 1,
+    "taskreport_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(attestedCompletion)],
+          )
+        ).rows,
+        [{ admitted: true }],
+        "the shape the guard refused over is the shape it left admitted",
+      );
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
         )
-      ).rows,
-      [{ admitted: true }],
-      "the shape the guard refused over is the shape it left admitted",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration012.version - 1,
-    );
-  });
+          .map(({ version }) => version)
+          .at(-1),
+        migration012.version - 1,
+      );
+    },
+  );
 });
 
 test("the boundary admits a completion that reports what its task produced and refuses one that attests a verdict", async () => {
-  await migrationDatabase("taskreport_events", async (subject) => {
-    await installationAt(subject, migration012.version);
-    for (const [label, report, admitted] of taskReports)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(taskReportCompletion(report))],
-          )
-        ).rows,
-        [{ admitted }],
-        label,
-      );
-    for (const [label, event] of taskReportRefused)
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows,
-        [{ admitted: false }],
-        label,
-      );
-  });
+  await migrationDatabaseAt(
+    migration012.version,
+    "taskreport_events",
+    async (subject) => {
+      for (const [label, report, admitted] of taskReports)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(taskReportCompletion(report))],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+      for (const [label, event] of taskReportRefused)
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows,
+          [{ admitted: false }],
+          label,
+        );
+    },
+  );
 });
 
 /**
@@ -5009,70 +4892,73 @@ const taskReportCompletions: readonly (readonly [
 ];
 
 test("the scheduler's door journals the report the task it settled terminated under", async () => {
-  await migrationDatabase("taskreport_completion", async (subject) => {
-    await installationAt(subject, migration012.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
+  await migrationDatabaseAt(
+    migration012.version,
+    "taskreport_completion",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
        VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
        INSERT INTO input_bundle(tenant,project,bundle,digest)
        VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
-    );
-    const folded = (
-      await subject.query<{ digest: string }>(
-        "SELECT result_digest_fold(repeat('d',64)) AS digest",
-      )
-    ).rows[0]?.digest;
-    assert.ok(folded !== undefined, "the digest fold answered nothing");
-    for (const [
-      what,
-      ordinal,
-      requestKind,
-      columns,
-      values,
-      verdict,
-      submission,
-      expected,
-    ] of taskReportCompletions) {
-      const at = String(ordinal);
-      await subject.query(
-        identityExecution(ordinal, requestKind, columns, values, verdict),
       );
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT result,operation FROM submit_task_completion
+      const folded = (
+        await subject.query<{ digest: string }>(
+          "SELECT result_digest_fold(repeat('d',64)) AS digest",
+        )
+      ).rows[0]?.digest;
+      assert.ok(folded !== undefined, "the digest fold answered nothing");
+      for (const [
+        what,
+        ordinal,
+        requestKind,
+        columns,
+        values,
+        verdict,
+        submission,
+        expected,
+      ] of taskReportCompletions) {
+        const at = String(ordinal);
+        await subject.query(
+          identityExecution(ordinal, requestKind, columns, values, verdict),
+        );
+        assert.deepEqual(
+          (
+            await subject.query(
+              `SELECT result,operation FROM submit_task_completion
                ('tenant-5','project-5','execution-${at}',1,${at},${at},${submission},
                 'operation-report-${at}','subject-5')`,
-          )
-        ).rows,
-        [{ result: "Submitted", operation: `operation-report-${at}` }],
-        what,
-      );
+            )
+          ).rows,
+          [{ result: "Submitted", operation: `operation-report-${at}` }],
+          what,
+        );
+        assert.deepEqual(
+          (
+            await subject.query<{ journalled: unknown }>(
+              `SELECT (command::jsonb)#>'{event,value}' AS journalled
+               FROM operation WHERE operation='operation-report-${at}'`,
+            )
+          ).rows,
+          [{ journalled: expected(Number(folded)) }],
+          what,
+        );
+      }
       assert.deepEqual(
         (
-          await subject.query<{ journalled: unknown }>(
-            `SELECT (command::jsonb)#>'{event,value}' AS journalled
-               FROM operation WHERE operation='operation-report-${at}'`,
+          await subject.query<{ outcome: string }>(
+            `SELECT outcome FROM execution
+             WHERE execution IN ('execution-5','execution-6') ORDER BY execution`,
           )
         ).rows,
-        [{ journalled: expected(Number(folded)) }],
-        what,
+        [{ outcome: "ProcessFailed" }, { outcome: "ProcessFailed" }],
+        "a death the door was told of is the outcome the execution records",
       );
-    }
-    assert.deepEqual(
-      (
-        await subject.query<{ outcome: string }>(
-          `SELECT outcome FROM execution
-             WHERE execution IN ('execution-5','execution-6') ORDER BY execution`,
-        )
-      ).rows,
-      [{ outcome: "ProcessFailed" }, { outcome: "ProcessFailed" }],
-      "a death the door was told of is the outcome the execution records",
-    );
-  });
+    },
+  );
 });
 
 test("a fresh install records the ticket released as a definition", async () => {
@@ -5094,49 +4980,6 @@ test("a fresh install records the ticket released as a definition", async () => 
     );
   });
 });
-
-/** The four references a task definition is, as a release carries one. */
-const releasedWorkDefinition = {
-  workload: 1,
-  inputs: 2,
-  executionRequirements: 3,
-  resultContract: 4,
-};
-
-/** The definition the stage's evaluators carry, one each, so a read of one can miss. */
-const releasedEvaluatorDefinition = {
-  workload: 5,
-  inputs: 6,
-  executionRequirements: 7,
-  resultContract: 8,
-};
-
-const releasedSecondDefinition = {
-  workload: 9,
-  inputs: 10,
-  executionRequirements: 11,
-  resultContract: 12,
-};
-
-/** The released ticket every case below varies one field of. */
-const releasedWhole = {
-  id: 1,
-  content: 13,
-  dependencies: [2, 3],
-  workConfiguration: releasedWorkDefinition,
-  evaluationPlan: {
-    stages: [
-      {
-        key: 1,
-        evaluators: [
-          { key: 1, task: releasedEvaluatorDefinition },
-          { key: 3, task: releasedSecondDefinition },
-        ],
-      },
-    ],
-  },
-  finalizationConfiguration: 14,
-};
 
 function releasedEvent(value: unknown): unknown {
   return { type: "CreateTicket", value };
@@ -5335,9 +5178,6 @@ const releasedDispatches: readonly (readonly [string, unknown, boolean])[] = [
     true,
   ],
 ];
-
-/** The task a produced report below is the obligation of. */
-const releasedTask = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
 
 const releasedObligation = {
   task: releasedTask,
@@ -5563,24 +5403,27 @@ const releasedReports: readonly (readonly [string, unknown, boolean])[] = [
 ];
 
 test("the boundary admits a ticket released as the definition it runs at and refuses the spelling it left", async () => {
-  await migrationDatabase("released_events", async (subject) => {
-    await installationAt(subject, migration013.version);
-    for (const [label, event, admitted] of [
-      ...releasedTickets,
-      ...releasedDispatches,
-      ...releasedReports,
-    ])
-      assert.deepEqual(
-        (
-          await subject.query<{ admitted: boolean }>(
-            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-            [JSON.stringify(event)],
-          )
-        ).rows,
-        [{ admitted }],
-        label,
-      );
-  });
+  await migrationDatabaseAt(
+    migration013.version,
+    "released_events",
+    async (subject) => {
+      for (const [label, event, admitted] of [
+        ...releasedTickets,
+        ...releasedDispatches,
+        ...releasedReports,
+      ])
+        assert.deepEqual(
+          (
+            await subject.query<{ admitted: boolean }>(
+              "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+              [JSON.stringify(event)],
+            )
+          ).rows,
+          [{ admitted }],
+          label,
+        );
+    },
+  );
 });
 
 /** The release the vintage before this one stored, which is what the guard is for. */
@@ -5590,31 +5433,34 @@ const releasedBefore = {
 };
 
 test("a journal with an entry in it refuses the definition arriving and names the wipe", async () => {
-  await migrationDatabase("released_guard", async (subject) => {
-    await installationBefore(subject, migration013.version);
-    await subject.query(`${deletionPartition}\n${journaledDecision}`);
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query<{ admitted: boolean }>(
-          "SELECT decision_event_is_valid($1::jsonb) AS admitted",
-          [JSON.stringify(releasedBefore)],
+  await migrationDatabaseAt(
+    migration013.version - 1,
+    "released_guard",
+    async (subject) => {
+      await subject.query(`${deletionPartition}\n${journaledDecision}`);
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query<{ admitted: boolean }>(
+            "SELECT decision_event_is_valid($1::jsonb) AS admitted",
+            [JSON.stringify(releasedBefore)],
+          )
+        ).rows,
+        [{ admitted: true }],
+        "the shape the guard refused over is the shape it left admitted",
+      );
+      assert.deepEqual(
+        (
+          await postgresRuntimeSchema(subject).applied(
+            new AbortController().signal,
+          )
         )
-      ).rows,
-      [{ admitted: true }],
-      "the shape the guard refused over is the shape it left admitted",
-    );
-    assert.deepEqual(
-      (
-        await postgresRuntimeSchema(subject).applied(
-          new AbortController().signal,
-        )
-      )
-        .map(({ version }) => version)
-        .at(-1),
-      migration013.version - 1,
-    );
-  });
+          .map(({ version }) => version)
+          .at(-1),
+        migration013.version - 1,
+      );
+    },
+  );
 });
 
 /** Each row the two relations a release fills admit, and each half one they refuse. */
@@ -5682,19 +5528,12 @@ const releasedRows: readonly (readonly [string, string, boolean])[] = [
 ];
 
 test("the two relations a release fills hold a whole row and refuse a half one", async () => {
-  await migrationDatabase("released_rows", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "released_rows", async (subject) => {
     await subject.query(deletionPartition);
     for (const [label, row, held] of releasedRows)
       if (held) await subject.query(row);
       else await assert.rejects(subject.query(row), label);
   });
-});
-
-/** The release the door reads back the definition it reports, as the writer journals one. */
-const releasedEntry = JSON.stringify({
-  seq: 1,
-  event: ticketCreated(releasedWhole),
 });
 
 /** The repository the accepted work result was produced at, and the commit it names. */
@@ -5726,19 +5565,6 @@ async function releasedJournalled(
   ).rows[0]?.journalled;
 }
 
-/** What every case below hangs the door off: the release, the revision and the bundle a request pins. */
-async function releasedSeeded(subject: pg.Pool): Promise<void> {
-  await subject.query(
-    `${deletionPartition}\n${deletionJournalRow(1, releasedEntry)};
-     UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
-     INSERT INTO configuration_revision
-       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-     VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
-     INSERT INTO input_bundle(tenant,project,bundle,digest)
-     VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
-  );
-}
-
 function releasedSubmission(ordinal: number): string {
   const at = String(ordinal);
   return `SELECT result,operation FROM submit_task_completion
@@ -5747,8 +5573,7 @@ function releasedSubmission(ordinal: number): string {
 }
 
 test("the door reports the work obligation the release wrote down and the source it was accepted at", async () => {
-  await migrationDatabase("released_work", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "released_work", async (subject) => {
     await releasedSeeded(subject);
     const digest = await releasedFold(subject, "d".repeat(64));
     const source = await releasedFold(subject, releasedCommit);
@@ -5810,35 +5635,41 @@ test("the door reports the work obligation the release wrote down and the source
 });
 
 test("the door reports a failure as the task that failed and the evidence it can be read at", async () => {
-  await migrationDatabase("events_failure_door", async (subject) => {
-    await postgresMigrate(subject);
-    await releasedSeeded(subject);
-    await subject.query(
-      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", "Fail"),
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT result,operation FROM submit_task_completion
+  await migrationDatabaseAt(
+    "Migrated",
+    "events_failure_door",
+    async (subject) => {
+      await releasedSeeded(subject);
+      await subject.query(
+        identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", "Fail"),
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT result,operation FROM submit_task_completion
              ('tenant-5','project-5','execution-1',1,1,1,'Failed','manifest-1',
               repeat('d',64),NULL,'operation-failed-1','subject-5')`,
-        )
-      ).rows,
-      [{ result: "Submitted", operation: "operation-failed-1" }],
-    );
-    const task = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
-    assert.deepEqual(await releasedJournalled(subject, "operation-failed-1"), {
-      type: "ReportTaskTerminal",
-      value: {
-        type: "TerminalFailureReport",
-        value: {
-          ticket: 1,
-          failure: { task, evidence: 1 },
-          kind: "ProcessFailure",
+          )
+        ).rows,
+        [{ result: "Submitted", operation: "operation-failed-1" }],
+      );
+      const task = { type: "WorkTask", value: { ticket: 1, cycle: 3 } };
+      assert.deepEqual(
+        await releasedJournalled(subject, "operation-failed-1"),
+        {
+          type: "ReportTaskTerminal",
+          value: {
+            type: "TerminalFailureReport",
+            value: {
+              ticket: 1,
+              failure: { task, evidence: 1 },
+              kind: "ProcessFailure",
+            },
+          },
         },
-      },
-    });
-  });
+      );
+    },
+  );
 });
 
 /** The identity the stage the release names spawns its second evaluator under. */
@@ -5885,55 +5716,58 @@ const releasedOtherTicketWork = identityExecution(
 );
 
 test("the door reports the definition the evaluator's own key carries, under what its cycle produced", async () => {
-  await migrationDatabase("released_evaluation", async (subject) => {
-    await postgresMigrate(subject);
-    await releasedSeeded(subject);
-    const digest = await releasedFold(subject, "d".repeat(64));
-    const judged = await releasedFold(subject, releasedJudgedDigest);
-    await subject.query(
-      identityExecution(
-        1,
-        "SpawnEvaluation",
-        "kind,cycle,stage,generation,evaluator",
-        "'Evaluation',2,1,5,3",
-      ),
-    );
-    await subject.query(releasedLaterWork);
-    await subject.query(releasedJudgedWork);
-    assert.notEqual(
-      judged,
-      2,
-      "the reference the work reported is not the cycle it ran in",
-    );
-    assert.notEqual(judged, digest, "nor is it the evaluator's own result");
-    assert.deepEqual(
-      (await subject.query(releasedSubmission(1))).rows,
-      [{ result: "Submitted", operation: "operation-released-1" }],
-      "the evaluator the stage the release names runs",
-    );
-    assert.deepEqual(
-      await releasedJournalled(subject, "operation-released-1"),
-      {
-        type: "ReportTaskTerminal",
-        value: {
-          type: "EvaluationResultReport",
+  await migrationDatabaseAt(
+    "Migrated",
+    "released_evaluation",
+    async (subject) => {
+      await releasedSeeded(subject);
+      const digest = await releasedFold(subject, "d".repeat(64));
+      const judged = await releasedFold(subject, releasedJudgedDigest);
+      await subject.query(
+        identityExecution(
+          1,
+          "SpawnEvaluation",
+          "kind,cycle,stage,generation,evaluator",
+          "'Evaluation',2,1,5,3",
+        ),
+      );
+      await subject.query(releasedLaterWork);
+      await subject.query(releasedJudgedWork);
+      assert.notEqual(
+        judged,
+        2,
+        "the reference the work reported is not the cycle it ran in",
+      );
+      assert.notEqual(judged, digest, "nor is it the evaluator's own result");
+      assert.deepEqual(
+        (await subject.query(releasedSubmission(1))).rows,
+        [{ result: "Submitted", operation: "operation-released-1" }],
+        "the evaluator the stage the release names runs",
+      );
+      assert.deepEqual(
+        await releasedJournalled(subject, "operation-released-1"),
+        {
+          type: "ReportTaskTerminal",
           value: {
-            ticket: 1,
-            result: {
-              obligation: {
-                task: releasedEvaluatorTask,
-                definition: releasedSecondDefinition,
-                contextRef: judged,
+            type: "EvaluationResultReport",
+            value: {
+              ticket: 1,
+              result: {
+                obligation: {
+                  task: releasedEvaluatorTask,
+                  definition: releasedSecondDefinition,
+                  contextRef: judged,
+                },
+                resultRef: digest,
               },
-              resultRef: digest,
+              verdict: "EvaluatorPass",
             },
-            verdict: "EvaluatorPass",
           },
         },
-      },
-      "the evaluator judges under the reference its work cycle reported",
-    );
-  });
+        "the evaluator judges under the reference its work cycle reported",
+      );
+    },
+  );
 });
 
 /** A definition a second stage carries, distinct from every one the first stage lists. */
@@ -5963,180 +5797,192 @@ const releasedTwoStageEntry = JSON.stringify({
 });
 
 test("the door reports the definition of the stage the evaluator runs in, not the first stage listing its key", async () => {
-  await migrationDatabase("released_second_stage", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, releasedTwoStageEntry)};
+  await migrationDatabaseAt(
+    "Migrated",
+    "released_second_stage",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, releasedTwoStageEntry)};
        UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
        INSERT INTO configuration_revision
          (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
        VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
        INSERT INTO input_bundle(tenant,project,bundle,digest)
        VALUES('tenant-5','project-5','bundle-5',repeat('b',64))`,
-    );
-    const digest = await releasedFold(subject, "d".repeat(64));
-    const judged = await releasedFold(subject, releasedJudgedDigest);
-    await subject.query(
-      identityExecution(
-        1,
-        "SpawnEvaluation",
-        "kind,cycle,stage,generation,evaluator",
-        "'Evaluation',2,2,1,3",
-      ),
-    );
-    await subject.query(releasedJudgedWork);
-    assert.deepEqual(
-      (await subject.query(releasedSubmission(1))).rows,
-      [{ result: "Submitted", operation: "operation-released-1" }],
-      "the second stage's evaluator runs",
-    );
-    assert.deepEqual(
-      await releasedJournalled(subject, "operation-released-1"),
-      {
-        type: "ReportTaskTerminal",
-        value: {
-          type: "EvaluationResultReport",
+      );
+      const digest = await releasedFold(subject, "d".repeat(64));
+      const judged = await releasedFold(subject, releasedJudgedDigest);
+      await subject.query(
+        identityExecution(
+          1,
+          "SpawnEvaluation",
+          "kind,cycle,stage,generation,evaluator",
+          "'Evaluation',2,2,1,3",
+        ),
+      );
+      await subject.query(releasedJudgedWork);
+      assert.deepEqual(
+        (await subject.query(releasedSubmission(1))).rows,
+        [{ result: "Submitted", operation: "operation-released-1" }],
+        "the second stage's evaluator runs",
+      );
+      assert.deepEqual(
+        await releasedJournalled(subject, "operation-released-1"),
+        {
+          type: "ReportTaskTerminal",
           value: {
-            ticket: 1,
-            result: {
-              obligation: {
-                task: {
-                  type: "EvaluationTask",
-                  value: {
-                    ticket: 1,
-                    workCycle: 2,
-                    stage: 2,
-                    generation: 1,
-                    evaluator: 3,
+            type: "EvaluationResultReport",
+            value: {
+              ticket: 1,
+              result: {
+                obligation: {
+                  task: {
+                    type: "EvaluationTask",
+                    value: {
+                      ticket: 1,
+                      workCycle: 2,
+                      stage: 2,
+                      generation: 1,
+                      evaluator: 3,
+                    },
                   },
+                  definition: releasedThirdDefinition,
+                  contextRef: judged,
                 },
-                definition: releasedThirdDefinition,
-                contextRef: judged,
+                resultRef: digest,
               },
-              resultRef: digest,
+              verdict: "EvaluatorPass",
             },
-            verdict: "EvaluatorPass",
           },
         },
-      },
-      "the evaluator judges under its own stage's definition",
-    );
-  });
+        "the evaluator judges under its own stage's definition",
+      );
+    },
+  );
 });
 
 test("an evaluator whose cycle records no passed work result is refused by name", async () => {
-  await migrationDatabase("released_unjudged", async (subject) => {
-    await postgresMigrate(subject);
-    await releasedSeeded(subject);
-    await subject.query(
-      identityExecution(
-        1,
-        "SpawnEvaluation",
-        "kind,cycle,stage,generation,evaluator",
-        "'Evaluation',2,1,5,3",
-      ),
-    );
-    await subject.query(
-      identityExecution(2, "SpawnWork", "kind,cycle", "'Work',2", "Fail"),
-    );
-    await subject.query(releasedLaterWork);
-    await subject.query(releasedOtherTicketWork);
-    assert.deepEqual(
-      (await subject.query(releasedSubmission(1))).rows,
-      [{ result: "WorkResultUnrecorded", operation: null }],
-      "a judgement whose own cycle records no passed result of its own ticket",
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ held: number }>(
-          "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
-        )
-      ).rows,
-      [{ held: 0 }],
-      "the refused completion journalled nothing",
-    );
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "released_unjudged",
+    async (subject) => {
+      await releasedSeeded(subject);
+      await subject.query(
+        identityExecution(
+          1,
+          "SpawnEvaluation",
+          "kind,cycle,stage,generation,evaluator",
+          "'Evaluation',2,1,5,3",
+        ),
+      );
+      await subject.query(
+        identityExecution(2, "SpawnWork", "kind,cycle", "'Work',2", "Fail"),
+      );
+      await subject.query(releasedLaterWork);
+      await subject.query(releasedOtherTicketWork);
+      assert.deepEqual(
+        (await subject.query(releasedSubmission(1))).rows,
+        [{ result: "WorkResultUnrecorded", operation: null }],
+        "a judgement whose own cycle records no passed result of its own ticket",
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ held: number }>(
+            "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
+          )
+        ).rows,
+        [{ held: 0 }],
+        "the refused completion journalled nothing",
+      );
+    },
+  );
 });
 
 test("a work result nothing observed a source for is refused on a ticket bound to a repository", async () => {
-  await migrationDatabase("released_unsourced", async (subject) => {
-    await postgresMigrate(subject);
-    await releasedSeeded(subject);
-    await subject.query(
-      `INSERT INTO ticket_source(tenant,project,ticket,source,repository,commit,ref)
+  await migrationDatabaseAt(
+    "Migrated",
+    "released_unsourced",
+    async (subject) => {
+      await releasedSeeded(subject);
+      await subject.query(
+        `INSERT INTO ticket_source(tenant,project,ticket,source,repository,commit,ref)
        VALUES('tenant-5','project-5',1,7,'${releasedRepository}','${releasedCommit}','${releasedRef}')`,
-    );
-    await subject.query(
-      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',4"),
-    );
-    assert.deepEqual(
-      (await subject.query(releasedSubmission(1))).rows,
-      [{ result: "SourceUnrecorded", operation: null }],
-      "a pass nothing observed a source for",
-    );
-    assert.deepEqual(
-      (
-        await subject.query<{ held: number }>(
-          "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
-        )
-      ).rows,
-      [{ held: 0 }],
-      "the refused completion journalled nothing",
-    );
-  });
+      );
+      await subject.query(
+        identityExecution(1, "SpawnWork", "kind,cycle", "'Work',4"),
+      );
+      assert.deepEqual(
+        (await subject.query(releasedSubmission(1))).rows,
+        [{ result: "SourceUnrecorded", operation: null }],
+        "a pass nothing observed a source for",
+      );
+      assert.deepEqual(
+        (
+          await subject.query<{ held: number }>(
+            "SELECT count(*)::int AS held FROM operation WHERE operation='operation-released-1'",
+          )
+        ).rows,
+        [{ held: 0 }],
+        "the refused completion journalled nothing",
+      );
+    },
+  );
 });
 
 /** How many releases the index case seeds, so a scan of them all is visible as one. */
 const releasedIndexEntries = 400;
 
 test("the release index answers a read at the key a released ticket names", async () => {
-  await migrationDatabase("released_index", async (subject) => {
-    await installationAt(subject, migration013.version);
-    await subject.query(deletionPartition);
-    await subject.query("BEGIN");
-    await subject.query(
-      `INSERT INTO decision_input
+  await migrationDatabaseAt(
+    migration013.version,
+    "released_index",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      await subject.query("BEGIN");
+      await subject.query(
+        `INSERT INTO decision_input
          (tenant,project,ordinal,input_kind,input_id,base_priority,
           lifecycle_generation,state,decided_seq,terminal_at)
        SELECT 'tenant-5','project-5',n,'Continuation','entry-'||n,
               'Continuation',1,'Journaled',n,now()
          FROM generate_series(1,$1::bigint) n`,
-      [releasedIndexEntries],
-    );
-    await subject.query(
-      `INSERT INTO journal_entry
+        [releasedIndexEntries],
+      );
+      await subject.query(
+        `INSERT INTO journal_entry
          (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
           recovery_epoch,cause_kind,cause_id)
        SELECT 'tenant-5','project-5',n,
          format('{"seq":%s,"event":{"type":"CreateTicket","value":{"id":%s}},"rec":{}}',n,n),
          'digest-'||n,'previous-'||n,'owner',1,'epoch-5','Continuation','entry-'||n
          FROM generate_series(1,$1::bigint) n`,
-      [releasedIndexEntries],
-    );
-    await subject.query("COMMIT");
-    await subject.query("ANALYZE journal_entry");
-    const before = await releaseIndexUse(subject);
-    assert.equal(
-      (
-        await subject.query(
-          `SELECT j.seq FROM journal_entry j
+        [releasedIndexEntries],
+      );
+      await subject.query("COMMIT");
+      await subject.query("ANALYZE journal_entry");
+      const before = await releaseIndexUse(subject);
+      assert.equal(
+        (
+          await subject.query(
+            `SELECT j.seq FROM journal_entry j
             WHERE j.tenant='tenant-5' AND j.project='project-5'
               AND (CASE WHEN j.entry IS JSON OBJECT
                         THEN j.entry::jsonb->'event'->>'type' END)
                   = ANY (ARRAY['ReleaseTicket'::text, 'CreateTicket'::text])
               AND (CASE WHEN j.entry IS JSON OBJECT
                         THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(1)`,
-        )
-      ).rowCount,
-      1,
-    );
-    await subject.query("SELECT pg_stat_force_next_flush()");
-    const after = await releaseIndexUse(subject);
-    assert.ok(
-      after.tuples - before.tuples <= 1,
-      `one release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
-    );
-  });
+          )
+        ).rowCount,
+        1,
+      );
+      await subject.query("SELECT pg_stat_force_next_flush()");
+      const after = await releaseIndexUse(subject);
+      assert.ok(
+        after.tuples - before.tuples <= 1,
+        `one release cost ${String(after.tuples - before.tuples)} entries out of the index, so it was scanned for rather than looked up`,
+      );
+    },
+  );
 });
 
 /** What each role may do with the two relations a release fills, and what it may not. */
@@ -6175,8 +6021,7 @@ const releasedSourceColumns = [
 const releasedEntryColumns = ["tenant", "project", "entry"];
 
 test("the two relations a release fills are open to the roles that write and read them and no others", async () => {
-  await migrationDatabase("released_grants", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "released_grants", async (subject) => {
     for (const [relation, role, privilege, granted] of releasedPrivileges)
       assert.equal(
         (
@@ -6260,46 +6105,52 @@ async function predicatesClosed(
 }
 
 test("the reference predicates are the boundary owner's and nobody's to execute", async () => {
-  await migrationDatabase("released_predicates", async (subject) => {
-    await postgresMigrate(subject);
-    await predicatesClosed(subject, releasedPredicates);
-  });
+  await migrationDatabaseAt(
+    "Migrated",
+    "released_predicates",
+    async (subject) => {
+      await predicatesClosed(subject, releasedPredicates);
+    },
+  );
 });
 
 /** The tag the authority CHECK switched on until a wall became a task's. */
 const releasedRetiredTag = "ExecutionBlocked";
 
 test("the authority a completion is admitted under names no tag this machine retired", async () => {
-  await migrationDatabase("released_authority", async (subject) => {
-    await installationAt(subject, migration013.version);
-    const rendered = (
-      await subject.query<{ rendered: string }>(
-        `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
+  await migrationDatabaseAt(
+    migration013.version,
+    "released_authority",
+    async (subject) => {
+      const rendered = (
+        await subject.query<{ rendered: string }>(
+          `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
           WHERE conname='operation_completion_authority_is_its_boundary'`,
-      )
-    ).rows[0]?.rendered;
-    assert.ok(rendered !== undefined, "the authority CHECK is not installed");
-    assert.ok(
-      !rendered.includes(releasedRetiredTag),
-      `the authority CHECK still switches on ${releasedRetiredTag}`,
-    );
-    assert.ok(
-      rendered.includes("TaskDone"),
-      "the authority CHECK stopped weighing the completion it is for",
-    );
-    await subject.query(deletionPartition);
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO operation
+        )
+      ).rows[0]?.rendered;
+      assert.ok(rendered !== undefined, "the authority CHECK is not installed");
+      assert.ok(
+        !rendered.includes(releasedRetiredTag),
+        `the authority CHECK still switches on ${releasedRetiredTag}`,
+      );
+      assert.ok(
+        rendered.includes("TaskDone"),
+        "the authority CHECK stopped weighing the completion it is for",
+      );
+      await subject.query(deletionPartition);
+      await assert.rejects(
+        subject.query(
+          `INSERT INTO operation
            (tenant,project,operation,authority_kind,authority_subject,admission,
             key_version,key_digest,payload_digest,command,command_tag)
          VALUES('tenant-5','project-5','operation-5','User','author','Ordinary',
                 'v1','key-5','payload-5','{}','TaskDone')`,
-      ),
-      /operation_completion_authority_is_its_boundary/u,
-      "a completion from an authority that is not the scheduler's",
-    );
-  });
+        ),
+        /operation_completion_authority_is_its_boundary/u,
+        "a completion from an authority that is not the scheduler's",
+      );
+    },
+  );
 });
 
 /** The wipe the migration's guard names, read from the tree rather than restated here. */
@@ -6319,6 +6170,7 @@ const wipeKept = [
   "action_observation",
   "admitted_worker",
   "capacity_account",
+  "chat_host",
   "configuration_revision",
   "deployment_authoring_policy",
   "execution_cluster",
@@ -6326,6 +6178,7 @@ const wipeKept = [
   "forge_installation",
   "installation_authority",
   "invite_link",
+  "member_thread_limit",
   "personal_runner",
   "personal_runner_project",
   "personal_runner_registration_token",
@@ -6342,6 +6195,7 @@ const wipeKept = [
   "repository_configuration_import",
   "repository_configuration_provenance",
   "repository_configuration_version",
+  "repository_configuration_workload_path",
   "schema_migration",
   "selector_inventory_state",
   "selector_project_settings",
@@ -6486,8 +6340,7 @@ async function wipeStanding(subject: pg.Pool): Promise<void> {
 
 test("the wipe empties every relation it names, resets the counters and keeps the project", async () => {
   const script = await readFile(wipeScriptPath, "utf8");
-  await migrationDatabase("wipe_tickets", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "wipe_tickets", async (subject) => {
     await wipeSeeded(subject);
 
     await subject.query(script);
@@ -6546,29 +6399,27 @@ test("a fresh install records the ticket events arriving and keeps no continuati
 });
 
 test("a journal with an entry in it refuses the events arriving and names the wipe", async () => {
-  await migrationDatabase("events_guard", async (subject) => {
-    await installationBefore(subject, migration014.version);
-    await subject.query(
-      `${deletionPartition}\n${deletionJournalRow(1, releasedEntry)}`,
-    );
-    await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT max(version) AS version,
+  await migrationDatabaseAt(
+    migration014.version - 1,
+    "events_guard",
+    async (subject) => {
+      await subject.query(
+        `${deletionPartition}\n${deletionJournalRow(1, releasedEntry)}`,
+      );
+      await assert.rejects(postgresMigrate(subject), /wipe-tickets\.sql/u);
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT max(version) AS version,
                   to_regclass('public.project_continuation')::text AS relation
              FROM schema_migration`,
-        )
-      ).rows,
-      [{ version: migration013.version, relation: "project_continuation" }],
-    );
-  });
+          )
+        ).rows,
+        [{ version: migration013.version, relation: "project_continuation" }],
+      );
+    },
+  );
 });
-
-/** A release as the journal records one, which is the released ticket under the event's tag. */
-function ticketCreated(value: unknown): unknown {
-  return { type: "TicketCreated", value };
-}
 
 /** The evaluator obligation a produced evaluation report below carries. */
 const eventsEvaluatorObligation = {
@@ -6938,42 +6789,44 @@ async function eventsAdmitted(
 }
 
 test("the journal takes one ticket event per row and refuses a command, a record and a ref that is not one", async () => {
-  await migrationDatabase("events_journal", async (subject) => {
-    await installationAt(subject, migration014.version);
-    await subject.query(deletionPartition);
-    for (const [label, event, admitted] of eventsJournalled)
-      assert.equal(
-        await eventsAdmitted(subject, JSON.stringify({ seq: 1, event })),
-        admitted,
-        label,
-      );
-    for (const [label, entry] of [
-      [
-        "an event beside the record of deciding it",
-        {
-          seq: 1,
-          event: { type: "TicketRevoked", value: 1 },
-          rec: { label: "ticket-revoked", transitions: [], effects: [] },
-        },
-      ],
-      [
-        "an entry at another sequence",
-        { seq: 2, event: { type: "TicketRevoked", value: 1 } },
-      ],
-      ["an entry with no event", { seq: 1 }],
-    ] as const)
-      assert.equal(
-        await eventsAdmitted(subject, JSON.stringify(entry)),
-        false,
-        label,
-      );
-    assert.equal(await eventsAdmitted(subject, "not json"), false, "text");
-  });
+  await migrationDatabaseAt(
+    migration014.version,
+    "events_journal",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      for (const [label, event, admitted] of eventsJournalled)
+        assert.equal(
+          await eventsAdmitted(subject, JSON.stringify({ seq: 1, event })),
+          admitted,
+          label,
+        );
+      for (const [label, entry] of [
+        [
+          "an event beside the record of deciding it",
+          {
+            seq: 1,
+            event: { type: "TicketRevoked", value: 1 },
+            rec: { label: "ticket-revoked", transitions: [], effects: [] },
+          },
+        ],
+        [
+          "an entry at another sequence",
+          { seq: 2, event: { type: "TicketRevoked", value: 1 } },
+        ],
+        ["an entry with no event", { seq: 1 }],
+      ] as const)
+        assert.equal(
+          await eventsAdmitted(subject, JSON.stringify(entry)),
+          false,
+          label,
+        );
+      assert.equal(await eventsAdmitted(subject, "not json"), false, "text");
+    },
+  );
 });
 
 test("the ticket service journals through the check without holding the validator", async () => {
-  await migrationDatabase("events_writer", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "events_writer", async (subject) => {
     await subject.query(deletionPartition);
     const journalled = (entry: string) =>
       `INSERT INTO journal_entry
@@ -7136,27 +6989,29 @@ const eventsCommands: readonly (readonly [
 ];
 
 test("the inbox's grammar keeps the commands less the reduce and the disposition, and both exclusions", async () => {
-  await migrationDatabase("events_commands", async (subject) => {
-    await installationAt(subject, migration014.version);
-    for (const [label, event, grammar, mailbox] of eventsCommands) {
-      assert.deepEqual(
-        (
-          await subject.query<{ grammar: boolean; mailbox: boolean }>(
-            `SELECT decision_command_is_valid($1::jsonb) AS grammar,
+  await migrationDatabaseAt(
+    migration014.version,
+    "events_commands",
+    async (subject) => {
+      for (const [label, event, grammar, mailbox] of eventsCommands) {
+        assert.deepEqual(
+          (
+            await subject.query<{ grammar: boolean; mailbox: boolean }>(
+              `SELECT decision_command_is_valid($1::jsonb) AS grammar,
                     ticket_command_is_valid($2::jsonb) AS mailbox`,
-            [JSON.stringify(event), eventsDecide(event)],
-          )
-        ).rows,
-        [{ grammar, mailbox }],
-        label,
-      );
-    }
-  });
+              [JSON.stringify(event), eventsDecide(event)],
+            )
+          ).rows,
+          [{ grammar, mailbox }],
+          label,
+        );
+      }
+    },
+  );
 });
 
 test("a desk task is opened once per decision, whatever position it names", async () => {
-  await migrationDatabase("events_desk", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "events_desk", async (subject) => {
     await subject.query(
       `${deletionPartition}\n${deletionJournalRow(1, journalledRevocation)}`,
     );
@@ -7187,8 +7042,7 @@ test("a desk task is opened once per decision, whatever position it names", asyn
 });
 
 test("a decision input counts the passes it was deferred", async () => {
-  await migrationDatabase("events_deferral", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "events_deferral", async (subject) => {
     await subject.query(deletionPartition);
     const input = (ordinal: number, kind: string, passes?: number) =>
       passes === undefined
@@ -7237,8 +7091,7 @@ test("a decision input counts the passes it was deferred", async () => {
 const eventsIndexEntries = 400;
 
 test("the release index answers a read at the one tag a release is journalled at", async () => {
-  await migrationDatabase("events_index", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "events_index", async (subject) => {
     await subject.query(deletionPartition);
     await subject.query("BEGIN");
     await subject.query(
@@ -7297,8 +7150,7 @@ const eventsPredicates = [
 ];
 
 test("the predicates the events arrive with are the boundary owner's and nobody's to execute", async () => {
-  await migrationDatabase("events_owners", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "events_owners", async (subject) => {
     await predicatesClosed(subject, eventsPredicates);
   });
 });
@@ -7357,8 +7209,7 @@ test("a fresh install records the ticket commands arriving and the refusal colum
  * refused settlement.
  */
 test("the refusal codes the inbox admits are exactly the ones the writer decides", async () => {
-  await migrationDatabase("commands_codes", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_codes", async (subject) => {
     const [row] = (
       await subject.query<{ definition: string }>(
         `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
@@ -7388,27 +7239,30 @@ test("a journal or an inbox with a row in it refuses the commands arriving and n
     ["a journal entry", deletionJournalRow(1, journalledRevocation)],
     ["an operation and no journal entry", commandsStoredOperation],
   ] as const)
-    await migrationDatabase("commands_guard", async (subject) => {
-      await installationBefore(subject, migration015.version);
-      await subject.query(`${deletionPartition}\n${seed}`);
-      await assert.rejects(
-        postgresMigrate(subject),
-        /wipe-tickets\.sql/u,
-        label,
-      );
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT max(version) AS version,
+    await migrationDatabaseAt(
+      migration015.version - 1,
+      "commands_guard",
+      async (subject) => {
+        await subject.query(`${deletionPartition}\n${seed}`);
+        await assert.rejects(
+          postgresMigrate(subject),
+          /wipe-tickets\.sql/u,
+          label,
+        );
+        assert.deepEqual(
+          (
+            await subject.query(
+              `SELECT max(version) AS version,
                     (SELECT count(*)::int FROM information_schema.columns
                       WHERE table_name='decision_input' AND column_name='refusal') AS refusal
                FROM schema_migration`,
-          )
-        ).rows,
-        [{ version: migration014.version, refusal: 0 }],
-        label,
-      );
-    });
+            )
+          ).rows,
+          [{ version: migration014.version, refusal: 0 }],
+          label,
+        );
+      },
+    );
 });
 
 /** A report as the package spells it, naming the ticket it is about when one is given. */
@@ -7500,8 +7354,7 @@ const commandsReportEvents: readonly (readonly [
 ];
 
 test("the journal takes a report only about the ticket its event is about", async () => {
-  await migrationDatabase("commands_journal", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_journal", async (subject) => {
     await subject.query(deletionPartition);
     for (const [tag, report, around] of commandsReportEvents)
       for (const [label, event, admitted] of [
@@ -7672,8 +7525,7 @@ const commandsTable: readonly (readonly [string, unknown, boolean, boolean])[] =
   ];
 
 test("the inbox's grammar is the ticket commands, and both exclusions hold at their names", async () => {
-  await migrationDatabase("commands_grammar", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_grammar", async (subject) => {
     for (const [label, command, grammar, mailbox] of commandsTable)
       assert.deepEqual(
         (
@@ -7746,8 +7598,7 @@ async function commandsClassified(
 }
 
 test("the mailbox classifies at the new tags and a revocation keeps its priority", async () => {
-  await migrationDatabase("commands_accept", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_accept", async (subject) => {
     await subject.query(deletionPartition);
     const accepted = (door: string, operation: string, command: string) =>
       commandsAccepted(subject, door, operation, command);
@@ -7809,47 +7660,49 @@ test("the mailbox classifies at the new tags and a revocation keeps its priority
 });
 
 test("the authority a completion is admitted under follows the completion's new tags", async () => {
-  await migrationDatabase("commands_authority", async (subject) => {
-    await postgresMigrate(subject);
-    const rendered = (
-      await subject.query<{ rendered: string }>(
-        `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
+  await migrationDatabaseAt(
+    "Migrated",
+    "commands_authority",
+    async (subject) => {
+      const rendered = (
+        await subject.query<{ rendered: string }>(
+          `SELECT pg_get_constraintdef(oid) AS rendered FROM pg_constraint
           WHERE conname='operation_completion_authority_is_its_boundary'`,
-      )
-    ).rows[0]?.rendered;
-    assert.ok(rendered !== undefined, "the authority CHECK is not installed");
-    for (const retired of ["'TaskDone'", "'FinalizationResult'"])
-      assert.ok(
-        !rendered.includes(retired),
-        `the CHECK still names ${retired}`,
-      );
-    await subject.query(deletionPartition);
-    const stored = (operation: string, authority: string, tag: string) =>
-      subject.query(
-        `INSERT INTO operation
+        )
+      ).rows[0]?.rendered;
+      assert.ok(rendered !== undefined, "the authority CHECK is not installed");
+      for (const retired of ["'TaskDone'", "'FinalizationResult'"])
+        assert.ok(
+          !rendered.includes(retired),
+          `the CHECK still names ${retired}`,
+        );
+      await subject.query(deletionPartition);
+      const stored = (operation: string, authority: string, tag: string) =>
+        subject.query(
+          `INSERT INTO operation
            (tenant,project,operation,authority_kind,authority_subject,admission,
             key_version,key_digest,payload_digest,command,command_tag)
          VALUES('tenant-5','project-5',$1,$2,'author','CorrectnessReducing',
                 'v1',$1,'payload-5','{}',$3)`,
-        [operation, authority, tag],
-      );
-    for (const [tag, authority] of [
-      ["ReportTaskTerminal", "ExecutionScheduler"],
-      ["ReportFinalizationResult", "Finalizer"],
-    ] as const) {
-      await assert.rejects(
-        stored(`operation-user-${tag}`, "User", tag),
-        /operation_completion_authority_is_its_boundary/u,
-        `${tag} from an authority that is not ${authority}`,
-      );
-      await stored(`operation-own-${tag}`, authority, tag);
-    }
-  });
+          [operation, authority, tag],
+        );
+      for (const [tag, authority] of [
+        ["ReportTaskTerminal", "ExecutionScheduler"],
+        ["ReportFinalizationResult", "Finalizer"],
+      ] as const) {
+        await assert.rejects(
+          stored(`operation-user-${tag}`, "User", tag),
+          /operation_completion_authority_is_its_boundary/u,
+          `${tag} from an authority that is not ${authority}`,
+        );
+        await stored(`operation-own-${tag}`, authority, tag);
+      }
+    },
+  );
 });
 
 test("the completion door stores the report under the tag of the command it built", async () => {
-  await migrationDatabase("commands_door", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_door", async (subject) => {
     await releasedSeeded(subject);
     await subject.query(
       identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", "Fail"),
@@ -7871,41 +7724,6 @@ test("the completion door stores the report under the tag of the command it buil
     );
   });
 });
-
-/** A refusal the machine decided, in the codec's spelling. */
-function commandsRefusal(type: string, value: unknown): string {
-  return JSON.stringify({ type, value });
-}
-
-/** One payload each machine refusal is admitted with. */
-const commandsRefusals: readonly (readonly [string, unknown])[] = [
-  ["TicketAlreadyExists", 1],
-  ["DependenciesNotFound", { ticket: 1, dependencies: [2, 3] }],
-  ["SelfDependency", 1],
-  ["TicketNotFound", 1],
-  ["TicketNotPending", 1],
-  ["TicketIdentityMismatch", 1],
-  ["TicketRevisionStale", { ticket: 1, expected: 2, current: 3 }],
-  ["TicketDependenciesChanged", 1],
-  ["DependenciesIncomplete", { ticket: 1, dependencies: [2] }],
-  ["TicketNotRevocable", 1],
-  ["TicketNotResumable", 1],
-  ["TaskNotCurrent", { ticket: 1, task: releasedTask }],
-  ["FinalizationNotCurrent", { ticket: 1, workCycle: 2, generation: 1 }],
-];
-
-/** The boundary's own refusals, which carry none. */
-const commandsBoundaryRefusals = [
-  "AuthoringChanged",
-  "ConfigurationInvalid",
-  "TicketChanged",
-  "SelectionChanged",
-  "ExecutionSourceUnreadable",
-  "ExecutionSourceDenied",
-  "BriefNamesNoRepository",
-  "TicketCapacityReached",
-  "FinalizationRequestClosed",
-];
 
 const commandsKnown = "decision_input_outcome_is_known";
 const commandsCarried = "decision_input_refusal_is_its_outcome";
@@ -7992,118 +7810,119 @@ const commandsRefused: readonly (readonly [
     commandsRefusal("FinalizationNotCurrent", { workCycle: 2, generation: 1 }),
     commandsCarried,
   ],
+  [
+    "revoked dependencies naming none",
+    "DependenciesRevoked",
+    commandsRefusal("DependenciesRevoked", { ticket: 1, dependencies: [] }),
+    commandsCarried,
+  ],
+  [
+    "a cycle about no ticket",
+    "DependencyCycle",
+    commandsRefusal("DependencyCycle", { dependencies: [2] }),
+    commandsCarried,
+  ],
+  [
+    "the code an update moving the dependencies was refused under",
+    "TicketDependenciesChanged",
+    commandsRefusal("TicketDependenciesChanged", 1),
+    commandsKnown,
+  ],
 ];
 
-/** Writes one refused input, answering the error it was refused with, if any. */
-async function commandsRefuse(
-  subject: pg.Pool,
-  ordinal: number,
-  code: string,
-  refusal: string | null,
-): Promise<string | null> {
-  try {
-    await subject.query(
-      `INSERT INTO decision_input
-         (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation,
-          state,outcome_code,refusal,refused_head,refused_lifecycle_generation,terminal_at)
-       VALUES('tenant-5','project-5',$1,'Operation',$2,'Ordinary',1,
-              'Refused',$3,$4,0,1,now())`,
-      [ordinal, `input-${String(ordinal)}`, code, refusal],
-    );
-    return null;
-  } catch (error: unknown) {
-    return String(error);
-  }
-}
-
 test("a refused input keeps the refusal the machine decided and none for the boundary's own", async () => {
-  await migrationDatabase("commands_refusals", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(deletionPartition);
-    let ordinal = 0;
-    for (const [code, value] of commandsRefusals)
-      assert.equal(
-        await commandsRefuse(
-          subject,
-          ++ordinal,
+  await migrationDatabaseAt(
+    "Migrated",
+    "commands_refusals",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      let ordinal = 0;
+      for (const [code, value] of commandsRefusals)
+        assert.equal(
+          await commandsRefuse(
+            subject,
+            ++ordinal,
+            code,
+            commandsRefusal(code, value),
+          ),
+          null,
           code,
-          commandsRefusal(code, value),
-        ),
-        null,
-        code,
-      );
-    for (const code of commandsBoundaryRefusals)
-      assert.equal(
-        await commandsRefuse(subject, ++ordinal, code, null),
-        null,
-        code,
-      );
-    for (const [label, code, refusal, check] of commandsRefused) {
-      const refused = await commandsRefuse(subject, ++ordinal, code, refusal);
-      assert.ok(refused?.includes(check), `${label}: ${String(refused)}`);
-    }
-  });
+        );
+      for (const code of commandsBoundaryRefusals)
+        assert.equal(
+          await commandsRefuse(subject, ++ordinal, code, null),
+          null,
+          code,
+        );
+      for (const [label, code, refusal, check] of commandsRefused) {
+        const refused = await commandsRefuse(subject, ++ordinal, code, refusal);
+        assert.ok(refused?.includes(check), `${label}: ${String(refused)}`);
+      }
+    },
+  );
 });
 
 test("the ticket service settles a refusal through the check, and the api reads it", async () => {
-  await migrationDatabase("commands_refusal_writer", async (subject) => {
-    await postgresMigrate(subject);
-    await subject.query(deletionPartition);
-    await subject.query(
-      `INSERT INTO decision_input
+  await migrationDatabaseAt(
+    "Migrated",
+    "commands_refusal_writer",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      await subject.query(
+        `INSERT INTO decision_input
          (tenant,project,ordinal,input_kind,input_id,base_priority,lifecycle_generation)
        VALUES('tenant-5','project-5',1,'Operation','input-1','Ordinary',1)`,
-    );
-    const settled = commandsRefusal("TicketNotFound", 1);
-    const client = await subject.connect();
-    const settle = (refusal: string | null) =>
-      client.query(
-        `UPDATE decision_input
+      );
+      const settled = commandsRefusal("TicketNotFound", 1);
+      const client = await subject.connect();
+      const settle = (refusal: string | null) =>
+        client.query(
+          `UPDATE decision_input
             SET state='Refused', outcome_code='TicketNotFound', refusal=$1,
                 refused_head=0, refused_lifecycle_generation=1, terminal_at=now()
           WHERE input_id='input-1'`,
-        [refusal],
-      );
-    try {
-      await client.query("BEGIN");
-      await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
-      await assert.rejects(settle(null), new RegExp(commandsCarried, "u"));
-      await client.query("ROLLBACK");
-      await client.query("BEGIN");
-      await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
-      await settle(settled);
-      await client.query("COMMIT");
-    } finally {
-      client.release();
-    }
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT refusal,
+          [refusal],
+        );
+      try {
+        await client.query("BEGIN");
+        await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
+        await assert.rejects(settle(null), new RegExp(commandsCarried, "u"));
+        await client.query("ROLLBACK");
+        await client.query("BEGIN");
+        await client.query(`SET LOCAL ROLE ${ticketServiceRole}`);
+        await settle(settled);
+        await client.query("COMMIT");
+      } finally {
+        client.release();
+      }
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT refusal,
                   has_column_privilege($1,'public.decision_input','refusal','SELECT') AS reads,
                   has_column_privilege($1,'public.decision_input','refusal','UPDATE') AS writes,
                   has_function_privilege($1,'public.decision_refusal_is_valid(text,text)','EXECUTE') AS executes,
                   has_function_privilege('public','public.decision_refusal_is_valid(text,text)','EXECUTE') AS anyone
              FROM decision_input`,
-          [apiRole],
-        )
-      ).rows,
-      [
-        {
-          refusal: settled,
-          reads: true,
-          writes: false,
-          executes: false,
-          anyone: false,
-        },
-      ],
-    );
-  });
+            [apiRole],
+          )
+        ).rows,
+        [
+          {
+            refusal: settled,
+            reads: true,
+            writes: false,
+            executes: false,
+            anyone: false,
+          },
+        ],
+      );
+    },
+  );
 });
 
 test("the command validator rebuilt whole stays the boundary owner's and nobody's to execute", async () => {
-  await migrationDatabase("commands_owners", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "commands_owners", async (subject) => {
     await predicatesClosed(subject, [
       "public.decision_command_is_valid(jsonb)",
     ]);
@@ -8205,39 +8024,42 @@ async function updateInstalledPrivileges(subject: pg.Pool): Promise<void> {
 }
 
 test("an applied 016 stores each released ticket's brief as the one its content digest names", async () => {
-  await migrationDatabase("update_brief_backfill", async (subject) => {
-    await installationBefore(subject, migration016.version);
-    await seedProposingBinding(subject);
-    assert.deepEqual(
-      await createdProposingDraftBefore039(subject, "refs/heads/branch-91"),
-      [{ result: "Created", ticket: "1" }],
-    );
-    const brief = {
-      intent: "Land it.",
-      links: [],
-      checks: [],
-      branch: "refs/heads/branch-91",
-      repository: "bound-91",
-      finalization: { mode: "PullRequest" },
-    };
-    await subject.query(
-      `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest)
+  await migrationDatabaseAt(
+    migration016.version - 1,
+    "update_brief_backfill",
+    async (subject) => {
+      await seedProposingBinding(subject);
+      assert.deepEqual(
+        await createdProposingDraftBefore039(subject, "refs/heads/branch-91"),
+        [{ result: "Created", ticket: "1" }],
+      );
+      const brief = {
+        intent: "Land it.",
+        links: [],
+        checks: [],
+        branch: "refs/heads/branch-91",
+        repository: "bound-91",
+        finalization: { mode: "PullRequest" },
+      };
+      await subject.query(
+        `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest)
        VALUES('tenant-91','project-91',1,$1::jsonb,'digest-definition-91')`,
-      [JSON.stringify({ content: { digest: materialDigest(brief) } })],
-    );
-    await postgresMigrate(subject);
-    const [row] = (
-      await subject.query<{ brief: unknown; content: string }>(
-        `SELECT brief,definition->'content'->>'digest' AS content
+        [JSON.stringify({ content: { digest: materialDigest(brief) } })],
+      );
+      await postgresMigrate(subject);
+      const [row] = (
+        await subject.query<{ brief: unknown; content: string }>(
+          `SELECT brief,definition->'content'->>'digest' AS content
            FROM ticket_definition WHERE tenant='tenant-91'`,
-      )
-    ).rows;
-    assert.ok(row !== undefined);
-    assert.deepEqual(releasedTicketBrief(row.brief, row.content), {
-      ...brief,
-      images: [],
-    });
-  });
+        )
+      ).rows;
+      assert.ok(row !== undefined);
+      assert.deepEqual(releasedTicketBrief(row.brief, row.content), {
+        ...brief,
+        images: [],
+      });
+    },
+  );
 });
 
 /** What 015 left behind on a project that ran: a journal, an inbox, refusals, drafts and a projection. */
@@ -8422,8 +8244,7 @@ function updateJournalled(
 }
 
 test("the journal takes an update past the release's revision, about the ticket its definition names", async () => {
-  await migrationDatabase("update_journal", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "update_journal", async (subject) => {
     await subject.query(deletionPartition);
     const contentless: Record<string, unknown> = { ...releasedWhole };
     delete contentless["content"];
@@ -8488,8 +8309,7 @@ function updateCommand(value: Record<string, unknown>): unknown {
 }
 
 test("the inbox's grammar takes an update at a revision it expects, and no Decide carries one", async () => {
-  await migrationDatabase("update_grammar", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "update_grammar", async (subject) => {
     for (const [label, command, grammar] of [
       ["an update", updateCommand({}), true],
       [
@@ -8567,8 +8387,7 @@ async function updateAccepted(
 }
 
 test("a principal offers an update as its own envelope, classified ordinary against a draft revision that exists", async () => {
-  await migrationDatabase("update_accept", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "update_accept", async (subject) => {
     await seedProposingBinding(subject);
     assert.deepEqual(
       await createdProposingDraft(subject, "refs/heads/branch-91"),
@@ -8678,9 +8497,8 @@ async function updateReleasedAt(subject: pg.Pool): Promise<unknown> {
   ).rows[0];
 }
 
-test("a released draft reopens while its ticket is pending, at the dependencies it was released with", async () => {
-  await migrationDatabase("update_draft", async (subject) => {
-    await postgresMigrate(subject);
+test("a released draft reopens while its ticket is pending, at any dependencies", async () => {
+  await migrationDatabaseAt("Migrated", "update_draft", async (subject) => {
     await seedProposingBinding(subject);
     for (const ticket of ["1", "2"])
       assert.deepEqual(
@@ -8713,18 +8531,8 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
     );
     assert.deepEqual(
       await updateRevised(subject, 1, moved),
-      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
-      "a revision that moves the dependencies",
-    );
-    assert.deepEqual(
-      await updateRevised(subject, 1, "not json"),
-      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
-      "a revision naming no dependencies",
-    );
-    assert.deepEqual(
-      await updateRevised(subject, 1, same),
       [{ result: "Revised", version: 2, state: "Released" }],
-      "a revision at the dependencies it was released with",
+      "a revision that moves the dependencies",
     );
     assert.deepEqual(await updateRevised(subject, 1, same), [
       { result: "Stale", version: 2, state: "Released" },
@@ -8742,33 +8550,189 @@ test("a released draft reopens while its ticket is pending, at the dependencies 
   });
 });
 
-test("the draft's released version is one it has, and only a released draft has one", async () => {
-  await migrationDatabase("update_draft_check", async (subject) => {
-    await postgresMigrate(subject);
-    await seedProposingBinding(subject);
+/** Draft 1 released and Pending beside draft 2, at the dependencies `plainAuthoring` names, where the installation predates 086. */
+async function pendingReleasedDraft(subject: pg.Pool): Promise<void> {
+  await seedProposingBinding(subject);
+  for (const ticket of ["1", "2"])
     assert.deepEqual(
-      await createdProposingDraft(subject, "refs/heads/branch-91"),
-      [{ result: "Created", ticket: "1" }],
+      await createdProposingDraftBefore086(subject, "refs/heads/branch-91"),
+      [{ result: "Created", ticket }],
     );
-    for (const [label, change] of [
-      ["a draft released from no version", "state='Released'"],
-      ["an unreleased draft naming a version", "released_authoring_version=1"],
-      [
-        "a released draft naming a version it never reached",
-        "state='Released', released_authoring_version=2",
-      ],
-    ] as const)
-      await assert.rejects(
-        subject.query(`UPDATE draft SET ${change}`),
-        /draft_release_names_its_version/u,
-        label,
-      );
+  assert.equal(
+    await updateFenced(subject, draftReleaseFunction, 1, true),
+    true,
+  );
+  await subject.query(
+    `INSERT INTO ticket_projection(tenant,project,ticket,phase,seq)
+     VALUES('tenant-91','project-91',1,'Pending',1)`,
+  );
+}
+
+/** Each stored refusal read back through this image's reader: its code, or why the reader refused it. */
+async function refusalsRead085(subject: pg.Pool): Promise<readonly string[]> {
+  const rows = (
+    await subject.query<{ outcome_code: string; refusal: string | null }>(
+      `SELECT outcome_code,refusal FROM decision_input
+        WHERE tenant='tenant-5' AND state='Refused' ORDER BY ordinal`,
+    )
+  ).rows;
+  return rows.map(({ outcome_code, refusal }) => {
+    const read = parseStoredRefusal(outcome_code, refusal);
+    return read.parsed === "Ok" ? read.value.type : read.why;
+  });
+}
+
+/** Stores every refusal that stood before 085 under 084's constraints and holds the two 085 admits refused there, answering the codes stored in order. */
+async function refusalsStoredBefore085(
+  subject: pg.Pool,
+): Promise<readonly string[]> {
+  const stood = [
+    ...commandsRefusalsBefore085.filter(
+      ([code]) => code !== commandsRetired085[0],
+    ),
+    ...commandsBoundaryRefusals.map((code) => [code, undefined] as const),
+  ];
+  let ordinal = 0;
+  for (const [code, value] of stood)
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        ++ordinal,
+        code,
+        value === undefined ? null : commandsRefusal(code, value),
+      ),
+      null,
+      code,
+    );
+  for (const [code, value] of commandsRefusals085)
+    assert.match(
+      String(
+        await commandsRefuse(subject, 99, code, commandsRefusal(code, value)),
+      ),
+      /decision_input_outcome_is_known/u,
+      code,
+    );
+  return stood.map(([code]) => code);
+}
+
+/** Stores the two refusals 085 admits past the `stored` rows before them, and holds the one it retires refused. */
+async function refusalsStoredAfter085(
+  subject: pg.Pool,
+  stored: number,
+): Promise<void> {
+  let ordinal = stored;
+  for (const [code, value] of commandsRefusals085)
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        ++ordinal,
+        code,
+        commandsRefusal(code, value),
+      ),
+      null,
+      code,
+    );
+  const [retired, payload] = commandsRetired085;
+  assert.match(
+    String(
+      await commandsRefuse(
+        subject,
+        ordinal + 1,
+        retired,
+        commandsRefusal(retired, payload),
+      ),
+    ),
+    /decision_input_outcome_is_known/u,
+  );
+}
+
+test("085 keeps every refusal that stood readable, admits the dependency refusals, retires the changed one and lets a pending draft's dependencies move", async () => {
+  await migrationDatabase("dependencies_change", async (subject) => {
+    await installationBefore(subject, migration085.version);
+    await subject.query(deletionPartition);
+    const moved = encodeDraftAuthoring({
+      ...plainAuthoring,
+      deps: new Set([2]),
+    });
+    await pendingReleasedDraft(subject);
+    assert.deepEqual(
+      await updateRevised(subject, 1, moved),
+      [{ result: "DependenciesLocked", version: 1, state: "Released" }],
+      "084 locks a released draft's dependencies",
+    );
+    const stood = await refusalsStoredBefore085(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration085.version));
+    assert.deepEqual(await refusalsRead085(subject), stood);
+    await refusalsStoredAfter085(subject, stood.length);
+    assert.deepEqual(
+      await updateRevised(subject, 1, moved),
+      [{ result: "Revised", version: 2, state: "Released" }],
+      "a released draft's dependencies move while its ticket is Pending",
+    );
   });
 });
 
+test("085 refuses a store holding a refusal under the retired code, and leaves it at 084", async () => {
+  await migrationDatabase("dependencies_change_retired", async (subject) => {
+    await installationBefore(subject, migration085.version);
+    await subject.query(deletionPartition);
+    const [retired, payload] = commandsRetired085;
+    assert.equal(
+      await commandsRefuse(
+        subject,
+        1,
+        retired,
+        commandsRefusal(retired, payload),
+      ),
+      null,
+    );
+    await assert.rejects(
+      postgresMigrate(subject),
+      /decision_input_outcome_is_known/u,
+    );
+    assert.deepEqual(
+      (
+        await postgresRuntimeSchema(subject).applied(
+          new AbortController().signal,
+        )
+      ).at(-1)?.version,
+      migration085.version - 1,
+    );
+  });
+});
+
+test("the draft's released version is one it has, and only a released draft has one", async () => {
+  await migrationDatabaseAt(
+    "Migrated",
+    "update_draft_check",
+    async (subject) => {
+      await seedProposingBinding(subject);
+      assert.deepEqual(
+        await createdProposingDraft(subject, "refs/heads/branch-91"),
+        [{ result: "Created", ticket: "1" }],
+      );
+      for (const [label, change] of [
+        ["a draft released from no version", "state='Released'"],
+        [
+          "an unreleased draft naming a version",
+          "released_authoring_version=1",
+        ],
+        [
+          "a released draft naming a version it never reached",
+          "state='Released', released_authoring_version=2",
+        ],
+      ] as const)
+        await assert.rejects(
+          subject.query(`UPDATE draft SET ${change}`),
+          /draft_release_names_its_version/u,
+          label,
+        );
+    },
+  );
+});
+
 test("the door reports the work obligation of the ticket's latest definition", async () => {
-  await migrationDatabase("update_door", async (subject) => {
-    await postgresMigrate(subject);
+  await migrationDatabaseAt("Migrated", "update_door", async (subject) => {
     await releasedSeeded(subject);
     await subject.query(
       `${deletionJournalRow(
@@ -8817,2240 +8781,6 @@ test("the door reports the work obligation of the ticket's latest definition", a
     assert.deepEqual(
       journalled.value.value.result.obligation.definition,
       releasedSecondDefinition,
-    );
-  });
-});
-
-/**
- * Whether the writer may move a ticket's configuration pin, and that the api
- * role may move neither column of it nor read the digest.
- */
-async function repinPrivileges(
-  subject: pg.Pool,
-  writer: boolean,
-): Promise<void> {
-  for (const [column, role, privilege, granted] of [
-    ["configuration_revision", ticketServiceRole, "UPDATE", writer],
-    ["configuration_digest", ticketServiceRole, "UPDATE", writer],
-    ["configuration_revision", apiRole, "UPDATE", false],
-    ["configuration_digest", apiRole, "UPDATE", false],
-    ["configuration_digest", apiRole, "SELECT", false],
-  ] as const)
-    assert.equal(
-      (
-        await subject.query<{ held: boolean }>(
-          "SELECT has_column_privilege($1,'public.ticket_projection',$2,$3) AS held",
-          [role, column, privilege],
-        )
-      ).rows[0]?.held,
-      granted,
-      `${role} ${privilege} on ticket_projection.${column}`,
-    );
-}
-
-test("017 lets the writer re-pin a ticket's configuration, which 016 did not", async () => {
-  await migrationDatabase("repin_install", async (subject) => {
-    await installationBefore(subject, migration017.version);
-    await repinPrivileges(subject, false);
-    assert.ok((await postgresMigrate(subject)).includes(migration017.version));
-    await repinPrivileges(subject, true);
-  });
-});
-
-test("017 migrates a database already holding its grant", async () => {
-  await migrationDatabase("repin_granted", async (subject) => {
-    await installationBefore(subject, migration017.version);
-    await subject.query(
-      `GRANT UPDATE(configuration_revision, configuration_digest)
-         ON TABLE public.ticket_projection TO ${ticketServiceRole}`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration017.version));
-    await repinPrivileges(subject, true);
-  });
-});
-
-/** The columns 018 gives an attempt, by name. */
-async function invocationColumns(subject: pg.Pool): Promise<readonly string[]> {
-  const found = await subject.query<{ column_name: string }>(
-    `SELECT column_name FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='execution_attempt'
-        AND column_name IN ('invocation','invoked')
-      ORDER BY column_name`,
-  );
-  return found.rows.map((row) => row.column_name);
-}
-
-test("018 gives an attempt its invocation and the worker plane its one read of it", async () => {
-  await migrationDatabase("attempt_invocation", async (subject) => {
-    const read = `public.${workerTaskReadFunction}(text)`;
-    await installationBefore(subject, migration018.version);
-    assert.deepEqual(await invocationColumns(subject), []);
-    assert.equal(await migrationHasFunction(subject, read), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration018.version));
-    assert.deepEqual(await invocationColumns(subject), [
-      "invocation",
-      "invoked",
-    ]);
-    for (const [column, role, privilege, granted] of [
-      ["invocation", schedulerRole, "UPDATE", true],
-      ["invoked", poolPlaneRole, "SELECT", true],
-      ["invocation", poolPlaneRole, "SELECT", false],
-      ["invocation", workerPlaneRole, "SELECT", false],
-      ["invocation", apiRole, "SELECT", false],
-    ] as const)
-      assert.equal(
-        (
-          await subject.query<{ held: boolean }>(
-            "SELECT has_column_privilege($1,'public.execution_attempt',$2,$3) AS held",
-            [role, column, privilege],
-          )
-        ).rows[0]?.held,
-        granted,
-        `${role} ${privilege} on execution_attempt.${column}`,
-      );
-    assert.deepEqual(
-      (
-        await subject.query<{
-          owner: string;
-          definer: boolean;
-          plane: boolean;
-          pool: boolean;
-        }>(
-          `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
-                  has_function_privilege($2,p.oid,'EXECUTE') AS plane,
-                  has_function_privilege($3,p.oid,'EXECUTE') AS pool
-             FROM pg_proc p WHERE p.oid=to_regprocedure($1)`,
-          [read, workerPlaneRole, poolPlaneRole],
-        )
-      ).rows,
-      [{ owner: boundaryOwnerRole, definer: true, plane: true, pool: false }],
-    );
-  });
-});
-
-/** The columns 019 gives a session attempt, by name. */
-async function sessionInvocationColumns(
-  subject: pg.Pool,
-): Promise<readonly string[]> {
-  const found = await subject.query<{ column_name: string }>(
-    `SELECT column_name FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='session_attempt'
-        AND column_name IN ('invocation','invoked')`,
-  );
-  return found.rows.map((row) => row.column_name);
-}
-
-/** Who owns each named boundary and which runtime roles may execute it, in name order. */
-async function sessionInvocationBoundaries(
-  subject: pg.Pool,
-  signatures: readonly string[],
-): Promise<readonly unknown[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT p.oid::regprocedure::text AS signature,
-            pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
-            has_function_privilege($2,p.oid,'EXECUTE') AS scheduler,
-            has_function_privilege($3,p.oid,'EXECUTE') AS plane,
-            has_function_privilege($4,p.oid,'EXECUTE') AS pool,
-            has_function_privilege($5,p.oid,'EXECUTE') AS api
-       FROM pg_proc p WHERE p.oid = ANY(SELECT to_regprocedure(unnest($1::text[])))
-      ORDER BY p.proname`,
-    [signatures, schedulerRole, workerPlaneRole, poolPlaneRole, apiRole],
-  );
-  return found.rows;
-}
-
-test("019 gives a session attempt its invocation, opened only with one, and the worker plane its one read of it", async () => {
-  await migrationDatabase("session_invocation", async (subject) => {
-    const bare =
-      "open_session_attempt(text,text,text,text,text,text,text,bigint,bigint,bigint,bigint)";
-    const invoked = bare.replace("bigint)", "bigint,jsonb)");
-    const read = `${sessionTaskReadFunction}(text)`;
-    await installationBefore(subject, migration019.version);
-    assert.deepEqual(await sessionInvocationColumns(subject), []);
-    assert.equal(await migrationHasFunction(subject, bare), true);
-    assert.equal(await migrationHasFunction(subject, read), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration019.version));
-    assert.deepEqual(await sessionInvocationColumns(subject), ["invocation"]);
-    assert.equal(await migrationHasFunction(subject, bare), false);
-    const owned = { owner: boundaryOwnerRole, definer: true, pool: false };
-    assert.deepEqual(
-      await sessionInvocationBoundaries(subject, [invoked, read]),
-      [
-        {
-          signature: invoked,
-          ...owned,
-          scheduler: true,
-          plane: false,
-          api: false,
-        },
-        {
-          signature: read,
-          ...owned,
-          scheduler: false,
-          plane: true,
-          api: false,
-        },
-      ],
-    );
-  });
-});
-
-/** Every role of the installation holding anything on a pool's class, and what it holds. */
-async function poolClassPrivileges(
-  subject: pg.Pool,
-): Promise<readonly Record<string, unknown>[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT r.rolname AS role,
-            has_column_privilege(r.rolname,'public.worker_pool','class','SELECT') AS read,
-            has_column_privilege(r.rolname,'public.worker_pool','class','INSERT') AS insert,
-            has_column_privilege(r.rolname,'public.worker_pool','class','UPDATE') AS update
-       FROM pg_roles r WHERE r.rolname LIKE 'chuggy%'
-        AND (has_column_privilege(r.rolname,'public.worker_pool','class','SELECT')
-          OR has_column_privilege(r.rolname,'public.worker_pool','class','INSERT')
-          OR has_column_privilege(r.rolname,'public.worker_pool','class','UPDATE'))
-      ORDER BY r.rolname`,
-  );
-  return found.rows;
-}
-
-/** A pool's class column as the catalogue has it: absent, or present with its default. */
-async function poolClassColumn(
-  subject: pg.Pool,
-): Promise<readonly Record<string, unknown>[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT column_default, is_nullable FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='worker_pool' AND column_name='class'`,
-  );
-  return found.rows;
-}
-
-test("020 records a pool's class, the one class there is for each pool already registered", async () => {
-  await migrationDatabase("worker_pool_class", async (subject) => {
-    await installationBefore(subject, migration020.version);
-    assert.deepEqual(await poolClassColumn(subject), []);
-    await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-20','project-20','Active');
-       INSERT INTO worker_pool(tenant,project,pool,principal,client_id)
-       VALUES('tenant-20','project-20','pool-20','principal-20','client-20')`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration020.version));
-    assert.deepEqual(
-      (await subject.query("SELECT pool, class FROM worker_pool")).rows,
-      [{ pool: "pool-20", class: "Dedicated" }],
-    );
-    assert.deepEqual(await poolClassColumn(subject), [
-      { column_default: null, is_nullable: "NO" },
-    ]);
-    for (const refused of ["Personal", "Shared"])
-      await assert.rejects(
-        subject.query(
-          `INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
-           VALUES('tenant-20','project-20',$1,$1,$1,$1)`,
-          [refused],
-        ),
-        /worker_pool_class_is_known/u,
-      );
-    assert.deepEqual(await poolClassPrivileges(subject), [
-      { role: apiRole, read: true, insert: true, update: false },
-      { role: poolPlaneRole, read: true, insert: false, update: false },
-      { role: schedulerRole, read: true, insert: false, update: false },
-    ]);
-  });
-});
-
-/** The registry columns the scheduler may read, in the table's own order. */
-async function schedulerPoolColumns(
-  subject: pg.Pool,
-): Promise<readonly string[]> {
-  const found = await subject.query<{ attname: string }>(
-    `SELECT a.attname FROM pg_attribute a
-      WHERE a.attrelid='public.worker_pool'::regclass AND a.attnum>0
-        AND NOT a.attisdropped
-        AND has_column_privilege($1,a.attrelid,a.attnum,'SELECT')
-      ORDER BY a.attnum`,
-    [schedulerRole],
-  );
-  return found.rows.map((row) => row.attname);
-}
-
-test("021 lets the scheduler read a registered pool's project, name, declaration, principal and class, and no other column", async () => {
-  await migrationDatabase("scheduler_pools", async (subject) => {
-    await installationBefore(subject, migration021.version);
-    assert.deepEqual(await schedulerPoolColumns(subject), []);
-    assert.ok((await postgresMigrate(subject)).includes(migration021.version));
-    assert.deepEqual(await schedulerPoolColumns(subject), [
-      "tenant",
-      "project",
-      "pool",
-      "capabilities",
-      "principal",
-      "class",
-    ]);
-  });
-});
-
-/** Whether each role named may read and write the registration a pool's attempt was claimed under. */
-async function poolPrincipalPrivileges(
-  subject: pg.Pool,
-): Promise<readonly unknown[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT r.role,
-            has_column_privilege(r.role,'public.execution_attempt','pool_principal','SELECT') AS read,
-            has_column_privilege(r.role,'public.execution_attempt','pool_principal','UPDATE') AS update
-       FROM unnest($1::text[]) AS r(role) ORDER BY r.role`,
-    [[apiRole, poolPlaneRole, workerPlaneRole]],
-  );
-  return found.rows;
-}
-
-test("022 records the registration a pool's attempt was claimed under, and refuses an installation where a pool holds one already", async () => {
-  await migrationDatabase("worker_pool_fencing", async (subject) => {
-    const fence = `${workerPoolFenceFunction}(text,text,text)`;
-    await installationBefore(subject, migration022.version);
-    await releasedSeeded(subject);
-    await subject.query(
-      identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null),
-    );
-    await subject.query(
-      "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22'",
-    );
-    await assert.rejects(
-      postgresMigrate(subject),
-      /execution_attempt_pool_principal_is_a_pool_s/u,
-      "no principal is guessed for an attempt a pool already holds",
-    );
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [fence]), []);
-    await subject.query(
-      "UPDATE execution_attempt SET pool=NULL, assignment=NULL",
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration022.version));
-    await assert.rejects(
-      subject.query(
-        "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22'",
-      ),
-      /execution_attempt_pool_principal_is_a_pool_s/u,
-    );
-    await subject.query(
-      "UPDATE execution_attempt SET pool='pool-22', assignment='assignment-22', pool_principal='principal-22', capability_secret_digest=NULL",
-    );
-    assert.deepEqual(await poolPrincipalPrivileges(subject), [
-      { role: apiRole, read: false, update: false },
-      { role: poolPlaneRole, read: true, update: true },
-      { role: workerPlaneRole, read: false, update: false },
-    ]);
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [fence]), [
-      {
-        signature: fence,
-        owner: boundaryOwnerRole,
-        definer: true,
-        scheduler: false,
-        plane: false,
-        pool: false,
-        api: true,
-      },
-    ]);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT array_to_string(proconfig,',') AS settings,
-                  EXISTS(SELECT 1 FROM aclexplode(proacl) entry
-                          WHERE entry.grantee=0) AS world
-             FROM pg_proc WHERE oid=$1::regprocedure`,
-          [fence],
-        )
-      ).rows,
-      [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],
-    );
-  });
-});
-
-/** What the plane serving pools may do to an execution's backoff and status. */
-async function poolPlaneExecutionPrivileges(
-  subject: pg.Pool,
-): Promise<readonly unknown[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT has_column_privilege($1,'public.execution','placement_backoff_from','SELECT') AS reads_backoff,
-            has_column_privilege($1,'public.execution','placement_backoff_from','UPDATE') AS locks,
-            has_function_privilege($1,'${statusMoveFunction}(text,text)','EXECUTE') AS moves_status`,
-    [poolPlaneRole],
-  );
-  return found.rows;
-}
-
-test("023 gives the plane serving pools the release and takes back its reading of the backoff", async () => {
-  await migrationDatabase("worker_pool_release", async (subject) => {
-    const release = `${workerPoolReleaseFunction}(text,text,text,text,text)`;
-    await installationBefore(subject, migration023.version);
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [release]), []);
-    assert.deepEqual(await poolPlaneExecutionPrivileges(subject), [
-      { reads_backoff: true, locks: true, moves_status: true },
-    ]);
-    assert.ok((await postgresMigrate(subject)).includes(migration023.version));
-    assert.deepEqual(await poolPlaneExecutionPrivileges(subject), [
-      { reads_backoff: false, locks: true, moves_status: false },
-    ]);
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [release]), [
-      {
-        signature: release,
-        owner: boundaryOwnerRole,
-        definer: true,
-        scheduler: false,
-        plane: false,
-        pool: true,
-        api: false,
-      },
-    ]);
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT array_to_string(proconfig,',') AS settings,
-                  EXISTS(SELECT 1 FROM aclexplode(proacl) entry
-                          WHERE entry.grantee=0) AS world
-             FROM pg_proc WHERE oid=$1::regprocedure`,
-          [release],
-        )
-      ).rows,
-      [{ settings: "search_path=pg_catalog, public, pg_temp", world: false }],
-    );
-  });
-});
-
-test("026 gives every tenant a project stands in a row of its own, and a project no tenant row holds is refused", async () => {
-  await migrationDatabase("project_creation", async (subject) => {
-    const doors = [
-      `${projectCreateFunction}(text,text,text,boolean,text,text,text)`,
-      `${projectCreationGrantsFunction}(text)`,
-    ];
-    await installationBefore(subject, migration026.version);
-    await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-26','project-a','Active'),('tenant-26','project-b','Active'),
-         ('other-26','project-a','Active')`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration026.version));
-    assert.deepEqual(
-      (await subject.query("SELECT tenant FROM tenant ORDER BY tenant")).rows,
-      [{ tenant: "other-26" }, { tenant: "tenant-26" }],
-    );
-    await assert.rejects(
-      subject.query(
-        `INSERT INTO project(tenant,project,lifecycle) VALUES('absent-26','project-a','Active')`,
-      ),
-      /project_names_a_tenant/u,
-    );
-    assert.deepEqual(
-      await sessionInvocationBoundaries(subject, doors),
-      doors.map((signature) => ({
-        signature,
-        owner: boundaryOwnerRole,
-        definer: true,
-        scheduler: false,
-        plane: false,
-        pool: false,
-        api: true,
-      })),
-    );
-  });
-});
-
-/** The columns a forge claim is keyed by, in key order. */
-async function forgeClaimKey(subject: pg.Pool): Promise<readonly string[]> {
-  const found = await subject.query<{ attname: string }>(
-    `SELECT a.attname FROM pg_constraint c
-       CROSS JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS k(attnum,ord)
-       JOIN pg_attribute a ON a.attrelid=c.conrelid AND a.attnum=k.attnum
-      WHERE c.conname='forge_installation_pkey' ORDER BY k.ord`,
-  );
-  return found.rows.map((row) => row.attname);
-}
-
-/** One claim through the door, answering what the door decided. */
-async function forgeClaimRecorded(
-  subject: pg.Pool,
-  app: string,
-  installationId: string,
-  tenant: string,
-): Promise<unknown> {
-  const found = await subject.query<{ recorded: string }>(
-    `SELECT ${forgeInstallationRecordFunction}('github',$1,'acme','Organization',$2,$3,'Member','s') AS recorded`,
-    [app, installationId, tenant],
-  );
-  return found.rows[0]?.recorded;
-}
-
-/** Every claim as the relation holds it, in an order that does not depend on the key. */
-async function forgeClaimRows(subject: pg.Pool): Promise<readonly unknown[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT forge,app,account,account_kind,installation_id,tenant,
-            authority_kind,authority_subject,claimed_at::text AS claimed_at
-       FROM forge_installation ORDER BY tenant,app`,
-  );
-  return found.rows;
-}
-
-/** Two apps claimed by one tenant and the same account refused to another, as 027 found them. */
-async function forgeClaimsBefore027(subject: pg.Pool): Promise<void> {
-  assert.equal(
-    await forgeClaimRecorded(subject, "portal", "101", "tenant-a"),
-    "Recorded",
-  );
-  assert.equal(
-    await forgeClaimRecorded(subject, "worker", "102", "tenant-a"),
-    "Recorded",
-  );
-  assert.equal(
-    await forgeClaimRecorded(subject, "portal", "101", "tenant-b"),
-    "ClaimedElsewhere",
-  );
-  assert.deepEqual(await forgeClaimKey(subject), ["forge", "app", "account"]);
-}
-
-/** Every reader of a claim, asked for each tenant apart, answers that tenant's own row. */
-async function forgeClaimReadersAnswer(subject: pg.Pool): Promise<void> {
-  const installations = postgresForgeInstallations(subject);
-  const claims = postgresForgeInstallationClaims(subject);
-  const asked = {
-    forge: asForgeId("github"),
-    app: asForgeApp("portal"),
-    account: asForgeAccount("acme"),
-  };
-  for (const [tenant, installationId, held] of [
-    ["tenant-a", "101", ["portal", "worker"]],
-    ["tenant-b", "103", ["portal"]],
-  ] as const) {
-    const named = asTenantId(tenant);
-    assert.equal(
-      (await installations.installation({ ...asked, tenant: named }))
-        ?.installationId,
-      installationId,
-      tenant,
-    );
-    assert.deepEqual(
-      (await claims.claims(named)).claims.map((row) => row.app).sort(),
-      held,
-      tenant,
-    );
-    assert.equal(
-      (await claims.claim(named, asForgeInstallationId(installationId)))
-        ?.account,
-      "acme",
-      tenant,
-    );
-    assert.equal(
-      (await claims.accountClaim({ ...asked, tenant: named }))?.installationId,
-      installationId,
-      tenant,
-    );
-  }
-}
-
-/** The door is still the boundary owner's and the API's alone, and every role that minted still reads. */
-async function forgeClaimGrantsKept(subject: pg.Pool): Promise<void> {
-  const door = `${forgeInstallationRecordFunction}(text,text,text,text,text,text,text,text)`;
-  assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
-    {
-      signature: door,
-      owner: boundaryOwnerRole,
-      definer: true,
-      scheduler: false,
-      plane: false,
-      pool: false,
-      api: true,
-    },
-  ]);
-  const readers = await subject.query<{ reads: boolean }>(
-    `SELECT has_table_privilege(role,'public.forge_installation','SELECT') AS reads
-       FROM unnest($1::text[]) AS role`,
-    [
-      [
-        apiRole,
-        workerPlaneRole,
-        finalizerRole,
-        ticketServiceRole,
-        configurationImporterRole,
-      ],
-    ],
-  );
-  assert.deepEqual(
-    readers.rows.map((row) => row.reads),
-    [true, true, true, true, true],
-  );
-}
-
-test("027 keys a forge claim by its tenant, keeping every claim that stood", async () => {
-  await migrationDatabase("forge_claim_per_tenant", async (subject) => {
-    await installationAt(subject, migrations.indexOf(migration027));
-    await forgeClaimsBefore027(subject);
-    const stood = await forgeClaimRows(subject);
-    assert.ok((await postgresMigrate(subject)).includes(migration027.version));
-    assert.deepEqual(await forgeClaimKey(subject), [
-      "tenant",
-      "forge",
-      "app",
-      "account",
-    ]);
-    assert.deepEqual(await forgeClaimRows(subject), stood);
-    assert.equal(
-      await forgeClaimRecorded(subject, "portal", "101", "tenant-a"),
-      "AlreadyRecorded",
-    );
-    assert.equal(
-      await forgeClaimRecorded(subject, "portal", "101", "tenant-b"),
-      "Recorded",
-    );
-    assert.equal(
-      await forgeClaimRecorded(subject, "portal", "103", "tenant-b"),
-      "Reinstalled",
-    );
-    await forgeClaimReadersAnswer(subject);
-    await forgeClaimGrantsKept(subject);
-  });
-});
-
-test("028 lands a repository bound from here on by pull request, leaving the bindings that stood", async () => {
-  await migrationDatabase("binding_lands_by_pull_request", async (subject) => {
-    await installationAt(subject, migrations.indexOf(migration028));
-    await seedLandinglessBinding(subject);
-    const landings = async () =>
-      (
-        await subject.query<{ repository: string; landing_mode: string }>(
-          `SELECT repository,landing_mode FROM project_repository
-            WHERE tenant='tenant-90' AND project='project-90' ORDER BY repository`,
-        )
-      ).rows;
-    assert.deepEqual(await landings(), [
-      { repository: "bound-90", landing_mode: "Push" },
-    ]);
-    assert.ok((await postgresMigrate(subject)).includes(migration028.version));
-    assert.equal(
-      (
-        await subject.query<{ bound: string }>(
-          `SELECT ${repositoryBindingWriteFunction}(
-             'tenant-90','project-90','bound-90-after','epoch-90',
-             'operation-90','Administrator','test-operator') AS bound`,
-        )
-      ).rows[0]?.bound,
-      "Bound",
-    );
-    assert.deepEqual(await landings(), [
-      { repository: "bound-90", landing_mode: "Push" },
-      { repository: "bound-90-after", landing_mode: "PullRequest" },
-    ]);
-  });
-});
-
-/** The placement rows 029 leaves, in project order, and whether each names who set it. */
-async function placementRows(subject: pg.Pool): Promise<readonly unknown[]> {
-  const found = await subject.query<Record<string, unknown>>(
-    `SELECT project, work_route, evaluation_route, set_by_kind, set_at
-       FROM project_execution_placement ORDER BY project`,
-  );
-  return found.rows;
-}
-
-/** What 029's constraints refuse: a second routing row, and a setter named in part. */
-async function placementRefusals(subject: pg.Pool): Promise<void> {
-  await assert.rejects(
-    subject.query(`INSERT INTO execution_routing
-      (singleton,work_route,evaluation_route,project_routes)
-      VALUES (2,'Pool','Pool','{}')`),
-    /execution_routing_is_one_row/u,
-  );
-  await assert.rejects(
-    subject.query(
-      `UPDATE project_execution_placement SET set_by_kind='Member'`,
-    ),
-    /project_execution_placement_setter_is_whole/u,
-  );
-}
-
-test("029 places every project that runs today in cluster, naming no setter, and seeds the routing a scheduler naming none runs", async () => {
-  await migrationDatabase("execution_placement", async (subject) => {
-    const door = `${executionPlacementSetFunction}(text,text,text,text,text,text)`;
-    await installationBefore(subject, migration029.version);
-    await subject.query(
-      `${tenantSeed("tenant-29")}
-       INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-29','project-a','Active'),('tenant-29','project-b','Active')`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration029.version));
-    await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-29','project-c','Active')`,
-    );
-    assert.deepEqual(
-      await placementRows(subject),
-      ["project-a", "project-b"].map((project) => ({
-        project,
-        work_route: "InCluster",
-        evaluation_route: "InCluster",
-        set_by_kind: null,
-        set_at: null,
-      })),
-      "a project created after the backfill was placed by somebody",
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT work_route, evaluation_route, project_routes FROM execution_routing`,
-        )
-      ).rows,
-      [
-        {
-          work_route: "InCluster",
-          evaluation_route: "InCluster",
-          project_routes: {},
-        },
-      ],
-    );
-    await placementRefusals(subject);
-    assert.deepEqual(await sessionInvocationBoundaries(subject, [door]), [
-      {
-        signature: door,
-        owner: boundaryOwnerRole,
-        definer: true,
-        scheduler: false,
-        plane: false,
-        pool: false,
-        api: true,
-      },
-    ]);
-  });
-});
-
-/** Where each of 032's projects routes its threads and its lead, and from where. */
-async function sessionRoutes(subject: pg.Pool): Promise<readonly string[]> {
-  const found = await subject.query<{ routed: string }>(
-    `SELECT p.project || ' ' || thread.route || '/' || lead.route || ' '
-            || thread.source AS routed
-       FROM project p
-      CROSS JOIN LATERAL ${sessionRouteFunction}(p.tenant,p.project,'Thread') thread
-      CROSS JOIN LATERAL ${sessionRouteFunction}(p.tenant,p.project,'Lead') lead
-      ORDER BY p.project`,
-  );
-  return found.rows.map((row) => row.routed);
-}
-
-/** What 032's constraints refuse: a second routing row, and a setter named in part. */
-async function sessionPlacementRefusals(subject: pg.Pool): Promise<void> {
-  await assert.rejects(
-    subject.query(`INSERT INTO session_routing
-      (singleton,thread_route,lead_route,project_routes)
-      VALUES (2,'Pool','Pool','{}')`),
-    /session_routing_is_one_row/u,
-  );
-  await assert.rejects(
-    subject.query(`UPDATE project_session_placement SET set_by_kind='Member'`),
-    /project_session_placement_setter_is_whole/u,
-  );
-}
-
-/** A lead session of project-a holding one queued turn, as an installation before 032 holds it. */
-const queuedTurnSeed = `
-  INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
-  VALUES('cluster-32',1,1);
-  INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
-  VALUES('account-32','cluster-32',0,1,1);
-  INSERT INTO agent_session
-    (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-  VALUES('tenant-32','project-a','session-32','Lead','principal-32','{}',
-         'slot-32','account-32','cluster-32');
-  INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-  VALUES('tenant-32','project-a','session-32','turn-32',1,'Observation','{}')`;
-
-/** That turn stamped in cluster, where it ran, and no default route for a turn queued after it. */
-async function queuedTurnStamped(subject: pg.Pool): Promise<void> {
-  assert.deepEqual(
-    (await subject.query(`SELECT turn, route FROM session_turn`)).rows,
-    [{ turn: "turn-32", route: "InCluster" }],
-    "a turn queued before the routes ran in cluster",
-  );
-  await assert.rejects(
-    subject.query(
-      `INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input)
-       VALUES('tenant-32','project-a','session-32','turn-32-b',2,'Observation','{}')`,
-    ),
-    /null value in column "route"/u,
-    "a turn no door stamped was queued",
-  );
-}
-
-test("032 places every project's sessions and queued turns in cluster, publishes no routing, and leaves a later project to the default", async () => {
-  await migrationDatabase("session_placement", async (subject) => {
-    const doors = [
-      `${sessionRouteFunction}(text,text,text)`,
-      `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
-      `${sessionPlacementSetFunction}(text,text,text,text,text,text)`,
-    ];
-    await installationBefore(subject, migration032.version);
-    await subject.query(
-      `${tenantSeed("tenant-32")}
-       INSERT INTO project(tenant,project,lifecycle) VALUES
-         ('tenant-32','project-a','Active'),('tenant-32','project-b','Active');
-       ${queuedTurnSeed}`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration032.version));
-    await queuedTurnStamped(subject);
-    await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-32','project-c','Active')`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT project, set_by_kind, set_at FROM project_session_placement
-            ORDER BY project`,
-        )
-      ).rows,
-      ["project-a", "project-b"].map((project) => ({
-        project,
-        set_by_kind: null,
-        set_at: null,
-      })),
-    );
-    assert.deepEqual(
-      (await subject.query(`SELECT 1 FROM session_routing`)).rows,
-      [],
-      "a routing no scheduler published",
-    );
-    assert.deepEqual(await sessionRoutes(subject), [
-      "project-a InCluster/InCluster Project",
-      "project-b InCluster/InCluster Project",
-      "project-c InCluster/InCluster Default",
-    ]);
-    await sessionPlacementRefusals(subject);
-    assert.deepEqual(
-      await sessionInvocationBoundaries(subject, doors),
-      doors.map((signature) => ({
-        signature,
-        owner: boundaryOwnerRole,
-        definer: true,
-        scheduler: false,
-        plane: false,
-        pool: false,
-        api: true,
-      })),
-    );
-  });
-});
-
-/** A held decision for `ticket` at `version`, as its lead recorded it before 034. */
-function heldDecisionSeed(
-  decision: string,
-  named: readonly (readonly [number, number])[],
-): string {
-  const deliveries = named
-    .map(
-      ([ticket, version]) =>
-        `('${decision}','tenant-34','project-34','${decision}-${String(ticket)}',
-          '{"expectedTicketVersion":${String(version)}}',${String(ticket)})`,
-    )
-    .join(",");
-  return `
-    INSERT INTO selector_attempt(attempt,tenant,project,state)
-      VALUES('${decision}','tenant-34','project-34','Completed');
-    INSERT INTO selector_interaction(selector_decision,tenant,project,
-      instructions_version,instructions,observed_view,context,tool_activity,
-      result,implementation_revision,model_revision,policy_revision,accounting,
-      started_at,completed_at)
-      VALUES('${decision}','tenant-34','project-34','v','','','','','','r','r',
-             'r','',now(),now());
-    INSERT INTO selector_proposal_delivery(selector_decision,tenant,project,
-      operation,command,ticket) VALUES ${deliveries};`;
-}
-
-test("034 ends every held row of a decision naming a ticket that already moved, and keeps the rest", async () => {
-  await migrationDatabase("held_proposal_currency", async (subject) => {
-    await installationBefore(subject, migration034.version);
-    await subject.query(
-      `${tenantSeed("tenant-34")}
-       INSERT INTO project(tenant,project,lifecycle)
-         VALUES('tenant-34','project-34','Active');
-       INSERT INTO ticket_projection(tenant,project,ticket,phase,seq) VALUES
-         ('tenant-34','project-34',1,'Work',5),
-         ('tenant-34','project-34',2,'Pending',3),
-         ('tenant-34','project-34',3,'Pending',2),
-         ('tenant-34','project-34',4,'Work',7),
-         ('tenant-34','project-34',5,'Pending',1);
-       ${heldDecisionSeed("moved", [
-         [1, 4],
-         [2, 3],
-       ])}
-       ${heldDecisionSeed("current", [[3, 2]])}
-       ${heldDecisionSeed("mixed", [
-         [4, 6],
-         [5, 1],
-       ])}
-       UPDATE selector_proposal_delivery SET state='Pending',retry_at=now()
-        WHERE selector_decision='mixed' AND ticket=5;`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration034.version));
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT selector_decision AS decision,ticket::int,state,outcome
-             FROM selector_proposal_delivery ORDER BY selector_decision,ticket`,
-        )
-      ).rows,
-      [
-        {
-          decision: "current",
-          ticket: 3,
-          state: "AwaitingApproval",
-          outcome: null,
-        },
-        {
-          decision: "mixed",
-          ticket: 4,
-          state: "Terminal",
-          outcome: '{"state":"SelectionChanged"}',
-        },
-        { decision: "mixed", ticket: 5, state: "Pending", outcome: null },
-        ...[1, 2].map((ticket) => ({
-          decision: "moved",
-          ticket,
-          state: "Terminal",
-          outcome: '{"state":"SelectionChanged"}',
-        })),
-      ],
-    );
-    assert.deepEqual(
-      (await subject.query(`SELECT 1 FROM selector_proposal_review`)).rows,
-      [],
-      "a review nobody gave",
-    );
-  });
-});
-
-/** A lead holding objectives and two answered decision turns, as an installation before 042 holds it. */
-const measuredLeadSeed = `
-  ${tenantSeed("tenant-42")}
-  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-42','project-42','Active');
-  INSERT INTO execution_cluster(cluster,slots_max,policy_revision)
-  VALUES('cluster-42',1,1);
-  INSERT INTO capacity_account(account,cluster,reserved,maximum,policy_revision)
-  VALUES('account-42','cluster-42',0,1,1);
-  INSERT INTO agent_session
-    (tenant,project,session,kind,principal,capabilities,credential_slot,account,
-     cluster,system_prompt)
-  VALUES('tenant-42','project-42','lead-42','Lead','principal-42','{}',
-         'slot-42','account-42','cluster-42','objectives-42');
-  INSERT INTO session_turn(tenant,project,session,turn,ordinal,input_kind,input,
-    route,state,ended_at,result,model,tokens,cost_micros,duration_ms,tools)
-  VALUES
-    ('tenant-42','project-42','lead-42','turn-42-a',1,'Observation','{}',
-     'InCluster','Answered',now(),'{}','model-42',700,1,1,'{}'),
-    ('tenant-42','project-42','lead-42','turn-42-b',2,'Observation','{}',
-     'InCluster','Answered',now(),'{}','model-42',900,1,1,'{}')`;
-
-test("042 widens the lead read to its objectives and newest decision measure, and grants the selector its closing door alone", async () => {
-  await migrationDatabase("lead_succession", async (subject) => {
-    const close = `${leadCloseFunction}(text,text,text)`;
-    await installationBefore(subject, migration042.version);
-    await subject.query(measuredLeadSeed);
-    assert.equal(await migrationHasFunction(subject, close), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration042.version));
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT session,state,agent_reference,system_prompt,tokens::int
-             FROM ${leadSessionFunction}('tenant-42','project-42')`,
-        )
-      ).rows,
-      [
-        {
-          session: "lead-42",
-          state: "Open",
-          agent_reference: null,
-          system_prompt: "objectives-42",
-          tokens: 900,
-        },
-      ],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT p.oid::regprocedure::text AS signature,
-                  pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
-                  array_to_string(p.proconfig,',') AS settings,
-                  has_function_privilege($2,p.oid,'EXECUTE') AS selector,
-                  has_function_privilege($3,p.oid,'EXECUTE') AS api,
-                  has_function_privilege($4,p.oid,'EXECUTE') AS scheduler,
-                  has_function_privilege('public',p.oid,'EXECUTE') AS public
-             FROM pg_proc p
-            WHERE p.oid IN (to_regprocedure($1), to_regprocedure($5))
-            ORDER BY p.proname`,
-          [
-            close,
-            selectorServiceRole,
-            apiRole,
-            schedulerRole,
-            `${leadSessionFunction}(text,text)`,
-          ],
-        )
-      ).rows,
-      [close, `${leadSessionFunction}(text,text)`].map((signature) => ({
-        signature,
-        owner: boundaryOwnerRole,
-        definer: true,
-        settings: "search_path=pg_catalog, public, pg_temp",
-        selector: true,
-        api: false,
-        scheduler: false,
-        public: false,
-      })),
-    );
-  });
-});
-
-/** One overrides change as a principal's envelope stores it, with whatever a case changes. */
-function parkedOverridesEnvelope(
-  changed: Readonly<Record<string, unknown>> = {},
-): string {
-  return JSON.stringify({
-    version: 1,
-    command: "ChangeTicketOverrides",
-    ticket: 1,
-    action: "action-43",
-    authorizingSeq: 1,
-    overrides: { worker: { setup: ["npm ci"] } },
-    ...changed,
-  });
-}
-
-test("043 settles a change that would move a definition under its own code, and knows the envelope that asks for one", async () => {
-  await migrationDatabase("parked_overrides", async (subject) => {
-    await installationBefore(subject, migration043.version);
-    await subject.query(deletionPartition);
-    const valid = async (envelope: string) =>
-      (
-        await subject.query<{ valid: boolean }>(
-          `SELECT public_ticket_command_is_valid($1::jsonb) AS valid`,
-          [envelope],
-        )
-      ).rows[0]?.valid;
-    assert.equal(await valid(parkedOverridesEnvelope()), false);
-    assert.match(
-      String(await commandsRefuse(subject, 1, "OverridesMoveDefinition", null)),
-      /decision_input_outcome_is_known/u,
-    );
-    assert.equal(await commandsRefuse(subject, 1, "TicketChanged", null), null);
-    assert.ok((await postgresMigrate(subject)).includes(migration043.version));
-    assert.equal(
-      await commandsRefuse(subject, 2, "OverridesMoveDefinition", null),
-      null,
-    );
-    assert.equal(await valid(parkedOverridesEnvelope()), true);
-    for (const changed of [
-      { overrides: ["npm ci"] },
-      { ticket: 0 },
-      { action: "" },
-      { resolution: "Resume" },
-    ])
-      assert.equal(
-        await valid(parkedOverridesEnvelope(changed)),
-        false,
-        JSON.stringify(changed),
-      );
-  });
-});
-
-/** A selector attempt left running by a process before 045, which kept no project revision. */
-const attemptBeforeRevisionSeed = `
-  ${tenantSeed("tenant-45")}
-  INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-45','project-45','Active');
-  INSERT INTO selector_attempt(attempt,tenant,project,state)
-  VALUES('attempt-45','tenant-45','project-45','Running')`;
-
-test("045 gives a selector attempt the project revision its decision is fenced on, which the selector writes and an older row lacks", async () => {
-  await migrationDatabase("selector_attempt_revision", async (subject) => {
-    await installationBefore(subject, migration045.version);
-    await subject.query(attemptBeforeRevisionSeed);
-    assert.ok((await postgresMigrate(subject)).includes(migration045.version));
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT attempt,project_revision FROM selector_attempt`,
-        )
-      ).rows,
-      [{ attempt: "attempt-45", project_revision: null }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT has_column_privilege($1,'public.selector_attempt','project_revision','UPDATE') AS writes,
-                  has_column_privilege($1,'public.selector_attempt','project_revision','SELECT') AS reads`,
-          [selectorServiceRole],
-        )
-      ).rows,
-      [{ writes: true, reads: true }],
-    );
-    await assert.rejects(
-      subject.query(
-        `UPDATE selector_attempt SET project_revision=-1 WHERE attempt='attempt-45'`,
-      ),
-      /selector_attempt_project_revision_check/u,
-    );
-  });
-});
-
-/** A tenant's links as 046 kept them: one open, one used and one revoked. */
-const tenantLinksBefore047 = `
-  INSERT INTO invite_link(link,tenant,token_digest,role,projects,new_accounts,minted_by,expires_at)
-  VALUES('open-47','tenant-47',repeat('a',64),'Member','[]',true,'minter',now()+interval '1 day'),
-        ('used-47','tenant-47',repeat('b',64),'Admin','[{"project":"web","roles":["Viewer"]}]',false,'minter',now()+interval '1 day'),
-        ('revoked-47','tenant-47',repeat('c',64),'Member','[]',false,'minter',now()+interval '1 day');
-  UPDATE invite_link SET used_by='user',used_at=now() WHERE link='used-47';
-  UPDATE invite_link SET revoked_at=now() WHERE link='revoked-47'`;
-
-/** A workspace link's insert, `extra` the columns past the ones every row names. */
-function workspaceLinkInsert047(
-  link: string,
-  digest: string,
-  extra: { readonly columns: string; readonly values: string },
-): string {
-  return `INSERT INTO invite_link(link,token_digest,new_accounts,minted_by,expires_at,${extra.columns})
-    VALUES('${link}',repeat('${digest}',64),false,'minter',now()+interval '1 day',${extra.values})`;
-}
-
-/** Asserts each row 047 refuses is refused under the one constraint holding a row to one kind. */
-async function workspaceLinkKindsRefused047(subject: pg.Pool): Promise<void> {
-  for (const refused of [
-    workspaceLinkInsert047("roled-47", "e", {
-      columns: "create_accounts,role,projects",
-      values: "true,'Member','[]'",
-    }),
-    `INSERT INTO invite_link(tenant,token_digest,role,projects,new_accounts,create_accounts,minted_by,expires_at)
-       VALUES('tenant-47',repeat('f',64),'Member','[]',false,true,'minter',now()+interval '1 day')`,
-    workspaceLinkInsert047("unnamed-47", "1", {
-      columns: "create_accounts,used_by,used_at",
-      values: "true,'user',now()",
-    }),
-  ])
-    await assert.rejects(subject.query(refused), /invite_link_is_one_kind/u);
-}
-
-/** Whether the plane's role may update each column 047 adds, and `tenant`. */
-async function workspaceLinkUpdates047(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query<Record<string, boolean>>(
-      `SELECT has_column_privilege($1,'public.invite_link','workspace','UPDATE') AS workspace,
-              has_column_privilege($1,'public.invite_link','tenant','UPDATE') AS tenant,
-              has_column_privilege($1,'public.invite_link','note','UPDATE') AS note,
-              has_column_privilege($1,'public.invite_link','create_accounts','UPDATE') AS accounts`,
-      [accessPlaneRole],
-    )
-  ).rows;
-}
-
-test("047 lets a link name no tenant, keeping every tenant link that stood, and grants the plane's role the workspace and nothing else new", async () => {
-  await migrationDatabase("workspace_links", async (subject) => {
-    await installationBefore(subject, migration047.version);
-    await subject.query(tenantLinksBefore047);
-    const rows = async () =>
-      (
-        await subject.query<Record<string, unknown>>(
-          `SELECT link,tenant,role,projects,new_accounts,used_by,revoked_at IS NOT NULL AS revoked
-             FROM invite_link ORDER BY link`,
-        )
-      ).rows;
-    const stood = await rows();
-    assert.ok((await postgresMigrate(subject)).includes(migration047.version));
-    assert.deepEqual(await rows(), stood);
-    assert.deepEqual(await workspaceLinkUpdates047(subject), [
-      { workspace: true, tenant: false, note: false, accounts: false },
-    ]);
-    const links = postgresInviteLinks(subject);
-    assert.equal(
-      (await links.spend("a".repeat(64), "redeemer"))?.tenant,
-      "tenant-47",
-    );
-    await subject.query(
-      workspaceLinkInsert047("site-47", "d", {
-        columns: "create_accounts,note",
-        values: "true,'for someone'",
-      }),
-    );
-    assert.equal(await links.presented("d".repeat(64)), "Workspace");
-    await workspaceLinkKindsRefused047(subject);
-    assert.equal(
-      (await links.workspaceSpend("d".repeat(64), "user", asTenantId("w-47")))
-        ?.spent,
-      "Spent",
-    );
-    await subject.query(
-      workspaceLinkInsert047("twin-47", "2", {
-        columns: "create_accounts",
-        values: "false",
-      }),
-    );
-    assert.deepEqual(
-      await links.workspaceSpend("2".repeat(64), "other", asTenantId("w-47")),
-      { spent: "Taken" },
-    );
-  });
-});
-
-/** Every binding standing, as the rows 052 must leave as they were. */
-async function bindingsStanding052(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT tenant,project,repository,bound_at,retired_at
-         FROM project_repository ORDER BY tenant,project,repository`,
-    )
-  ).rows;
-}
-
-/** One bind into `project` through the door, answering its outcome. */
-async function boundThrough052(
-  subject: pg.Pool,
-  project: string,
-  repository: string,
-): Promise<string | undefined> {
-  return (
-    await subject.query<{ outcome: string }>(
-      `SELECT bind_project_repository('tenant-52',$1,$2,'epoch-52',$3,
-         'Administrator','operator-52') AS outcome`,
-      [project, repository, `operation-52-${project}-${repository}`],
-    )
-  ).rows[0]?.outcome;
-}
-
-test("052 keeps every binding that stood and releases a retired one's repository to another project", async () => {
-  await migrationDatabase("retirement_releases", async (subject) => {
-    await installationBefore(subject, migration052.version);
-    await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-52')`);
-    await subject.query(tenantSeed("tenant-52"));
-    await subject.query(
-      `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
-       VALUES('tenant-52','project-52','Active',0,1),
-             ('tenant-52','other-52','Active',0,1)`,
-    );
-    await subject.query(
-      `INSERT INTO project_repository
-         (tenant,project,repository,recovery_epoch,retired_at)
-       VALUES('tenant-52','project-52','live-52','epoch-52',NULL),
-             ('tenant-52','project-52','retired-52','epoch-52',now())`,
-    );
-    assert.equal(
-      await boundThrough052(subject, "other-52", "retired-52"),
-      "RepositoryBoundElsewhere",
-    );
-    const stood = await bindingsStanding052(subject);
-    assert.ok((await postgresMigrate(subject)).includes(migration052.version));
-    assert.deepEqual(await bindingsStanding052(subject), stood);
-    assert.equal(
-      await boundThrough052(subject, "other-52", "live-52"),
-      "RepositoryBoundElsewhere",
-    );
-    assert.equal(
-      await boundThrough052(subject, "other-52", "retired-52"),
-      "Bound",
-    );
-  });
-});
-
-/** The codes 053 admits, which 043's constraint refused. */
-const pairingRefusals053: readonly string[] = [
-  "BriefChecksUncommanded",
-  "ConfigurationFromAnotherRepository",
-];
-
-test("053 settles a release under the pairing fault it was refused for, and keeps every code that stood", async () => {
-  await migrationDatabase("release_pairing_refusals", async (subject) => {
-    await installationBefore(subject, migration053.version);
-    await subject.query(deletionPartition);
-    let ordinal = 0;
-    for (const code of pairingRefusals053)
-      assert.match(
-        String(await commandsRefuse(subject, ordinal + 1, code, null)),
-        /decision_input_outcome_is_known/u,
-        code,
-      );
-    for (const [code, value] of commandsRefusals)
-      assert.equal(
-        await commandsRefuse(
-          subject,
-          ++ordinal,
-          code,
-          commandsRefusal(code, value),
-        ),
-        null,
-        code,
-      );
-    for (const code of [...commandsBoundaryRefusals, "OverridesMoveDefinition"])
-      assert.equal(
-        await commandsRefuse(subject, ++ordinal, code, null),
-        null,
-        code,
-      );
-    assert.ok((await postgresMigrate(subject)).includes(migration053.version));
-    for (const code of pairingRefusals053)
-      assert.equal(
-        await commandsRefuse(subject, ++ordinal, code, null),
-        null,
-        code,
-      );
-  });
-});
-
-/** What each runtime role holds on the refusal 055 keeps, column by column where a grant is. */
-async function leadRefusalGrants055(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT grantee,privilege_type,
-              string_agg(column_name,',' ORDER BY column_name COLLATE "C") AS columns
-         FROM information_schema.column_privileges
-        WHERE table_name='selector_lead_refusal' AND grantee <> current_user
-        GROUP BY grantee,privilege_type
-        ORDER BY grantee,privilege_type`,
-    )
-  ).rows;
-}
-
-/** Whether the selector may delete the refusal 055 keeps, which is no column's privilege. */
-async function leadRefusalDeletes055(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query<{ granted: boolean }>(
-      `SELECT has_table_privilege($1,'selector_lead_refusal','DELETE') AS granted`,
-      [selectorServiceRole],
-    )
-  ).rows[0]?.granted;
-}
-
-/** How 055 declares the refusal's read, and who may execute it. */
-async function leadRefusalReadDeclared055(
-  subject: pg.Pool,
-  read: string,
-): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
-              array_to_string(p.proconfig,',') AS settings,
-              has_function_privilege($2,p.oid,'EXECUTE') AS api,
-              has_function_privilege($3,p.oid,'EXECUTE') AS selector,
-              has_function_privilege('public',p.oid,'EXECUTE') AS public
-         FROM pg_proc p WHERE p.oid = to_regprocedure($1)`,
-      [read, apiRole, selectorServiceRole],
-    )
-  ).rows;
-}
-
-test("055 keeps no refusal for any project that stood, grants the selector its writes and the API its read alone", async () => {
-  await migrationDatabase("lead_refusal", async (subject) => {
-    const read = `${leadRefusalReadFunction}(text,text)`;
-    await installationBefore(subject, migration055.version);
-    await subject.query(deletionPartition);
-    assert.equal(await migrationHasFunction(subject, read), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration055.version));
-    assert.deepEqual(
-      (await subject.query(`SELECT * FROM selector_lead_refusal`)).rows,
-      [],
-    );
-    const every = "project,refusal,refused_since,tenant";
-    assert.deepEqual(await leadRefusalGrants055(subject), [
-      { grantee: boundaryOwnerRole, privilege_type: "SELECT", columns: every },
-      {
-        grantee: selectorServiceRole,
-        privilege_type: "INSERT",
-        columns: every,
-      },
-      {
-        grantee: selectorServiceRole,
-        privilege_type: "SELECT",
-        columns: every,
-      },
-      {
-        grantee: selectorServiceRole,
-        privilege_type: "UPDATE",
-        columns: "refusal,refused_since",
-      },
-    ]);
-    assert.equal(await leadRefusalDeletes055(subject), true);
-    await subject.query(
-      `INSERT INTO selector_lead_refusal (tenant,project,refusal)
-       VALUES ('tenant-5','project-5','RunnerOffline')`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT refusal FROM ${leadRefusalReadFunction}('tenant-5','project-5')`,
-        )
-      ).rows,
-      [{ refusal: "RunnerOffline" }],
-    );
-    assert.deepEqual(await leadRefusalReadDeclared055(subject, read), [
-      {
-        owner: boundaryOwnerRole,
-        definer: true,
-        settings: "search_path=pg_catalog, public, pg_temp",
-        api: true,
-        selector: false,
-        public: false,
-      },
-    ]);
-  });
-});
-
-/** What one attempt 056 is run beside keeps of a pool's refusal. */
-async function poolRefusalKept056(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT pool_refusal, to_jsonb(a) ? 'pool_refusal_fault' AS has_fault,
-              to_jsonb(a)->>'pool_refusal_fault' AS fault
-         FROM execution_attempt a WHERE tenant='tenant-5' AND attempt='attempt-1'`,
-    )
-  ).rows;
-}
-
-test("056 keeps every refusal that stood with no fault, admits the contract's image faults alone, and none beside no refusal", async () => {
-  await migrationDatabase("pool_refusal_fault", async (subject) => {
-    await installationBefore(subject, migration056.version);
-    await subject.query(
-      `${deletionPartition}
-       ${deletionJournalRow(1, journalledRevocation)};
-       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
-       INSERT INTO configuration_revision
-         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
-       INSERT INTO input_bundle(tenant,project,bundle,digest)
-       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
-       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)};
-       UPDATE execution_attempt
-          SET pool='pool-5',pool_principal='principal-5',assignment='assignment-5',
-              pool_refusal='no node'
-        WHERE tenant='tenant-5' AND attempt='attempt-1'`,
-    );
-    assert.deepEqual(await poolRefusalKept056(subject), [
-      { pool_refusal: "no node", has_fault: false, fault: null },
-    ]);
-    assert.ok((await postgresMigrate(subject)).includes(migration056.version));
-    assert.deepEqual(await poolRefusalKept056(subject), [
-      { pool_refusal: "no node", has_fault: true, fault: null },
-    ]);
-    const known = (
-      await subject.query<{ definition: string }>(
-        `SELECT pg_get_constraintdef(c.oid) AS definition FROM pg_constraint c
-          WHERE c.conrelid = 'execution_attempt'::regclass
-            AND c.conname = 'execution_attempt_pool_refusal_fault_is_known'`,
-      )
-    ).rows[0]?.definition;
-    assert.deepEqual(
-      [...(known ?? "").matchAll(/'([^']+)'::text/gu)].map((each) => each[1]),
-      [...workerImageFaults],
-      "the installed faults are the contract's",
-    );
-    const faulted = (fault: string, refusal: string | null) =>
-      subject
-        .query(
-          `UPDATE execution_attempt SET pool_refusal=$2,pool_refusal_fault=$1
-            WHERE tenant='tenant-5' AND attempt='attempt-1'`,
-          [fault, refusal],
-        )
-        .then(
-          () => undefined,
-          (failure: unknown) => String(failure),
-        );
-    assert.equal(await faulted("ImageLacksGit", "git: not found"), undefined);
-    assert.match(
-      String(await faulted("ImageLacksSed", "sed: not found")),
-      /execution_attempt_pool_refusal_fault_is_known/u,
-    );
-    assert.match(
-      String(await faulted("ImageLacksGit", null)),
-      /execution_attempt_pool_refusal_fault_is_a_refusal_s/u,
-    );
-  });
-});
-
-/** What one attempt 057 is run beside keeps of a runtime. */
-async function attemptRuntimeKept057(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT to_jsonb(a) ? 'runtime' AS has_runtime,
-              to_jsonb(a)->>'runtime' AS runtime
-         FROM execution_attempt a WHERE tenant='tenant-5' AND attempt='attempt-1'`,
-    )
-  ).rows;
-}
-
-/** Every role but the owner that holds a privilege on the runtime 057 adds, by kind. */
-async function attemptRuntimeGrants057(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT grantee,privilege_type FROM information_schema.column_privileges
-        WHERE table_name='execution_attempt' AND column_name='runtime'
-          AND grantee <> current_user
-        ORDER BY grantee,privilege_type`,
-    )
-  ).rows;
-}
-
-test("057 keeps every attempt that stood with no runtime, bounds the one written, and lets the pool plane read it and no role change it", async () => {
-  await migrationDatabase("attempt_runtime", async (subject) => {
-    await installationBefore(subject, migration057.version);
-    await subject.query(
-      `${deletionPartition}
-       ${deletionJournalRow(1, journalledRevocation)};
-       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
-       INSERT INTO configuration_revision
-         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
-       INSERT INTO input_bundle(tenant,project,bundle,digest)
-       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
-       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)}`,
-    );
-    assert.deepEqual(await attemptRuntimeKept057(subject), [
-      { has_runtime: false, runtime: null },
-    ]);
-    assert.ok((await postgresMigrate(subject)).includes(migration057.version));
-    assert.deepEqual(await attemptRuntimeKept057(subject), [
-      { has_runtime: true, runtime: null },
-    ]);
-    assert.deepEqual(await attemptRuntimeGrants057(subject), [
-      { grantee: boundaryOwnerRole, privilege_type: "SELECT" },
-      { grantee: poolPlaneRole, privilege_type: "SELECT" },
-      { grantee: schedulerRole, privilege_type: "INSERT" },
-      { grantee: schedulerRole, privilege_type: "SELECT" },
-    ]);
-    const written = (runtime: string) =>
-      subject
-        .query(
-          `UPDATE execution_attempt SET runtime=$1
-            WHERE tenant='tenant-5' AND attempt='attempt-1'`,
-          [runtime],
-        )
-        .then(
-          () => undefined,
-          (failure: unknown) => String(failure),
-        );
-    assert.equal(await written("r".repeat(workerImageCharsMax)), undefined);
-    for (const runtime of ["", "r".repeat(workerImageCharsMax + 1)])
-      assert.match(
-        String(await written(runtime)),
-        /execution_attempt_runtime_is_bounded/u,
-        String(runtime.length),
-      );
-  });
-});
-
-/** Whether each role holds the door 058 moves, in the order it lists them. */
-async function projectReadDoors058(subject: pg.Pool): Promise<unknown> {
-  const held = async (role: string, door: string) =>
-    (
-      await subject.query<{ granted: boolean }>(
-        "SELECT has_function_privilege($1,$2,'EXECUTE') AS granted",
-        [role, door],
-      )
-    ).rows[0]?.granted;
-  return {
-    schedulerLists: await held(
-      schedulerRole,
-      `${repositoryBindingListFunction}(text,text,bigint)`,
-    ),
-    planeReadsRetirement: await held(
-      workerPlaneRole,
-      `${repositoryLandingReadFunction}(text,text,text)`,
-    ),
-    planeReadsBinding: await held(
-      workerPlaneRole,
-      `${repositoryBindingReadFunction}(text,text,text)`,
-    ),
-  };
-}
-
-test("058 lets the scheduler list one project's bindings and the worker plane read a binding's retirement, and takes the plane's older door", async () => {
-  await migrationDatabase("project_reads", async (subject) => {
-    await installationBefore(subject, migration058.version);
-    assert.deepEqual(await projectReadDoors058(subject), {
-      schedulerLists: false,
-      planeReadsRetirement: false,
-      planeReadsBinding: true,
-    });
-    assert.ok((await postgresMigrate(subject)).includes(migration058.version));
-    assert.deepEqual(await projectReadDoors058(subject), {
-      schedulerLists: true,
-      planeReadsRetirement: true,
-      planeReadsBinding: false,
-    });
-    await assertDoorsStandOwned(subject, [
-      `${repositoryBindingListFunction}(text,text,bigint)`,
-      `${repositoryLandingReadFunction}(text,text,text)`,
-    ]);
-  });
-});
-
-/** What the one execution 059 is run beside keeps of a size. */
-async function executionSizeKept059(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT to_jsonb(e) ? 'cpu_millis' AS has_size,
-              to_jsonb(e)->'cpu_millis' AS cpu_millis,
-              to_jsonb(e)->'memory_mib' AS memory_mib
-         FROM execution e WHERE tenant='tenant-5' AND execution='execution-1'`,
-    )
-  ).rows;
-}
-
-/** Every role but the owner holding a privilege on a size column or on the refusal, by column and kind. */
-async function executionSizeGrants059(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT column_name,grantee,privilege_type FROM information_schema.column_privileges
-        WHERE ((table_name='execution' AND column_name IN ('cpu_millis','memory_mib'))
-            OR (table_name='execution_attempt' AND column_name='pool_refusal'
-                AND grantee=$1))
-          AND grantee <> current_user
-        ORDER BY column_name,grantee,privilege_type`,
-      [apiRole],
-    )
-  ).rows;
-}
-
-test("059 keeps every execution that stood on the deployment's size, bounds a size to what a configuration may ask, and lets no role change one", async () => {
-  await migrationDatabase("execution_size", async (subject) => {
-    await installationBefore(subject, migration059.version);
-    await subject.query(
-      `${deletionPartition}
-       ${deletionJournalRow(1, journalledRevocation)};
-       UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
-       INSERT INTO configuration_revision
-         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
-       VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
-       INSERT INTO input_bundle(tenant,project,bundle,digest)
-       VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
-       ${identityExecution(1, "SpawnWork", "kind,cycle", "'Work',3", null)}`,
-    );
-    assert.deepEqual(await executionSizeKept059(subject), [
-      { has_size: false, cpu_millis: null, memory_mib: null },
-    ]);
-    assert.ok((await postgresMigrate(subject)).includes(migration059.version));
-    assert.deepEqual(await executionSizeKept059(subject), [
-      { has_size: true, cpu_millis: null, memory_mib: null },
-    ]);
-    const granted = (column: string) =>
-      [
-        { grantee: apiRole, privilege_type: "SELECT" },
-        { grantee: boundaryOwnerRole, privilege_type: "SELECT" },
-        { grantee: finalizerRole, privilege_type: "SELECT" },
-        { grantee: poolPlaneRole, privilege_type: "SELECT" },
-        { grantee: schedulerRole, privilege_type: "INSERT" },
-        { grantee: schedulerRole, privilege_type: "SELECT" },
-      ].map((grant) => ({ column_name: column, ...grant }));
-    assert.deepEqual(await executionSizeGrants059(subject), [
-      ...granted("cpu_millis"),
-      ...granted("memory_mib"),
-      {
-        column_name: "pool_refusal",
-        grantee: apiRole,
-        privilege_type: "SELECT",
-      },
-    ]);
-    const sized = (column: string, value: number) =>
-      subject
-        .query(
-          `UPDATE execution SET ${column}=$1
-            WHERE tenant='tenant-5' AND execution='execution-1'`,
-          [value],
-        )
-        .then(
-          () => undefined,
-          (failure: unknown) => String(failure),
-        );
-    const cpuMillisPerCpu = 1_000;
-    for (const [column, least, most] of [
-      ["cpu_millis", cpuMillisPerCpu, configurationCpusMax * cpuMillisPerCpu],
-      ["memory_mib", configurationMemoryMibMin, configurationMemoryMibMax],
-    ] as const) {
-      assert.equal(await sized(column, least), undefined, column);
-      assert.equal(await sized(column, most), undefined, column);
-      for (const value of [least - 1, most + 1])
-        assert.match(
-          String(await sized(column, value)),
-          new RegExp(`execution_${column}_is_bounded`, "u"),
-          `${column} ${String(value)}`,
-        );
-    }
-  });
-});
-
-/** A proposal over request-5's prepared attempt and its permit as an installation before 060 left one, with `merged` written over it. */
-function mergeWaitProposal060(merged: string): string {
-  return `${deletionPartition}
-  ${renamedFinalization(renamedAttemptPrepared)};
-  INSERT INTO commit_permit
-    (tenant,project,permit,attempt,recovery_epoch,lifecycle_generation)
-  VALUES('tenant-5','project-5','permit-5','attempt-5','epoch-5',1);
-  INSERT INTO finalization_change_proposal
-    (tenant,project,request,permit,proposal_request,head_ref,head_commit,
-     base_ref,base_commit,title,body,attempts,creation,creation_evidence)
-  VALUES('tenant-5','project-5','request-5','permit-5',repeat('e',64),
-         'refs/heads/chuggy/ticket',repeat('c',40),'refs/heads/main',
-         repeat('a',40),'ticket: land it','land it',1,'Created',
-         '{"status":"Open"}');
-  ${merged}`;
-}
-
-/** Whether the proposal 060 found was given its opening as when the forge was last heard about its merge, or nothing. */
-async function mergeHeardKept060(
-  subject: pg.Pool,
-): Promise<readonly { readonly unheard: boolean; readonly opened: boolean }[]> {
-  return (
-    await subject.query<{ unheard: boolean; opened: boolean }>(
-      `SELECT merge_heard_at IS NULL AS unheard,
-              merge_heard_at IS NOT DISTINCT FROM opened_at AS opened
-         FROM finalization_change_proposal`,
-    )
-  ).rows;
-}
-
-test("060 ages every merge an installation had asked about from its proposal's opening, leaves one never asked unheard, and settles a refusal only on a conflict", async () => {
-  for (const [merged, heard] of [
-    [
-      `UPDATE finalization_change_proposal
-          SET merge_attempts=1, merge_reading='Unmerged', merge_readings=1,
-              merge_reading_evidence='{"status":"Open","mergeability":"Blocked"}'`,
-      { unheard: false, opened: true },
-    ],
-    [
-      "UPDATE finalization_change_proposal SET merge_attempts=1, merge='HeadMoved'",
-      { unheard: false, opened: true },
-    ],
-    ["", { unheard: true, opened: false }],
-  ] as const)
-    await migrationDatabase("merge_waits", async (subject) => {
-      await installationBefore(subject, migration060.version);
-      await subject.query(mergeWaitProposal060(merged));
-      assert.ok(
-        (await postgresMigrate(subject)).includes(migration060.version),
-      );
-      assert.deepEqual(await mergeHeardKept060(subject), [heard], merged);
-    });
-
-  await migrationDatabase("merge_waits_reason", async (subject) => {
-    await installationBefore(subject, migration060.version);
-    await subject.query(
-      mergeWaitProposal060(
-        "UPDATE finalization_change_proposal SET merge_attempts=1",
-      ),
-    );
-    await postgresMigrate(subject);
-    const answered = (reason: string) =>
-      subject
-        .query(
-          `UPDATE finalization_change_proposal
-              SET merge='NotMergeable', merge_reason=$1`,
-          [reason],
-        )
-        .then(
-          () => undefined,
-          (failure: unknown) => String(failure),
-        );
-    assert.match(
-      String(await answered("Blocked")),
-      /finalization_change_proposal_merge_is_whole/u,
-      "the forge's own rules may lift, so no row settles on them",
-    );
-    assert.equal(await answered("Conflict"), undefined);
-  });
-});
-
-/** Every revision's tool allowlist, current first and then the history in order. */
-async function toolAllowlists066(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT 'current' AS row, revision::text, controls::jsonb->'toolAllowlist' AS tools
-         FROM selector_runtime_settings
-       UNION ALL
-       SELECT 'history', revision::text, controls::jsonb->'toolAllowlist'
-         FROM selector_runtime_settings_history
-       ORDER BY 1, 2`,
-    )
-  ).rows;
-}
-
-/** An owner's write of the installation's tool allowlist through the settings door, its controls rendered as `jsonb` renders them. */
-async function ownerControls066(
-  subject: pg.Pool,
-  toolAllowlist: string,
-): Promise<void> {
-  await subject.query(
-    `SELECT * FROM update_selector_runtime_settings(1, NULL, NULL, NULL,
-       (SELECT jsonb_set(controls::jsonb, '{toolAllowlist}', $1::jsonb)::text
-          FROM selector_runtime_settings),
-       'User', 'owner')`,
-    [toolAllowlist],
-  );
-}
-
-/**
- * A migration naming one tool in the allowlist the migration before it left,
- * the label its databases are named by, and the lead's roster it must leave
- * that allowlist holding.
- */
-interface ToolAllowlistWidening {
-  readonly label: string;
-  readonly version: number;
-  readonly from: readonly string[];
-  readonly tool: string;
-  readonly lead: readonly string[];
-  readonly seededText: string;
-}
-
-/** That `widening` names its tool at its roster place, in place and in its history, and leaves a list an owner wrote. */
-async function toolAllowlistWidened(
-  widening: ToolAllowlistWidening,
-): Promise<void> {
-  const held = new Set([
-    ...sessionCapabilities.flatMap(
-      (capability) => builtInToolCapabilities[capability],
-    ),
-    ...chuggyToolNames(sessionCapabilities),
-  ]);
-  await migrationDatabase(widening.label, async (subject) => {
-    await installationBefore(subject, widening.version);
-    await ownerControls066(subject, JSON.stringify(widening.from));
-    await installationAt(subject, widening.version);
-    const rows = (await toolAllowlists066(subject)) as readonly {
-      readonly row: string;
-      readonly revision: string;
-      readonly tools: readonly string[];
-    }[];
-    assert.deepEqual(
-      rows.map(({ row, revision }) => `${row} ${revision}`),
-      ["current 2", "history 1", "history 2"],
-    );
-    for (const { tools } of rows) {
-      assert.deepEqual(
-        tools.filter((tool) => held.has(tool)),
-        widening.lead,
-      );
-      assert.deepEqual(
-        tools.filter((tool) => !widening.from.includes(tool)),
-        [widening.tool],
-      );
-    }
-    const seeded = await subject.query<{ controls: string }>(
-      "SELECT controls FROM selector_runtime_settings_history WHERE revision = 1",
-    );
-    assert.ok(
-      seeded.rows[0]?.controls.includes(widening.seededText),
-      "the seed's own row keeps its text",
-    );
-  });
-  await migrationDatabase(`${widening.label}_owned`, async (subject) => {
-    const owned = ["Read", "mcp__chuggy__list_tickets"];
-    await installationBefore(subject, widening.version);
-    await ownerControls066(subject, JSON.stringify(owned));
-    await installationAt(subject, widening.version);
-    const rows = (await toolAllowlists066(subject)) as readonly {
-      readonly row: string;
-      readonly tools: readonly string[];
-    }[];
-    assert.deepEqual(
-      rows.map(({ row, tools }) => [
-        row,
-        tools.includes(widening.tool),
-        tools.length,
-      ]),
-      [
-        ["current", false, owned.length],
-        ["history", true, widening.from.length + 1],
-        ["history", false, owned.length],
-      ],
-    );
-  });
-}
-
-test("066 names list_repositories in the seeded allowlist at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
-  await toolAllowlistWidened({
-    label: "lead_lists_repositories",
-    version: migration066.version,
-    from: baselineToolAllowlist,
-    tool: "mcp__chuggy__list_repositories",
-    lead: leadToolAllowlist.filter(
-      (tool) => tool !== "mcp__chuggy__fetch_image",
-    ),
-    seededText:
-      '"mcp__chuggy__read_thread_transcript","mcp__chuggy__list_repositories","mcp__chuggy__initialize_draft"',
-  });
-});
-
-test("068 names fetch_image in the allowlist 066 left at its roster place, in place and in its history, and leaves a list an owner wrote", async () => {
-  await toolAllowlistWidened({
-    label: "lead_fetches_images",
-    version: migration068.version,
-    from: toolAllowlistAt066(),
-    tool: "mcp__chuggy__fetch_image",
-    lead: leadToolAllowlist,
-    seededText:
-      '"mcp__chuggy__list_repositories","mcp__chuggy__fetch_image","mcp__chuggy__initialize_draft"',
-  });
-});
-
-/** What each role holds on the attempts 067 keeps, column by column where a grant is. */
-async function importAttemptGrants067(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT grantee,privilege_type,
-              string_agg(column_name,',' ORDER BY column_name COLLATE "C") AS columns
-         FROM information_schema.column_privileges
-        WHERE table_name='repository_configuration_import' AND grantee <> current_user
-        GROUP BY grantee,privilege_type
-        ORDER BY grantee,privilege_type`,
-    )
-  ).rows;
-}
-
-/** How 067 declares its door, and who may execute it. */
-async function importAttemptDoorDeclared067(
-  subject: pg.Pool,
-  door: string,
-): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
-              array_to_string(p.proconfig,',') AS settings,
-              has_function_privilege($2,p.oid,'EXECUTE') AS api,
-              has_function_privilege($3,p.oid,'EXECUTE') AS importer,
-              has_function_privilege($4,p.oid,'EXECUTE') AS selector,
-              has_function_privilege('public',p.oid,'EXECUTE') AS public
-         FROM pg_proc p WHERE p.oid = to_regprocedure($1)`,
-      [door, apiRole, configurationImporterRole, selectorServiceRole],
-    )
-  ).rows;
-}
-
-/** One attempt written through 067's door, answering the refusal where it was refused. */
-function importAttemptRecorded067(
-  subject: pg.Pool | pg.PoolClient,
-  attempt: readonly [string, string | null, string, string | null],
-): Promise<string | undefined> {
-  const [repository, commit, result, absent] = attempt;
-  return subject
-    .query(
-      `SELECT ${repositoryConfigurationImportRecordFunction}
-         ('tenant-5','project-5',$1,$2,$3,$4)`,
-      [repository, commit, result, absent],
-    )
-    .then(
-      () => undefined,
-      (failure: unknown) => String(failure),
-    );
-}
-
-/** The attempt 067 keeps of the bound repository, its time left out. */
-async function importAttemptKept067(subject: pg.Pool): Promise<unknown> {
-  return (
-    await subject.query(
-      `SELECT repository_commit,result,absent FROM repository_configuration_import
-        WHERE tenant='tenant-5' AND project='project-5'`,
-    )
-  ).rows;
-}
-
-test("067 keeps no attempt for any binding that stood, and lets the API and the importer write one through its door alone", async () => {
-  await migrationDatabase("configuration_import_attempt", async (subject) => {
-    const door = `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text)`;
-    await installationBefore(subject, migration067.version);
-    await subject.query(
-      `${deletionPartition}
-       INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
-       VALUES('tenant-5','project-5','repository-5','epoch-5')`,
-    );
-    assert.equal(await migrationHasFunction(subject, door), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration067.version));
-    assert.deepEqual(
-      (
-        await subject.query(
-          "SELECT version,name FROM schema_migration WHERE version=$1",
-          [migration067.version],
-        )
-      ).rows,
-      [{ version: migration067.version, name: migration067.name }],
-    );
-    assert.deepEqual(await importAttemptKept067(subject), []);
-    const every =
-      "absent,attempted_at,project,repository,repository_commit,result,tenant";
-    assert.deepEqual(await importAttemptGrants067(subject), [
-      { grantee: apiRole, privilege_type: "SELECT", columns: every },
-      { grantee: boundaryOwnerRole, privilege_type: "INSERT", columns: every },
-      { grantee: boundaryOwnerRole, privilege_type: "SELECT", columns: every },
-      {
-        grantee: boundaryOwnerRole,
-        privilege_type: "UPDATE",
-        columns: "absent,attempted_at,repository_commit,result",
-      },
-    ]);
-    assert.deepEqual(await importAttemptDoorDeclared067(subject, door), [
-      {
-        owner: boundaryOwnerRole,
-        definer: true,
-        settings: "search_path=pg_catalog, public, pg_temp",
-        api: true,
-        importer: true,
-        selector: false,
-        public: false,
-      },
-    ]);
-  });
-});
-
-/** One attempt 067's door is asked to keep, as repository, commit, result and absence. */
-type ImportAttempt067 = readonly [string, string | null, string, string | null];
-
-/** A commit an attempt read. */
-const importAttemptCommit067 = "a".repeat(40);
-
-/** Every kind of attempt 067 admits, each replacing the one before it. */
-const importAttemptsAdmitted067: readonly ImportAttempt067[] = [
-  ["repository-5", importAttemptCommit067, "Imported", null],
-  [
-    "repository-5",
-    importAttemptCommit067,
-    "SnapshotAbsent",
-    "ConfigurationDirectory",
-  ],
-  ["repository-5", null, "SnapshotAbsent", "Commit"],
-  ["repository-5", null, "Unavailable", null],
-  ["repository-5", importAttemptCommit067, "DeclarationsRefused", null],
-  ["repository-5", "b".repeat(64), "Imported", null],
-];
-
-/** Each attempt 067 refuses, and the constraint it is refused by. */
-const importAttemptsRefused067: readonly (readonly [
-  ImportAttempt067,
-  RegExp,
-])[] = [
-  [
-    ["repository-5", importAttemptCommit067, "Refused", null],
-    /_result_is_known/u,
-  ],
-  [
-    ["repository-5", importAttemptCommit067, "SnapshotAbsent", "Branch"],
-    /_absent_is_known/u,
-  ],
-  [
-    ["repository-5", importAttemptCommit067, "SnapshotAbsent", null],
-    /_absent_is_a_snapshots/u,
-  ],
-  [
-    ["repository-5", importAttemptCommit067, "Imported", "Commit"],
-    /_absent_is_a_snapshots/u,
-  ],
-  [["repository-5", null, "Imported", null], /_commit_was_read/u],
-  [
-    ["repository-5", null, "SnapshotAbsent", "ConfigurationDirectory"],
-    /_commit_was_read/u,
-  ],
-  [["repository-5", "main", "Imported", null], /_commit_is_git_object/u],
-  [
-    ["repository-5", "a".repeat(41), "Imported", null],
-    /_commit_is_git_object/u,
-  ],
-  [
-    ["repository-5", `x${importAttemptCommit067}`, "Imported", null],
-    /_commit_is_git_object/u,
-  ],
-  [
-    ["unbound-5", importAttemptCommit067, "Imported", null],
-    /_repository_is_bound/u,
-  ],
-];
-
-/** A database at 067 holding one bound repository and no attempt of it. */
-async function importAttemptBound067(subject: pg.Pool): Promise<void> {
-  await installationBefore(subject, migration067.version);
-  await subject.query(
-    `${deletionPartition}
-     INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
-     VALUES('tenant-5','project-5','repository-5','epoch-5')`,
-  );
-  await postgresMigrate(subject);
-}
-
-test("067 keeps one attempt a binding, each replacing the one before, and admits only what an attempt can be", async () => {
-  await migrationDatabase(
-    "configuration_import_attempt_rows",
-    async (subject) => {
-      await importAttemptBound067(subject);
-      for (const attempt of importAttemptsAdmitted067) {
-        assert.equal(
-          await importAttemptRecorded067(subject, attempt),
-          undefined,
-        );
-        assert.deepEqual(await importAttemptKept067(subject), [
-          {
-            repository_commit: attempt[1],
-            result: attempt[2],
-            absent: attempt[3],
-          },
-        ]);
-      }
-      for (const [attempt, refusal] of importAttemptsRefused067)
-        assert.match(
-          String(await importAttemptRecorded067(subject, attempt)),
-          refusal,
-          attempt.join(" "),
-        );
-    },
-  );
-});
-
-/**
- * The door's clock is its transaction's, so of two recordings racing, the one
- * whose transaction began first is the earlier, and finds the later one kept.
- */
-test("067 never replaces an attempt with one recorded before it", async () => {
-  await migrationDatabase(
-    "configuration_import_attempt_order",
-    async (subject) => {
-      await importAttemptBound067(subject);
-      const earlier = await subject.connect();
-      try {
-        await earlier.query("BEGIN");
-        await earlier.query("SELECT now()");
-        assert.equal(
-          await importAttemptRecorded067(subject, [
-            "repository-5",
-            importAttemptCommit067,
-            "Imported",
-            null,
-          ]),
-          undefined,
-        );
-        assert.equal(
-          await importAttemptRecorded067(earlier, [
-            "repository-5",
-            "b".repeat(40),
-            "StaleBinding",
-            null,
-          ]),
-          undefined,
-        );
-        await earlier.query("COMMIT");
-      } finally {
-        earlier.release();
-      }
-      assert.deepEqual(await importAttemptKept067(subject), [
-        {
-          repository_commit: importAttemptCommit067,
-          result: "Imported",
-          absent: null,
-        },
-      ]);
-    },
-  );
-});
-
-test("069 leaves every pool and every member's runner naming no runner, and keeps one only whole and in the header's grammar", async () => {
-  await migrationDatabase("runner_versions", async (subject) => {
-    await installationBefore(subject, migration069.version);
-    await subject.query(
-      `${deletionPartition}
-       INSERT INTO worker_pool(tenant,project,pool,class,principal,client_id)
-       VALUES('tenant-5','project-5','pool-69','Dedicated','pool-principal-69','pool-client-69');
-       INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
-       VALUES('tenant-5','owner-69','{}','runner-principal-69','runner-client-69')`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration069.version));
-    for (const table of ["worker_pool", "personal_runner"]) {
-      assert.deepEqual(
-        (
-          await subject.query(
-            `SELECT runner_package,runner_version FROM ${table}`,
-          )
-        ).rows,
-        [{ runner_package: null, runner_version: null }],
-        table,
-      );
-      for (const [runnerPackage, version, refusal] of [
-        ["chuggy_linux", "0.14.0", "runner_package_is_a_package"],
-        ["chuggy-linux", "0.14.0-rc.1", "runner_version_is_a_release"],
-        ["chuggy-linux", "0.014.0", "runner_version_is_a_release"],
-        ["chuggy-linux", null, "runner_is_named_whole"],
-        [null, "0.14.0", "runner_is_named_whole"],
-      ] as const)
-        await assert.rejects(
-          subject.query(
-            `UPDATE ${table} SET runner_package=$1,runner_version=$2`,
-            [runnerPackage, version],
-          ),
-          new RegExp(`${table}_${refusal}`, "u"),
-          `${table} ${String(runnerPackage)}/${String(version)}`,
-        );
-      assert.equal(
-        (
-          await subject.query(
-            `UPDATE ${table} SET runner_package='chuggy-linux',runner_version='0.14.0'`,
-          )
-        ).rowCount,
-        1,
-        table,
-      );
-    }
-  });
-});
-
-test("070 keeps every member's runner and allowlist, keys a runner by its client beside its member, and lets the API write no column of one in place", async () => {
-  await migrationDatabase("many_personal_runners", async (subject) => {
-    await installationBefore(subject, migration070.version);
-    await subject.query(
-      `${deletionPartition}
-       INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
-       VALUES('tenant-5','owner-70','{}','runner-principal-70','runner-client-70');
-       INSERT INTO personal_runner_project(tenant,owner,project)
-       VALUES('tenant-5','owner-70','project-5')`,
-    );
-    assert.ok((await postgresMigrate(subject)).includes(migration070.version));
-    await subject.query(
-      `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
-       VALUES('tenant-5','owner-70','{}','runner-principal-71','runner-client-71')`,
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT r.client_id,l.project FROM personal_runner r
-             JOIN personal_runner_project l ON l.tenant=r.tenant AND l.owner=r.owner
-            ORDER BY r.client_id`,
-        )
-      ).rows,
-      [
-        { client_id: "runner-client-70", project: "project-5" },
-        { client_id: "runner-client-71", project: "project-5" },
-      ],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT pg_get_constraintdef(oid) AS keyed FROM pg_constraint
-            WHERE conrelid='public.personal_runner'::regclass AND contype='p'`,
-        )
-      ).rows,
-      [{ keyed: "PRIMARY KEY (tenant, owner, client_id)" }],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT a.attname AS writable FROM pg_attribute a
-            WHERE a.attrelid='public.personal_runner'::regclass AND a.attnum>0
-              AND NOT a.attisdropped
-              AND has_column_privilege($1,'public.personal_runner',a.attname,'UPDATE')`,
-          [apiRole],
-        )
-      ).rows,
-      [],
-    );
-    assert.deepEqual(
-      (
-        await subject.query(
-          `SELECT p.proname AS installed,p.proowner::regrole::text AS owner
-             FROM pg_proc p
-            WHERE p.proname = ANY($1::text[]) ORDER BY p.proname`,
-          [[personalRunnerFenceFunction, personalSessionOpenFunction]],
-        )
-      ).rows,
-      [personalRunnerFenceFunction, personalSessionOpenFunction]
-        .toSorted()
-        .map((installed) => ({ installed, owner: boundaryOwnerRole })),
     );
   });
 });

@@ -9,12 +9,17 @@ import {
   configurationRevisionSummary,
   draftPageLimitDefault,
   draftInitializationPolicy,
+  bootstrapConfigurationRevision,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   draftReleaseRefusalCode,
   encodeDraftAuthoring,
   parseDraftAuthoring,
   releaseConfigurationReadiness,
+  releaseConfigurationRepositoryOf,
   releasePairingFaults,
+  ticketConfigurationReadiness,
+  ticketProgramShort,
   type CanonicalConfiguration,
   type ReleaseConfigurationFault,
 } from "../../src/interpreter/authoring.ts";
@@ -238,7 +243,7 @@ test("a stage that briefs an agent with no worker to run it is not releasable", 
     );
     assert.deepEqual(
       releaseConfigurationReadiness(workerlessConfiguration(stages), {
-        checks: [asBriefCheckLine("npm test")],
+        checks: [asBriefCheckLine("npm test", 0)],
       }),
       { readiness: "Incomplete", fault: "WorkerUndeclared" },
       `${which}, refused for itself before any pairing`,
@@ -252,7 +257,7 @@ test("a configuration whose every stage runs commands is releasable with no work
       work: commandedWork,
       evaluations: [commandedCheck],
     }),
-    { checks: [asBriefCheckLine("npm test")] },
+    { checks: [asBriefCheckLine("npm test", 0)] },
   );
   assert.equal(readiness.readiness, "Ready");
 });
@@ -266,7 +271,7 @@ test("a configuration commanding no check stage refuses a brief that appends che
       { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
     ],
   });
-  const appending = { checks: [asBriefCheckLine("npm test")] };
+  const appending = { checks: [asBriefCheckLine("npm test", 0)] };
   assert.deepEqual(
     releaseConfigurationReadiness(readyConfiguration, appending),
     { readiness: "Incomplete", fault: "BriefChecksUncommanded" },
@@ -341,7 +346,7 @@ test("a release refuses a configuration imported from another repository", () =>
     draftReleaseReadiness(
       readyConfiguration,
       { checks: [], repository: firstRepository },
-      secondRepository,
+      { from: "Imported", repository: secondRepository },
       undefined,
     ),
     { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
@@ -351,7 +356,7 @@ test("a release refuses a configuration imported from another repository", () =>
       draftReleaseReadiness(
         readyConfiguration,
         { checks: [], repository },
-        repository,
+        { from: "Imported", repository },
         undefined,
       ).readiness,
       "Ready",
@@ -370,6 +375,71 @@ test("a release refuses a configuration imported from another repository", () =>
   }
 });
 
+test("a release under a bootstrap is refused for any repository but the one it was authored for", () => {
+  const revision = bootstrapConfigurationRevision(firstRepository);
+  const bootstrap = configurationRepositoryOf(revision, undefined);
+  assert.deepEqual(bootstrap, { from: "Bootstrap", revision });
+  assert.deepEqual(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: secondRepository },
+      bootstrap,
+      undefined,
+    ),
+    { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
+  );
+  assert.equal(
+    draftReleaseReadiness(
+      readyConfiguration,
+      { checks: [], repository: firstRepository },
+      bootstrap,
+      undefined,
+    ).readiness,
+    "Ready",
+  );
+  assert.deepEqual(configurationRepositoryOf(revision, secondRepository), {
+    from: "Imported",
+    repository: secondRepository,
+  });
+});
+
+test("the one bootstrap a project held before each repository had its own releases in no repository", () => {
+  const orphan = asConfigurationRevisionId("bootstrap");
+  for (const repository of [firstRepository, secondRepository])
+    assert.deepEqual(
+      draftReleaseReadiness(
+        readyConfiguration,
+        { checks: [], repository },
+        releaseConfigurationRepositoryOf(orphan, undefined),
+        undefined,
+      ),
+      { readiness: "Incomplete", fault: "ConfigurationFromAnotherRepository" },
+    );
+  assert.equal(
+    configurationRepositoryOf(orphan, undefined),
+    undefined,
+    "a ticket already released under it is judged as under any authored revision",
+  );
+  assert.deepEqual(
+    releaseConfigurationRepositoryOf(orphan, secondRepository),
+    { from: "Imported", repository: secondRepository },
+    "a revision imported under the name is scoped by its repository",
+  );
+  const revision = bootstrapConfigurationRevision(firstRepository);
+  assert.deepEqual(
+    releaseConfigurationRepositoryOf(revision, undefined),
+    configurationRepositoryOf(revision, undefined),
+  );
+  assert.equal(
+    configurationRepositoryOf(
+      asConfigurationRevisionId("repository:0a1b2c3:bootstrap"),
+      undefined,
+    ),
+    undefined,
+    "a revision that merely ends in the bootstrap's name is not one",
+  );
+});
+
 test("the configuration's own refusals are answered before the repository's", () => {
   const uncommanded = {
     readiness: "Incomplete",
@@ -378,7 +448,7 @@ test("the configuration's own refusals are answered before the repository's", ()
   assert.deepEqual(
     draftReleaseReadiness(
       readyConfiguration,
-      { checks: [asBriefCheckLine("npm test")] },
+      { checks: [asBriefCheckLine("npm test", 0)] },
       undefined,
       undefined,
     ),
@@ -388,12 +458,93 @@ test("the configuration's own refusals are answered before the repository's", ()
   assert.deepEqual(
     draftReleaseReadiness(
       readyConfiguration,
-      { checks: [asBriefCheckLine("npm test")], repository: firstRepository },
-      secondRepository,
+      {
+        checks: [asBriefCheckLine("npm test", 0)],
+        repository: firstRepository,
+      },
+      { from: "Imported", repository: secondRepository },
       undefined,
     ),
     uncommanded,
     "and before a configuration read in another repository",
+  );
+});
+
+/** A document reviewing in its first stage and running commands in its second. */
+const reviewedThenChecked = canonicalConfigurationOf({
+  ...(JSON.parse(readyConfiguration) as Record<string, unknown>),
+  evaluations: [
+    { purpose: "Review", instructions: ["Review it."], practices: [] },
+    { purpose: "Check", checks: [".chug/tasks/ci.sh"] },
+  ],
+});
+
+/** A program whose Nth stage draws the evaluator keys at N. */
+function programOf(stages: readonly (readonly number[])[]) {
+  return stages.map((evaluators, index) => ({
+    key: index + 1,
+    evaluators: evaluators.map((key) => ({ key })),
+  }));
+}
+
+test("a document's program runs less than it plans where it runs no stage under one of its evaluations, whatever its evaluators", () => {
+  const ticketOf = (configuration: CanonicalConfiguration) => {
+    const readiness = ticketConfigurationReadiness(
+      configuration,
+      undefined,
+      undefined,
+      undefined,
+    );
+    assert.equal(readiness.readiness, "Ready");
+    if (readiness.readiness !== "Ready") throw new Error("not ready");
+    return readiness.ticket;
+  };
+  const planned = ticketOf(reviewedThenChecked);
+  assert.equal(ticketProgramShort(planned, programOf([[1], [1]])), false);
+  assert.equal(
+    ticketProgramShort(planned, programOf([[1, 2], [3]])),
+    false,
+    "a stage runs its one block whatever evaluator keys it lists",
+  );
+  assert.equal(ticketProgramShort(planned, programOf([[1]])), true);
+  assert.equal(
+    ticketProgramShort(planned, programOf([[1], []])),
+    true,
+    "a stage drawn with no evaluator runs nothing",
+  );
+  assert.equal(
+    ticketProgramShort(ticketOf(readyConfiguration), programOf([[1]])),
+    false,
+    "a document listing no evaluations plans none",
+  );
+});
+
+test("a document's program leaving out the stage a brief's checks join is refused under its own fault", () => {
+  const checked = {
+    checks: [asBriefCheckLine("npm test", 0)],
+    repository: firstRepository,
+  };
+  const fault = (
+    stages: readonly (readonly number[])[],
+    brief: Parameters<typeof draftReleaseReadiness>[1] = checked,
+  ) => {
+    const readiness = draftReleaseReadiness(
+      reviewedThenChecked,
+      brief,
+      undefined,
+      undefined,
+      undefined,
+      programOf(stages),
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  assert.equal(fault([[1], [1]]), "Ready");
+  assert.equal(fault([[1]]), "ProgramSkipsBriefChecks");
+  assert.equal(fault([[1], []]), "ProgramSkipsBriefChecks");
+  assert.equal(
+    fault([[1]], { checks: [], repository: firstRepository }),
+    "Ready",
+    "a brief carrying no checks has nothing to leave out",
   );
 });
 

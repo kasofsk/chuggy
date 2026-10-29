@@ -9,6 +9,7 @@ import {
   cancellationFunction,
   configurationImporterRole,
   finalizerRole,
+  metricsPlaneRole,
   notificationPublishFunction,
   poolPlaneRole,
   projectChangeAppendFunction,
@@ -26,6 +27,7 @@ import {
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
+  ticketUpdatedDependenciesFunction,
   ticketRunnerLossFunction,
   ticketRunStepFailureFunction,
   ticketServiceRole,
@@ -57,7 +59,7 @@ const executionRoutingColumns =
 const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
-  "authority,backoff_secs,bounds,deadline_secs,image,mirrors,model,published_at,singleton";
+  "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton";
 /** The five relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
@@ -83,6 +85,7 @@ after(async () => {
 test("every runtime role may read only the migration ledger contract", async () => {
   for (const role of [
     accessPlaneRole,
+    metricsPlaneRole,
     apiRole,
     ticketServiceRole,
     selectorServiceRole,
@@ -237,6 +240,49 @@ test("the access plane's role reaches its invite links and is refused every rela
   ] as const)
     assert.match(
       (await harness.attemptAs(accessPlaneRole, statement)) ?? "",
+      postgresHarnessDenial(relation),
+      statement,
+    );
+});
+
+test("the metrics plane's role reads the columns its scrape names and nothing else", async () => {
+  for (const statement of [
+    `SELECT tenant,project,execution,ticket,task,source_request,owner,placement,configuration_revision FROM execution`,
+    "SELECT tenant,project,request,task,kind,stage,evaluator FROM execution_request_task",
+    "SELECT tenant,project,ticket,selection,overrides FROM ticket_definition",
+    "SELECT tenant,project,execution,attempt,state,personal,opened_at,ended_at FROM execution_attempt",
+    "SELECT tenant,project,execution,attempt,turns,duration_ms,duration_api_ms FROM execution_run_total",
+    "SELECT model,tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,cost_usd_micros FROM execution_run_model_usage",
+    "SELECT tenant,project,revision,canonical FROM configuration_revision",
+    "SELECT tenant,project,session,state,model,tokens,cost_micros,duration_ms,ended_at FROM session_turn",
+    "SELECT tenant,project,session,kind,principal,scope FROM agent_session",
+    "SELECT tenant,project,phase FROM ticket_projection",
+  ])
+    assert.equal(
+      await harness.attemptAs(metricsPlaneRole, statement),
+      undefined,
+      statement,
+    );
+  for (const [statement, relation] of [
+    ["SELECT pool FROM execution_attempt", "execution_attempt"],
+    ["SELECT workload FROM execution_attempt", "execution_attempt"],
+    ["SELECT capability FROM execution_attempt", "execution_attempt"],
+    ["SELECT requirement_value FROM execution", "execution"],
+    ["SELECT definition FROM ticket_definition", "ticket_definition"],
+    ["SELECT input FROM session_turn", "session_turn"],
+    ["SELECT result FROM session_turn", "session_turn"],
+    ["SELECT system_prompt FROM agent_session", "agent_session"],
+    ["SELECT project_ref FROM agent_session", "agent_session"],
+    [
+      "SELECT authority_subject FROM configuration_revision",
+      "configuration_revision",
+    ],
+    ["SELECT * FROM project", "project"],
+    ["SELECT * FROM journal_entry", "journal_entry"],
+    ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
+  ] as const)
+    assert.match(
+      (await harness.attemptAs(metricsPlaneRole, statement)) ?? "",
       postgresHarnessDenial(relation),
       statement,
     );
@@ -466,6 +512,18 @@ test("the API cannot bypass versioned authoring functions", async () => {
     [
       "DELETE FROM repository_configuration_provenance",
       "repository_configuration_provenance",
+    ],
+    [
+      "INSERT INTO repository_configuration_workload_path DEFAULT VALUES",
+      "repository_configuration_workload_path",
+    ],
+    [
+      "UPDATE repository_configuration_workload_path SET path='.chug/workloads/ci.json'",
+      "repository_configuration_workload_path",
+    ],
+    [
+      "DELETE FROM repository_configuration_workload_path",
+      "repository_configuration_workload_path",
     ],
     ["UPDATE draft SET state='Released'", "draft"],
     ["UPDATE project SET ticket_next=ticket_next+1", "project"],
@@ -936,6 +994,15 @@ test("only the API reads the failed run step an escalated ticket stopped at", as
   );
 });
 
+test("only the API reads the dependencies a ticket's last update named", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${ticketUpdatedDependenciesFunction}(text,text,bigint)`,
+    ),
+    [apiRole],
+  );
+});
+
 test("only the scheduler finds and resumes a job lost on its runner, and only the API reads the loss", async () => {
   assert.deepEqual(
     await changeLogExecutors(`${ticketRunnerLossFunction}(text,text,bigint)`),
@@ -1019,7 +1086,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "assignment,attempt,attempt_number,capability,capability_secret_digest,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runtime,state,tenant,workload",
+      "assignment,attempt,attempt_number,capability,capability_secret_digest,claimed_at,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runtime,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
@@ -1157,11 +1224,11 @@ test("the scheduler reads execution and capacity, of the project only its lifecy
   );
   assert.equal(
     read.find((row) => row.relation === "worker_pool")?.columns,
-    "capabilities,class,pool,principal,project,tenant",
+    "capabilities,class,memory_ceiling_mib,pool,principal,project,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "personal_runner")?.columns,
-    "capabilities,owner,principal,tenant",
+    "capabilities,memory_ceiling_mib,owner,principal,tenant",
   );
   assert.equal(
     read.find((row) => row.relation === "draft_revision")?.columns,
@@ -1343,23 +1410,24 @@ test("the binding every evidence function opens with is nobody's to call", async
 });
 
 /**
- * The two landing doors and the retirement: moving a binding's landing and
+ * The two landing doors and the retirement: writing a binding's settings and
  * ending the binding are the API's questions, asked on behalf of one project by
- * routes it already gates. Reading one is the API's too, and the worker
- * plane's, which holds a repository a pod names to its project's live
- * bindings; every other runtime role reads a binding as part of a row it
+ * routes it already gates. Reading one is the API's too, the worker plane's,
+ * which holds a repository a pod names to its project's live bindings, and the
+ * finalizer's, whose mints read whether a binding allows the pipeline
+ * definitions; every other runtime role reads a binding as part of a row it
  * already holds a door for, so none of them holds these.
  */
-test("no runtime role but the API moves a binding's landing or retires one, and only it and the worker plane read one", async () => {
+test("no runtime role but the API writes a binding's settings or retires one, and only it, the worker plane and the finalizer read one", async () => {
   const calls = [
     [
       repositoryLandingReadFunction,
-      `SELECT landing_mode FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
-      [apiRole, workerPlaneRole],
+      `SELECT landing_mode,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      [apiRole, workerPlaneRole, finalizerRole],
     ],
     [
       repositoryLandingWriteFunction,
-      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push')`,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push',false,false)`,
       [apiRole],
     ],
     [

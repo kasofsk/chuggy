@@ -12,6 +12,7 @@ import {
   postgresPersonalRunnerRegistry,
 } from "../../src/adapters/postgres/personalRunner.ts";
 import {
+  postgresWorkerPoolAssignments,
   postgresWorkerPoolRoster,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
@@ -176,8 +177,43 @@ test("the scheduler reads every runner of a member's in the tenant, each with ev
       owner: member,
       principal: registered.principal,
       capabilities: registered.capabilities,
+      memoryCeilingMib: undefined,
       allowlist: [partition],
     })),
+  );
+});
+
+test("each runner is read by the scheduler with the memory ceiling its own newest poll naming one named", async () => {
+  const partition = await project("runner-ceiling");
+  const runners = postgresPersonalRunnerRegistry(api);
+  const stamps = postgresWorkerPoolRunners(plane);
+  const roster = postgresWorkerPoolRoster(scheduler);
+  const key = { tenant: partition.tenant, owner: member };
+  const first = registration(key, clientNumbered(partition.tenant, 1));
+  const second = registration(key, clientNumbered(partition.tenant, 2));
+  await runners.register(first);
+  await runners.register(second);
+  await runners.allow(key, partition.project);
+  const ceilings = async () =>
+    (await roster.personal(partition, member)).map(
+      (runner) => runner.memoryCeilingMib,
+    );
+  await stamps.named(
+    { kind: "Personal", ...key, principal: first.principal },
+    undefined,
+    undefined,
+    2_048,
+  );
+  assert.deepEqual(await ceilings(), [2_048, undefined]);
+  await stamps.named(
+    { kind: "Personal", ...key, principal: first.principal },
+    undefined,
+    undefined,
+  );
+  assert.deepEqual(
+    await ceilings(),
+    [2_048, undefined],
+    "a poll naming none keeps it",
   );
 });
 
@@ -217,11 +253,12 @@ test("a second registration stands beside the first, each read by its client, an
   assert.deepEqual(read?.projects, [partition.project]);
 });
 
-test("a runner is read with its newest poll of either kind, live only while that poll is inside the window, and live for executions only by its poll for them", async () => {
+test("a runner is read with its newest poll, live only while that poll is inside the window, live with no room for an execution, and live for executions only by its poll for them", async () => {
   const partition = await project("runner-polled");
   const runners = postgresPersonalRunnerRegistry(api);
   const key = { tenant: partition.tenant, owner: member };
-  await runners.register(registration(key, `client-${partition.tenant}`));
+  const registered = registration(key, `client-${partition.tenant}`);
+  await runners.register(registered);
   const unpolled = (await runners.runners(key))?.runners[0];
   assert.equal(unpolled?.polledAt, undefined);
   assert.equal(unpolled?.live, false);
@@ -234,24 +271,27 @@ test("a runner is read with its newest poll of either kind, live only while that
       [partition.tenant, secsAgo],
     );
   await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
-  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
+  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 3);
   const stale = (await runners.runners(key))?.runners[0];
   assert.equal(stale?.live, false);
   assert.equal(stale?.executionsLive, false);
+  await postgresWorkerPoolAssignments(plane).polled(
+    { ...key, principal: registered.principal, kind: "Personal" },
+    false,
+  );
+  const full = (await runners.runners(key))?.runners[0];
+  assert.equal(full?.live, true, "a poll with no room for an execution");
+  assert.equal(full?.executionsLive, false);
   assert.deepEqual(
     await harness.query(
-      `SELECT abs(extract(epoch FROM executions_polled_at-$2::timestamptz))<0.001
+      `SELECT abs(extract(epoch FROM last_polled_at-$2::timestamptz))<0.001
                 AS newest
          FROM personal_runner WHERE tenant=$1`,
-      [partition.tenant, stale?.polledAt],
+      [partition.tenant, full?.polledAt],
     ),
     [{ newest: true }],
-    "the newer of the two polls is the one read",
+    "the poll read is the newest",
   );
-  await stamp("last_polled_at", 1);
-  const sessionPolled = (await runners.runners(key))?.runners[0];
-  assert.equal(sessionPolled?.live, true);
-  assert.equal(sessionPolled?.executionsLive, false);
   await stamp("executions_polled_at", 1);
   assert.equal((await runners.runners(key))?.runners[0]?.executionsLive, true);
 });
@@ -269,13 +309,13 @@ test("each runner is read with the runner its own registration's newest poll nam
   const named = async () =>
     (await runners.runners(key))?.runners.map((runner) => runner.runner);
   assert.deepEqual(await named(), [undefined]);
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   assert.deepEqual(await named(), [linux]);
   const [written] = await harness.query(
     `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
     [partition.tenant],
   );
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   assert.deepEqual(
     await harness.query(
       `SELECT xmin::text AS written FROM personal_runner WHERE tenant=$1`,
@@ -284,9 +324,9 @@ test("each runner is read with the runner its own registration's newest poll nam
     [written],
     "the same runner again writes nothing",
   );
-  await stamps.named(polled(), undefined);
+  await stamps.named(polled(), undefined, undefined);
   assert.deepEqual(await named(), [undefined], "a poll naming none keeps none");
-  await stamps.named(polled(), linux);
+  await stamps.named(polled(), linux, undefined);
   const second = registration(key, clientNumbered(partition.tenant, 2));
   await runners.register(second);
   assert.deepEqual(
@@ -295,7 +335,7 @@ test("each runner is read with the runner its own registration's newest poll nam
     "a new registration names no runner",
   );
   const darwin = { package: "chuggy-darwin", version: "0.2.0" };
-  await stamps.named(polled(second.principal), darwin);
+  await stamps.named(polled(second.principal), darwin, undefined);
   assert.deepEqual(await named(), [linux, darwin]);
   await assert.rejects(
     harness.query(
@@ -405,13 +445,13 @@ test("a personal token is spent once, by whichever of two racing redemptions the
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("a1");
   assert.equal(
-    await tokens.mint(tenant, digest, ["linux"], Date.now() + 60_000, member),
+    await tokens.mint(tenant, digest, Date.now() + 60_000, member, "Runner"),
     "Minted",
   );
   assert.deepEqual(await tokens.permitted(digest), {
     tenant,
-    capabilities: ["linux"],
     mintedBy: member,
+    kind: "Runner",
   });
   const spent = await Promise.all([
     tokens.consume(digest),
@@ -428,7 +468,7 @@ test("a personal token past its expiry is neither readable, spendable nor restor
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   const digest = postgresHarnessTokenDigest("b2");
   assert.equal(
-    await tokens.mint(tenant, digest, [], Date.now() - 1_000, member),
+    await tokens.mint(tenant, digest, Date.now() - 1_000, member, "Runner"),
     "Minted",
   );
   assert.equal(await tokens.permitted(digest), undefined);
@@ -442,24 +482,46 @@ test("a personal token names a tenant that is a row", async () => {
     await tokens.mint(
       asTenantId("tenant-never-made"),
       postgresHarnessTokenDigest("c3"),
-      [],
       Date.now() + 60_000,
       member,
+      "Runner",
     ),
     "NotFound",
   );
 });
 
-test("a member holds at most their bound of live tokens in a tenant, and a mint sweeps their expired ones", async () => {
+test("a token is read and spent as the kind it was minted for, and the schema refuses a kind it does not know", async () => {
+  const { tenant } = await project("token-kind");
+  const tokens = postgresPersonalRunnerRegistrationTokens(api);
+  const digest = postgresHarnessTokenDigest("f1");
+  assert.equal(
+    await tokens.mint(tenant, digest, Date.now() + 60_000, member, "ChatHost"),
+    "Minted",
+  );
+  const terms = { tenant, mintedBy: member, kind: "ChatHost" };
+  assert.deepEqual(await tokens.permitted(digest), terms);
+  assert.deepEqual(await tokens.consume(digest), terms);
+  await assert.rejects(
+    harness.query(
+      `INSERT INTO personal_runner_registration_token
+         (token_digest,tenant,minted_by,expires_at,kind)
+       VALUES($1,$2,$3,now()+interval '1 minute','Pool')`,
+      [postgresHarnessTokenDigest("f2"), tenant, member],
+    ),
+    /personal_runner_registration_token_kind_is_known/u,
+  );
+});
+
+test("a member holds at most their bound of live tokens in a tenant, of either kind, and a mint sweeps their expired ones", async () => {
   const { tenant } = await project("token-bound");
   const tokens = postgresPersonalRunnerRegistrationTokens(api);
   assert.equal(
     await tokens.mint(
       tenant,
       postgresHarnessTokenDigest("d0"),
-      [],
       Date.now() - 1_000,
       member,
+      "Runner",
     ),
     "Minted",
   );
@@ -468,29 +530,31 @@ test("a member holds at most their bound of live tokens in a tenant, and a mint 
       await tokens.mint(
         tenant,
         postgresHarnessTokenDigest(`d${String(minted)}`),
-        [],
         Date.now() + 60_000,
         member,
+        minted % 2 === 0 ? "ChatHost" : "Runner",
       ),
       "Minted",
+    );
+  for (const kind of ["Runner", "ChatHost"] as const)
+    assert.equal(
+      await tokens.mint(
+        tenant,
+        postgresHarnessTokenDigest(kind === "Runner" ? "dfa" : "dfb"),
+        Date.now() + 60_000,
+        member,
+        kind,
+      ),
+      "LimitReached",
+      kind,
     );
   assert.equal(
     await tokens.mint(
       tenant,
-      postgresHarnessTokenDigest("dff"),
-      [],
-      Date.now() + 60_000,
-      member,
-    ),
-    "LimitReached",
-  );
-  assert.equal(
-    await tokens.mint(
-      tenant,
       postgresHarnessTokenDigest("e0"),
-      [],
       Date.now() + 60_000,
       other,
+      "Runner",
     ),
     "Minted",
     "the bound is one member's, not the tenant's",
@@ -528,7 +592,8 @@ test("the pool plane reads a runner and its allowlist and stamps its poll, and c
   assert.equal(
     await harness.attemptAs(
       poolPlaneRole,
-      `UPDATE personal_runner SET last_polled_at=now(),runner_package=NULL,runner_version=NULL
+      `UPDATE personal_runner
+          SET last_polled_at=now(),runner_package=NULL,runner_version=NULL,capabilities='{}'
         WHERE principal='none'`,
     ),
     undefined,

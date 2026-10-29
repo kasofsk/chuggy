@@ -39,8 +39,32 @@
  * since the forge was last heard about it: a proposal merged by anyone, at
  * whatever head, concludes the merge; one closed unmerged is read on the same
  * cadence, because a person may reopen it, and waits again once one has; and
- * only a blocked one read as mergeable is merged again, at the commit this
- * request proposed and under the same ceilings as any other.
+ * only a blocked one read as mergeable is merged again, at the head pinned for
+ * it and under the same ceilings as any other.
+ *
+ * A BRANCH BEHIND ITS BASE IS BROUGHT UP TO DATE, ONE PER BASE AT A TIME. A
+ * reading that finds the proposal behind authorizes asking the forge to merge
+ * the base into it, conditional on the pinned head, under a ceiling of its own.
+ * Each update makes the repository run its required checks again, so only the
+ * oldest proposal behind on a repository's base is updated, and only while no
+ * other update there is unread.
+ *
+ * A PROPOSAL AN EARLIER REQUEST OF THE SAME TICKET OPENED IS ADOPTED, NOT
+ * OPENED AGAIN. A forge holds one open proposal per head and base, so a rework
+ * promoted onto the ticket's branch is already carried by the proposal the
+ * last request opened, and a create can only be refused. That proposal is
+ * known by the number its row recorded rather than by a marker, read by that
+ * number, and adopted only where the reading finds it open on this request's
+ * head and base; one closed, merged or elsewhere is left alone and a proposal
+ * of this request's own is opened instead. Closing it to open another would
+ * lose the review and discussion it carries.
+ *
+ * A HEAD THAT IS THE PINNED HEAD BROUGHT UP TO DATE IS ADOPTED. A read head
+ * other than the pinned one is pinned in its place, and merged at, only where
+ * git proves it a merge whose first parent is the pinned head, whose second is
+ * on the base, and whose tree is the clean merge of the two — the integration a
+ * preparation already makes without evaluating again. Any other head is one
+ * nobody here vouched for, and no merge is spent on it.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
@@ -49,7 +73,12 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
-import type { GitObjectId, GitRefName, RepositoryId } from "./finalizer.ts";
+import type {
+  GitObjectId,
+  GitRefName,
+  HeadAdoption,
+  RepositoryId,
+} from "./finalizer.ts";
 import {
   finalizerIdentityCharsMax,
   repositoryCredentialCharsMax,
@@ -287,13 +316,17 @@ export interface ChangeProposalRequest {
 
 export type ChangeProposalStatus = "Open" | "Closed" | "Merged" | "Superseded";
 
-/** What the forge last said about merging a proposal, `Unknown` where it said nothing this tree reads. */
+/**
+ * What the forge last said about merging a proposal, `Unknown` where it said
+ * nothing this tree reads. `Behind` is a proposal its base has moved past, which
+ * the forge's rules refuse until it is brought up to date.
+ */
 export type ChangeProposalMergeability =
-  "Mergeable" | "Conflicting" | "Blocked" | "Unknown";
+  "Mergeable" | "Conflicting" | "Blocked" | "Behind" | "Unknown";
 
 /** Every mergeability, so a suite and a database CHECK iterate rather than restate. */
 export const allChangeProposalMergeabilities: readonly ChangeProposalMergeability[] =
-  ["Mergeable", "Conflicting", "Blocked", "Unknown"];
+  ["Mergeable", "Conflicting", "Blocked", "Behind", "Unknown"];
 
 export interface ChangeProposalEvidence {
   readonly identity: ChangeProposalIdentity;
@@ -382,11 +415,17 @@ export type ChangeProposalCreationAnswer = Extract<
 >;
 
 /**
- * What a row says one create came to: the answer the forge gave, or that this
- * deployment could not store the evidence of it.
+ * What a row says one create came to: the answer the forge gave, that this
+ * deployment could not store the evidence of it, or that no create was made
+ * because the proposal an earlier request opened was read open and adopted.
  */
 export type ChangeProposalCreationStored =
-  ChangeProposalCreationAnswer | { readonly created: "Unstorable" };
+  | ChangeProposalCreationAnswer
+  | { readonly created: "Unstorable" }
+  | {
+      readonly created: "Adopted";
+      readonly evidence: ChangeProposalEvidence;
+    };
 
 /** Every answer a create settles a row with, so a suite and a database CHECK iterate. */
 export const allChangeProposalCreationAnswers: readonly ChangeProposalCreationAnswer["created"][] =
@@ -394,7 +433,7 @@ export const allChangeProposalCreationAnswers: readonly ChangeProposalCreationAn
 
 /** Every arm a row records a create as. */
 export const allChangeProposalCreationsStored: readonly ChangeProposalCreationStored["created"][] =
-  [...allChangeProposalCreationAnswers, "Unstorable"];
+  [...allChangeProposalCreationAnswers, "Unstorable", "Adopted"];
 
 export type ChangeProposalRead =
   | { readonly read: "Found"; readonly evidence: ChangeProposalEvidence }
@@ -467,6 +506,9 @@ export interface ChangeProposalPort {
     request: ChangeProposalMergeRequest,
   ): Promise<ChangeProposalRead>;
   merge(request: ChangeProposalMergeRequest): Promise<ChangeProposalMerged>;
+  updateBranch(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalUpdated>;
 }
 
 /** The composition boundary selects one adapter by the configured forge binding. */
@@ -670,6 +712,70 @@ export function reconcileChangeProposal(
   }
 }
 
+/**
+ * Whether an adopted proposal is still where this request stands. It was
+ * proved by its number and never by this request's marker, so nothing a person
+ * may edit is compared, exactly as for a reading of a merge.
+ */
+function proposalAdoptedContradiction(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  merged: ChangeProposalMergedStanding,
+): ChangeProposalContradiction | undefined {
+  if (evidence.identity.forge !== request.binding.forge) return "ForgeMismatch";
+  return (
+    proposalPlaceContradiction(request, evidence) ??
+    proposalStatusContradiction(evidence, merged)
+  );
+}
+
+/**
+ * The proposal an earlier request of the same ticket recorded on this
+ * request's head and base, as its row addresses it, and what reading it by that
+ * number found.
+ */
+export interface ChangeProposalAdoptionGathered {
+  readonly proposal: ChangeProposalAddress;
+  readonly read: ChangeProposalRead;
+}
+
+export type ChangeProposalAdoptionNext =
+  | { readonly next: "Adopt"; readonly evidence: ChangeProposalEvidence }
+  | { readonly next: "Create" }
+  | { readonly next: "Held"; readonly reason: "Unavailable" | "Denied" };
+
+/**
+ * What reading an earlier request's proposal authorizes before this request
+ * opens one: adopting it where it is the proposal its number addresses, on
+ * this forge, open, and on this request's head and base; and opening one of
+ * this request's own where it is anything else. A reading that could not be
+ * made has said nothing, so the request holds rather than spend a create the
+ * forge would refuse while that proposal stands.
+ */
+export function changeProposalAdoptionNext(
+  request: ChangeProposalRequest,
+  gathered: ChangeProposalAdoptionGathered,
+): ChangeProposalAdoptionNext {
+  const read = gathered.read;
+  switch (read.read) {
+    case "Absent":
+      return { next: "Create" };
+    case "Unavailable":
+    case "Denied":
+      return { next: "Held", reason: read.read };
+    case "Found": {
+      const evidence = read.evidence;
+      return evidence.identity.number === gathered.proposal.number &&
+        proposalAdoptedContradiction(request, evidence, "Contradictory") ===
+          undefined
+        ? { next: "Adopt", evidence }
+        : { next: "Create" };
+    }
+    default:
+      return assertNever(read);
+  }
+}
+
 /** What evidence of a proposal settles this request to, whichever answer carried it. */
 function proposalEvidenceNext(
   request: ChangeProposalRequest,
@@ -723,6 +829,34 @@ function proposalUnansweredNext(
     : { next: "RefuseAttempt" };
 }
 
+/** What a row whose create is settled continues to, an adopted proposal judged as one proved by its number. */
+function changeProposalAnsweredNext(
+  request: ChangeProposalRequest,
+  creation: ChangeProposalCreationStored,
+  merged: ChangeProposalMergedStanding,
+): ChangeProposalPublicationNext {
+  switch (creation.created) {
+    case "Unstorable":
+      return { next: "Held", reason: "EvidenceUnstorable" };
+    case "Adopted": {
+      const contradiction = proposalAdoptedContradiction(
+        request,
+        creation.evidence,
+        merged,
+      );
+      return contradiction === undefined
+        ? { next: "Accepted", evidence: creation.evidence }
+        : { next: "Refused", contradiction, evidence: creation.evidence };
+    }
+    case "Created":
+    case "AlreadyExists":
+    case "Contradictory":
+      return proposalEvidenceNext(request, creation.evidence, merged);
+    default:
+      return assertNever(creation);
+  }
+}
+
 /**
  * Continues one publication from the state its row is in. A create whose
  * outcome is unknown can only be read back; only a state with nothing in
@@ -745,9 +879,7 @@ export function changeProposalPublicationNext(
     case "Unanswered":
       return proposalUnansweredNext(request, publication, bounds, merged);
     case "Answered":
-      return publication.creation.created === "Unstorable"
-        ? { next: "Held", reason: "EvidenceUnstorable" }
-        : proposalEvidenceNext(request, publication.creation.evidence, merged);
+      return changeProposalAnsweredNext(request, publication.creation, merged);
     default:
       return assertNever(publication);
   }
@@ -858,6 +990,23 @@ export const allChangeProposalMergeReconciliationAnswers: readonly ChangeProposa
 export const allChangeProposalMergeReconciliationsStored: readonly ChangeProposalMergeReconciliationStored["reconciled"][] =
   [...allChangeProposalMergeReconciliationAnswers, "Unstorable"];
 
+/**
+ * What asking the forge to bring a proposal up to date came to. `Accepted` is
+ * an update the forge will make in its own time, which a later reading sees;
+ * `Refused` is one it will not make, the head not being the one it was
+ * conditional on or the base not merging cleanly into it.
+ */
+export type ChangeProposalUpdated =
+  | { readonly updated: "Accepted" }
+  | { readonly updated: "Refused" }
+  | { readonly updated: "Denied" }
+  | { readonly updated: "Unavailable" }
+  | { readonly updated: "Ambiguous" };
+
+/** Every arm an update answers with, so a suite iterates rather than restates. */
+export const allChangeProposalUpdates: readonly ChangeProposalUpdated["updated"][] =
+  ["Accepted", "Refused", "Denied", "Unavailable", "Ambiguous"];
+
 /** What a merge waiting on the forge waits on: its own rules, or a head somebody else moved. */
 export type ChangeProposalMergeWait = "Blocked" | "HeadMoved";
 
@@ -899,14 +1048,50 @@ export type ChangeProposalMerging =
       readonly heardAgeSecs: number;
     };
 
-/** How many merges one request may ask for, and how many readings each of them is read back by. */
+/** How many merges one request may ask for, how many readings each of them is read back by, and how many updates it may ask for. */
 export interface ChangeProposalMergingBounds {
   readonly mergesMax: number;
   readonly readingsMax: number;
+  readonly updatesMax: number;
+}
+
+/**
+ * What updating one proposal's branch has come to: the updates that may have
+ * reached the forge, whether one stands that no reading has seen since, and
+ * whether it is this proposal's turn — no other update on its repository's base
+ * unread, and no older proposal there behind.
+ */
+export interface ChangeProposalUpdating {
+  readonly updates: number;
+  readonly unread: boolean;
+  readonly turn: boolean;
+}
+
+/** Nothing updated yet, which is where a proposal nobody has stored starts. */
+export const changeProposalUpdatingNone: ChangeProposalUpdating = {
+  updates: 0,
+  unread: false,
+  turn: true,
+};
+
+/**
+ * What a merge is decided over beside its row: the head pinned for it, which a
+ * merge is conditional on and an update expects; how updating it stands; and,
+ * where the last reading found another head, what git proved of that head.
+ */
+export interface ChangeProposalMergeGathered {
+  readonly head: GitObjectId;
+  readonly updating: ChangeProposalUpdating;
+  readonly adoption?: {
+    readonly head: GitObjectId;
+    readonly adoption: HeadAdoption;
+  };
 }
 
 export type ChangeProposalMergingNext =
   | { readonly next: "Merge" }
+  | { readonly next: "Update" }
+  | { readonly next: "Adopt"; readonly head: GitObjectId }
   | { readonly next: "ReadByNumber" }
   | { readonly next: "RefuseAttempt" }
   | { readonly next: "Wait"; readonly reason: "Blocked" | "Closed" }
@@ -920,6 +1105,7 @@ export type ChangeProposalMergingNext =
       readonly next: "Held";
       readonly reason:
         | "MergesExhausted"
+        | "UpdatesExhausted"
         | "Blocked"
         | "HeadMoved"
         | "Closed"
@@ -996,19 +1182,39 @@ function proposalMergingBoundsAsserted(
     throw new RangeError("proposal merge bound must be positive");
   if (!Number.isSafeInteger(bounds.readingsMax) || bounds.readingsMax < 1)
     throw new RangeError("proposal merge reading bound must be positive");
+  if (!Number.isSafeInteger(bounds.updatesMax) || bounds.updatesMax < 1)
+    throw new RangeError("proposal update bound must be positive");
+}
+
+/** Refuses an update count that is not one, and an update unread where none was asked. */
+function proposalMergeGatheredAsserted(
+  gathered: ChangeProposalMergeGathered,
+): void {
+  const { updates, unread } = gathered.updating;
+  if (!Number.isSafeInteger(updates) || updates < 0)
+    throw new RangeError("proposal merging: updates are not a count");
+  if (unread && updates < 1)
+    throw new RangeError(
+      "proposal merging: an update is unread but none was asked",
+    );
+  if (gathered.adoption?.head === gathered.head)
+    throw new RangeError(
+      "proposal merging: the pinned head is offered for adoption",
+    );
 }
 
 /**
  * What one stored reading says of the proposal a merge was asked of: what it
  * settles the merge to, whoever merged it; what the forge said of merging a
- * proposal it found open; that it was found closed, which a person may undo;
- * and nothing where it was read as merged at no commit.
+ * proposal it found open, and at which head; that it was found closed, which a
+ * person may undo; and nothing where it was read as merged at no commit.
  */
 type ProposalMergeRead =
   | { readonly read: "Settled"; readonly next: ChangeProposalMergingNext }
   | {
       readonly read: "Open";
       readonly mergeability: ChangeProposalMergeability | undefined;
+      readonly head: GitObjectId;
     }
   | { readonly read: "Closed" }
   | { readonly read: "Unsettled" };
@@ -1033,7 +1239,11 @@ function proposalMergeRead(
   const contradiction = proposalMergeContradiction(request, evidence);
   switch (contradiction) {
     case undefined:
-      return { read: "Open", mergeability: evidence.mergeability };
+      return {
+        read: "Open",
+        mergeability: evidence.mergeability,
+        head: evidence.head.commit,
+      };
     case "Merged":
       return evidence.mergeCommit === undefined
         ? { read: "Unsettled" }
@@ -1071,13 +1281,14 @@ const proposalMergeConflicted: ChangeProposalMergingNext = {
 /**
  * What a merge nobody has heard the fate of authorizes. Its readings are spent
  * on it alone, so a merge none of them found landed is one the forge never made
- * and the attempt it stands on is released, while one a reading found blocked
- * or closed is released to wait on the forge and one ruled out of the number it
- * addressed merges nothing again.
+ * and the attempt it stands on is released, while one a reading found blocked,
+ * behind, at another head or closed is released to wait on the forge and one
+ * ruled out of the number it addressed merges nothing again.
  */
 function proposalMergeUnansweredNext(
   request: ChangeProposalRequest,
   merging: Extract<ChangeProposalMerging, { readonly merging: "Unanswered" }>,
+  gathered: ChangeProposalMergeGathered,
   bounds: ChangeProposalMergingBounds,
 ): ChangeProposalMergingNext {
   if (merging.merges < 1)
@@ -1087,7 +1298,12 @@ function proposalMergeUnansweredNext(
   if (read.read === "Closed") return { next: "Wait", reason: "Closed" };
   if (read.read === "Open" && read.mergeability === "Conflicting")
     return proposalMergeConflicted;
-  if (read.read === "Open" && read.mergeability === "Blocked")
+  if (
+    read.read === "Open" &&
+    (read.mergeability === "Blocked" ||
+      read.mergeability === "Behind" ||
+      read.head !== gathered.head)
+  )
     return { next: "Wait", reason: "Blocked" };
   return merging.readings < merging.merges * bounds.readingsMax
     ? { next: "ReadByNumber" }
@@ -1103,14 +1319,67 @@ function proposalMergeRereadDue(heardAgeSecs: number): boolean {
   return heardAgeSecs >= proposalMergeRereadSecs;
 }
 
+/** A reading on the cadence the forge is asked again at, and the hold a pass waits at until then. */
+function proposalMergeRereadOr(
+  heardAgeSecs: number,
+  reason: "Blocked" | "HeadMoved" | "Closed",
+): ChangeProposalMergingNext {
+  return proposalMergeRereadDue(heardAgeSecs)
+    ? { next: "ReadByNumber" }
+    : { next: "Held", reason };
+}
+
+/**
+ * What a reading at a head other than the pinned one authorizes: adopting it
+ * where git proved it the pinned head brought up to date, and otherwise the
+ * wait on whoever moved it. A head git could not be asked about waits the same
+ * way, and is asked about again with the next reading.
+ */
+function proposalMergeMovedHeadNext(
+  head: GitObjectId,
+  gathered: ChangeProposalMergeGathered,
+  heardAgeSecs: number,
+): ChangeProposalMergingNext {
+  const adoption = gathered.adoption;
+  if (adoption !== undefined && adoption.head !== head)
+    throw new RangeError(
+      "proposal merging: adoption was proved of a head no reading found",
+    );
+  return adoption?.adoption === "Adoptable"
+    ? { next: "Adopt", head }
+    : proposalMergeRereadOr(heardAgeSecs, "HeadMoved");
+}
+
+/**
+ * What a reading finding the proposal behind its base authorizes. An update of
+ * its own no reading has seen yet is waited out; one of another proposal on the
+ * same base, or an older proposal behind there, is waited for; and a reading
+ * old enough to be due again is renewed before an update is spent on it.
+ */
+function proposalMergeBehindNext(
+  updating: ChangeProposalUpdating,
+  bounds: ChangeProposalMergingBounds,
+  heardAgeSecs: number,
+): ChangeProposalMergingNext {
+  if (updating.unread) return proposalMergeRereadOr(heardAgeSecs, "Blocked");
+  if (updating.updates >= bounds.updatesMax)
+    return { next: "Held", reason: "UpdatesExhausted" };
+  if (!updating.turn || proposalMergeRereadDue(heardAgeSecs))
+    return proposalMergeRereadOr(heardAgeSecs, "Blocked");
+  return { next: "Update" };
+}
+
 /**
  * What a merge the forge's own rules refused authorizes: another merge only
- * once a reading finds the proposal mergeable and while the merges are unspent,
- * and otherwise a reading on the cadence the forge is asked again at.
+ * once a reading finds the proposal mergeable at the pinned head and while the
+ * merges are unspent, an update once one finds it behind, an adoption once one
+ * finds it at a head git proved adoptable, and otherwise a reading on the
+ * cadence the forge is asked again at.
  */
 function proposalMergeWaitingNext(
   request: ChangeProposalRequest,
   merging: Extract<ChangeProposalMerging, { readonly merging: "Waiting" }>,
+  gathered: ChangeProposalMergeGathered,
   bounds: ChangeProposalMergingBounds,
 ): ChangeProposalMergingNext {
   if (merging.merges < 1)
@@ -1119,33 +1388,53 @@ function proposalMergeWaitingNext(
   if (read.read === "Settled") return read.next;
   if (read.read === "Open" && read.mergeability === "Conflicting")
     return proposalMergeConflicted;
+  if (read.read === "Open" && read.head !== gathered.head)
+    return proposalMergeMovedHeadNext(
+      read.head,
+      gathered,
+      merging.heardAgeSecs,
+    );
   if (read.read === "Open" && read.mergeability === "Mergeable")
     return merging.merges < bounds.mergesMax
       ? { next: "Merge" }
       : { next: "Held", reason: "MergesExhausted" };
-  return proposalMergeRereadDue(merging.heardAgeSecs)
-    ? { next: "ReadByNumber" }
-    : { next: "Held", reason: read.read === "Closed" ? "Closed" : "Blocked" };
+  if (read.read === "Open" && read.mergeability === "Behind")
+    return proposalMergeBehindNext(
+      gathered.updating,
+      bounds,
+      merging.heardAgeSecs,
+    );
+  return proposalMergeRereadOr(
+    merging.heardAgeSecs,
+    read.read === "Closed" ? "Closed" : "Blocked",
+  );
 }
 
 /**
- * What a merge the forge answered had moved head authorizes. This request only
- * ever asks to merge the commit its permit landed, so it never merges again and
- * waits on whoever moved the head; a merge the forge reports, by anyone and at
- * any head, concludes it, and the landing's read names the head it merged.
+ * What a merge the forge answered had moved head authorizes. This request
+ * merges only the head pinned for it, so it merges nothing again until a
+ * reading finds a head git proved adoptable and that head is pinned instead;
+ * until then it waits on whoever moved the head, and a merge the forge
+ * reports, by anyone and at any head, concludes it, the landing's read naming
+ * the head it merged.
  */
 function proposalMergeMovedNext(
   request: ChangeProposalRequest,
   merging: Extract<ChangeProposalMerging, { readonly merging: "Moved" }>,
+  gathered: ChangeProposalMergeGathered,
 ): ChangeProposalMergingNext {
   const read = proposalMergeRead(request, merging.reading);
   if (read.read === "Settled") return read.next;
-  return proposalMergeRereadDue(merging.heardAgeSecs)
-    ? { next: "ReadByNumber" }
-    : {
-        next: "Held",
-        reason: read.read === "Closed" ? "Closed" : "HeadMoved",
-      };
+  if (read.read === "Open" && read.head !== gathered.head)
+    return proposalMergeMovedHeadNext(
+      read.head,
+      gathered,
+      merging.heardAgeSecs,
+    );
+  return proposalMergeRereadOr(
+    merging.heardAgeSecs,
+    read.read === "Closed" ? "Closed" : "HeadMoved",
+  );
 }
 
 /**
@@ -1156,9 +1445,11 @@ function proposalMergeMovedNext(
 export function changeProposalMergeNext(
   request: ChangeProposalRequest,
   merging: ChangeProposalMerging,
+  gathered: ChangeProposalMergeGathered,
   bounds: ChangeProposalMergingBounds,
 ): ChangeProposalMergingNext {
   proposalMergingBoundsAsserted(bounds);
+  proposalMergeGatheredAsserted(gathered);
   switch (merging.merging) {
     case "Unasked":
       return { next: "Merge" };
@@ -1167,13 +1458,13 @@ export function changeProposalMergeNext(
         ? { next: "Merge" }
         : { next: "Held", reason: "MergesExhausted" };
     case "Unanswered":
-      return proposalMergeUnansweredNext(request, merging, bounds);
+      return proposalMergeUnansweredNext(request, merging, gathered, bounds);
     case "Waiting":
-      return proposalMergeWaitingNext(request, merging, bounds);
+      return proposalMergeWaitingNext(request, merging, gathered, bounds);
     case "Answered":
       return { next: "Concluded", merge: merging.merge };
     case "Moved":
-      return proposalMergeMovedNext(request, merging);
+      return proposalMergeMovedNext(request, merging, gathered);
     default:
       return assertNever(merging);
   }

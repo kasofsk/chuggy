@@ -82,20 +82,48 @@ export function commitLabel(commit: string): Label {
 }
 
 /**
- * The member who filed a ticket, drawn as the subject their issuer gave them
- * shortened as a digest is, the issuer every member of a site shares being cut
- * by the length that prefixes it. A subject with no such prefix is shortened
- * whole, and the whole authority subject is kept for the hover.
+ * The subject an issuer gave a principal, the issuer every member of a site
+ * shares being cut by the length that prefixes it. A principal with no such
+ * prefix is its own subject.
  */
-export function creatorLabel(subject: string): Label {
-  const prefix = /^(\d+):/u.exec(subject);
+export function creatorSubject(principal: string): string {
+  const prefix = /^(\d+):/u.exec(principal);
   const issuerEndsAt =
     prefix === null ? 0 : prefix[0].length + Number(prefix[1]);
-  return {
-    text: digestShortened(
-      issuerEndsAt < subject.length ? subject.slice(issuerEndsAt) : subject,
+  return issuerEndsAt < principal.length
+    ? principal.slice(issuerEndsAt)
+    : principal;
+}
+
+/** The email the directory holds for each of a roster's people, by subject;
+ * a person it holds none for is left out. */
+export function creatorEmailsOf(
+  people: readonly {
+    readonly subject: string;
+    readonly email?: string | undefined;
+  }[],
+): ReadonlyMap<string, string> {
+  return new Map(
+    people.flatMap((person) =>
+      person.email === undefined ? [] : [[person.subject, person.email]],
     ),
-    title: subject,
+  );
+}
+
+/**
+ * The member who filed a ticket, drawn as their email where the project's
+ * people, who are the site issuer's own, name one for their subject, and
+ * otherwise as the subject shortened as a digest is. The whole principal is
+ * kept for the hover.
+ */
+export function creatorLabel(
+  principal: string,
+  emails: ReadonlyMap<string, string> = new Map(),
+): Label {
+  const subject = creatorSubject(principal);
+  return {
+    text: emails.get(subject) ?? digestShortened(subject),
+    title: principal,
   };
 }
 

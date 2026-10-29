@@ -24,7 +24,10 @@ import {
   githubChangeProposalsPerPageMax,
   type GithubChangeProposalsHosts,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
-import { allChangeProposalMerges } from "../../src/interpreter/changeProposal.ts";
+import {
+  allChangeProposalMerges,
+  allChangeProposalUpdates,
+} from "../../src/interpreter/changeProposal.ts";
 import {
   asChangeProposalRequestIdentity,
   asForgeBindingId,
@@ -41,6 +44,7 @@ import {
   reconcileChangeProposal,
   type ChangeProposalEvidence,
   type ChangeProposalMerged,
+  type ChangeProposalUpdated,
   type ChangeProposalMergeRequest,
   type ChangeProposalPort,
   type ChangeProposalRequest,
@@ -957,6 +961,75 @@ test("a merge this forge could never be asked is answered without a request", as
   assert.equal(recorder.calls.length, 0);
 });
 
+test("an update is one request, addressed by number and expecting the pinned head", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(202, {
+      message: "Updating pull request branch.",
+      url: "https://github.com/kasofsk/chuggy/pull/17",
+    }),
+  ]);
+  const updated = await fixtureAdapter(recorder).updateBranch(
+    fixtureMergeRequest(),
+  );
+  assert.deepEqual(updated, { updated: "Accepted" });
+  assert.equal(recorder.calls.length, 1);
+  const call = recorder.calls[0];
+  assert.equal(
+    call?.url,
+    `https://api.github.com/repos/kasofsk/chuggy/pulls/${String(fixtureNumber)}/update-branch`,
+  );
+  assert.equal(call?.method, "PUT");
+  assert.equal(call?.redirect, "error");
+  assert.deepEqual(JSON.parse(call?.body ?? ""), {
+    expected_head_sha: fixtureHeadCommit,
+  });
+  assert.equal(call?.headers["authorization"], `Bearer ${fixtureSecret}`);
+});
+
+test("every way this forge answers an update is its own value", async () => {
+  const cases: readonly [Response | Error, ChangeProposalUpdated][] = [
+    [fixtureAnswer(202, { message: "Updating" }), { updated: "Accepted" }],
+    [new Response("", { status: 202 }), { updated: "Ambiguous" }],
+    [fixtureRefusal(422), { updated: "Refused" }],
+    [fixtureRefusal(403), { updated: "Denied" }],
+    [fixtureRefusal(404), { updated: "Denied" }],
+    [
+      fixtureRefusal(403, { "x-ratelimit-remaining": "0" }),
+      { updated: "Unavailable" },
+    ],
+    [fixtureRefusal(429), { updated: "Unavailable" }],
+    [fixtureRefusal(500), { updated: "Ambiguous" }],
+    [new Error("the forge stopped"), { updated: "Ambiguous" }],
+  ];
+  const answered = new Set<string>();
+  for (const [answer, expected] of cases) {
+    const recorder = fixtureForge([answer]);
+    const updated = await fixtureAdapter(recorder).updateBranch(
+      fixtureMergeRequest(),
+    );
+    assert.deepEqual(updated, expected, JSON.stringify(expected));
+    assert.equal(recorder.calls.length, 1, JSON.stringify(expected));
+    answered.add(updated.updated);
+  }
+  assert.deepEqual([...answered].sort(), [...allChangeProposalUpdates].sort());
+});
+
+test("an update this forge could never be asked is answered without a request", async () => {
+  const recorder = fixtureForge([]);
+  const elsewhere = fixtureMergeRequest({
+    repository: asRepositoryId("https://gitlab.invalid/kasofsk/chuggy"),
+  });
+  assert.deepEqual(await fixtureAdapter(recorder).updateBranch(elsewhere), {
+    updated: "Denied",
+  });
+  const asked = fixtureMergeRequest();
+  assert.deepEqual(
+    await fixtureAdapter(recorder, "Unavailable").updateBranch(asked),
+    { updated: "Unavailable" },
+  );
+  assert.equal(recorder.calls.length, 0);
+});
+
 test("what this forge says about merging a proposal reaches its evidence", async () => {
   const request = fixtureRequest();
   const cases = [
@@ -965,7 +1038,7 @@ test("what this forge says about merging a proposal reaches its evidence", async
     [{ mergeable: false, mergeable_state: "unknown" }, "Conflicting"],
     [{ mergeable: true, mergeable_state: "blocked" }, "Blocked"],
     [{ mergeable: true, mergeable_state: "draft" }, "Blocked"],
-    [{ mergeable: true, mergeable_state: "behind" }, "Blocked"],
+    [{ mergeable: true, mergeable_state: "behind" }, "Behind"],
     [{ mergeable: null, mergeable_state: "unknown" }, "Unknown"],
   ] as const;
   for (const [answered, mergeability] of cases) {

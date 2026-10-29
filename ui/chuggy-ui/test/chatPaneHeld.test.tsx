@@ -1,6 +1,7 @@
 /**
  * The chat pane's state as the shell holds it: the viewport's default until
- * the reader moves the pane, and where they put it from then on.
+ * the reader moves the pane, where they put it from then on, and the thread
+ * they picked for it whether or not the pane is drawn.
  */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
@@ -69,4 +70,41 @@ test("a pane the reader moved stays where they put it across a change of width",
   expect(shown()).toBe("Left Docked");
   view.rerender(drawn(true));
   expect(shown()).toBe("Left Docked");
+});
+
+const atlas = { tenant: "acme", project: "atlas" };
+
+function Pick(): ReactNode {
+  const { chosen, choose } = useChatPane();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        choose({ partition: atlas, session: "picked" });
+      }}
+    >
+      {chosen?.session ?? "none"}
+    </button>
+  );
+}
+
+function picking(drawn: boolean): ReactNode {
+  return (
+    <ChatPaneProvider twoColumn>{drawn ? <Pick /> : null}</ChatPaneProvider>
+  );
+}
+
+/** A thread's own page draws no pane, so what the reader picked has to be
+ * held by something that page does not take away. */
+test("a pick outlives the part that made it, and is there when that part is drawn again", () => {
+  const view = render(picking(true));
+  expect(shown()).toBe("none");
+  act(() => {
+    screen.getByRole("button").click();
+  });
+  expect(shown()).toBe("picked");
+  view.rerender(picking(false));
+  expect(screen.queryByRole("button")).toBeNull();
+  view.rerender(picking(true));
+  expect(shown()).toBe("picked");
 });

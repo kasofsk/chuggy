@@ -1,9 +1,11 @@
 /**
- * One person's roles, hosted runs and personal runners, changed in the dialog
- * their row's Edit opens: a box for each workspace role, for hosted runs and
- * for personal runners, and the workspace's projects as a grid; and, for a
- * reader who gives personal runners, taking the person's own runners off. A box is drawn where the reader may change
- * it or the person holds it, and is pressable only where the reader may. A
+ * One person's roles, hosted runs, personal runners and unscoped chat, changed
+ * in the dialog their row's Edit opens: a box for each workspace role, for
+ * hosted runs, for personal runners and for unscoped chat, and the workspace's
+ * projects as a grid; and, for a reader who gives personal runners, taking the
+ * person's own runners off. A box is drawn where the reader may change it or
+ * the person holds it, unscoped chat only where the reader may, and is
+ * pressable only where the reader may. A
  * press sends one grant or one removal and reads the list and the abilities
  * again. A change the plane took draws its box as changed until they are
  * read; a refusal leaves the box as it was and one line in the dialog. Removing the reader's own
@@ -25,10 +27,12 @@ import {
   apiGrantPersonalRunners,
   apiGrantProjectRole,
   apiGrantTenantRole,
+  apiGrantUnscopedChat,
   apiRemoveHostedRuns,
   apiRemovePersonalRunners,
   apiRemoveProjectRole,
   apiRemoveTenantRole,
+  apiRemoveUnscopedChat,
 } from "../../core/accessRoutes.ts";
 import {
   tenantPersonBoxChecked,
@@ -68,6 +72,10 @@ function tenantPersonChangeSent(
     return change.held
       ? apiRemovePersonalRunners(ports, tenant, subject)
       : apiGrantPersonalRunners(ports, tenant, subject);
+  if (change.scope === "UnscopedChat")
+    return change.held
+      ? apiRemoveUnscopedChat(ports, tenant, subject)
+      : apiGrantUnscopedChat(ports, tenant, subject);
   if (change.scope === "Tenant")
     return change.held
       ? apiRemoveTenantRole(ports, tenant, subject, change.role)

@@ -29,7 +29,6 @@ import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
 import type { SelectorReviewOutcome } from "../../contract/rosters.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
 import {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -39,13 +38,13 @@ import {
   projectCreationSchema,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
-  projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
   projectOwnerFallbackSchema,
+  threadLimitSchema,
   type PublicMutation,
 } from "../../contract/requests.ts";
 import {
@@ -57,15 +56,17 @@ import {
 import type { ExecutionRoutes } from "../../interpreter/executionScheduler.ts";
 import type { SessionRoutes } from "../../interpreter/sessionPlacement.ts";
 import type { WorkerPoolOwnerFallback } from "../../interpreter/projectOwnerFallback.ts";
+import {
+  asThreadOpenKey,
+  type ThreadOpenKey,
+} from "../../interpreter/threadRead.ts";
 import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
 } from "../../interpreter/selector.ts";
 import { asTaskId, asTicketId } from "../../domain/ids.ts";
 import {
-  asCanonicalConfiguration,
   asConfigurationRevisionId,
-  type CanonicalConfiguration,
   type ConfigurationPageCursor,
   type ConfigurationRevisionId,
   type DraftPageCursor,
@@ -78,16 +79,13 @@ import type {
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
 import {
-  asForgeAccount,
   asForgeId,
   asForgeInstallationId,
-  asForgeRepositoryName,
   type ForgeInstallationId,
 } from "../../interpreter/forgeInstallation.ts";
 import type {
   ForgeAuthorizationRequest,
   ProjectRepositoryBindRequest,
-  ProjectRepositoryCreateRequest,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { ExecutionPageCursor } from "../../interpreter/operationsView.ts";
 import type { ProjectCreationRequest } from "../../interpreter/projectCreation.ts";
@@ -105,9 +103,7 @@ import {
   type Partition,
 } from "../../interpreter/projectStore.ts";
 import {
-  asGitObjectId,
   asRepositoryId,
-  type GitObjectId,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
 import {
@@ -116,7 +112,7 @@ import {
 } from "../../interpreter/ticketBrief.ts";
 import {
   asRepositoryLanding,
-  type RepositoryLanding,
+  type ProjectRepositoryLandingWrite,
 } from "../../interpreter/repositoryBinding.ts";
 
 /**
@@ -157,34 +153,29 @@ const nativeActionCursorSchema = inventoryCursorSchema.extend({
 
 import {
   personalRunnerRedemptionSchema,
+  registrationTokenRequestSchema,
   type PersonalRunnerRedemptionRequest,
+  type RegistrationTokenRequest,
 } from "../../contract/requests.ts";
 import {
   workerPoolRedemptionSchema,
-  workerPoolRegistrationTokenRequestSchema,
   type WorkerPoolRedemptionRequest,
-  type WorkerPoolRegistrationTokenRequest,
 } from "../../contract/workerPool.ts";
-export interface ParsedConfigurationCreation {
-  readonly revision: ConfigurationRevisionId;
-  readonly parent?: ConfigurationRevisionId;
-  readonly canonical: CanonicalConfiguration;
-}
-
 export interface ParsedRepositoryConfigurationImport {
   readonly repository: RepositoryId;
-  readonly commit?: GitObjectId;
 }
 
 /**
- * What an owner asks a registration token for, and what a machine redeems one
- * with. Both are the contract's own schemas: a pool is registered by a third
- * party's machine, so the shapes are where the wire is.
+ * What an owner asks a registration token for, its ignored capabilities
+ * dropped here so nothing past the boundary reads them, and what a machine
+ * redeems one with, which is the worker contract's own schema: a pool is
+ * registered by a third party's machine, so the shape is where the wire is.
  */
-export function parseWorkerPoolTokenRequest(
+export function parseRegistrationTokenRequest(
   body: unknown,
-): WorkerPoolRegistrationTokenRequest {
-  return workerPoolRegistrationTokenRequestSchema.parse(body);
+): RegistrationTokenRequest {
+  const { lifetimeSecs } = registrationTokenRequestSchema.parse(body);
+  return { lifetimeSecs };
 }
 
 export function parseWorkerPoolRedemption(
@@ -203,12 +194,14 @@ export function parseRepositoryConfigurationImport(
   body: unknown,
 ): ParsedRepositoryConfigurationImport {
   const parsed = repositoryConfigurationImportSchema.parse(body);
-  return {
-    repository: asRepositoryId(parsed.repository),
-    ...(parsed.commit === undefined
-      ? {}
-      : { commit: asGitObjectId(parsed.commit) }),
-  };
+  return { repository: asRepositoryId(parsed.repository) };
+}
+
+/** The repository a head read names, from the query that names it. */
+export function parseRepositoryConfigurationHead(query: unknown): RepositoryId {
+  return asRepositoryId(
+    nativeHttpEndpoints.configurationHead.query.parse(query).repository,
+  );
 }
 
 /** One minting request as the wire carries it, both fields already narrowed. */
@@ -265,17 +258,16 @@ export function parseProjectRepositoryBind(
   };
 }
 
-/** One landing move as the wire carries it: the binding, the landing read, and the one wanted. */
-export function parseProjectRepositoryLanding(body: unknown): {
-  readonly repository: RepositoryId;
-  readonly expected: RepositoryLanding;
-  readonly landing: RepositoryLanding;
-} {
+/** One write of a binding's settings as the wire carries it: the binding, and each setting as read and as wanted. */
+export function parseProjectRepositoryLanding(
+  body: unknown,
+): ProjectRepositoryLandingWrite {
   const parsed = projectRepositoryLandingSchema.parse(body);
   return {
     repository: asRepositoryId(parsed.repository),
     expected: asRepositoryLanding(parsed.expected.mode),
     landing: asRepositoryLanding(parsed.landing.mode),
+    pipelinesWritable: parsed.pipelinesWritable,
   };
 }
 
@@ -310,20 +302,6 @@ export function parseProjectRepositoryConfigure(body: unknown): RepositoryId {
   return asRepositoryId(
     projectRepositoryConfigureSchema.parse(body).repository,
   );
-}
-
-/** One creation as the wire carries it, the identity coming from the header rather than the body. */
-export function parseProjectRepositoryCreate(
-  body: unknown,
-  operation: string,
-): ProjectRepositoryCreateRequest {
-  const parsed = projectRepositoryCreateSchema.parse(body);
-  return {
-    account: asForgeAccount(parsed.account),
-    name: asForgeRepositoryName(parsed.name),
-    visibility: parsed.visibility,
-    operation: asOperationId(operation),
-  };
 }
 
 export interface ParsedDraftCreation {
@@ -370,6 +348,7 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
     ...(value.title === undefined ? {} : { title: value.title }),
     intent: value.intent,
     links: value.links,
+    ...(value.images === undefined ? {} : { images: value.images }),
     ...(value.checks === undefined ? {} : { checks: value.checks }),
     ...(value.repository === undefined ? {} : { repository: value.repository }),
     ...(value.branch === undefined ? {} : { branch: value.branch }),
@@ -377,19 +356,6 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
       ? {}
       : { finalization: releaseBriefFinalization(value.finalization) }),
   });
-}
-
-export function parseConfigurationCreation(
-  body: unknown,
-): ParsedConfigurationCreation {
-  const value = configurationCreationSchema.parse(body);
-  return {
-    revision: asConfigurationRevisionId(value.revision),
-    ...(value.parent === undefined
-      ? {}
-      : { parent: asConfigurationRevisionId(value.parent) }),
-    canonical: asCanonicalConfiguration(value.canonical),
-  };
 }
 
 /**
@@ -588,7 +554,10 @@ export function parseInventoryCursor(value: string): Partition {
   return partition;
 }
 
+/** A partition the wire names, which is never a member's own: a project identity beginning `@` is reserved for theirs. */
 export function parsePartition(tenant: string, project: string): Partition {
+  if (project.startsWith("@"))
+    throw new RangeError("project id: an identity beginning @ is reserved");
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
 }
 
@@ -701,6 +670,16 @@ export function parseThreadMessage(body: unknown): {
     message: value.message,
     ...(value.images === undefined ? {} : { images: value.images }),
   };
+}
+
+/** How many threads one member may hold open, as an administrator writes it whole. */
+export function parseThreadLimit(body: unknown): number {
+  return threadLimitSchema.parse(body).threadsMax;
+}
+
+/** The key a member's client opens a thread under, which the door is idempotent on. */
+export function parseThreadOpen(body: unknown): ThreadOpenKey {
+  return asThreadOpenKey(nativeHttpEndpoints.openThread.body.parse(body).key);
 }
 
 /**

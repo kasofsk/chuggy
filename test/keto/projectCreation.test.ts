@@ -172,6 +172,7 @@ test("a site's selector develops each project made under it, and administers nei
     "Read",
     "Mutate",
     "ProposeDispatch",
+    "ChatMetadata",
     "Execute",
   ]);
   assert.equal(await administers(selector, partition), false);
@@ -353,6 +354,7 @@ test("a created tenant and project give their creator and the site's administrat
       "GrantTenantAdmin",
       "GrantMember",
       "GrantPersonalRunners",
+      "GrantUnscopedChat",
       "ManageTenantAuthorities",
     ],
     project: ketoHarnessProjectAuthorities,
@@ -417,7 +419,11 @@ test("a repeat after the grants are recorded restores no default removed in betw
     await grants.remove(grant);
   const removed = {
     site: [],
-    tenant: ["GrantPersonalRunners", "ManageTenantAuthorities"],
+    tenant: [
+      "GrantPersonalRunners",
+      "GrantUnscopedChat",
+      "ManageTenantAuthorities",
+    ],
     project: [
       "GrantDeveloper",
       "GrantDispatcher",

@@ -25,20 +25,25 @@ const partition = { tenant: asTenantId("acme"), project: asProjectId("atlas") };
 const member = asPrincipal("issuer-member");
 
 const none: ProjectAbilitiesResponse = {
+  principal: member,
   mutate: false,
   dispatch: false,
   manageSelector: false,
+  overrideTicketConfig: false,
+  skipPlannedEvaluations: false,
   administer: false,
 };
 
 /** Each field and the kind its door asks, written out rather than read from the interpreter's record. */
 const asked: readonly (readonly [
-  keyof ProjectAbilitiesResponse,
+  Exclude<keyof ProjectAbilitiesResponse, "principal">,
   ProjectAccessKind,
 ])[] = [
   ["mutate", "Mutate"],
   ["dispatch", "DispatchTicket"],
   ["manageSelector", "ManageProjectSelector"],
+  ["overrideTicketConfig", "OverrideTicketConfig"],
+  ["skipPlannedEvaluations", "SkipPlannedEvaluations"],
   ["administer", "Administer"],
 ];
 

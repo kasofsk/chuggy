@@ -10,10 +10,15 @@ module mc_registered_runner {
       { operatingSystem: Linux, architecture: Arm64 }),
     executionCapabilities: Set(
       "Agent:Claude", "Agent:Codex", "Tool:Xcode", "Simulator:iOS"),
+    memoryCeiling: Unbounded,
     revision: 1
   }
   pure val changedInventory: CapabilityInventory = {
     ...inventory, executionCapabilities: Set("Simulator:iOS"), revision: 2
+  }
+  /// Every capability of `inventory` under a ceiling below each execution's size.
+  pure val smallInventory: CapabilityInventory = {
+    ...inventory, memoryCeiling: CeilingMib(2048), revision: 3
   }
   pure val profile: ExecutionProfile = {
     route: RegisteredRunner, personalRunnerAllowed: true, minimumTrust: 1,
@@ -40,7 +45,7 @@ module mc_registered_runner {
     executions: profiles.keys().mapBy(id => execution(id)),
     placements: profiles.keys().mapBy(id => { execution: id, attemptGeneration: 1,
       requirement: requirement, profile: profiles.get(id), requirementIdentity: id,
-      requirementDigest: 101, phase: Waiting }),
+      requirementDigest: 101, memoryMib: 4096, phase: Waiting }),
     runners: Map(1 -> owners, 2 -> dedicated),
     sessions: Map(1 -> session(1), 2 -> session(2)),
     assignments: Map()
@@ -61,11 +66,11 @@ module mc_registered_runner {
   pure val assignmentIds: Set[int] = Set(10, 11, 12, 13)
 
   /// Whether a Personal runner of the execution's owner is configured for its
-  /// placement and can run its requirement.
+  /// placement and can run its requirement at its size.
   pure def ownedBy(s: RunnerState, id: int, o: int): bool =
     val r = s.runners.get(o)
     val p = s.placements.get(id)
-    and { r.class == Personal, policyConfigures(r, executionById(s, id), p.profile), inventoryMatches(p.requirement, r.retainedInventory) }
+    and { r.class == Personal, policyConfigures(r, executionById(s, id), p.profile), inventoryMatches(p.requirement, r.retainedInventory), sizeFits(p, r.retainedInventory) }
   /// Whether binding would give a non-Personal runner a Strict execution whose
   /// owner has a runner for it.
   pure def bindsPastStrictOwner(s: RunnerState, id: int, rid: int): bool = and {
@@ -123,7 +128,7 @@ module mc_registered_runner {
   action takeover = nondet rid = runnerState.runners.keys().oneOf()
     all {
       runnerState.runners.get(rid).sessionGeneration < 3,
-      nondet nextInventory = Set(inventory, changedInventory).oneOf()
+      nondet nextInventory = Set(inventory, changedInventory, smallInventory).oneOf()
       runnerState' = takeOver(runnerState, rid, nextInventory, 1),
       ghostsKept
     }

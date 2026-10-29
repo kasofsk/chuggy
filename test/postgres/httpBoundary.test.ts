@@ -13,6 +13,7 @@ import {
   leadInquiriesResponseSchema,
   leadInquiryAcceptedSchema,
   leadInquiryResponseSchema,
+  operationResponseSchema,
   ticketResponseSchema,
   type DraftResponse,
 } from "../../src/contract/responses.ts";
@@ -25,7 +26,10 @@ import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/sched
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { composeNativeWeb } from "../../src/compose.ts";
-import { asConfigurationRevisionId } from "../../src/interpreter/authoring.ts";
+import {
+  asConfigurationRevisionId,
+  canonicalConfigurationOf,
+} from "../../src/interpreter/authoring.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import type { ConfigurationPin } from "../../src/interpreter/projectDecision.ts";
@@ -520,7 +524,7 @@ test("real HTTP ingress files a draft's overrides and a released ticket's read a
   harness.access.grant({
     partition,
     principal,
-    access: new Set(["Read", "Mutate"]),
+    access: new Set(["Read", "Mutate", "OverrideTicketConfig"]),
   });
   const repository = await postgresHarnessBinding(harness, partition);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
@@ -771,6 +775,143 @@ test("real HTTP ingress answers each draft write's landing and who named it, the
         })
       ).landing,
       { mode: "Push", source: "Default" },
+    );
+  } finally {
+    await app.close();
+    await pool.end();
+    await harness.close();
+  }
+});
+
+/** A document whose one evaluation stage runs commands, which a brief's checks join. */
+const ingressCheckedConfiguration = canonicalConfigurationOf({
+  ...(JSON.parse(postgresHarnessConfiguration) as Record<string, unknown>),
+  evaluations: [{ purpose: "Check", checks: [".chug/tasks/ci.sh"] }],
+});
+
+/** Files one draft through the real door running `stages` stages, its brief carrying `checks`. */
+async function ingressProgrammed(
+  root: string,
+  revision: string,
+  repository: string,
+  stages: number,
+  checks: readonly string[],
+): Promise<DraftResponse> {
+  const fence = await ingressFence(root, revision);
+  const filed = await fetch(`${root}/drafts`, {
+    method: "POST",
+    headers: ingressHeaders,
+    body: JSON.stringify({
+      configurationRevision: revision,
+      configurationDigest: fence.configurationDigest,
+      expectedProjectSequence: fence.projectSequence,
+      authoring: {
+        dependencies: [],
+        program: Array.from({ length: stages }, (_, at) => ({
+          key: at + 1,
+          evaluators: [{ key: 1 }],
+        })),
+      },
+      brief: { intent: "Check it.", links: [], repository, checks },
+    }),
+  });
+  const answered = await filed.text();
+  assert.equal(filed.status, 201, answered);
+  return draftResponseSchema.parse(JSON.parse(answered));
+}
+
+/** Submits one draft's release through the real door, answering its status and body. */
+async function ingressReleasing(
+  root: string,
+  draft: DraftResponse,
+  operation: string,
+): Promise<{ readonly status: number; readonly body: unknown }> {
+  const released = await fetch(`${root}/operations`, {
+    method: "POST",
+    headers: { ...ingressHeaders, "idempotency-key": `key-${randomUUID()}` },
+    body: JSON.stringify({
+      operation,
+      mutation: {
+        mutation: "ReleaseDraft",
+        ticket: draft.ticket,
+        authoringVersion: draft.authoringVersion,
+        configurationRevision: draft.configurationRevision,
+      },
+    }),
+  });
+  return { status: released.status, body: await released.json() };
+}
+
+/**
+ * A program running less than its plan over the REAL composition: refused at
+ * the door, naming the permit, to a member who does not hold it, and let
+ * through for one who does; and refused at the decision whoever releases it
+ * where it leaves out the stage the brief's checks join.
+ */
+test("real HTTP ingress refuses a short program without SkipPlannedEvaluations, and a program skipping the brief's checks to anyone", async () => {
+  const harness = await postgresHarnessOpen();
+  const partition = await postgresHarnessProject(harness.store, "http-short");
+  const member = ["Read", "Mutate"] as const;
+  harness.access.grant({ partition, principal, access: new Set(member) });
+  const repository = await postgresHarnessBinding(harness, partition);
+  const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
+  const configured = await harness.authoring.createConfiguration({
+    partition,
+    authority: postgresHarnessSubmission(partition, "http-short").authority,
+    revision,
+    canonical: ingressCheckedConfiguration,
+  });
+  assert.equal(configured.created, "Created");
+  const { pool, app } = composedIngress(harness.access);
+  const address = await app.listen({ host: "127.0.0.1", port: 0 });
+  const root = `${address}/api/v1/tenants/${partition.tenant}/projects/${partition.project}`;
+  try {
+    const writer = postgresHarnessWriter(harness);
+    let memory = await projectWriterLoad(
+      writer,
+      await postgresHarnessHeld(harness.store, partition, "http-short"),
+    );
+    const decided = async (operation: string) => {
+      const input = await harness.discovery.next(partition, 300);
+      assert.ok(input !== undefined);
+      memory = (await projectWriterDecide(writer, memory, input)).memory;
+      const read = await fetch(`${root}/operations/${operation}`, {
+        headers: ingressHeaders,
+      });
+      return operationResponseSchema.parse(await read.json());
+    };
+    const skipping = await ingressProgrammed(root, revision, repository, 0, [
+      "npm test",
+    ]);
+    const refused = await ingressReleasing(root, skipping, "short-member");
+    assert.equal(refused.status, 403);
+    const error = (refused.body as { error: { code: string; message: string } })
+      .error;
+    assert.equal(error.code, "ProgramSkipsPlannedEvaluations");
+    assert.match(error.message, /skip_planned_evaluations/u);
+
+    const whole = await ingressProgrammed(root, revision, repository, 1, [
+      "npm test",
+    ]);
+    assert.equal(
+      (await ingressReleasing(root, whole, "whole-member")).status,
+      202,
+    );
+    assert.equal((await decided("whole-member")).state, "Succeeded");
+
+    harness.access.grant({
+      partition,
+      principal,
+      access: new Set([...member, "SkipPlannedEvaluations"] as const),
+    });
+    assert.equal(
+      (await ingressReleasing(root, skipping, "short-holder")).status,
+      202,
+    );
+    const skipped = await decided("short-holder");
+    assert.equal(
+      skipped.state === "Refused" ? skipped.code : skipped.state,
+      "ProgramSkipsBriefChecks",
     );
   } finally {
     await app.close();

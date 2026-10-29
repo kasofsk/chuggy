@@ -128,7 +128,6 @@ to start without the required ones.
 | `CHUG_API_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
 | `CHUG_API_FORGE_REPOSITORIES_MAX` | 500 | how many repositories one installation listing pages for before it answers `truncated`; it may not exceed what the response schema answers |
 | `CHUG_API_BOOTSTRAP_WORKER_IMAGE` | | the image a bootstrap configuration commands, which `deploy/rig/forge/README.md` describes; a deployment naming none authors no bootstrap and the bind reports its configuration step deferred |
-| `CHUG_API_FORGE_TEMPLATE_REPOSITORY` | | `<owner>/<name>`, the template a personal account's repository is generated from; a deployment naming none answers such a create `PersonalAccountCreatesOnGitHub` |
 | `CHUG_API_PUBLIC_ORIGIN` | optional | the origin this API is publicly reached at, such as `https://chuggy.example`, which a bootstrap configuration names the configuration schema's URL under; a deployment naming none tells the bootstrap's worker the route alone, and one naming anything but an http or https origin with nothing after it, or one too long for a briefing line, refuses to start |
 | `CHUG_API_ACTION_REPORTERS` | optional | a JSON list of who may report what a declared action did: each a `reporter`, a `scheme` (`BearerSecret`, a secret presented as a bearer with this tree's report document, or `FluxSignature`, a Flux `generic-hmac` provider's events signed with the secret), a `secretFile`, a `tenant`, a `project` and its `actions`; a list that cannot be read, names an action twice, names a `FluxSignature` reporter for other than one action or names its `secretFile` for another reporter refuses to start, a secret's file is read per report and one that is absent, empty or not a regular file verifies nothing, a signed event that is neither a Kustomization reconciled nor a Kustomization's error is answered 200 `Ignored` and records nothing, and a deployment naming none answers every report 404 |
 | `CHUG_API_HOST` | `0.0.0.0` in the image | the source default is loopback, which no kubelet can reach |
@@ -219,6 +218,47 @@ credential.
 | `CHUG_ACCESS_PLANE_OIDC_JWKS_TIMEOUT_MS` | | |
 | `CHUG_ACCESS_PLANE_HOST` | | the default is loopback |
 | `CHUG_ACCESS_PLANE_PORT` | 3003 | |
+
+## Configuring the pool plane
+
+The variables here are read by `src/roots/poolPlane.ts` beside the rest of the
+plane's own. `CHUG_POOL_PLANE_IMAGE_HOSTS` is in
+[`deploy/rig/pools/README.md`](../pools/README.md).
+
+A runner whose configuration turns reporting on posts a report of its machine
+and its work to `/v1/runner-report` under its own bearer. The plane holds each
+runner's latest report in memory, and nothing is written to its database. With
+a metrics port named, a second listener serves `GET /metrics` in the Prometheus
+text format: every `chuggy_runner_` series of each runner whose report it
+holds, beside what that runner's latest poll named. A report older than
+`workerPoolReportAgeMsMax` in `src/interpreter/workerPoolReports.ts` is
+dropped, and its runner's series with it.
+
+Every series carries `tenant` and `host`; a pool's carries `project` and
+`pool`, and a personal runner's `owner`, its owner's subject under
+`CHUG_POOL_PLANE_OIDC_ISSUER`, and `personal_runner`, its client id.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_POOL_PLANE_METRICS_PORT` | | the port the reports are served on, apart from the plane's own so a NetworkPolicy may admit a scraper to it alone; unset, no listener is opened and everything else is served as before |
+| `CHUG_POOL_PLANE_METRICS_HOST` | | the default is loopback |
+| `CHUG_POOL_PLANE_METRICS_RUNNERS_MAX` | 1000 | the most runners whose reports and polls are held; past it the one heard from least recently is dropped |
+
+## Configuring the metrics plane
+
+Every variable here is read by `src/roots/metricsPlane.ts`, and the process
+refuses to start without the required ones. It serves `GET /metrics` in the
+Prometheus text format, read afresh from the database on every scrape, and
+answers 503 to a scrape it cannot answer whole.
+
+| Variable | | |
+|---|---|---|
+| `CHUG_METRICS_PLANE_DATABASE_URL` | required | the PostgreSQL the runs are recorded in, connecting as a login of `chuggy_metrics_plane` with the group named as `?options=-c%20role%3Dchuggy_metrics_plane`; the plane is ready only when it is that role |
+| `CHUG_METRICS_PLANE_OIDC_ISSUER` | required | the issuer people sign in through; a series' `owner` is the subject a principal carries under it, and empty for any other |
+| `CHUG_METRICS_PLANE_READ_TIMEOUT_MS` | 10000 | how long one scrape's reads may take, all of its statements together, before the scrape is refused |
+| `CHUG_METRICS_PLANE_SERIES_MAX` | 10000 | the most series one page carries; a scrape past it is refused |
+| `CHUG_METRICS_PLANE_HOST` | | the default is loopback |
+| `CHUG_METRICS_PLANE_PORT` | 3004 | |
 
 ## Configuring the worker plane's minting
 

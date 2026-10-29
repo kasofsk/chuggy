@@ -12,15 +12,15 @@
 
 import type { AccessInviteLink } from "../../../../src/contract/accessPlane.ts";
 import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
+import type { ProjectRepositoryWorkerReachResponse } from "../../../../src/contract/responses.ts";
 import type {
-  ExecutionOutcome,
-  ExecutionStatus,
   ForgeInstallationPermissionsName,
   SelectorAttention,
   SelectorMode,
   SessionRunnerStanding,
   SessionState,
   SessionTurnState,
+  ThreadStanding,
   TicketLandingState,
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
@@ -121,43 +121,6 @@ export function ticketLandingTone(state: TicketLandingState): Tone {
   }
 }
 
-/**
- * An execution's own hue, total over `executionStatuses` and
- * `executionOutcomes`: the outcome's where the execution reached one, since
- * that is the more final of the two facts, and the status' otherwise. The
- * word this pairs with is `projectTableExecutionPhrase`'s; this answers only
- * the hue, so a roster the wire grows stops compiling here rather than
- * reaching a row as an untoned chip.
- */
-export function executionTone(
-  status: ExecutionStatus,
-  outcome: ExecutionOutcome | undefined,
-): Tone {
-  if (outcome !== undefined) {
-    switch (outcome) {
-      case "Passed":
-        return "pass";
-      case "Failed":
-      case "ProcessFailed":
-        return "fail";
-      case "Blocked":
-        return "parked";
-    }
-  }
-  switch (status) {
-    case "Queued":
-      return "queued";
-    case "Admitted":
-    case "Launching":
-    case "Running":
-      return "live";
-    case "Terminal":
-      return "neutral";
-    case "Cancelled":
-      return "retired";
-  }
-}
-
 /** One status word and its tone for a stage the program did not run. */
 export interface StageArm {
   readonly word: string;
@@ -188,6 +151,19 @@ export function sessionStateTone(state: SessionState): Tone {
       return "live";
     case "Closed":
       return "retired";
+  }
+}
+
+/** Where a member's thread stands: taking messages, ended, or held by a member
+ * who is gone, which is something to act on rather than retired. */
+export function threadStandingTone(standing: ThreadStanding): Tone {
+  switch (standing) {
+    case "Open":
+      return "live";
+    case "Closed":
+      return "retired";
+    case "Orphaned":
+      return "parked";
   }
 }
 
@@ -223,6 +199,19 @@ export function forgeAppStandingTone(standing: ForgeAppStanding): Tone {
       return "pass";
     case "Missing":
       return "parked";
+  }
+}
+
+/** Why the worker app cannot be said to reach a bound repository: a settled absence is parked, a read that said nothing is neutral. */
+export function repositoryWorkerReachTone(
+  reach: ProjectRepositoryWorkerReachResponse["reach"],
+): Tone {
+  switch (reach) {
+    case "Unselected":
+    case "Unclaimed":
+      return "parked";
+    case "Unknown":
+      return "neutral";
   }
 }
 

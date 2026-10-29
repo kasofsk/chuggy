@@ -108,7 +108,7 @@ async function leadInquiryListing(
   const found = await pool.query<LeadInquiryRow>(
     sql`SELECT session,principal,state,turn,turn_state,
                ordinal::text AS ordinal,input,result,failure,
-               asked_at::text AS asked_at,model,tokens::text AS tokens,
+               to_char(asked_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS asked_at,model,tokens::text AS tokens,
                cost_micros::text AS cost_micros,
                duration_ms::text AS duration_ms,tools
           FROM read_lead_inquiries(
@@ -125,7 +125,7 @@ async function leadInquiryOne(
   const found = await pool.query<LeadInquiryRow>(
     sql`SELECT session,principal,state,turn,turn_state,
                ordinal::text AS ordinal,input,result,failure,
-               asked_at::text AS asked_at,model,tokens::text AS tokens,
+               to_char(asked_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS asked_at,model,tokens::text AS tokens,
                cost_micros::text AS cost_micros,
                duration_ms::text AS duration_ms,tools
           FROM read_lead_inquiry(

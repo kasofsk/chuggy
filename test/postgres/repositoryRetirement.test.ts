@@ -27,6 +27,7 @@ import {
 } from "../../src/compose.ts";
 import {
   asGitObjectId,
+  asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asForgeInstallationToken } from "../../src/interpreter/forgeInstallation.ts";
@@ -56,6 +57,10 @@ import {
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
+
+/** UTC ISO 8601, the form a binding answers its retirement in. */
+const repositoryRetirementInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -186,7 +191,7 @@ test("the doors that answer a whole binding answer its retirement", async () => 
   );
   const retired = await retire(partition, repository);
   const at = retired.outcome === "Retired" ? retired.binding.retiredAt : "none";
-  assert.equal(typeof at, "string");
+  assert.match(at ?? "", repositoryRetirementInstantForm);
   assert.equal(
     (
       await postgresProjectRepositoryLanding(pool).landing(
@@ -201,6 +206,38 @@ test("the doors that answer a whole binding answer its retirement", async () => 
       (bound) => [String(bound.repository), bound.retiredAt],
     ),
     [[repository, at]],
+  );
+});
+
+/** A mint reads a retirement beside the allowance, so the row a retirement leaves keeps both. */
+test("a retired binding answers the pipeline definitions it allowed beside its retirement", async () => {
+  const partition = await fixtureProject("retire-pipelines");
+  const repository = await bindAt(partition, "retire-pipelines");
+  const landing = postgresProjectRepositoryLanding(pool);
+  const standing = await landing.landing(partition, asRepositoryId(repository));
+  assert.equal(
+    (
+      await landing.setLanding({
+        partition,
+        repository: asRepositoryId(repository),
+        expected: standing?.landing ?? { mode: "Push" },
+        landing: standing?.landing ?? { mode: "Push" },
+        pipelinesWritable: { expected: false, wanted: true },
+      })
+    ).outcome,
+    "Written",
+  );
+  const retired = await retire(partition, repository);
+  assert.deepEqual(
+    retired.outcome === "Retired"
+      ? [retired.binding.pipelinesWritable, typeof retired.binding.retiredAt]
+      : undefined,
+    [true, "string"],
+  );
+  const read = await landing.landing(partition, asRepositoryId(repository));
+  assert.deepEqual(
+    [read?.pipelinesWritable, typeof read?.retiredAt],
+    [true, "string"],
   );
 });
 
@@ -482,9 +519,13 @@ test("the member import refuses a repository its project retired, and after anot
       undefined,
       undefined,
       {
-        defaultBranch: () => Promise.resolve({ read: "Absent" }),
+        defaultBranch: () =>
+          Promise.resolve({
+            read: "Branch",
+            branch: asGitRefName("refs/heads/main"),
+            commit: asGitObjectId("c".repeat(40)),
+          }),
         referenced: () => Promise.resolve({ read: "Referenced", files: [] }),
-
         snapshot: () =>
           Promise.resolve({
             read: "Snapshot",
@@ -511,7 +552,6 @@ test("the member import refuses a repository its project retired, and after anot
           partition,
           {
             repository: asRepositoryId(repository),
-            commit: asGitObjectId("c".repeat(40)),
           },
         )
       ).result;

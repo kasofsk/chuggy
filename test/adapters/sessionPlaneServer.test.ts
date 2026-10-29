@@ -62,6 +62,7 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
+  type SessionCapability,
 } from "../../src/interpreter/agentSession.ts";
 import type { SessionPlaneIdentity } from "../../src/interpreter/sessionPlane.ts";
 import type { SessionPodEnding } from "../../src/interpreter/sessionScheduler.ts";
@@ -192,6 +193,56 @@ test("a session pod is told what its own session is, and nothing it has not got"
     "what it is",
   );
   await told.close();
+});
+
+/** The plane over a thread holding `capabilities`, and the roster it names to a pod offering `release`. */
+function sessionPlaneNamed(capabilities: readonly SessionCapability[]) {
+  const app = sessionPlane({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({ ...identity, kind: "Thread", capabilities }),
+    },
+  });
+  const named = async (release: string | undefined) =>
+    (
+      await app.inject({
+        method: "GET",
+        url: "/v1/session",
+        headers: {
+          ...held,
+          ...(release === undefined ? {} : { [workerContractHeader]: release }),
+        },
+      })
+    ).json<{ capabilities: string[] }>().capabilities;
+  return { app, named };
+}
+
+test("a thread's dispatch is named to a pod whose release reads it, and left out for one before it", async () => {
+  const { app, named } = sessionPlaneNamed([
+    "ProjectRead",
+    "TicketDispatch",
+    "DraftOriginate",
+  ]);
+  assert.deepEqual(await named("1.20.0"), [
+    "ProjectRead",
+    "TicketDispatch",
+    "DraftOriginate",
+  ]);
+  for (const release of ["1.19.0", "1.0.0", undefined])
+    assert.deepEqual(
+      await named(release),
+      ["ProjectRead", "DraftOriginate"],
+      String(release),
+    );
+  await app.close();
+});
+
+test("a member's own session's reads are named to a pod whose release reads them, and left out for one before it", async () => {
+  const { app, named } = sessionPlaneNamed(["MemberRead"]);
+  assert.deepEqual(await named("1.29.0"), ["MemberRead"]);
+  for (const release of ["1.28.0", "1.27.0", "1.20.0", undefined])
+    assert.deepEqual(await named(release), [], String(release));
+  await app.close();
 });
 
 test("a session told what it forks from is told the reference the plane resolved", async () => {

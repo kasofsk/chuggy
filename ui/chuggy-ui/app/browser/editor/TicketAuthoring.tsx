@@ -59,7 +59,6 @@ export interface TicketAuthoringProps {
   readonly onForm: (form: TicketCreationForm) => void;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
-  readonly dependenciesLocked: boolean;
   readonly assemble: (form: TicketCreationForm) => Assembled;
   /** The form with what the screen proposes for a box left empty, which is
    * what the Form side submits and the YAML is first written from. */
@@ -157,7 +156,6 @@ function FormSubmit(props: {
  * screen knows the project holds. */
 function useYamlContext(props: TicketAuthoringProps) {
   const { initial, offers, repositories, storeKey } = props;
-  const locked = props.dependenciesLocked;
   const held = props.form.images;
   const [kept] = useState(() => ticketYamlImagesStored(storeKey));
   return useMemo(
@@ -165,10 +163,9 @@ function useYamlContext(props: TicketAuthoringProps) {
       base: initial,
       offers,
       repositories,
-      dependenciesLocked: locked,
       images: [...new Set([...initial.images, ...held, ...kept])],
     }),
-    [initial, offers, repositories, locked, held, kept],
+    [initial, offers, repositories, held, kept],
   );
 }
 

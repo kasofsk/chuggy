@@ -9,9 +9,10 @@
  * project, and a partition it names beside it is the same one with the
  * other's tenant or project name appended; its principals and assignment carry
  * a suffix of the case's own, since both are unique across the installation.
- * The pool is the registry row, the session is the identity the claim is asked
- * under, and the placement is an execution released with the case's
- * requirement, opened and invoked. A slot a session holds is an attempt its
+ * The pool is the registry row, its memory ceiling written as a poll naming one
+ * writes it, the session is the identity the claim is asked under, and the
+ * placement is an execution released with the case's requirement and size,
+ * opened and invoked. A slot a session holds is an attempt its
  * pool claimed first, and a bound identity or an assigned phase is an attempt
  * another pool claimed first.
  *
@@ -45,6 +46,7 @@ import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
 import {
   kubernetesPoolBackend,
@@ -66,6 +68,7 @@ import {
 import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
 import {
   asProjectId,
+  asRecoveryEpoch,
   asTenantId,
   type Partition,
   type ProjectId,
@@ -77,6 +80,7 @@ import {
   workerPoolReconcile,
   type DedicatedPoolIdentity,
   type PersonalRunnerIdentity,
+  type WorkerPoolClaimTerms,
   type WorkerPoolPollSettings,
   type WorkerPoolPorts,
 } from "../../src/interpreter/workerPool.ts";
@@ -152,6 +156,9 @@ await rig.harness.query(
 
 /** How long a claim's lease runs for, past the duration of any case here. */
 const leaseSecs = 300;
+
+/** The size a claim reads an execution naming no memory as, which no case's size is. */
+const memoryMibDefault = 256;
 
 /** Whether a pool is planted as a member's runner rather than a registry row. */
 function runnerOwned(pool: WorkerPoolRunner): boolean {
@@ -369,11 +376,12 @@ interface Owned {
 
 const unowned: Owned = { owner: null, fallback: null };
 
-/** The next execution admitted and opened as an invoked attempt, marked for a pool unless `inCluster`, and owned as `owned` says. */
+/** The next execution admitted and opened as an attempt, invoked unless `invoked` is false, marked for a pool unless `inCluster`, and owned as `owned` says. */
 async function opened(
   project: SchedulerProject,
   inCluster = false,
   owned: Owned = unowned,
+  invoked = true,
 ): Promise<{ execution: string; attempt: string }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
@@ -401,7 +409,10 @@ async function opened(
   });
   if (attempt.opened !== "Opened")
     throw new Error("worker pool claim suite: no attempt was opened");
-  if (!(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation)))
+  if (
+    invoked &&
+    !(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation))
+  )
     throw new Error("worker pool claim suite: no invocation was recorded");
   return { execution: admitted.execution, attempt: attempt.attempt.attempt };
 }
@@ -445,7 +456,7 @@ async function registeredPool(
   return clientId;
 }
 
-/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise. */
+/** A member's runner as its row and allowlist, polled `polledSecsAgo` before now where it is `live` and never otherwise, under the ceiling it names. */
 async function plantedRunner(
   named: Planted,
   pool: WorkerPoolRunner,
@@ -468,21 +479,23 @@ async function plantedRunner(
     pool.capabilities,
     live ? polledSecsAgo : undefined,
     allowed.map((project) => project.project),
+    pool.memoryCeilingMib,
   );
   return identity;
 }
 
-/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise. */
+/** A runner's row and the projects it is allowed into, polled `polledSecsAgo` before now where that is named and never otherwise, under `memoryCeilingMib` where that is named. */
 async function plantedRunnerRows(
   identity: PersonalPlaneIdentity,
   capabilities: readonly string[],
   polledSecsAgo: number | undefined,
   allowlist: readonly ProjectId[],
+  memoryCeilingMib?: number,
 ): Promise<void> {
   await rig.harness.query(
-    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at)
+    `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id,executions_polled_at,memory_ceiling_mib)
       VALUES($1,$2,$3,$4,$5,
-        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END)`,
+        CASE WHEN $6::boolean THEN now()-make_interval(secs=>$7::double precision) END,$8)`,
     [
       identity.tenant,
       identity.owner,
@@ -491,6 +504,7 @@ async function plantedRunnerRows(
       `chuggy-personal-${randomUUID()}`,
       polledSecsAgo !== undefined,
       polledSecsAgo ?? 0,
+      memoryCeilingMib ?? null,
     ],
   );
   for (const project of allowlist)
@@ -506,13 +520,40 @@ type PersonalPlaneIdentity = PersonalRunnerIdentity & {
 
 type PlantedIdentity = DedicatedPoolIdentity | PersonalPlaneIdentity;
 
-/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
-async function claimedBy(
+/** Whether the claim `takes` would make on these terms would take anything, asked of the probe that takes nothing. */
+async function waiting(
   identity: PlantedIdentity,
-  assignment: string,
+  terms: WorkerPoolClaimTerms,
+  home: Partition | undefined,
+  ownersRevoked: readonly Principal[] = [],
+): Promise<boolean> {
+  return identity.kind === "Dedicated"
+    ? assignments.waiting(identity, terms, ownersRevoked)
+    : assignments.waitingPersonal(
+        identity,
+        terms,
+        home === undefined ? [] : [home.project],
+      );
+}
+
+/**
+ * Whether a pool or runner claims the oldest placeable attempt it may, a
+ * runner in `home`, under `assignment` and within `memoryRoomMib` where it is
+ * named; the probe is asked first, and answers what the claim then does.
+ */
+async function takes(
+  identity: PlantedIdentity,
   home?: Partition,
-) {
-  const terms = { leaseSecs, heldMax: Number.MAX_SAFE_INTEGER };
+  assignment = `assignment-${randomUUID()}`,
+  memoryRoomMib?: number,
+): Promise<boolean> {
+  const terms: WorkerPoolClaimTerms = {
+    leaseSecs,
+    heldMax: Number.MAX_SAFE_INTEGER,
+    memoryMibDefault,
+    ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
+  };
+  const asked = await waiting(identity, terms, home);
   const bearer = `bearer-${randomUUID()}`;
   const claimed =
     identity.kind === "Dedicated"
@@ -524,7 +565,17 @@ async function claimedBy(
           bearer,
           home === undefined ? [] : [home.project],
         );
-  if (claimed === undefined)
+  assert.equal(asked, claimed !== undefined, "the probe answers the claim");
+  return claimed !== undefined;
+}
+
+/** Claims the oldest placeable attempt for a pool or runner that must get one, a runner in the case's project. */
+async function claimedBy(
+  identity: PlantedIdentity,
+  assignment: string,
+  home?: Partition,
+) {
+  if (!(await takes(identity, home, assignment)))
     throw new Error("worker pool claim suite: a planted claim took nothing");
 }
 
@@ -578,6 +629,13 @@ async function plantedPool(
     pool,
     named.project.partition,
   );
+  if (pool.memoryCeilingMib !== undefined)
+    await postgresWorkerPoolRunners(planePool).named(
+      identity,
+      undefined,
+      undefined,
+      pool.memoryCeilingMib,
+    );
   return { identity, clientId };
 }
 
@@ -684,7 +742,7 @@ async function claimAsked(
   pools: PlantedPools,
   home: Partition,
 ): Promise<unknown> {
-  const terms = { leaseSecs, heldMax };
+  const terms = { leaseSecs, heldMax, memoryMibDefault };
   const bearer = `bearer-${randomUUID()}`;
   try {
     return identity.kind === "Dedicated"
@@ -735,7 +793,9 @@ async function claimTook(
     session.held + (c.assignmentsBound.includes(runnerCaseAssignment) ? 1 : 0);
   const named = planted(
     c,
-    await releasedUnder(label, c.placement.requirement, bystanders + 1),
+    await releasedUnder(label, c.placement.requirement, bystanders + 1, {
+      memoryMib: c.placement.memoryMib,
+    }),
   );
   const pools = await plantedPools(c, named, polledSecsAgo);
   const target = await plantedTarget(c, session.held, named, pools);
@@ -750,6 +810,12 @@ async function claimTook(
     );
   const home = named.project.partition;
   const identity = sessionIdentity(c, named, pools);
+  const asked = await waiting(
+    identity,
+    { leaseSecs, heldMax: session.heldMax, memoryMibDefault },
+    home,
+    pools.ownersRevoked,
+  );
   const claimed = await claimAsked(
     identity,
     session.heldMax,
@@ -768,6 +834,19 @@ async function claimTook(
     claimed !== undefined,
     took,
     "a claim answers what it bound, and binds what it answers",
+  );
+  assert.equal(
+    asked,
+    c.assignmentsBound.includes(runnerCaseAssignment)
+      ? workerPoolCanAssign(
+          c.placement,
+          { pool: c.pool, session },
+          [{ pool: c.pool, session }, ...c.others],
+          runnerCaseAssignment,
+          new Set(),
+        )
+      : took,
+    "the probe answers what the claim takes, an assignment's name aside",
   );
   return took;
 }
@@ -873,6 +952,28 @@ const pinned: ExecutionRequirement = {
   image: pinnedImage,
 };
 
+/** An owner's runner for `project` alone, live and declaring all `pinned` asks, under `memoryCeilingMib` where it is named. */
+async function ownersRunner(
+  project: SchedulerProject,
+  label: string,
+  memoryCeilingMib?: number,
+): Promise<PersonalPlaneIdentity> {
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(
+    runner,
+    declaringAll(pinned),
+    0,
+    [project.partition.project],
+    memoryCeilingMib,
+  );
+  return runner;
+}
+
 test("a pool that reports holding nothing is held to what the database says it holds", async () => {
   const project = await releasedUnder("claim-under-report", pinned, 2);
   const pool = await pollingPool(project, "under-report", pinned);
@@ -913,7 +1014,7 @@ test("a claim made while the same pool's last is still open waits for it and cou
   const pool = await pollingPool(project, "racing", pinned);
   await opened(project);
   await opened(project);
-  const terms = { leaseSecs, heldMax: 1 };
+  const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
   let reach = (): void => undefined;
   const reached = new Promise<void>((resolve) => (reach = resolve));
   let open = (): void => undefined;
@@ -954,7 +1055,7 @@ test("a registration made while an older one's claim is still open waits for it 
     postgresHarnessHeldAtCommit(planePool, reach, gate),
   ).claim(
     older,
-    { leaseSecs, heldMax: 1 },
+    { leaseSecs, heldMax: 1, memoryMibDefault },
     `fenced-${randomUUID()}`,
     `bearer-${randomUUID()}`,
     [],
@@ -1081,6 +1182,350 @@ async function handedOut(
   if (assignment === undefined) throw new Error(`${label} was handed nothing`);
   return assignment;
 }
+
+test("an execution naming no memory meets a ceiling at the plane's size for it, for a pool, for its owner's runner and for a pool deferring to that runner", async () => {
+  for (const [ceiling, fits] of [
+    [memoryMibDefault, true],
+    [memoryMibDefault - 1, false],
+  ] as const) {
+    const label = `claim-unsized-${String(ceiling)}`;
+    const pooled = await releasedUnder(`${label}-pool`, pinned, 1);
+    const pool = await pollingPool(pooled, label, pinned);
+    await postgresWorkerPoolRunners(planePool).named(
+      pool,
+      undefined,
+      undefined,
+      ceiling,
+    );
+    await opened(pooled);
+    assert.equal(await takes(pool), fits, `a pool under ${String(ceiling)}`);
+    const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+    const runner = await ownersRunner(owned, label, ceiling);
+    const strict = { owner: runner.owner, fallback: "Strict" };
+    await opened(owned, false, strict);
+    await opened(owned, false, strict);
+    const unbounded = await pollingPool(owned, `${label}-unbounded`, pinned);
+    assert.equal(
+      await takes(unbounded),
+      !fits,
+      `a pool deferring to a runner under ${String(ceiling)}`,
+    );
+    assert.equal(
+      await takes(runner, owned.partition),
+      fits,
+      `a runner under ${String(ceiling)}`,
+    );
+  }
+});
+
+test("a claim takes no job larger than the room its poll named, a job naming no memory at the plane's size, for a pool and for its owner's runner", async () => {
+  for (const [memoryMib, room, fits] of [
+    [4_096, 4_096, true],
+    [4_096, 4_095, false],
+    [4_096, undefined, true],
+    [undefined, memoryMibDefault, true],
+    [undefined, memoryMibDefault - 1, false],
+  ] as const) {
+    const label = `claim-room-${String(memoryMib)}-${String(room)}`;
+    const resources = memoryMib === undefined ? undefined : { memoryMib };
+    const pooled = await releasedUnder(`${label}-pool`, pinned, 1, resources);
+    const pool = await pollingPool(pooled, label, pinned);
+    await opened(pooled);
+    assert.equal(
+      await takes(pool, undefined, undefined, room),
+      fits,
+      `a pool: ${label}`,
+    );
+    const owned = await releasedUnder(`${label}-owned`, pinned, 1, resources);
+    const runner = await ownersRunner(owned, label);
+    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+    assert.equal(
+      await takes(runner, owned.partition, undefined, room),
+      fits,
+      `a runner: ${label}`,
+    );
+  }
+});
+
+test("a poll's claims together fit the room it named, and it is told whether one more it fits is waiting under its ceiling", async () => {
+  const label = "claim-room-poll";
+  const project = await releasedUnder(label, pinned, 3, { memoryMib: 3_000 });
+  const pool = await pollingPool(project, label, pinned);
+  for (let opening = 0; opening < 3; opening += 1) await opened(project);
+  const runners = postgresWorkerPoolRunners(planePool);
+  const poll = (wanted: number, memoryRoomMib: number) =>
+    workerPoolReconcile(
+      polling(() => randomUUID()),
+      pool,
+      { jobs: [], sessions: [] },
+      {
+        wanted,
+        wantedSessions: 0,
+        memoryRoomMib,
+        contract: workerContractRelease,
+      },
+      { ...settings, heldMax: 4 },
+    );
+  const first = await poll(2, 4_096);
+  assert.deepEqual(
+    first.assignments.map((taken) => taken.memoryMib),
+    [3_000],
+  );
+  assert.equal(first.jobsWaiting, false, "the room the first claim left");
+  assert.equal((await poll(0, 3_000)).jobsWaiting, true, "a room it fits");
+  assert.equal((await poll(0, 2_999)).jobsWaiting, false, "a room too small");
+  await runners.named(pool, undefined, undefined, 2_048);
+  assert.equal((await poll(0, 8_192)).jobsWaiting, false, "a ceiling below");
+  await runners.named(pool, undefined, undefined, 3_000);
+  assert.equal((await poll(0, 8_192)).jobsWaiting, true, "a ceiling at");
+  const last = await poll(2, 6_000);
+  assert.deepEqual(
+    last.assignments.map((taken) => taken.memoryMib),
+    [3_000, 3_000],
+  );
+  assert.equal(last.jobsWaiting, false, "nothing left to claim");
+});
+
+test("a claim or a probe whose size is no positive count, or whose room is no count, is refused before anything is asked", async () => {
+  const partition = { tenant: "terms", project: "terms" } as Partition;
+  const pool: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    partition,
+    pool: "terms",
+    principal: asPrincipal("https://issuer.invalid#terms"),
+  };
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: partition.tenant,
+    owner: asPrincipal("https://issuer.invalid#terms-owner"),
+    principal: asPrincipal("https://issuer.invalid#terms-runner"),
+  };
+  for (const [over, refusal] of [
+    [{ memoryMibDefault: 0 }, /invalid worker pool memory default/u],
+    [{ memoryRoomMib: -1 }, /invalid worker pool memory room/u],
+    [{ memoryRoomMib: 1.5 }, /invalid worker pool memory room/u],
+  ] as const) {
+    const terms = { leaseSecs, heldMax: 1, memoryMibDefault, ...over };
+    for (const asked of [
+      () => assignments.claim(pool, terms, "terms", "terms", []),
+      () => assignments.waiting(pool, terms, []),
+      () =>
+        assignments.claimPersonal(runner, terms, "terms", "terms", [
+          partition.project,
+        ]),
+      () => assignments.waitingPersonal(runner, terms, [partition.project]),
+    ])
+      await assert.rejects(asked, refusal, JSON.stringify(over));
+  }
+});
+
+test("a claim and its probe take nothing of a project that is not Active, nor an attempt a newer recovery epoch superseded, for a pool and for its owner's runner", async () => {
+  const label = "claim-fenced";
+  const pooled = await releasedUnder(`${label}-pool`, pinned, 2);
+  const pool = await pollingPool(pooled, label, pinned);
+  const owned = await releasedUnder(`${label}-owned`, pinned, 2);
+  const runner = await ownersRunner(owned, label);
+  for (let opening = 0; opening < 2; opening += 1) {
+    await opened(pooled);
+    await opened(owned, false, { owner: runner.owner, fallback: "Strict" });
+  }
+  for (const [who, project, taking] of [
+    ["a pool", pooled, () => takes(pool)],
+    ["a runner", owned, () => takes(runner, owned.partition)],
+  ] as const) {
+    for (const [lifecycle, taken] of [
+      ["Suspended", false],
+      ["Active", true],
+    ] as const) {
+      await rig.harness.query(
+        `UPDATE project SET lifecycle=$3, lifecycle_generation=lifecycle_generation+1
+          WHERE tenant=$1 AND project=$2`,
+        [project.partition.tenant, project.partition.project, lifecycle],
+      );
+      assert.equal(await taking(), taken, `${who} of a project ${lifecycle}`);
+    }
+  }
+  await rig.harness.store.establishRecoveryEpoch(
+    asRecoveryEpoch(`epoch-${label}-${randomUUID()}`),
+  );
+  assert.equal(await takes(pool), false, "a pool under a superseded epoch");
+  assert.equal(
+    await takes(runner, owned.partition),
+    false,
+    "a runner under a superseded epoch",
+  );
+});
+
+/** Ends an attempt as a lapse ends one no runner claimed: withdrawn, holding no lease. */
+async function withdrawnUnclaimed(attempt: string): Promise<void> {
+  await rig.harness.query(
+    `UPDATE execution_attempt SET state='Withdrawn', evidence='PlacementUnavailable',
+        ended_at=now(), lease_owner=NULL, lease_expires_at=NULL
+      WHERE attempt=$1`,
+    [attempt],
+  );
+}
+
+test("a pool's claim and its probe take nothing of an attempt withdrawn unclaimed or not yet invoked, and take a job whose owner is not the owner of the live runner beside it", async () => {
+  const label = "probe-pool";
+  const withdrawn = await releasedUnder(`${label}-withdrawn`, pinned, 1);
+  const withdrawing = await pollingPool(withdrawn, `${label}-w`, pinned);
+  await withdrawnUnclaimed((await opened(withdrawn)).attempt);
+  assert.equal(await takes(withdrawing), false, "withdrawn unclaimed");
+  const uninvoked = await releasedUnder(`${label}-uninvoked`, pinned, 1);
+  const waiting = await pollingPool(uninvoked, `${label}-u`, pinned);
+  await opened(uninvoked, false, unowned, false);
+  assert.equal(await takes(waiting), false, "not yet invoked");
+  const beside = await releasedUnder(`${label}-beside`, pinned, 1);
+  const deferring = await pollingPool(beside, `${label}-b`, pinned);
+  await ownersRunner(beside, `${label}-beside`);
+  await opened(beside, false, {
+    owner: `https://issuer.invalid#${label}-owner-${randomUUID()}`,
+    fallback: "Strict",
+  });
+  assert.equal(await takes(deferring), true, "another owner's runner beside");
+});
+
+/** A case's project, its owner's runner in it, and the ownership its jobs are opened under. */
+interface RunnerPlanted {
+  readonly project: SchedulerProject;
+  readonly runner: PersonalPlaneIdentity;
+  readonly owned: Owned;
+}
+
+/** Asks the claim as the case's runner, of the case's project. */
+function runnerAsked({ runner, project }: RunnerPlanted): Promise<boolean> {
+  return takes(runner, project.partition);
+}
+
+/** Opens the case project's next job as its runner's owner's. */
+function runnerOpened({
+  project,
+  owned,
+}: RunnerPlanted): Promise<{ execution: string; attempt: string }> {
+  return opened(project, false, owned);
+}
+
+/** Each way an owner's runner is asked for a job it may not take: a label, what its project is released under, and how its job is opened and the claim asked. */
+const runnerTakesNothing: readonly (readonly [
+  string,
+  ExecutionRequirement,
+  (planted: RunnerPlanted) => Promise<boolean>,
+])[] = [
+  [
+    "unlike",
+    { ...pinned, architecture: "Arm64" },
+    async (planted) => {
+      await runnerOpened(planted);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "in-cluster",
+    pinned,
+    async (planted) => {
+      const { project, owned } = planted;
+      const target = await opened(project);
+      await rig.harness.query(
+        `UPDATE execution SET placement='InCluster',owner=$4,owner_fallback=$5
+          WHERE tenant=$1 AND project=$2 AND execution=$3`,
+        [
+          project.partition.tenant,
+          project.partition.project,
+          target.execution,
+          owned.owner,
+          owned.fallback,
+        ],
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "admitted",
+    pinned,
+    async (planted) => {
+      const target = await runnerOpened(planted);
+      await statusPlanted(
+        planted.project.partition,
+        target.execution,
+        "Admitted",
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "withdrawn",
+    pinned,
+    async (planted) => {
+      await withdrawnUnclaimed((await runnerOpened(planted)).attempt);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "claimed",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      await claimedBy(
+        planted.runner,
+        `claimed-${randomUUID()}`,
+        planted.project.partition,
+      );
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "uninvoked",
+    pinned,
+    async (planted) => {
+      await opened(planted.project, false, planted.owned, false);
+      return runnerAsked(planted);
+    },
+  ],
+  [
+    "another-owner",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(
+        {
+          ...planted.runner,
+          owner: asPrincipal(`https://issuer.invalid#other-${randomUUID()}`),
+        },
+        planted.project.partition,
+      );
+    },
+  ],
+  [
+    "another-tenant",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(
+        { ...planted.runner, tenant: asTenantId(`other-${randomUUID()}`) },
+        planted.project.partition,
+      );
+    },
+  ],
+  [
+    "no-project",
+    pinned,
+    async (planted) => {
+      await runnerOpened(planted);
+      return takes(planted.runner);
+    },
+  ],
+];
+
+test("an owner's runner's claim and its probe take nothing it cannot run, routed in the cluster, not launching, withdrawn, claimed or not yet invoked, nor for a runner named under another owner or tenant or asking of no project", async () => {
+  const label = "probe-runner";
+  for (const [why, requirement, arranged] of runnerTakesNothing) {
+    const project = await releasedUnder(`${label}-${why}`, requirement, 2);
+    const runner = await ownersRunner(project, `${label}-${why}`);
+    const owned = { owner: runner.owner, fallback: "Strict" };
+    assert.equal(await arranged({ project, runner, owned }), false, why);
+  }
+});
 
 test("a container's pod runs the image its requirement pinned, claimed out of the database", async () => {
   const assignment = await handedOut("claim-pinned-image", pinned);

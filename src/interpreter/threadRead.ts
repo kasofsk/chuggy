@@ -11,13 +11,17 @@
  * caller's own mailbox and no other; the close door is `Mutate` and reaches
  * any thread, because a thread files drafts and does nothing else, so ending
  * one takes nothing its owner cannot file again from a new one. What enforces
- * the owner-alone half is `enqueue_thread_message` taking no session at all
- * and resolving one from the authenticated principal: the URL's session is
- * compared with the one that resolved, AFTER the enqueue, so a mismatch is
- * refused on what the durable side actually did rather than on a row read a
- * round trip earlier. The standing read before it is a fast refusal and the
- * seeding decision, not the control — between the two, a thread can be closed
- * and another opened.
+ * the owner-alone half is `enqueue_thread_message` holding the session the URL
+ * names against the authenticated principal, in the transaction that enqueues,
+ * so a refusal is decided on the row the turn would land in rather than on one
+ * read a round trip earlier. The standing read before it is a fast refusal and
+ * the seeding decision, not the control — between the two, a thread can be
+ * closed.
+ *
+ * A MEMBER HOLDS SEVERAL OPEN THREADS, up to their limit in the project. An
+ * open is idempotent on the key its client minted, so a retried open answers
+ * the thread the first one opened, and an open past the limit is refused
+ * rather than closing one to make room.
  *
  * THE MAILBOX IS PAGED AND THE LISTING IS NOT. One thread turn carries what the
  * member typed and what came back, and either alone may weigh most of a wire
@@ -53,6 +57,8 @@ import {
   textCodePointsCount,
   threadMessageCharsMax,
   threadMessageImagesMax,
+  threadOpenKeyCharsMax,
+  threadOpenKeyPattern,
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -61,6 +67,7 @@ import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
   SessionId,
+  SessionScope,
   SessionState,
   SessionTurnFailure,
   SessionTurnId,
@@ -74,7 +81,7 @@ import {
 } from "./finalizerPreparation.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Partition, ProjectId, TenantId } from "./projectStore.ts";
 import { projectArtifactFetched } from "./projectArtifact.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
@@ -116,6 +123,15 @@ export interface ThreadRecord {
 }
 
 /**
+ * One of a member's own threads wherever it is kept: a project's, named by its
+ * project, or their own, named by their reserved partition.
+ */
+export interface MemberThreadRecord extends ThreadRecord {
+  readonly project: ProjectId;
+  readonly scope: SessionScope;
+}
+
+/**
  * One turn of a thread's mailbox as a reader sees it, carrying its input and
  * its result where the lead's carries neither: a member's input is what they
  * typed and their result is the answer they are waiting for.
@@ -154,11 +170,35 @@ export interface ThreadStandingRecord {
   readonly streams: readonly SessionStoreStreamRow[];
 }
 
-/** What opening a member's thread answered: it is open now, or it already was. */
-export interface ThreadOpened {
-  readonly opened: "Opened" | "AlreadyOpen";
-  readonly thread: ThreadRecord;
+declare const threadOpenKeyBrand: unique symbol;
+
+/** The key a client opens a thread under, which opening is idempotent on. */
+export type ThreadOpenKey = string & { readonly [threadOpenKeyBrand]: true };
+
+/** Brands an open key, refusing one the wire would refuse. */
+export function asThreadOpenKey(value: string): ThreadOpenKey {
+  if (
+    value.length === 0 ||
+    textCodePointsCount(value) > threadOpenKeyCharsMax ||
+    !threadOpenKeyPattern.test(value)
+  )
+    throw new RangeError(
+      `a thread open key is between 1 and ${String(threadOpenKeyCharsMax)} letters, digits, hyphens and underscores`,
+    );
+  return value as ThreadOpenKey;
 }
+
+/**
+ * What opening a member's thread answered: the key's thread is open now, the
+ * key already opened one, or the member holds as many open as their limit. The
+ * last carries the limit, so the member is told what they ran into.
+ */
+export type ThreadOpened =
+  | {
+      readonly opened: "Opened" | "AlreadyOpen";
+      readonly thread: ThreadRecord;
+    }
+  | { readonly opened: "ThreadLimitReached"; readonly threadsMax: number };
 
 /**
  * What closing a thread answered: it is closed now, it already was, or the
@@ -215,7 +255,6 @@ export type ThreadTurnStopped =
 export type ThreadMessageEnqueued =
   | {
       readonly enqueued: "Enqueued" | "AlreadyEnqueued";
-      readonly session: SessionId;
       readonly ordinal: number;
     }
   | {
@@ -223,40 +262,58 @@ export type ThreadMessageEnqueued =
     };
 
 /**
- * The durable thread authority migrations 062 and 075 answer: the listing, the
- * door that opens one, the standing read, the door a message goes through and
- * the door that closes one. `open` TAKES NO ROSTER, `enqueueMessage` TAKES NO
- * SESSION AND `close` TAKES NO PRINCIPAL, and each omission is the control —
- * the definer writes `threadCapabilitiesDefault` itself so an API talked into
- * opening a thread cannot widen one, it resolves the mailbox from the
- * principal so an API talked into enqueuing cannot reach another member's, and
- * any member who may mutate the project may close any of its threads, so the
- * close door refuses only a session that is not a thread.
+ * The durable thread authority: the listing, the door that opens one, the
+ * standing read, the door a message goes through and the door that closes one.
+ * `open` TAKES NO ROSTER AND NO LIMIT and `close` TAKES NO PRINCIPAL, and each
+ * omission is the control — the definer writes the roster and reads the
+ * member's limit itself so an API talked into opening a thread can neither
+ * widen one nor exceed the other, and any member who may mutate the project
+ * may close any of its threads, so the close door refuses only a session that
+ * is not a thread.
  */
 export interface ThreadStore {
+  /** One page of the project's threads, the reader's own open ones first so
+   * none they hold falls off it. */
   threads(
     partition: Partition,
+    reader: Principal,
     limit: number,
   ): Promise<readonly ThreadRecord[]>;
   open(input: {
     readonly partition: Partition;
     readonly principal: Principal;
+    /** The identity the thread is opened under where the key has opened none. */
     readonly session: SessionId;
+    readonly key: ThreadOpenKey;
     readonly systemPrompt: string;
     readonly credentialSlot: string;
   }): Promise<ThreadOpened>;
+  /**
+   * Opens one of the principal's own threads in their reserved partition,
+   * which draws no capacity and holds `MemberRead` alone; `partition` is that
+   * partition, the opened thread being read back there.
+   */
+  openUnscoped(input: {
+    readonly partition: Partition;
+    readonly principal: Principal;
+    readonly session: SessionId;
+    readonly key: ThreadOpenKey;
+    readonly systemPrompt: string;
+    readonly credentialSlot: string;
+  }): Promise<ThreadOpened>;
+  /** One page of the principal's own threads across the tenant, open ones and the latest first. */
+  memberThreads(input: {
+    readonly tenant: TenantId;
+    readonly principal: Principal;
+    readonly limit: number;
+  }): Promise<readonly MemberThreadRecord[]>;
   /** One thread's standing, or nothing where the session is not this project's own thread. */
   standing(input: {
     readonly partition: Partition;
     readonly session: SessionId;
     readonly query: ThreadMailboxQuery;
   }): Promise<ThreadStandingRecord | undefined>;
-  /**
-   * `session` is the one the caller NAMED, never the one the mailbox is found
-   * by: the durable side resolves the mailbox from the principal and refuses a
-   * session that is not the one it resolved, so a stale listing cannot put a
-   * message in a conversation the member is not reading.
-   */
+  /** Refuses a session that is not one of the principal's own threads, in the transaction that would enqueue. */
   enqueueMessage(input: {
     readonly partition: Partition;
     readonly principal: Principal;
@@ -267,7 +324,7 @@ export interface ThreadStore {
     readonly route: PlacementRoute;
   }): Promise<ThreadMessageEnqueued>;
   /**
-   * Ends one waiting or claimed turn of the principal's own open thread, and
+   * Ends one waiting or claimed turn of an open thread of the principal's, and
    * tells the thread's readers its stream ended. It takes the principal
    * because the definer is what holds a stop to the caller's own thread, in
    * the transaction that ends the turn.
@@ -360,11 +417,12 @@ export type ThreadRead =
       readonly streams: readonly SessionStoreStreamRow[];
     };
 
-/** What opening my thread answered, and which of the two the wire reports as created. */
+/** What opening a thread of mine answered, and which of the two the wire reports as created. */
 export type ThreadOpening =
   | { readonly result: "NotFound" }
   | { readonly result: "HostedRunsNotGranted" }
   | { readonly result: "NoRunner" }
+  | { readonly result: "ThreadLimitReached"; readonly threadsMax: number }
   | {
       readonly result: "Opened" | "AlreadyOpen";
       readonly thread: ThreadEntry;
@@ -384,8 +442,7 @@ export type ThreadClosing =
 
 /**
  * What naming a thread answered, and the entry as it now reads.
- * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
- * message door's is.
+ * `NotYourThread` is a thread of another member's, as the message door's is.
  */
 export type ThreadRenaming =
   | { readonly result: "NotFound" }
@@ -394,8 +451,7 @@ export type ThreadRenaming =
 
 /**
  * What hiding a thread answered: which side of the rail it is now on.
- * `NotYourThread` is the URL and the caller's own mailbox disagreeing, as the
- * message door's is.
+ * `NotYourThread` is a thread of another member's, as the message door's is.
  */
 export type ThreadHiding =
   | { readonly result: "NotFound" }
@@ -403,8 +459,8 @@ export type ThreadHiding =
   | { readonly result: "Hidden" | "Shown"; readonly thread: ThreadEntry };
 
 /**
- * What the message door answered. `NotYourThread` is the URL and the resolved
- * mailbox disagreeing, and it is deliberately not `NotFound`: a member may read
+ * What the message door answered. `NotYourThread` is a thread of another
+ * member's, and it is deliberately not `NotFound`: a member may read
  * every thread this project holds, so hiding one they may already list would
  * tell them nothing they cannot see and would hide which refusal they met.
  */
@@ -414,7 +470,7 @@ export type ThreadMessageSent =
   | { readonly result: "Closed" }
   /** The tenant does not grant the caller hosted runs, which the turn would spend. */
   | { readonly result: "HostedRunsNotGranted" }
-  /** The turn would be offered to the caller's personal runner, and they have none serving the project. */
+  /** The turn would be offered to the caller's chat host, and they have none. */
   | { readonly result: "NoRunner" }
   /** The first turn's seeding block and the message will not fit one turn together. */
   | { readonly result: "TooLarge"; readonly charsMax: number }
@@ -449,15 +505,9 @@ export function threadTurnStopping(
     : { result: stopped };
 }
 
-/**
- * What the durable enqueue answered, as the door answers it, and where the URL
- * is held against the mailbox that resolved: an ordinal in a session the caller
- * did not name is a `202` about a conversation they are not reading, so the two
- * success arms are refused where the sessions differ.
- */
+/** What the durable enqueue answered, as the door answers it. */
 export function threadMessageSent(
   enqueued: ThreadMessageEnqueued,
-  named: SessionId,
   turn: SessionTurnId,
 ): ThreadMessageSent {
   switch (enqueued.enqueued) {
@@ -474,13 +524,11 @@ export function threadMessageSent(
       };
     case "Enqueued":
     case "AlreadyEnqueued":
-      return enqueued.session !== named
-        ? { result: "NotYourThread" }
-        : {
-            result: enqueued.enqueued === "Enqueued" ? "Sent" : "AlreadySent",
-            turn,
-            ordinal: enqueued.ordinal,
-          };
+      return {
+        result: enqueued.enqueued === "Enqueued" ? "Sent" : "AlreadySent",
+        turn,
+        ordinal: enqueued.ordinal,
+      };
   }
 }
 

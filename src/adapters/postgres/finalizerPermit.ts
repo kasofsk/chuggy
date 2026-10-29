@@ -78,7 +78,11 @@ import {
 } from "../../interpreter/projectStore.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { projectRowCounter } from "./rows.ts";
-import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
+import {
+  finalizerRowDeclined,
+  finalizerRowPresent,
+  finalizerRowValue,
+} from "./finalizerRows.ts";
 
 /**
  * The namespace the permit lock is taken in. It is an arbitrary constant whose
@@ -125,7 +129,9 @@ interface HeldPermitRow {
   readonly repository: string;
   readonly binding_epoch: string;
   readonly target_ref: string;
+  readonly target_base_ref: string | null;
   readonly candidate_commit: string;
+  readonly declined: string | null;
 }
 
 /** The refusal a grant answers with, which is a value and never a raised failure. */
@@ -298,13 +304,16 @@ async function finalizerPermitReadingWritten(
   const { partition, reconciliation } = record;
   const written = await client.query(
     sql`INSERT INTO finalization_reconciliation
-       (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit)
+       (tenant, project, permit, candidate_commit, target_ref, verdict, observed_commit,
+        declined)
      VALUES (${partition.tenant},${partition.project},${reconciliation.permit},
              ${reconciliation.candidate},${reconciliation.target},
-             ${reconciliation.verdict},${reconciliation.observed ?? null})
+             ${reconciliation.verdict},${reconciliation.observed ?? null},
+             ${reconciliation.declined ?? null})
      ON CONFLICT (tenant, project, permit) DO UPDATE
         SET verdict = EXCLUDED.verdict,
             observed_commit = EXCLUDED.observed_commit,
+            declined = EXCLUDED.declined,
             reconciled_at = now()
       WHERE finalization_reconciliation.verdict = 'Unreadable'`,
   );
@@ -361,7 +370,7 @@ export async function finalizerPermitHolds(
   const found = await client.query<HeldPermitRow>(
     sql`SELECT p.tenant, p.project, p.permit, b.repository,
             b.recovery_epoch AS binding_epoch,
-            r.target_ref, r.candidate_commit
+            r.target_ref, a.target_base_ref, r.candidate_commit, r.declined
        FROM commit_permit p
        JOIN finalization_attempt a
          ON a.tenant=p.tenant AND a.project=p.project AND a.attempt=p.attempt
@@ -388,7 +397,11 @@ export async function finalizerPermitHolds(
         recoveryEpoch: asRecoveryEpoch(row.binding_epoch),
       },
       target: asGitRefName(row.target_ref),
+      ...(row.target_base_ref === null
+        ? {}
+        : { baseRef: asGitRefName(row.target_base_ref) }),
       candidate: asGitObjectId(row.candidate_commit),
+      ...finalizerRowDeclined(row.declined),
     };
   });
 }

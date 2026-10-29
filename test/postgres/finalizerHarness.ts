@@ -99,10 +99,12 @@ import {
   checkedFinalizerConfig,
   finalizerDefaults,
   type AncestryProved,
+  type CandidateHeld,
   type CandidateIntegrated,
   type CandidatePrepared,
   type CandidatePromoted,
   type CandidatePromotion,
+  type FinalizationAttemptOutcome,
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
@@ -304,12 +306,27 @@ export function finalizerRemoteOpen(
   return remote;
 }
 
+/** What a case changes about the real git adapter: the bound its pushes stop at, and a scratch of its own where it stands for a restarted finalizer. */
+export interface FinalizerRemotePortOptions {
+  readonly promotionTimeoutSecsMax?: number;
+  readonly scratch?: string;
+}
+
 /** The real git adapter over one remote, with a credential no filesystem remote asks for. */
-export function finalizerRemotePort(rig: FinalizerRig): GitPromotionPort {
+export function finalizerRemotePort(
+  rig: FinalizerRig,
+  {
+    promotionTimeoutSecsMax,
+    scratch = "adapter",
+  }: FinalizerRemotePortOptions = {},
+): GitPromotionPort {
   return gitPromotion({
-    scratchDirectory: join(rig.gitRoot, "adapter"),
+    scratchDirectory: join(rig.gitRoot, scratch),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
+    ...(promotionTimeoutSecsMax === undefined
+      ? {}
+      : { promotionTimeoutSecsMax }),
     credentials: {
       credential: () =>
         Promise.resolve({
@@ -833,11 +850,11 @@ export function finalizerIdentity(label: string): string {
   return `${label}-${randomUUID()}`;
 }
 
-/** What one prepared or failed attempt a case writes says, defaulted to the clean prepared one. */
+/** What one attempt a case writes says, defaulted to the clean prepared one. */
 export interface FinalizerAttempt {
   readonly attempt?: string;
   readonly target?: string;
-  readonly outcome?: "Prepared" | "Failed";
+  readonly outcome?: FinalizationAttemptOutcome;
   readonly candidate?: string | null;
   readonly failureKind?: string | null;
   readonly approvalRequired?: boolean;
@@ -907,7 +924,7 @@ export async function finalizerPrepare(
       project.configurationDigest,
       attempt.approvalRequired ?? false,
       outcome,
-      outcome === "Prepared" ? (attempt.candidate ?? finalizerCommit()) : null,
+      outcome === "Failed" ? null : (attempt.candidate ?? finalizerCommit()),
       outcome === "Failed" ? (attempt.failureKind ?? "MergeConflict") : null,
       finalizerDigest(),
       attempt.conflictManifest?.artifact ?? null,
@@ -1015,6 +1032,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   ancestry: AncestryProved;
   preparation?: CandidatePrepared;
   integration?: CandidateIntegrated;
+  held: CandidateHeld;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1025,6 +1043,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     target: { observed: "Target", target },
     promotion: { promoted: "Advanced" },
     ancestry: { proved: "Ancestor", observed: target.commit },
+    held: "Unheld",
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1043,6 +1062,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       }
       return Promise.resolve(fake.preparation);
     },
+    proveCandidateHeld: () => {
+      fake.acts.push("held");
+      return Promise.resolve(fake.held);
+    },
     integrateCandidate: () => {
       fake.acts.push("integrate");
       if (fake.integration === undefined) {
@@ -1058,6 +1081,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     proveCandidateAncestry: () => {
       fake.acts.push("prove");
       return Promise.resolve(fake.ancestry);
+    },
+    proveHeadAdoptable: () => {
+      fake.acts.push("adopt");
+      return Promise.resolve("Unadoptable");
     },
   };
   return fake;
@@ -1421,15 +1448,15 @@ export async function finalizerLifecycle(
   );
 }
 
-/** Puts one claim's lease in the past, which is what a crashed holder leaves behind. */
+/** Puts the lease of every claimed request of the project in the past, which is what a crashed holder leaves behind. */
 export async function finalizerExpireClaim(
   rig: FinalizerRig,
   project: FinalizerProject,
 ): Promise<void> {
   await rig.as(
     `UPDATE finalization_request SET claim_expires_at = now() - interval '1 hour'
-      WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [project.partition.tenant, project.partition.project, project.request],
+      WHERE tenant=$1 AND project=$2 AND claim_owner IS NOT NULL`,
+    [project.partition.tenant, project.partition.project],
   );
 }
 

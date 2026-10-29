@@ -27,8 +27,30 @@
  * runner's package where its release reads one. A header that does not name a
  * runner is a poll naming none, never a refusal, since the cluster's own pool
  * and every earlier runner send none.
+ *
+ * A POLL MAY NAME THE CAPABILITIES ITS RUNNER HAS, and one whose header names
+ * no set this side reads is refused with a 400, as a query this side cannot
+ * read is, rather than served as naming none. The set steers what is
+ * claimed, so a poll whose set was dropped would go on claiming under the one
+ * its owner meant to replace; a runner reads the 400 as final, and a set that
+ * did not read once does not read on the next poll either. The memory ceiling
+ * and the memory room a poll may name steer what is claimed in the same way,
+ * and the wait it may name bounds when it is answered; each is refused in the
+ * same way.
+ *
+ * A POOL OR A PERSONAL RUNNER MAY REPORT how its machine and its work are
+ * doing. The report is held against the caller its bearer resolved to, beside
+ * what that caller's polls named, by the interpreter's `workerPoolReports`. A
+ * chat host is no runner: its report is answered as a caller this route does
+ * not serve, and nothing of its polls is held.
+ *
+ * A MEMBER'S CHAT HOST IS SERVED FROM ITS OWN RELEASE ON. One speaking an
+ * earlier release is refused on every route as any caller outside the plane's
+ * range is, since nothing before it reads what a host is handed.
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+
+import { contractVersionRefusalStatus } from "../../contract/workerContract.ts";
 
 import {
   assignmentOutcomeSchema,
@@ -37,13 +59,30 @@ import {
   workerPoolPollQuery,
   workerPoolPollQuerySchema,
   workerPoolPollRoute,
+  workerPoolSettlementOutcomes,
   workerPoolSettlementRoutes,
+  workerRunnerCapabilitiesHeader,
+  workerRunnerCapabilitiesOf,
+  workerRunnerCountOf,
   workerRunnerHeader,
+  workerRunnerMemoryCeilingHeader,
+  workerRunnerMemoryRoomHeader,
   workerRunnerOf,
+  workerRunnerPollWaitHeader,
+  workerRunnerReportBytesMax,
+  workerRunnerReportRoute,
+  workerRunnerReportSchema,
   type AssignmentOutcome,
   type WorkerRunner,
+  type WorkerRunnerCapabilitiesNamed,
+  type WorkerRunnerCountNamed,
 } from "../../contract/workerPool.ts";
 import { ProjectAccessUnavailable } from "../../interpreter/projectAccess.ts";
+import {
+  contractVersionAccepted,
+  contractVersionRefusal,
+  workerContractChatHost,
+} from "../../interpreter/workerPlane.ts";
 import type { ProjectAccess } from "../../interpreter/projectAccess.ts";
 import {
   workerPoolImagePullAllowed,
@@ -56,6 +95,7 @@ import {
   workerPoolHeldNamedMax,
   workerPoolPoll,
   workerPoolSettled,
+  type ChatHostPlaneRegistry,
   type PersonalRunnerPlaneRegistry,
   type PoolPlaneIdentity,
   type WorkerPoolAssignments,
@@ -65,6 +105,11 @@ import {
   type WorkerPoolRegistry,
   type WorkerPoolRunners,
 } from "../../interpreter/workerPool.ts";
+import type {
+  WorkerPoolPolled,
+  WorkerPoolReporter,
+  WorkerPoolReports,
+} from "../../interpreter/workerPoolReports.ts";
 import type { WorkerPoolSessionPorts } from "../../interpreter/workerPoolSessions.ts";
 import {
   workerRunnerReleaseAnswered,
@@ -99,11 +144,14 @@ export interface PoolPlaneService {
   readonly access: ProjectAccess;
   readonly registry: WorkerPoolRegistry;
   readonly personal: PersonalRunnerPlaneRegistry;
+  readonly chatHosts: ChatHostPlaneRegistry;
   readonly assignments: WorkerPoolAssignments;
   readonly sessions: WorkerPoolSessionPorts;
   readonly runners: WorkerPoolRunners;
   /** The release pinned for each runner package, which a poll naming that package's runner is answered with. */
   readonly releases: WorkerRunnerReleases;
+  /** Where each runner's latest report and poll facts are held. */
+  readonly reports: WorkerPoolReports;
   readonly settings: WorkerPoolPollSettings;
   readonly mint: WorkerPoolMint;
   readonly ready: () => Promise<boolean>;
@@ -123,6 +171,43 @@ function poolPorts(service: PoolPlaneService): WorkerPoolPorts {
 function poolRunnerNamed(request: FastifyRequest): WorkerRunner | undefined {
   const named = request.headers[workerRunnerHeader];
   return workerRunnerOf(Array.isArray(named) ? named.join(", ") : named);
+}
+
+/** The capabilities a request names, a header sent more than once read as one list, as HTTP joins a list's lines. */
+function poolCapabilitiesNamed(
+  request: FastifyRequest,
+): WorkerRunnerCapabilitiesNamed {
+  const named = request.headers[workerRunnerCapabilitiesHeader];
+  return workerRunnerCapabilitiesOf(
+    Array.isArray(named) ? named.join(", ") : named,
+  );
+}
+
+/** The count a request's `header` names, a header sent more than once joined into text no count reads as. */
+function poolCountNamed(
+  request: FastifyRequest,
+  header: string,
+): WorkerRunnerCountNamed {
+  const named = request.headers[header];
+  return workerRunnerCountOf(Array.isArray(named) ? named.join(", ") : named);
+}
+
+/** The counts a poll's headers name, or nothing where one of them does not read as a count. */
+function poolCountsNamed(request: FastifyRequest):
+  | {
+      readonly ceiling: WorkerRunnerCountNamed;
+      readonly room: WorkerRunnerCountNamed;
+      readonly wait: WorkerRunnerCountNamed;
+    }
+  | undefined {
+  const counts = {
+    ceiling: poolCountNamed(request, workerRunnerMemoryCeilingHeader),
+    room: poolCountNamed(request, workerRunnerMemoryRoomHeader),
+    wait: poolCountNamed(request, workerRunnerPollWaitHeader),
+  };
+  return Object.values(counts).some((count) => count.named === "Unread")
+    ? undefined
+    : counts;
 }
 
 /**
@@ -157,8 +242,11 @@ async function poolCaller(
   let identity: PoolPlaneIdentity | undefined;
   try {
     identity = await workerPoolAdmitted(
-      service.registry,
-      service.personal,
+      {
+        pools: service.registry,
+        personal: service.personal,
+        chatHosts: service.chatHosts,
+      },
       service.access,
       authenticated.bearer.principal,
     );
@@ -206,13 +294,28 @@ function poolPlaneRoute(
     { ...route, released: poolPlaneContractChecked },
     async (request, reply) => {
       const caller = await poolCaller(service, poolBearer(request));
-      if (caller.caller === "Pool") return caller.identity;
-      void poolRefused(reply, caller.caller);
-      return undefined;
+      if (caller.caller !== "Pool") {
+        void poolRefused(reply, caller.caller);
+        return undefined;
+      }
+      if (
+        caller.identity.kind === "ChatHost" &&
+        !contractVersionAccepted(
+          workerContractChatHost,
+          workerContractOffered(request),
+        )
+      ) {
+        void reply.code(contractVersionRefusalStatus).send(chatHostRefusal);
+        return undefined;
+      }
+      return caller.identity;
     },
     handler,
   );
 }
+
+/** What a chat host speaking a release before its own is answered with on every route. */
+const chatHostRefusal = contractVersionRefusal(workerContractChatHost);
 
 /** The assignment a settlement's path names, held to the same bound as everywhere else on the wire. */
 function poolAssignmentNamed(request: FastifyRequest): string | undefined {
@@ -240,7 +343,15 @@ function poolAssignmentsRoute(
         workerPoolHeldNamedMax(service.settings),
       ).safeParse(request.query);
       if (!query.success) return reply.code(400).send();
+      const capabilities = poolCapabilitiesNamed(request);
+      if (capabilities.named === "Unread") return reply.code(400).send();
+      const counts = poolCountsNamed(request);
+      if (counts === undefined) return reply.code(400).send();
+      const { ceiling, room, wait } = counts;
       const runner = poolRunnerNamed(request);
+      const contract = workerContractOffered(request);
+      poolPolledHeld(service, identity, runner, room, ceiling);
+      const idleSecs = query.data[workerPoolPollQuery.idleSecs];
       let polled: Awaited<ReturnType<typeof workerPoolPoll>>;
       try {
         polled = await workerPoolPoll(
@@ -251,6 +362,16 @@ function poolAssignmentsRoute(
             wanted: query.data[workerPoolPollQuery.wanted],
             wantedSessions: query.data[workerPoolPollQuery.wantedSessions],
             ...(runner === undefined ? {} : { runner }),
+            ...(capabilities.named === "Set"
+              ? { capabilities: capabilities.capabilities }
+              : {}),
+            ...(ceiling.named === "Count"
+              ? { memoryCeilingMib: ceiling.count }
+              : {}),
+            ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
+            ...(wait.named === "Count" ? { pollWaitSecs: wait.count } : {}),
+            ...(idleSecs === undefined ? {} : { idleSecs }),
+            ...(contract === undefined ? {} : { contract }),
           },
           service.settings,
         );
@@ -263,13 +384,63 @@ function poolAssignmentsRoute(
       const release = workerRunnerReleaseAnswered(
         service.releases,
         runner,
-        workerContractOffered(request),
+        contract,
       );
       return reply
         .code(200)
         .send(
           release === undefined ? polled.answer : { ...polled.answer, release },
         );
+    },
+  );
+}
+
+/** A pool or a personal runner as its reports are held, and a chat host as none. */
+function poolReporter(
+  identity: PoolPlaneIdentity,
+): WorkerPoolReporter | undefined {
+  return identity.kind === "ChatHost" ? undefined : identity;
+}
+
+/** Holds what a poll named of its runner and its memory, for a caller whose reports are held. */
+function poolPolledHeld(
+  service: PoolPlaneService,
+  identity: PoolPlaneIdentity,
+  runner: WorkerRunner | undefined,
+  room: WorkerRunnerCountNamed,
+  ceiling: WorkerRunnerCountNamed,
+): void {
+  const reporter = poolReporter(identity);
+  if (reporter === undefined) return;
+  const polled: WorkerPoolPolled = {
+    ...(runner === undefined ? {} : { runner }),
+    ...(room.named === "Count" ? { memoryRoomMib: room.count } : {}),
+    ...(ceiling.named === "Count" ? { memoryCeilingMib: ceiling.count } : {}),
+  };
+  service.reports.polled(reporter, polled);
+}
+
+/** A runner's report of itself, held against the caller its bearer names whatever the body says. */
+function poolReportRoute(
+  app: FastifyInstance,
+  service: PoolPlaneService,
+): void {
+  poolPlaneRoute(
+    app,
+    service,
+    {
+      method: "POST",
+      url: workerRunnerReportRoute,
+      bodyBytesMax: workerRunnerReportBytesMax,
+    },
+    (request, reply, identity) => {
+      const reporter = poolReporter(identity);
+      if (reporter === undefined)
+        return Promise.resolve(reply.code(404).send());
+      const report = workerRunnerReportSchema.safeParse(request.body);
+      if (!report.success) return Promise.resolve(reply.code(400).send());
+      service.reports.reported(reporter, report.data);
+      return Promise.resolve(reply.code(204).send());
     },
   );
 }
@@ -283,7 +454,7 @@ function poolOutcomeRoutes(
   app: FastifyInstance,
   service: PoolPlaneService,
 ): void {
-  for (const outcome of ["Accepted", "Refused", "Unavailable"] as const)
+  for (const outcome of workerPoolSettlementOutcomes)
     poolPlaneRoute(
       app,
       service,
@@ -406,6 +577,7 @@ export function createPoolPlaneApp(service: PoolPlaneService): FastifyInstance {
   planeHealthRoutes(app, service.ready);
   poolAssignmentsRoute(app, service);
   poolOutcomeRoutes(app, service);
+  poolReportRoute(app, service);
   poolPullRoute(app, service);
   return app;
 }

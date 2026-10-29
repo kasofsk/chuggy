@@ -21,7 +21,16 @@ import {
   workspaceManifest,
 } from "../../scripts/pack-worker-contract.ts";
 import { workerContractHistory } from "../../scripts/worker-contract-wire.ts";
-import { workerContractHeader } from "../../src/contract/workerContract.ts";
+import {
+  workerContractHeader,
+  workerContractRelease,
+  workerContractRunDiskLow,
+} from "../../src/contract/workerContract.ts";
+import { runEndedEvidences } from "../../src/contract/workerPlane.ts";
+import {
+  contractVersionAccepted,
+  workerContractAccepted,
+} from "../../src/interpreter/workerPlane.ts";
 import {
   workerContractAlias,
   workerContractAliases,
@@ -131,4 +140,26 @@ test("each installed release names its release in the header this server reads",
       release,
     );
   }
+});
+
+test("a run ends `RunDiskLow` from the version a runner holds a plane's release to, and no release below it names that label", async () => {
+  const from = {
+    min: workerContractRunDiskLow,
+    max: workerContractAccepted.max,
+  };
+  assert.ok(runEndedEvidences.includes("RunDiskLow"));
+  assert.ok(contractVersionAccepted(from, workerContractRelease));
+  for (const release of workerContractReplayed("job"))
+    assert.equal(
+      (
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "runEndedEvidences",
+          z.array(z.string()).optional(),
+        )
+      )?.includes("RunDiskLow") ?? false,
+      contractVersionAccepted(from, release),
+      release,
+    );
 });

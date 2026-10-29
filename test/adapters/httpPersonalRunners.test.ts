@@ -2,7 +2,7 @@
  * A member's own runners as their routes answer them: what each outcome of the
  * service is sent as, which caller and which tenant, project, runner and
  * subject each route hands the service, and that the redemption is public and
- * answers a file of its own kind.
+ * answers a file of its own kind, a chat host's included.
  */
 
 import assert from "node:assert/strict";
@@ -13,6 +13,8 @@ import {
   nativeHttpRoutes,
 } from "../../src/contract/http.ts";
 import {
+  chatHostCredentialsSchema,
+  chatHostResponseSchema,
   personalRunnerCredentialsSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
@@ -55,10 +57,21 @@ function fakeRunnersRedeemed(
           clientSecret: "a-secret",
         },
       };
+    case "a-host-token":
+      return {
+        result: "HostRegistered",
+        value: {
+          tenant: asTenantId("acme"),
+          owner: caller,
+          tokenUrl: "https://issuer.invalid/oauth2/token",
+          audience: "https://api.invalid",
+          planeUrl: "https://plane.invalid/",
+          clientId: "chuggy-personal-host",
+          clientSecret: "a-host-secret",
+        },
+      };
     case "bounded":
       return { result: "LimitReached" };
-    case "unpermitted":
-      return { result: "CapabilityNotPermitted" };
     default:
       return { result: "NotFound" };
   }
@@ -98,9 +111,7 @@ function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
 function fakeRunners(calls: string[]): PersonalRunnerService {
   return {
     mint: (principal, tenant, request) => {
-      calls.push(
-        `mint:${principal}:${tenant}:${request.capabilities.join("+")}`,
-      );
+      calls.push(`mint:${principal}:${tenant}:${JSON.stringify(request)}`);
       if (tenant === "full") return Promise.resolve({ result: "LimitReached" });
       return Promise.resolve(
         tenant === "acme"
@@ -148,6 +159,50 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
         subject === "a-member" ? "Deregistered" : "NotFound",
       );
     },
+    ...fakeChatHosts(calls),
+  };
+}
+
+/** The chat host side of the fake service, answering by the tenant a case names. */
+function fakeChatHosts(
+  calls: string[],
+): Pick<
+  PersonalRunnerService,
+  "mintChatHost" | "chatHost" | "deregisterChatHost"
+> {
+  return {
+    mintChatHost: (principal, tenant, request) => {
+      calls.push(`mint-host:${principal}:${tenant}:${JSON.stringify(request)}`);
+      return Promise.resolve(
+        tenant === "acme"
+          ? {
+              result: "Minted",
+              value: { token: "a-host-token", expiresAtMs: 5_000 },
+            }
+          : { result: "NotFound" },
+      );
+    },
+    chatHost: (principal, tenant) => {
+      calls.push(`host:${principal}:${tenant}`);
+      return Promise.resolve(
+        tenant === "acme"
+          ? {
+              result: "Found",
+              value: {
+                id: "chuggy-personal-host",
+                registeredAt: "2026-10-09T12:00:00.000Z",
+                polledAt: "2026-10-09T12:01:00.000Z",
+                live: true,
+                runner: { package: "chuggy-chat", version: "0.1.0" },
+              },
+            }
+          : { result: "NotFound" },
+      );
+    },
+    deregisterChatHost: (principal, tenant) => {
+      calls.push(`deregister-host:${principal}:${tenant}`);
+      return Promise.resolve(tenant === "acme" ? "Deregistered" : "NotFound");
+    },
   };
 }
 
@@ -171,16 +226,21 @@ const allowed = (tenant: string, project: string) =>
 test("a member mints a token for their tenant as themselves, and a tenant that does not permit them is not found", async () => {
   const calls: string[] = [];
   await using app = runnersApp(calls);
-  const mint = (tenant: string) =>
+  const mint = (tenant: string, payload: object = {}) =>
     app.inject({
       method: "POST",
       url: tokens(tenant),
       headers: { ...bearer, ...json },
-      payload: JSON.stringify({ capabilities: ["linux"], lifetimeSecs: 60 }),
+      payload: JSON.stringify({ lifetimeSecs: 60, ...payload }),
     });
   const minted = await mint("acme");
   assert.equal(minted.statusCode, 201);
   assert.deepEqual(minted.json(), { token: "a-token", expiresAtMs: 5_000 });
+  assert.equal(
+    (await mint("acme", { capabilities: ["Platform:Linux:Amd64"] })).statusCode,
+    201,
+    "a mint still naming capabilities mints, and they reach nothing",
+  );
   assert.equal((await mint("other")).statusCode, 404);
   const full = await mint("full");
   assert.equal(full.statusCode, 409);
@@ -192,13 +252,14 @@ test("a member mints a token for their tenant as themselves, and a tenant that d
     method: "POST",
     url: tokens("acme"),
     headers: json,
-    payload: JSON.stringify({ capabilities: [], lifetimeSecs: 60 }),
+    payload: JSON.stringify({ lifetimeSecs: 60 }),
   });
   assert.equal(unauthenticated.statusCode, 401);
   assert.deepEqual(calls, [
-    `mint:${caller}:acme:linux`,
-    `mint:${caller}:other:linux`,
-    `mint:${caller}:full:linux`,
+    `mint:${caller}:acme:{"lifetimeSecs":60}`,
+    `mint:${caller}:acme:{"lifetimeSecs":60}`,
+    `mint:${caller}:other:{"lifetimeSecs":60}`,
+    `mint:${caller}:full:{"lifetimeSecs":60}`,
   ]);
 });
 
@@ -231,7 +292,6 @@ test("a redemption needs no bearer and answers a file of kind Personal naming th
     "a pool's runner reading this file refuses it rather than inventing a project",
   );
   assert.equal((await redeem("spent")).statusCode, 404);
-  assert.equal((await redeem("unpermitted")).statusCode, 403);
   const bounded = await redeem("bounded");
   assert.equal(bounded.statusCode, 409);
   assert.equal(
@@ -243,6 +303,90 @@ test("a redemption needs no bearer and answers a file of kind Personal naming th
     400,
     "a personal redemption names no pool",
   );
+});
+
+/** The route a member's chat host in `tenant` is read and taken off at. */
+function chatHostAt(tenant: string): string {
+  return nativeHttpRoutes.chatHost.replace(":tenant", tenant);
+}
+
+test("a member mints their chat host's token and redeems it at the runners' route for a file of kind ChatHost", async () => {
+  const calls: string[] = [];
+  await using app = runnersApp(calls);
+  const mint = (tenant: string) =>
+    app.inject({
+      method: "POST",
+      url: nativeHttpRoutes.chatHostRegistrationTokens.replace(
+        ":tenant",
+        tenant,
+      ),
+      headers: { ...bearer, ...json },
+      payload: JSON.stringify({ lifetimeSecs: 60 }),
+    });
+  const minted = await mint("acme");
+  assert.equal(minted.statusCode, 201);
+  assert.deepEqual(minted.json(), {
+    token: "a-host-token",
+    expiresAtMs: 5_000,
+  });
+  assert.equal((await mint("other")).statusCode, 404);
+  const redeemed = await app.inject({
+    method: "POST",
+    url: nativeHttpRoutes.personalRunnerRegistrations,
+    headers: json,
+    payload: JSON.stringify({ token: "a-host-token", capabilities: [] }),
+  });
+  assert.equal(redeemed.statusCode, 201);
+  assert.deepEqual(chatHostCredentialsSchema.parse(redeemed.json()), {
+    kind: "ChatHost",
+    tenant: "acme",
+    owner: caller,
+    tokenUrl: "https://issuer.invalid/oauth2/token",
+    audience: "https://api.invalid",
+    planeUrl: "https://plane.invalid/",
+    clientId: "chuggy-personal-host",
+    clientSecret: "a-host-secret",
+  });
+  assert.equal(
+    personalRunnerCredentialsSchema.safeParse(redeemed.json()).success,
+    false,
+    "a personal runner reading a host's file refuses it",
+  );
+  assert.deepEqual(calls, [
+    `mint-host:${caller}:acme:{"lifetimeSecs":60}`,
+    `mint-host:${caller}:other:{"lifetimeSecs":60}`,
+    "redeem:a-host-token",
+  ]);
+});
+
+test("a member reads their chat host and takes it off, as themselves, and a tenant they have none in is not found", async () => {
+  const calls: string[] = [];
+  await using app = runnersApp(calls);
+  const found = await app.inject({ url: chatHostAt("acme"), headers: bearer });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(chatHostResponseSchema.parse(found.json()), {
+    id: "chuggy-personal-host",
+    registeredAt: "2026-10-09T12:00:00.000Z",
+    polledAt: "2026-10-09T12:01:00.000Z",
+    live: true,
+    runner: { package: "chuggy-chat", version: "0.1.0" },
+  });
+  assert.equal(
+    (await app.inject({ url: chatHostAt("other"), headers: bearer }))
+      .statusCode,
+    404,
+  );
+  const remove = (tenant: string) =>
+    app.inject({ method: "DELETE", url: chatHostAt(tenant), headers: bearer });
+  assert.equal((await remove("acme")).statusCode, 204);
+  assert.equal((await remove("other")).statusCode, 404);
+  assert.equal((await app.inject({ url: chatHostAt("acme") })).statusCode, 401);
+  assert.deepEqual(calls, [
+    `host:${caller}:acme`,
+    `host:${caller}:other`,
+    `deregister-host:${caller}:acme`,
+    `deregister-host:${caller}:other`,
+  ]);
 });
 
 test("a member reads their own runners, each by its id, beside the projects they serve, and a tenant they have none in is not found", async () => {

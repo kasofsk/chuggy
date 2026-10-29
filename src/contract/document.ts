@@ -13,9 +13,9 @@ import {
   nativeHttpRoutes,
   nativeHttpVersion,
   personalRunnersMax,
+  threadsOpenDefault,
 } from "./http.ts";
 import {
-  configurationCreationSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -25,7 +25,6 @@ import {
   projectNameCharsMax,
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
-  projectRepositoryCreateSchema,
   projectRepositoryLandingSchema,
   projectRepositoryRetirementSchema,
   publicMutationSchema,
@@ -33,54 +32,84 @@ import {
   reservedTenantNames,
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
+  threadLimitSchema,
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
+  registrationTokenRequestSchema,
 } from "./requests.ts";
-import {
-  workerPoolRedemptionSchema,
-  workerPoolRegistrationTokenRequestSchema,
-} from "./workerPool.ts";
+import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
+
+/** A request body as the JSON Schema of what its parser takes, which is the body a client sends. */
+function nativeHttpContractDocumentInput(schema: z.ZodType): unknown {
+  return z.toJSONSchema(schema, { io: "input" });
+}
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */
 function nativeHttpContractDocumentSchemas(): unknown {
   return {
-    publicMutation: z.toJSONSchema(publicMutationSchema),
-    configurationCreation: z.toJSONSchema(configurationCreationSchema),
-    repositoryConfigurationImport: z.toJSONSchema(
+    publicMutation: nativeHttpContractDocumentInput(publicMutationSchema),
+    repositoryConfigurationImport: nativeHttpContractDocumentInput(
       repositoryConfigurationImportSchema,
     ),
-    draftCreation: z.toJSONSchema(draftCreationSchema),
-    draftRevision: z.toJSONSchema(draftRevisionSchema),
-    executionPlacement: z.toJSONSchema(executionPlacementSchema),
-    sessionPlacement: z.toJSONSchema(sessionPlacementSchema),
-    ownerFallback: z.toJSONSchema(projectOwnerFallbackSchema),
-    forgeCredential: z.toJSONSchema(forgeCredentialRequestSchema),
-    forgeAuthorization: z.toJSONSchema(forgeAuthorizationSchema),
-    projectCreation: z.toJSONSchema(projectCreationSchema),
-    projectRepositoryBind: z.toJSONSchema(projectRepositoryBindSchema),
-    projectRepositoryCreate: z.toJSONSchema(projectRepositoryCreateSchema),
-    projectRepositoryLanding: z.toJSONSchema(projectRepositoryLandingSchema),
-    projectRepositoryRetirement: z.toJSONSchema(
+    draftCreation: nativeHttpContractDocumentInput(draftCreationSchema),
+    draftRevision: nativeHttpContractDocumentInput(draftRevisionSchema),
+    executionPlacement: nativeHttpContractDocumentInput(
+      executionPlacementSchema,
+    ),
+    sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
+    ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
+    forgeCredential: nativeHttpContractDocumentInput(
+      forgeCredentialRequestSchema,
+    ),
+    forgeAuthorization: nativeHttpContractDocumentInput(
+      forgeAuthorizationSchema,
+    ),
+    projectCreation: nativeHttpContractDocumentInput(projectCreationSchema),
+    projectRepositoryBind: nativeHttpContractDocumentInput(
+      projectRepositoryBindSchema,
+    ),
+    projectRepositoryLanding: nativeHttpContractDocumentInput(
+      projectRepositoryLandingSchema,
+    ),
+    projectRepositoryRetirement: nativeHttpContractDocumentInput(
       projectRepositoryRetirementSchema,
     ),
-    projectRepositoryConfigure: z.toJSONSchema(
+    projectRepositoryConfigure: nativeHttpContractDocumentInput(
       projectRepositoryConfigureSchema,
     ),
-    leadInquiry: z.toJSONSchema(nativeHttpEndpoints.askLead.body),
-    selectorProjectSettings: z.toJSONSchema(selectorProjectSettingsSchema),
-    selectorProposalReview: z.toJSONSchema(
+    leadInquiry: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.askLead.body,
+    ),
+    selectorProjectSettings: nativeHttpContractDocumentInput(
+      selectorProjectSettingsSchema,
+    ),
+    selectorProposalReview: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.reviewSelectorProposal.body,
     ),
-    threadMessage: z.toJSONSchema(nativeHttpEndpoints.sendThreadMessage.body),
-    threadRename: z.toJSONSchema(nativeHttpEndpoints.renameThread.body),
-    threadHide: z.toJSONSchema(nativeHttpEndpoints.hideThread.body),
-    workerPoolRegistrationToken: z.toJSONSchema(
-      workerPoolRegistrationTokenRequestSchema,
+    threadOpen: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.openThread.body,
     ),
-    workerPoolRedemption: z.toJSONSchema(workerPoolRedemptionSchema),
-    personalRunnerRedemption: z.toJSONSchema(personalRunnerRedemptionSchema),
-    actionReport: z.toJSONSchema(actionReportDocumentSchema),
+    threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
+    threadMessage: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.sendThreadMessage.body,
+    ),
+    threadRename: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.renameThread.body,
+    ),
+    threadHide: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.hideThread.body,
+    ),
+    workerPoolRegistrationToken: nativeHttpContractDocumentInput(
+      registrationTokenRequestSchema,
+    ),
+    workerPoolRedemption: nativeHttpContractDocumentInput(
+      workerPoolRedemptionSchema,
+    ),
+    personalRunnerRedemption: nativeHttpContractDocumentInput(
+      personalRunnerRedemptionSchema,
+    ),
+    actionReport: nativeHttpContractDocumentInput(actionReportDocumentSchema),
   };
 }
 
@@ -97,12 +126,14 @@ const runnerNotes = {
   executionPlacement:
     "where a project's work and evaluations run is decided per kind by the deployment's override for the project, else the project's own placement, else the deployment's default; an administrator writes both routes whole, and choosing InCluster needs the tenant's hosted grant, as a session on that route does",
   sessionPlacement:
-    "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread to its member's personal runners where they serve the project, an inquiry to a pool its member registered on the project, and the lead to any of the project's pools, so a member with no such runner for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner is registered and has polled lately",
+    "where a project's threads and its lead run is decided the same way, and an inquiry runs where the lead does; a turn admitted InCluster spends the tenant's hosted grant and one admitted on Pool is offered to runners instead: a thread and an inquiry to its member's chat host and the lead to any of the project's pools, so a member with no chat host for their thread or inquiry is refused NoRunner; a turn runs where it was admitted, so a change moves the next turn and never one already queued, and one offered to runners that none takes within the scheduler's dwell is withdrawn; the read says whether such a runner or host is registered and has polled lately",
   ownerFallback:
     "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
   workerPoolRegistration:
-    "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included",
+    "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
   personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live`,
+  chatHostRegistration:
+    "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };
 
 export function nativeHttpContractDocument(): unknown {
@@ -128,6 +159,12 @@ export function nativeHttpContractDocument(): unknown {
       nonTerminal: "phase=NonTerminal",
       selected: "repeat phase with one or more exact phase names",
     },
+    configurationLatestFilter: {
+      query: "latest",
+      all: "omit latest, or latest=false: every revision, newest first",
+      latest:
+        "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing",
+    },
     identities: {
       installation: "canonical UUID authority identity",
       tenant: "percent-encoded opaque UTF-8 path segment",
@@ -147,6 +184,7 @@ export function nativeHttpContractDocument(): unknown {
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     selectorProposals:
       "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
+    threadLimit: `a member holds at most their limit of open threads in a project, ${String(threadsOpenDefault)} until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing`,
     forgeInstallations:
       "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",
     projectCreation: `a principal creates a project in a tenant it administers, or, where the site permits it to create a tenant, in a tenant no grant holds, which it then administers, and a caller the site does not permit is refused for such a tenant before anything is written; a tenant is held by its row, by any grant on it and by any project inheriting from it, and a held tenant the caller does not administer is a conflict; each name is at most ${String(projectNameCharsMax)} lowercase letters, digits and hyphens that begin and end with a letter or digit, a new tenant may not be named ${reservedTenantNames.join(", ")}, and its creator repeating the request, under any idempotency key, answers the same project`,
@@ -157,9 +195,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryRetirement:
       "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
     repositoryConfigurations:
-      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap that still releases and otherwise answers what the project holds; the bootstrap is one revision per project and never rewritten, so two requests racing author it once and a repository meeting one whose text differs, being another repository's or outgrown by the release rule, defers as BootstrapDiffers until it declares its own",
-    repositoryCreation:
-      "creating a repository requires this tenant's claims of both apps on the account; the repository is the forge's from the moment it answers, so a later refusal is reported beside one that stands and a name already taken is bound rather than created",
+      "a newly bound repository is imported at its own default-branch head, and one declaring no configurations is authored a bootstrap; the step is reported beside the binding and never refuses it, and is asked for again through its own route, which runs it for a live binding the project holds no configuration from and no bootstrap of its own that still releases and otherwise answers what the project holds; a bootstrap is one revision per repository, named for it, and never rewritten, so two requests racing author it once and a repository meeting its own whose text differs, worded otherwise or outgrown by the release rule, defers as BootstrapDiffers until it declares its own; a ticket releases under a repository's bootstrap in that repository alone",
     ...runnerNotes,
     actionReports:
       "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",

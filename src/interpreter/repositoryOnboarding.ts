@@ -51,29 +51,29 @@
  * the configuration route, which runs it for a repository the project holds
  * nothing for and answers what the project holds for any other.
  *
- * THE BOOTSTRAP'S REVISION IS ITS NAME, so two steps racing to author it author
- * one row: the second meets the first's revision as the one it already is. A
+ * A BOOTSTRAP IS ONE REPOSITORY'S, AT A REVISION NAMED FOR IT, so two steps
+ * racing to author it author one row and two repositories' bootstraps are two:
+ * the second step meets the first's revision as the one it already is. A
  * revision is never rewritten, so a stored bootstrap whose text differs, being
- * another repository's, one the generator words otherwise or one the release
- * rule has since outgrown, is met as `BootstrapDiffers` rather than replaced,
- * and only counts as held while it still releases.
+ * one the generator words otherwise or one the release rule has since
+ * outgrown, is met as `BootstrapDiffers` rather than replaced, and only counts
+ * as held for its own repository and while it still releases.
+ *
+ * WHETHER THE WORKER APP REACHES A REPOSITORY IS REPORTED, NOT REQUIRED. A bind
+ * proves the portal claim, and a repository the worker App's installation does
+ * not select is still bound, with that reason beside it at the bind and on
+ * every listing, read afresh each time by `./repositoryWorkerReach.ts`.
  */
 
 import { assertNever } from "../domain/assertNever.ts";
 import {
-  asConfigurationRevisionId,
+  bootstrapConfigurationRevision,
   releaseConfigurationReadiness,
   type AuthoringStore,
   type CanonicalConfiguration,
   type ConfigurationRevisionId,
 } from "./authoring.ts";
-import {
-  bootstrapConfiguration,
-  bootstrapConfigurationCommitMessage,
-  bootstrapConfigurationFile,
-  bootstrapConfigurationName,
-  bootstrapConfigurationPath,
-} from "./bootstrapConfiguration.ts";
+import { bootstrapConfiguration } from "./bootstrapConfiguration.ts";
 import type {
   GitRefName,
   RepositoryBinding,
@@ -97,22 +97,15 @@ import type {
   ForgeInstallationRepositories,
   ForgeRepositorySummary,
 } from "./forgeDirectory.ts";
-import type {
-  ForgeAccount,
-  ForgeAccountKind,
-  ForgeApp,
-  ForgeId,
-  ForgeInstallation,
-  ForgeInstallationId,
-  ForgeRepositoryName,
+import {
+  workerPodForgeApp,
+  type ForgeAccount,
+  type ForgeAccountKind,
+  type ForgeApp,
+  type ForgeId,
+  type ForgeInstallationId,
+  type ForgeInstallationStore,
 } from "./forgeInstallation.ts";
-import type {
-  ForgeRepositoryCreation,
-  ForgeRepositoryCreationMode,
-  ForgeRepositoryMade,
-  ForgeRepositoryVisibility,
-  ForgeTemplateRepository,
-} from "./forgeRepositoryCreation.ts";
 import type {
   ForgeInstallationClaimed,
   ForgeInstallationClaims,
@@ -127,7 +120,6 @@ import {
   type ForgeUserAuthorization,
   type ForgeUserInstallation,
 } from "./forgeAuthorization.ts";
-import { allForgeApps } from "./forgeInstallation.ts";
 import type { Authority, OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -137,9 +129,15 @@ import type {
   ProjectRepositoryBindingWrite,
   ProjectRepositoryBound,
   ProjectRepositoryLandingStore,
+  ProjectRepositoryLandingWrite,
   ProjectRepositoryRetirementStore,
   RepositoryLanding,
 } from "./repositoryBinding.ts";
+import {
+  type ForgeRepositoryAddress,
+  repositoryWorkerReaches,
+  type RepositoryWorkerReach,
+} from "./repositoryWorkerReach.ts";
 
 /** One app this deployment holds the key of, as its own forge describes it. */
 export interface ForgeAppSummary extends ForgeAppDescription {
@@ -278,79 +276,30 @@ export type ProjectRepositoryConfigurationsResult =
       readonly reason: ProjectRepositoryConfigurationsDeferral;
     };
 
+/** Why the worker App cannot be said to reach a bound repository, which a binding it reaches carries none of. */
+export type ProjectRepositoryWorkerUnreached = Exclude<
+  RepositoryWorkerReach,
+  { readonly reach: "Covered" }
+>;
+
+/** A binding's `workerReach`, absent where the worker App reaches it or this deployment asks no worker App. */
+type ProjectRepositoryWorkerReachField = {
+  readonly workerReach?: ProjectRepositoryWorkerUnreached;
+};
+
 /** What binding one repository to one project came to. */
 export type ProjectRepositoryBindResult =
-  | {
+  | ({
       readonly result: "Bound";
       readonly repository: RepositoryId;
       readonly landing: RepositoryLanding;
       readonly configurations: ProjectRepositoryConfigurationsResult;
-    }
+    } & ProjectRepositoryWorkerReachField)
   | { readonly result: "AlreadyBound"; readonly repository: RepositoryId }
   | { readonly result: "NotInstalled" }
   | { readonly result: "OperationConflict" }
   | { readonly result: "BoundElsewhere" }
   | { readonly result: "EpochChanged" }
-  | { readonly result: "NotFound" }
-  | { readonly result: "Unavailable" };
-
-/** The steps of a creation a forge can refuse outright, each named in the refusal. */
-export const allProjectRepositoryCreateSteps = ["create", "seed"] as const;
-
-export type ProjectRepositoryCreateStep =
-  (typeof allProjectRepositoryCreateSteps)[number];
-
-/**
- * What reserving a created repository's default branch came to. `Skipped` is a
- * repository with no branch to reserve, which is what an unseeded one is, and
- * an outage is neither created nor refused: the ruleset may yet be this app's
- * to make, and reading it as a refusal would say a decision was taken.
- */
-export type ProjectRepositoryRulesetResult =
-  | { readonly result: "Created" }
-  | { readonly result: "Refused"; readonly message: string }
-  | { readonly result: "Skipped" }
-  | { readonly result: "Unavailable" };
-
-/** The repository a forge made, as the answer names it. */
-export interface ProjectRepositoryMade {
-  readonly account: ForgeAccount;
-  readonly name: ForgeRepositoryName;
-  readonly url: RepositoryId;
-}
-
-/**
- * What creating one repository came to. A repository that was made and then met
- * a refusal is reported with the refusal and not undone: it exists on the forge
- * either way, and the caller is told how far the request got so the bind route
- * can finish what this one started.
- */
-export type ProjectRepositoryCreateResult =
-  | {
-      readonly result: "Created";
-      readonly repository: RepositoryId;
-      readonly landing: RepositoryLanding;
-      readonly created: ProjectRepositoryMade;
-      readonly seeded: boolean;
-      readonly ruleset: ProjectRepositoryRulesetResult;
-      readonly configurations: ProjectRepositoryConfigurationsResult;
-    }
-  | { readonly result: "InstallationMissing"; readonly app: ForgeApp }
-  | { readonly result: "PersonalAccountCreatesOnGitHub" }
-  | { readonly result: "RepositoryExists" }
-  | {
-      readonly result: "ForgeRefused";
-      readonly step: ProjectRepositoryCreateStep;
-      readonly message: string;
-    }
-  | {
-      readonly result: "BindRefused";
-      readonly bind: Exclude<
-        ProjectRepositoryBindResult,
-        { readonly result: "Bound" }
-      >;
-    }
-  | { readonly result: "NotConfigured" }
   | { readonly result: "NotFound" }
   | { readonly result: "Unavailable" };
 
@@ -363,7 +312,8 @@ export type ProjectRepositoryCreateResult =
 export type ProjectRepositoryListed = ProjectRepositoryBound & {
   /** The last configuration import attempted of it, absent where none was. */
   readonly lastImport?: RepositoryConfigurationImportAttempt;
-} & (
+} & ProjectRepositoryWorkerReachField &
+  (
     | { readonly configured: false }
     | {
         readonly configured: true;
@@ -395,7 +345,7 @@ export type ProjectRepositoryConfigureResult =
   | { readonly result: "NotFound" };
 
 /**
- * What moving one repository's landing came to. A conflict answers the binding
+ * What writing one binding's settings came to. A conflict answers the binding
  * as it stands, because the writer's next act is to read it again; a repository
  * this project does not bind is the same miss as a project it may not see.
  */
@@ -432,22 +382,14 @@ export interface ProjectRepositoryBindRequest {
   readonly operation: OperationId;
 }
 
-/**
- * One repository to create, under the identity the binding inside it is one
- * attempt at. The forge is not the caller's to name: a deployment creates
- * through the one forge its creation half is composed for.
- */
-export interface ProjectRepositoryCreateRequest {
-  readonly account: ForgeAccount;
-  readonly name: ForgeRepositoryName;
-  readonly visibility: ForgeRepositoryVisibility;
-  readonly operation: OperationId;
-}
-
 /** One app's half of the composition, composed for each app this deployment holds a key for. */
 export interface RepositoryOnboardingForgeApp {
   readonly forge: ForgeId;
   readonly app: ForgeApp;
+  /** A repository as this forge addresses it, nothing where the forge addresses no such repository. */
+  readonly addressOf: (
+    repository: string,
+  ) => ForgeRepositoryAddress | undefined;
   readonly apps: ForgeApps;
   readonly directory: ForgeInstallationDirectory;
   readonly installationRepositories: ForgeInstallationRepositories;
@@ -463,21 +405,25 @@ export interface RepositoryOnboardingAuthorization {
 /**
  * What a project already holds from the configuration step: how many names
  * each repository asked about declared into it, a repository that declared none
- * absent, and the bootstrap revision's text where the project holds one. The
- * text rather than a flag, because whether a stored revision still releases is
- * the release rule's answer today and not the one it gave when authored.
+ * absent, and the text of each bootstrap revision asked about that the project
+ * holds, one it does not absent. The text rather than a flag, because whether a
+ * stored revision still releases is the release rule's answer today and not the
+ * one it gave when authored.
  */
 export interface RepositoryConfigurationsHeld {
   readonly declared: ReadonlyMap<RepositoryId, number>;
-  readonly bootstrap: CanonicalConfiguration | undefined;
+  readonly bootstraps: ReadonlyMap<
+    ConfigurationRevisionId,
+    CanonicalConfiguration
+  >;
 }
 
-/** Reads what a project holds from the configuration step, for the repositories it binds. */
+/** Reads what a project holds from the configuration step, for the repositories it binds and their bootstraps' revisions. */
 export interface RepositoryConfigurationsHeldRead {
   held(query: {
     readonly partition: Partition;
     readonly repositories: readonly RepositoryId[];
-    readonly bootstrap: ConfigurationRevisionId;
+    readonly bootstraps: readonly ConfigurationRevisionId[];
   }): Promise<RepositoryConfigurationsHeld>;
 }
 
@@ -508,23 +454,13 @@ export interface RepositoryConfigurationsPorts {
   readonly publicOrigin?: string;
 }
 
-/**
- * The half creating a repository is composed with: which forge it makes one on,
- * the three acts it makes one by, and the repository a personal account's is
- * copied from. A deployment naming no template creates for organizations only,
- * which is the one shape a forge admits from an app without one.
- */
-export interface RepositoryCreationPorts {
-  readonly forge: ForgeId;
-  readonly repositories: ForgeRepositoryCreation;
-  readonly template?: ForgeTemplateRepository;
-}
-
 /** Everything the service is composed with, one forge half per app a key is held for. */
 export interface RepositoryOnboardingPorts {
   readonly access: ProjectAccess;
   readonly forgeApps: readonly RepositoryOnboardingForgeApp[];
   readonly credentials: RepositoryCredentialPort;
+  /** The claim a repository's owner is minted under, looked up as the plane's mint looks it up. */
+  readonly installations: ForgeInstallationStore;
   readonly recording: ForgeInstallationRecording;
   readonly claims: ForgeInstallationClaims;
   readonly bindings: ProjectRepositoryBindings;
@@ -534,7 +470,6 @@ export interface RepositoryOnboardingPorts {
   readonly configurationsHeld: RepositoryConfigurationsHeldRead;
   readonly importAttempts: RepositoryConfigurationImportAttemptsRead;
   readonly configurations?: RepositoryConfigurationsPorts;
-  readonly creation?: RepositoryCreationPorts;
   readonly authorization?: RepositoryOnboardingAuthorization;
 }
 
@@ -571,12 +506,6 @@ export interface RepositoryOnboarding {
     request: ProjectRepositoryBindRequest,
   ): Promise<ProjectRepositoryBindResult>;
 
-  createRepository(
-    principal: Principal,
-    partition: Partition,
-    request: ProjectRepositoryCreateRequest,
-  ): Promise<ProjectRepositoryCreateResult>;
-
   projectRepositories(
     principal: Principal,
     partition: Partition,
@@ -585,9 +514,7 @@ export interface RepositoryOnboarding {
   setLanding(
     principal: Principal,
     partition: Partition,
-    repository: RepositoryId,
-    expected: RepositoryLanding,
-    landing: RepositoryLanding,
+    written: ProjectRepositoryLandingWrite,
   ): Promise<ProjectRepositoryLandingResult>;
 
   retireRepository(
@@ -839,18 +766,12 @@ async function installationPermissions(
   }
 }
 
-/** The one revision a project's bootstrap is authored at, which is its name. */
-const bootstrapConfigurationRevision = asConfigurationRevisionId(
-  bootstrapConfigurationName,
-);
-
 /**
- * The bootstrap configuration authored as this project's own, at the revision
- * the name itself is. Identical text is that revision and any other is
- * `BootstrapDiffers`, whether it is another repository's, was authored under
- * another image, origin or branch or in other words than the generator's, or no
- * longer releases, and in each case the repository declaring its own
- * configurations is what clears it.
+ * The bootstrap configuration authored as this repository's own, at the
+ * revision named for it. Identical text is that revision and any other is
+ * `BootstrapDiffers`, whether it was authored under another image, origin or
+ * branch or in other words than the generator's, or no longer releases, and in
+ * each case the repository declaring its own configurations is what clears it.
  */
 async function bindRepositoryBootstrapped(
   configurations: RepositoryConfigurationsPorts,
@@ -866,7 +787,7 @@ async function bindRepositoryBootstrapped(
   const created = await configurations.authoring.createConfiguration({
     partition: binding.partition,
     authority,
-    revision: bootstrapConfigurationRevision,
+    revision: bootstrapConfigurationRevision(binding.repository),
     canonical: bootstrapConfiguration({
       repository: binding.repository,
       defaultBranch: head.branch,
@@ -995,6 +916,43 @@ async function boundRepositoryLanding(
   return bound.landing;
 }
 
+/**
+ * What the worker App reaches of each repository named, under the project's
+ * tenant, through the first worker App half this deployment holds; none held
+ * is nothing asked. A binding is durable before this runs, so a question that
+ * raised is every repository's `Unknown` rather than a failed bind or listing.
+ */
+async function boundRepositoryWorkerReaches(
+  ports: RepositoryOnboardingPorts,
+  partition: Partition,
+  repositories: readonly RepositoryId[],
+): Promise<ReadonlyMap<RepositoryId, RepositoryWorkerReach>> {
+  const worker = ports.forgeApps.find((held) => held.app === workerPodForgeApp);
+  if (worker === undefined || repositories.length === 0) return new Map();
+  return repositoryWorkerReaches(
+    { ...worker, installations: ports.installations },
+    partition.tenant,
+    repositories,
+  ).catch(
+    () =>
+      new Map(
+        repositories.map((repository) => [
+          repository,
+          { reach: "Unknown" } as const,
+        ]),
+      ),
+  );
+}
+
+/** A binding's reach as it is answered: nothing where the worker App reaches it or nothing was asked. */
+function projectRepositoryWorkerReachField(
+  reach: RepositoryWorkerReach | undefined,
+): ProjectRepositoryWorkerReachField {
+  return reach === undefined || reach.reach === "Covered"
+    ? {}
+    : { workerReach: reach };
+}
+
 /** One binding as the bind route asks for it, which is the permit and then the act. */
 async function bindRepository(
   ports: RepositoryOnboardingPorts,
@@ -1018,8 +976,8 @@ async function bindRepository(
  * that would have to answer at execution time is the one asked here, and the
  * token that comes back is read for its verdict and dropped. It is the portal
  * claim that is proved, the api's own reads minting under the portal app, and
- * whether the tenant also claimed the worker app on the repository's owner is
- * the plane's question at execution time.
+ * whether the worker app reaches the repository is the plane's question at
+ * execution time, reported beside the binding here rather than refused.
  */
 async function boundRepository(
   ports: RepositoryOnboardingPorts,
@@ -1054,6 +1012,13 @@ async function boundRepository(
           binding,
           authority,
         ),
+        ...projectRepositoryWorkerReachField(
+          (
+            await boundRepositoryWorkerReaches(ports, partition, [
+              request.repository,
+            ])
+          ).get(request.repository),
+        ),
       };
     case "AlreadyBound":
       return { result: "AlreadyBound", repository: request.repository };
@@ -1071,264 +1036,16 @@ async function boundRepository(
 }
 
 /**
- * Both of this tenant's claims on the account, the portal's answered back
- * because it carries the kind of account the creation mode is decided from.
- * Both are required rather than the portal's alone: a repository this tree
- * makes is meant to run attempts from the moment it exists, and the plane mints
- * under the worker app.
- */
-async function createRepositoryClaims(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  tenant: TenantId,
-  account: ForgeAccount,
-): Promise<ForgeInstallationClaimed | { readonly missing: ForgeApp }> {
-  let portal: ForgeInstallationClaimed | undefined;
-  for (const app of allForgeApps) {
-    const claimed = await ports.claims.accountClaim({
-      tenant,
-      forge: creation.forge,
-      app,
-      account,
-    });
-    if (claimed === undefined) return { missing: app };
-    if (app === "portal") portal = claimed;
-  }
-  if (portal === undefined)
-    throw new Error("create repository: no portal app is named");
-  return portal;
-}
-
-/**
- * Which of a forge's collections the repository is made in, which the claimed
- * account's own kind decides. A personal account is served by copying a
- * template and by nothing else, so a deployment naming none has no way to make
- * one and says so.
- */
-function createRepositoryMode(
-  creation: RepositoryCreationPorts,
-  accountKind: ForgeAccountKind,
-): ForgeRepositoryCreationMode | undefined {
-  if (accountKind === "Organization") return { mode: "Organization" };
-  return creation.template === undefined
-    ? undefined
-    : { mode: "Template", template: creation.template };
-}
-
-/**
- * How far the first commit got, which is what puts a branch under a created
- * repository. A refusal is the forge's own and settled; an outage is the
- * caller's to retry, and the retry meets `RepositoryExists`.
- */
-type CreateRepositorySeeding =
-  | { readonly seeding: "Seeded" }
-  | { readonly seeding: "Unseeded" }
-  | { readonly seeding: "Refused"; readonly message: string }
-  | { readonly seeding: "Unavailable" };
-
-/**
- * The first commit, written where there is an image to command. A deployment
- * naming no bootstrap image seeds nothing: the file it would write is a
- * configuration commanding no image, which nothing could run.
- */
-async function createRepositorySeeded(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  installation: ForgeInstallation,
-  request: ProjectRepositoryCreateRequest,
-  made: ForgeRepositoryMade,
-): Promise<CreateRepositorySeeding> {
-  const image = ports.configurations?.bootstrapImage;
-  if (image === undefined) return { seeding: "Unseeded" };
-  const publicOrigin = ports.configurations?.publicOrigin;
-  const seeded = await creation.repositories.seed({
-    installation,
-    name: request.name,
-    branch: made.defaultBranch,
-    path: bootstrapConfigurationPath,
-    message: bootstrapConfigurationCommitMessage,
-    /**
-     * Uncontained, unlike the bind's step: the generator's only raise is its
-     * postcondition, over inputs branded shorter than the bound it checks.
-     */
-    content: bootstrapConfigurationFile({
-      repository: made.url,
-      defaultBranch: made.defaultBranch,
-      image,
-      ...(publicOrigin === undefined ? {} : { publicOrigin }),
-    }),
-  });
-  switch (seeded.seeded) {
-    case "Seeded":
-      return { seeding: "Seeded" };
-    case "Refused":
-      return { seeding: "Refused", message: seeded.message };
-    case "Unavailable":
-      return { seeding: "Unavailable" };
-    default:
-      return assertNever(seeded);
-  }
-}
-
-/**
- * The ruleset that reserves the default branch, which is asked for only where
- * there is a branch to reserve. A refusal leaves the repository standing and
- * unprotected, which is reported rather than undone.
- */
-async function createRepositoryRuleset(
-  creation: RepositoryCreationPorts,
-  installation: ForgeInstallation,
-  name: ForgeRepositoryName,
-  seeded: boolean,
-): Promise<ProjectRepositoryRulesetResult> {
-  if (!seeded) return { result: "Skipped" };
-  const reserved = await creation.repositories.reserveDefaultBranch({
-    installation,
-    name,
-  });
-  switch (reserved.created) {
-    case "Ruleset":
-      return { result: "Created" };
-    case "Refused":
-      return { result: "Refused", message: reserved.message };
-    case "Unavailable":
-      return { result: "Unavailable" };
-    default:
-      return assertNever(reserved);
-  }
-}
-
-/**
- * One repository made, seeded, reserved and bound. Nothing here is undone: the
- * repository is the forge's from the moment it answers, so each step after it
- * is reported beside a repository that stands, and a request that got as far as
- * making one and no further answers `RepositoryExists` when it is sent again.
- */
-async function createRepository(
-  ports: RepositoryOnboardingPorts,
-  principal: Principal,
-  partition: Partition,
-  request: ProjectRepositoryCreateRequest,
-): Promise<ProjectRepositoryCreateResult> {
-  const authority = await ports.access.authorize(
-    principal,
-    partition,
-    "Administer",
-  );
-  if (authority === undefined) return { result: "NotFound" };
-  const creation = ports.creation;
-  if (creation === undefined) return { result: "NotConfigured" };
-  const claimed = await createRepositoryClaims(
-    ports,
-    creation,
-    partition.tenant,
-    request.account,
-  );
-  if ("missing" in claimed)
-    return { result: "InstallationMissing", app: claimed.missing };
-  const mode = createRepositoryMode(creation, claimed.accountKind);
-  if (mode === undefined) return { result: "PersonalAccountCreatesOnGitHub" };
-  const installation: ForgeInstallation = {
-    forge: claimed.forge,
-    app: claimed.app,
-    account: claimed.account,
-    installationId: claimed.installationId,
-  };
-  const created = await creation.repositories.create({
-    installation,
-    name: request.name,
-    visibility: request.visibility,
-    creation: mode,
-  });
-  switch (created.created) {
-    case "Repository":
-      return createRepositoryBound(
-        ports,
-        creation,
-        { authority, installation, partition, request },
-        created.repository,
-      );
-    case "Exists":
-      return { result: "RepositoryExists" };
-    case "Refused":
-      return {
-        result: "ForgeRefused",
-        step: "create",
-        message: created.message,
-      };
-    case "Unavailable":
-      return { result: "Unavailable" };
-    default:
-      return assertNever(created);
-  }
-}
-
-/** Everything the steps after the create share, gathered so each of them takes one argument for it. */
-interface CreateRepositoryContext {
-  readonly authority: Authority;
-  readonly installation: ForgeInstallation;
-  readonly partition: Partition;
-  readonly request: ProjectRepositoryCreateRequest;
-}
-
-/** The seed, the ruleset and the binding, over a repository the forge has already made. */
-async function createRepositoryBound(
-  ports: RepositoryOnboardingPorts,
-  creation: RepositoryCreationPorts,
-  context: CreateRepositoryContext,
-  made: ForgeRepositoryMade,
-): Promise<ProjectRepositoryCreateResult> {
-  const seeding = await createRepositorySeeded(
-    ports,
-    creation,
-    context.installation,
-    context.request,
-    made,
-  );
-  if (seeding.seeding === "Refused")
-    return { result: "ForgeRefused", step: "seed", message: seeding.message };
-  if (seeding.seeding === "Unavailable") return { result: "Unavailable" };
-  const seeded = seeding.seeding === "Seeded";
-  const ruleset = await createRepositoryRuleset(
-    creation,
-    context.installation,
-    context.request.name,
-    seeded,
-  );
-  const bound = await boundRepository(
-    ports,
-    context.partition,
-    context.authority,
-    { repository: made.url, operation: context.request.operation },
-  );
-  if (bound.result !== "Bound") return { result: "BindRefused", bind: bound };
-  return {
-    result: "Created",
-    repository: bound.repository,
-    landing: bound.landing,
-    created: {
-      account: context.installation.account,
-      name: context.request.name,
-      url: made.url,
-    },
-    seeded,
-    ruleset,
-    configurations: bound.configurations,
-  };
-}
-
-/**
- * One landing moved, behind the permit that binds: what a repository lands by
- * is the same administration as what a project binds, and a project this
+ * One binding's settings written, behind the permit that binds: what a
+ * repository lands by and whether its jobs may write its pipeline definitions
+ * are the same administration as what a project binds, and a project this
  * caller may not administer is not there.
  */
 async function setLanding(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   partition: Partition,
-  repository: RepositoryId,
-  expected: RepositoryLanding,
-  landing: RepositoryLanding,
+  write: ProjectRepositoryLandingWrite,
 ): Promise<ProjectRepositoryLandingResult> {
   const authority = await ports.access.authorize(
     principal,
@@ -1336,12 +1053,7 @@ async function setLanding(
     "Administer",
   );
   if (authority === undefined) return { result: "NotFound" };
-  const written = await ports.landing.setLanding({
-    partition,
-    repository,
-    expected,
-    landing,
-  });
+  const written = await ports.landing.setLanding({ ...write, partition });
   switch (written.outcome) {
     case "Written":
       return { result: "Written", repository: written.binding };
@@ -1395,15 +1107,14 @@ function heldConfigurations(
   return ports.configurationsHeld.held({
     partition,
     repositories,
-    bootstrap: bootstrapConfigurationRevision,
+    bootstraps: repositories.map(bootstrapConfigurationRevision),
   });
 }
 
 /**
  * What the step has already left one repository, or nothing: the names it
- * declared where it declared any, and otherwise the project's bootstrap while it
- * still releases, which a repository declaring none releases its tickets under
- * whichever repository it was authored for.
+ * declared where it declared any, and otherwise the bootstrap authored for it
+ * while that still releases.
  */
 function heldRepositoryConfigurations(
   held: RepositoryConfigurationsHeld,
@@ -1411,29 +1122,47 @@ function heldRepositoryConfigurations(
 ): ProjectRepositoryConfigurationsHeld | undefined {
   const declared = held.declared.get(repository) ?? 0;
   if (declared > 0) return { result: "Imported", count: declared };
+  const revision = bootstrapConfigurationRevision(repository);
+  const bootstrap = held.bootstraps.get(revision);
   if (
-    held.bootstrap !== undefined &&
-    releaseConfigurationReadiness(held.bootstrap).readiness === "Ready"
+    bootstrap !== undefined &&
+    releaseConfigurationReadiness(bootstrap).readiness === "Ready"
   )
-    return { result: "Bootstrapped", revision: bootstrapConfigurationRevision };
+    return { result: "Bootstrapped", revision };
   return undefined;
 }
 
-/** One binding beside what the step has left the project for it, and the last import attempted of it. */
+/** What one listing reads beside the bindings themselves. */
+interface ListedRepositoryReads {
+  readonly held: RepositoryConfigurationsHeld;
+  readonly attempted: ReadonlyMap<
+    RepositoryId,
+    RepositoryConfigurationImportAttempt
+  >;
+  readonly reaches: ReadonlyMap<RepositoryId, RepositoryWorkerReach>;
+}
+
+/** One binding beside what the step has left the project for it, the last import attempted of it, and what the worker App reaches of it. */
 function listedRepository(
   row: ProjectRepositoryBound,
-  held: RepositoryConfigurationsHeld,
-  attempted: ReadonlyMap<RepositoryId, RepositoryConfigurationImportAttempt>,
+  reads: ListedRepositoryReads,
 ): ProjectRepositoryListed {
-  const configurationsHeld = heldRepositoryConfigurations(held, row.repository);
-  const lastImport = attempted.get(row.repository);
-  const listed = lastImport === undefined ? row : { ...row, lastImport };
+  const configurationsHeld = heldRepositoryConfigurations(
+    reads.held,
+    row.repository,
+  );
+  const lastImport = reads.attempted.get(row.repository);
+  const listed = {
+    ...row,
+    ...(lastImport === undefined ? {} : { lastImport }),
+    ...projectRepositoryWorkerReachField(reads.reaches.get(row.repository)),
+  };
   return configurationsHeld === undefined
     ? { ...listed, configured: false }
     : { ...listed, configured: true, configurationsHeld };
 }
 
-/** Every binding a reader may see, each with what the step has left the project for it. */
+/** Every binding a reader may see, each with what the step has left the project for it and, where it is live, what the worker App reaches of it. */
 async function projectRepositories(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
@@ -1450,9 +1179,18 @@ async function projectRepositories(
     partition,
     repositories,
   });
+  const reaches = await boundRepositoryWorkerReaches(
+    ports,
+    partition,
+    bound
+      .filter((row) => row.retiredAt === undefined)
+      .map((row) => row.repository),
+  );
   return {
     result: "Repositories",
-    repositories: bound.map((row) => listedRepository(row, held, attempted)),
+    repositories: bound.map((row) =>
+      listedRepository(row, { held, attempted, reaches }),
+    ),
   };
 }
 
@@ -1529,14 +1267,11 @@ export function repositoryOnboarding(
     bindRepository: (principal, partition, request) =>
       bindRepository(ports, principal, partition, request),
 
-    createRepository: (principal, partition, request) =>
-      createRepository(ports, principal, partition, request),
-
     projectRepositories: (principal, partition) =>
       projectRepositories(ports, principal, partition),
 
-    setLanding: (principal, partition, repository, expected, landing) =>
-      setLanding(ports, principal, partition, repository, expected, landing),
+    setLanding: (principal, partition, written) =>
+      setLanding(ports, principal, partition, written),
 
     retireRepository: (principal, partition, repository) =>
       retireRepository(ports, principal, partition, repository),

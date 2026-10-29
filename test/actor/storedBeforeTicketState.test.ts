@@ -6,16 +6,17 @@
  *
  * THE ROWS AND WHAT WAS DERIVED FROM THEM ARE THE PREVIOUS IMAGE'S, PINNED.
  * `stored-before-ticket-state.json` was written by the image at f8998a22. For
- * every golden the manifest names it holds the decided rows that image's
- * golden recorded, each entry and obligation in the text a store keeps; and
- * one more journal, driven through that image's deciders under the writer's
- * rework cap, which reworks under the cap, parks at it and resumes, resumes a
- * blocked evaluator and a finalization, reworks from a finalization and
- * completes, then revokes a ticket mid-run. Beside each row it holds what that
- * image derived: the projection rows the decision changed, its materialization
- * with every request, action and finalization identity and every task number
- * minted, the source a spawn ran at, and the dispatch candidates at their
- * ticket versions. Nothing here re-derives the previous image's answer.
+ * every golden `test/fixtures/corpus-before-dependency-change/` names it holds
+ * the decided rows that image's golden recorded, each entry and obligation in
+ * the text a store keeps; and one more journal, driven through that image's
+ * deciders under the writer's rework cap, which reworks under the cap, parks at
+ * it and resumes, resumes a blocked evaluator and a finalization, reworks from
+ * a finalization and completes, then revokes a ticket mid-run. Beside each row
+ * it holds what that image derived: the projection rows the decision changed,
+ * its materialization with every request, action and finalization identity and
+ * every task number minted, the source a spawn ran at, and the dispatch
+ * candidates at their ticket versions. Nothing here re-derives the previous
+ * image's answer.
  */
 
 import assert from "node:assert/strict";
@@ -62,7 +63,7 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import { reworkPolicy } from "../../src/interpreter/reworkCap.ts";
 import { decodeTrace, stateValue } from "../itf/decode.ts";
-import { decodeLastDecision } from "../itf/vocabulary.ts";
+import { decodeDecidedStep } from "../itf/vocabulary.ts";
 
 /** One stored row, as the previous image's store kept it. */
 interface StoredRow {
@@ -94,7 +95,12 @@ const pinned = JSON.parse(
   readonly result: Readonly<Record<string, Pinned>>;
 };
 
-const goldenDir = join(import.meta.dirname, "..", "golden");
+const goldenDir = join(
+  import.meta.dirname,
+  "..",
+  "fixtures",
+  "corpus-before-dependency-change",
+);
 const goldenNames = (
   JSON.parse(readFileSync(join(goldenDir, "manifest.json"), "utf8")) as {
     goldens: readonly { name: string }[];
@@ -135,7 +141,7 @@ function storedEntries(journal: Pinned): readonly StoredEntry[] {
   }));
 }
 
-/** The decided rows a golden this image emitted records, as a store would keep them. */
+/** The decided rows a frozen golden records, read through this image's codec as a store would keep them. */
 function reemitted(name: string): readonly StoredRow[] {
   const trace = decodeTrace(
     JSON.parse(
@@ -147,11 +153,11 @@ function reemitted(name: string): readonly StoredRow[] {
   const rows: StoredRow[] = [];
   trace.states.forEach((state, at) => {
     if (at === 0 || stateValue(state, "mbt::actionTaken") === "settle") return;
-    const last = decodeLastDecision(stateValue(state, stepVar));
-    if (last !== "NoDecision" && last.type === "Decided")
+    const decided = decodeDecidedStep(stateValue(state, stepVar));
+    if (decided !== undefined)
       rows.push({
-        entry: encodeEntry({ seq: rows.length + 1, event: last.value.event }),
-        obligations: last.value.obligations.map(encodeObligation),
+        entry: encodeEntry({ seq: rows.length + 1, event: decided.event }),
+        obligations: decided.obligations.map(encodeObligation),
       });
   });
   return rows;
@@ -176,7 +182,7 @@ for (const [name, journal] of Object.entries(pinned.result)) {
       const expected = journal.expected[at];
       assert.ok(expected, `${name} row ${String(at + 1)} has no pin`);
       const post = replayStep(held, entry.event);
-      const projection = projectionChanges(held.graph, post.graph);
+      const projection = projectionChanges(held.graph, post.graph, entry.event);
       for (const row of projection) versions.set(row.ticket, entry.seq);
       if (entry.event.type === "TicketCreated")
         contracts.set(entry.event.value.id, contract);
@@ -213,7 +219,7 @@ for (const [name, journal] of Object.entries(pinned.result)) {
 }
 
 for (const name of goldenNames) {
-  test(`${name}: this image's golden decides the rows the previous one stored`, () => {
+  test(`${name}: the frozen golden decides the rows the previous image stored`, () => {
     const journal = pinned.result[name];
     assert.ok(journal, `${name} has no pin`);
     assert.deepEqual(plain(reemitted(name)), journal.rows);

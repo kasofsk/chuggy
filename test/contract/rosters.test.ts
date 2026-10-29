@@ -78,6 +78,8 @@ import {
   sessionTurnStates,
   sessionKinds,
   sessionCapabilities,
+  sessionScopes,
+  projectLifecycles,
   agentReportedTurnFailures,
   runEndedEvidences,
   runStepEvidences,
@@ -86,8 +88,8 @@ import {
 import {
   allForgeAccountKinds,
   allForgeApps,
-  allForgeCredentialPermissionSets,
   allForgeIds,
+  allForgePermissionSets,
 } from "../../src/interpreter/forgeInstallation.ts";
 import {
   allForgeAccountProofs,
@@ -143,12 +145,14 @@ import {
 } from "../../src/interpreter/refusal.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
+import { allLifecycles } from "../../src/interpreter/projectStore.ts";
 import { allWorkerPoolOwnerFallbacks } from "../../src/interpreter/projectOwnerFallback.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
   allSessionCapabilities,
   allSessionKinds,
+  allSessionScopes,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
@@ -641,12 +645,13 @@ test("the refusal code roster is exhaustive over its union", () => {
   const refusals: Record<RefusalCode, true> = {
     TicketAlreadyExists: true,
     DependenciesNotFound: true,
+    DependenciesRevoked: true,
+    DependencyCycle: true,
     SelfDependency: true,
     TicketNotFound: true,
     TicketNotPending: true,
     TicketIdentityMismatch: true,
     TicketRevisionStale: true,
-    TicketDependenciesChanged: true,
     DependenciesIncomplete: true,
     TicketNotRevocable: true,
     TicketNotResumable: true,
@@ -664,6 +669,9 @@ test("the refusal code roster is exhaustive over its union", () => {
     SelectionUnknown: true,
     SelectionUnsupported: true,
     ProgramExceedsPlan: true,
+    ProgramSkipsBriefChecks: true,
+    OverridesUnsupported: true,
+    OverridesUnknown: true,
     TicketCapacityReached: true,
     FinalizationRequestClosed: true,
     OverridesMoveDefinition: true,
@@ -751,6 +759,8 @@ test("every session and refusal roster restates the interpreter's own", () => {
   assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
   assert.deepEqual(sessionKinds, allSessionKinds);
   assert.deepEqual(sessionCapabilities, allSessionCapabilities);
+  assert.deepEqual(sessionScopes, allSessionScopes);
+  assert.deepEqual(projectLifecycles, allLifecycles);
   assert.deepEqual(agentReportedTurnFailures, allAgentReportedTurnFailures);
   assert.deepEqual(sessionStates, allSessionStates);
   assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
@@ -761,11 +771,7 @@ test("every session and refusal roster restates the interpreter's own", () => {
     ...allPlatformTurnFailures,
   ]);
   assert.deepEqual(threadStandings, allThreadStandings);
-  assert.deepEqual(
-    forgeCredentialPermissions,
-    allForgeCredentialPermissionSets,
-    "a credential request never names the set that makes repositories",
-  );
+  assert.deepEqual(forgeCredentialPermissions, allForgePermissionSets);
   assert.deepEqual(forgeIds, allForgeIds);
   assert.deepEqual(forgeApps, allForgeApps);
   assert.deepEqual(forgeAccountKinds, allForgeAccountKinds);

@@ -132,6 +132,8 @@ export interface ProjectRepositoryBound {
   readonly repository: RepositoryId;
   readonly boundAt: string;
   readonly landing: RepositoryLanding;
+  /** Whether a mint for the jobs this project runs in the repository may ask the forge for its pipeline definitions, which a binding starts without. */
+  readonly pipelinesWritable: boolean;
   readonly retiredAt?: string;
 }
 
@@ -146,19 +148,28 @@ export interface ProjectRepositoryBindings {
   bindings(partition: Partition): Promise<readonly ProjectRepositoryBound[]>;
 }
 
-/** One landing move, against the landing the writer read. */
-export interface ProjectRepositoryLandingCommand {
-  readonly partition: Partition;
+/** One write of a binding's settings as its writer asks for it, each against the value the writer read. */
+export interface ProjectRepositoryLandingWrite {
   readonly repository: RepositoryId;
   readonly expected: RepositoryLanding;
   readonly landing: RepositoryLanding;
+  readonly pipelinesWritable: {
+    readonly expected: boolean;
+    readonly wanted: boolean;
+  };
+}
+
+/** One write of a binding's settings, in the project it binds into. */
+export interface ProjectRepositoryLandingCommand extends ProjectRepositoryLandingWrite {
+  readonly partition: Partition;
 }
 
 /**
- * What moving one repository's landing came to. `LandingMoved` answers the row
- * standing at neither the landing the writer read nor the one it asked for,
- * because the writer's next act is to read it again, and `Unavailable` is a
- * write that did not complete under its lock and can be made again.
+ * What writing one binding's settings came to. `LandingMoved` answers the row
+ * where either setting stands at neither the value the writer read nor the one
+ * it asked for, because the writer's next act is to read it again, and
+ * `Unavailable` is a write that did not complete under its lock and can be
+ * made again.
  */
 export type ProjectRepositoryLandingOutcome =
   | { readonly outcome: "Written"; readonly binding: ProjectRepositoryBound }
@@ -170,9 +181,10 @@ export type ProjectRepositoryLandingOutcome =
   | { readonly outcome: "Unavailable" };
 
 /**
- * One binding's landing, read and moved. It is a port of its own rather than a
- * pair of methods on the bind, because binding is an administration a project
- * does once and a landing is a setting it edits.
+ * One binding's settings, read and written. It is a port of its own rather
+ * than a pair of methods on the bind, because binding is an administration a
+ * project does once and its landing and pipeline definitions are settings it
+ * edits.
  */
 export interface ProjectRepositoryLandingStore {
   landing(

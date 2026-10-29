@@ -11,12 +11,13 @@
  * the route becomes after that may hand the turn to a pod on the shared
  * credential.
  *
- * A turn queued for runners needs the member to have registered one, and one
+ * A turn queued for runners needs the member to have registered a chat host, and one
  * that no runner takes within the dwell is withdrawn, so it stops holding its
  * session.
  */
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
@@ -47,6 +48,7 @@ import {
   sessionRigAttempt,
   sessionRigAttemptState,
   sessionRigBoundless,
+  sessionRigPersonalRunner,
   sessionRigQueuedFor,
   sessionRigRouted,
   sessionRigRunner,
@@ -124,7 +126,7 @@ async function opening(
     method: "POST",
     url: threadsOf(partition),
     headers: versioned,
-    payload: {},
+    payload: { key: randomUUID() },
   });
   return { status: opened.statusCode, body: opened.json() };
 }
@@ -350,12 +352,14 @@ function refusal(body: unknown): string {
   return (body as HttpErrorEnvelope).error.code;
 }
 
-test("a member with no runner on the project is refused a thread routed to runners, and admitted once one is registered though it never polled", async () => {
+test("a member with no chat host is refused a thread routed to runners however live their personal runner is, and admitted once a chat host is registered though it never polled", async () => {
   const partition = await threadRigProject(rig, "route-runnerless");
   const member = threadRigMember(rig, partition, "route-runnerless");
   const session = await threadOf(partition, member);
   const newcomer = threadRigMember(rig, partition, "route-runnerless-new");
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
+  for (const runs of [member, newcomer])
+    await sessionRigPersonalRunner(rig.sessions, partition, runs.principal);
 
   const refused = await opening(partition, newcomer);
   assert.deepEqual(

@@ -6,7 +6,6 @@
 
 import { expect, test } from "vitest";
 
-import { personalRunnersMax } from "../../../src/contract/http.ts";
 import { runnerPackageOffered } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
@@ -32,12 +31,14 @@ import {
   boxPools,
   boxSettings,
   boxUnits,
+  boxVersion,
 } from "./setupRunnerBox.ts";
 import {
   rosterCommand,
+  rosterChat,
+  rosterChatUnit,
   rosterLingerRefusal,
-  rosterOwn,
-  rosterOwnUnit,
+  rosterMyRunners,
   rosterPool,
   rosterUnit,
   runnerNotes,
@@ -96,12 +97,12 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
-      "the site did not say of acme/widgets whether you may register a runner of your own (Fault)",
+      "the site did not say of acme/widgets whether you may register a chat host (Fault)",
       1,
       "Runner",
     ],
     [
-      "the site did not say of acme/widgets whether you have a runner of your own (Fault)",
+      "the site did not say of acme/widgets whether you have a chat host (Fault)",
       1,
       "Runner",
     ],
@@ -190,12 +191,17 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
-      "registering this machine as your own runner ended with exit 1, saying: it said why",
+      "registering this machine as your chat host ended with exit 1, saying: it said why",
       1,
       "Runner",
     ],
     [
-      "installing your own runner's service ended with exit 1, saying: it said why",
+      "the chat host's own check ended with exit 1, saying: it said why",
+      1,
+      "Runner",
+    ],
+    [
+      "installing your chat host's service ended with exit 1, saying: it said why",
       1,
       "Runner",
     ],
@@ -267,6 +273,11 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       1,
       "Runner",
     ],
+    [
+      `installing the runner package left chuggy-linux 0.14.0 at ${rosterCommand}, and chuggy setup needs 0.35.0 or later`,
+      1,
+      "Runner",
+    ],
   ],
   Unseen: [
     [
@@ -285,12 +296,17 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
-      `registering this machine as your own runner ended well, and what it makes is not at ${boxPools}`,
+      `registering this machine as your chat host ended well, and what it makes is not at ${boxPools}`,
       1,
       "Runner",
     ],
     [
-      `installing your own runner's service ended well, and what it makes is not at ${boxUnits}/${rosterOwnUnit}`,
+      `registering this machine as your chat host ended well, and what it makes is not at ${rosterChat}`,
+      1,
+      "Runner",
+    ],
+    [
+      `installing your chat host's service ended well, and what it makes is not at ${boxUnits}/${rosterChatUnit}`,
       1,
       "Runner",
     ],
@@ -302,7 +318,7 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
       "Runner",
     ],
     [
-      "installing your own runner's service ended with exit 1, saying: chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1",
+      "installing your chat host's service ended with exit 1, saying: chuggy-linux 0.7.0 needs Node 22 or later; /usr/bin/node is Node 18.19.1",
       1,
       "Runner",
     ],
@@ -332,6 +348,16 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
     [
       "the runner's own check did not pass; the runner's own check said: FAIL  a new check: no",
+      1,
+      "Runner",
+    ],
+    [
+      "the chat host's own check did not pass; the chat host's own check said: FAIL  a new check: no",
+      1,
+      "Runner",
+    ],
+    [
+      `the Claude credential is not alone in a directory of its own, which a chat host needs; the chat host's own check said: FAIL  chat credential directory: ${boxLogin} shares its directory with other files`,
       1,
       "Runner",
     ],
@@ -377,56 +403,55 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
     ],
   ],
   PermitWithheld: [
-    [
-      "the workspace does not let you register a runner of your own",
-      0,
-      "Runner",
-    ],
-    [
-      "the workspace does not let you register a runner of your own",
-      0,
-      "Runner",
-    ],
+    ["the workspace does not let you register a chat host", 0, "Runner"],
+    ["the workspace does not let you register a chat host", 0, "Runner"],
   ],
-  OwnMintRefused: [
+  ChatMintRefused: [
     [
-      "the site made no registration token for your own runner (Absent)",
+      "the site made no registration token for your chat host (Absent)",
       1,
       "Runner",
     ],
     [
-      "the site made no registration token for your own runner (Conflict)",
+      "the site made no registration token for your chat host (Conflict)",
       1,
       "Runner",
     ],
     [
-      "the site made no registration token for your own runner (Fault)",
+      "the site made no registration token for your chat host (Fault)",
       1,
       "Runner",
     ],
   ],
-  ServesRefused: [
+  ChatHostOffline: [
     [
-      "the site did not add acme/widgets to the projects your own runners serve (Absent)",
-      1,
-      "Runner",
-    ],
-    [
-      "the site did not add acme/widgets to the projects your own runners serve (Fault)",
-      1,
-      "Runner",
-    ],
-  ],
-  OwnLimit: [
-    [
-      `you have ${String(personalRunnersMax)} runners of your own in the workspace, as many as a member may, and none is this machine`,
+      "your chat host is another machine, registered and not running",
       0,
       "Runner",
     ],
   ],
-  OwnNotLive: [
+  ChatLogin: [
+    ...[
+      "Claude login",
+      "Anthropic API key",
+      "Bedrock credential",
+      "Bedrock credential",
+      "Google Cloud service account key",
+      "Foundry API key",
+    ].map((credential): [string, number, string] => [
+      `the runner's ${credential}, ${boxLogin}, is not alone in its directory, which your chat host is handed whole`,
+      0,
+      "Runner",
+    ]),
     [
-      "your own runner's service is running, and after 90 s the site still does not see this machine live as your own runner",
+      `the runner's Claude login, ${boxLogin}, is a symbolic link, which your chat host is not handed`,
+      0,
+      "Runner",
+    ],
+  ],
+  ChatHostNotLive: [
+    [
+      "your chat host's service is running, and after 90 s the site still does not see this machine live as your chat host",
       1,
       "Runner",
     ],
@@ -436,6 +461,36 @@ const all: { readonly [K in Kind]: ReturnType<typeof said> } = {
 test("every stop is said by what was found, exits zero where it waits on the person and one where something failed, and names runner again but for a machine no runner can be put on", () => {
   for (const kind of Object.keys(all) as Kind[])
     expect(said(kind), kind).toEqual(all[kind]);
+});
+
+/** What every credential a chat host cannot be handed is told last: the services restarted onto the settings, by the command that restarts them all. */
+const restartedOnto =
+  "Then restart this machine's runner services, which read the settings only as they start: systemctl --user restart 'chuggy-linux-*.service'. The old one can go once they have. Tell me once they have restarted.";
+
+test("a credential a chat host cannot be handed is told how a copy is put where it can be, a subscription's token at the login's own place, which the settings are then set to name, and any other in a directory of its own, and then to restart every runner service of the machine's onto the settings", () => {
+  const [token, key] = runnerStops.ChatLogin;
+  const linked = runnerStops.ChatLogin.at(-1);
+  if (token === undefined || key === undefined || linked === undefined)
+    throw new Error("no ChatLogin in the roster");
+  const old = `${boxSettings.slice(0, boxSettings.lastIndexOf("/"))}/claude-token`;
+  expect(
+    setupRunnerStopSaid(
+      { ...token, credential: { kind: "Subscription", path: old } },
+      "acme/widgets",
+    ).tell,
+  ).toBe(
+    `Your chat host is handed the directory of the runner's Claude login whole, and ${old} shares its directory with other files, so this machine is not your chat host yet. Copy the token itself alone to ${boxLogin}, readable only by you (mode 600), and set claudeTokenFile in ${boxSettings} to ${boxLogin}. ${restartedOnto}`,
+  );
+  expect(setupRunnerStopSaid(key, "acme/widgets").tell).toBe(
+    `Your chat host is handed the directory of the runner's Anthropic API key whole, and ${boxLogin} shares its directory with other files, so this machine is not your chat host yet. Copy it alone into a directory of its own, such as ${boxLogin.slice(0, boxLogin.lastIndexOf("/"))}, readable only by you, and change where ${boxSettings} names it to the copy. ${restartedOnto}`,
+  );
+  expect(setupRunnerStopSaid(linked, "acme/widgets").tell).toBe(
+    `Your chat host is handed the runner's Claude login only as a file of its own, and ${boxLogin} is a symbolic link, so this machine is not your chat host yet. Copy the token itself alone to ${boxLogin}, readable only by you (mode 600), and set claudeTokenFile in ${boxSettings} to ${boxLogin}. ${restartedOnto}`,
+  );
+  for (const stop of runnerStops.ChatLogin)
+    expect(setupRunnerStopSaid(stop, "acme/widgets").tell).toContain(
+      restartedOnto,
+    );
 });
 
 test("every stop tells the person one thing that ends on what they are to tell the agent, and waits on a condition a rule can carry", () => {
@@ -475,7 +530,7 @@ test("only a stop made before the run's first act says nothing was changed, whic
       "so I cannot say the runner is set up. What was done before stays done.",
     ),
   ).toEqual([
-    "own Fault",
+    "chat Fault",
     "permit Fault",
     "placement Fault",
     "placement Refused",
@@ -575,8 +630,8 @@ test("a package older than the least, or of a version that cannot be read, is sa
   ).toEqual([
     `found: the runner package is installed: chuggy-linux 0.3.0, at ${rosterCommand}, and chuggy setup needs 0.14.0 or later`,
     `found: the runner package is installed: chuggy-linux, at ${rosterCommand}, and chuggy setup needs 0.14.0 or later and could not read its version`,
-    `did: installed the runner package, chuggy-linux 0.14.0, at ${rosterCommand}`,
-    `did: installed the runner package, chuggy-linux 0.14.0, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux ${boxVersion}, at ${rosterCommand}`,
+    `did: installed the runner package, chuggy-linux ${boxVersion}, at ${boxOwn}/bin/chuggy-linux, and chuggy-linux 0.3.0 is still at ${rosterCommand}`,
   ]);
 });
 
@@ -603,7 +658,7 @@ test("each thing a run found is said as found and each thing it did as did, in w
       setupRunnerNoteSaid(note, "acme/widgets").join(": "),
     );
   expect(lines("Package")).toEqual([
-    `found: the runner package is installed: chuggy-linux 0.14.0, at ${rosterCommand}`,
+    `found: the runner package is installed: chuggy-linux ${boxVersion}, at ${rosterCommand}`,
   ]);
   expect(lines("PoolGone")).toEqual([
     `found: ${rosterPool} registered this machine as shame, and the site lists no runner of acme/widgets by that name`,
@@ -645,14 +700,14 @@ test("each thing a run found is said as found and each thing it did as did, in w
     UnitWritten: ["did"],
     ProjectLive: ["found"],
     Hosted: ["found"],
-    Own: ["found"],
-    OwnGone: ["found"],
-    OwnRegistered: ["did"],
-    OwnUnit: ["found"],
-    OwnUnitWritten: ["did"],
-    Serves: ["found"],
-    ServesAdded: ["did"],
-    OwnLive: ["found"],
+    ChatHost: ["found"],
+    ChatHostGone: ["found"],
+    ChatHostRegistered: ["did"],
+    ChatChecked: ["found"],
+    ChatUnit: ["found"],
+    ChatUnitWritten: ["did"],
+    ChatHostLive: ["found"],
+    ChatHostElsewhere: ["found"],
     Linger: ["found"],
     LingerOn: ["did"],
     Running: ["found"],
@@ -677,32 +732,42 @@ test("a Claude credential found is said by its kind's own name, beside the file 
   ]);
 });
 
-test("the person's own runner is said as theirs, apart from the project's: found on this machine, no longer known, or registered here, and the project found among what their runners serve or added", () => {
+test("the person's chat host is said as theirs, apart from the project's runner: found on this machine, no longer known, registered here, checked, served, and live here or on another machine", () => {
   const lines = runnerNotesAll
-    .filter((note) => /^(?:Own|Serves|ProjectLive|Hosted)/u.test(note.note))
+    .filter((note) => /^(?:Chat|ProjectLive|Hosted)/u.test(note.note))
     .map((note) => setupRunnerNoteSaid(note, "acme/widgets").join(": "));
   expect(lines).toEqual([
     "found: the site sees a runner of acme/widgets live",
     "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
-    `found: this machine is registered as one of your own runners, in ${rosterOwn}`,
-    `found: ${rosterOwn} registered this machine as your own runner, and the site no longer knows that registration`,
-    `did: registered this machine as one of your own runners, in ${rosterOwn}`,
-    `found: your own runner's service is installed: ${rosterOwnUnit}`,
-    `did: installed your own runner's service, ${rosterOwnUnit}`,
-    "found: your own runners serve acme/widgets",
-    "did: added acme/widgets to the projects your own runners serve",
-    "found: the site sees this machine live as your own runner, so your chats in acme/widgets can run on it",
+    `found: this machine is registered as your chat host, in ${rosterChat}`,
+    `found: ${rosterChat} registered this machine as your chat host, and the site no longer knows that registration`,
+    `did: registered this machine as your chat host, in ${rosterChat}`,
+    "found: the chat host's own check passed",
+    "found: the chat host's own check passed, with a warning: warn  chat image: it is old",
+    `found: your chat host's service is installed: ${rosterChatUnit}`,
+    `did: installed your chat host's service, ${rosterChatUnit}`,
+    "found: the site sees this machine live as your chat host, so your chats in acme/widgets can run on it",
+    "found: the site sees your chat host live on another machine, so your chats in acme/widgets run there",
   ]);
 });
 
-test("a workspace that does not let the person register a runner of their own is said with the project's work as it stands, the page and the press an admin turns it on with, the person being one where they are, and nothing to try again until it is on", () => {
+test("a chat host on another machine that is not running is the person's to start there or to remove, on their My runners page, and is never replaced unasked", () => {
+  const [offline] = runnerStops.ChatHostOffline.map((stop) =>
+    setupRunnerStopSaid(stop, "acme/widgets"),
+  );
+  expect(offline?.tell).toBe(
+    `Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${rosterMyRunners}, for this machine to be it instead. Tell me once you have done either.`,
+  );
+});
+
+test("a workspace that does not let the person register a chat host is said with the project's work as it stands, the page and the press an admin turns it on with, the person being one where they are, and nothing to try again until it is on", () => {
   const [runner, cluster] = runnerStops.PermitWithheld.map((stop) =>
     setupRunnerStopSaid(stop, "acme/widgets"),
   );
   const own =
-    "Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, https://chuggy.example/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.";
+    "Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, https://chuggy.example/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.";
   expect(runner).toEqual({
-    found: "the workspace does not let you register a runner of your own",
+    found: "the workspace does not let you register a chat host",
     tell: `The runner for the work on acme/widgets is set up and live. ${own}`,
     when: "once the person says Personal runners is on for them in the workspace",
     again: "Runner",
@@ -785,7 +850,7 @@ test("the first line of the check under a mark is found among the lines that are
   expect(setupCheckFirst(aside, "warn")?.line).not.toContain("slow");
 });
 
-test("the checks this program has words for are named as the package's doctor prints them, in its order", () => {
+test("the checks this program has words for are named as the package's doctor prints them, in its order, and then those it prints of a chat host alone, in theirs", () => {
   expect(Object.keys(setupRunnerChecks)).toEqual([
     "pool file",
     "runner configuration",
@@ -796,6 +861,11 @@ test("the checks this program has words for are named as the package's doctor pr
     "job network",
     "pool token",
     "plane",
+    "chat credential directory",
+    "chat settings",
+    "chat session users",
+    "chat supervisor",
+    "chat image",
   ]);
 });
 

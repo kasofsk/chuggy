@@ -45,12 +45,16 @@
  * epoch, because a restore withdraws the authority a scheduler was holding
  * before it.
  *
- * AN ATTEMPT OFFERED TO POOLS THAT NO POOL HOLDS NEVER RAN. The reaper reads
- * one whose execution is placed with pools and whose `pool` is null as that,
- * and withdraws it as `PlacementUnavailable` without spending the budget. One
- * a pool holds ran, and is lost. Once an attempt names a pool, a launch opens
- * no other for its execution and answers `AssignmentEnded`, which the pass
- * concludes.
+ * AN ATTEMPT OFFERED TO POOLS WAITS UNLEASED FOR A RUNNER ONCE IT IS INVOKED.
+ * It is opened under a lease as any attempt is, and the move recording its
+ * invocation drops it, so one the scheduler never finished preparing still
+ * lapses. The reaper reads a lapsed one whose `pool` is null as never having
+ * run, and withdraws it as `PlacementUnavailable` without spending the budget.
+ * A waiting one is ended only by a move that reads `pool` null in the
+ * statement that ends it, because a claim moves no generation. A claim leases
+ * it again; one a pool holds ran, and is lost when that lease lapses. Once an
+ * attempt names a pool, a launch opens no other for its execution and answers
+ * `AssignmentEnded`, which the pass concludes.
  *
  * AN ATTEMPT A POOL REFUSED IS NEVER REAPED. Its lease lapses because the
  * refusal stops the pool renewing it, so the lapse says nothing the refusal
@@ -117,6 +121,8 @@ import {
   type SpawnRegistered,
   type PlacementId,
   type RefusedAttempt,
+  type WaitingAttempt,
+  type WaitingAttemptRecord,
   type WorkTaskInvocation,
 } from "../../interpreter/executionScheduler.ts";
 import type {
@@ -963,7 +969,11 @@ async function schedulerLockAttemptExecution(
   );
 }
 
-/** Records an attempt's invocation, which a `Placing` attempt of this generation is given once. */
+/**
+ * Records an attempt's invocation, which a `Placing` attempt of this generation
+ * is given once, and drops the lease of one offered to pools, which from here
+ * waits for a runner to claim it.
+ */
 async function schedulerAttemptInvoked(
   client: pg.PoolClient,
   attempt: FencedAttempt,
@@ -971,11 +981,15 @@ async function schedulerAttemptInvoked(
 ): Promise<boolean> {
   await schedulerLockAttemptExecution(client, attempt);
   const invoked = await client.query(
-    sql`UPDATE execution_attempt SET invocation = ${JSON.stringify(invocation)}::jsonb
-      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
-        AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
-        AND generation = ${attempt.generation} AND state = 'Placing'
-        AND invocation IS NULL`,
+    sql`UPDATE execution_attempt a SET invocation = ${JSON.stringify(invocation)}::jsonb,
+            lease_owner = CASE WHEN e.placement = 'Pool' THEN NULL ELSE a.lease_owner END,
+            lease_expires_at = CASE WHEN e.placement = 'Pool' THEN NULL ELSE a.lease_expires_at END
+       FROM execution e
+      WHERE e.tenant = a.tenant AND e.project = a.project AND e.execution = a.execution
+        AND a.tenant = ${attempt.partition.tenant} AND a.project = ${attempt.partition.project}
+        AND a.execution = ${attempt.execution} AND a.attempt = ${attempt.attempt}
+        AND a.generation = ${attempt.generation} AND a.state = 'Placing'
+        AND a.invocation IS NULL`,
   );
   return invoked.rowCount === 1;
 }
@@ -1188,7 +1202,94 @@ async function schedulerEndLapsed(
   return ended.rowCount ?? 0;
 }
 
-/** At most `executionsMax` executions that own a slot and have no live attempt. */
+/**
+ * At most `attemptsMax` attempts of this epoch offered to pools, invoked, and
+ * neither held nor refused by a runner, in key order after `after` where one
+ * is named, with whether their project is still `Active`.
+ */
+async function schedulerWaitingAttempts(
+  client: pg.PoolClient,
+  epoch: RecoveryEpoch,
+  attemptsMax: number,
+  after: WaitingAttempt | undefined,
+): Promise<readonly WaitingAttempt[]> {
+  schedulerRequirePositive(attemptsMax, "attemptsMax");
+  if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
+  const waiting = await client.query<
+    SchedulerRowKey & {
+      attempt: string;
+      generation: string;
+      active: boolean;
+    }
+  >(
+    sql`SELECT a.tenant, a.project, a.execution, a.attempt,
+               a.generation::text AS generation, (p.lifecycle = 'Active') AS active
+          FROM execution_attempt a
+          JOIN execution e
+            ON e.tenant = a.tenant AND e.project = a.project
+           AND e.execution = a.execution
+          JOIN project p ON p.tenant = a.tenant AND p.project = a.project
+         WHERE a.state = 'Placing' AND a.pool IS NULL AND a.invoked
+           AND a.lease_owner IS NULL AND a.pool_refusal IS NULL
+           AND a.recovery_epoch = ${epoch} AND e.placement = 'Pool'
+           AND (${after === undefined}::boolean
+                OR (a.tenant, a.project, a.execution, a.attempt)
+                   > (${after?.partition.tenant ?? null}::text,
+                      ${after?.partition.project ?? null}::text,
+                      ${after?.execution ?? null}::text,
+                      ${after?.attempt ?? null}::text))
+         ORDER BY a.tenant, a.project, a.execution, a.attempt
+         LIMIT ${attemptsMax}`,
+  );
+  return waiting.rows.map((row) => ({
+    partition: schedulerRowPartition(row),
+    execution: asExecutionId(row.execution),
+    attempt: asAttemptId(row.attempt),
+    generation: projectRowCounter(row.generation, "attempt generation"),
+    projectActive: row.active,
+  }));
+}
+
+/**
+ * Withdraws a waiting attempt, spending nothing, where no runner has claimed it
+ * since it was read and, where `current` is named, where what it records is
+ * not that. A claim moves no generation, so it is `pool` the move is fenced by,
+ * read in the statement that ends the attempt.
+ */
+async function schedulerWaitingWithdrawn(
+  client: pg.PoolClient,
+  attempt: FencedAttempt,
+  evidence: AttemptEvidenceRecord,
+  current: WaitingAttemptRecord | undefined,
+): Promise<boolean> {
+  await schedulerLockAttemptExecution(client, attempt);
+  const invocation =
+    current === undefined ? null : JSON.stringify(current.invocation);
+  const ended = await client.query(
+    sql`UPDATE execution_attempt
+        SET state = 'Withdrawn', evidence = ${evidence}, ended_at = now()
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution} AND attempt = ${attempt.attempt}
+        AND generation = ${attempt.generation} AND state = 'Placing'
+        AND pool IS NULL AND lease_owner IS NULL AND invoked
+        AND (${invocation}::jsonb IS NULL
+             OR invocation IS DISTINCT FROM ${invocation}::jsonb
+             OR runtime IS DISTINCT FROM ${current?.runtime ?? null}::text)`,
+  );
+  if (ended.rowCount !== 1) return false;
+  await client.query(
+    sql`UPDATE execution SET placement_backoff_from = now()
+      WHERE tenant = ${attempt.partition.tenant} AND project = ${attempt.partition.project}
+        AND execution = ${attempt.execution}
+        AND status NOT IN ('Terminal', 'Cancelled')`,
+  );
+  return true;
+}
+
+/**
+ * At most `executionsMax` executions that own a slot and have no live attempt,
+ * leaving out one routed to pools of a project no runner may claim for.
+ */
 async function schedulerUnlaunched(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
@@ -1222,7 +1323,9 @@ async function schedulerUnlaunched(
         AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
        LEFT JOIN ticket_definition d
          ON d.tenant = e.tenant AND d.project = e.project AND d.ticket = e.ticket
+       JOIN project p ON p.tenant = e.tenant AND p.project = e.project
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
+        AND (e.placement <> 'Pool' OR p.lifecycle = 'Active')
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
@@ -1424,10 +1527,14 @@ function postgresExecutionSchedulerSweeps(
   | "reapLapsedAttempts"
   | "attemptsAwaitingCleanup"
   | "attemptCleanupCompleted"
+  | "waitingAttempts"
+  | "waitingAttemptWithdrawn"
+  | "waitingAttemptOutdated"
   | "unlaunched"
   | "fenceOldEpochAttempts"
   | "runnerLostTickets"
 > {
+  let waitingAfter: WaitingAttempt | undefined;
   return {
     refusedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
@@ -1445,6 +1552,26 @@ function postgresExecutionSchedulerSweeps(
       schedulerAttemptsAwaitingCleanup(pool, attemptsMax),
     attemptCleanupCompleted: (attempt) =>
       schedulerAttemptCleanupCompleted(pool, attempt),
+    waitingAttempts: async (epoch, attemptsMax) => {
+      const waiting = await postgresTransaction(pool, (client) =>
+        schedulerWaitingAttempts(client, epoch, attemptsMax, waitingAfter),
+      );
+      waitingAfter = waiting.length < attemptsMax ? undefined : waiting.at(-1);
+      return waiting;
+    },
+    waitingAttemptWithdrawn: (attempt, evidence) =>
+      postgresTransaction(pool, (client) =>
+        schedulerWaitingWithdrawn(client, attempt, evidence, undefined),
+      ),
+    waitingAttemptOutdated: (attempt, current) =>
+      postgresTransaction(pool, (client) =>
+        schedulerWaitingWithdrawn(
+          client,
+          attempt,
+          "PlacementUnavailable",
+          current,
+        ),
+      ),
     unlaunched: (epoch, executionsMax) =>
       postgresTransaction(pool, (client) =>
         schedulerUnlaunched(client, epoch, executionsMax),

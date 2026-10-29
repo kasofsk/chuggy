@@ -219,8 +219,9 @@ export function configurationCatalogSelection(
 /**
  * An initialization read under the catalog's defaults, as it reads under this
  * selection instead: the selected plan's program, its stage count as the most
- * a program holds, and the first stage a commands workload runs in, without the
- * note the server wrote of the plan it read. A plan the catalog does not hold
+ * a program holds, and the key of the first stage a commands workload runs in,
+ * counted from one as the program's are, without the note the server wrote of
+ * the plan it read. A plan the catalog does not hold
  * leaves it as read.
  */
 export function configurationCatalogInitialization(
@@ -256,7 +257,7 @@ export function configurationCatalogInitialization(
       })),
     },
     choices: { ...initialization.choices, programStagesMax: plan.length },
-    ...(commanded === -1 ? {} : { commandedCheckStage: commanded }),
+    ...(commanded === -1 ? {} : { commandedCheckStage: commanded + 1 }),
   };
 }
 

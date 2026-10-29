@@ -25,6 +25,7 @@ import type { SessionSchedulerService } from "../../src/interpreter/sessionSched
 import { blessedPracticeCatalog } from "../../src/interpreter/taskBriefing.ts";
 import type { SessionLaunchFacts } from "../../src/interpreter/workerPoolSessions.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
+import { workerPoolMemoryMibDefault } from "../../src/interpreter/workerPool.ts";
 
 /** Everything `schedulerProcessRoot` takes but the store it opens for itself. */
 export const schedulerRootService: Omit<
@@ -60,6 +61,7 @@ export const schedulerRootService: Omit<
   runtimeFacts: { facts: () => Promise.resolve({ read: "Unavailable" }) },
   practices: blessedPracticeCatalog,
   workerRuntime: `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"e".repeat(64)}`,
+  poolMemoryMib: workerPoolMemoryMibDefault,
   config: executionSchedulerDefaults,
   ticketService: ticketServiceDefaults,
   finalizer: finalizerDefaults,

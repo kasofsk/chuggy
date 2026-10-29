@@ -42,6 +42,8 @@ import {
   type AttemptWorkloadObserved,
   type AttemptOpening,
   type Terminalized,
+  type WaitingAttempt,
+  type WaitingAttemptRecord,
   type WorkTaskInvocation,
 } from "../../src/interpreter/executionScheduler.ts";
 import {
@@ -97,11 +99,16 @@ import {
   ProjectAccessUnavailable,
   type ProjectAccess,
 } from "../../src/interpreter/projectAccess.ts";
-import type {
-  PersonalRunnerRegistered,
-  WorkerPoolRegistered,
-  WorkerPoolRosterPage,
+import {
+  workerPoolMemoryMibDefault,
+  type PersonalRunnerRegistered,
+  type WorkerPoolRegistered,
+  type WorkerPoolRosterPage,
 } from "../../src/interpreter/workerPool.ts";
+import {
+  workerPoolIncompatibility,
+  type WorkerPoolAnswered,
+} from "../../src/interpreter/workerPoolAssignment.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
 const partition = {
@@ -239,6 +246,15 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
     reapLapsedAttempts: () => Promise.resolve(0),
     attemptsAwaitingCleanup: () => Promise.resolve([]),
     attemptCleanupCompleted: () => Promise.resolve(true),
+    waitingAttempts: () => Promise.resolve([]),
+    waitingAttemptWithdrawn: (_attempt, evidence) => {
+      calls.push(`waiting-withdrawn:${evidence}`);
+      return Promise.resolve(true);
+    },
+    waitingAttemptOutdated: () => {
+      calls.push("waiting-outdated");
+      return Promise.resolve(true);
+    },
     unlaunched: () => Promise.resolve([execution]),
     fenceOldEpochAttempts: () => {
       calls.push("fenced");
@@ -344,6 +360,7 @@ function serviceWith(
     ticketBriefs: { brief: () => Promise.resolve(brief) },
     practices: blessedPracticeCatalog,
     workerRuntime,
+    poolMemoryMib: workerPoolMemoryMibDefault,
     config: executionSchedulerDefaults,
     ticketService: ticketServiceDefaults,
     finalizer: finalizerDefaults,
@@ -722,6 +739,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("observing");
       return Promise.resolve([]);
     },
+    waitingAttempts: () => {
+      calls.push("waiting");
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: () => {
       calls.push("reaped");
       return Promise.resolve(0);
@@ -755,6 +776,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "claimed:SpawnWork,SpawnEvaluation",
     "admitted",
     "observing",
+    "waiting",
     "reaped",
     "unlaunched",
     "lost",
@@ -954,6 +976,10 @@ test("each sweep is asked for at most the count a pass is configured to take", a
       swept.push(`observe:${String(attemptsMax)}`);
       return Promise.resolve([]);
     },
+    waitingAttempts: (_epoch, attemptsMax) => {
+      swept.push(`waiting:${String(attemptsMax)}`);
+      return Promise.resolve([]);
+    },
     reapLapsedAttempts: (_epoch, attemptsMax) => {
       swept.push(`reap:${String(attemptsMax)}`);
       return Promise.resolve(0);
@@ -964,6 +990,7 @@ test("each sweep is asked for at most the count a pass is configured to take", a
   assert.deepEqual(swept, [
     `fence:${bound}`,
     `observe:${bound}`,
+    `waiting:${bound}`,
     `reap:${bound}`,
   ]);
 });
@@ -1805,6 +1832,7 @@ function registeredPool(
     partition: { ...partition, project },
     pool: "pool-one",
     capabilities,
+    memoryCeilingMib: undefined,
     class: "Dedicated",
     principal: asPrincipal("principal-one"),
   };
@@ -1961,6 +1989,139 @@ test("an authority that cannot answer decides nothing, so the execution is held 
   }
 });
 
+/** The fixture's attempt as a pass reads it waiting for a runner. */
+const waitingAttempt: WaitingAttempt = {
+  partition,
+  execution: execution.execution,
+  attempt: attempt.attempt,
+  generation: attempt.generation,
+  projectActive: true,
+};
+
+/**
+ * A pass that finds the fixture's attempt waiting for a runner and nothing to
+ * open, against the registry page, the policy and the authority a case
+ * supplies, answering each withdrawal as `withdrawn` says and noting what an
+ * outdated one was compared against.
+ */
+async function poolWaitingPass(
+  calls: string[],
+  over: {
+    readonly waiting?: WaitingAttempt;
+    readonly page?: WorkerPoolRosterPage;
+    readonly resolved?: ProfileResolved;
+    readonly access?: ProjectAccess;
+    readonly withdrawn?: boolean;
+    readonly compared?: WaitingAttemptRecord[];
+  } = {},
+): Promise<void> {
+  const service = serviceWith(calls, over.resolved ?? runnable, placedOk);
+  await executionSchedulerLaunch(
+    {
+      ...service,
+      store: {
+        ...service.store,
+        waitingAttempts: () =>
+          Promise.resolve([over.waiting ?? waitingAttempt]),
+        execution: () =>
+          Promise.resolve({
+            ...execution,
+            route: "Pool" as const,
+            status: "Launching" as const,
+          }),
+        waitingAttemptWithdrawn: (_attempt, evidence) => {
+          calls.push(`waiting-withdrawn:${evidence}`);
+          return Promise.resolve(over.withdrawn ?? true);
+        },
+        waitingAttemptOutdated: (_attempt, current) => {
+          calls.push("waiting-outdated");
+          over.compared?.push(current);
+          return Promise.resolve(false);
+        },
+        unlaunched: () => Promise.resolve([]),
+      },
+      workerPools: {
+        personal: () => Promise.resolve([]),
+        registered: () => {
+          calls.push("registered");
+          return Promise.resolve(
+            over.page ?? {
+              pools: [registeredPool(["Platform:Linux:Amd64"])],
+              truncated: false,
+            },
+          );
+        },
+      },
+      access: over.access ?? poolAccess(),
+    },
+    epoch,
+  );
+}
+
+test("a waiting attempt of a project no longer Active is withdrawn without asking the pools", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, {
+    waiting: { ...waitingAttempt, projectActive: false },
+  });
+  assert.deepEqual(calls, ["waiting-withdrawn:PlacementUnavailable"]);
+});
+
+test("a waiting attempt no configured runner could take now is withdrawn and its execution blocked, and nothing is blocked where a runner took it first", async () => {
+  const none = { pools: [], truncated: false };
+  const calls: string[] = [];
+  await poolWaitingPass(calls, { page: none });
+  assert.deepEqual(calls, [
+    "registered",
+    "waiting-withdrawn:PlacementIncompatible",
+    "blocked:RequiredCapabilityUnavailable",
+  ]);
+  const raced: string[] = [];
+  await poolWaitingPass(raced, { page: none, withdrawn: false });
+  assert.deepEqual(raced, [
+    "registered",
+    "waiting-withdrawn:PlacementIncompatible",
+  ]);
+});
+
+test("a waiting attempt whose policy now denies it is blocked as at opening, and one whose policy cannot answer goes on waiting", async () => {
+  const denied: string[] = [];
+  await poolWaitingPass(denied, {
+    resolved: { resolved: "Denied", reason: "ExecutionPolicyDenied" },
+  });
+  assert.deepEqual(denied, [
+    "registered",
+    "waiting-withdrawn:PolicyDenied",
+    "blocked:ExecutionPolicyDenied",
+  ]);
+  const held: string[] = [];
+  await poolWaitingPass(held, { resolved: { resolved: "Unavailable" } });
+  assert.deepEqual(held, ["registered"]);
+});
+
+test("a waiting attempt whose authority cannot answer is neither prepared again nor ended", async () => {
+  const calls: string[] = [];
+  await poolWaitingPass(calls, {
+    access: {
+      authorize: () =>
+        Promise.reject(new ProjectAccessUnavailable("no answer")),
+      authorizeTenant: () =>
+        Promise.reject(new ProjectAccessUnavailable("no answer")),
+      authorizeSite: projectAccessSiteRefused,
+    },
+  });
+  assert.deepEqual(calls, ["registered"]);
+});
+
+test("a waiting attempt that prepares is compared against what this pass would record, under the runtime the pass opens attempts under", async () => {
+  const calls: string[] = [];
+  const compared: WaitingAttemptRecord[] = [];
+  await poolWaitingPass(calls, { compared });
+  assert.deepEqual(calls, ["registered", "waiting-outdated"]);
+  const [current] = compared;
+  assert.equal(current?.runtime, workerRuntime);
+  assert.deepEqual(current.invocation.profile, runnable.profile);
+});
+
 const member = asPrincipal("member-one");
 
 /** `member`'s personal runner, allowlisting the fixture's project unless a case says otherwise. */
@@ -1968,6 +2129,7 @@ const memberRunner: PersonalRunnerRegistered = {
   owner: member,
   principal: asPrincipal("chuggy-personal-one"),
   capabilities: ["Platform:Linux:Amd64"],
+  memoryCeilingMib: undefined,
   allowlist: [partition],
 };
 
@@ -2079,6 +2241,108 @@ test("an owner's execution is blocked where the runner that alone could run it i
     const calls: string[] = [];
     await ownedLaunch(calls, "Strict", [runner], access);
     assert.deepEqual(calls, ["personal:member-one", ...blocked], why);
+  }
+});
+
+test("an owner's execution is held where the owner's runner takes its size, and blocked for its memory where only that runner's ceiling stops it", async () => {
+  const small = workerPoolMemoryMibDefault - 1;
+  for (const [why, runner, called] of [
+    [
+      "at the ceiling",
+      { ...memberRunner, memoryCeilingMib: workerPoolMemoryMibDefault },
+      ["personal:member-one"],
+    ],
+    [
+      "over the ceiling",
+      { ...memberRunner, memoryCeilingMib: small },
+      [
+        "personal:member-one",
+        "ended:Withdrawn:PlacementIncompatible",
+        "blocked:RequiredMemoryUnavailable",
+      ],
+    ],
+    [
+      "over the ceiling and the inventory",
+      {
+        ...memberRunner,
+        capabilities: ["Platform:Linux:Arm64"],
+        memoryCeilingMib: small,
+      },
+      ["personal:member-one", ...blocked],
+    ],
+  ] as const) {
+    const calls: string[] = [];
+    await ownedLaunch(calls, "Strict", [runner], ownerAccess(true, true));
+    assert.deepEqual(calls, called, why);
+  }
+});
+
+test("an incompatible execution is blocked for its memory exactly where some runner, personal or the project's, would be configured for it but for its ceiling", () => {
+  const owned: LogicalExecution = {
+    ...execution,
+    route: "Pool",
+    owner: member,
+    ownerFallback: "Strict",
+  };
+  const small = workerPoolMemoryMibDefault - 1;
+  const arm = ["Platform:Linux:Arm64"];
+  const personal = (
+    capabilities: readonly string[],
+    memoryCeilingMib: number,
+  ): WorkerPoolAnswered => ({
+    partition,
+    pool: member,
+    principal: memberRunner.principal,
+    capabilities,
+    memoryCeilingMib,
+    class: "Personal",
+    dedicatedOwner: member,
+    allowlist: memberRunner.allowlist,
+    revoked: false,
+  });
+  const dedicated = (
+    capabilities: readonly string[],
+    memoryCeilingMib: number,
+  ): WorkerPoolAnswered => ({
+    ...registeredPool(capabilities),
+    memoryCeilingMib,
+    dedicatedOwner: undefined,
+    allowlist: [],
+    revoked: false,
+  });
+  for (const [why, answered, reason] of [
+    [
+      "a personal runner too small",
+      [personal(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    [
+      "a personal runner too small and unlike",
+      [personal(arm, small)],
+      "RequiredCapabilityUnavailable",
+    ],
+    [
+      "a pool too small",
+      [dedicated(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    [
+      "a pool too small and unlike",
+      [dedicated(arm, small)],
+      "RequiredCapabilityUnavailable",
+    ],
+    [
+      "an unlike pool beside a personal runner too small",
+      [dedicated(arm, small), personal(memberRunner.capabilities, small)],
+      "RequiredMemoryUnavailable",
+    ],
+    ["no runner", [], "RequiredCapabilityUnavailable"],
+  ] as const) {
+    assert.equal(
+      workerPoolIncompatibility(owned, answered, workerPoolMemoryMibDefault),
+      reason,
+      why,
+    );
   }
 });
 
@@ -2381,6 +2645,56 @@ test("a fault of the site's runtime withdraws the attempt without blocking or sp
   ]);
 });
 
+test("a run its site stopped at its deadline stores its text, then ends timed out as its worker's own report would, spending a retry, then cancels the pod", async () => {
+  const calls: string[] = [];
+  const seen: string[] = [];
+  assert.deepEqual(
+    await observing(
+      calls,
+      { observed: "TimedOut", text: "stopped at its deadline" },
+      { written: "Written" },
+      true,
+      seen,
+    ),
+    { observed: 1, notices: [] },
+  );
+  assert.deepEqual(calls, [
+    "observed:attempt-one",
+    "wrote:attempt-one:stopped at its deadline",
+    "ended:Lost:RunTimedOut",
+    "cancelled:attempt-one:1",
+  ]);
+  assert.deepEqual(seen, ["attemptEnded:Lost:RunTimedOut"]);
+});
+
+test("a timed-out run whose text could not be stored still ends, and the text's absence is told", async () => {
+  const calls: string[] = [];
+  const why = "the worker plane answered 503";
+  assert.deepEqual(
+    await observing(
+      calls,
+      { observed: "TimedOut", text: "text" },
+      { written: "Unwritten", why },
+    ),
+    {
+      observed: 1,
+      notices: [
+        {
+          notice: "ErrorUnwritten",
+          attempt,
+          ended: "RunTimedOut",
+          text: "text",
+          why,
+        },
+      ],
+    },
+  );
+  assert.deepEqual(calls.slice(2), [
+    "ended:Lost:RunTimedOut",
+    "cancelled:attempt-one:1",
+  ]);
+});
+
 test("a workload with no fault its worker cannot report is left to its lease", async () => {
   const calls: string[] = [];
   assert.deepEqual(await observing(calls, { observed: "Unfaulted" }), {
@@ -2405,7 +2719,7 @@ test("a fault whose text could not be stored still blocks, and the text's absenc
         {
           notice: "ErrorUnwritten",
           attempt,
-          fault: "ImageLacksGit",
+          ended: "ImageLacksGit",
           text: "text",
           why,
         },
@@ -2423,6 +2737,7 @@ test("an attempt something else ended first is neither counted nor told", async 
   for (const found of [
     { observed: "SiteFault", why: "pod one: copy failed" },
     { observed: "ImageFault", fault: "ImageLacksGit", text: "text" },
+    { observed: "TimedOut", text: "text" },
   ] as const) {
     assert.deepEqual(
       await observing(

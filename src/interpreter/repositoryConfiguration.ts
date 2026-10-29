@@ -167,9 +167,9 @@ export interface RepositoryConfigurationSnapshotPort {
 
 /**
  * What reading where a repository's own HEAD points came to. `Absent` is a
- * repository holding no commit under it, which is what a repository created and
- * not yet seeded is, and is not an outage: there is nothing there to read at
- * this commit or any other.
+ * repository holding no commit under it, which is what a repository created
+ * empty is, and is not an outage: there is nothing there to read at this commit
+ * or any other.
  */
 export type RepositoryDefaultBranchRead =
   | {
@@ -203,6 +203,8 @@ export interface RepositoryConfigurationDeclaration {
   readonly revision: ConfigurationRevisionId;
   readonly canonical: CanonicalConfiguration;
   readonly configuration: DeclaredConfiguration;
+  /** The file each catalog workload named by path was read from, by the name it is held under. */
+  readonly workloadPaths: Readonly<Record<string, string>>;
 }
 
 export type RepositoryConfigurationFault =
@@ -270,7 +272,7 @@ export interface RepositoryConfigurationImportPorts {
   readonly attempts: RepositoryConfigurationImportAttempts;
 }
 
-/** An import's ports and where a repository's default branch points, which an import naming no commit is made at. */
+/** An import's ports and where a repository's default branch points, which every import is made at. */
 export interface RepositoryConfigurationHeadImportPorts extends RepositoryConfigurationImportPorts {
   readonly heads: RepositoryDefaultBranchPort;
 }
@@ -491,8 +493,55 @@ async function importRepositoryConfigurationsBound(input: {
   readonly ports: RepositoryConfigurationImportPorts;
 }): Promise<RepositoryConfigurationImportAttempted> {
   const binding = input.binding;
-  const request = { repository: binding, commit: input.commit };
-  const snapshot = await input.ports.snapshots.snapshot(request);
+  const read = await readRepositoryConfigurations(input.ports.snapshots, {
+    repository: binding,
+    commit: input.commit,
+  });
+  if (read.result !== "Ready") return read;
+  const imported = await input.ports.store.importRepositoryConfigurations({
+    partition: binding.partition,
+    binding,
+    authority: input.authority,
+    declarations: read.declarations,
+  });
+  switch (imported.imported) {
+    case "Imported":
+      return { result: "Imported", declarations: read.declarations.length };
+    case "IdentityConflict":
+      return { result: "IdentityConflict" };
+    case "StaleBinding":
+      return { result: "StaleBinding" };
+    default:
+      return assertNever(imported);
+  }
+}
+
+/**
+ * What one commit's declarations read as, short of storing any: what an
+ * import of it would be refused with, or every declaration ready to store.
+ */
+export type RepositoryConfigurationRead =
+  | Extract<
+      RepositoryConfigurationImportOutcome,
+      {
+        readonly result:
+          | "SnapshotAbsent"
+          | "Unavailable"
+          | "SnapshotRefused"
+          | "DeclarationsRefused";
+      }
+    >
+  | {
+      readonly result: "Ready";
+      readonly declarations: readonly RepositoryConfigurationDeclaration[];
+    };
+
+/** Reads one commit's declarations and every file they name, as an import of it would. */
+export async function readRepositoryConfigurations(
+  snapshots: RepositoryConfigurationSnapshotPort,
+  request: RepositoryDeclarationSnapshotRequest,
+): Promise<RepositoryConfigurationRead> {
+  const snapshot = await snapshots.snapshot(request);
   switch (snapshot.read) {
     case "Absent":
       return snapshot.absent === "Commit"
@@ -507,43 +556,88 @@ async function importRepositoryConfigurationsBound(input: {
     case "Refused":
       return { result: "SnapshotRefused", refused: snapshot.refused };
     case "Snapshot": {
-      const referenced = await importRepositoryConfigurationsReferenced(
-        input.ports.snapshots,
+      const referenced = await readRepositoryConfigurationsReferenced(
+        snapshots,
         request,
         snapshot.files,
       );
       if (!(referenced instanceof Map))
-        return importRepositoryConfigurationsUnread(referenced);
+        return readRepositoryConfigurationsUnread(referenced);
       const readiness = repositoryConfigurationImportReadiness({
-        repository: binding.repository,
-        commit: input.commit,
+        repository: request.repository.repository,
+        commit: request.commit,
         files: snapshot.files,
         referenced,
       });
-      if (readiness.readiness === "Refused")
-        return { result: "DeclarationsRefused", faults: readiness.faults };
-      const imported = await input.ports.store.importRepositoryConfigurations({
-        partition: binding.partition,
-        binding,
-        authority: input.authority,
-        declarations: readiness.declarations,
-      });
-      switch (imported.imported) {
-        case "Imported":
-          return {
-            result: "Imported",
-            declarations: readiness.declarations.length,
-          };
-        case "IdentityConflict":
-          return { result: "IdentityConflict" };
-        case "StaleBinding":
-          return { result: "StaleBinding" };
-        default:
-          return assertNever(imported);
-      }
+      return readiness.readiness === "Refused"
+        ? { result: "DeclarationsRefused", faults: readiness.faults }
+        : { result: "Ready", declarations: readiness.declarations };
     }
     default:
       return assertNever(snapshot);
+  }
+}
+
+/** What a repository's default branch declares now, read as an import would and stored nowhere. */
+export type RepositoryConfigurationHeadOutcome =
+  | { readonly result: "NotFound" }
+  | { readonly result: "RepositoryAbsent" }
+  | ({ readonly result: "Unavailable" } & RepositoryDeclarationUnavailable)
+  | { readonly result: "BranchAbsent" }
+  | {
+      readonly result: "Read";
+      readonly branch: GitRefName;
+      readonly commit: GitObjectId;
+      readonly read: Exclude<
+        RepositoryConfigurationRead,
+        { readonly result: "Unavailable" }
+      >;
+    };
+
+/** An import at the head's ports short of the two that write. */
+export type RepositoryConfigurationHeadPorts = Pick<
+  RepositoryConfigurationHeadImportPorts,
+  "bindings" | "snapshots" | "heads"
+>;
+
+/**
+ * Reads a binding's default branch where it points now, as an import of it
+ * would, so a reader can see what the next import makes before anything runs
+ * it.
+ */
+export async function readRepositoryConfigurationHead(input: {
+  readonly partition: Partition;
+  readonly repository: RepositoryId;
+  readonly ports: RepositoryConfigurationHeadPorts;
+}): Promise<RepositoryConfigurationHeadOutcome> {
+  const binding = await input.ports.bindings.binding(
+    input.partition,
+    input.repository,
+  );
+  if (binding === undefined) return { result: "RepositoryAbsent" };
+  const head = await input.ports.heads.defaultBranch(binding);
+  switch (head.read) {
+    case "Absent":
+      return { result: "BranchAbsent" };
+    case "Unavailable":
+      return repositoryDeclarationUnavailableOutcome({
+        unavailable:
+          head.evidence !== undefined && !("git" in head.evidence)
+            ? "Credential"
+            : "Repository",
+        ...(head.evidence === undefined ? {} : { evidence: head.evidence }),
+      });
+    case "Branch": {
+      const read = await readRepositoryConfigurations(input.ports.snapshots, {
+        repository: binding,
+        commit: head.commit,
+      });
+      return read.result === "Unavailable"
+        ? read
+        : { result: "Read", branch: head.branch, commit: head.commit, read };
+    }
+    default:
+      return assertNever(head);
   }
 }
 
@@ -553,7 +647,7 @@ async function importRepositoryConfigurationsBound(input: {
  * import reads paths is as many as it can take, and a snapshot naming more
  * than that stops reading for readiness to refuse.
  */
-async function importRepositoryConfigurationsReferenced(
+async function readRepositoryConfigurationsReferenced(
   snapshots: RepositoryConfigurationSnapshotPort,
   request: RepositoryDeclarationSnapshotRequest,
   files: readonly RepositoryDeclarationFile[],
@@ -585,12 +679,12 @@ async function importRepositoryConfigurationsReferenced(
 }
 
 /** A reference read that found nothing to read, as the outcome a snapshot saying the same is. */
-function importRepositoryConfigurationsUnread(
+function readRepositoryConfigurationsUnread(
   read: Exclude<
     RepositoryConfigurationReferencedRead,
     { readonly read: "Referenced" }
   >,
-): RepositoryConfigurationImportAttempted {
+): RepositoryConfigurationRead {
   switch (read.read) {
     case "Absent":
       return { result: "SnapshotAbsent", absent: "Commit" };
@@ -911,7 +1005,9 @@ export async function importBoundRepositories(input: {
 }
 
 /** The binding a line is about. */
-function boundRepositoryImportLineWhere(bound: BoundRepositoryImport): string {
+export function boundRepositoryImportLineWhere(
+  bound: Pick<BoundRepositoryImport, "partition" | "repository">,
+): string {
   return `${bound.partition.tenant}/${bound.partition.project} ${bound.repository}`;
 }
 
@@ -1133,6 +1229,7 @@ function repositoryConfigurationEnvelope(
     revision: repositoryConfigurationRevision(commit, name),
     canonical,
     configuration: readiness.configuration,
+    workloadPaths: resolved.workloadPaths,
   };
 }
 

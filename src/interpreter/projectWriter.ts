@@ -59,7 +59,11 @@
 import { createHash } from "node:crypto";
 
 import type { Entry, Replayed, StoredEntry } from "../actor/journal.ts";
-import { genesis, replayStep, storedJournalLegalOn } from "../actor/journal.ts";
+import {
+  replayStep,
+  storedJournalLegalOn,
+  storedReplay,
+} from "../actor/journal.ts";
 import { ticketEquals } from "../domain/equality.ts";
 import { commandSubject, type TicketCommand } from "../actor/command.ts";
 import type { Config } from "../domain/config.ts";
@@ -68,15 +72,11 @@ import type {
   Escalation,
   SuccessfulTicketDecision,
   TicketDecision,
+  TicketEvent,
   TicketGraph,
   TicketState,
 } from "../domain/generated/modelTypes.ts";
-import {
-  canReleaseIn,
-  dependableIn,
-  depArtifacts,
-  waitsOn,
-} from "../domain/enablement.ts";
+import { dependableIn, depArtifacts, waitsOn } from "../domain/enablement.ts";
 import {
   alwaysPolicy,
   commandTaken,
@@ -84,10 +84,10 @@ import {
   type EvaluationFailurePolicy,
 } from "../domain/deciders.ts";
 import { decisionValid } from "../domain/decisionValid.ts";
-import { evolve } from "../domain/evolve.ts";
+import { eventSlice, evolve } from "../domain/evolve.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
-import { genesisLedgers, ledgerAt, type Ledgers } from "../domain/ledger.ts";
-import { phaseOf } from "../domain/phase.ts";
+import { ledgerAt, type Ledgers } from "../domain/ledger.ts";
+import { isTerminal, phaseOf } from "../domain/phase.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
 import type {
   DispatchSource,
@@ -193,18 +193,11 @@ export function projectedEscalationOf(state: TicketState): ProjectedEscalation {
     : "NoEscalation";
 }
 
-/**
- * Every ticket's current standing, which is the whole projection and the
- * rebuild of it. Every field is read off the same `TicketGraph` this decision left
- * behind, so no two of them can be at different journal positions — and the
- * evidence a decision carried lands on the one row it is about, which is
- * escalated or the decision contradicts itself.
- */
-export function projectionOf(
+/** Refuses evidence for a ticket the graph does not hold escalated, which is a decision contradicting itself. */
+function projectionEvidenceChecked(
   graph: TicketGraph,
-  escalated?: TicketEscalationEvidence,
-): readonly TicketProjection[] {
-  const dependable = new Set(dependableIn(graph));
+  escalated: TicketEscalationEvidence | undefined,
+): void {
   if (
     escalated !== undefined &&
     projectedEscalationOf(ticketAt(graph, escalated.ticket).state) ===
@@ -213,6 +206,14 @@ export function projectionOf(
     throw new IntegrityContradiction(
       "a decision carries evidence for a ticket it did not escalate",
     );
+}
+
+/** The row of every ticket a graph holds, each read off that ticket alone. */
+function projectionRows(
+  graph: TicketGraph,
+  escalated: TicketEscalationEvidence | undefined,
+): readonly TicketProjection[] {
+  const dependable = new Set(dependableIn(graph));
   return ticketIds(graph).map((ticket) => {
     const value = ticketAt(graph, ticket);
     return {
@@ -229,21 +230,66 @@ export function projectionOf(
 }
 
 /**
- * The projection rows one decision changed: a ticket it released, and a ticket
- * whose phase it moved. A ticket the decision left alone is not rewritten.
+ * Every ticket's current standing, which is the whole projection and the
+ * rebuild of it. Every field is read off the same `TicketGraph` this decision left
+ * behind, so no two of them can be at different journal positions — and the
+ * evidence a decision carried lands on the one row it is about, which is
+ * escalated or the decision contradicts itself.
+ */
+export function projectionOf(
+  graph: TicketGraph,
+  escalated?: TicketEscalationEvidence,
+): readonly TicketProjection[] {
+  projectionEvidenceChecked(graph, escalated);
+  return projectionRows(graph, escalated);
+}
+
+/**
+ * The projection rows one event changed: its ticket's row, where the event
+ * released that ticket or moved it. A row reads its own ticket alone and an
+ * event moves no ticket but the one it names, so every other row is the one
+ * already written.
  */
 export function projectionChanges(
   pre: TicketGraph,
   post: TicketGraph,
+  event: TicketEvent,
   escalated?: TicketEscalationEvidence,
 ): readonly TicketProjection[] {
-  return projectionOf(post, escalated).filter((row) => {
+  projectionEvidenceChecked(post, escalated);
+  return projectionRows(eventSlice(post, event), escalated).filter((row) => {
     const previous = pre.tickets.get(row.ticket);
     return (
       previous === undefined ||
       !ticketEquals(previous, ticketAt(post, row.ticket))
     );
   });
+}
+
+/** What a writer replays from its journal: the graph, the ledgers, and each ticket's version. */
+export interface ProjectWriterReplayed extends Replayed {
+  readonly ticketVersions: ReadonlyMap<number, number>;
+}
+
+/**
+ * The journal replayed from genesis, each ticket versioned at the last row
+ * that changed its projection row. A row stamps only the rows its own event
+ * changed, so the replay costs the journal's rows and not its rows times the
+ * fleet.
+ */
+export function projectWriterReplay(
+  journal: readonly StoredEntry[],
+): ProjectWriterReplayed {
+  const ticketVersions = new Map<number, number>();
+  const replayed = storedReplay(journal, (entry, before, after) => {
+    for (const projection of projectionChanges(
+      before.graph,
+      after.graph,
+      entry.event,
+    ))
+      ticketVersions.set(projection.ticket, entry.seq);
+  });
+  return { ...replayed, ticketVersions };
 }
 
 /**
@@ -279,16 +325,9 @@ export async function projectWriterLoad(
   writer: ProjectTicketWriter,
   lease: Lease,
 ): Promise<ProjectMemory> {
-  const journal = await projectWriterJournal(writer, lease);
-  const ticketVersions = new Map<number, number>();
-  let replayed: Replayed = { graph: genesis, ledgers: genesisLedgers };
-  for (const row of journal) {
-    const post = replayStep(replayed, row.entry.event);
-    for (const projection of projectionChanges(replayed.graph, post.graph))
-      ticketVersions.set(projection.ticket, row.entry.seq);
-    replayed = post;
-  }
-  const { graph, ledgers } = replayed;
+  const { graph, ledgers, ticketVersions } = projectWriterReplay(
+    await projectWriterJournal(writer, lease),
+  );
   const dispatchContracts = await writer.store.loadDispatchContracts?.(lease);
   const memory = {
     lease,
@@ -389,6 +428,18 @@ function projectWriterFailurePolicy(
 }
 
 /**
+ * Whether a project has room for one more release. The deployment's `nTickets`
+ * bounds the tickets a project holds unfinished, since a Done or Revoked ticket
+ * occupies no room and an id the server mints is never reused.
+ */
+function releaseRoomIn(config: Config, graph: TicketGraph): boolean {
+  return (
+    ticketIds(graph).filter((id) => !isTerminal(ticketAt(graph, id).state))
+      .length < config.nTickets
+  );
+}
+
+/**
  * What `decide` answers a command at the state in hand, an accepted one held
  * to `decisionValid` because every obligation it owes is about to become a
  * row. Outside `commandTaken` a release or an update is refused as the
@@ -416,7 +467,7 @@ function projectWriterDecision(
   if (
     command.type === "CreateTicket" &&
     !memory.graph.tickets.has(command.value.id) &&
-    !canReleaseIn(writer.config, memory.graph, asTicketId(command.value.id))
+    !releaseRoomIn(writer.config, memory.graph)
   )
     return { type: "Boundary", code: "TicketCapacityReached" };
   const decision = decide(
@@ -444,6 +495,7 @@ function journaledPlan(
   const projection = projectionChanges(
     memory.graph,
     post.graph,
+    decision.event,
     projectWriterEscalationEvidence(item, command, post.graph),
   );
   const versions = new Map(memory.ticketVersions);

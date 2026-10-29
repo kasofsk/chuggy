@@ -21,7 +21,9 @@ import {
 import { parkedOverridesVerdict } from "../../src/interpreter/parkedOverrides.ts";
 import type { ReleasedTicket } from "../../src/domain/generated/modelTypes.ts";
 import {
+  asConfigurationRevisionId,
   canonicalConfigurationOf,
+  configurationRepositoryOf,
   draftReleaseReadiness,
   releaseConfigurationReadiness,
   type ReleaseAuthoring,
@@ -322,7 +324,7 @@ const overridableFields = Object.entries(
 
 test("what the contract offers a parked ticket leaves every repository configuration's definition where it was", () => {
   assert.deepEqual(
-    [...parkedTicketOverrideFields, "work.instructions"].sort(),
+    [...parkedTicketOverrideFields, "work.instructions", "workloads"].sort(),
     [...overridableFields].sort(),
   );
   const directory = new URL("../fixtures/configurations/", import.meta.url);
@@ -363,7 +365,123 @@ test("what the contract offers a parked ticket leaves every repository configura
       { verdict: "Refused", code: "OverridesMoveDefinition" },
       name,
     );
+    assert.deepEqual(
+      parkedOverridesVerdict(ticket, undefined, {
+        workloads: { build: { prompt: { text: "Do the other work." } } },
+      }),
+      { verdict: "Refused", code: "OverridesUnsupported" },
+      name,
+    );
   }
+});
+
+/** A catalog ticket whose work is one agent and whose one stage runs one command. */
+const parkedCatalogTicket = {
+  configuration: canonicalConfigurationOf({
+    version: 2,
+    image: "worker:v2",
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { text: "Do the work." },
+        worker: { mode: document.worker.mode, setup: [], files: [] },
+      },
+      tests: { runner: "Commands", commands: ["npm test"] },
+    },
+    plans: { standard: [{ name: "checks", evaluators: ["tests"] }] },
+    defaults: { work: "build", evaluation: "standard" },
+  }),
+  configurationRepository: undefined,
+  authoring: {
+    deps: new Set<number>(),
+    prog: [{ key: 1, evaluators: [{ key: 1 }] }],
+  },
+  brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+};
+
+test("an override of a workload a parked catalog ticket runs moves its definition, which is why the contract offers a parked ticket no workloads", () => {
+  assert.deepEqual(parkedOverridesVerdict(parkedCatalogTicket, undefined, {}), {
+    verdict: "Admitted",
+  });
+  const offers: readonly ConfigurationOverrides[] = [
+    { workloads: { build: { prompt: { text: "Do the other work." } } } },
+    {
+      workloads: {
+        build: {
+          worker: {
+            mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+            setup: ["make prepare"],
+            files: [],
+          },
+        },
+      },
+    },
+    { workloads: { tests: { commands: ["npm test", "npm run lint"] } } },
+  ];
+  for (const offered of offers) {
+    assert.deepEqual(
+      parkedOverridesVerdict(parkedCatalogTicket, undefined, offered),
+      { verdict: "Refused", code: "OverridesMoveDefinition" },
+      JSON.stringify(offered),
+    );
+    assert.deepEqual(
+      parkedOverridesVerdict(parkedCatalogTicket, offered, offered),
+      { verdict: "Admitted" },
+      JSON.stringify(offered),
+    );
+  }
+});
+
+test("a parked override that moves a brief's checks onto an evaluator the program leaves out is refused ProgramSkipsBriefChecks", () => {
+  const agent = (text: string) => ({
+    runner: "Agent",
+    prompt: { text },
+    worker: { mode: document.worker.mode, setup: [], files: [] },
+  });
+  const ticket = {
+    configuration: canonicalConfigurationOf({
+      version: 2,
+      image: "worker:v2",
+      workloads: {
+        build: agent("Do the work."),
+        review: agent("Review the work."),
+        tests: { runner: "Commands", commands: ["npm test"] },
+      },
+      plans: { gated: [{ name: "checks", evaluators: ["review", "tests"] }] },
+      defaults: { work: "build", evaluation: "gated" },
+    }),
+    configurationRepository: undefined,
+    authoring: {
+      deps: new Set<number>(),
+      prog: [{ key: 1, evaluators: [{ key: 2 }] }],
+    },
+    brief: asDraftBrief({
+      ...briefBeforeImages,
+      checks: ["npm run lint"],
+      repository: "repository-one",
+    }),
+  };
+  const commanded: ConfigurationOverrides = {
+    workloads: { review: { runner: "Commands", commands: ["true"] } },
+  };
+  assert.deepEqual(parkedOverridesVerdict(ticket, undefined, commanded), {
+    verdict: "Refused",
+    code: "ProgramSkipsBriefChecks",
+  });
+  assert.deepEqual(
+    parkedOverridesVerdict(
+      {
+        ...ticket,
+        brief: asDraftBrief({
+          ...briefBeforeImages,
+          repository: "repository-one",
+        }),
+      },
+      undefined,
+      commanded,
+    ),
+    { verdict: "Admitted" },
+  );
 });
 
 test("a parked ticket's overrides are held to the ones it holds, not to the configuration alone", () => {
@@ -417,7 +535,13 @@ test("a parked ticket whose brief and configuration do not pair is refused under
       "BriefNamesNoRepository",
     ],
     [
-      { ...paired, configurationRepository: asRepositoryId("repository-two") },
+      {
+        ...paired,
+        configurationRepository: {
+          from: "Imported",
+          repository: asRepositoryId("repository-two"),
+        },
+      },
       "ConfigurationFromAnotherRepository",
     ],
   ] as const;
@@ -431,6 +555,27 @@ test("a parked ticket whose brief and configuration do not pair is refused under
   assert.deepEqual(parkedOverridesVerdict(paired, undefined, {}), {
     verdict: "Admitted",
   });
+});
+
+test("a parked ticket released under the project's one bootstrap from before each repository had its own still takes overrides", () => {
+  const ticket = {
+    configuration: canonicalConfigurationOf(document),
+    configurationRepository: configurationRepositoryOf(
+      asConfigurationRevisionId("bootstrap"),
+      undefined,
+    ),
+    authoring,
+    brief: asDraftBrief({ ...briefBeforeImages, repository: "repository-one" }),
+  };
+  assert.deepEqual(parkedOverridesVerdict(ticket, undefined, {}), {
+    verdict: "Admitted",
+  });
+  assert.deepEqual(
+    parkedOverridesVerdict(ticket, undefined, {
+      work: { instructions: ["Do the other work."] },
+    }),
+    { verdict: "Refused", code: "OverridesMoveDefinition" },
+  );
 });
 
 test("an agent named where the requirement is a container capability moves the definition, though the contract offers the mode", () => {

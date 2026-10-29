@@ -27,7 +27,7 @@ import {
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
 import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
-import { artifactRoles, runEndedEvidences } from "./rosters.ts";
+import { artifactRoles, forgeApps, runEndedEvidences } from "./rosters.ts";
 import {
   artifactFailures,
   resultManifestRejections,
@@ -162,9 +162,9 @@ export const workerCredentialRepositorySchema = z
   .refine((value) => isBoundedText(value, repositoryIdentityCharsMax));
 
 /**
- * What an attempt may ask its credential for: nothing or its own repository,
- * minted what its task kind needs, or another repository its project binds,
- * minted a read.
+ * What an attempt may ask its credential for: nothing, which is its own
+ * repository minted what its task kind needs, or a repository it names, minted
+ * a read where it is its own or one its project binds.
  */
 export const workerCredentialSchema = z.strictObject({
   repository: workerCredentialRepositorySchema.exactOptional(),
@@ -187,8 +187,34 @@ export const workerCredentialAbsences = [
   "NotMinted",
 ] as const;
 
+/** Which refusal a mint for `repository` met, the `app` it was asked of, and where the operator goes to change it. */
+export const workerCredentialUnreachedSchema = z.discriminatedUnion("reach", [
+  /** The installation on the repository's owner does not select it: the operator adds it to that installation's repository selection. */
+  z.object({
+    reach: z.literal("Unselected"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+    installation: identitySchema,
+  }),
+  /** The forge refused that installation or the app itself, for its key, a suspension or a permission not accepted: the operator goes to the app's installation page. */
+  z.object({
+    reach: z.literal("Refused"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+    installation: identitySchema,
+  }),
+  /** No installation of the app is claimed on the owner: the operator installs the app there. */
+  z.object({
+    reach: z.literal("Unclaimed"),
+    repository: workerCredentialRepositorySchema,
+    app: z.enum(forgeApps),
+  }),
+]);
+
+/** `unreached` is present only on a `NotMinted` whose mint got past the repository's address. */
 export const workerCredentialAbsentSchema = z.object({
   reason: z.enum(workerCredentialAbsences),
+  unreached: workerCredentialUnreachedSchema.optional(),
 });
 export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema

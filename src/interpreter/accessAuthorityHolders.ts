@@ -147,6 +147,7 @@ export const accessTenantAuthorityKinds: Readonly<
   MemberGranters: "ManageTenantAuthorities",
   HostedRunsGranters: "ManageSiteHeldAuthorities",
   PersonalRunnersGranters: "ManageTenantAuthorities",
+  UnscopedChatGranters: "ManageTenantAuthorities",
   AuthorityManagers: "ManageTenantAuthorities",
 };
 

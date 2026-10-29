@@ -3,9 +3,9 @@
  * revision that form becomes, and the update that releases it.
  *
  * The form is the creation form, so every fault it states is the one creation
- * states. The dependencies are the one field it does not take from the reader:
- * a released ticket's cannot change, so the revision carries the draft's own
- * whatever the form holds, and the draft door refuses the rest.
+ * states. Its dependencies are offered as creation offers them, less the
+ * ticket itself and with every one its draft holds, so a revoked one can be
+ * dropped.
  *
  * AN EDIT KEEPS THE CONFIGURATION ITS DRAFT NAMES. It starts on that name and
  * moves the ticket to another only where its reader chooses one, so a revision
@@ -31,6 +31,7 @@ import {
 } from "./ticketCreation.ts";
 import { overridesHeldOf } from "./ticketOverrides.ts";
 import type {
+  AuthoringStanding,
   CreationFault,
   CreationOffer,
   TicketCreationForm,
@@ -91,6 +92,26 @@ export function editOfferListed(
   return editOfferHeld(draft, offers) !== undefined;
 }
 
+/** An offer as an edit draws it: its dependency candidates less the ticket
+ * itself, and with every dependency the draft holds, ascending. */
+function editOfferDependencies(
+  draft: DraftResponse,
+  offer: CreationOffer,
+): CreationOffer {
+  const offered = new Set([
+    ...offer.initialization.dependencyCandidates,
+    ...draft.authoring.dependencies,
+  ]);
+  offered.delete(draft.ticket);
+  return {
+    ...offer,
+    initialization: {
+      ...offer.initialization,
+      dependencyCandidates: [...offered].sort((left, right) => left - right),
+    },
+  };
+}
+
 /**
  * The offers one edit is drawn over. A draft whose configuration the project
  * no longer offers is offered its own revision first and starts there, given
@@ -102,13 +123,21 @@ export function editOffersFrom(
   offers: readonly CreationOffer[],
   own: DraftInitializationResponse | undefined,
 ): EditOffers {
-  const held = editOfferHeld(draft, offers);
-  if (held !== undefined) return { offers, configuration: held.name };
+  const drawn = offers.map((offer) => editOfferDependencies(draft, offer));
+  const held = editOfferHeld(draft, drawn);
+  if (held !== undefined) return { offers: drawn, configuration: held.name };
   if (own?.configuration.revision !== draft.configurationRevision)
-    return { offers, configuration: "" };
+    return { offers: drawn, configuration: "" };
   const name = editConfigurationName(draft);
   return {
-    offers: [{ name, listed: undefined, initialization: own }, ...offers],
+    offers: [
+      editOfferDependencies(draft, {
+        name,
+        listed: undefined,
+        initialization: own,
+      }),
+      ...drawn,
+    ],
     configuration: name,
   };
 }
@@ -142,6 +171,7 @@ export function editFormFrom(
       finalization?.mode ?? creationLandingDefault(repositories, repository),
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
+    workloads: draft.overrides?.workloads ?? {},
   };
 }
 
@@ -155,19 +185,22 @@ export type EditAssembly =
 /**
  * The revision one form becomes, written against the draft version it was read
  * at and pinned to the revision of the offer the form names, which is how an
- * update re-pins a ticket and how it is moved to another configuration.
+ * update re-pins a ticket and how it is moved to another configuration. A
+ * reader who may not override revises with the draft's overrides as they
+ * are, or with none, and one who may not skip planned evaluations with a
+ * program running the whole plan.
  */
 export function editRevisionFrom(
   draft: DraftResponse,
   offers: readonly CreationOffer[],
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
+  standing: Omit<AuthoringStanding, "held"> = { mayOverride: true },
 ): EditAssembly {
-  const assembled = creationBodyFrom(
-    offers,
-    { ...form, dependencies: draft.authoring.dependencies },
-    repositories,
-  );
+  const assembled = creationBodyFrom(offers, form, repositories, {
+    ...standing,
+    held: draft.overrides,
+  });
   if (assembled.assembled === "Faults") return assembled;
   return {
     assembled: "Body",

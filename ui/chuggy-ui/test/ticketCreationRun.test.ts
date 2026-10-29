@@ -18,12 +18,14 @@ import {
   createAndReleaseTicket,
   creationContextSentence,
   creationOffersMax,
+  creationProjectNotActiveSentence,
   readCreationContext,
   reviseAndUpdateTicket,
 } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,
   creationBody,
+  creationBootstrapRevision,
   creationDeclared,
   creationDraft,
   creationInitialization,
@@ -304,43 +306,64 @@ function declaringProject(
   return answering((_method, path) => {
     if (path.endsWith("/repositories")) return bindings(...bound);
     if (path.includes("/configurations")) return ok(page);
-    return path.endsWith("/bootstrap") && bootstrap !== undefined
+    return path.endsWith(bootstrapPath(scratch)) && bootstrap !== undefined
       ? bootstrap
       : initialization(path);
   });
 }
 
-const firstPageAndOffers = [
-  `GET ${partitionBase}/repositories`,
-  `GET ${partitionBase}/configurations`,
-  `GET ${partitionBase}/draft-initializations/bootstrap`,
-  `GET ${partitionBase}/draft-initializations/n-development`,
-  `GET ${partitionBase}/draft-initializations/n-sonnet`,
-];
+/** The path one repository's bootstrap initialization is read at. */
+function bootstrapPath(repository: string): string {
+  return `/draft-initializations/${encodeURIComponent(creationBootstrapRevision(repository))}`;
+}
+
+/** The walk's one page, and then each offer read in name order. */
+function firstPageAndOffers(...bootstraps: readonly string[]) {
+  return [
+    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/configurations`,
+    ...bootstraps.map(
+      (repository) => `GET ${partitionBase}${bootstrapPath(repository)}`,
+    ),
+    `GET ${partitionBase}/draft-initializations/n-development`,
+    `GET ${partitionBase}/draft-initializations/n-sonnet`,
+  ];
+}
 
 /**
  * One repository declaring, one bound declaring nothing long before any row
  * the first page holds, and three bound today. None that declares nothing is
- * waited on, so the walk is one page, and the bootstrap they share is read once.
+ * waited on, so the walk is one page, and each one's own bootstrap is read.
  */
-test("bindings that declare nothing, however old, cost the walk nothing and are offered the bootstrap", async () => {
+test("bindings that declare nothing, however old, cost the walk nothing and are offered their bootstraps", async () => {
   const today = "2026-10-07 08:00:00.5+00";
+  const common = "https://forge.test/kasofsk/chuggy-common";
+  const linux = "https://forge.test/kasofsk/chuggy-linux";
   const held = declaringProject(
     [
       imported(chuggy),
       bootstrapped(fabric, "2026-09-10 00:00:00+00"),
       bootstrapped(scratch, today),
-      bootstrapped("https://forge.test/kasofsk/chuggy-common", today),
-      bootstrapped("https://forge.test/kasofsk/chuggy-linux", today),
+      bootstrapped(common, today),
+      bootstrapped(linux, today),
     ],
     "2026-10-07 09:00:00.123456+00",
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(offeredOf(read)).toStrictEqual([
     false,
-    ["bootstrap", "development", "development-sonnet"],
+    [
+      "bootstrap · gdoteof/chuggy-fabric",
+      "bootstrap · gdoteof/scratch",
+      "bootstrap · kasofsk/chuggy-common",
+      "bootstrap · kasofsk/chuggy-linux",
+      "development",
+      "development-sonnet",
+    ],
   ]);
-  expect(held.calls).toStrictEqual(firstPageAndOffers);
+  expect(held.calls).toStrictEqual(
+    firstPageAndOffers(fabric, scratch, common, linux),
+  );
 });
 
 /**
@@ -362,7 +385,7 @@ test("a bootstrap older than everything the walk reads is still what a later bin
     false,
     ["bootstrap", "development", "development-sonnet"],
   ]);
-  expect(held.calls).toStrictEqual(firstPageAndOffers);
+  expect(held.calls).toStrictEqual(firstPageAndOffers(scratch));
 });
 
 /** Every offer is a request, so a repository declaring more than one read
@@ -502,6 +525,24 @@ test("a fence the API refuses returns the reader to the form, unreleased", async
   expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
 });
 
+test("a project that is not active is a refusal, not a fence to submit again over", async () => {
+  const held = answering(() => ({
+    status: 409,
+    body: { error: { code: "ProjectNotActive" }, lifecycle: "Suspended" },
+  }));
+  const created = await createAndReleaseTicket(
+    held.ports,
+    creationPartition,
+    releaseSubmission,
+    () => undefined,
+  );
+  expect(created).toMatchObject({
+    created: "Refused",
+    reason: creationProjectNotActiveSentence,
+  });
+  expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
+});
+
 test("a release that settles as succeeded is the one ticket to navigate to", async () => {
   const held = answering(
     creationAnswers((path) =>
@@ -528,6 +569,34 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
     () => undefined,
   );
   expect(created).toStrictEqual({ created: "Created", ticket: 12 });
+});
+
+test("a release onto a revoked ticket says so, and what to depend on instead", async () => {
+  const held = answering(
+    creationAnswers(() =>
+      ok({
+        operation: "op-1",
+        acceptedAt: "2026-08-26T00:00:00Z",
+        state: "Refused",
+        code: "DependenciesRevoked",
+        refusedHead: 41,
+        refusedLifecycleGeneration: 1,
+        refusal: {
+          type: "DependenciesRevoked",
+          value: { ticket: 12, dependencies: [7] },
+        },
+      }),
+    ),
+  );
+  const created = await createAndReleaseTicket(
+    held.ports,
+    creationPartition,
+    releaseSubmission,
+    () => undefined,
+  );
+  expect(created.created === "Refused" && created.reason).toContain(
+    "#12 cannot come to depend on #7, which was revoked and will never be done; depend on a ticket that is still open",
+  );
 });
 
 /** What a draft left held is, and what the submit after it does, is
@@ -634,13 +703,13 @@ test("an edit revises the draft, then releases it against the revision read", as
   ]);
 });
 
-test("a revision that moves the dependencies is refused at the door, and nothing is released", async () => {
+test("a revision the door refuses is refused, and nothing is released", async () => {
   const held = answering(() => ({
     status: 409,
     body: {
       error: {
-        code: "DependenciesLocked",
-        message: "A released ticket's dependencies cannot change.",
+        code: "DraftNotEditable",
+        message: "The draft is not editable.",
       },
     },
   }));
@@ -652,7 +721,8 @@ test("a revision that moves the dependencies is refused at the door, and nothing
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason: "what this ticket depends on cannot change once it is released",
+    reason:
+      "the draft is closed to revision: only a pending ticket's draft can be revised",
     held: undefined,
   });
   expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
@@ -689,6 +759,35 @@ test("an update nobody saw settle says so, holding the revised draft", async () 
   expect(updated).toStrictEqual({
     created: "Refused",
     reason: "the operation is still pending after the attempt budget",
+    held: { draft: revisedDraft },
+  });
+});
+
+test("an update onto a ticket that waits on this one says it would never start", async () => {
+  const held = answering(
+    updateAnswers({
+      operation: "op-3",
+      acceptedAt: "2026-08-26T00:00:00Z",
+      state: "Refused",
+      code: "DependencyCycle",
+      refusedHead: 43,
+      refusedLifecycleGeneration: 1,
+      refusal: {
+        type: "DependencyCycle",
+        value: { ticket: 12, dependencies: [14] },
+      },
+    }),
+  );
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  expect(updated).toStrictEqual({
+    created: "Refused",
+    reason:
+      "#12 cannot depend on #14, which already waits on it, so neither could ever start",
     held: { draft: revisedDraft },
   });
 });

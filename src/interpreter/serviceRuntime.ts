@@ -27,14 +27,24 @@ export function runtimePreconditionAnswer(
   return met ? { met: "Met" } : { met: "Refused", why };
 }
 
+/**
+ * What a raise says: its message, or, for an aggregate raised with none, the
+ * messages of the errors it carries.
+ */
+function runtimePreconditionUndecidedWhy(error: unknown): string {
+  if (!(error instanceof Error)) return "the check raised";
+  if (error.message.length > 0 || !(error instanceof AggregateError))
+    return error.message;
+  return (error.errors as unknown[])
+    .map((each) => (each instanceof Error ? each.message : String(each)))
+    .join("; ");
+}
+
 /** The verdict a check that raised answers with: it reached no finding at all. */
 export function runtimePreconditionUndecided(
   error: unknown,
 ): RuntimePreconditionVerdict {
-  return {
-    met: "Undecided",
-    why: error instanceof Error ? error.message : "the check raised",
-  };
+  return { met: "Undecided", why: runtimePreconditionUndecidedWhy(error) };
 }
 
 export interface RuntimeSchemaVersionSource {

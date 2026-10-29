@@ -320,6 +320,9 @@ test("readiness needs every permit a check will ask for", async () => {
   assert.ok(everyPermit.has("Project#grant_viewer"));
   assert.ok(everyPermit.has("Tenant#register_personal_runner"));
   assert.ok(everyPermit.has("Tenant#grant_personal_runners"));
+  assert.ok(everyPermit.has("Tenant#open_unscoped_chat"));
+  assert.ok(everyPermit.has("Tenant#grant_unscoped_chat"));
+  assert.ok(everyPermit.has("Project#chat_metadata"));
   for (const missing of everyPermit) {
     const without = new Set([...everyPermit].filter((it) => it !== missing));
     assert.equal(

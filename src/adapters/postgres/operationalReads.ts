@@ -61,8 +61,8 @@ import {
   nativeHttpPageItemsMax,
   workerErrorPath,
 } from "../../contract/http.ts";
-import { projectRowCounter } from "./rows.ts";
-import { storedSelectionOf } from "./ticketBrief.ts";
+import { projectRowCounter, projectRowInstant } from "./rows.ts";
+import { storedOverridesOf, storedSelectionOf } from "./ticketBrief.ts";
 import { executionRowResources } from "./schedulerRows.ts";
 import {
   postgresAttemptRuns,
@@ -100,11 +100,13 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly canonical: string;
   /** The catalog entries the ticket selected, as text, which a version 1 ticket holds none of. */
   readonly selection: string | null;
+  /** The overrides the ticket holds, as text, where it holds any. */
+  readonly overrides: string | null;
   readonly status: string;
   readonly outcome: string | null;
   readonly retries_spent: string;
   readonly relaunches: string;
-  readonly registered_at: string;
+  readonly registered_at: string | null;
   readonly started_at: string | null;
   readonly run_started_at: string | null;
   readonly terminal_at: string | null;
@@ -118,7 +120,8 @@ interface AttemptViewRow {
   readonly attempt_number: string;
   readonly generation: string;
   readonly state: string;
-  readonly opened_at: string;
+  readonly opened_at: string | null;
+  readonly claimed_at: string | null;
   readonly ended_at: string | null;
   readonly evidence: string | null;
   readonly error_bytes: string | null;
@@ -131,7 +134,7 @@ interface ResultViewRow {
   readonly schema_version: number;
   readonly digest: string;
   readonly verdict: string;
-  readonly recorded_at: string;
+  readonly recorded_at: string | null;
   readonly report: string | null;
 }
 
@@ -234,6 +237,7 @@ function executionSummaryWorkloadCarrier(
       ? undefined
       : catalogWorkloadTask(
           configuration,
+          storedOverridesOf(row.overrides),
           storedSelectionOf(row.selection),
           position,
         );
@@ -277,7 +281,7 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
         }),
     retriesSpent: projectRowCounter(row.retries_spent, "execution retries"),
     relaunches: projectRowCounter(row.relaunches, "execution relaunches"),
-    registeredAt: asPublicInstant(row.registered_at),
+    registeredAt: projectRowInstant(row.registered_at, "registration time"),
     ...(row.started_at === null
       ? {}
       : { startedAt: asPublicInstant(row.started_at) }),
@@ -306,7 +310,10 @@ function attemptResource(
     number: projectRowCounter(row.attempt_number, "attempt number"),
     generation: projectRowCounter(row.generation, "attempt generation"),
     state: known(row.state, allAttemptStates, "attempt state"),
-    openedAt: asPublicInstant(row.opened_at),
+    openedAt: projectRowInstant(row.opened_at, "opening time"),
+    ...(row.claimed_at === null
+      ? {}
+      : { claimedAt: asPublicInstant(row.claimed_at) }),
     ...(row.ended_at === null
       ? {}
       : { endedAt: asPublicInstant(row.ended_at) }),
@@ -384,10 +391,13 @@ async function executionRows(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
+               (SELECT d.overrides::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -397,17 +407,12 @@ async function executionRows(
                                   AND b.execution=a.execution
                                   AND b.attempt_number>a.attempt_number))::text
                  AS relaunches,
-               e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               (SELECT a.opened_at::text FROM execution_attempt a
+               to_char(e.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS registered_at,to_char(e.terminal_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS terminal_at,
+               (SELECT to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT r.started_at::text FROM execution_attempt a
-                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
-                   AND r.execution=a.execution AND r.attempt=a.attempt
-                 WHERE a.tenant=e.tenant AND a.project=e.project
-                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
-                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
+               to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
                CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
                     THEN e.owner_fallback END AS owner_fallback,
@@ -424,11 +429,18 @@ async function executionRows(
           LEFT JOIN repository_configuration_version v
             ON v.tenant=e.tenant AND v.project=e.project
            AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN LATERAL (SELECT r.started_at FROM execution_attempt a
+              LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+               AND r.execution=a.execution AND r.attempt=a.attempt
+             WHERE a.tenant=e.tenant AND a.project=e.project
+               AND a.execution=e.execution AND a.state IN ('Placing','Running')
+             ORDER BY a.attempt_number DESC LIMIT 1) live ON true
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND (${afterTicket}::bigint IS NULL
                 OR (e.ticket,e.task)>(${afterTicket}::bigint,${afterTask}::bigint))
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
-           AND e.status=ANY(${[...selectedStatuses(query)]}::text[])
+           AND s.status=ANY(${[...selectedStatuses(query)]}::text[])
          ORDER BY e.ticket,e.task LIMIT ${query.limit + 1}`,
   );
   return found.rows;
@@ -480,10 +492,13 @@ async function oneExecution(
                e.configuration_revision,e.requirement_identity,e.requirement_value,
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
-               e.cpu_millis,e.memory_mib,c.canonical,e.status,e.outcome,
+               e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
                (SELECT d.selection::text FROM ticket_definition d
                  WHERE d.tenant=e.tenant AND d.project=e.project
                    AND d.ticket=e.ticket) AS selection,
+               (SELECT d.overrides::text FROM ticket_definition d
+                 WHERE d.tenant=e.tenant AND d.project=e.project
+                   AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -493,17 +508,12 @@ async function oneExecution(
                                   AND b.execution=a.execution
                                   AND b.attempt_number>a.attempt_number))::text
                  AS relaunches,
-               e.registered_at::text AS registered_at,e.terminal_at::text AS terminal_at,
-               (SELECT a.opened_at::text FROM execution_attempt a
+               to_char(e.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS registered_at,to_char(e.terminal_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS terminal_at,
+               (SELECT to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
-               (SELECT r.started_at::text FROM execution_attempt a
-                  LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
-                   AND r.execution=a.execution AND r.attempt=a.attempt
-                 WHERE a.tenant=e.tenant AND a.project=e.project
-                   AND a.execution=e.execution AND a.state IN ('Placing','Running')
-                 ORDER BY a.attempt_number DESC LIMIT 1) AS run_started_at,
+               to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
                e.result_manifest,
                CASE WHEN e.placement='Pool' AND e.owner IS NOT NULL
                     THEN e.owner_fallback END AS owner_fallback,
@@ -520,6 +530,13 @@ async function oneExecution(
           LEFT JOIN repository_configuration_version v
             ON v.tenant=e.tenant AND v.project=e.project
            AND v.name=p.name AND v.digest=p.digest
+          LEFT JOIN LATERAL (SELECT r.started_at FROM execution_attempt a
+              LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
+               AND r.execution=a.execution AND r.attempt=a.attempt
+             WHERE a.tenant=e.tenant AND a.project=e.project
+               AND a.execution=e.execution AND a.state IN ('Placing','Running')
+             ORDER BY a.attempt_number DESC LIMIT 1) live ON true
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution=${execution}`,
   );
@@ -533,11 +550,17 @@ async function attempts(
 ): Promise<readonly ExecutionAttemptResource[]> {
   const found = await pool.query<AttemptViewRow>(
     sql`SELECT n.attempt,n.attempt_number::text AS attempt_number,
-               n.generation::text AS generation,n.state,n.opened_at::text AS opened_at,
-               n.ended_at::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
+               n.generation::text AS generation,n.state,to_char(n.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(n.claimed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS claimed_at,
+               to_char(n.ended_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS ended_at,n.evidence,n.error_bytes::text AS error_bytes,
                n.pool_refusal
-          FROM (SELECT a.attempt,a.attempt_number,a.generation,a.state,a.opened_at,
-                       a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
+          FROM (SELECT a.attempt,a.attempt_number,a.generation,
+                       (CASE WHEN a.state='Placing' AND EXISTS (
+                              SELECT 1 FROM execution_run x
+                               WHERE x.tenant=a.tenant AND x.project=a.project
+                                 AND x.execution=a.execution AND x.attempt=a.attempt)
+                            THEN 'Running' ELSE a.state END)::text AS state,a.opened_at,
+                       a.claimed_at,a.ended_at,a.evidence,r.bytes AS error_bytes,a.pool_refusal
                   FROM execution_attempt a
                   LEFT JOIN worker_artifact_reservation r
                     ON r.tenant=a.tenant AND r.project=a.project
@@ -560,7 +583,7 @@ async function resultResource(
 ): Promise<ExecutionResultResource | undefined> {
   const found = await pool.query<ResultViewRow>(
     sql`SELECT r.manifest,r.attempt,r.schema_version,r.digest,r.verdict,
-               r.recorded_at::text AS recorded_at,p.report
+               to_char(r.recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at,p.report
           FROM execution_result r
           LEFT JOIN execution_result_report p
             ON p.tenant=r.tenant AND p.project=r.project AND p.manifest=r.manifest
@@ -583,7 +606,7 @@ async function resultResource(
     schemaVersion: row.schema_version,
     digest: asArtifactDigest(row.digest),
     verdict: resultVerdict(row.verdict),
-    recordedAt: asPublicInstant(row.recorded_at),
+    recordedAt: projectRowInstant(row.recorded_at, "recording time"),
     artifacts: artifacts.rows
       .slice(0, 256)
       .map((artifact) => artifactResource(artifact, outputs)),
@@ -629,7 +652,7 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
   return {
     status: async (partition) => {
       const found = await pool.query<StatusViewRow>(
-        sql`SELECT transaction_timestamp()::text AS observed_at,
+        sql`SELECT to_char(transaction_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS observed_at,
                    queued::text,admitted::text,launching::text,running::text,
                    cluster_slots_max::text,cluster_active::text,
                    account_maximum::text,account_active::text,account_deficit::text

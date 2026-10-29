@@ -1,6 +1,5 @@
 /**
- * The configuration a repository declaring none starts on, and the file a
- * repository this tree creates is seeded with.
+ * The configuration a repository declaring none starts on.
  *
  * IT IS A CATALOG OF TWO WORKLOADS, the work and the one reviewer its one plan
  * runs, so a repository starts on the version it is told to declare.
@@ -24,10 +23,10 @@
  * tickets run on what it declares is an import's doing once the change is on
  * the default branch, which no change can show, so it is said as motivation and
  * held against nothing. No file may be left declaring the bootstrap's own name:
- * a seeded repository holds this document under it, and a repository that kept
- * the name would still be declaring a bootstrap. Nor may the document be left
- * under another name, which an import takes like any other and which briefs
- * every later ticket to write the declarations again.
+ * a repository holding this document under it would still be declaring a
+ * bootstrap. Nor may the document be left under another name, which an import
+ * takes like any other and which briefs every later ticket to write the
+ * declarations again.
  *
  * BOTH ITS WORKLOADS TAKE CHUGGY'S FRAMING AND THE ONE BRIEF, since what the
  * brief says of the request's limit binds the worker and the reviewer alike.
@@ -66,6 +65,7 @@ import {
 } from "../contract/configurationDocument.ts";
 import { nativeHttpRoutes, textCodePointsCount } from "../contract/http.ts";
 import { bootstrapConfigurationName } from "../contract/responses.ts";
+import { chuggyDocsIndex } from "../contract/sessionTools.ts";
 import {
   briefingLineCharsMax,
   commandLinesMax,
@@ -90,12 +90,8 @@ export interface BootstrapConfigurationInput {
 /** The bootstrap's name, surfaced where the configuration it names is generated. */
 export { bootstrapConfigurationName };
 
-/** Where a seeded bootstrap configuration is written in the repository it configures. */
+/** Where the bootstrap configuration sits in a repository that holds it as a file. */
 export const bootstrapConfigurationPath = `${repositoryConfigurationRoot}${bootstrapConfigurationName}.json`;
-
-/** What the commit that writes that file says it is. */
-export const bootstrapConfigurationCommitMessage =
-  "Add the bootstrap chuggy configuration";
 
 /** The line naming the image, which is what bounds the image. */
 function bootstrapImageLine(image: string): string {
@@ -177,10 +173,6 @@ const bootstrapWorkerMode = {
   arguments: [],
 } as const;
 
-/** Where chuggy's public docs list each page's Markdown, for an agent to fetch. */
-export const bootstrapDocsIndex =
-  "https://raw.githubusercontent.com/kasofsk/chuggy-docs/main/llms.txt";
-
 /** One agent workload's skeleton, its prompt the file the letter `prompt` stands for. */
 function bootstrapAgentSkeleton(purpose: string, prompt: string): string {
   return `{"runner":"Agent",${purpose}"prompt":{"path":${prompt}},"worker":{"mode":${JSON.stringify(bootstrapWorkerMode)},"setup":[L],"files":[]}}`;
@@ -205,8 +197,9 @@ function bootstrapWorkLines(input: BootstrapConfigurationInput): string[] {
     `I may instead be any image the repository builds or chooses, best one it already builds for its CI with what its checks need added. chuggy mounts its runtime read-only at ${workerRuntimeDirectory} and replaces the image's ENTRYPOINT and CMD, so the image needs /bin/sh, git on PATH, glibc ${configurationImageGlibcVersionMin} or later with libstdc++ (a current Debian or Ubuntu, not Alpine or musl), and a $HOME, workspace and temporary directory uid 1000 can write; a ticket on an image lacking one stops with a reason naming it.`,
     "chuggy's node runs under an init the runtime ships, so I needs none, and a process a job orphans is reaped when it exits.",
     "Do not assume I has a docker client: a check or setup that runs docker needs an image whose build installs the client, and it reaches an engine only where the runner's owner has handed jobs one.",
-    `chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage start at ${bootstrapDocsIndex}, which links each page's Markdown; read the ones a choice here turns on.`,
+    `chuggy's docs on a job's container, its image, docker in a job, build caches and sizing a stage start at ${chuggyDocsIndex}, which links each page's Markdown; read the ones a choice here turns on.`,
     "Command the checks the repository already runs, and put in each workload's setup the lines L, if any, that install what it needs, such as npm ci or uv sync; setup runs at the repository root before its workload does, so commit with this change any lockfile it writes that the repository does not yet track, or every later change will carry that file. A service the checks need, such as a database, is the image's own, started by a check, or the runner owner's, passed in by environment, and never chuggy's.",
+    'A setup line L passes a variable on to the setup lines after it, the agent\'s shells and the commands of its own job by appending NAME=value to the file CHUG_ENV names, as echo "PATH=$HOME/.tool/bin:$PATH" >> "$CHUG_ENV" does; each workload\'s job runs only its own setup, so every workload that needs the variable sets it in its own. A NAME starting CHUG_ or CHUGGY_ is chuggy\'s, and setting one fails the setup.',
   ];
 }
 
@@ -309,8 +302,8 @@ export function bootstrapConfiguration(
 /**
  * The same configuration as the file a repository declares it in, which an
  * import of that repository reads back as a declaration under its name. The
- * bytes inside the envelope are the checked ones, so a seeded file and an
- * authored revision cannot say different things.
+ * bytes inside the envelope are the checked ones, so the file and an authored
+ * revision cannot say different things.
  */
 export function bootstrapConfigurationFile(
   input: BootstrapConfigurationInput,

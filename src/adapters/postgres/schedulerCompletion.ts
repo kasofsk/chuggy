@@ -714,6 +714,8 @@ function schedulerStepReport(step: RunStepEvidence): string {
       return "The push failed.";
     case "RunTimedOut":
       return "The run passed its deadline.";
+    case "RunDiskLow":
+      return "Its runner stopped the run because its disk ran low.";
     default:
       return assertNever(step);
   }

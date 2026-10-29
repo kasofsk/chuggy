@@ -13,13 +13,18 @@ import type { Principal } from "./principal.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** The kind each ability asks, exhaustive over the answer's fields, so a field added without a kind is a compile error. */
+/** The kind each ability asks, exhaustive over the answer's fields but the reader's principal, so a field added without a kind is a compile error. */
 export const projectAbilityKinds: Readonly<
-  Record<keyof ProjectAbilitiesResponse, ProjectAccessKind>
+  Record<
+    Exclude<keyof ProjectAbilitiesResponse, "principal">,
+    ProjectAccessKind
+  >
 > = {
   mutate: "Mutate",
   dispatch: "DispatchTicket",
   manageSelector: "ManageProjectSelector",
+  overrideTicketConfig: "OverrideTicketConfig",
+  skipPlannedEvaluations: "SkipPlannedEvaluations",
   administer: "Administer",
 };
 
@@ -39,14 +44,31 @@ export async function projectAbilities(
     return { result: "NotFound" };
   const held = async (kind: ProjectAccessKind) =>
     (await access.authorize(principal, partition, kind)) !== undefined;
-  const [mutate, dispatch, manageSelector, administer] = await Promise.all([
+  const [
+    mutate,
+    dispatch,
+    manageSelector,
+    overrideTicketConfig,
+    skipPlannedEvaluations,
+    administer,
+  ] = await Promise.all([
     held(projectAbilityKinds.mutate),
     held(projectAbilityKinds.dispatch),
     held(projectAbilityKinds.manageSelector),
+    held(projectAbilityKinds.overrideTicketConfig),
+    held(projectAbilityKinds.skipPlannedEvaluations),
     held(projectAbilityKinds.administer),
   ]);
   return {
     result: "Authorized",
-    value: { mutate, dispatch, manageSelector, administer },
+    value: {
+      principal,
+      mutate,
+      dispatch,
+      manageSelector,
+      overrideTicketConfig,
+      skipPlannedEvaluations,
+      administer,
+    },
   };
 }

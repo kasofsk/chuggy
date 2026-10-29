@@ -16,6 +16,7 @@ import test from "node:test";
 import {
   threadMessageCharsMax,
   threadMessageImagesMax,
+  threadOpenKeyCharsMax,
   threadTitleCharsMax,
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
@@ -51,6 +52,7 @@ import {
 } from "../../src/interpreter/finalizerPreparation.ts";
 import { projectArtifactIdentityText } from "../../src/interpreter/projectArtifact.ts";
 import {
+  asThreadOpenKey,
   checkedThreadMessageImages,
   checkedThreadsLimit,
   threadBacklogRetrySeconds,
@@ -59,6 +61,7 @@ import {
   threadTitle,
   type ThreadClosed,
   type ThreadMessageEnqueued,
+  type ThreadOpened,
   type ThreadRecord,
   type ThreadHidden,
   type ThreadRenamed,
@@ -121,12 +124,17 @@ function record(
   };
 }
 
+/** The key every open in this suite is made under, where a case is not about the key. */
+const aKey = asThreadOpenKey("open-key-1");
+
 interface ThreadDoubles {
   readonly calls: string[];
   readonly threads: readonly ThreadRecord[];
   /** The principals the project no longer admits, which is what orphans a thread. */
   readonly unadmitted: readonly Principal[];
   readonly enqueued: ThreadMessageEnqueued;
+  /** What the open door answers where a case sets it; else that it opened the caller's thread. */
+  readonly opened?: ThreadOpened;
   /** What the stop door answers where a case sets it; else that it stopped the turn. */
   readonly stopped?: ThreadTurnStopped;
   /** What the close door answers where a case sets it; else the record named, closed. */
@@ -149,6 +157,22 @@ function enqueueDouble(doubles: ThreadDoubles): ThreadStore["enqueueMessage"] {
   };
 }
 
+/** The open door, recording what it was opened with and the key it was opened under. */
+function openDouble(doubles: ThreadDoubles): ThreadStore["open"] {
+  return (input) => {
+    doubles.calls.push(
+      `open:${input.session}:${input.credentialSlot}:${input.systemPrompt}`,
+      `open-key:${input.key}`,
+    );
+    return Promise.resolve(
+      doubles.opened ?? {
+        opened: "Opened",
+        thread: record(mine, geoff, { turns: 0 }),
+      },
+    );
+  };
+}
+
 function stopDouble(doubles: ThreadDoubles): ThreadStore["stopTurn"] {
   return ({ principal, session, turn }) => {
     doubles.calls.push(`stop:${principal}:${session}:${turn}`);
@@ -158,18 +182,15 @@ function stopDouble(doubles: ThreadDoubles): ThreadStore["stopTurn"] {
 
 function threadStore(doubles: ThreadDoubles): ThreadStore {
   return {
-    threads: (_partition, limit) => {
-      doubles.calls.push(`threads:${String(limit)}`);
+    threads: (_partition, reader, limit) => {
+      doubles.calls.push(`threads:${reader}:${String(limit)}`);
       return Promise.resolve(doubles.threads);
     },
-    open: (input) => {
-      doubles.calls.push(
-        `open:${input.session}:${input.credentialSlot}:${input.systemPrompt}`,
-      );
-      return Promise.resolve({
-        opened: "Opened",
-        thread: record(mine, geoff, { turns: 0 }),
-      });
+    open: openDouble(doubles),
+    openUnscoped: openDouble(doubles),
+    memberThreads: ({ principal, limit }) => {
+      doubles.calls.push(`memberThreads:${principal}:${String(limit)}`);
+      return Promise.resolve([]);
     },
     standing: ({ session, query }) => {
       doubles.calls.push(
@@ -294,7 +315,7 @@ function boundary(
   const held: ThreadDoubles = {
     calls: [],
     threads: [record(mine, geoff), record(hers, dana)],
-    enqueued: { enqueued: "Enqueued", session: mine, ordinal: 7 },
+    enqueued: { enqueued: "Enqueued", ordinal: 7 },
     unadmitted: [],
     ...doubles,
   };
@@ -358,7 +379,9 @@ test("every member reads every thread, and `mine` is the reader's own", async ()
     ],
   );
   assert.ok(held.calls.includes("authorize:Read"));
-  assert.ok(held.calls.includes(`threads:${String(threadsAnsweredMax)}`));
+  assert.ok(
+    held.calls.includes(`threads:${dana}:${String(threadsAnsweredMax)}`),
+  );
   assert.deepEqual(
     Object.keys(read.result === "Found" ? (read.threads[0] ?? {}) : {}).sort(),
     [
@@ -547,26 +570,49 @@ test("a transcript page is the lead's walk over the thread's own session", async
 test("opening a thread is a mutation, and the roster is never the caller's", async () => {
   const { web, held } = boundary();
 
-  const opened = await web.openThread(geoff, partition);
+  const opened = await web.openThread(geoff, partition, aKey);
 
   assert.equal(opened.result, "Opened");
   assert.equal(opened.result === "Opened" ? opened.thread.mine : false, true);
   assert.ok(held.calls.includes("authorize:Mutate"));
+  assert.ok(held.calls.includes(`open-key:${aKey}`));
   assert.ok(
     held.calls
       .find((call) => call.startsWith("open:"))
       ?.startsWith(`open:${mine}:member-thread:`),
   );
   assert.equal(
-    (await boundary({}, ["Read"]).web.openThread(geoff, partition)).result,
+    (await boundary({}, ["Read"]).web.openThread(geoff, partition, aKey))
+      .result,
     "NotFound",
   );
+});
+
+test("an open the definer refuses at the member's limit answers that limit", async () => {
+  const { web } = boundary({
+    opened: { opened: "ThreadLimitReached", threadsMax: 3 },
+  });
+
+  assert.deepEqual(await web.openThread(geoff, partition, aKey), {
+    result: "ThreadLimitReached",
+    threadsMax: 3,
+  });
+});
+
+test("an open key outside the wire's charset or bound is refused before it is a key", () => {
+  assert.throws(() => asThreadOpenKey(""), RangeError);
+  assert.throws(() => asThreadOpenKey("a key"), RangeError);
+  assert.throws(
+    () => asThreadOpenKey("k".repeat(threadOpenKeyCharsMax + 1)),
+    RangeError,
+  );
+  assert.equal(asThreadOpenKey(aKey), aKey);
 });
 
 test("opening a thread needs the tenant's hosted grant, and is refused before anything opens without it", async () => {
   const { web, held } = boundary({}, ["Read", "Mutate"]);
 
-  assert.deepEqual(await web.openThread(geoff, partition), {
+  assert.deepEqual(await web.openThread(geoff, partition, aKey), {
     result: "HostedRunsNotGranted",
   });
   assert.ok(held.calls.includes("authorizeTenant:ExecuteHosted"));
@@ -877,7 +923,7 @@ test("the recorded prompt names the authority the door authorized", async () => 
   const { web, held } = boundary();
   const principal = oidcPrincipal("https://auth.example", "geoff");
 
-  await web.openThread(principal, partition);
+  await web.openThread(principal, partition, aKey);
 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
   assert.ok(open.includes(`You are ${principal}'s thread on acme/atlas`));
@@ -897,6 +943,7 @@ test("a project's own standing is what the opened thread's prompt carries", asyn
   await web.openThread(
     oidcPrincipal("https://auth.example", "geoff"),
     partition,
+    aKey,
   );
 
   const open = held.calls.find((call) => call.startsWith("open:")) ?? "";
@@ -964,7 +1011,7 @@ test("a thread routed to the member's runner opens and takes a message without t
     ),
   );
 
-  assert.equal((await web.openThread(geoff, partition)).result, "Opened");
+  assert.equal((await web.openThread(geoff, partition, aKey)).result, "Opened");
   const sent = await web.sendThreadMessage(geoff, partition, {
     session: mine,
     turn: asSessionTurnId("thread-turn-1"),
@@ -983,7 +1030,7 @@ test("a thread routed to runners where the member has registered none is refused
     sessionRoutesAt({ Thread: "Pool" }),
   );
 
-  assert.deepEqual(await web.openThread(geoff, partition), {
+  assert.deepEqual(await web.openThread(geoff, partition, aKey), {
     result: "NoRunner",
   });
   const sent = await web.sendThreadMessage(geoff, partition, {
@@ -1011,7 +1058,7 @@ test("a thread routed to runners is refused where the member's only runners are 
     ),
   );
 
-  assert.deepEqual(await web.openThread(geoff, partition), {
+  assert.deepEqual(await web.openThread(geoff, partition, aKey), {
     result: "NoRunner",
   });
 });
@@ -1060,39 +1107,9 @@ test("a message to my own thread is enqueued and answers its ordinal", async () 
 });
 
 /**
- * The standing read and the enqueue are two round trips, and a thread can be
- * closed by the reaper and reopened from another tab between them; the enqueue
- * resolves the mailbox from the principal, so the ordinal it answers may belong
- * to a session the URL never named — a `202` about a conversation the member is
- * not reading. The URL is therefore held against what resolved.
- */
-test("a mailbox reopened under the caller between the two round trips is refused", async () => {
-  const { web, held } = boundary({
-    enqueued: {
-      enqueued: "Enqueued",
-      session: asSessionId("thread-geoff-reopened"),
-      ordinal: 1,
-    },
-  });
-
-  const sent = await web.sendThreadMessage(geoff, partition, {
-    session: mine,
-    turn: asSessionTurnId("thread-turn-1"),
-    message: "still 42",
-  });
-
-  assert.equal(sent.result, "NotYourThread");
-  assert.equal(
-    held.calls.filter((call) => call.startsWith("enqueue:")).length,
-    1,
-  );
-});
-
-/**
- * The durable side compares the session the URL named against the mailbox it
- * resolved and refuses a mismatch itself, so the comparison here is the second
- * of two. The door passes that refusal through rather than reading it as a
- * mailbox that has gone.
+ * The durable side refuses a session the URL named that is another member's,
+ * and the door passes that refusal through rather than reading it as a mailbox
+ * that has gone.
  */
 test("a mailbox the durable side says is not the caller's is refused as that", async () => {
   const { web } = boundary({ enqueued: { enqueued: "NotYourThread" } });
@@ -1103,28 +1120,6 @@ test("a mailbox the durable side says is not the caller's is refused as that", a
         session: mine,
         turn: asSessionTurnId("thread-turn-1"),
         message: "have a look at 42",
-      })
-    ).result,
-    "NotYourThread",
-  );
-});
-
-/** The same holds of a retry, whose ordinal is just as much a claim about a mailbox. */
-test("a retry whose mailbox has moved is refused rather than reported", async () => {
-  const { web } = boundary({
-    enqueued: {
-      enqueued: "AlreadyEnqueued",
-      session: asSessionId("thread-geoff-reopened"),
-      ordinal: 1,
-    },
-  });
-
-  assert.equal(
-    (
-      await web.sendThreadMessage(geoff, partition, {
-        session: mine,
-        turn: asSessionTurnId("thread-turn-1"),
-        message: "again",
       })
     ).result,
     "NotYourThread",
@@ -1177,7 +1172,7 @@ test("a first turn the project's own context will not fit in names its ceiling",
 
 test("a retried message answers the ordinal it already has", async () => {
   const { web } = boundary({
-    enqueued: { enqueued: "AlreadyEnqueued", session: mine, ordinal: 7 },
+    enqueued: { enqueued: "AlreadyEnqueued", ordinal: 7 },
   });
 
   const sent = await web.sendThreadMessage(geoff, partition, {

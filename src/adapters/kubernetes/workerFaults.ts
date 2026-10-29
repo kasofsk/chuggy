@@ -1,22 +1,24 @@
 /**
  * What the cluster backend says of a worker whose pod met a fault the worker
- * itself could not report: the observation the scheduler acts on, and the
- * error text the backend stores in the worker's place.
+ * itself could not report, or was stopped at its deadline before it could:
+ * the observation the scheduler acts on, and the error text the backend
+ * stores in the worker's place.
  *
  * THE TEXT IS THE BACKEND'S, ONE FIXED TEXT PER FAULT. A person reading why
- * their job never ran is told what the image lacks in this backend's words,
- * and for a pull or a start the kubelet's own message after it, because only
- * the kubelet knows which of the fault's causes it was. Nothing the workload
- * wrote is ever relayed.
+ * their job failed is told what went wrong in this backend's words, and for a
+ * pull or a start the kubelet's own message after it, because only the kubelet
+ * knows which of the fault's causes it was. Nothing the workload wrote is ever
+ * relayed.
  *
  * IT IS STORED WHERE THE WORKER WOULD HAVE STORED IT, UNDER THE WORKER'S OWN
- * BEARER. A worker that never started wrote nothing, so the backend that placed
- * it reads the bearer back from the Secret it made for the pod and uploads the
- * text through the worker plane's own artifact route, as a pool does for a job
- * of its own; the plane is what reserves and stores it, and this side holds no
- * store. The Secret goes with its pod, so the text is written before the pod is
- * cancelled, and a text that could not be written is an answer rather than a
- * raised failure, because the block it explains does not wait on it.
+ * BEARER. A worker that never started, or was killed before it could report,
+ * left no text of its own, so the backend that placed it reads the bearer back
+ * from the Secret it made for the pod and uploads the text through the worker
+ * plane's own artifact route, as a pool does for a job of its own; the plane
+ * is what reserves and stores it, and this side holds no store. The Secret goes
+ * with its pod, so the text is written before the pod is cancelled, and a text
+ * that could not be written is an answer rather than a raised failure, because
+ * the end or block it explains does not wait on it.
  */
 
 import { workerErrorPath } from "../../contract/http.ts";
@@ -36,7 +38,7 @@ import type {
 import {
   kubernetesDeadline,
   kubernetesObjectRead,
-  kubernetesSecretValue,
+  kubernetesSecretRead,
   type KubernetesReached,
 } from "./clusterReach.ts";
 import type { KubernetesPodSite } from "./kubernetesSite.ts";
@@ -60,6 +62,10 @@ export const kubernetesImageFaultTexts = {
   ImageTmpUnwritable:
     "The image this job names gives the job's user no temporary directory it can write.",
 } as const satisfies Readonly<Record<WorkerImageFault, string>>;
+
+/** What the cluster tells the person whose job's pod it stopped at its deadline, in the words a runner gives a job it killed at its own. */
+export const kubernetesDeadlineText =
+  "Worker exited before reporting: the cluster stopped its pod at its deadline";
 
 /** The text one fault is told by, the kubelet's message after it where the fault carried one. */
 export function kubernetesImageFaultText(
@@ -85,6 +91,8 @@ export function kubernetesWorkloadObserved(
   switch (found.fault) {
     case "None":
       return { observed: "Unfaulted" };
+    case "Deadline":
+      return { observed: "TimedOut", text: kubernetesDeadlineText };
     case "Image":
       return {
         observed: "ImageFault",
@@ -115,13 +123,13 @@ export async function kubernetesWorkerErrorWritten(
   bearer: { readonly secret: string; readonly key: string },
   text: string,
 ): Promise<AttemptErrorWritten> {
-  const token = await kubernetesSecretValue(
+  const token = await kubernetesSecretRead(
     site,
     fetcher,
     bearer.secret,
     bearer.key,
   );
-  if (token === undefined || token.length === 0)
+  if (token.read !== "Value" || token.value.length === 0)
     return {
       written: "Unwritten",
       why: `the bearer Secret ${bearer.secret} could not be read`,
@@ -129,7 +137,7 @@ export async function kubernetesWorkerErrorWritten(
   return kubernetesWorkerErrorPosted(
     site,
     fetcher,
-    { token, plane: site.workerPlaneUrl },
+    { token: token.value, plane: site.workerPlaneUrl },
     text,
   );
 }

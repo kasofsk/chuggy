@@ -12,6 +12,7 @@ import test from "node:test";
 
 import {
   allForgeApps,
+  asForgeInstallationId,
   asForgeInstallationToken,
   workerPodForgeApp,
   type ForgePermissionSet,
@@ -59,7 +60,7 @@ const expiresAtMs = 1_700_000_000_000;
 /** What one mint was asked for, so a case can say the pod widened nothing. */
 interface Asked {
   readonly repository: RepositoryId;
-  readonly tenant: string;
+  readonly partition: Partition;
   readonly permissions: ForgePermissionSet;
 }
 
@@ -68,8 +69,12 @@ function tokensOf(
   asked: Asked[],
 ): ForgeRepositoryTokens {
   return {
-    token: (forRepository, tenant, permissions) => {
-      asked.push({ repository: forRepository, tenant, permissions });
+    token: (forRepository, partitionAsked, permissions) => {
+      asked.push({
+        repository: forRepository,
+        partition: partitionAsked,
+        permissions,
+      });
       return minted instanceof Error
         ? Promise.reject(minted)
         : Promise.resolve(minted);
@@ -111,6 +116,7 @@ function bindingOf(
     repository: bound,
     boundAt: "2026-10-01T00:00:00Z",
     landing: asRepositoryLanding("Push"),
+    pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };
 }
@@ -159,9 +165,7 @@ test("a work attempt is minted write on the repository its own bundle pinned", a
     minted: "Credential",
     value: { username: forgeCredentialUsername, password: token, expiresAtMs },
   });
-  assert.deepEqual(asked, [
-    { repository, tenant: partition.tenant, permissions: "write" },
-  ]);
+  assert.deepEqual(asked, [{ repository, partition, permissions: "write" }]);
 });
 
 test("an evaluation attempt is minted read, because an evaluation pushes nothing", async () => {
@@ -208,6 +212,33 @@ test("a forge that refused this app is a refusal the pod falls back from", async
   });
 });
 
+test("a refusal met past the address names the repository, the app and which refusal it was", async () => {
+  const installationId = asForgeInstallationId("156786211");
+  for (const unreached of [
+    { reach: "Unselected", app: workerPodForgeApp, installationId },
+    { reach: "Refused", app: workerPodForgeApp, installationId },
+    { reach: "Unclaimed", app: workerPodForgeApp },
+  ] as const) {
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf({ minted: "Denied", unreached }, []),
+      bindings: bindingsOf(bindingOf(sibling)),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf("Work")), {
+      minted: "NotFound",
+      unreached: { ...unreached, repository },
+    });
+    assert.deepEqual(await minting.attempt(authorityOf("Work"), sibling), {
+      minted: "NotFound",
+      unreached: { ...unreached, repository: sibling },
+    });
+    assert.deepEqual(await minting.session(partition, sibling), {
+      minted: "NotFound",
+      unreached: { ...unreached, repository: sibling },
+    });
+  }
+});
+
 test("a forge that could not be reached is an outage and never a fallback", async () => {
   for (const minted of [
     { minted: "Unavailable" } as const,
@@ -237,9 +268,7 @@ test("a session is minted read on what its own project binds, never on what it n
     value: { username: forgeCredentialUsername, password: token, expiresAtMs },
   });
   assert.deepEqual(named, [{ partition, named: mirror }]);
-  assert.deepEqual(asked, [
-    { repository, tenant: partition.tenant, permissions: "read" },
-  ]);
+  assert.deepEqual(asked, [{ repository, partition, permissions: "read" }]);
 });
 
 test("a session naming what its project does not bind is minted nothing", async () => {
@@ -268,7 +297,7 @@ test("a binding store that could not be read is an outage, not an absent binding
   assert.deepEqual(asked, [], "an unread binding was minted for");
 });
 
-test("an attempt naming its own repository, or none, is minted as its task kind always was", async () => {
+test("an attempt naming no repository is minted its own for what its task kind does", async () => {
   for (const [taskKind, permissions] of [
     ["Work", "write"],
     ["Evaluation", "read"],
@@ -280,19 +309,37 @@ test("an attempt naming its own repository, or none, is minted as its task kind 
       bindings: bindingsOf(bindingOf(repository), read),
     });
 
-    for (const named of [undefined, repository])
-      assert.deepEqual(await minting.attempt(authorityOf(taskKind), named), {
-        minted: "Credential",
-        value: {
-          username: forgeCredentialUsername,
-          password: token,
-          expiresAtMs,
-        },
-      });
-    assert.deepEqual(asked, [
-      { repository, tenant: partition.tenant, permissions },
-      { repository, tenant: partition.tenant, permissions },
-    ]);
+    assert.deepEqual(await minting.attempt(authorityOf(taskKind)), {
+      minted: "Credential",
+      value: {
+        username: forgeCredentialUsername,
+        password: token,
+        expiresAtMs,
+      },
+    });
+    assert.deepEqual(asked, [{ repository, partition, permissions }]);
+    assert.deepEqual(read, [], "its own repository was held to the bindings");
+  }
+});
+
+test("an attempt naming its own repository is minted read, whatever its task kind", async () => {
+  for (const taskKind of ["Work", "Evaluation"] as const) {
+    const asked: Asked[] = [];
+    const read: Read[] = [];
+    const minting = workerPlaneCredentialMinting({
+      tokens: tokensOf(granted, asked),
+      bindings: bindingsOf(bindingOf(repository), read),
+    });
+
+    assert.deepEqual(await minting.attempt(authorityOf(taskKind), repository), {
+      minted: "Credential",
+      value: {
+        username: forgeCredentialUsername,
+        password: token,
+        expiresAtMs,
+      },
+    });
+    assert.deepEqual(asked, [{ repository, partition, permissions: "read" }]);
     assert.deepEqual(read, [], "its own repository was held to the bindings");
   }
 });
@@ -316,7 +363,7 @@ test("an attempt naming another repository its project binds is minted read, wha
     });
     assert.deepEqual(read, [{ partition, named: sibling }]);
     assert.deepEqual(asked, [
-      { repository: sibling, tenant: partition.tenant, permissions: "read" },
+      { repository: sibling, partition, permissions: "read" },
     ]);
   }
 });

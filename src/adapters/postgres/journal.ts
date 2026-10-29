@@ -78,8 +78,8 @@ import {
   parseEntry,
   type Parsed,
 } from "../../interpreter/wire.ts";
+import { configurationRevisionDigest } from "../../interpreter/configurationDigest.ts";
 import {
-  configurationRevisionDigest,
   journalChainDigest,
   journalChainGenesis,
   journalEnvelopeDigest,
@@ -102,15 +102,75 @@ interface StoredJournalRow {
   readonly cause_id: string;
   readonly configuration_revision: string | null;
   readonly configuration_digest: string | null;
-  readonly configuration_canonical: string | null;
   readonly event_schema_version: number;
   readonly decision_semantics_version: number;
+}
+
+/**
+ * Each configuration a partition's journal names, keyed by the revision and
+ * digest a row names it with. It is read once rather than joined onto every
+ * row, so a load holds one copy of a configuration however many rows name it.
+ */
+type StoredJournalConfigurations = ReadonlyMap<
+  string,
+  { readonly digest: string; readonly canonical: string }
+>;
+
+function storedJournalConfigurationKey(
+  revision: string,
+  digest: string,
+): string {
+  return JSON.stringify([revision, digest]);
+}
+
+/**
+ * Read after the rows it serves, so every configuration a row names is in it:
+ * a configuration is retained while any row names it.
+ */
+async function storedJournalConfigurations(
+  client: pg.PoolClient,
+  partition: Partition,
+): Promise<StoredJournalConfigurations> {
+  const { tenant, project } = partition;
+  const found = await client.query<{
+    revision: string;
+    digest: string;
+    canonical: string;
+  }>(
+    sql`SELECT c.revision,c.digest,c.canonical FROM configuration_revision c
+       WHERE c.tenant = ${tenant} AND c.project = ${project}
+         AND EXISTS (SELECT 1 FROM journal_entry j
+                      WHERE j.tenant = c.tenant AND j.project = c.project
+                        AND j.configuration_revision = c.revision
+                        AND j.configuration_digest = c.digest)`,
+  );
+  return new Map(
+    found.rows.map((row) => [
+      storedJournalConfigurationKey(row.revision, row.digest),
+      { digest: row.digest, canonical: row.canonical },
+    ]),
+  );
+}
+
+/** The keys of the configurations whose retained content still hashes to the digest rows name, each hashed once. */
+function storedJournalConfigurationsAttested(
+  configurations: StoredJournalConfigurations,
+): ReadonlySet<string> {
+  const attested = new Set<string>();
+  for (const [key, configuration] of configurations)
+    if (
+      configurationRevisionDigest(configuration.canonical) ===
+      configuration.digest
+    )
+      attested.add(key);
+  return attested;
 }
 
 function storedJournalRowVerified(
   row: StoredJournalRow,
   partition: Partition,
   previous: string,
+  attested: ReadonlySet<string>,
 ): boolean {
   if (row.prev_digest !== previous) return false;
   if (row.integrity_version === 1) {
@@ -134,9 +194,12 @@ function storedJournalRowVerified(
   return (
     cause !== undefined &&
     configuration !== undefined &&
-    row.configuration_canonical !== null &&
-    configurationRevisionDigest(row.configuration_canonical) ===
-      configuration.configurationDigest &&
+    attested.has(
+      storedJournalConfigurationKey(
+        configuration.configurationRevision,
+        configuration.configurationDigest,
+      ),
+    ) &&
     journalEnvelopeDigest(partition, previous, {
       entryText: row.entry,
       cause,
@@ -155,11 +218,9 @@ async function storedJournalRows(
   return (
     await client.query<StoredJournalRow>(
       sql`SELECT j.seq,j.entry,j.entry_digest,j.prev_digest,j.integrity_version,j.cause_kind,j.cause_id,
-       j.configuration_revision,j.configuration_digest,c.canonical AS configuration_canonical,
+       j.configuration_revision,j.configuration_digest,
        j.event_schema_version,j.decision_semantics_version
-       FROM journal_entry j LEFT JOIN configuration_revision c
-         ON c.tenant=j.tenant AND c.project=j.project
-        AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
+       FROM journal_entry j
        WHERE j.tenant = ${tenant} AND j.project = ${project} ORDER BY j.seq`,
     )
   ).rows;
@@ -181,19 +242,27 @@ export async function postgresJournalDispatchContracts(
       decision_semantics_version: number;
       configuration_revision: string;
       configuration_digest: string;
-      configuration_canonical: string;
     }>(
       sql`SELECT j.entry,j.integrity_version,j.decision_semantics_version,
-              j.configuration_revision,j.configuration_digest,
-              c.canonical AS configuration_canonical
-         FROM journal_entry j JOIN configuration_revision c
-           ON c.tenant=j.tenant AND c.project=j.project
-          AND c.revision=j.configuration_revision AND c.digest=j.configuration_digest
-        WHERE j.tenant=${lease.partition.tenant} AND j.project=${lease.partition.project} AND j.configuration_revision IS NOT NULL
+              j.configuration_revision,j.configuration_digest
+         FROM journal_entry j
+        WHERE j.tenant=${lease.partition.tenant} AND j.project=${lease.partition.project}
+          AND j.configuration_revision IS NOT NULL AND j.configuration_digest IS NOT NULL
         ORDER BY j.seq`,
+    );
+    const configurations = await storedJournalConfigurations(
+      client,
+      lease.partition,
     );
     const contracts = new Map<number, DispatchContractPin>();
     for (const stored of found.rows) {
+      const configuration = configurations.get(
+        storedJournalConfigurationKey(
+          stored.configuration_revision,
+          stored.configuration_digest,
+        ),
+      );
+      if (configuration === undefined) continue;
       const semantics = storedJournalRowSemantics(stored);
       if (!isDecisionSemanticsVersion(semantics))
         throw new Error(
@@ -209,7 +278,7 @@ export async function postgresJournalDispatchContracts(
         contracts.set(eventTicket(event), {
           configurationRevision: stored.configuration_revision,
           configurationDigest: stored.configuration_digest,
-          configurationCanonical: stored.configuration_canonical,
+          configurationCanonical: configuration.canonical,
         });
       }
     }
@@ -299,11 +368,13 @@ function storedJournalRowSemantics(row: {
 function postgresJournalStored(
   partition: Partition,
   rows: readonly StoredJournalRow[],
+  configurations: StoredJournalConfigurations,
 ): Parsed<readonly StoredEntry[]> {
   const stored: StoredEntry[] = [];
+  const attested = storedJournalConfigurationsAttested(configurations);
   let previous = journalChainGenesis(partition);
   for (const row of rows) {
-    if (!storedJournalRowVerified(row, partition, previous)) {
+    if (!storedJournalRowVerified(row, partition, previous, attested)) {
       return {
         parsed: "Refused",
         why: `the stored envelope of row ${row.seq} failed integrity verification`,
@@ -348,7 +419,11 @@ async function postgresJournalEntries(
       `postgres journal: ${tenant}/${project} claims head ${String(standing.head)} over ${String(rows.length)} stored entries`,
     );
   }
-  return postgresJournalStored(standing.partition, rows);
+  return postgresJournalStored(
+    standing.partition,
+    rows,
+    await storedJournalConfigurations(client, standing.partition),
+  );
 }
 
 /** Replays the partition under the lease the decision will present, refusing one the row no longer honours. */
@@ -416,8 +491,12 @@ export function postgresJournalLegality(
       for (const partition of listed.partitions) {
         signal.throwIfAborted();
         const stored = await postgresTransaction(pool, (client) =>
-          storedJournalRows(client, partition).then((rows) =>
-            postgresJournalStored(partition, rows),
+          storedJournalRows(client, partition).then(async (rows) =>
+            postgresJournalStored(
+              partition,
+              rows,
+              await storedJournalConfigurations(client, partition),
+            ),
           ),
         );
         const why =

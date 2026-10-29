@@ -6,7 +6,13 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, renderHook } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  renderHook,
+  screen,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -26,11 +32,14 @@ interface Posted {
   readonly body: unknown;
 }
 
-/** The door as the case scripts it: every open answers the same thread, and
- * each message is answered by the next status the case names. */
-function doorAnswering(messageStatuses: readonly number[]): Posted[] {
+/** The door both scripted doors share: runs granted, the thread placed in the
+ * cluster, every post recorded, and the thread and message answers the case
+ * supplies. */
+function doorStubbed(
+  onThread: () => Response,
+  onMessage: () => Response,
+): Posted[] {
   const posted: Posted[] = [];
-  const statuses = [...messageStatuses];
   vi.stubGlobal("fetch", (url: string, init: RequestInit) => {
     if (url.endsWith("/hosted-runs"))
       return Promise.resolve(answer({ granted: true }));
@@ -42,18 +51,24 @@ function doorAnswering(messageStatuses: readonly number[]): Posted[] {
       url,
       body: typeof init.body === "string" ? JSON.parse(init.body) : undefined,
     });
-    if (url.endsWith("/threads"))
-      return Promise.resolve(
-        answer(threadEntry({ session: "thread-1", mine: true }), 201),
-      );
-    const status = statuses.shift() ?? 202;
-    return Promise.resolve(
-      status === 202
-        ? answer({ turn: "t", ordinal: 1 }, 202)
-        : answer({ error: { code: "Invalid" } }, status),
-    );
+    return Promise.resolve(url.endsWith("/threads") ? onThread() : onMessage());
   });
   return posted;
+}
+
+/** The door as the case scripts it: every open answers the same thread, and
+ * each message is answered by the next status the case names. */
+function doorAnswering(messageStatuses: readonly number[]): Posted[] {
+  const statuses = [...messageStatuses];
+  return doorStubbed(
+    () => answer(threadEntry({ session: "thread-1", mine: true }), 201),
+    () => {
+      const status = statuses.shift() ?? 202;
+      return status === 202
+        ? answer({ turn: "t", ordinal: 1 }, 202)
+        : answer({ error: { code: "Invalid" } }, status);
+    },
+  );
 }
 
 function wrapper(props: { readonly children: ReactNode }): ReactNode {
@@ -98,6 +113,65 @@ test("a refused first message is sent again into the thread it opened", async ()
     true,
   ]);
   expect(messages[0]?.body).toStrictEqual(messages[1]?.body);
+});
+
+/** The door as the case scripts it: each open is answered the next answer the
+ * case names, then the thread, and every message is taken. */
+function doorOpening(openAnswers: readonly (() => Response)[]): Posted[] {
+  const answers = [...openAnswers];
+  const opened = () =>
+    answer(threadEntry({ session: "thread-1", mine: true }), 201);
+  return doorStubbed(
+    () => (answers.shift() ?? opened)(),
+    () => answer({ turn: "t", ordinal: 1 }, 202),
+  );
+}
+
+/** The composer of a reader with no thread. */
+function firstComposer(): ReturnType<
+  typeof renderHook<ReturnType<typeof useThreadSend>, unknown>
+> {
+  return renderHook(
+    () =>
+      useThreadSend({
+        partition: threadPartition,
+        session: undefined,
+        takes: true,
+      }),
+    { wrapper },
+  );
+}
+
+/** The open may have opened a thread its answer never reached, so the press
+ * after it asks under the same key and is answered that thread. */
+test("a first press whose open failed opens again under the same key", async () => {
+  const posted = doorOpening([
+    () => answer({ error: { code: "InternalError" } }, 500),
+  ]);
+  const { result } = firstComposer();
+  await act(async () => {
+    expect(await result.current.composer.onSend("hello", [])).toBe("Kept");
+  });
+  await act(async () => {
+    expect(await result.current.composer.onSend("hello", [])).toBe("Sent");
+  });
+  const opens = posted.filter((one) => one.url.endsWith("/threads"));
+  expect(opens).toHaveLength(2);
+  expect(opens[1]?.body, "a retried open minted a fresh key").toStrictEqual(
+    opens[0]?.body,
+  );
+});
+
+test("a first press refused at the reader's thread limit says so and keeps the text", async () => {
+  doorOpening([
+    () => answer({ error: { code: "ThreadLimitReached" }, threadsMax: 1 }, 409),
+  ]);
+  const { result } = firstComposer();
+  await act(async () => {
+    expect(await result.current.composer.onSend("hello", [])).toBe("Kept");
+  });
+  render(<>{result.current.composer.note}</>);
+  expect(screen.getByText("Not sent · Thread limit reached")).toBeTruthy();
 });
 
 /** A press's message is held under the turn it is posted as, which is what

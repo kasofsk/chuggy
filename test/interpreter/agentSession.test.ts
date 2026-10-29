@@ -9,12 +9,13 @@
  */
 
 import assert from "node:assert/strict";
-import { createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { test } from "node:test";
 
 import {
   allSessionCapabilities,
   allSessionKinds,
+  allSessionScopes,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
@@ -25,6 +26,8 @@ import {
   asSessionId,
   asSessionStoreStream,
   asSessionTurnId,
+  memberScopePartition,
+  memberScopeReserved,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
 } from "../../src/interpreter/agentSession.ts";
@@ -33,6 +36,8 @@ import {
   sessionBearerPattern,
   sessionBearerPrefix,
 } from "../../src/contract/sessionPlane.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { populated } from "./roster.ts";
 
 /** Every brander, beside the subject its refusal has to name. */
@@ -217,8 +222,11 @@ test("every roster holds its members in the order the schema iterates", () => {
     "ProjectRead",
     "DraftAuthor",
     "DraftOriginate",
+    "TicketDispatch",
     "LeadDecision",
+    "MemberRead",
   ]);
+  assert.deepEqual(allSessionScopes, ["Project", "Member"]);
   assert.deepEqual(allSessionTurnInputKinds, [
     "Observation",
     "UserMessage",
@@ -262,4 +270,29 @@ test("no roster member repeats, and the capability roster fits the bound a row c
     );
   }
   assert.ok(allSessionCapabilities.length <= sessionCapabilitiesMax);
+});
+
+test("a member's own partition is in their tenant, reserved, and keyed by the digest of their principal alone", () => {
+  const tenant = asTenantId("tenant-own");
+  const own = memberScopePartition(tenant, asPrincipal("principal-own"));
+  assert.deepEqual(own, {
+    tenant,
+    project: `@member-${createHash("sha256").update("principal-own").digest("hex")}`,
+  });
+  assert.equal(memberScopeReserved(own), true);
+  assert.deepEqual(
+    memberScopePartition(
+      asTenantId("tenant-other"),
+      asPrincipal("principal-own"),
+    ).project,
+    own.project,
+  );
+  assert.notEqual(
+    memberScopePartition(tenant, asPrincipal("principal-else")).project,
+    own.project,
+  );
+  assert.equal(
+    memberScopeReserved({ tenant, project: asProjectId("project-own") }),
+    false,
+  );
 });

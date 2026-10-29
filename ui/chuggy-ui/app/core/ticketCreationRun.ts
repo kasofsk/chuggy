@@ -165,9 +165,13 @@ export type TicketCreationEnded =
       readonly held: CreationDraftHeld;
     };
 
-/** The one conflict a creation route answers: the fence this body carries moved. */
+/** The conflict a creation route answers where the fence this body carries moved. */
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
+
+/** The conflict it answers instead where the project takes no new ticket at any fence. */
+export const creationProjectNotActiveSentence =
+  "the project is not active, so it takes no new tickets";
 
 /** The version fence of a held draft, which it is read for just before it is
  * written, so only a writer in between meets it. */
@@ -329,13 +333,16 @@ async function creationDraftCreated(
   const answered = await apiCreateDraft(ports, partition, body);
   if (answered.outcome === "Ok")
     return { draft: answered.value, body, operation, unsettled: false };
-  return answered.outcome === "Conflict"
-    ? { created: "Stale", reason: creationStaleSentence }
-    : {
-        created: "Refused",
-        reason: operationFailureSentence(answered),
-        held: undefined,
-      };
+  if (answered.outcome === "Conflict" && answered.code !== "ProjectNotActive")
+    return { created: "Stale", reason: creationStaleSentence };
+  return {
+    created: "Refused",
+    reason:
+      answered.outcome === "Conflict"
+        ? creationProjectNotActiveSentence
+        : operationFailureSentence(answered),
+    held: undefined,
+  };
 }
 
 /** What a revision writes of a body, which is all of it but the fence. A

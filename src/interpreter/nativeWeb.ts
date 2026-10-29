@@ -21,6 +21,11 @@ import {
   authorizedProjectValue,
   type AuthorizedResult,
 } from "./authorizedProject.ts";
+import {
+  overridesAccess,
+  overridesNamed,
+  overridesRevisionAccess,
+} from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
 import type { Principal } from "./principal.ts";
@@ -59,10 +64,8 @@ import type {
 import type { Refusal } from "./refusal.ts";
 import type {
   AuthoringStore,
-  CanonicalConfiguration,
   ConfigurationPage,
   ConfigurationPageQuery,
-  ConfigurationCreated,
   ConfigurationRevisionResource,
   ConfigurationRevisionId,
   DraftCreated,
@@ -82,6 +85,7 @@ import {
   ticketCommandedCheckStage,
   ticketCommandedCheckStageNote,
   ticketConfigurationReadiness,
+  ticketProgramShort,
 } from "./authoring.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import { asBriefFinalization, type DraftBrief } from "./ticketBrief.ts";
@@ -158,7 +162,10 @@ import {
 import {
   checkedLeadTranscriptQuery,
   leadNotNeeded,
+  leadAwaitingSelector,
   leadPaused,
+  leadSelectorNotGranted,
+  leadSelectorUnnamed,
   leadTranscriptPage,
   sessionHeldWalk,
   sessionHeldWalkAsks,
@@ -184,12 +191,13 @@ import {
   sessionStoreStreamsAnswered,
   workerErrorPath,
 } from "../contract/http.ts";
-import type { GitObjectId, RepositoryId } from "./finalizer.ts";
+import type { RepositoryId } from "./finalizer.ts";
 import type { ProjectRepositoryLandingStore } from "./repositoryBinding.ts";
 import {
-  importRepositoryConfigurations,
   importRepositoryConfigurationsAtHead,
+  readRepositoryConfigurationHead,
   type RepositoryConfigurationHeadImportPorts,
+  type RepositoryConfigurationHeadOutcome,
   type RepositoryConfigurationImportOutcome,
 } from "./repositoryConfiguration.ts";
 import {
@@ -215,6 +223,7 @@ import {
   type ThreadMailboxQuery,
   type ThreadMessageImagesChecked,
   type ThreadMessageSent,
+  type ThreadOpenKey,
   type ThreadOpening,
   type ThreadRead,
   type ThreadRecord,
@@ -385,6 +394,8 @@ export interface TicketDependencyResource {
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly title?: string;
+  /** The repository the ticket's released brief names. */
+  readonly repository?: string;
   /** Which revision of its definition the ticket is at: one at release, one more per update. */
   readonly revision: number;
   /** The authority subject of the member whose first authoring revision filed the ticket. */
@@ -423,6 +434,8 @@ export interface TicketResource {
    * from, which is what its evaluation runs; its draft may since hold another.
    */
   readonly program?: ReleaseAuthoringProgram;
+  /** The dependencies that same release or update named, ascending; its draft may since name others. */
+  readonly dependencies?: readonly TicketId[];
   readonly runTotals?: RunTotals;
 }
 
@@ -599,6 +612,11 @@ export interface NativeSubmission {
   readonly viaSession?: SessionId;
 }
 
+/**
+ * `ProgramSkipsPlannedEvaluations` is a release or an update whose program runs
+ * less than its configuration plans, submitted by a caller not holding
+ * `SkipPlannedEvaluations`; nothing was accepted.
+ */
 export type NativeSubmissionResult =
   | { readonly result: "NotFound" }
   | {
@@ -606,6 +624,7 @@ export type NativeSubmissionResult =
       readonly scope: BacklogScope;
       readonly retryAfterSeconds: number;
     }
+  | { readonly result: "ProgramSkipsPlannedEvaluations" }
   | { readonly result: "Authorized"; readonly acceptance: Accepted };
 
 export type NativeCancellation =
@@ -757,29 +776,22 @@ export interface NativeWeb {
     partition: Partition,
     operation: OperationId,
   ): Promise<NativeCancellation>;
-  createConfiguration(
-    principal: Principal,
-    input: {
-      readonly partition: Partition;
-      readonly revision: ConfigurationRevisionId;
-      readonly parent?: ConfigurationRevisionId;
-      readonly canonical: CanonicalConfiguration;
-    },
-  ): Promise<AuthorizedResult<ConfigurationCreated>>;
   configurations(
     principal: Principal,
     partition: Partition,
     query: ConfigurationPageQuery,
   ): Promise<AuthorizedResult<ConfigurationPage>>;
-  /** Imports at `commit`, or where the repository's default branch points now where it names none. */
+  /** Imports where the repository's default branch points now, and at no other commit. */
   importRepositoryConfigurations(
     principal: Principal,
     partition: Partition,
-    source: {
-      readonly repository: RepositoryId;
-      readonly commit?: GitObjectId;
-    },
+    source: { readonly repository: RepositoryId },
   ): Promise<RepositoryConfigurationImportOutcome>;
+  repositoryConfigurationHead(
+    principal: Principal,
+    partition: Partition,
+    repository: RepositoryId,
+  ): Promise<RepositoryConfigurationHeadOutcome>;
   createDraft(
     principal: Principal,
     input: {
@@ -791,6 +803,8 @@ export interface NativeWeb {
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
+      /** The session whose bearer carried the request, which the draft keeps as the thread its events wake. */
+      readonly originSession?: SessionId;
     },
   ): Promise<AuthorizedResult<NativeDraftCreated>>;
   initializeDraft(
@@ -866,6 +880,7 @@ export interface NativeWeb {
   openThread(
     principal: Principal,
     partition: Partition,
+    key: ThreadOpenKey,
   ): Promise<ThreadOpening>;
   sendThreadMessage(
     principal: Principal,
@@ -918,6 +933,8 @@ export interface NativeWeb {
 }
 
 function submissionAccess(command: ProjectCommand): ProjectAccessKind {
+  if (command.command === "ChangeTicketOverrides")
+    return overridesAccess(command.overrides);
   if (command.command === "ManualDispatch") return "DispatchTicket";
   if (command.command === "ProposeDispatch") return "ProposeDispatch";
   return "Mutate";
@@ -931,12 +948,7 @@ function checkedInventoryLimit(limit: number): number {
 
 type NativeAuthoringMethods = Pick<
   NativeWeb,
-  | "draft"
-  | "drafts"
-  | "createConfiguration"
-  | "createDraft"
-  | "reviseDraft"
-  | "deleteDraft"
+  "draft" | "drafts" | "createDraft" | "reviseDraft" | "deleteDraft"
 >;
 
 function nativeDraftInitializationMethod(
@@ -1019,10 +1031,10 @@ function nativeConfigurationMethods(
 }
 
 /**
- * What a member's import is composed from: the import's own ports with the
- * default branch it reads where a member names no commit, and the binding door
- * that answers a binding's retirement, which the import's binding read does
- * not.
+ * What a member's import and head read are composed from: the import's own
+ * ports with the default branch it reads, and
+ * the binding door that answers a binding's retirement, which the import's
+ * binding read does not.
  */
 export interface NativeRepositoryConfigurationImportPorts extends RepositoryConfigurationHeadImportPorts {
   readonly landing: Pick<ProjectRepositoryLandingStore, "landing">;
@@ -1030,7 +1042,8 @@ export interface NativeRepositoryConfigurationImportPorts extends RepositoryConf
 
 /**
  * Imports only from a repository this project binds live, so a member cannot
- * read one their project retired, which another may since have bound.
+ * read one their project retired, which another may since have bound, and only
+ * at its default branch, so what a member imports is what was checked in.
  */
 function nativeRepositoryConfigurationImportMethod(
   access: ProjectAccess,
@@ -1044,20 +1057,33 @@ function nativeRepositoryConfigurationImportMethod(
     const bound = await ports.landing.landing(partition, source.repository);
     if (bound === undefined || bound.retiredAt !== undefined)
       return { result: "RepositoryAbsent" };
-    return source.commit === undefined
-      ? importRepositoryConfigurationsAtHead({
-          partition,
-          repository: source.repository,
-          authority,
-          ports,
-        })
-      : importRepositoryConfigurations({
-          partition,
-          repository: source.repository,
-          commit: source.commit,
-          authority,
-          ports,
-        });
+    return importRepositoryConfigurationsAtHead({
+      partition,
+      repository: source.repository,
+      authority,
+      ports,
+    });
+  };
+}
+
+/**
+ * Reads a repository's head for any member who may read the project, since it
+ * stores nothing, and only from a repository the project binds live, as the
+ * import does.
+ */
+function nativeRepositoryConfigurationHeadMethod(
+  access: ProjectAccess,
+  ports?: NativeRepositoryConfigurationImportPorts,
+): NativeWeb["repositoryConfigurationHead"] {
+  return async (principal, partition, repository) => {
+    const authority = await access.authorize(principal, partition, "Read");
+    if (authority === undefined) return { result: "NotFound" };
+    if (ports === undefined)
+      return { result: "Unavailable", unavailable: "Repository" };
+    const bound = await ports.landing.landing(partition, repository);
+    if (bound === undefined || bound.retiredAt !== undefined)
+      return { result: "RepositoryAbsent" };
+    return readRepositoryConfigurationHead({ partition, repository, ports });
   };
 }
 
@@ -1224,6 +1250,7 @@ function nativeDraftCreationMethod(
           ? { ...created, landing: nativeDraftLanding(landed, created.draft) }
           : created;
       },
+      overridesAccess(input.overrides),
     );
 }
 
@@ -1233,7 +1260,7 @@ function nativeDraftRevisionMethod(
   authoring: AuthoringStore,
   projectArtifacts?: ProjectArtifactPort,
 ): NativeWeb["reviseDraft"] {
-  return (principal, input) =>
+  return async (principal, input) =>
     authorizedProjectMutation(
       access,
       principal,
@@ -1255,6 +1282,12 @@ function nativeDraftRevisionMethod(
           ? { ...revised, landing: nativeDraftLanding(landed, revised.draft) }
           : revised;
       },
+      overridesNamed(input.overrides)
+        ? overridesRevisionAccess(
+            await authoring.draft(input.partition, input.ticket),
+            input,
+          )
+        : "Mutate",
     );
 }
 
@@ -1265,13 +1298,6 @@ function nativeAuthoringMethods(
 ): NativeAuthoringMethods {
   return {
     ...nativeDraftReadMethods(access, authoring),
-    createConfiguration: (principal, input) =>
-      authorizedProjectMutation(
-        access,
-        principal,
-        input.partition,
-        (authority) => authoring.createConfiguration({ ...input, authority }),
-      ),
     createDraft: nativeDraftCreationMethod(access, authoring, projectArtifacts),
     reviseDraft: nativeDraftRevisionMethod(access, authoring, projectArtifacts),
     deleteDraft: (principal, input) =>
@@ -1284,10 +1310,82 @@ function nativeAuthoringMethods(
   };
 }
 
+/**
+ * Whether a release or an update runs less than its configuration plans,
+ * judged on the revision it names, which is never rewritten and which its
+ * decision resolves or refuses, so what this answers is what the decision
+ * releases. `Unretained` is a revision the project does not hold; a
+ * configuration that makes no ticket is refused at the decision, so it runs
+ * nothing and is not short.
+ */
+async function nativeSubmitRunsLessThanPlan(
+  authoring: AuthoringStore,
+  partition: Partition,
+  command: Extract<
+    ProjectCommand,
+    { readonly command: "ReleaseDraft" | "UpdateTicket" }
+  >,
+): Promise<boolean | "Unretained"> {
+  const revision = await authoring.draftRevision(partition, command);
+  if (revision === undefined) return "Unretained";
+  const readiness = ticketConfigurationReadiness(
+    revision.canonical,
+    undefined,
+    revision.overrides,
+    revision.selection,
+  );
+  return (
+    readiness.readiness === "Ready" &&
+    ticketProgramShort(readiness.ticket, revision.program)
+  );
+}
+
+/**
+ * What a release or an update is answered before the inbox, if anything: one
+ * running less than its plan, by a caller not holding `SkipPlannedEvaluations`,
+ * is refused for it; one naming a revision the project does not hold is refused
+ * as an invalid command, so a revision written after this read is never
+ * released unasked.
+ */
+async function nativeSubmitPlanRefusal(
+  access: ProjectAccess,
+  authoring: AuthoringStore,
+  principal: Principal,
+  submission: NativeSubmission,
+): Promise<NativeSubmissionResult | undefined> {
+  const command = submission.command;
+  if (command.command !== "ReleaseDraft" && command.command !== "UpdateTicket")
+    return undefined;
+  const short = await nativeSubmitRunsLessThanPlan(
+    authoring,
+    submission.partition,
+    command,
+  );
+  if (short === "Unretained")
+    return {
+      result: "Authorized",
+      acceptance: { accepted: "InvalidCommand" },
+    };
+  if (!short) return undefined;
+  const skips = await access.authorize(
+    principal,
+    submission.partition,
+    "SkipPlannedEvaluations",
+  );
+  return skips === undefined
+    ? { result: "ProgramSkipsPlannedEvaluations" }
+    : undefined;
+}
+
+/**
+ * A release or an update that runs less than its plan asks
+ * `SkipPlannedEvaluations` beside `Mutate`, before anything is accepted.
+ */
 function nativeSubmitMethod(
   access: ProjectAccess,
   inbox: OperationInbox,
   backlog: ExecutionBacklogGuard,
+  authoring: AuthoringStore,
 ): NativeWeb["submit"] {
   return async (principal, submission) => {
     const authority = await access.authorize(
@@ -1296,6 +1394,13 @@ function nativeSubmitMethod(
       submissionAccess(submission.command),
     );
     if (authority === undefined) return { result: "NotFound" };
+    const refused = await nativeSubmitPlanRefusal(
+      access,
+      authoring,
+      principal,
+      submission,
+    );
+    if (refused !== undefined) return refused;
     if (dispatchNeedsExecutionHeadroom(submission.command)) {
       const verdict = await backlog.admitsDispatch(submission.partition);
       if (verdict.admits === "Backlogged")
@@ -1558,6 +1663,10 @@ export interface NativeLeadPorts {
   readonly history: SelectorHistoryStore;
   /** The project's settings as the selector resolves them, which say whether it is paused. */
   readonly settings: Pick<SelectorRuntimeSettingsSource, "projectSettings">;
+  /** The tickets a dispatch is enabled at, which say whether one waits on a decision. */
+  readonly candidates: DispatchViewStore;
+  /** The site's selector, whose read of a project is what its sweep lists it by, where the deployment names one. */
+  readonly selector?: Principal;
 }
 
 function composedLeadPorts(ports?: NativeLeadPorts): NativeLeadPorts {
@@ -1702,18 +1811,45 @@ type NativeLeadMethods = Pick<
 >;
 
 /**
- * Why a project holds no lead, where a paused selector outranks the refusal it
- * keeps, since a paused selector asks no admission and its kept refusal may have
- * stopped being true. The resolved mode is `Paused` under an installation pause
- * as under the project's own, which is what the selector stops for.
+ * Why a project holds no lead, where a selector paused, by the installation or
+ * the project, or one that may not read the project outranks the refusal it
+ * keeps, since neither asks admission and a kept refusal may have stopped being
+ * true. With neither and no refusal, a released ticket the selector has not yet
+ * taken up is `AwaitingSelector`, or `SelectorUnnamed` where no selector is
+ * named whose reach could be read, and only a project where none waits is
+ * `NotNeeded`.
  */
 async function nativeLeadSessionAbsence(
+  access: ProjectAccess,
   ports: NativeLeadPorts,
   partition: Partition,
 ): Promise<LeadAbsence> {
   if ((await ports.settings.projectSettings(partition)).mode === "Paused")
     return leadPaused;
-  return (await ports.leads.leadRefusal(partition)) ?? leadNotNeeded;
+  if (
+    ports.selector !== undefined &&
+    (await access.authorize(ports.selector, partition, "Read")) === undefined
+  )
+    return leadSelectorNotGranted;
+  const refused = await ports.leads.leadRefusal(partition);
+  if (refused !== undefined) return refused;
+  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
+    return leadNotNeeded;
+  return ports.selector === undefined
+    ? leadSelectorUnnamed
+    : leadAwaitingSelector;
+}
+
+/**
+ * Whether a released ticket waits on a dispatch decision. A view being rebuilt
+ * answers no candidates, so it says none waits until it stands again.
+ */
+async function nativeLeadDispatchWaits(
+  candidates: DispatchViewStore,
+  partition: Partition,
+): Promise<boolean> {
+  const page = await candidates.read(partition, { limit: 1 });
+  return page.result === "Page" && page.candidates.length > 0;
 }
 
 /**
@@ -1738,7 +1874,7 @@ function nativeLeadSessionMethods(
       if (standing === undefined)
         return {
           result: "None",
-          absence: await nativeLeadSessionAbsence(ports, partition),
+          absence: await nativeLeadSessionAbsence(access, ports, partition),
         };
       return {
         result: "Found",
@@ -1881,18 +2017,18 @@ async function nativeInquiryEntries(
 }
 
 /**
- * Opening the caller's own thread, which is `Mutate` and takes no session: a
- * member has one thread per project, the definer is idempotent on that, and the
- * roster it is opened with is the definer's own. It is refused where its first
- * turn would be: in cluster without the tenant's hosted grant, and on a runner
- * with none of the member's registered.
+ * Opening a thread of the caller's own, which is `Mutate` and takes the key its
+ * client minted rather than a session: the definer is idempotent on the key,
+ * holds the member to their limit, and writes the roster itself. It is refused
+ * where its first turn would be: in cluster without the tenant's hosted grant,
+ * and on a runner with none of the member's registered.
  */
 function nativeOpenThreadMethod(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
 ): NativeWeb["openThread"] {
-  return async (principal, partition) => {
+  return async (principal, partition, key) => {
     const authority = await access.authorize(principal, partition, "Mutate");
     if (authority === undefined) return { result: "NotFound" };
     const spend = await sessionSpendRoute(
@@ -1909,6 +2045,7 @@ function nativeOpenThreadMethod(
       partition,
       principal,
       session: ports.sessions.session(),
+      key,
       systemPrompt: threadSystemPrompt({
         partition,
         owner: authority.subject,
@@ -1919,6 +2056,8 @@ function nativeOpenThreadMethod(
       }),
       credentialSlot: ports.credentialSlot,
     });
+    if (opened.opened === "ThreadLimitReached")
+      return { result: opened.opened, threadsMax: opened.threadsMax };
     return {
       result: opened.opened,
       thread: threadEntry(opened.thread, principal, authority.subject),
@@ -1954,14 +2093,14 @@ function composedThreadArtifactStore(
 }
 
 /**
- * The message door, which is `Mutate` and reaches the caller's own mailbox
- * alone: the session the URL names is checked against the one the caller's
- * principal resolves to, so the page a member is reading and the mailbox their
- * message lands in cannot come apart. Each turn is stamped with the route it
- * was admitted on and runs there, so the route and what it needs of the member
- * are asked at every send, not only when the thread opened, and an image the
- * message names is checked against this project's own artifacts only once the
- * thread is confirmed open and the caller's own.
+ * The message door, which is `Mutate` and reaches the caller's own threads
+ * alone: the session the URL names is the mailbox, and the durable door refuses
+ * it where it is another member's, so the page a member is reading and the
+ * mailbox their message lands in cannot come apart. Each turn is stamped with
+ * the route it was admitted on and runs there, so the route and what it needs
+ * of the member are asked at every send, not only when the thread opened, and
+ * an image the message names is checked against this project's own artifacts
+ * only once the thread is confirmed open and the caller's own.
  */
 function nativeSendThreadMessageMethod(
   access: ProjectAccess,
@@ -2024,7 +2163,6 @@ function nativeSendThreadMessageMethod(
         input: turnInput,
         route: spend.route,
       }),
-      input.session,
       input.turn,
     );
   };
@@ -2084,8 +2222,8 @@ function nativeCloseThreadMethod(
 }
 
 /**
- * The gate rename and hide share: `Mutate`, the ports behind it, and the
- * caller's own mailbox — or the refusal that stands in for all three.
+ * The gate rename and hide share: `Mutate`, the ports behind it, and a thread
+ * of the caller's own — or the refusal that stands in for all three.
  */
 async function nativeOwnedThread(
   access: ProjectAccess,
@@ -2115,10 +2253,7 @@ async function nativeOwnedThread(
   return { owned: true, ports, authority };
 }
 
-/**
- * Renaming and hiding are each the owner's alone, resolved against the
- * caller's own mailbox as the message door resolves it.
- */
+/** Renaming and hiding are each the owner's alone, as the message door is. */
 function nativeThreadViewMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
@@ -2184,6 +2319,7 @@ function nativeThreadReadMethods(
       const ports = composedThreadPorts(threads);
       const found = await ports.threads.threads(
         partition,
+        principal,
         checkedThreadsLimit(threadsAnsweredMax),
       );
       return {
@@ -2385,8 +2521,11 @@ function nativeLeadInquiryMethods(
   };
 }
 
-/** The thread side of the boundary, whose reads and whose doors reach it as one. */
-function nativeThreadMethods(
+/**
+ * The thread side of the boundary, whose reads and whose doors reach it as one.
+ * A member's own chat reaches the same doors through an access of its own.
+ */
+export function nativeThreadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
   routes?: SessionRouteReads,
@@ -2500,6 +2639,10 @@ export function nativeWeb(
       access,
       repositoryConfigurationImports,
     ),
+    repositoryConfigurationHead: nativeRepositoryConfigurationHeadMethod(
+      access,
+      repositoryConfigurationImports,
+    ),
     ...nativeConfigurationMethods(access, authoring),
     ...nativeDraftInitializationMethod(access, authoring),
     ...nativeAuthoringMethods(access, authoring, projectArtifacts),
@@ -2513,7 +2656,7 @@ export function nativeWeb(
       access,
       selectorContexts,
     ),
-    submit: nativeSubmitMethod(access, inbox, backlog),
+    submit: nativeSubmitMethod(access, inbox, backlog, authoring),
     ...nativeProjectionMethods(access, reads),
     cancel: nativeCancelMethod(access, reads, inbox),
     notifications: authorizedProjectValue(access, (partition, cursor) =>

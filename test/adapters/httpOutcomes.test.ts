@@ -14,7 +14,6 @@ import {
 } from "../../src/interpreter/authoring.ts";
 import {
   cancellationResponse,
-  configurationCreationResponse,
   configurationResponse,
   configurationsResponse,
   dispatchViewResponse,
@@ -29,26 +28,80 @@ import {
   operationResponse,
   projectArtifactReadResponse,
   projectResponse,
+  repositoryConfigurationHeadResponse,
   repositoryConfigurationImportResponse,
+  runErrorResponse,
+  runTranscriptResponse,
   submissionResponse,
+  ticketLandingsResponse,
 } from "../../src/adapters/http/outcomes.ts";
-import { projectArtifactUploadBytesMax } from "../../src/contract/http.ts";
+import { actionReportLinkCharsMax } from "../../src/contract/actionReport.ts";
+import {
+  projectArtifactUploadBytesMax,
+  proposalMergeStateCharsMax,
+  runTranscriptBatchBytesMax,
+  runTranscriptBatchesMax,
+  runTranscriptPageBatchesMax,
+  ticketLandingConflictBytesMax,
+  ticketLandingRefCharsMax,
+  ticketLandingsAnsweredMax,
+  workerPlaneUploadBytesMax,
+} from "../../src/contract/http.ts";
+import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import {
   draftsResponseSchema,
   projectArtifactResponseSchema,
+  repositoryConfigurationHeadResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
   chuggyToolImageResponseBytesMax,
   chuggyToolResponseBytesMax,
+  chuggyToolRunErrorResponseBytesMax,
+  chuggyToolRunTranscriptResponseBytesMax,
+  chuggyToolTicketLandingBytesMax,
+  chuggyToolTicketLandingsResponseBytesMax,
   imageMediaTypes,
   projectArtifactEncoding,
 } from "../../src/contract/sessionTools.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import {
+  allChangeProposalCreationsStored,
+  allChangeProposalMergeabilities,
+  allChangeProposalMergeAnswers,
+  allChangeProposalMergeWaits,
+  allChangeProposalStatuses,
+  allChangeProposalUnmergeableSettled,
+  asProposalMergeState,
+} from "../../src/interpreter/changeProposal.ts";
+import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
+import {
+  allFinalizationAttemptOutcomes,
+  allFinalizationFailureKinds,
+  asFinalizationAttemptId,
+  asGitObjectId,
+  asGitRefName,
+  asRepositoryId,
+  gitRefNameCharsMax,
+} from "../../src/interpreter/finalizer.ts";
+import {
+  asProjectArtifactId,
+  conflictManifestText,
+} from "../../src/interpreter/finalizerPreparation.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
+import { memberAuthority } from "../../src/interpreter/projectAccess.ts";
+import {
+  ticketLandingReads,
+  type TicketLandingRecord,
+} from "../../src/interpreter/ticketLandings.ts";
+import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { repositoryDeclarationRoot } from "../../src/interpreter/repositoryDeclaration.ts";
 import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
 import { parseDraftRevision } from "../../src/adapters/http/contract.ts";
+import { repositoryConfigurationWorkFile } from "../interpreter/repositoryConfigurationFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant/one"),
@@ -64,6 +117,112 @@ const standing = {
   admission: "Ordinary" as const,
   lifecycleGeneration: 1,
 };
+
+test("a repository head that could be read is answered with what it declares, refused or not", () => {
+  const ready = repositoryConfigurationImportReadiness({
+    repository: asRepositoryId("repository"),
+    commit: asGitObjectId("e".repeat(40)),
+    files: [repositoryConfigurationWorkFile],
+  });
+  if (ready.readiness !== "Ready") throw new Error("fixture was refused");
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const answered = repositoryConfigurationHeadResponse({
+    ...at,
+    read: { result: "Ready", declarations: ready.declarations },
+  });
+  assert.equal(answered.status, 200);
+  const head = repositoryConfigurationHeadResponseSchema.parse(
+    answered.body,
+  ).head;
+  assert.equal(head.state, "Ready");
+  if (head.state !== "Ready") throw new Error("unreachable");
+  const [declared] = ready.declarations;
+  assert.deepEqual(
+    head.configurations[0]?.digest,
+    configurationRevisionDigest(declared?.canonical ?? ""),
+  );
+  assert.equal("workloadPaths" in (head.configurations[0] ?? {}), false);
+  const refused = repositoryConfigurationHeadResponse({
+    ...at,
+    read: {
+      result: "DeclarationsRefused",
+      faults: [{ path: "declaration", fault: "EnvelopeInvalid" }],
+    },
+  });
+  assert.equal(refused.status, 200);
+  assert.equal(
+    repositoryConfigurationHeadResponseSchema.parse(refused.body).head.state,
+    "ConfigurationsRefused",
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({
+      result: "Unavailable",
+      unavailable: "Repository",
+    }).status,
+    503,
+  );
+  assert.equal(
+    repositoryConfigurationHeadResponse({ result: "RepositoryAbsent" }).status,
+    404,
+  );
+});
+
+test("a head with no branch, no commit, no configurations or no read is answered by which it was", () => {
+  const at = {
+    result: "Read",
+    branch: asGitRefName("main"),
+    commit: asGitObjectId("e".repeat(40)),
+  } as const;
+  const headOf = (
+    outcome: Parameters<typeof repositoryConfigurationHeadResponse>[0],
+  ) => {
+    const answered = repositoryConfigurationHeadResponse(outcome);
+    assert.equal(answered.status, 200);
+    return repositoryConfigurationHeadResponseSchema.parse(answered.body).head;
+  };
+  assert.deepEqual(headOf({ result: "BranchAbsent" }), {
+    state: "BranchAbsent",
+  });
+  assert.deepEqual(
+    headOf({ ...at, read: { result: "SnapshotAbsent", absent: "Commit" } }),
+    { state: "CommitAbsent", branch: "main", commit: "e".repeat(40) },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: {
+        result: "SnapshotAbsent",
+        absent: "ConfigurationDirectory",
+        ignored: {
+          paths: [".chug/configurations/README.md"],
+          truncated: false,
+        },
+      },
+    }),
+    {
+      state: "ConfigurationsAbsent",
+      branch: "main",
+      commit: "e".repeat(40),
+      ignored: { paths: [".chug/configurations/README.md"], truncated: false },
+    },
+  );
+  assert.deepEqual(
+    headOf({
+      ...at,
+      read: { result: "SnapshotRefused", refused: "Credential" },
+    }),
+    {
+      state: "SnapshotRefused",
+      branch: "main",
+      commit: "e".repeat(40),
+      refused: "Credential",
+    },
+  );
+});
 
 test("repository import outcomes distinguish retry, refusal, and conflict", () => {
   assert.equal(
@@ -344,30 +503,8 @@ const draft = {
 };
 const landing = { mode: "Push", source: "Default" } as const;
 
-test("configuration outcomes are closed and location-bearing", () => {
+test("an absent configuration is answered as not found", () => {
   assert.equal(configurationResponse(undefined).status, 404);
-  const cases = [
-    { value: { created: "Created", revision: configuration }, status: 201 },
-    {
-      value: { created: "AlreadyExists", revision: configuration },
-      status: 200,
-    },
-    { value: { created: "IdentityConflict" }, status: 409 },
-    { value: { created: "ParentNotFound" }, status: 404 },
-  ] as const;
-  for (const each of populated(cases, "configuration creation outcomes")) {
-    assert.equal(
-      configurationCreationResponse({
-        result: "Authorized",
-        value: each.value,
-      }).status,
-      each.status,
-    );
-  }
-  assert.equal(
-    configurationCreationResponse({ result: "NotFound" }).status,
-    404,
-  );
 });
 
 test("configuration pages expose only an opaque continuation cursor", () => {
@@ -408,6 +545,7 @@ test("a draft answers the brief it was written with, title and all", () => {
     title: "Serve the title on the draft",
     intent: "Serve the brief on the draft resource.",
     links: ["https://example.test/issues/340"],
+    images: ["artifact-1"],
     repository: "origin/chuggy",
   });
   assert.deepEqual(
@@ -416,6 +554,7 @@ test("a draft answers the brief it was written with, title and all", () => {
       title: "Serve the title on the draft",
       intent: "Serve the brief on the draft resource.",
       links: ["https://example.test/issues/340"],
+      images: ["artifact-1"],
       checks: [],
       repository: "origin/chuggy",
     },
@@ -427,10 +566,11 @@ test("a draft answers the brief it was written with, title and all", () => {
   );
 });
 
-test("revising a draft with exactly the brief it was read back with keeps its repository", () => {
+test("revising a draft with exactly the brief it was read back with keeps its repository and images", () => {
   const brief = asDraftBrief({
     intent: "Serve the brief on the draft resource.",
     links: [],
+    images: ["artifact-1"],
     repository: "origin/chuggy",
   });
   const readBack = (
@@ -448,6 +588,7 @@ test("revising a draft with exactly the brief it was read back with keeps its re
     brief: readBack,
   });
   assert.equal(revision.brief.repository, "origin/chuggy");
+  assert.deepEqual(revision.brief.images, ["artifact-1"]);
 });
 
 test("a drafts page names its cursor exactly where it says there is more", () => {
@@ -528,7 +669,8 @@ test("draft creation maps every closed result, a branchless landing among them",
       value: { created: "Unavailable", retryAfterSeconds: 5 },
       status: 503,
     },
-    { value: { created: "Stale" }, status: 409 },
+    { value: { created: "Stale", currentProjectSequence: 9 }, status: 409 },
+    { value: { created: "NotActive", lifecycle: "Suspended" }, status: 409 },
     { value: { created: "LandingUnbranched" }, status: 422 },
   ] as const;
   for (const each of populated(creations, "draft creation outcomes")) {
@@ -546,6 +688,34 @@ test("draft creation maps every closed result, a branchless landing among them",
     "LandingUnbranched",
     "the reason a caller acts on is the code and not the status",
   );
+  assert.deepEqual(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "Stale", currentProjectSequence: 9 },
+    }).body,
+    {
+      error: {
+        code: "DraftInitializationStale",
+        message: "The draft initialization is stale.",
+      },
+      currentProjectSequence: 9,
+    },
+    "a stale head is answered with the one to write against",
+  );
+  assert.deepEqual(
+    draftCreationResponse({
+      result: "Authorized",
+      value: { created: "NotActive", lifecycle: "Suspended" },
+    }).body,
+    {
+      error: {
+        code: "ProjectNotActive",
+        message: "The project is not active, so it takes no new draft.",
+      },
+      lifecycle: "Suspended",
+    },
+    "a project no head admits a draft to is not answered as a stale one",
+  );
 });
 
 test("draft revision and deletion map every closed result", () => {
@@ -562,7 +732,6 @@ test("draft revision and deletion map every closed result", () => {
       status: 503,
     },
     { value: { revised: "LandingUnbranched" }, status: 422 },
-    { value: { revised: "DependenciesLocked" }, status: 409 },
   ] as const;
   for (const each of populated(revisions, "draft revision outcomes")) {
     assert.equal(
@@ -582,21 +751,6 @@ test("draft revision and deletion map every closed result", () => {
       each.status,
     );
   }
-});
-
-test("a released draft's dependencies are refused by their own code", () => {
-  assert.deepEqual(
-    draftRevisionResponse({
-      result: "Authorized",
-      value: { revised: "DependenciesLocked" },
-    }).body,
-    {
-      error: {
-        code: "DependenciesLocked",
-        message: "A released ticket's dependencies cannot change.",
-      },
-    },
-  );
 });
 
 test("a reopened draft is read beside the version its ticket was last released at", () => {
@@ -634,7 +788,7 @@ test("a draft the project's bindings do not answer for is not found", () => {
   );
 });
 
-test("the largest image an upload admits is answered within what fetch_image reads and past what any other tool reads, in the encoding it decodes by", () => {
+test("the largest image an upload admits is answered within what fetch_image reads and past what an ordinary tool reads, in the encoding it decodes by", () => {
   for (const mediaType of imageMediaTypes) {
     const { body } = projectArtifactReadResponse({
       fetched: "Content",
@@ -650,4 +804,220 @@ test("the largest image an upload admits is answered within what fetch_image rea
       mediaType,
     );
   }
+});
+
+/**
+ * The heaviest text a character can make as JSON escapes it, and one that JSON
+ * leaves as it is: a control character, one byte that escapes to six, and a
+ * character of four bytes.
+ */
+const runTextExtremes = [
+  ["control characters", "\u0001", 1],
+  ["four-byte characters", "\u{1F600}", 4],
+] as const;
+
+test("the largest error text a worker uploads is answered within what read_run_error reads and past what an ordinary tool reads", () => {
+  for (const [what, character, bytes] of runTextExtremes) {
+    const { body } = runErrorResponse({
+      read: "Content",
+      content: character.repeat(workerPlaneUploadBytesMax / bytes),
+    });
+    const weighed = Buffer.byteLength(JSON.stringify(body));
+    assert.ok(weighed <= chuggyToolRunErrorResponseBytesMax, what);
+    assert.ok(weighed > chuggyToolResponseBytesMax, what);
+  }
+});
+
+test("a page of the largest transcript batches is answered within what read_run_transcript reads", () => {
+  for (const [what, character, bytes] of runTextExtremes) {
+    const recordedAt = asPublicInstant("2026-10-22T12:00:00.000Z");
+    const { body } = runTranscriptResponse({
+      read: "Page",
+      page: {
+        batches: Array.from({ length: runTranscriptPageBatchesMax }, () => ({
+          batch: runTranscriptBatchesMax,
+          recordedAt,
+          bytes: runTranscriptBatchBytesMax,
+          read: "Content" as const,
+          content: character.repeat(runTranscriptBatchBytesMax / bytes),
+        })),
+        observedAt: recordedAt,
+        complete: false,
+        nextAfter: runTranscriptBatchesMax,
+      },
+    });
+    const weighed = Buffer.byteLength(JSON.stringify(body));
+    assert.ok(weighed <= chuggyToolRunTranscriptResponseBytesMax, what);
+    assert.ok(weighed > chuggyToolResponseBytesMax, what);
+  }
+});
+
+/** The longest member of a roster, which is the heaviest code a field naming it carries. */
+function landingCodeHeaviest<T extends string>(roster: readonly T[]): T {
+  const [first, ...rest] = roster;
+  assert.ok(first !== undefined, "an empty roster names no code");
+  return rest.reduce(
+    (held, code) => (code.length > held.length ? code : held),
+    first,
+  );
+}
+
+const landingCommitHeaviest = asGitObjectId("f".repeat(64));
+const landingInstant = asPublicInstant("2026-10-25T12:00:00.000000Z");
+const landingCountHeaviest = Number.MAX_SAFE_INTEGER;
+
+/** A reference name of control characters at its bound, each of which JSON escapes to six bytes. */
+const landingRefHeaviest = "\u0001".repeat(ticketLandingRefCharsMax);
+
+/** A link a report could carry at its bound, of the visible character JSON escapes. */
+const landingLinkHeaviest = `https://h/${"\\".repeat(actionReportLinkCharsMax - "https://h/".length)}`;
+
+/** One request's rows as the heaviest of them hold it, in each state that carries a field of its own. */
+function landingRecordsHeaviest(): readonly TicketLandingRecord[] {
+  const base = {
+    cycle: landingCountHeaviest,
+    generation: landingCountHeaviest,
+    attempts: landingCountHeaviest,
+    attempt: {
+      outcome: landingCodeHeaviest(allFinalizationAttemptOutcomes),
+      failureKind: landingCodeHeaviest(allFinalizationFailureKinds),
+      targetRef: landingRefHeaviest,
+      targetCommit: landingCommitHeaviest,
+      candidateCommit: landingCommitHeaviest,
+      preparedAt: landingInstant,
+    },
+    conflictManifest: asProjectArtifactId("manifest"),
+    approvalOpen: false,
+    proposal: {
+      url: landingLinkHeaviest,
+      headRef: landingRefHeaviest,
+      headCommit: landingCommitHeaviest,
+      baseRef: landingRefHeaviest,
+      creation: landingCodeHeaviest(allChangeProposalCreationsStored),
+      status: landingCodeHeaviest(allChangeProposalStatuses),
+      merge: landingCodeHeaviest(allChangeProposalMergeAnswers),
+      mergeReason: landingCodeHeaviest(allChangeProposalUnmergeableSettled),
+      mergeability: landingCodeHeaviest(allChangeProposalMergeabilities),
+      mergeState: asProposalMergeState(
+        "\u0001".repeat(proposalMergeStateCharsMax),
+      ),
+      mergeCommit: landingCommitHeaviest,
+      mergedHead: landingCommitHeaviest,
+    },
+  };
+  return [
+    {
+      ...base,
+      request: "Registered",
+      hold: {
+        kind: landingCodeHeaviest(finalizationUnavailableKinds),
+        passes: landingCountHeaviest,
+        since: landingInstant,
+      },
+    },
+    {
+      ...base,
+      request: "Registered",
+      wait: {
+        reason: landingCodeHeaviest(allChangeProposalMergeWaits),
+        checkedAt: landingInstant,
+      },
+    },
+    {
+      ...base,
+      request: "Fulfilled",
+      concluded: "Succeeded",
+      landedCommit: landingCommitHeaviest,
+    },
+  ];
+}
+
+/**
+ * A ticket's read over a store answering `record` as often as it is asked, and
+ * a manifest naming more paths of `character` than one landing's conflict
+ * holds.
+ */
+async function landingsReadHeaviest(
+  record: TicketLandingRecord,
+  character: string,
+) {
+  const manifest = new TextEncoder().encode(
+    conflictManifestText({
+      request: "request",
+      attempt: asFinalizationAttemptId("attempt"),
+      strategy: "Merge",
+      candidate: landingCommitHeaviest,
+      target: {
+        ref: asGitRefName("refs/heads/main"),
+        commit: landingCommitHeaviest,
+      },
+      conflict: {
+        paths: Array.from(
+          { length: ticketLandingConflictBytesMax },
+          () => character,
+        ),
+        truncated: false,
+      },
+    }),
+  );
+  const reads = ticketLandingReads({
+    access: {
+      authorize: (who) => Promise.resolve(memberAuthority(who)),
+      authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
+    },
+    store: {
+      landings: (_partition, _ticket, count) =>
+        Promise.resolve(Array.from({ length: count }, () => record)),
+    },
+    artifacts: {
+      readArtifact: () =>
+        Promise.resolve({ read: "Content" as const, content: manifest }),
+    },
+  });
+  const read = await reads.read(
+    asPrincipal("reader"),
+    partition,
+    asTicketId(7),
+  );
+  assert.ok(read !== undefined);
+  return read;
+}
+
+/** The characters a conflict's paths are weighed in: the most paths, the most escaped, and the widest. */
+const landingPathCharacters = ["a", "\u0001", "\u{1F600}"] as const;
+
+test("a landing's reference names are bounded as a stored row's are", () => {
+  assert.equal(ticketLandingRefCharsMax, gitRefNameCharsMax);
+});
+
+test("the heaviest landings a ticket's read answers are answered within what read_ticket_landings reads and past what an ordinary tool reads", async () => {
+  for (const record of landingRecordsHeaviest())
+    for (const character of landingPathCharacters) {
+      const read = await landingsReadHeaviest(record, character);
+      const [landing] = read.landings;
+      assert.equal(read.landings.length, ticketLandingsAnsweredMax);
+      assert.equal(
+        landing?.proposal?.url,
+        landingLinkHeaviest,
+        "the link was not answered",
+      );
+      assert.equal(
+        landing?.conflict?.truncated,
+        true,
+        "the paths were not cut at their bound",
+      );
+      const what = `${landing?.state ?? "none"} with paths of ${JSON.stringify(character)}`;
+      for (const answered of read.landings)
+        assert.ok(
+          Buffer.byteLength(JSON.stringify(answered)) <=
+            chuggyToolTicketLandingBytesMax,
+          what,
+        );
+      const weighed = Buffer.byteLength(
+        JSON.stringify(ticketLandingsResponse(read).body),
+      );
+      assert.ok(weighed <= chuggyToolTicketLandingsResponseBytesMax, what);
+      assert.ok(weighed > chuggyToolResponseBytesMax, what);
+    }
 });

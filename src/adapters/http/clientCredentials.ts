@@ -1,6 +1,8 @@
 /**
  * The access token an authenticated client presents, minted by the OAuth2
- * client-credentials grant and replaced before the issuer expires it.
+ * client-credentials grant and replaced before the issuer expires it. This and
+ * `src/adapters/http/poolTokens.ts` are chuggy-common's `poolTokens.mjs` in
+ * TypeScript, and a change to one is a change to both.
  *
  * A TOKEN IS REPLACED AHEAD OF EXPIRY. The issuer signs short-lived access
  * tokens and the API verifies them offline, so a client that waits for the 401
@@ -58,11 +60,29 @@
  *
  * THE GRANT IS READ UNDER A BOUND, because the issuer is reached across the
  * same network as everything else and an endpoint that answers endlessly is
- * not distinguishable from one that is slow.
+ * not distinguishable from one that is slow. So is a refusal.
  *
- * NOTHING HERE REACHES A DIAGNOSTIC BUT A STATUS. The secret is in the request
- * and the token is in the response, and a mint failure is reported by a process
- * that logs.
+ * A GRANT IS REFUSED ONLY BY AN RFC 6749 §5.2 REFUSAL: a 400 or a 401 whose
+ * body is a JSON object naming one of that section's codes. Each is the
+ * issuer's word on this client's credential, its registration or its request,
+ * which presenting the credential again will not change, and is raised as
+ * `ClientCredentialsRefused`. Any other failed grant is an ordinary error,
+ * because a proxy in front of an issuer it cannot reach answers statuses of
+ * its own.
+ *
+ * A REFUSAL AN ISSUER ALSO GIVES A LOOKUP IT COULD NOT MAKE IS CONFIRMED.
+ * Hydra, through fosite, answers every failed read of its client store
+ * `invalid_client`, as it answers a client it does not have, until its
+ * readiness probe takes it out of rotation. So that refusal is an ordinary
+ * error, saying it is being confirmed, until every grant across
+ * `refusalConfirmMs` has been refused the same way; a grant, any other answer
+ * or a different status starts the interval again. The interval is the
+ * caller's, since how long an issuer stays ready without its database is a
+ * fact of its deployment.
+ *
+ * NOTHING HERE REACHES A DIAGNOSTIC BUT A STATUS AND A REFUSAL'S CODE. The
+ * secret is in the request and the token is in the response, and a mint
+ * failure is reported by a process that logs.
  */
 
 import { z } from "zod";
@@ -85,6 +105,37 @@ const clientCredentialsGrantSchema = z.object({
   expires_in: z.number().int().positive(),
 });
 
+/** The codes RFC 6749 §5.2 refuses a grant with, and the only ones read as a refusal. */
+const clientCredentialsRefusalCodes = [
+  "invalid_request",
+  "invalid_client",
+  "invalid_grant",
+  "unauthorized_client",
+  "unsupported_grant_type",
+  "invalid_scope",
+] as const;
+
+type ClientCredentialsRefusalCode =
+  (typeof clientCredentialsRefusalCodes)[number];
+
+/** The statuses RFC 6749 §5.2 refuses a grant with: 401 for a client that failed authentication, 400 for the rest. */
+const clientCredentialsRefusalStatuses: ReadonlySet<number> = new Set([
+  400, 401,
+]);
+
+/**
+ * The codes an issuer also refuses a client it could not look up with. Every
+ * other code fosite decides against the request or the registration that
+ * lookup returned.
+ */
+const clientCredentialsLookupCodes: ReadonlySet<ClientCredentialsRefusalCode> =
+  new Set(["invalid_client"]);
+
+/** A refusal may carry more than its code, and a client ignores the rest. */
+const clientCredentialsRefusalSchema = z.object({
+  error: z.enum(clientCredentialsRefusalCodes),
+});
+
 export interface ClientCredentialsConfig {
   readonly tokenUrl: string;
   readonly clientId: string;
@@ -96,6 +147,7 @@ export interface ClientCredentialsConfig {
   readonly responseReadsMax: number;
   readonly refreshMarginMs: number;
   readonly mintCooldownMs: number;
+  readonly refusalConfirmMs: number;
   readonly fetch?: typeof fetch;
   readonly currentTimeEpochMs?: () => number;
   readonly monotonicMs?: () => number;
@@ -137,6 +189,10 @@ function clientCredentialsChecked(
     config.mintCooldownMs,
     "client credentials mint cooldown",
   );
+  checkedPositiveBound(
+    config.refusalConfirmMs,
+    "client credentials refusal confirmation",
+  );
   if (config.mintCooldownMs >= config.refreshMarginMs)
     throw new RangeError(
       "client credentials mint cooldown must be shorter than its refresh margin",
@@ -171,10 +227,86 @@ function clientCredentialsHoldMs(
  */
 export class ClientCredentialsRefused extends Error {
   readonly status: number;
-  constructor(status: number) {
-    super(`client credentials grant returned ${String(status)}`);
+  readonly code: ClientCredentialsRefusalCode;
+  constructor(status: number, code: ClientCredentialsRefusalCode) {
+    super(`client credentials grant returned ${String(status)} ${code}`);
     this.name = "ClientCredentialsRefused";
     this.status = status;
+    this.code = code;
+  }
+}
+
+interface ClientCredentialsRefusals {
+  granted(): void;
+  failed(failure: unknown, atMonotonicMs: number): unknown;
+}
+
+interface ClientCredentialsRefusalFirst {
+  readonly status: number;
+  readonly code: ClientCredentialsRefusalCode;
+  readonly atMonotonicMs: number;
+}
+
+/** What a failed mint raises, a refusal an issuer also gives a lookup it could not make held as an ordinary error until it has lasted `confirmMs`, measured from the start of the first mint refused that way. */
+function clientCredentialsRefusals(
+  confirmMs: number,
+): ClientCredentialsRefusals {
+  let first: ClientCredentialsRefusalFirst | undefined;
+  const seconds = (milliseconds: number): string =>
+    `${String(Math.floor(milliseconds / millisecondsPerSecond))}s`;
+  return {
+    granted: () => {
+      first = undefined;
+    },
+    failed: (failure, atMonotonicMs) => {
+      if (
+        !(failure instanceof ClientCredentialsRefused) ||
+        !clientCredentialsLookupCodes.has(failure.code)
+      ) {
+        first = undefined;
+        return failure;
+      }
+      if (first?.status !== failure.status || first.code !== failure.code)
+        first = { status: failure.status, code: failure.code, atMonotonicMs };
+      const heldMs = atMonotonicMs - first.atMonotonicMs;
+      return heldMs >= confirmMs
+        ? failure
+        : new Error(
+            `${failure.message}, a refusal being confirmed: ${seconds(heldMs)} of ${seconds(confirmMs)}`,
+          );
+    },
+  };
+}
+
+/** An answer's body as JSON, read under the configured bounds. */
+async function clientCredentialsAnswer(
+  config: ClientCredentialsConfig,
+  response: Response,
+): Promise<unknown> {
+  const bytes = await boundedResponseBytes(
+    response,
+    config.responseBytesMax,
+    config.responseReadsMax,
+  );
+  return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+}
+
+/** The code a failed grant was refused with, or nothing where the answer is no refusal. */
+async function clientCredentialsRefusalCode(
+  config: ClientCredentialsConfig,
+  response: Response,
+): Promise<ClientCredentialsRefusalCode | undefined> {
+  if (!clientCredentialsRefusalStatuses.has(response.status)) {
+    await response.body?.cancel();
+    return undefined;
+  }
+  try {
+    const refusal = clientCredentialsRefusalSchema.safeParse(
+      await clientCredentialsAnswer(config, response),
+    );
+    return refusal.success ? refusal.data.error : undefined;
+  } catch {
+    return undefined;
   }
 }
 
@@ -198,20 +330,15 @@ async function clientCredentialsMinted(
     signal: AbortSignal.timeout(config.requestTimeoutMs),
   });
   if (response.status !== 200) {
-    await response.body?.cancel();
-    throw response.status >= 400 && response.status < 500
-      ? new ClientCredentialsRefused(response.status)
-      : new Error(
+    const code = await clientCredentialsRefusalCode(config, response);
+    throw code === undefined
+      ? new Error(
           `client credentials grant returned ${String(response.status)}`,
-        );
+        )
+      : new ClientCredentialsRefused(response.status, code);
   }
-  const bytes = await boundedResponseBytes(
-    response,
-    config.responseBytesMax,
-    config.responseReadsMax,
-  );
   const grant = clientCredentialsGrantSchema.parse(
-    JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)),
+    await clientCredentialsAnswer(config, response),
   );
   if (grant.token_type.toLowerCase() !== clientCredentialsTokenType)
     throw new Error("client credentials grant is not a bearer token");
@@ -238,7 +365,7 @@ export function clientCredentialsMonotonicMs(): number {
   return performance.now();
 }
 
-/** Mints on demand and holds the grant until its margin, sharing one mint between the callers waiting on it. */
+/** Mints on demand and holds the grant until its margin, sharing one mint between the callers waiting on it. A refusal not yet confirmed is raised as an ordinary error. */
 export function clientCredentialsTokenSource(
   input: ClientCredentialsConfig,
 ): AccessTokenSource {
@@ -249,13 +376,15 @@ export function clientCredentialsTokenSource(
   let held: ClientCredentialsHeld | undefined;
   let minting: Promise<ClientCredentialsHeld> | undefined;
   let attemptedAtMonotonicMs: number | undefined;
+  const refusals = clientCredentialsRefusals(config.refusalConfirmMs);
   const cooling = (): boolean =>
     attemptedAtMonotonicMs !== undefined &&
     monotonicMs() - attemptedAtMonotonicMs < config.mintCooldownMs;
   const mint = (): Promise<ClientCredentialsHeld> => {
     const inFlight = minting;
     if (inFlight !== undefined) return inFlight;
-    attemptedAtMonotonicMs = monotonicMs();
+    const attemptedAt = monotonicMs();
+    attemptedAtMonotonicMs = attemptedAt;
     return (minting = clientCredentialsMinted(
       config,
       transport,
@@ -264,11 +393,12 @@ export function clientCredentialsTokenSource(
       (granted) => {
         held = granted;
         minting = undefined;
+        refusals.granted();
         return granted;
       },
       (failure: unknown) => {
         minting = undefined;
-        throw failure;
+        throw refusals.failed(failure, attemptedAt);
       },
     ));
   };

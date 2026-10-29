@@ -136,8 +136,7 @@ async function answering(
 
 function readAt(highWaterBatch: number): LeadTranscriptRead {
   return {
-    partition: leadPartition,
-    session: undefined,
+    of: { lead: leadPartition },
     stream: leadStream,
     highWaterBatch,
   };

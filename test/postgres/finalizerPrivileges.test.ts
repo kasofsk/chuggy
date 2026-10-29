@@ -318,7 +318,7 @@ const writeSurface = [
     table_name: "finalization_attempt",
     privilege_type: "INSERT",
     columns:
-      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_commit,target_ref,tenant,ticket",
+      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,repository,request,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
   },
   {
     table_name: "finalization_change_proposal",
@@ -330,18 +330,18 @@ const writeSurface = [
     table_name: "finalization_change_proposal",
     privilege_type: "UPDATE",
     columns:
-      "attempts,creation,creation_contradiction,creation_evidence,declines,merge,merge_attempts,merge_commit,merge_declines,merge_heard_at,merge_reading,merge_reading_contradiction,merge_reading_evidence,merge_readings,merge_reason,merge_refusals,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,refusals",
+      "attempts,creation,creation_contradiction,creation_evidence,declines,merge,merge_attempts,merge_commit,merge_declines,merge_head,merge_heard_at,merge_reading,merge_reading_contradiction,merge_reading_evidence,merge_readings,merge_reason,merge_refusals,merge_update_declines,merge_update_unread,merge_updates,reconciliation,reconciliation_contradiction,reconciliation_evidence,reconciliations,refusals",
   },
   {
     table_name: "finalization_reconciliation",
     privilege_type: "INSERT",
     columns:
-      "candidate_commit,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
+      "candidate_commit,declined,observed_commit,permit,project,reconciled_at,target_ref,tenant,verdict",
   },
   {
     table_name: "finalization_reconciliation",
     privilege_type: "UPDATE",
-    columns: "observed_commit,reconciled_at,verdict",
+    columns: "declined,observed_commit,reconciled_at,verdict",
   },
   {
     table_name: "finalization_request",

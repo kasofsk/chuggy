@@ -20,16 +20,28 @@ import {
   workerPoolPollRoute,
   workerPoolReconciliationSchema,
   workerPoolSettlementPath,
+  workerRunnerCapabilitiesHeader,
   workerRunnerHeader,
+  workerRunnerMemoryCeilingHeader,
+  workerRunnerMemoryRoomHeader,
+  workerRunnerPollWaitHeader,
+  workerRunnerReportBytesMax,
+  workerRunnerReportRoute,
 } from "../../src/contract/workerPool.ts";
+import { metricsExposition } from "../../src/adapters/http/metricsExposition.ts";
 import {
   asSessionAttemptId,
   asSessionBearerId,
   asSessionBearerSecret,
   asSessionId,
 } from "../../src/interpreter/agentSession.ts";
-import { workerContractAccepted } from "../../src/interpreter/workerPlane.ts";
+import {
+  contractVersionAccepted,
+  workerContractAccepted,
+  workerContractChatHost,
+} from "../../src/interpreter/workerPlane.ts";
 import type {
+  ChatHostIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
   WorkerPoolAssignments,
@@ -37,8 +49,14 @@ import type {
   WorkerPoolRunners,
 } from "../../src/interpreter/workerPool.ts";
 import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
+import {
+  workerPoolReportAgeMsMax,
+  workerPoolReports,
+  type WorkerPoolReports,
+} from "../../src/interpreter/workerPoolReports.ts";
 import type {
   SessionLaunchFacts,
+  WorkerPoolSessionOpening,
   WorkerPoolSessions,
 } from "../../src/interpreter/workerPoolSessions.ts";
 import {
@@ -68,6 +86,10 @@ import {
   planeUnendingAnswered,
 } from "./planeBodies.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import {
+  workerRunnerReportHeaviest,
+  workerRunnerReportLeast,
+} from "../contract/workerRunnerReportFixture.ts";
 
 const issuer = "https://issuer.invalid";
 
@@ -90,6 +112,14 @@ const runner: PersonalRunnerIdentity = {
   principal: oidcPrincipal(issuer, "chuggy-personal-one"),
 };
 
+/** A member's chat host in the same tenant, known by a token of its own. */
+const hostToken = "host-token";
+const host: ChatHostIdentity = {
+  tenant: partition.tenant,
+  owner: oidcPrincipal(issuer, "a-member"),
+  principal: oidcPrincipal(issuer, "chuggy-personal-host"),
+};
+
 /** The image the one claimed execution pinned, and the name a pool is handed it by. */
 const pinned = `registry.invalid/worker@sha256:${"a".repeat(64)}`;
 const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
@@ -97,6 +127,12 @@ const published = `registry.public.invalid/worker@sha256:${"a".repeat(64)}`;
 /** A pool's token and the release it speaks, which is this plane's own. */
 const speaking = {
   authorization: `Bearer ${poolToken}`,
+  [workerContractHeader]: workerContractRelease,
+};
+
+/** A chat host's token and the release it speaks. */
+const hostSpeaking = {
+  authorization: `Bearer ${hostToken}`,
   [workerContractHeader]: workerContractRelease,
 };
 
@@ -150,6 +186,8 @@ function calls(pinning: readonly string[] = []): {
       },
       ownersDeferredTo: () => Promise.resolve([]),
       claimPersonal: () => Promise.resolve(undefined),
+      waiting: () => Promise.resolve(false),
+      waitingPersonal: () => Promise.resolve(false),
       allowlisted: () => Promise.resolve([]),
       polled: () => Promise.resolve(),
       renew: (_identity, assignment) =>
@@ -256,11 +294,16 @@ function sessionCalls(
 const issuing = {
   authenticateBearer: (token: string) =>
     Promise.resolve(
-      token === poolToken || token === runnerToken
+      token === poolToken || token === runnerToken || token === hostToken
         ? ({
             authenticated: "Bearer",
             bearer: {
-              principal: token === poolToken ? poolPrincipal : runner.principal,
+              principal:
+                token === poolToken
+                  ? poolPrincipal
+                  : token === runnerToken
+                    ? runner.principal
+                    : host.principal,
             },
           } as const)
         : token === "issuer-down"
@@ -292,18 +335,45 @@ const linuxPin = {
   integrity: `sha512-${"A".repeat(85)}g==`,
 };
 
-/** Records the runner each poll named, by the kind of caller that named it. */
+/** Records the runner and the capabilities each poll named, by the kind of caller that named them. */
 function runnerCalls(): {
   readonly named: unknown[];
+  readonly advertised: unknown[];
+  readonly ceilings: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
+  const advertised: unknown[] = [];
+  const ceilings: unknown[] = [];
   return {
     named,
+    advertised,
+    ceilings,
     runners: {
-      named: (caller: PoolPlaneIdentity, runner) =>
-        Promise.resolve(void named.push([caller.kind, runner])),
+      named: (caller: PoolPlaneIdentity, runner, capabilities, ceiling) => {
+        named.push([caller.kind, runner]);
+        advertised.push([caller.kind, capabilities]);
+        ceilings.push([caller.kind, ceiling]);
+        return Promise.resolve();
+      },
     },
+  };
+}
+
+/** Where reports are held, under a clock the case moves. */
+function reportsHeld(): {
+  readonly clock: { nowMs: number };
+  readonly reports: WorkerPoolReports;
+} {
+  const clock = { nowMs: 1_000_000 };
+  return {
+    clock,
+    reports: workerPoolReports({
+      issuer,
+      runnersMax: 4,
+      ageMsMax: workerPoolReportAgeMsMax,
+      now: () => clock.nowMs,
+    }),
   };
 }
 
@@ -312,6 +382,7 @@ function plane(
   access: ProjectAccess = authority("Allow"),
   sessions: WorkerPoolSessions = sessionCalls().store,
   runners: WorkerPoolRunners = runnerCalls().runners,
+  reports: WorkerPoolReports = reportsHeld().reports,
 ): PoolPlaneService {
   let minted = 0;
   return {
@@ -327,6 +398,10 @@ function plane(
     personal: {
       identify: (principal) =>
         Promise.resolve(principal === runner.principal ? runner : undefined),
+    },
+    chatHosts: {
+      identify: (principal) =>
+        Promise.resolve(principal === host.principal ? host : undefined),
     },
     assignments: ports,
     sessions: {
@@ -345,6 +420,7 @@ function plane(
     },
     runners,
     releases: workerRunnerReleasesRead({ "chuggy-linux": linuxPin }),
+    reports,
     mint: () => `minted-${String((minted += 1))}`,
     settings: {
       leaseSecs: 30,
@@ -474,6 +550,208 @@ test("a runner named twice names none, and its poll is served", async () => {
   assert.equal(answered.statusCode, 200);
   assert.equal("release" in answered.json<object>(), false);
   assert.deepEqual(recorded.named, [["Dedicated", undefined]]);
+});
+
+test("a poll naming its capabilities has them kept as one list however its header spells them, and a poll naming none keeps none", async () => {
+  const bazel = ["Platform:Linux:Amd64", "Tool:Bazel"];
+  for (const [why, headers, kept] of [
+    [
+      "a list",
+      {
+        ...speaking,
+        [workerRunnerCapabilitiesHeader]: " Platform:Linux:Amd64,Tool:Bazel ",
+      },
+      ["Dedicated", bazel],
+    ],
+    [
+      "a list sent on two lines",
+      {
+        ...speaking,
+        [workerRunnerCapabilitiesHeader]: [
+          "Platform:Linux:Amd64",
+          "Tool:Bazel",
+        ] as string[],
+      },
+      ["Dedicated", bazel],
+    ],
+    [
+      "an empty list",
+      { ...speaking, [workerRunnerCapabilitiesHeader]: "" },
+      ["Dedicated", []],
+    ],
+    ["no list", speaking, ["Dedicated", undefined]],
+    [
+      "a personal runner",
+      {
+        ...runnerSpeaking,
+        [workerRunnerCapabilitiesHeader]: "Platform:Linux:Amd64, Tool:Bazel",
+      },
+      ["Personal", bazel],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.advertised, [kept], why);
+  }
+});
+
+test("a poll naming capabilities this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const capabilities of [
+    "Tool Bazel",
+    "Tool:Bazel, Tool:Bazel",
+    ["Tool:Bazel", "Tool:Bazel"],
+  ]) {
+    const recorded = runnerCalls();
+    const made = calls();
+    const answered = await createPoolPlaneApp(
+      plane(made.ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({
+      method: "GET",
+      url: polling(["live"], 1),
+      headers: { ...speaking, [workerRunnerCapabilitiesHeader]: capabilities },
+    });
+    assert.equal(answered.statusCode, 400, String(capabilities));
+    assert.equal(answered.body, "", String(capabilities));
+    assert.deepEqual(recorded.named, [], String(capabilities));
+    assert.deepEqual(made.made, [], String(capabilities));
+  }
+});
+
+test("a poll naming its memory ceiling has it kept, and a poll naming none keeps none", async () => {
+  for (const [why, headers, kept] of [
+    [
+      "a ceiling",
+      { ...speaking, [workerRunnerMemoryCeilingHeader]: "8192" },
+      ["Dedicated", 8_192],
+    ],
+    [
+      "a ceiling of nothing",
+      { ...speaking, [workerRunnerMemoryCeilingHeader]: "0" },
+      ["Dedicated", 0],
+    ],
+    ["no ceiling", speaking, ["Dedicated", undefined]],
+    [
+      "a personal runner",
+      { ...runnerSpeaking, [workerRunnerMemoryCeilingHeader]: "16384" },
+      ["Personal", 16_384],
+    ],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.ceilings, [kept], why);
+  }
+});
+
+test("a poll naming a memory ceiling, a memory room or a wait this side cannot read is refused whole, with nothing kept, renewed or claimed", async () => {
+  for (const header of [
+    workerRunnerMemoryCeilingHeader,
+    workerRunnerMemoryRoomHeader,
+    workerRunnerPollWaitHeader,
+  ])
+    for (const count of [
+      "-1",
+      "4096 MiB",
+      "1.5",
+      "08",
+      "99999999999999999999",
+      ["4096", "4096"],
+    ]) {
+      const recorded = runnerCalls();
+      const made = calls();
+      const answered = await createPoolPlaneApp(
+        plane(made.ports, authority("Allow"), undefined, recorded.runners),
+      ).inject({
+        method: "GET",
+        url: polling(["live"], 1),
+        headers: { ...speaking, [header]: count },
+      });
+      const why = `${header} ${String(count)}`;
+      assert.equal(answered.statusCode, 400, why);
+      assert.equal(answered.body, "", why);
+      assert.deepEqual(recorded.named, [], why);
+      assert.deepEqual(made.made, [], why);
+    }
+});
+
+/** The plane `plane` builds, long-polling for `pollsMax` passes. */
+function planePolling(
+  ports: WorkerPoolAssignments,
+  pollsMax: number,
+): PoolPlaneService {
+  const built = plane(ports);
+  return { ...built, settings: { ...built.settings, pollsMax } };
+}
+
+test("a poll naming its memory room has every claim held to it and one naming none is claimed by count, and a poll naming its wait is answered within it", async () => {
+  for (const [why, headers, rooms] of [
+    [
+      "a room",
+      { ...speaking, [workerRunnerMemoryRoomHeader]: "4096" },
+      [4_096, 4_096, 4_096],
+    ],
+    [
+      "a wait of nothing",
+      { ...speaking, [workerRunnerPollWaitHeader]: "0" },
+      [undefined],
+    ],
+    ["neither", speaking, [undefined, undefined, undefined]],
+  ] as const) {
+    const claimed: unknown[] = [];
+    const answered = await createPoolPlaneApp(
+      planePolling(
+        {
+          ...calls().ports,
+          claim: (_identity, terms) =>
+            Promise.resolve(void claimed.push(terms.memoryRoomMib)),
+        },
+        3,
+      ),
+    ).inject({ method: "GET", url: polling([], 1), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(claimed, rooms, why);
+  }
+});
+
+test("a poll of this release naming its room is told a job it fits is waiting, and one of 1.20.0 naming a room is not and reads its answer", async () => {
+  const earlier = await workerContractReleasePool("1.20.0");
+  for (const [why, headers, reconciliation, waiting] of [
+    [
+      "this release",
+      { ...speaking, [workerRunnerMemoryRoomHeader]: "4096" },
+      workerPoolReconciliationSchema,
+      true,
+    ],
+    [
+      "1.20.0",
+      {
+        ...speaking,
+        [workerContractHeader]: earlier.release,
+        [workerRunnerMemoryRoomHeader]: "4096",
+      },
+      earlier.reconciliation,
+      undefined,
+    ],
+  ] as const) {
+    const asked: unknown[] = [];
+    const answered = await createPoolPlaneApp(
+      plane({
+        ...calls().ports,
+        waiting: (_identity, terms) =>
+          Promise.resolve((asked.push(terms.memoryRoomMib), true)),
+      }),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    const body = answered.json<Record<string, unknown>>();
+    assert.deepEqual(reconciliation.parse(body), body, why);
+    assert.equal(body["jobsWaiting"], waiting, why);
+    assert.deepEqual(asked, waiting === undefined ? [] : [4_096], why);
+  }
 });
 
 test("a pool wanting none is renewed, told what to stop and claimed nothing", async () => {
@@ -739,7 +1017,8 @@ const runtimePublished = `registry.public.invalid/worker-runtime@sha256:${"e".re
  * What a claim returns: an image pinned on a published host, and a capability
  * requirement, which is handed out with no image; each beside the runtime its
  * attempt was opened under, which a release that reads none is never handed;
- * and a pinned image whose attempt kept no runtime, which is handed none.
+ * a pinned image whose attempt kept no runtime, which is handed none; and a
+ * personal runner's pinned image, beside the project its attempt is in.
  */
 const claims = {
   pinned: {
@@ -768,6 +1047,16 @@ const claims = {
       image: pinned,
     },
   },
+  personal: {
+    requirement: {
+      mode: "Container",
+      operatingSystem: "Linux",
+      architecture: "Amd64",
+      image: pinned,
+    },
+    runtime,
+    project: asProjectId("project"),
+  },
 } as const;
 
 test("a pool is handed the runtime its claim's attempt was opened under, on the public host", async () => {
@@ -783,14 +1072,113 @@ test("a pool is handed the runtime its claim's attempt was opened under, on the 
   assert.equal(assignment?.image, published);
 });
 
-/** Every poll a replayed pool makes: what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner it names where its release names one. */
+test("a personal runner's poll naming this release is handed its job's project, and an earlier release's or a pool's none", async () => {
+  for (const [what, headers, project] of [
+    ["a runner of this release", runnerSpeaking, "project"],
+    [
+      "a runner of 1.14.0",
+      { ...runnerSpeaking, [workerContractHeader]: "1.14.0" },
+      undefined,
+    ],
+    ["a pool of this release", speaking, undefined],
+  ] as const) {
+    const answered = await createPoolPlaneApp(
+      plane({
+        ...calls().ports,
+        claim: () => Promise.resolve(claims.pinned),
+        claimPersonal: () => Promise.resolve(claims.personal),
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
+      }),
+    ).inject({ method: "GET", url: polling([]), headers });
+    assert.equal(answered.statusCode, 200, what);
+    const [assignment] = workerPoolReconciliationSchema.parse(
+      answered.json(),
+    ).assignments;
+    assert.equal(assignment?.image, published, what);
+    assert.equal(
+      assignment !== undefined && "project" in assignment
+        ? assignment.project
+        : undefined,
+      project,
+      what,
+    );
+  }
+});
+
+/** Every poll a replayed pool makes: whose token it polls with, what it holds, how many executions and sessions it has room for, what a claim returns it, and the runner and the memory room it names where its release names them. */
 const poolReplayPolls = [
-  ["a pinned image", ["live", "gone"], 1, 0, claims.pinned, undefined],
-  ["a capability requirement", [], 1, 0, claims.capable, undefined],
-  ["an attempt that kept no runtime", [], 1, 0, claims.unkept, undefined],
-  ["no room", ["live"], 0, 0, claims.pinned, undefined],
-  ["nothing to claim", [], 1, 0, undefined, "chuggy-linux/0.14.0"],
-  ["room for a session", [], 0, 1, undefined, undefined],
+  [
+    "a pinned image",
+    poolToken,
+    ["live", "gone"],
+    1,
+    0,
+    claims.pinned,
+    undefined,
+    undefined,
+  ],
+  [
+    "a capability requirement",
+    poolToken,
+    [],
+    1,
+    0,
+    claims.capable,
+    undefined,
+    undefined,
+  ],
+  [
+    "an attempt that kept no runtime",
+    poolToken,
+    [],
+    1,
+    0,
+    claims.unkept,
+    undefined,
+    undefined,
+  ],
+  ["no room", poolToken, ["live"], 0, 0, claims.pinned, undefined, undefined],
+  [
+    "nothing to claim",
+    poolToken,
+    [],
+    1,
+    0,
+    undefined,
+    "chuggy-linux/0.14.0",
+    "4096",
+  ],
+  ["room for a session", poolToken, [], 0, 1, undefined, undefined, undefined],
+  [
+    "a personal runner's job",
+    runnerToken,
+    [],
+    1,
+    0,
+    claims.personal,
+    "chuggy-linux/0.18.0",
+    undefined,
+  ],
+  [
+    "a personal runner's session",
+    runnerToken,
+    [],
+    0,
+    1,
+    undefined,
+    undefined,
+    undefined,
+  ],
+  [
+    "a chat host's session",
+    hostToken,
+    [],
+    0,
+    1,
+    undefined,
+    undefined,
+    undefined,
+  ],
 ] as const;
 
 /**
@@ -800,20 +1188,31 @@ const poolReplayPolls = [
  * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed the session it has room for`, async () => {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and a pool or a chat host is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
+      token,
       held,
       wanted,
       sessions,
       claimed,
       named,
-    ] of poolReplayPolls) {
+      room,
+    ] of poolReplayPolls.filter(
+      ([, token]) =>
+        token !== hostToken ||
+        contractVersionAccepted(workerContractChatHost, older.release),
+    )) {
       const recorded = calls();
       const ports = {
         ...recorded.ports,
         claim: () => Promise.resolve(claimed),
+        claimPersonal: () =>
+          Promise.resolve(
+            claimed !== undefined && "project" in claimed ? claimed : undefined,
+          ),
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
       };
       const offering = sessionCalls([], ["session-waiting"]);
       const query = new URLSearchParams([
@@ -827,11 +1226,14 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         method: "GET",
         url: `${older.pollRoute}?${query.toString()}`,
         headers: {
-          authorization: `Bearer ${poolToken}`,
+          authorization: `Bearer ${token}`,
           [workerContractHeader]: older.release,
           ...(older.runnerHeader === undefined || named === undefined
             ? {}
             : { [older.runnerHeader]: named }),
+          ...(older.memoryRoomHeader === undefined || room === undefined
+            ? {}
+            : { [older.memoryRoomHeader]: room }),
         },
       });
       assert.equal(answered.statusCode, 200, what);
@@ -839,7 +1241,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.deepEqual(older.reconciliation.parse(body), body, what);
       assert.deepEqual(
         offering.made.filter((call) => (call as unknown[])[0] === "open"),
-        Array(sessions).fill(["open", "session-waiting", "minted-1"]),
+        Array(token === runnerToken ? 0 : sessions).fill([
+          "open",
+          "session-waiting",
+          "minted-1",
+        ]),
         what,
       );
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
@@ -1318,10 +1724,26 @@ test("a pool holding a session may pull its session's image, and one holding non
   }
 });
 
+test("a pool holding an index by digest is allowed the platform manifest docker resolves it to, and only in that repository", async () => {
+  const platform = `sha256:${"b".repeat(64)}`;
+  for (const [held, address, status] of [
+    [[pinned], `/v2/worker/manifests/${platform}`, 200],
+    [[pinned], `/v2/api/manifests/${platform}`, 403],
+    [[pinned], "/v2/worker/manifests/v1", 403],
+    [[], `/v2/worker/manifests/${platform}`, 403],
+  ] as const) {
+    const answered = await createPoolPlaneApp(plane(calls(held).ports)).inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address),
+    });
+    assert.equal(answered.statusCode, status, `${held.join(",")} ${address}`);
+  }
+});
+
 test("a pull of an image the pool holds no assignment for is 403", async () => {
   const app = createPoolPlaneApp(plane(calls([pinned]).ports));
   for (const address of [
-    `/v2/worker/manifests/sha256:${"b".repeat(64)}`,
     `/v2/api/manifests/${heldDigest}`,
     `/v2/api/blobs/${heldDigest}`,
   ]) {
@@ -1338,6 +1760,47 @@ test("a pull of an image the pool holds no assignment for is 403", async () => {
     headers: forwarded("GET", `/v2/worker/manifests/${heldDigest}`),
   });
   assert.equal(holdingNothing.statusCode, 403);
+});
+
+test("a chat host holding nothing may pull the manifests and blobs of the session image's repository its poll names, and no other image, while a pool or a personal runner holding nothing may not", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  const named = `sha256:${"c".repeat(64)}`;
+  for (const [caller, token, address, status] of [
+    ["host", hostToken, `/v2/session/manifests/${named}`, 200],
+    ["host", hostToken, `/v2/session/blobs/sha256:${"b".repeat(64)}`, 200],
+    ["host", hostToken, `/v2/session/manifests/sha256:${"d".repeat(64)}`, 200],
+    ["host", hostToken, `/v2/worker/manifests/${heldDigest}`, 403],
+    ["pool", poolToken, `/v2/session/manifests/${named}`, 403],
+    ["runner", runnerToken, `/v2/session/manifests/${named}`, 403],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: authorizing,
+      headers: forwarded("GET", address, basic(token)),
+    });
+    assert.equal(answered.statusCode, status, `${caller} ${address}`);
+  }
+});
+
+test("a chat host's poll names the session image on its public host, and a pool's and a personal runner's name none", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  for (const [headers, named] of [
+    [hostSpeaking, sessionPublished],
+    [speaking, undefined],
+    [runnerSpeaking, undefined],
+  ] as const) {
+    const answered = await app.inject({
+      method: "GET",
+      url: polling([], 0, 0),
+      headers,
+    });
+    assert.equal(answered.statusCode, 200);
+    assert.equal(
+      workerPoolReconciliationSchema.parse(answered.json()).chatImage,
+      named,
+      headers.authorization,
+    );
+  }
 });
 
 test("a caller that is no admitted pool is 403, and an outage of the issuer, the authority or the store is 503", async () => {
@@ -1404,7 +1867,7 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
   }
 });
 
-test("a personal runner is admitted by its owner's permit and renews the executions it names", async () => {
+test("a personal runner is admitted by its owner's permit, renews the executions it names and is handed no session, its session store asked nothing of one", async () => {
   const recorded = calls();
   const sessions = sessionCalls([], ["thread-one"]);
   const answered = await createPoolPlaneApp(
@@ -1418,8 +1881,13 @@ test("a personal runner is admitted by its owner's permit and renews the executi
   const body = workerPoolReconciliationSchema.parse(answered.json());
   assert.deepEqual(body.assignments, []);
   assert.deepEqual(body.stop, []);
-  assert.equal(body.sessions.length, 1);
+  assert.deepEqual(body.sessions, []);
   assert.deepEqual(recorded.made, [["renew", "live"]]);
+  assert.deepEqual(
+    sessions.made,
+    [],
+    "a personal runner's poll asked its session store",
+  );
 });
 
 test("a personal runner whose owner lost the permit to register one is told it is not there", async () => {
@@ -1447,18 +1915,22 @@ test("a personal runner's settlement of an execution reaches the executions it h
   assert.deepEqual(recorded.made, [["held", "live"]]);
 });
 
-test("a personal runner's session is opened only in a project its owner may still read", async () => {
-  const read: unknown[] = [];
-  const sessions = sessionCalls([], ["thread-one"]);
-  const refusing: ProjectAccess = {
+/** Project access that records each read it is asked and refuses every one. */
+function readsRefused(read: unknown[]): ProjectAccess {
+  return {
     ...authority("Allow"),
     authorize: (principal, asked, access) => {
       read.push([principal, asked.project, access]);
       return Promise.resolve(undefined);
     },
   };
+}
+
+test("a personal runner polling with room for a session and none for an execution asks its owner's read of no project", async () => {
+  const read: unknown[] = [];
+  const sessions = sessionCalls([], ["thread-one"]);
   const answered = await createPoolPlaneApp(
-    plane(calls().ports, refusing, sessions.store),
+    plane(calls().ports, readsRefused(read), sessions.store),
   ).inject({
     method: "GET",
     url: polling([], 0, 1),
@@ -1469,14 +1941,10 @@ test("a personal runner's session is opened only in a project its owner may stil
     workerPoolReconciliationSchema.parse(answered.json()).sessions,
     [],
   );
-  assert.deepEqual(read, [[runner.owner, asProjectId("project"), "Read"]]);
-  assert.ok(
-    !sessions.made.some((call) => Array.isArray(call) && call[0] === "open"),
-    "a session was opened in a project its owner may not read",
-  );
+  assert.deepEqual(read, []);
 });
 
-test("a personal runner polling while its owner's read cannot be answered is told to retry", async () => {
+test("a personal runner polling for an execution while its owner's read cannot be answered is told to retry", async () => {
   const sessions = sessionCalls([], ["thread-one"]);
   const unanswered: ProjectAccess = {
     ...authority("Allow"),
@@ -1486,12 +1954,331 @@ test("a personal runner polling while its owner's read cannot be answered is tol
       ),
   };
   const answered = await createPoolPlaneApp(
-    plane(calls().ports, unanswered, sessions.store),
+    plane(
+      {
+        ...calls().ports,
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
+      },
+      unanswered,
+      sessions.store,
+    ),
   ).inject({
     method: "GET",
-    url: polling([], 0, 1),
+    url: polling([], 1, 0),
     headers: runnerSpeaking,
   });
   assert.equal(answered.statusCode, 503);
   assert.equal(answered.body, "");
+});
+
+/** A session side whose launch caps idle at `idleSecsMax`, recording every opening it is asked for. */
+function idleCapped(
+  idleSecsMax: number | undefined,
+  offered: readonly string[] = ["thread-one"],
+): {
+  readonly made: unknown[];
+  readonly opened: WorkerPoolSessionOpening[];
+  readonly store: WorkerPoolSessions;
+} {
+  const offering = sessionCalls([], offered);
+  const opened: WorkerPoolSessionOpening[] = [];
+  return {
+    made: offering.made,
+    opened,
+    store: {
+      ...offering.store,
+      launch: () =>
+        Promise.resolve(
+          idleSecsMax === undefined ? launch : { ...launch, idleSecsMax },
+        ),
+      open: (identity, opening) => {
+        opened.push(opening);
+        return offering.store.open(identity, opening);
+      },
+    },
+  };
+}
+
+test("a chat host of this release is handed its sessions and never an execution, renewing none it names", async () => {
+  const recorded = calls();
+  const sessions = idleCapped(undefined);
+  const answered = await createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling(["unknown"], 1, 1),
+    headers: hostSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  const body = workerPoolReconciliationSchema.parse(answered.json());
+  assert.deepEqual(body.assignments, []);
+  assert.equal(body.sessions.length, 1);
+  assert.deepEqual(recorded.made, [["renew", "unknown"]]);
+  assert.deepEqual(body.stop, ["unknown"]);
+});
+
+test("a chat host speaking a release before its own is refused at the poll and at every settlement, before any port", async () => {
+  const recorded = calls();
+  const sessions = idleCapped(undefined);
+  const app = createPoolPlaneApp(
+    plane(recorded.ports, authority("Allow"), sessions.store),
+  );
+  for (const [method, url] of [
+    ["GET", polling([], 0, 1)],
+    ["POST", workerPoolSettlementPath("Accepted", "one")],
+  ] as const) {
+    const refused = await app.inject({
+      method,
+      url,
+      headers: { ...hostSpeaking, [workerContractHeader]: "1.26.0" },
+      payload: {},
+    });
+    assert.equal(refused.statusCode, contractVersionRefusalStatus, url);
+    assert.deepEqual(contractVersionRefusalSchema.parse(refused.json()), {
+      action: "stop",
+      reason: "UnsupportedContractVersion",
+      accepted: {
+        min: workerContractVersionText(workerContractChatHost.min),
+        max: workerContractVersionText(workerContractChatHost.max),
+      },
+    });
+  }
+  assert.deepEqual(recorded.made, []);
+  assert.deepEqual(sessions.made, []);
+});
+
+test("a chat host's declared idle bound is capped at the launch's, recorded on its claim and launched as its idle limit", async () => {
+  for (const [declared, cap, recorded] of [
+    [600, 60, 60],
+    [30, 60, 30],
+    [undefined, 60, undefined],
+    [30, undefined, undefined],
+  ] as const) {
+    const sessions = idleCapped(cap);
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), sessions.store),
+    ).inject({
+      method: "GET",
+      url: `${polling([], 0, 1)}${declared === undefined ? "" : `&${workerPoolPollQuery.idleSecs}=${String(declared)}`}`,
+      headers: hostSpeaking,
+    });
+    const named = `${String(declared)} under ${String(cap)}`;
+    assert.equal(answered.statusCode, 200, named);
+    const [opening] = sessions.opened;
+    assert.equal(opening?.idleSecs, recorded, named);
+    assert.equal(
+      opening?.launch.bounds.idleMs,
+      recorded === undefined ? launch.bounds.idleMs : recorded * 1_000,
+      named,
+    );
+  }
+});
+
+test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
+  const sessions = idleCapped(60);
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=30`,
+    headers: speaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  const [opening] = sessions.opened;
+  assert.equal(opening?.idleSecs, undefined);
+  assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
+  const refused = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), idleCapped(60).store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=0`,
+    headers: hostSpeaking,
+  });
+  assert.equal(refused.statusCode, 400);
+});
+
+test("a chat host's session is opened only in a project its owner may still read, asked as its owner", async () => {
+  const read: unknown[] = [];
+  const sessions = idleCapped(undefined);
+  const refusing = readsRefused(read);
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, refusing, sessions.store),
+  ).inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: hostSpeaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  assert.deepEqual(read, [[host.owner, asProjectId("project"), "Read"]]);
+  assert.deepEqual(sessions.opened, []);
+});
+
+/** The sample lines `reports` serves of the family `name`. */
+function reportSamples(
+  reports: WorkerPoolReports,
+  name: string,
+): readonly string[] {
+  return metricsExposition(reports.families())
+    .split("\n")
+    .filter((line) => line.startsWith(`${name}{`));
+}
+
+function reporting(
+  app: ReturnType<typeof createPoolPlaneApp>,
+  headers: Readonly<Record<string, string>>,
+  payload: unknown,
+) {
+  return app.inject({
+    method: "POST",
+    url: workerRunnerReportRoute,
+    headers: { ...headers, "content-type": "application/json" },
+    payload: JSON.stringify(payload),
+  });
+}
+
+test("a report is held against the runner its bearer names, and one whose body names another is refused with nothing held", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  for (const named of [
+    { tenant: "elsewhere" },
+    { project: "elsewhere" },
+    { pool: "pool-two" },
+    { owner: "someone-else" },
+  ]) {
+    const refused = await reporting(app, runnerSpeaking, {
+      ...workerRunnerReportLeast,
+      ...named,
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(named));
+  }
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_jobs_running"),
+    [],
+  );
+  const taken = await reporting(app, speaking, {
+    ...workerRunnerReportLeast,
+    host: "pool-two",
+  });
+  assert.equal(taken.statusCode, 204);
+  assert.equal(taken.body, "");
+  assert.deepEqual(reportSamples(held.reports, "chuggy_runner_jobs_running"), [
+    'chuggy_runner_jobs_running{tenant="tenant",project="project",pool="pool-one",owner="",personal_runner="",host="pool-two"} 1',
+  ]);
+});
+
+test("a personal runner's series carry its owner's bare subject and its client, and its poll's beside them only once it reports", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  const polled = await app.inject({
+    method: "GET",
+    url: polling([]),
+    headers: {
+      ...runnerSpeaking,
+      [workerRunnerHeader]: "chuggy-linux/0.14.0",
+      [workerRunnerMemoryRoomHeader]: "512",
+      [workerRunnerMemoryCeilingHeader]: "1024",
+    },
+  });
+  assert.equal(polled.statusCode, 200);
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
+  held.clock.nowMs += 1_000;
+  assert.equal(
+    (await reporting(app, runnerSpeaking, workerRunnerReportLeast)).statusCode,
+    204,
+  );
+  const labels =
+    'tenant="tenant",project="",pool="",owner="a-member",personal_runner="chuggy-personal-one",host="build-box.local"';
+  assert.deepEqual(reportSamples(held.reports, "chuggy_runner_info"), [
+    `chuggy_runner_info{${labels},package="chuggy-linux",version="0.14.0"} 1`,
+  ]);
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_last_poll_timestamp_seconds"),
+    [`chuggy_runner_last_poll_timestamp_seconds{${labels}} 1000`],
+  );
+  assert.deepEqual(
+    reportSamples(held.reports, "chuggy_runner_memory_room_bytes"),
+    [`chuggy_runner_memory_room_bytes{${labels}} 536870912`],
+  );
+  held.clock.nowMs += workerPoolReportAgeMsMax + 1;
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
+});
+
+test("a chat host's report is answered as a caller the route does not serve, and nothing of it or its polls is held", async () => {
+  const held = reportsHeld();
+  const app = createPoolPlaneApp(
+    plane(calls().ports, undefined, undefined, undefined, held.reports),
+  );
+  await app.inject({
+    method: "GET",
+    url: polling([], 0, 1),
+    headers: hostSpeaking,
+  });
+  const refused = await reporting(app, hostSpeaking, workerRunnerReportLeast);
+  assert.equal(refused.statusCode, 404);
+  assert.equal(
+    (await reporting(app, speaking, workerRunnerReportLeast)).statusCode,
+    204,
+  );
+  assert.equal(
+    reportSamples(held.reports, "chuggy_runner_jobs_running").length,
+    1,
+  );
+});
+
+test("the heaviest report a runner may send is taken, and a byte past the bound is refused", async () => {
+  const app = createPoolPlaneApp(plane(calls().ports));
+  const heaviest = JSON.stringify(workerRunnerReportHeaviest());
+  const taken = await reporting(app, speaking, workerRunnerReportHeaviest());
+  assert.equal(taken.statusCode, 204);
+  const past = await app.inject({
+    method: "POST",
+    url: workerRunnerReportRoute,
+    headers: { ...speaking, "content-type": "application/json" },
+    payload: heaviest.padEnd(workerRunnerReportBytesMax + 1, " "),
+  });
+  assert.equal(past.statusCode, 413);
+});
+
+test("a report refuses a caller the plane does not serve before the body it sent ends", async () => {
+  const held = reportsHeld();
+  for (const [caller, token, status] of [
+    ["no bearer", undefined, 401],
+    ["a token the issuer rejects", "stranger", 401],
+    ["an issuer that cannot answer", "issuer-down", 503],
+  ] as const) {
+    await using app = createPoolPlaneApp(
+      plane(calls().ports, undefined, undefined, undefined, held.reports),
+    );
+    const answered = await planeUnendingAnswered(
+      await planeListening(app),
+      "POST",
+      workerRunnerReportRoute,
+      {
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        [workerContractHeader]: workerContractRelease,
+        "content-type": "application/json",
+      },
+    );
+    assert.equal(answered.status, status, caller);
+  }
+  assert.deepEqual(
+    held.reports
+      .families()
+      .flatMap((family): readonly unknown[] => family.samples),
+    [],
+  );
 });

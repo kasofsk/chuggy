@@ -13,9 +13,11 @@ import {
   asProposalMergeState,
   asProposalNumber,
   asProposalRemoteIdentity,
+  changeProposalAdoptionNext,
   changeProposalMergeNext,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
+  changeProposalUpdatingNone,
   changeProposalRequest,
   proposalBodyCharsMax,
   proposalEvidenceCharsMax,
@@ -28,6 +30,7 @@ import {
   reconcileChangeProposalMerge,
   type ChangeProposalAdapterSelector,
   type ChangeProposalEvidence,
+  type ChangeProposalMergeGathered,
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
   type ChangeProposalPort,
@@ -530,6 +533,10 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
         calls.push(`${vocabulary}:merge`);
         return Promise.resolve({ merged: "Ambiguous" });
       },
+      updateBranch: () => {
+        calls.push(`${vocabulary}:update-branch`);
+        return Promise.resolve({ updated: "Accepted" });
+      },
     };
   }
   const adapters = new Map([
@@ -545,11 +552,15 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
     .select(asForgeBindingId("forge-beta"))
     ?.readByNumber(mergeRequest);
   await selector.select(asForgeBindingId("forge-beta"))?.merge(mergeRequest);
+  await selector
+    .select(asForgeBindingId("forge-beta"))
+    ?.updateBranch(mergeRequest);
   assert.deepEqual(calls, [
     "change-request:create",
     "merge-proposal:read",
     "merge-proposal:read-by-number",
     "merge-proposal:merge",
+    "merge-proposal:update-branch",
   ]);
   assert.equal(selector.select(asForgeBindingId("unbound-forge")), undefined);
 });
@@ -734,7 +745,7 @@ test("a reading finding the proposal merged at a head somebody else pushed accep
     unheard(1, 1, { reconciled: "Accepted", evidence: merged }),
   ])
     assert.deepEqual(
-      changeProposalMergeNext(request, merging, mergeBounds),
+      changeProposalMergeNext(request, merging, pinned, mergeBounds),
       { next: "Concluded", merge: { merged: "Merged", mergeCommit } },
       merging.merging,
     );
@@ -761,7 +772,13 @@ test("every arm of the merge reading roster is one this reconciliation answers w
 });
 
 /** The ceilings every merging case below is continued under. */
-const mergeBounds = { mergesMax: 2, readingsMax: 2 };
+const mergeBounds = { mergesMax: 2, readingsMax: 2, updatesMax: 2 };
+
+/** The head this request proposed, pinned, with nothing updated yet. */
+const pinned: ChangeProposalMergeGathered = {
+  head: request.head.commit,
+  updating: changeProposalUpdatingNone,
+};
 
 /** A reading that found the proposal open and the forge ready to merge it. */
 const mergeableReading = {
@@ -806,23 +823,23 @@ function unheard(
 
 test("a merge nobody heard back from is read back within its bound and then released", () => {
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 0), mergeBounds),
+    changeProposalMergeNext(request, unheard(1, 0), pinned, mergeBounds),
     {
       next: "ReadByNumber",
     },
   );
   const open = { reconciled: "Unmerged", evidence: evidence() } as const;
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 1, open), mergeBounds),
+    changeProposalMergeNext(request, unheard(1, 1, open), pinned, mergeBounds),
     { next: "ReadByNumber" },
   );
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 2, open), mergeBounds),
+    changeProposalMergeNext(request, unheard(1, 2, open), pinned, mergeBounds),
     { next: "RefuseAttempt" },
     "readings that all found it open prove the merge was never made",
   );
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(2, 3, open), mergeBounds),
+    changeProposalMergeNext(request, unheard(2, 3, open), pinned, mergeBounds),
     { next: "ReadByNumber" },
     "the second attempt is read back under a budget of its own",
   );
@@ -830,6 +847,7 @@ test("a merge nobody heard back from is read back within its bound and then rele
     changeProposalMergeNext(
       request,
       unheard(1, 1, { reconciled: "Absent" }),
+      pinned,
       mergeBounds,
     ),
     { next: "Held", reason: "ProposalAbsent" },
@@ -843,6 +861,7 @@ test("a merge nobody heard back from is read back within its bound and then rele
         contradiction: "Closed",
         evidence: evidence({ status: "Closed" }),
       }),
+      pinned,
       mergeBounds,
     ),
     { next: "Wait", reason: "Closed" },
@@ -852,7 +871,12 @@ test("a merge nobody heard back from is read back within its bound and then rele
 
 test("only a merging with nothing in flight merges, and only while the merges are unspent", () => {
   assert.deepEqual(
-    changeProposalMergeNext(request, { merging: "Unasked" }, mergeBounds),
+    changeProposalMergeNext(
+      request,
+      { merging: "Unasked" },
+      pinned,
+      mergeBounds,
+    ),
     {
       next: "Merge",
     },
@@ -861,6 +885,7 @@ test("only a merging with nothing in flight merges, and only while the merges ar
     changeProposalMergeNext(
       request,
       { merging: "Idle", merges: 1 },
+      pinned,
       mergeBounds,
     ),
     { next: "Merge" },
@@ -869,6 +894,7 @@ test("only a merging with nothing in flight merges, and only while the merges ar
     changeProposalMergeNext(
       request,
       { merging: "Idle", merges: 2 },
+      pinned,
       mergeBounds,
     ),
     { next: "Held", reason: "MergesExhausted" },
@@ -882,13 +908,13 @@ test("only a merging with nothing in flight merges, and only while the merges ar
     moved(proposalMergeRereadSecs, mergeableReading),
   ]) {
     assert.notEqual(
-      changeProposalMergeNext(request, merging, mergeBounds).next,
+      changeProposalMergeNext(request, merging, pinned, mergeBounds).next,
       "Merge",
       JSON.stringify(merging).slice(0, 60),
     );
   }
   assert.throws(
-    () => changeProposalMergeNext(request, unheard(0, 0), mergeBounds),
+    () => changeProposalMergeNext(request, unheard(0, 0), pinned, mergeBounds),
     RangeError,
     "a state with nothing in flight is no state to read back from",
   );
@@ -902,6 +928,7 @@ test("a reading of the merged proposal concludes the merge, whatever the merge i
         reconciled: "Accepted",
         evidence: evidence({ status: "Merged", mergeCommit }),
       }),
+      pinned,
       mergeBounds,
     ),
     { next: "Concluded", merge: { merged: "Merged", mergeCommit } },
@@ -913,6 +940,7 @@ test("a reading of the merged proposal concludes the merge, whatever the merge i
         reconciled: "Accepted",
         evidence: evidence({ status: "Merged" }),
       }),
+      pinned,
       mergeBounds,
     ),
     { next: "ReadByNumber" },
@@ -926,7 +954,12 @@ test("what the forge says about merging is what tells a conflict from its own ru
     evidence: evidence({ mergeability: "Conflicting" }),
   } as const;
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 1, conflicting), mergeBounds),
+    changeProposalMergeNext(
+      request,
+      unheard(1, 1, conflicting),
+      pinned,
+      mergeBounds,
+    ),
     {
       next: "Concluded",
       merge: { merged: "NotMergeable", reason: "Conflict" },
@@ -937,7 +970,12 @@ test("what the forge says about merging is what tells a conflict from its own ru
     evidence: evidence({ mergeability: "Blocked" }),
   } as const;
   assert.deepEqual(
-    changeProposalMergeNext(request, unheard(1, 1, blocked), mergeBounds),
+    changeProposalMergeNext(
+      request,
+      unheard(1, 1, blocked),
+      pinned,
+      mergeBounds,
+    ),
     { next: "Wait", reason: "Blocked" },
     "the forge's own rules release the merge to wait on them",
   );
@@ -949,6 +987,7 @@ test("what the forge says about merging is what tells a conflict from its own ru
         contradiction: "Closed",
         evidence: evidence({ status: "Closed" }),
       }),
+      pinned,
       mergeBounds,
     ),
     { next: "Wait", reason: "Closed" },
@@ -963,6 +1002,7 @@ test("what the forge says about merging is what tells a conflict from its own ru
       changeProposalMergeNext(
         request,
         unheard(1, 1, { reconciled: "Unmerged", evidence: said }),
+        pinned,
         mergeBounds,
       ),
       { next: "ReadByNumber" },
@@ -980,6 +1020,7 @@ test("a merge the forge answered is concluded from the row", () => {
       changeProposalMergeNext(
         request,
         { merging: "Answered", merge },
+        pinned,
         mergeBounds,
       ),
       { next: "Concluded", merge },
@@ -989,7 +1030,7 @@ test("a merge the forge answered is concluded from the row", () => {
 
 test("a merge waiting on the forge's own rules is read again only once the cadence has passed", () => {
   assert.deepEqual(
-    changeProposalMergeNext(request, waiting(1, 0), mergeBounds),
+    changeProposalMergeNext(request, waiting(1, 0), pinned, mergeBounds),
     { next: "Held", reason: "Blocked" },
     "a reading just taken is not taken again",
   );
@@ -997,6 +1038,7 @@ test("a merge waiting on the forge's own rules is read again only once the caden
     changeProposalMergeNext(
       request,
       waiting(1, proposalMergeRereadSecs - 1),
+      pinned,
       mergeBounds,
     ),
     { next: "Held", reason: "Blocked" },
@@ -1005,6 +1047,7 @@ test("a merge waiting on the forge's own rules is read again only once the caden
     changeProposalMergeNext(
       request,
       waiting(1, proposalMergeRereadSecs),
+      pinned,
       mergeBounds,
     ),
     { next: "ReadByNumber" },
@@ -1017,6 +1060,7 @@ test("a merge waiting on the forge's own rules is read again only once the caden
           reconciled: "Unmerged",
           evidence: said,
         }),
+        pinned,
         mergeBounds,
       ),
       { next: "ReadByNumber" },
@@ -1024,12 +1068,13 @@ test("a merge waiting on the forge's own rules is read again only once the caden
     );
   }
   assert.throws(
-    () => changeProposalMergeNext(request, waiting(1, 1.5), mergeBounds),
+    () =>
+      changeProposalMergeNext(request, waiting(1, 1.5), pinned, mergeBounds),
     RangeError,
     "an age that is not a count of seconds",
   );
   assert.throws(
-    () => changeProposalMergeNext(request, waiting(0, 0), mergeBounds),
+    () => changeProposalMergeNext(request, waiting(0, 0), pinned, mergeBounds),
     RangeError,
     "a wait no merge was refused into",
   );
@@ -1040,6 +1085,7 @@ test("a waiting merge the forge's rules have cleared is merged again while the m
     changeProposalMergeNext(
       request,
       waiting(1, 0, mergeableReading),
+      pinned,
       mergeBounds,
     ),
     { next: "Merge" },
@@ -1049,6 +1095,7 @@ test("a waiting merge the forge's rules have cleared is merged again while the m
     changeProposalMergeNext(
       request,
       waiting(2, 0, mergeableReading),
+      pinned,
       mergeBounds,
     ),
     { next: "Held", reason: "MergesExhausted" },
@@ -1060,6 +1107,7 @@ test("a waiting merge the forge's rules have cleared is merged again while the m
         reconciled: "Unmerged",
         evidence: evidence({ mergeability: "Conflicting" }),
       }),
+      pinned,
       mergeBounds,
     ),
     {
@@ -1081,13 +1129,13 @@ test("a waiting merge somebody else made or closed is settled by the reading tha
   } as const;
   for (const merging of [waiting(1, 0, merged), moved(0, merged)])
     assert.deepEqual(
-      changeProposalMergeNext(request, merging, mergeBounds),
+      changeProposalMergeNext(request, merging, pinned, mergeBounds),
       { next: "Concluded", merge: { merged: "Merged", mergeCommit } },
       merging.merging,
     );
   for (const merging of [waiting(1, 0, closed), moved(0, closed)])
     assert.deepEqual(
-      changeProposalMergeNext(request, merging, mergeBounds),
+      changeProposalMergeNext(request, merging, pinned, mergeBounds),
       { next: "Held", reason: "Closed" },
       merging.merging,
     );
@@ -1096,7 +1144,7 @@ test("a waiting merge somebody else made or closed is settled by the reading tha
     moved(proposalMergeRereadSecs, closed),
   ])
     assert.deepEqual(
-      changeProposalMergeNext(request, merging, mergeBounds),
+      changeProposalMergeNext(request, merging, pinned, mergeBounds),
       { next: "ReadByNumber" },
       `a closed proposal ${merging.merging} is read again on the cadence`,
     );
@@ -1105,21 +1153,25 @@ test("a waiting merge somebody else made or closed is settled by the reading tha
     moved(0, { reconciled: "Absent" }),
   ])
     assert.deepEqual(
-      changeProposalMergeNext(request, merging, mergeBounds),
+      changeProposalMergeNext(request, merging, pinned, mergeBounds),
       { next: "Held", reason: "ProposalAbsent" },
       merging.merging,
     );
 });
 
 test("a moved head waits on whoever moved it and is never merged again", () => {
-  assert.deepEqual(changeProposalMergeNext(request, moved(0), mergeBounds), {
-    next: "Held",
-    reason: "HeadMoved",
-  });
+  assert.deepEqual(
+    changeProposalMergeNext(request, moved(0), pinned, mergeBounds),
+    {
+      next: "Held",
+      reason: "HeadMoved",
+    },
+  );
   assert.deepEqual(
     changeProposalMergeNext(
       request,
       moved(proposalMergeRereadSecs),
+      pinned,
       mergeBounds,
     ),
     { next: "ReadByNumber" },
@@ -1132,7 +1184,7 @@ test("a moved head waits on whoever moved it and is never merged again", () => {
     } as const,
   ]) {
     assert.deepEqual(
-      changeProposalMergeNext(request, moved(0, reading), mergeBounds),
+      changeProposalMergeNext(request, moved(0, reading), pinned, mergeBounds),
       { next: "Held", reason: "HeadMoved" },
       String(reading.evidence.mergeability),
     );
@@ -1140,6 +1192,7 @@ test("a moved head waits on whoever moved it and is never merged again", () => {
       changeProposalMergeNext(
         request,
         moved(proposalMergeRereadSecs, reading),
+        pinned,
         mergeBounds,
       ),
       { next: "ReadByNumber" },
@@ -1168,6 +1221,7 @@ test("a stored merge reading is rebound to the current request", () => {
     changeProposalMergeNext(
       request,
       unheard(1, 1, { reconciled: "Accepted", evidence: stale }),
+      pinned,
       mergeBounds,
     ),
     { next: "Refused", contradiction: "RepositoryMismatch", evidence: stale },
@@ -1176,6 +1230,7 @@ test("a stored merge reading is rebound to the current request", () => {
     changeProposalMergeNext(
       request,
       unheard(1, 1, { reconciled: "Unstorable" }),
+      pinned,
       mergeBounds,
     ),
     { next: "Held", reason: "EvidenceUnstorable" },
@@ -1185,14 +1240,425 @@ test("a stored merge reading is rebound to the current request", () => {
 test("a merging bound that is not a count is refused rather than treated as none", () => {
   for (const bound of [0, -1, 1.5]) {
     for (const offered of [
-      { mergesMax: bound, readingsMax: 2 },
-      { mergesMax: 2, readingsMax: bound },
+      { mergesMax: bound, readingsMax: 2, updatesMax: 2 },
+      { mergesMax: 2, readingsMax: bound, updatesMax: 2 },
+      { mergesMax: 2, readingsMax: 2, updatesMax: bound },
     ]) {
       assert.throws(
-        () => changeProposalMergeNext(request, { merging: "Unasked" }, offered),
+        () =>
+          changeProposalMergeNext(
+            request,
+            { merging: "Unasked" },
+            pinned,
+            offered,
+          ),
         RangeError,
         JSON.stringify(offered),
       );
     }
   }
+});
+
+/** A reading that found the proposal open and its base moved past it. */
+const behindReading = {
+  reconciled: "Unmerged",
+  evidence: evidence({
+    mergeability: "Behind",
+    mergeState: asProposalMergeState("behind"),
+  }),
+} as const;
+
+/** The head the forge's update of the pinned head made. */
+const updatedHead = asGitObjectId("e".repeat(40));
+
+/** A reading that found the proposal open at the updated head, the forge saying what a case needs. */
+function updatedReading(
+  overrides: Partial<ChangeProposalEvidence> = {},
+): ChangeProposalMergeReconciliationStored {
+  return {
+    reconciled: "Unmerged",
+    evidence: evidence({
+      head: { ref: request.head.ref, commit: updatedHead },
+      ...overrides,
+    }),
+  };
+}
+
+/** The pinned head with updating standing as a case needs it. */
+function updating(
+  overrides: Partial<ChangeProposalMergeGathered["updating"]>,
+): ChangeProposalMergeGathered {
+  return {
+    ...pinned,
+    updating: { ...changeProposalUpdatingNone, ...overrides },
+  };
+}
+
+/** The pinned head, with what git proved of the updated one. */
+function adopting(
+  adoption: "Adoptable" | "Unadoptable" | "Unread",
+): ChangeProposalMergeGathered {
+  return { ...pinned, adoption: { head: updatedHead, adoption } };
+}
+
+test("a reading finding the proposal behind its base brings it up to date", () => {
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      unheard(1, 1, behindReading),
+      pinned,
+      mergeBounds,
+    ),
+    { next: "Wait", reason: "Blocked" },
+    "a merge the forge refused for being behind waits to be updated",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, behindReading),
+      pinned,
+      mergeBounds,
+    ),
+    { next: "Update" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, proposalMergeRereadSecs, behindReading),
+      pinned,
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+    "a reading old enough to be taken again is taken before an update is spent on it",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, behindReading),
+      updating({ updates: 1, unread: true }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+    "an update no reading has seen is waited out",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, proposalMergeRereadSecs, behindReading),
+      updating({ updates: 1, unread: true }),
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+    "and is seen by the next reading on the cadence",
+  );
+  for (const merging of [
+    waiting(1, 0, blockedReading),
+    waiting(1, 0, { reconciled: "Unmerged", evidence: evidence() }),
+    moved(0, behindReading),
+    unheard(1, 1, behindReading),
+  ])
+    assert.notEqual(
+      changeProposalMergeNext(request, merging, pinned, mergeBounds).next,
+      "Update",
+      JSON.stringify(merging).slice(0, 80),
+    );
+});
+
+test("updates are spent from a ceiling of their own, and its end holds as merges spent", () => {
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, behindReading),
+      updating({ updates: 1 }),
+      mergeBounds,
+    ),
+    { next: "Update" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, behindReading),
+      updating({ updates: 2 }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "UpdatesExhausted" },
+  );
+  assert.throws(
+    () =>
+      changeProposalMergeNext(
+        request,
+        waiting(1, 0, behindReading),
+        updating({ updates: 0, unread: true }),
+        mergeBounds,
+      ),
+    RangeError,
+    "an update unread that was never asked",
+  );
+});
+
+test("a proposal behind waits while another on its base holds the turn", () => {
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, behindReading),
+      updating({ turn: false }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, proposalMergeRereadSecs, behindReading),
+      updating({ turn: false }),
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+    "it reads again on the cadence, and updates on the reading that finds its turn",
+  );
+});
+
+test("a head git proved the pinned one brought up to date is adopted and then merged", () => {
+  for (const merging of [
+    waiting(1, 0, updatedReading({ mergeability: "Mergeable" })),
+    waiting(1, 0, updatedReading({ mergeability: "Blocked" })),
+    moved(0, updatedReading({ mergeability: "Mergeable" })),
+  ])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        merging,
+        adopting("Adoptable"),
+        mergeBounds,
+      ),
+      { next: "Adopt", head: updatedHead },
+      merging.merging,
+    );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, updatedReading({ mergeability: "Mergeable" })),
+      { head: updatedHead, updating: changeProposalUpdatingNone },
+      mergeBounds,
+    ),
+    { next: "Merge" },
+    "once adopted, the head is the one merged at",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, {
+        reconciled: "Unmerged",
+        evidence: evidence({
+          head: { ref: request.head.ref, commit: updatedHead },
+          mergeability: "Behind",
+        }),
+      }),
+      { head: updatedHead, updating: changeProposalUpdatingNone },
+      mergeBounds,
+    ),
+    { next: "Update" },
+    "an adopted head the base moved past again is updated again",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      unheard(1, 1, updatedReading({ mergeability: "Mergeable" })),
+      pinned,
+      mergeBounds,
+    ),
+    { next: "Wait", reason: "Blocked" },
+    "a merge in flight found at another head is released to the wait that adopts it",
+  );
+});
+
+test("no merge is spent on a head that is neither the pinned one nor adoptable", () => {
+  for (const adoption of ["Unadoptable", "Unread"] as const) {
+    for (const [merging, due] of [
+      [
+        waiting(1, 0, updatedReading({ mergeability: "Mergeable" })),
+        waiting(
+          1,
+          proposalMergeRereadSecs,
+          updatedReading({ mergeability: "Mergeable" }),
+        ),
+      ],
+      [
+        moved(0, updatedReading({ mergeability: "Mergeable" })),
+        moved(
+          proposalMergeRereadSecs,
+          updatedReading({ mergeability: "Mergeable" }),
+        ),
+      ],
+    ] as const) {
+      assert.deepEqual(
+        changeProposalMergeNext(
+          request,
+          merging,
+          adopting(adoption),
+          mergeBounds,
+        ),
+        { next: "Held", reason: "HeadMoved" },
+        `${adoption} ${merging.merging}`,
+      );
+      assert.deepEqual(
+        changeProposalMergeNext(request, due, adopting(adoption), mergeBounds),
+        { next: "ReadByNumber" },
+        `${adoption} ${merging.merging} is read again on the cadence`,
+      );
+    }
+  }
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(1, 0, updatedReading({ mergeability: "Mergeable" })),
+      pinned,
+      mergeBounds,
+    ),
+    { next: "Held", reason: "HeadMoved" },
+    "a head git was never asked about is not merged either",
+  );
+  assert.throws(
+    () =>
+      changeProposalMergeNext(
+        request,
+        waiting(1, 0, {
+          reconciled: "Unmerged",
+          evidence: evidence({
+            head: {
+              ref: request.head.ref,
+              commit: asGitObjectId("f".repeat(40)),
+            },
+          }),
+        }),
+        adopting("Adoptable"),
+        mergeBounds,
+      ),
+    RangeError,
+    "adoption proved of a head no reading found",
+  );
+});
+
+/** The proposal an earlier request of the ticket recorded, as its row addresses it. */
+const recordedProposal = {
+  forge,
+  remote: asProposalRemoteIdentity("proposal-17"),
+  number: asProposalNumber(17),
+};
+
+test("a proposal an earlier request of the ticket recorded is adopted where it is open on this request's head and base", () => {
+  const earlier = evidence({
+    marker: asProposalMarker("chuggy-handoff:" + "e".repeat(64)),
+    title: "A person retitled it",
+    body: "And rewrote what it says.",
+    head: { ref: request.head.ref, commit: asGitObjectId("f".repeat(40)) },
+  });
+  assert.deepEqual(
+    changeProposalAdoptionNext(request, {
+      proposal: recordedProposal,
+      read: { read: "Found", evidence: earlier },
+    }),
+    { next: "Adopt", evidence: earlier },
+    "its marker, its words and its head commit are not what make it this ticket's",
+  );
+  assert.deepEqual(
+    changeProposalAdoptionNext(request, {
+      proposal: recordedProposal,
+      read: { read: "Absent" },
+    }),
+    { next: "Create" },
+  );
+  for (const read of ["Unavailable", "Denied"] as const)
+    assert.deepEqual(
+      changeProposalAdoptionNext(request, {
+        proposal: recordedProposal,
+        read: { read },
+      }),
+      { next: "Held", reason: read },
+    );
+});
+
+test("a proposal of the ticket's that is closed, merged or elsewhere is not adopted, and this request opens its own", () => {
+  for (const [found, why] of [
+    [evidence({ status: "Closed" }), "a closed proposal"],
+    [evidence({ status: "Merged" }), "a merged proposal"],
+    [
+      evidence({
+        base: { ...request.base, ref: asGitRefName("refs/heads/x") },
+      }),
+      "a proposal into another base",
+    ],
+    [
+      evidence({
+        head: { ...request.head, ref: asGitRefName("refs/heads/y") },
+      }),
+      "a proposal from another head",
+    ],
+    [
+      evidence({
+        identity: { ...recordedProposal, number: asProposalNumber(18) },
+      }),
+      "a proposal the recorded number does not address",
+    ],
+    [
+      evidence({
+        identity: {
+          ...recordedProposal,
+          forge: asForgeBindingId("forge-beta"),
+        },
+      }),
+      "a proposal on another forge",
+    ],
+  ] as const) {
+    assert.deepEqual(
+      changeProposalAdoptionNext(request, {
+        proposal: recordedProposal,
+        read: { read: "Found", evidence: found },
+      }),
+      { next: "Create" },
+      why,
+    );
+  }
+});
+
+test("an adopted proposal is judged by where it stands and never by the words it was opened with", () => {
+  const adopted = evidence({
+    marker: asProposalMarker("chuggy-handoff:" + "e".repeat(64)),
+    title: "A person retitled it",
+  });
+  const answered = (
+    found: ChangeProposalEvidence,
+  ): ChangeProposalPublication => ({
+    publication: "Answered",
+    creation: { created: "Adopted", evidence: found },
+  });
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      answered(adopted),
+      bounds,
+      "Accepted",
+    ),
+    { next: "Accepted", evidence: adopted },
+  );
+  const moved = evidence({
+    base: { ...request.base, ref: asGitRefName("refs/heads/x") },
+  });
+  assert.deepEqual(
+    changeProposalPublicationNext(request, answered(moved), bounds, "Accepted"),
+    { next: "Refused", contradiction: "BaseMismatch", evidence: moved },
+  );
+  assert.deepEqual(
+    changeProposalPublicationNext(
+      request,
+      {
+        publication: "Answered",
+        creation: { created: "AlreadyExists", evidence: adopted },
+      },
+      bounds,
+      "Accepted",
+    ),
+    { next: "Refused", contradiction: "MarkerMismatch", evidence: adopted },
+    "a create's answer is still held to this request's marker",
+  );
 });

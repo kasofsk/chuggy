@@ -31,7 +31,8 @@ Owned by the control plane and `create_project` for insertion and by the
 ticket-service role for the ownership columns, which is why the runtime is
 granted UPDATE and not INSERT: provisioning is not a decision. Its composite key is
 `(tenant, project)` and it is the parent every other relation here points
-at. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
+at; a project identity never begins `@`, which names a member's own partition
+in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
 active projects whose lease has expired by database time.
@@ -291,15 +292,36 @@ selector service's own door onto it. The selector closes a lead through
 `close_project_lead`, which closes only the project's open lead it names and
 refuses while a turn of it is in flight or an inquiry forked from it is open;
 `close_agent_session`, which abandons such turns, no runtime role may execute.
+A member holds any number of open threads up to `member_thread_limit`, which
+is a count rather than an index: `open_member_thread` and `open_agent_session`
+each take an advisory lock on the member before counting, and a thread the API
+opens carries `open_key`, the key its client minted, unique per member, which
+makes the open idempotent. `read_project_threads` takes its reader and lists
+their open threads first, so a page holds every thread they count against.
 Closing a thread is
 `close_member_thread`'s, the API's door, which admits a thread alone and
 performs that close. The objectives and the roster are the two columns a later
 write may move — a project whose North Star changed must be able to tell the
 next session that opens, and a thread's roster is reconfigured by the
 provisioning identity rather than reopened — and everything that decides who the
-session acts as stays frozen. Unfinished work is found by selecting open
+session acts as stays frozen, its `scope` among it. A session is a project's or,
+where `scope` is `Member`, its principal's own: a thread kept in the partition
+`member_scope_project` names for them, which `project` refuses to hold since it
+begins `@`, so the project key is `project_ref`, the partition for a project's
+session and nothing for a member's, beside a key of the tenant's own. A
+member's session draws no account and no cluster, holds `MemberRead` and
+nothing else, which no project's session may hold, and is opened by
+`open_unscoped_thread` alone under the same per-member lock, limit and key as
+`open_member_thread`'s; `session_route` answers `Pool` for its partition and
+`enqueue_session_turn` refuses it any other route, so only its owner's chat host
+claims it. `read_member_threads` lists a member's own threads across the
+tenant, wherever each is kept, as the project listing pages its own: their open
+threads of their own partition first, which their limit bounds, then their
+other open threads, then the most recent of the rest, cut at the page's bound
+with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
-`sessions_awaiting_placement` answers.
+`sessions_awaiting_placement` answers for the cluster and the chat host's and
+pool's awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because
@@ -327,11 +349,17 @@ on, and a session has none of them. Owned by the boundary owner, which is what t
 scheduler's boundaries and the worker plane's run as; its composite key is
 `(tenant, project, session)` and its identity `(tenant, project, session,
 attempt_number)`, with the attempt, the bearer and the bearer's digest each
-unique globally. It is changed by opening, placing, ending, the two reapers and
-the epoch fence, and `session_attempt_is_fenced` refuses a finished attempt any
-change but its cleanup acknowledgement. Unfinished work is found by selecting
-live attempts whose lease has expired by database time, whose epoch is not the
-current one, or which have been idle longer than the window the caller names.
+unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
+`ChatHost` or, on an attempt that has ended, `Personal`, which
+`session_attempt_personal_is_finished` holds it to, and is NULL exactly where
+`pool` is, the cluster's; `idle_secs` is the idle bound a chat host declared
+for its own attempt. It is changed by opening, placing, ending, the two
+reapers and the fences of the epoch, a pool and a chat host, and
+`session_attempt_is_fenced` refuses a finished attempt any change but its
+cleanup acknowledgement. Unfinished work is found by selecting live attempts
+whose lease has expired by database time, whose epoch is not the current one,
+or which have been idle longer than their own `idle_secs` where they have one
+and the window the caller names otherwise.
 
 `session_turn` — one exchange in a session's mailbox: what was asked, which
 attempt is holding it, what came back and which store batches it produced.
@@ -421,6 +449,16 @@ is a project that took them out. It has no unfinished work: the scheduler
 copies it onto an execution when it registers one, so a change moves only what
 registers after it, and a project with no row places as it did before.
 
+`member_thread_limit` — how many threads one member may hold open in one
+project, and who set it. Owned by the boundary owner, which is what
+`set_member_thread_limit` runs as; the API role writes it through that door
+alone and reads it through `member_thread_limit`, the function of the same name,
+which answers the default for a member with no row. Its key and identity are
+`(tenant, project, principal)` and it points at `project`. It is changed by that
+door alone, which answers `Unchanged` where nothing moved. It has no unfinished
+work: a limit lowered below what a member holds closes nothing, and refuses
+their next open until they are under it.
+
 `project_session_placement` — where one project's threads and its lead run,
 and who set it; an inquiry runs where the lead does. Owned by the boundary
 owner, which is what `set_project_session_placement` runs as; the API role
@@ -442,17 +480,18 @@ it.
 
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
-registered and last polled for a session and for an execution, and the runner
-package and version its newest poll named. Written by the API role, which
-registers and removes it whole, and by the pool plane, which stamps its polls
-and what they name; the pool plane, the scheduler and the boundary owner read
-it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
-many in a tenant as the API's bound admits, and it names no project; it points
-at `tenant`, and its principal and client id are each unique. It is changed by
-a registration, by a poll's stamps and by its removal, which fences, in the
-same transaction, every live attempt it claimed and nothing another runner of
-its owner's holds. It has no unfinished work: a registration is committed or
-it was rolled back.
+registered, last polled and last polled as one that could take an execution,
+and the runner package and version its newest poll named. Written by the API
+role, which registers and removes it whole, and by the pool plane, which
+stamps its polls and what they name; the pool plane, the scheduler and the
+boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
+so a member holds as many in a tenant as the API's bound admits, and it names
+no project; it points at `tenant`, and its principal and client id are each
+unique. Its runners claim and hold no session. It is changed by a
+registration, by a poll's stamps and by its removal, which fences, in the same
+transaction, every live execution attempt it claimed and nothing another
+runner of its owner's holds. It has no unfinished work: a registration is
+committed or it was rolled back.
 
 `personal_runner_project` — a project a member's personal runners may serve.
 Written by the API role alone, for the runners' owner; the pool plane, the
@@ -464,13 +503,26 @@ the API deletes it with their last runner. It has no unfinished work: an owner
 with no row has runners that serve nothing.
 
 `personal_runner_registration_token` — a single-use token a member mints to
-register their runner in a tenant: its digest, the minter, the capabilities it
-was minted with and its expiry. Written and read by the API role alone. Its
-identity is the digest, and it points at `tenant`. It is changed by a mint,
-which first deletes the minter's expired tokens and is refused past a bound on
-their live ones, and by a redemption, which marks it redeemed once and unmarks
-it where the registration it paid for was lost. It has no unfinished work: an
-unredeemed token expires, and the minter's next mint removes it.
+register their runner or their chat host in a tenant: its digest, the minter,
+its expiry and its `kind`, `Runner` or `ChatHost`, which is what redeeming it
+registers. Written and read by the API role alone. Its identity is the digest, and it
+points at `tenant`. It is changed by a mint, which first deletes the minter's
+expired tokens and is refused past a bound on their live ones, and by a
+redemption, which marks it redeemed once and unmarks it where the registration
+it paid for was lost. It has no unfinished work: an unredeemed token expires,
+and the minter's next mint removes it.
+
+`chat_host` — a member's chat host in one tenant: its principal, the issuer
+client it is removed by, when it registered and last polled, and the runner
+package and version its newest poll named. Written by the API role, which
+registers and removes it whole, and by the pool plane, which stamps its polls
+and what they name; the pool plane and the boundary owner read it. Its key and
+identity are `(tenant, owner)`, so a member holds one in a tenant, and it names
+no project; it points at `tenant`, and its principal and client id are each
+unique. It is changed by a registration, which replaces the row and fences, in
+the same transaction, every live attempt the replaced one held, by a poll's
+stamps, and by its removal, which fences what it held. It has no unfinished
+work: a registration is committed or it was rolled back.
 
 `repository_action` — the actions each bound repository's newest imported head
 declares, each with its name and the commit it was read at. Owned by the

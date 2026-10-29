@@ -1,7 +1,8 @@
 /**
  * The adapter behind `GitPromotionPort`: the remote reads a preparation pins,
  * the one conditional ref update a permit authorizes, and the ancestry proof
- * that says what the ref holds.
+ * that says what the ref holds, a ref the remote does not hold being an answer
+ * of its own rather than an unreadable one.
  *
  * A PROMOTION MAY BE AMBIGUOUS AND THAT IS AN ANSWER. The push either advanced
  * the ref, or was refused because the candidate was not a fast-forward of what
@@ -9,6 +10,23 @@
  * saying which. A stopped push is `Ambiguous` even where nothing could plausibly
  * have been sent, because collapsing it into a refusal would let a candidate be
  * promoted twice, and the repository is the only authority that can settle it.
+ *
+ * A DECLINED PUSH IS AMBIGUOUS TOO, AND ITS EVIDENCE SAYS WHO DECLINED IT. A
+ * repository that would not take the update for a reason of its own answers
+ * `RemoteDeclined`, and GitHub refusing a credential that may not change a
+ * workflow file answers `WorkflowsRefused`, read off the reason GitHub gives.
+ * Neither is a refusal: a decline says nothing of the target, so neither is
+ * sent to the re-read that means it moved, and the reading proves where it is.
+ *
+ * A CANDIDATE THE SCRATCH DOES NOT HOLD IS PROVED FROM THE TIP'S HISTORY. A
+ * scratch may not outlive its process, so a candidate it lacks is proved from
+ * that history: one still missing once every commit of it has been read is not
+ * in it.
+ *
+ * A SOURCE THAT DOES NOT DESCEND FROM ITS BASE IS PROVED THE SAME WAY. A worker
+ * that rewrote the history it was handed publishes a commit whose history no
+ * longer holds the base it declares, and that is `Undescended` only once that
+ * whole history has been read.
  *
  * REFUSAL IS THE RECEIVING REPOSITORY'S AND IS NEVER FORCED. The refspec is
  * plain, so a target that moved after it was observed refuses the update by
@@ -28,29 +46,44 @@ import { assertNever } from "../../domain/assertNever.ts";
 import type {
   AncestryProof,
   AncestryProved,
+  CandidateHeld,
+  CandidateHeldQuestion,
   CandidateIntegrated,
   CandidateIntegration,
   CandidatePrepared,
   CandidatePreparation,
   CandidateSourcePreparation,
+  CandidateSourcePrepared,
   CandidatePromoted,
   CandidatePromotion,
   GitEvidence,
+  GitObjectId,
   GitPromotionPort,
+  HeadAdoption,
+  HeadAdoptionQuestion,
   RepositoryBinding,
   RepositoryCredential,
   RepositoryCredentialPort,
+  RepositoryId,
   TargetObserved,
 } from "../../interpreter/finalizer.ts";
-import { candidateIntegrate, candidatePrepare } from "./gitCandidate.ts";
+import {
+  candidateAdoptable,
+  candidateHeld,
+  candidateIntegrate,
+  candidatePrepare,
+} from "./gitCandidate.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
   scratchIsAncestor,
+  scratchNamesCommit,
   scratchObserveHead,
   scratchPush,
+  scratchReaches,
   scratchReadRef,
   scratchOpen,
+  scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
 } from "./gitScratch.ts";
@@ -174,7 +207,7 @@ async function gitPromotionPrepare(
 async function gitPromotionPrepareSource(
   own: GitPromotionState,
   preparation: CandidateSourcePreparation,
-): Promise<CandidatePrepared> {
+): Promise<CandidateSourcePrepared> {
   const authorized = await gitPromotionCredentialOf(
     own,
     preparation.repository,
@@ -209,15 +242,39 @@ async function gitPromotionPrepareSource(
   ) {
     return { prepared: "Failed", evidence: "ObjectMissing" };
   }
-  const descends = await scratchIsAncestor(
-    own.scratch,
-    repository,
-    preparation.base,
-    preparation.commit,
-  );
-  return descends === true
-    ? { prepared: "Candidate", candidate: preparation.commit }
-    : { prepared: "Failed", evidence: "ObjectMissing" };
+  return gitPromotionSourceDescends(own, repository, preparation);
+}
+
+/**
+ * Whether a fetched source commit descends from its declared base. Git says
+ * no both of a base it does not hold and of a walk that met a commit it could
+ * not read, so a no is `Undescended` only once the commit's whole history has
+ * been read; any read that did not look is a failure to read, not an answer.
+ */
+async function gitPromotionSourceDescends(
+  own: GitPromotionState,
+  repository: RepositoryId,
+  preparation: CandidateSourcePreparation,
+): Promise<CandidateSourcePrepared> {
+  const { base, commit } = preparation;
+  const named = await scratchNamesCommit(own.scratch, repository, base);
+  const reached =
+    named === "Yes"
+      ? await scratchReaches(own.scratch, repository, base, commit)
+      : named;
+  switch (reached) {
+    case "Yes":
+      return { prepared: "Candidate", candidate: commit };
+    case "Unread":
+      return { prepared: "Failed", evidence: "ObjectMissing" };
+    case "No":
+      return (await scratchWalksHistory(own.scratch, repository, commit)) ===
+        "Yes"
+        ? { prepared: "Undescended" }
+        : { prepared: "Failed", evidence: "ObjectMissing" };
+    default:
+      return assertNever(reached);
+  }
 }
 
 /** Integrates one candidate against one observed target. */
@@ -234,6 +291,10 @@ async function gitPromotionIntegrate(
   }
   return candidateIntegrate(own.scratch, authorized.credential, integration);
 }
+
+/** The reason GitHub declines a push with where the credential behind it may not create or update a workflow file. */
+const gitPromotionWorkflowsRefusal =
+  "refusing to allow a GitHub App to create or update workflow ";
 
 /** What the remote holds now, which is the read that turns a refusal into information. */
 async function gitPromotionRefusedBy(
@@ -283,12 +344,48 @@ async function gitPromotionPromote(
       return { promoted: "Advanced" };
     case "Refused":
       return gitPromotionRefusedBy(own, promotion, authorized.credential);
+    case "Declined":
+      return {
+        promoted: "Ambiguous",
+        evidence: pushed.reason.startsWith(gitPromotionWorkflowsRefusal)
+          ? "WorkflowsRefused"
+          : "RemoteDeclined",
+      };
     case "TimedOut":
       return { promoted: "Ambiguous", evidence: "PromotionTimedOut" };
     case "Unknown":
       return { promoted: "Ambiguous", evidence: "RemoteUnreachable" };
     default:
       return assertNever(pushed);
+  }
+}
+
+/**
+ * What a fetched tip proves about a candidate the scratch did not hold, and
+ * `undefined` where reading the tip's history brought it. Nothing is proved
+ * until every commit of that history has been read.
+ */
+async function gitPromotionProveMissing(
+  own: GitPromotionState,
+  repository: RepositoryId,
+  candidate: GitObjectId,
+  observed: GitObjectId,
+): Promise<AncestryProved | undefined> {
+  if (
+    (await scratchWalksHistory(own.scratch, repository, observed)) !== "Yes"
+  ) {
+    return { proved: "Unreadable", evidence: "ObjectMissing" };
+  }
+  const named = await scratchNamesCommit(own.scratch, repository, candidate);
+  switch (named) {
+    case "No":
+      return { proved: "NotAncestor", observed };
+    case "Yes":
+      return undefined;
+    case "Unread":
+      return { proved: "Unreadable", evidence: "ObjectMissing" };
+    default:
+      return assertNever(named);
   }
 }
 
@@ -309,9 +406,7 @@ async function gitPromotionProve(
     credential,
     proof.ref,
   );
-  if (read.read === "Absent") {
-    return { proved: "Unreadable", evidence: "RefUnreadable" };
-  }
+  if (read.read === "Absent") return { proved: "Absent" };
   if (read.read === "Unreachable") {
     return { proved: "Unreadable", evidence: "RemoteUnreachable" };
   }
@@ -321,10 +416,18 @@ async function gitPromotionProve(
   ) {
     return { proved: "Unreadable", evidence: "RemoteUnreachable" };
   }
-  const held =
-    (await scratchHasCommit(own.scratch, repository, observed)) &&
-    (await scratchHasCommit(own.scratch, repository, proof.candidate));
-  if (!held) return { proved: "Unreadable", evidence: "ObjectMissing" };
+  if (!(await scratchHasCommit(own.scratch, repository, observed))) {
+    return { proved: "Unreadable", evidence: "ObjectMissing" };
+  }
+  if (!(await scratchHasCommit(own.scratch, repository, proof.candidate))) {
+    const missing = await gitPromotionProveMissing(
+      own,
+      repository,
+      proof.candidate,
+      observed,
+    );
+    if (missing !== undefined) return missing;
+  }
   const ancestor = await scratchIsAncestor(
     own.scratch,
     repository,
@@ -337,6 +440,26 @@ async function gitPromotionProve(
   return ancestor
     ? { proved: "Ancestor", observed }
     : { proved: "NotAncestor", observed };
+}
+
+/** Reads whether the target a ticket lands on already holds its candidate, a credential refused being no answer. */
+async function gitPromotionHeld(
+  own: GitPromotionState,
+  question: CandidateHeldQuestion,
+): Promise<CandidateHeld> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return "Unread";
+  return candidateHeld(own.scratch, authorized.credential, question);
+}
+
+/** Reads whether a proposal's head is its pinned head brought up to date with its base, a credential refused being no answer. */
+async function gitPromotionAdoptable(
+  own: GitPromotionState,
+  question: HeadAdoptionQuestion,
+): Promise<HeadAdoption> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return "Unread";
+  return candidateAdoptable(own.scratch, authorized.credential, question);
 }
 
 /** The adapter over its options, refusing at construction what it could never serve. */
@@ -363,9 +486,11 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     observeTarget: (repository) => gitPromotionObserve(own, repository),
     prepareCandidate: (preparation) => gitPromotionPrepare(own, preparation),
     prepareSource: (preparation) => gitPromotionPrepareSource(own, preparation),
+    proveCandidateHeld: (question) => gitPromotionHeld(own, question),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
+    proveHeadAdoptable: (question) => gitPromotionAdoptable(own, question),
   };
 }

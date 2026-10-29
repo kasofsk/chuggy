@@ -24,7 +24,10 @@ import {
   kubernetesNamespacePrecondition,
   kubernetesWorkerLaunch,
 } from "../../src/adapters/kubernetes/workerLaunch.ts";
-import { kubernetesImageFaultTexts } from "../../src/adapters/kubernetes/workerFaults.ts";
+import {
+  kubernetesDeadlineText,
+  kubernetesImageFaultTexts,
+} from "../../src/adapters/kubernetes/workerFaults.ts";
 import { kubernetesPullFailureDwellSecs } from "../../src/adapters/kubernetes/podFaults.ts";
 import {
   checkedKubernetesWorkerLaunchConfig,
@@ -348,6 +351,7 @@ function expectedContainer(): unknown {
     name: kubernetesWorkerContainerName,
     image: workerImage,
     command: ["/bin/sh", "/opt/chuggy/check.sh"],
+    workingDir: "/workspace",
     env: [
       { name: workerTaskVariable, value: expectedTask() },
       {
@@ -1505,6 +1509,19 @@ test("a runtime copy that failed is the site's fault and names the pod it failed
       why: `pod ${name}: the runtime copy chuggy-runtime ended Error with status 1`,
     },
   );
+});
+
+test("a pod the cluster stopped at its deadline is a run timed out, told in the backend's words, even where the copy it cut short would be the site's", async () => {
+  for (const name of [
+    "deadline-exceeded",
+    "deadline-exceeded-copying",
+    "deadline-exceeded-pulling",
+  ])
+    assert.deepEqual(
+      await observedWith(() => Response.json(capturedPod(name))),
+      { observed: "TimedOut", text: kubernetesDeadlineText },
+      name,
+    );
 });
 
 test("a pod that is not there, not shown or not reachable is unfaulted", async () => {

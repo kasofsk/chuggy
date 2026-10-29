@@ -30,6 +30,7 @@ function schedulerRuntime(config: SchedulerCommandConfig): ServiceRuntime {
       runtimeFacts: suppliedRuntimeFacts(config.runtimeFacts),
       practices: blessedPracticeCatalog,
       workerRuntime: config.workers.runtimeImage,
+      poolMemoryMib: config.poolMemoryMib,
       config: config.scheduler,
       ticketService: config.ticketService,
       finalizer: config.finalizer,

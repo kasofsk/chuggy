@@ -319,13 +319,13 @@ export async function finalizerPreparationRecord(
     sql`INSERT INTO finalization_attempt
        (tenant, project, attempt, request, ticket, repository, input_bundle,
         input_bundle_digest, target_ref,
-        target_commit, strategy, configuration_revision, configuration_digest,
-        approval_required, outcome, candidate_commit, failure_kind,
-        conflict_manifest, conflict_manifest_digest, attempt_digest)
+        target_commit, target_base_ref, strategy, configuration_revision,
+        configuration_digest, approval_required, outcome, candidate_commit,
+        failure_kind, conflict_manifest, conflict_manifest_digest, attempt_digest)
      VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
              ${claim.request},${claim.ticket},${record.repository},
              ${record.bundle.bundle},${record.bundle.digest},${record.target.ref},
-             ${record.target.commit},${record.strategy},
+             ${record.target.commit},${record.target.baseRef ?? null},${record.strategy},
              ${record.configuration.revision},${record.configuration.digest},
              ${record.approvalRequired},${record.outcome},
              ${record.candidate ?? null},${record.failureKind ?? null},

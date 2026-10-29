@@ -26,7 +26,6 @@ import type { ConfigurationOverrides } from "../../../src/contract/configuration
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
-import { viewportDeskEm } from "../app/browser/shell/viewport.ts";
 import {
   answer,
   openedStream,
@@ -43,7 +42,7 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { viewportAtEm } from "./viewport.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -384,7 +383,7 @@ const setupFailed = {
 };
 const setupLine = "Fix it under Overrides · Setup, then Resume";
 
-test("a ticket whose setup failed tells a member to fix it under the card's Setup, and a reader who may not mutate nothing of it", async () => {
+test("a ticket whose setup failed tells a member to fix it under the card's Setup, and a reader who may not override nothing of it", async () => {
   serving(
     "WorkFailureEscalated",
     "Answered",
@@ -408,7 +407,7 @@ test("a ticket whose setup failed tells a member to fix it under the card's Setu
   );
   vi.stubGlobal(
     "fetch",
-    abilitiesFetch({ ...abilitiesEvery, mutate: false }, fetch),
+    abilitiesFetch({ ...abilitiesEvery, overrideTicketConfig: false }, fetch),
   );
   const refused = await drawn();
   expect(within(refused).getByText("Setup failed")).toBeDefined();
@@ -464,8 +463,11 @@ function overridesOffers(card: HTMLElement): readonly boolean[] {
   );
 }
 
-test("a reader who may not mutate reads the overrides and is offered neither Save overrides nor Discard", async () => {
-  const card = await typedBy({ ...abilitiesEvery, mutate: false });
+test("a reader who may not override reads the overrides and is offered neither Save overrides nor Discard", async () => {
+  const card = await typedBy({
+    ...abilitiesEvery,
+    overrideTicketConfig: false,
+  });
   expect(within(card).getByLabelText(/^Model/u)).toBeDefined();
   expect(overridesOffers(card)).toStrictEqual([false, false]);
 });

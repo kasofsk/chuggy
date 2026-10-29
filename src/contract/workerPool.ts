@@ -10,14 +10,20 @@
  * is why this is thin, and why it is here: a third party implements the wire,
  * so it is written where the wire is.
  *
- * NOTHING HERE IDENTIFIES THE WORK. `assignment` is opaque because a pool that
- * could read an execution identity would learn the tenant's ticket structure,
- * and capability tokens are opaque because a pool may translate one into a node
- * selector, a scheduler constraint, or nothing.
+ * NOTHING HERE IDENTIFIES THE WORK, BUT TO ITS OWNER'S MACHINE. `assignment` is
+ * opaque because a pool that could read an execution identity would learn the
+ * tenant's ticket structure, and capability tokens are opaque because a pool
+ * may translate one into a node selector, a scheduler constraint, or nothing.
+ * A member's personal runner is told one thing more, each job's project, in
+ * the tenant its registration names: it is its owner's machine, where that
+ * job's own shells are told the project already, by the core's
+ * `workerJobVariables`. A project's pool is told none, since its registration
+ * names its project.
  */
 
 import { z } from "zod";
 
+import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
 export const workerPoolTokenCharsMax = 63;
@@ -53,6 +59,12 @@ export const workerPoolAssignmentIdentitySchema = z
 /** The image an assignment names, by the host a pool pulls it from. */
 const workerPoolImageSchema = z.string().min(1).max(workerImageCharsMax);
 
+/** The project an assignment names, held to the bound of every other name on the wire. */
+const workerPoolProjectSchema = z
+  .string()
+  .min(1)
+  .max(workerPoolIdentityCharsMax);
+
 export const workerPoolAssignmentSchema = z.strictObject({
   /** The idempotency key and the cancel handle in one. */
   assignment: workerPoolAssignmentIdentitySchema,
@@ -71,6 +83,13 @@ export const workerPoolAssignmentSchema = z.strictObject({
    * the workload runs its image's own entrypoint.
    */
   runtime: workerPoolImageSchema.optional(),
+  /**
+   * The project of a job a member's personal runner is assigned, in the
+   * tenant its registration names, by which the job mounts its owner's
+   * volumes scoped per project. It is absent for a project's pool, whose
+   * registration names its own.
+   */
+  project: workerPoolProjectSchema.optional(),
   /**
    * The size of the box, which no capability token expresses. Omit them and
    * large work lands on a small machine and dies as a process failure rather
@@ -93,11 +112,12 @@ export const workerPoolAssignmentSchema = z.strictObject({
 /**
  * An assignment that runs one of a project's agent sessions: the same shape,
  * its image always named, because a session runs its site's session image and
- * never one a pool chooses, and no runtime, because that image carries its
- * own. Its bearer is the session's own, which the same bound admits.
+ * never one a pool chooses, no runtime, because that image carries its own,
+ * and no project, because a session mounts none of its owner's volumes. Its
+ * bearer is the session's own, which the same bound admits.
  */
 export const workerPoolSessionAssignmentSchema = workerPoolAssignmentSchema
-  .omit({ runtime: true })
+  .omit({ runtime: true, project: true })
   .extend({ image: workerPoolImageSchema });
 
 /**
@@ -136,6 +156,13 @@ export const workerPoolSettlementRoutes = {
   Unavailable: `${workerPoolPollRoute}/:assignment/unavailable`,
 } as const;
 
+/** The outcomes a settlement names, in the order its routes are keyed. */
+export const workerPoolSettlementOutcomes = [
+  "Accepted",
+  "Refused",
+  "Unavailable",
+] as const satisfies readonly (keyof typeof workerPoolSettlementRoutes)[];
+
 export function workerPoolSettlementPath(
   outcome: keyof typeof workerPoolSettlementRoutes,
   assignment: string,
@@ -146,11 +173,12 @@ export function workerPoolSettlementPath(
   );
 }
 
-/** The poll's query parameters by name, `held` repeated once per assignment and each room named at most once. */
+/** The poll's query parameters by name, `held` repeated once per assignment and every other named at most once. */
 export const workerPoolPollQuery = {
   held: "held",
   wanted: "wanted",
   wantedSessions: "wantedSessions",
+  idleSecs: "idleSecs",
 } as const;
 
 /** A count as a query string carries one: decimal, canonical, and within what a number can hold. */
@@ -164,7 +192,9 @@ const workerPoolQueryCountSchema = z
  * The poll's query as the plane reads it: `held`, the assignments of either
  * kind the pool is still running, repeated or single or absent as a query
  * carries a list, `wanted`, how many more executions it has room for now, and
- * `wantedSessions`, how many more sessions, which is none where it is absent.
+ * `wantedSessions`, how many more sessions, which is none where it is absent,
+ * and `idleSecs`, how long a session a member's chat host claims may sit idle,
+ * which the plane caps at its own bound and reads from no other caller.
  * The held list's length is the plane's own setting rather than a figure
  * written here, and a list longer than that is refused whole rather than cut,
  * because a cut list reads as a pool that let go of work it is still running;
@@ -184,6 +214,9 @@ export function workerPoolPollQuerySchema(heldMax: number) {
     ),
     [workerPoolPollQuery.wanted]: workerPoolQueryCountSchema,
     [workerPoolPollQuery.wantedSessions]: workerPoolQueryCountSchema.default(0),
+    [workerPoolPollQuery.idleSecs]: workerPoolQueryCountSchema
+      .pipe(z.number().positive())
+      .optional(),
   });
 }
 
@@ -224,6 +257,84 @@ export function workerRunnerOf(
   return read.success ? read.data : undefined;
 }
 
+/**
+ * The header a runner names the capabilities it has in on its poll, as tokens
+ * separated by commas with any spaces or tabs around each, whose set replaces
+ * the one its registration or an earlier poll recorded. A poll without it
+ * leaves the recorded set as it is, since the cluster's own pool and every
+ * earlier runner send none, and an empty one names the empty set.
+ */
+export const workerRunnerCapabilitiesHeader = "chuggy-capabilities";
+
+/** The set a poll names: what a pool declares, none twice. */
+export const workerRunnerCapabilitiesSchema =
+  workerPoolCapabilitiesSchema.refine(
+    (capabilities) => new Set(capabilities).size === capabilities.length,
+  );
+
+/** What a poll's capabilities header names: nothing where it is absent, a set, or something `workerRunnerCapabilitiesSchema` does not read. */
+export type WorkerRunnerCapabilitiesNamed =
+  | { readonly named: "None" }
+  | { readonly named: "Set"; readonly capabilities: readonly string[] }
+  | { readonly named: "Unread" };
+
+/** The set `header` names, an empty element of its list naming nothing. */
+export function workerRunnerCapabilitiesOf(
+  header: string | undefined,
+): WorkerRunnerCapabilitiesNamed {
+  if (header === undefined) return { named: "None" };
+  const read = workerRunnerCapabilitiesSchema.safeParse(
+    header
+      .split(",")
+      .map((element) => element.replace(/^[ \t]+|[ \t]+$/gu, ""))
+      .filter((element) => element !== ""),
+  );
+  return read.success
+    ? { named: "Set", capabilities: read.data }
+    : { named: "Unread" };
+}
+
+/**
+ * The header a runner names, in MiB, the most memory it takes one job of in on
+ * its poll, which replaces the ceiling its registration or an earlier poll
+ * recorded. A poll without it leaves the recorded ceiling as it is, and a
+ * caller none of whose polls named one is offered a job of any size.
+ */
+export const workerRunnerMemoryCeilingHeader = "chuggy-memory-ceiling";
+
+/**
+ * The header a runner names, in MiB, the memory it has room for now in on its
+ * poll: each job the poll claims fits what the claims before it left of that
+ * room, a job naming no memory read at the plane's own size. A poll without it
+ * is claimed by count alone.
+ */
+export const workerRunnerMemoryRoomHeader = "chuggy-memory-room";
+
+/**
+ * The header a runner names, in seconds, the longest it will wait for an
+ * answer with nothing in it in on its poll. The plane waits no longer than
+ * that or its own longest wait, whichever is shorter, and where it is zero
+ * answers after one look; a poll without it waits as long as the plane does.
+ */
+export const workerRunnerPollWaitHeader = "chuggy-poll-wait-secs";
+
+/** What a poll's count header names: nothing where it is absent, a count, or something a count does not read as. */
+export type WorkerRunnerCountNamed =
+  | { readonly named: "None" }
+  | { readonly named: "Count"; readonly count: number }
+  | { readonly named: "Unread" };
+
+/** The count `header` names, written as the poll's query writes one. */
+export function workerRunnerCountOf(
+  header: string | undefined,
+): WorkerRunnerCountNamed {
+  if (header === undefined) return { named: "None" };
+  const read = workerPoolQueryCountSchema.safeParse(header);
+  return read.success
+    ? { named: "Count", count: read.data }
+    : { named: "Unread" };
+}
+
 /** The longest address a runner's release is fetched from. */
 export const workerRunnerReleaseUrlCharsMax = 2_048;
 
@@ -253,6 +364,152 @@ export const workerPoolReconciliationSchema = z.strictObject({
    * It is absent where the poll named no runner or none is pinned for its package.
    */
   release: workerRunnerReleaseSchema.optional(),
+  /**
+   * Whether a job the poll's runner would be given, within the room and the
+   * ceiling it named, is still waiting once this answer's claims are made. It
+   * is named only to a poll naming its room whose release reads it, and such a
+   * poll that wants no job and finds one waiting is answered at once, so a
+   * runner with no slot free names a room of 0 or none.
+   */
+  jobsWaiting: z.boolean().optional(),
+  /**
+   * The image a chat host runs its sessions in, by the host it pulls it from,
+   * which is the session image the site publishes as this answer is made: the
+   * host starts one long-lived container from it, whose chat supervisor runs
+   * those sessions, before it names room for any, may pull it while it holds
+   * nothing, and where an answer names another than it runs, drains what it
+   * holds and restarts on the new one. It is named only to a chat host, and
+   * absent where the plane serves no session or its scheduler has published
+   * no launch yet, where the host starts nothing and polls again.
+   */
+  chatImage: workerPoolImageSchema.optional(),
+});
+
+/**
+ * Where a runner reports how its machine and its work are doing: a POST whose
+ * body is `workerRunnerReportSchema`, answered 204 with no body, and held
+ * against the runner its bearer names, so nothing in it names a tenant, a
+ * project, a pool or an owner. A runner sends one only where its own
+ * configuration turns reporting on, and only to a plane whose answers name
+ * `workerContractRunnerReport` or a later version.
+ */
+export const workerRunnerReportRoute = "/v1/runner-report";
+
+/** The longest machine name a report carries. */
+export const workerRunnerHostCharsMax = 253;
+
+/** The most a report is sent, which the heaviest report `workerRunnerReportSchema` reads fits within. */
+export const workerRunnerReportBytesMax = 4_096;
+
+/** The bounds, in seconds, a report counts its image pulls under. */
+export const workerRunnerImagePullBoundsSecs = [
+  1, 5, 15, 30, 60, 120, 300, 600,
+] as const;
+
+/** The bounds, in seconds, a report counts its runs under. */
+export const workerRunnerRunBoundsSecs = [
+  30, 60, 120, 300, 600, 1200, 1800, 3600, 7200,
+] as const;
+
+/** What a report counts a refusal under: the image fault it named, or `NoFault` where it named none. */
+export const workerRunnerRefusalFaults = [
+  ...workerImageFaults,
+  "NoFault",
+] as const;
+export type WorkerRunnerRefusalFault =
+  (typeof workerRunnerRefusalFaults)[number];
+
+/**
+ * How a job a runner was assigned ended, as the runner sees it: its process
+ * exited, it was killed at its deadline or for want of disk, the plane told the
+ * runner to stop it, or it never ran.
+ */
+export const workerRunnerJobEnds = [
+  "Succeeded",
+  "Failed",
+  "Deadline",
+  "DiskLow",
+  "Stopped",
+  "PlacementFailed",
+] as const;
+export type WorkerRunnerJobEnd = (typeof workerRunnerJobEnds)[number];
+
+/** What a report counts a run's duration by. */
+export const workerRunnerRunKinds = ["Job", "Session"] as const;
+export type WorkerRunnerRunKind = (typeof workerRunnerRunKinds)[number];
+
+/** A machine's name as a runner reports it, which is only ever displayed. */
+const workerRunnerHostSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/u)
+  .max(workerRunnerHostCharsMax);
+
+const workerRunnerReportCountSchema = z.number().int().nonnegative().safe();
+
+/** A strict object keyed by every label of `labels`, each holding what `value` reads or left out. */
+function workerRunnerReportKeyedSchema<
+  const Labels extends readonly string[],
+  Value extends z.ZodType,
+>(labels: Labels, value: Value) {
+  return z.strictObject(
+    Object.fromEntries(labels.map((label) => [label, value.optional()])) as {
+      [Label in Labels[number]]: z.ZodOptional<Value>;
+    },
+  );
+}
+
+/** Counts by a roster's labels, a label left out counting none. */
+function workerRunnerReportTallySchema<const Labels extends readonly string[]>(
+  labels: Labels,
+) {
+  return workerRunnerReportKeyedSchema(labels, workerRunnerReportCountSchema);
+}
+
+/** What fell in each bucket of `bounds` alone and in one past the last, and the seconds observed in all. */
+function workerRunnerReportHistogramSchema(bounds: readonly number[]) {
+  return z.strictObject({
+    bucketCounts: z
+      .array(workerRunnerReportCountSchema)
+      .min(bounds.length + 1)
+      .max(bounds.length + 1),
+    sumSecs: z.number().nonnegative(),
+  });
+}
+
+/**
+ * What a runner process knows of itself since it started: its machine's name,
+ * how long it has run, the jobs and sessions it runs now and the most of each
+ * it takes, the disk it has and the floor below which it takes no job where its
+ * backend measures disk, and the machine as its OS gives it. Every count is
+ * since the process started, so a restart starts each again.
+ */
+export const workerRunnerReportSchema = z.strictObject({
+  host: workerRunnerHostSchema,
+  uptimeSecs: z.number().nonnegative(),
+  jobsRunning: workerRunnerReportCountSchema,
+  concurrencyMax: workerRunnerReportCountSchema,
+  sessionsRunning: workerRunnerReportCountSchema,
+  sessionsMax: workerRunnerReportCountSchema,
+  diskFreeBytes: workerRunnerReportCountSchema.optional(),
+  diskFloorBytes: workerRunnerReportCountSchema.optional(),
+  cpus: workerRunnerReportCountSchema.optional(),
+  loadAverageOneMinute: z.number().nonnegative().optional(),
+  memoryTotalBytes: workerRunnerReportCountSchema.optional(),
+  memoryAvailableBytes: workerRunnerReportCountSchema.optional(),
+  /** Polls made, and the ones among them that never reached the plane. */
+  polls: workerRunnerReportCountSchema,
+  pollsFailed: workerRunnerReportCountSchema,
+  settlements: workerRunnerReportTallySchema(workerPoolSettlementOutcomes),
+  refusals: workerRunnerReportTallySchema(workerRunnerRefusalFaults),
+  jobsEnded: workerRunnerReportTallySchema(workerRunnerJobEnds),
+  sessionsEnded: workerRunnerReportTallySchema(sessionContainerEnds),
+  imagePullSecs: workerRunnerReportHistogramSchema(
+    workerRunnerImagePullBoundsSecs,
+  ),
+  runSecs: workerRunnerReportKeyedSchema(
+    workerRunnerRunKinds,
+    workerRunnerReportHistogramSchema(workerRunnerRunBoundsSecs),
+  ),
 });
 
 export const workerPoolRegistrationSchema = z.strictObject({
@@ -261,8 +518,9 @@ export const workerPoolRegistrationSchema = z.strictObject({
 });
 
 /**
- * What an owner asks a registration token for: the capabilities the machine it
- * is about to configure may claim, and how long the token stands.
+ * @deprecated No endpoint reads this. A mint takes
+ * `registrationTokenRequestSchema` from `src/contract/requests.ts`, and a
+ * token carries no capabilities.
  */
 export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
   capabilities: workerPoolCapabilitiesSchema,
@@ -271,7 +529,7 @@ export const workerPoolRegistrationTokenRequestSchema = z.strictObject({
 
 /**
  * What an operator redeems with: the token, the name the pool takes, and the
- * capabilities it declares — which the token bounds rather than confirms.
+ * capabilities it declares.
  */
 export const workerPoolRedemptionSchema = z.strictObject({
   token: z.string().min(1).max(workerPoolIdentityCharsMax),
@@ -289,9 +547,11 @@ export type WorkerPoolReconciliation = z.infer<
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
+export type WorkerRunnerReport = z.infer<typeof workerRunnerReportSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
 >;
+/** @deprecated As `workerPoolRegistrationTokenRequestSchema`. */
 export type WorkerPoolRegistrationTokenRequest = z.infer<
   typeof workerPoolRegistrationTokenRequestSchema
 >;

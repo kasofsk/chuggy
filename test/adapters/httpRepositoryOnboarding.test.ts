@@ -23,11 +23,6 @@
  * A PERSON'S TOKEN IS A SENTINEL, and every place it could leak is read for it:
  * the answer, the rows recorded, what the process wrote to its own streams, and
  * every forge request but the ones made to the API host under it.
- *
- * A CREATION IS THREE FORGE REQUESTS AND THE CASES ASSERT ALL OF THEM. Which
- * addresses were asked, in what order, is what tells a repository that was made
- * and seeded from one that was made and left empty — neither of which the
- * status says.
  */
 
 import assert from "node:assert/strict";
@@ -41,9 +36,9 @@ import {
   githubApps,
   githubInstallationDirectory,
 } from "../../src/adapters/forge/githubApp.ts";
+import { githubRepositoryAddressOf } from "../../src/adapters/forge/githubAddress.ts";
 import { githubInstallationRepositories } from "../../src/adapters/forge/githubInstallationRepositories.ts";
 import { githubUserAuthorization } from "../../src/adapters/forge/githubUserAuthorization.ts";
-import { githubRepositoryCreation } from "../../src/adapters/forge/githubRepositoryCreation.ts";
 import {
   nativeHttpMediaType,
   type HttpErrorEnvelope,
@@ -66,6 +61,7 @@ import {
   asForgeInstallationId,
   asForgeInstallationToken,
   type ForgeApp,
+  type ForgeInstallationStore,
   type ForgeInstallationTokens,
 } from "../../src/interpreter/forgeInstallation.ts";
 import type {
@@ -74,6 +70,7 @@ import type {
   ForgeInstallationClaims,
   ForgeInstallationRecorded,
 } from "../../src/interpreter/forgeInstallationClaim.ts";
+import { bootstrapConfigurationRevision } from "../../src/interpreter/authoring.ts";
 import { bootstrapConfiguration } from "../../src/interpreter/bootstrapConfiguration.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
@@ -94,7 +91,6 @@ import {
   repositoryOnboarding,
   type RepositoryConfigurationsHeld,
   type RepositoryConfigurationsPorts,
-  type RepositoryCreationPorts,
   type RepositoryOnboarding,
 } from "../../src/interpreter/repositoryOnboarding.ts";
 import { memoryProjectAccess } from "../postgres/projectAccessMemory.ts";
@@ -228,7 +224,7 @@ function fixtureStore(): OnboardingStore {
     outcome: "Bound",
     landingUnavailable: false,
     retirementUnavailable: false,
-    stepHeld: { declared: new Map(), bootstrap: undefined },
+    stepHeld: { declared: new Map(), bootstraps: new Map() },
     heldReads: 0,
     attempted: new Map(),
     resolved: {
@@ -250,17 +246,6 @@ function fixtureClaims(store: OnboardingStore): ForgeInstallationClaims {
       Promise.resolve(
         askedTenant === tenant
           ? store.held.find((row) => row.installationId === askedInstallation)
-          : undefined,
-      ),
-    accountClaim: (query) =>
-      Promise.resolve(
-        query.tenant === tenant
-          ? store.held.find(
-              (row) =>
-                row.forge === query.forge &&
-                row.app === query.app &&
-                row.account === query.account,
-            )
           : undefined,
       ),
   };
@@ -304,6 +289,7 @@ function fixtureServiceHalf(
   return {
     forge,
     app: held,
+    addressOf: githubRepositoryAddressOf,
     apps: githubApps(options),
     directory: githubInstallationDirectory(options),
     installationRepositories: githubInstallationRepositories({
@@ -346,25 +332,9 @@ function fixtureServiceConfigurations(
   };
 }
 
-/** The half the create route makes repositories through, over the same fetch. */
-function fixtureServiceCreation(
-  recorder: ForgeRecorder,
-): RepositoryCreationPorts {
-  return {
-    forge,
-    repositories: githubRepositoryCreation({
-      fetch: recorder.requestFetch,
-      apiUrl: fixtureApiUrl,
-      appId: fixtureAppIds[app],
-      tokens: listingTokens,
-    }),
-  };
-}
-
 /** What a case composes beyond the durable side: which apps it holds, and which halves it adds. */
 interface FixtureComposition {
   readonly apps: readonly ForgeApp[];
-  readonly creating: boolean;
   readonly image: string | undefined;
   readonly authorizing: boolean;
 }
@@ -392,6 +362,30 @@ function fixtureServiceAuthorization(
   };
 }
 
+/** The claim a repository's owner is minted under, read from the claims the store holds for this tenant. */
+function fixtureInstallations(store: OnboardingStore): ForgeInstallationStore {
+  return {
+    installation: (query) => {
+      const found = store.held.find(
+        (held) =>
+          held.forge === query.forge &&
+          held.app === query.app &&
+          held.account === query.account,
+      );
+      return Promise.resolve(
+        found === undefined || query.tenant !== tenant
+          ? undefined
+          : {
+              forge: found.forge,
+              app: found.app,
+              account: found.account,
+              installationId: found.installationId,
+            },
+      );
+    },
+  };
+}
+
 function fixtureService(
   t: TestContext,
   store: OnboardingStore,
@@ -411,6 +405,7 @@ function fixtureService(
     access,
     credentials,
     forgeApps: halves,
+    installations: fixtureInstallations(store),
     recording: {
       record: (claim) => {
         store.recordedClaims.push(claim);
@@ -441,11 +436,6 @@ function fixtureService(
     ...(image === undefined
       ? {}
       : { configurations: fixtureServiceConfigurations(image) }),
-    ...(composition.creating
-      ? {
-          creation: fixtureServiceCreation(recorder),
-        }
-      : {}),
     ...(composition.authorizing
       ? fixtureServiceAuthorization(t, recorder, halves)
       : {}),
@@ -472,6 +462,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
           repository: command.repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
         });
         return Promise.resolve("Bound" as const);
       }
@@ -481,6 +472,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
         repository: standing.repository,
         boundAt: standing.boundAt,
         landing: standing.landing,
+        pipelinesWritable: standing.pipelinesWritable,
       };
       return Promise.resolve("Bound" as const);
     },
@@ -502,14 +494,20 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
       if (standing === undefined)
         return Promise.resolve({ outcome: "NotBound" } as const);
       if (
-        standing.landing.mode !== command.expected.mode &&
-        standing.landing.mode !== command.landing.mode
+        (standing.landing.mode !== command.expected.mode &&
+          standing.landing.mode !== command.landing.mode) ||
+        (standing.pipelinesWritable !== command.pipelinesWritable.expected &&
+          standing.pipelinesWritable !== command.pipelinesWritable.wanted)
       )
         return Promise.resolve({
           outcome: "LandingMoved",
           binding: standing,
         } as const);
-      const written = { ...standing, landing: command.landing };
+      const written = {
+        ...standing,
+        landing: command.landing,
+        pipelinesWritable: command.pipelinesWritable.wanted,
+      };
       store.bound[at] = written;
       return Promise.resolve({ outcome: "Written", binding: written } as const);
     },
@@ -548,7 +546,6 @@ function fixtureCase(
     readonly granted?: readonly ("AdministerTenant" | "Administer" | "Read")[];
     readonly store?: OnboardingStore;
     readonly apps?: readonly ForgeApp[];
-    readonly creating?: boolean;
     readonly image?: string;
     readonly authorizing?: boolean;
     readonly tenants?: readonly TenantId[];
@@ -572,7 +569,6 @@ function fixtureCase(
     unservedNativeWeb,
     fixtureService(t, store, recorder, access, {
       apps: given.apps ?? bothApps,
-      creating: given.creating ?? false,
       image: given.image,
       authorizing: given.authorizing ?? false,
     }),
@@ -1308,6 +1304,9 @@ test("a bind without the project permit is not found and writes nothing", async 
   assert.deepEqual(refused.store.bound, []);
 });
 
+/** What a binding on `acme` carries where the tenant claims no worker App installation there. */
+const unclaimedReach = { reach: "Unclaimed", account: "acme" } as const;
+
 test("a bind is created at its own address and read back by the listing", async (t) => {
   const binding = fixtureCase(t, { granted: ["Administer", "Read"] });
   const served = await binding.app.inject({
@@ -1325,6 +1324,7 @@ test("a bind is created at its own address and read back by the listing", async 
     repository,
     landing: { mode: "Push" },
     configurations: { result: "Deferred", reason: "NotConfigured" },
+    workerReach: unclaimedReach,
   });
   const listed = await binding.app.inject({
     url: repositoriesRoot,
@@ -1337,7 +1337,9 @@ test("a bind is created at its own address and read back by the listing", async 
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "Push" },
+        pipelinesWritable: false,
         configured: false,
+        workerReach: unclaimedReach,
       },
     ],
   });
@@ -1351,11 +1353,17 @@ test("the listing answers a binding's last import attempted, and nothing of one 
   const listing = fixtureCase(t, { granted: ["Read"] });
   const other = asRepositoryId("https://github.com/acme/other.git");
   listing.store.bound.push(
-    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
+    {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+      pipelinesWritable: false,
+    },
     {
       repository: other,
       boundAt: "2026-09-12T01:00:00Z",
       landing: { mode: "Push" },
+      pipelinesWritable: false,
     },
   );
   const lastImport = {
@@ -1523,15 +1531,6 @@ const unauthenticatedRequests = [
     headers: { "content-type": nativeHttpMediaType },
     payload: { repository },
   },
-  {
-    method: "POST" as const,
-    url: `${repositoriesRoot}/new`,
-    headers: {
-      "content-type": nativeHttpMediaType,
-      "idempotency-key": "create-engine-1",
-    },
-    payload: { account: "acme", name: "engine", visibility: "private" },
-  },
 ];
 
 test("every route this slice adds answers an unauthenticated caller with 401", async (t) => {
@@ -1552,261 +1551,27 @@ test("every route this slice adds answers an unauthenticated caller with 401", a
   assert.equal(served.store.heldReads, 0);
 });
 
-const createRoot = `${repositoriesRoot}/new`;
 const bootstrapImage = `ghcr.io/acme/chuggy-worker@sha256:${"e".repeat(64)}`;
-const creationKeyed = { ...versioned, "idempotency-key": "create-engine-1" };
-const creating = { account: "acme", name: "engine", visibility: "private" };
 
-/** One claim of one app on the account a creation names, which `/new` needs two of. */
-function fixtureAccountClaim(held: ForgeApp): ForgeInstallationClaimed {
-  return {
-    forge,
-    app: held,
-    account: asForgeAccount("acme"),
-    accountKind: "Organization",
-    installationId: asForgeInstallationId(held === "portal" ? "8001" : "8002"),
-    claimedAt: claimed.claimedAt,
-  };
-}
-
-/** A store holding both claims, which is what every creation case but one starts from. */
-function fixtureCreationStore(
-  held: readonly ForgeApp[] = bothApps,
-): OnboardingStore {
-  const store = fixtureStore();
-  store.held.push(...held.map(fixtureAccountClaim));
-  return store;
-}
-
-/** The repository the forge says it made, which is what the seed and the bind name. */
-function madeAnswer(): Response {
-  return answer(201, { clone_url: repository, default_branch: "main" });
-}
-
-test("creating a repository is the project administrator's and nobody else's", async (t) => {
-  const reading = fixtureCase(t, {
-    granted: ["Read"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await reading.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(served.json<HttpErrorEnvelope>().error.code, "NotFound");
-  assert.deepEqual(reading.recorder.calls, []);
-});
-
-test("a creation with no idempotency key is refused before the forge is asked", async (t) => {
+test("no route makes a repository: a creation is answered as a path no route ever had, and the forge is not asked", async (t) => {
   const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: versioned,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 400);
-  assert.deepEqual(composed.recorder.calls, []);
-});
-
-test("a repository is made, seeded, reserved and bound, and the answer locates it", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      madeAnswer(),
-      answer(201, { content: {} }),
-      answer(201, { id: 1 }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
+    granted: ["AdministerTenant", "Administer", "Read"],
     image: bootstrapImage,
   });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 201);
-  const body = served.json<{
-    repository: string;
-    created: { account: string; name: string; url: string };
-    seeded: boolean;
-    ruleset: { result: string };
-  }>();
-  assert.equal(body.repository, repository);
-  assert.deepEqual(body.created, {
-    account: "acme",
-    name: "engine",
-    url: repository,
-  });
-  assert.equal(body.seeded, true);
-  assert.deepEqual(body.ruleset, { result: "Created" });
-  assert.equal(
-    served.headers["location"],
-    `${repositoriesRoot}/${encodeURIComponent(repository)}`,
-  );
-  assert.deepEqual(
-    composed.recorder.calls.map((call) => call.url),
-    [
-      `${fixtureApiUrl}/orgs/acme/repos`,
-      `${fixtureApiUrl}/repos/acme/engine/contents/.chug/configurations/bootstrap.json`,
-      `${fixtureApiUrl}/repos/acme/engine/rulesets`,
-    ],
-  );
-  assert.deepEqual(composed.store.bound, [
-    { repository, boundAt: "2026-09-11T01:00:00Z", landing: { mode: "Push" } },
-  ]);
-});
-
-test("a deployment naming no bootstrap image makes the repository unseeded", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [madeAnswer()],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 201);
-  const body = served.json<{ seeded: boolean; ruleset: { result: string } }>();
-  assert.equal(body.seeded, false);
-  assert.deepEqual(body.ruleset, { result: "Skipped" });
-  assert.deepEqual(
-    composed.recorder.calls.map((call) => call.url),
-    [`${fixtureApiUrl}/orgs/acme/repos`],
-  );
-});
-
-test("the identity a creation is decided under is the one the caller keyed it with", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [madeAnswer(), madeAnswer()],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  for (const key of ["create-engine-1", "create-engine-2"])
-    await composed.app.inject({
+  const sent = (path: string) =>
+    composed.app.inject({
       method: "POST",
-      url: createRoot,
-      headers: { ...versioned, "idempotency-key": key },
-      payload: creating,
+      url: `${repositoriesRoot}/${path}`,
+      headers: { ...versioned, "idempotency-key": "create-engine-1" },
+      payload: { account: "acme", name: "engine", visibility: "private" },
     });
-  assert.deepEqual(
-    composed.store.commands.map((command) => command.operation),
-    ["create-engine-1", "create-engine-2"],
-    "two requests for one repository are two operations and not one",
-  );
-});
-
-test("a tenant missing either claim on the account creates nothing", async (t) => {
-  const portalOnly = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore([app]),
-    creating: true,
-  });
-  const served = await portalOnly.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 422);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "InstallationMissing",
-  );
-  assert.deepEqual(portalOnly.recorder.calls, []);
-});
-
-test("a name the account already holds points at the bind route", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      answer(422, {
-        message: "Repository creation failed.",
-        errors: [{ message: "name already exists on this account" }],
-      }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 409);
-  assert.equal(served.json<HttpErrorEnvelope>().error.code, "RepositoryExists");
-  assert.deepEqual(composed.store.bound, []);
-});
-
-test("a forge that refused the create names the step and carries its words", async (t) => {
-  const composed = fixtureCase(t, {
-    answers: [
-      answer(403, { message: "Resource not accessible by integration" }),
-    ],
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 422);
-  const envelope = served.json<HttpErrorEnvelope>();
-  assert.equal(envelope.error.code, "ForgeRefused");
-  assert.ok(envelope.error.message.includes("create"));
-  assert.ok(envelope.error.message.includes("not accessible"));
-});
-
-test("a deployment composing no creation half answers that it names no such forge app", async (t) => {
-  const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: creating,
-  });
-  assert.equal(served.statusCode, 404);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "ForgeNotConfigured",
-  );
-});
-
-test("a body the creation schema does not name is refused", async (t) => {
-  const composed = fixtureCase(t, {
-    granted: ["Administer"],
-    store: fixtureCreationStore(),
-    creating: true,
-  });
-  const served = await composed.app.inject({
-    method: "POST",
-    url: createRoot,
-    headers: creationKeyed,
-    payload: { ...creating, visibility: "secret" },
-  });
-  assert.equal(served.statusCode, 400);
+  const creation = await sent("new");
+  const unrouted = await sent("never-a-route");
+  assert.equal(creation.statusCode, 404);
+  assert.equal(creation.statusCode, unrouted.statusCode);
+  assert.equal(creation.body.replace("/new", "/never-a-route"), unrouted.body);
   assert.deepEqual(composed.recorder.calls, []);
+  assert.deepEqual(composed.store.commands, []);
 });
 
 /** The landing route, as the console sends a move of one repository's landing. */
@@ -1817,6 +1582,24 @@ function landingRequest(body: Record<string, unknown>) {
     headers: versioned,
     payload: body,
   };
+}
+
+/** A settings write a setting moved under: refused as moved, answering the binding as it stands. */
+function landingMovedAsserted(
+  served: { readonly statusCode: number; json<T>(): T },
+  standing: { readonly mode: string; readonly pipelinesWritable: boolean },
+): void {
+  assert.equal(served.statusCode, 409);
+  assert.equal(
+    served.json<HttpErrorEnvelope>().error.code,
+    "RepositoryLandingMoved",
+  );
+  assert.deepEqual(served.json<{ repository: unknown }>().repository, {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: standing.mode },
+    pipelinesWritable: standing.pipelinesWritable,
+  });
 }
 
 /**
@@ -1854,6 +1637,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 200);
@@ -1862,6 +1646,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       repository,
       boundAt: "2026-09-11T01:00:00Z",
       landing: { mode: "PullRequest" },
+      pipelinesWritable: false,
     },
   });
   const listed = await landed.app.inject({
@@ -1874,7 +1659,9 @@ test("moving where a repository lands answers the row and the listing agrees", a
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "PullRequest" },
+        pipelinesWritable: false,
         configured: false,
+        workerReach: unclaimedReach,
       },
     ],
   });
@@ -1887,6 +1674,7 @@ test("a landing that moved under the writer is a conflict carrying the row that 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   const served = await landed.app.inject(
@@ -1894,17 +1682,12 @@ test("a landing that moved under the writer is a conflict carrying the row that 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
-  assert.equal(served.statusCode, 409);
-  assert.equal(
-    served.json<HttpErrorEnvelope>().error.code,
-    "RepositoryLandingMoved",
-  );
-  assert.deepEqual(served.json<{ repository: unknown }>().repository, {
-    repository,
-    boundAt: "2026-09-11T01:00:00Z",
-    landing: { mode: "PullRequest" },
+  landingMovedAsserted(served, {
+    mode: "PullRequest",
+    pipelinesWritable: false,
   });
 });
 
@@ -1915,6 +1698,7 @@ test("a repository this project does not bind has no landing to answer", async (
       repository: "https://github.com/acme/unbound.git",
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 404);
@@ -1928,6 +1712,7 @@ test("a landing move without the project permit is not found and writes nothing"
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 404);
@@ -1942,6 +1727,7 @@ test("a write the durable side could not complete is a wait and says how long", 
       repository,
       expected: { mode: "Push" },
       landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
     }),
   );
   assert.equal(served.statusCode, 503);
@@ -1952,17 +1738,103 @@ test("a write the durable side could not complete is a wait and says how long", 
   assert.equal(typeof served.headers["retry-after"], "string");
 });
 
-test("a landing no roster names is refused before the durable side is asked", async (t) => {
+test("allowing a repository's pipeline definitions answers the row and the listing agrees", async (t) => {
   const landed = await fixtureLanded(t);
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.equal(
+    served.json<{ repository: { pipelinesWritable: unknown } }>().repository
+      .pipelinesWritable,
+    true,
+  );
+  const listed = await landed.app.inject({
+    url: repositoriesRoot,
+    headers: authorized,
+  });
+  assert.deepEqual(
+    listed
+      .json<{ repositories: { pipelinesWritable: unknown }[] }>()
+      .repositories.map((row) => row.pipelinesWritable),
+    [true],
+  );
+});
+
+test("pipeline definitions allowed under the writer are a conflict carrying the row that stands", async (t) => {
+  const landed = await fixtureLanded(t);
+  await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
+    }),
+  );
+  landingMovedAsserted(served, { mode: "Push", pipelinesWritable: true });
+});
+
+test("allowing pipeline definitions without the project permit is not found and writes nothing", async (t) => {
+  const landed = await fixtureLanded(t, ["Administer", "Read"]);
+  const reader = fixtureCase(t, { granted: ["Read"], store: landed.store });
+  const served = await reader.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { expected: false, wanted: true },
+    }),
+  );
+  assert.equal(served.statusCode, 404);
+  assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
+});
+
+test("a landing no roster names, or a write missing either setting, is refused before the durable side is asked", async (t) => {
+  const landed = await fixtureLanded(t);
+  const unchanged = { expected: false, wanted: false };
   for (const body of [
-    { repository, expected: { mode: "Push" }, landing: { mode: "Merge" } },
-    { repository, landing: { mode: "Push" } },
-    { expected: { mode: "Push" }, landing: { mode: "Push" } },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Merge" },
+      pipelinesWritable: unchanged,
+    },
+    { repository, landing: { mode: "Push" }, pipelinesWritable: unchanged },
+    {
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: unchanged,
+    },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+    },
+    {
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "Push" },
+      pipelinesWritable: { wanted: true },
+    },
   ]) {
     const served = await landed.app.inject(landingRequest(body));
     assert.equal(served.statusCode, 400, JSON.stringify(body));
   }
   assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+  assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
 });
 
 /** The retirement route, as an administrator sends the end of one binding. */
@@ -1983,6 +1855,7 @@ test("retiring a binding answers the row it left and the listing agrees", async 
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: { mode: "Push" },
+    pipelinesWritable: false,
     retiredAt: fixtureRetiredAt,
   };
   assert.deepEqual(served.json(), { repository: retired });
@@ -2041,7 +1914,9 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          pipelinesWritable: false,
           configured: false,
+          workerReach: unclaimedReach,
         },
       ],
     },
@@ -2143,15 +2018,23 @@ test("a binding the project holds a bootstrap for is answered it and listed as h
   const landed = await fixtureLanded(t, undefined, bootstrapImage);
   landed.store.stepHeld = {
     declared: new Map(),
-    bootstrap: bootstrapConfiguration({
-      repository,
-      defaultBranch: asGitRefName("refs/heads/main"),
-      image: bootstrapImage,
-    }),
+    bootstraps: new Map([
+      [
+        bootstrapConfigurationRevision(repository),
+        bootstrapConfiguration({
+          repository,
+          defaultBranch: asGitRefName("refs/heads/main"),
+          image: bootstrapImage,
+        }),
+      ],
+    ]),
   };
   const served = await landed.app.inject(configureRequest({ repository }));
   assert.equal(served.statusCode, 200);
-  const bootstrapped = { result: "Bootstrapped", revision: "bootstrap" };
+  const bootstrapped = {
+    result: "Bootstrapped",
+    revision: bootstrapConfigurationRevision(repository),
+  };
   assert.deepEqual(served.json(), { repository, configurations: bootstrapped });
   assert.deepEqual(await listedHeld(landed), [[true, bootstrapped]]);
   landed.store.stepHeld = {

@@ -235,7 +235,7 @@ async function claimed(
   const bearer = `bearer-${randomUUID()}`;
   const claim = await assignments.claim(
     identity,
-    { leaseSecs: claimLeaseSecs, heldMax: 1 },
+    { leaseSecs: claimLeaseSecs, heldMax: 1, memoryMibDefault: 4_096 },
     `assignment-${randomUUID()}`,
     bearer,
     [],
@@ -338,10 +338,16 @@ test("a policy that moves between attempts leaves the route the execution regist
     placed,
   );
   const key = [project.partition.tenant, project.partition.project, execution];
-  await rig.harness.query(
-    `UPDATE execution_attempt SET lease_expires_at=now()-interval '1 second'
-      WHERE tenant=$1 AND project=$2 AND execution=$3 AND state='Placing'`,
-    key,
+  const waiting = (
+    await rig.store.waitingAttempts(
+      project.epoch,
+      executionSchedulerDefaults.attemptsPerPassMax,
+    )
+  ).find((attempt) => attempt.execution === execution);
+  assert.ok(waiting !== undefined);
+  assert.equal(
+    await rig.store.waitingAttemptWithdrawn(waiting, "PlacementUnavailable"),
+    true,
   );
   const moved = routedService(schedulerRouting(), placed);
   await executionSchedulerLaunch(moved, project.epoch);

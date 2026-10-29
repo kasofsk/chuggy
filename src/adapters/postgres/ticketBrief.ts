@@ -93,7 +93,9 @@ export function draftReleaseBriefOf(
   if (row.intent === null) return undefined;
   const finalization = draftBriefFinalizationOf(row);
   return {
-    checks: (row.checks ?? []).map(asBriefCheckLine),
+    checks: (row.checks ?? []).map((check, index) =>
+      asBriefCheckLine(check, index),
+    ),
     ...(row.repository === null
       ? {}
       : { repository: asRepositoryId(row.repository) }),
@@ -110,7 +112,9 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
     intent: asBriefIntent(row.intent),
     links: (row.links ?? []).map(asBriefLinkUrl),
     images: (row.images ?? []).map(asProjectArtifactId),
-    checks: (row.checks ?? []).map(asBriefCheckLine),
+    checks: (row.checks ?? []).map((check, index) =>
+      asBriefCheckLine(check, index),
+    ),
     ...(row.branch === null ? {} : { branch: asBriefBranch(row.branch) }),
     ...(row.repository === null
       ? {}

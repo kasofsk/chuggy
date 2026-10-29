@@ -4,9 +4,8 @@
  * THE ARMS THAT MATTER ARE THE ONES THAT COULD REPORT A MESSAGE AS SENT. The
  * composer clears the box and discards the text on `Sent`, so an arm that
  * answered it where nothing had been enqueued would tell a member their message
- * landed with nothing in any mailbox — and three of these arms are reachable
- * only when a read fails or a membership has gone, which no renderer case
- * arranges. So each one is a case here, at the tier that can express it.
+ * landed with nothing in any mailbox. Any read a press makes is answered a
+ * fault, so a press that read anything could not pass quietly.
  */
 
 import { expect, test } from "vitest";
@@ -15,14 +14,7 @@ import { nativeHttpMediaType } from "../../../src/contract/http.ts";
 import { threadMessageSent } from "../app/core/threadSendRun.ts";
 import { threadRefusalWord } from "../app/core/threads.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import {
-  threadBody,
-  threadEntry,
-  threadMineSession,
-  threadOtherSession,
-  threadPartition,
-  threadTurn,
-} from "./threadFixture.ts";
+import { threadHome, threadOtherSession } from "./threadFixture.ts";
 
 const message = { turn: "thread-turn-a", message: "into the race" };
 
@@ -44,8 +36,6 @@ function answered(body: unknown, status = 200): () => Response {
 interface Served {
   /** What `POST …/messages` answers, in the order the presses arrive. */
   readonly posts: readonly (() => Response)[];
-  readonly listing?: () => Response;
-  readonly standing?: () => Response;
 }
 
 interface Run {
@@ -63,8 +53,8 @@ const unscripted = answered(
   500,
 );
 
-/** The ports one press runs over: every read the settlement makes is scripted
- * and every post is recorded with the session it was addressed to. */
+/** The ports one press runs over: every post is scripted and recorded with the
+ * session it was addressed to, and every read is unscripted. */
 function serving(served: Served): Run {
   const posted: { url: string; turn: string }[] = [];
   let presses = 0;
@@ -81,9 +71,7 @@ function serving(served: Served): Run {
       presses += 1;
       return Promise.resolve((served.posts[at] ?? unscripted)());
     }
-    if (url.endsWith("/threads"))
-      return Promise.resolve((served.listing ?? unscripted)());
-    return Promise.resolve((served.standing ?? unscripted)());
+    return Promise.resolve(unscripted());
   };
   return {
     ports: {
@@ -100,220 +88,28 @@ const disputed = answered(
   403,
 );
 
-/** The listing as the door's own answer implies it: the URL's session is not
- * the caller's, and the one that is, is marked. */
-const listed = answered({
-  threads: [
-    threadEntry({ session: threadMineSession, mine: true }),
-    threadEntry({ session: threadOtherSession }),
-  ],
-});
-
-test("a press the door accepts is sent and settles nothing", async () => {
+test("a press the door accepts is sent", async () => {
   const run = serving({
     posts: [answered({ turn: message.turn, ordinal: 4 }, 202)],
   });
   expect(
-    await threadMessageSent(
-      run.ports,
-      threadPartition,
-      threadOtherSession,
-      message,
-    ),
+    await threadMessageSent(run.ports, threadHome, threadOtherSession, message),
   ).toStrictEqual({ send: "Sent", ordinal: 4 });
-  expect(run.posted().length, "an accepted press was settled anyway").toBe(1);
-});
-
-/**
- * The mailbox the message may have reached is the listing's `mine`, so a
- * listing that could not be read leaves the console unable to say whether it
- * landed — and saying it did would discard the text.
- */
-test("a listing that could not be read is refused, never reported as sent", async () => {
-  const run = serving({
-    posts: [disputed],
-    listing: answered({ error: { code: "InternalError", message: "no" } }, 500),
-  });
-  const answer = await threadMessageSent(
-    run.ports,
-    threadPartition,
-    threadOtherSession,
-    message,
-  );
-  expect(
-    answer.send,
-    "a settlement that could not reach the listing said the message landed",
-  ).toBe("Refused");
-  expect(run.posted().length, "it sent again over an unread listing").toBe(1);
-});
-
-/**
- * A membership revoked while a member was typing: the page still holds a read
- * saying the thread is theirs, the press earns the 403, and the listing then
- * carries no thread of theirs at all.
- */
-test("a member with no thread of their own is refused, never reported as sent", async () => {
-  const run = serving({
-    posts: [disputed],
-    listing: answered({
-      threads: [threadEntry({ session: threadOtherSession })],
-    }),
-  });
-  const answer = await threadMessageSent(
-    run.ports,
-    threadPartition,
-    threadOtherSession,
-    message,
-  );
-  expect(
-    answer.send,
-    "a member whose thread is gone was told their message landed",
-  ).toBe("Refused");
   expect(run.posted().length).toBe(1);
 });
 
-test("a mailbox that could not be read is refused, never reported as sent", async () => {
-  const run = serving({
-    posts: [disputed],
-    listing: listed,
-    standing: answered(
-      { error: { code: "InternalError", message: "no" } },
-      500,
-    ),
+/** The door refuses another member's session before it enqueues, so the
+ * refusal is the whole answer and nothing is read or sent after it. */
+test("a session not the caller's is refused, and nothing is sent elsewhere", async () => {
+  const run = serving({ posts: [disputed] });
+  expect(
+    await threadMessageSent(run.ports, threadHome, threadOtherSession, message),
+  ).toStrictEqual({
+    send: "Refused",
+    what: "Send",
+    cause: threadRefusalWord("NotYourThread"),
   });
-  const answer = await threadMessageSent(
-    run.ports,
-    threadPartition,
-    threadOtherSession,
-    message,
-  );
-  expect(
-    answer.send,
-    "a settlement that could not read the mailbox said the message landed",
-  ).toBe("Refused");
-  expect(run.posted().length, "it sent again over an unread mailbox").toBe(1);
-});
-
-/** The turn being in the mailbox is the whole of what settles it: the door
- * enqueued before it compared, so there is nothing to send again. */
-test("a mailbox holding the turn is sent, and is not sent again", async () => {
-  const run = serving({
-    posts: [disputed],
-    listing: listed,
-    standing: answered(
-      threadBody({
-        session: threadMineSession,
-        turns: [threadTurn({ turn: message.turn, ordinal: 7 })],
-      }),
-    ),
-  });
-  expect(
-    await threadMessageSent(
-      run.ports,
-      threadPartition,
-      threadOtherSession,
-      message,
-    ),
-  ).toStrictEqual({ send: "Sent", ordinal: 7 });
-  expect(
-    run.posted().length,
-    "a message the mailbox already held was sent a second time",
-  ).toBe(1);
-});
-
-/** A mailbox without the turn is a message that never landed, sent to the
- * session that resolved and under the identity the first press minted. */
-test("a mailbox without the turn is sent again there, under the same turn", async () => {
-  const run = serving({
-    posts: [disputed, answered({ turn: message.turn, ordinal: 9 }, 202)],
-    listing: listed,
-    standing: answered(
-      threadBody({
-        session: threadMineSession,
-        turns: [threadTurn({ turn: "thread-turn-other", ordinal: 6 })],
-      }),
-    ),
-  });
-  expect(
-    await threadMessageSent(
-      run.ports,
-      threadPartition,
-      threadOtherSession,
-      message,
-    ),
-  ).toStrictEqual({ send: "Sent", ordinal: 9 });
-  const posts = run.posted();
-  expect(posts.length).toBe(2);
-  expect(posts[1]?.turn, "the second send minted a fresh identity").toBe(
-    message.turn,
-  );
-  expect(
-    posts[1]?.url.includes(`/threads/${threadMineSession}/messages`),
-    "the second send went somewhere other than the mailbox that resolved",
-  ).toBe(true);
-});
-
-/**
- * THE SECOND SEND IS THE LAST. A settlement that settled its own second
- * refusal would read the listing and the mailbox again on every round, which
- * is a loop with a network in it.
- */
-test("a second send the door disputes again is reported, not settled again", async () => {
-  const run = serving({
-    posts: [disputed, disputed],
-    listing: listed,
-    standing: answered(
-      threadBody({
-        session: threadMineSession,
-        turns: [threadTurn({ turn: "thread-turn-other", ordinal: 6 })],
-      }),
-    ),
-  });
-  const answer = await threadMessageSent(
-    run.ports,
-    threadPartition,
-    threadOtherSession,
-    message,
-  );
-  expect(
-    answer,
-    "a second dispute was settled rather than reported",
-  ).toStrictEqual({ send: "Refused", what: "Send", cause: "Elsewhere" });
-  expect(run.posted().length, "the settlement sent a third time").toBe(2);
-});
-
-/**
- * WHAT IS REPORTED IS WHAT WAS OBSERVED. This arm is reached only after the
- * listing named a mailbox of the caller's own AND that mailbox was read, so a
- * reason saying no such mailbox could be found asserts the fact the settlement
- * had just disproved — and it is the arm a member reads when their thread was
- * closed and reopened under them.
- */
-test("a second dispute is not reported as a mailbox nobody could find", async () => {
-  const run = serving({
-    posts: [disputed, disputed],
-    listing: listed,
-    standing: answered(
-      threadBody({
-        session: threadMineSession,
-        turns: [threadTurn({ turn: "thread-turn-other", ordinal: 6 })],
-      }),
-    ),
-  });
-  const answer = await threadMessageSent(
-    run.ports,
-    threadPartition,
-    threadOtherSession,
-    message,
-  );
-  const reason = answer.send === "Refused" ? answer.cause : "";
-  expect(
-    reason,
-    "the reason named a mailbox the settlement had just read",
-  ).not.toContain("no open thread");
-  expect(reason, "the reason did not follow from the door's own answer").toBe(
-    threadRefusalWord("NotYourThread"),
-  );
+  expect(run.posted().length, "a refused press was sent again").toBe(1);
 });
 
 /** Every other rejection is the door's answer and not a race, so it is
@@ -326,7 +122,7 @@ test("a rejection that is not a dispute is reported without settling", async () 
   });
   const answer = await threadMessageSent(
     run.ports,
-    threadPartition,
+    threadHome,
     threadOtherSession,
     message,
   );

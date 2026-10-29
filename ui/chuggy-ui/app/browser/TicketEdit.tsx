@@ -1,8 +1,8 @@
 /**
  * Editing a Pending ticket: the creation form, prefilled from the ticket's
- * draft, with its dependencies drawn and not offered. It opens on the
- * configuration the draft names, so a ticket is moved to another only by a
- * reader who chooses one.
+ * draft, offering the creation candidates and the dependencies the draft holds,
+ * less the ticket itself. It opens on the configuration the draft names, so a
+ * ticket is moved to another only by a reader who chooses one.
  *
  * One submit revises the draft and releases it as the ticket's update, written
  * against the revision the ticket read carries, and the navigation back to the
@@ -10,6 +10,7 @@
  * not offered the form, because the update it would send is refused.
  */
 
+import { useProjectAbilities } from "./projectAbilities.tsx";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
@@ -35,8 +36,12 @@ import {
 } from "../core/operationFollow.ts";
 import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { ticketRevisable } from "../core/ticketActions.ts";
-import { creationRepositories } from "../core/ticketCreation.ts";
+import {
+  creationRepositories,
+  creationStandingOf,
+} from "../core/ticketCreation.ts";
 import type {
+  AuthoringStanding,
   CreationFault,
   CreationOffer,
   TicketCreationForm,
@@ -90,6 +95,7 @@ function useEditSubmit(props: {
   readonly subject: EditSubject;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly standing: AuthoringStanding;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
 }): {
@@ -119,6 +125,7 @@ function useEditSubmit(props: {
       props.offers,
       form,
       props.repositories,
+      props.standing,
     );
     if (assembled.assembled === "Faults") {
       props.onFaults(assembled.faults);
@@ -151,11 +158,7 @@ function useEditSubmit(props: {
   return { attempt, submit };
 }
 
-/**
- * The form over one draft. What was typed is held from the first keystroke, so
- * a draft read again after a refusal re-seeds only a form nobody has touched.
- */
-export function EditForm(props: {
+interface EditFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly subject: EditSubject;
@@ -163,9 +166,17 @@ export function EditForm(props: {
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
   readonly partial?: boolean;
+  /** What the reader may send; absent, they may override and leave out part of the plan. */
+  readonly standing?: AuthoringStanding;
   readonly onUpdated: () => void;
   readonly onDirty?: (dirty: boolean) => void;
-}): ReactNode {
+}
+
+/**
+ * The form over one draft. What was typed is held from the first keystroke, so
+ * a draft read again after a refusal re-seeds only a form nobody has touched.
+ */
+export function EditForm(props: EditFormProps): ReactNode {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
@@ -175,7 +186,9 @@ export function EditForm(props: {
   const draft = props.subject.draft;
   const { offers, configuration } = props.edit;
   const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
+  const standing = props.standing ?? { mayOverride: true };
   const running = useEditSubmit({
+    standing,
     ports: props.ports,
     partition: props.partition,
     subject: props.subject,
@@ -200,8 +213,9 @@ export function EditForm(props: {
         onForm={setEdited}
         offers={offers}
         repositories={repositories}
-        dependenciesLocked
-        assemble={(held) => editRevisionFrom(draft, offers, held, repositories)}
+        assemble={(held) =>
+          editRevisionFrom(draft, offers, held, repositories, standing)
+        }
         storeKey={storeKey}
         submitLabel="revise and release"
         busy={running.attempt.attempt === "Running"}
@@ -217,7 +231,7 @@ export function EditForm(props: {
             offers={offers}
             partial={props.partial === true}
             repositories={repositories}
-            dependenciesLocked
+            standing={standing}
             api={props}
           />
         }
@@ -293,6 +307,7 @@ function EditOffered(props: {
   readonly onDirty: (dirty: boolean) => void;
 }): ReactNode {
   const { context, partition, subject } = props;
+  const standing = creationStandingOf(useProjectAbilities(partition));
   return (
     <EditOffersRead
       partition={partition}
@@ -307,6 +322,7 @@ function EditOffered(props: {
           edit={edit}
           bound={context.repositories}
           partial={context.partial}
+          standing={standing}
           onDirty={props.onDirty}
           onUpdated={props.onUpdated}
         />

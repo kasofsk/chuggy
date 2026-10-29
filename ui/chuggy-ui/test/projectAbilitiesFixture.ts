@@ -9,16 +9,22 @@ import type { ProjectAbilitiesResponse } from "../../../src/contract/responses.t
 import { answer } from "./screenHarness.tsx";
 
 export const abilitiesEvery: ProjectAbilitiesResponse = {
+  principal: "issuer reader",
   mutate: true,
   dispatch: true,
   manageSelector: true,
+  overrideTicketConfig: true,
+  skipPlannedEvaluations: true,
   administer: true,
 };
 
 export const abilitiesNone: ProjectAbilitiesResponse = {
+  principal: "issuer reader",
   mutate: false,
   dispatch: false,
   manageSelector: false,
+  overrideTicketConfig: false,
+  skipPlannedEvaluations: false,
   administer: false,
 };
 

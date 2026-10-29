@@ -65,6 +65,7 @@ import {
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
+import type { ProjectRepositoryListed } from "../../src/interpreter/repositoryOnboarding.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
 import {
   postgresHarnessConfiguration,
@@ -79,6 +80,10 @@ import {
   fixtureBindRepository,
   fixtureBoundRepository,
 } from "./repositoryBindingFixture.ts";
+
+/** UTC ISO 8601, the form the listing answers every instant in. */
+const configurationImportInstantForm =
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -420,14 +425,13 @@ function routeOver(bound: BoundCases) {
   );
 }
 
-test("the route keeps each way an import it was asked for came out, at the commit it named", async () => {
+test("the route keeps each way an import it was asked for came out, at its default branch's head", async () => {
   const bound = await bindCases("import-attempt-route", atCommit);
   const web = routeOver(bound);
   for (const [repository, each] of bound.answered) {
     if (each.head.read !== "Branch") throw new Error("the case names no head");
     await web.importRepositoryConfigurations(principal, bound.partition, {
       repository,
-      commit: each.head.commit,
     });
   }
   assert.deepEqual(await keptOf(bound), expectedOf(atCommit));
@@ -456,7 +460,7 @@ test("the route asked for no commit imports at the head it read, and keeps an at
 /** One project's listing as the API composes it, by repository. */
 async function listedOf(
   partition: Partition,
-): Promise<ReadonlyMap<string, { readonly lastImport?: unknown }>> {
+): Promise<ReadonlyMap<string, ProjectRepositoryListed>> {
   const listed = await composeRepositoryOnboarding({
     apiPool,
     access: fixtureMember,
@@ -484,6 +488,12 @@ test("the listing answers each binding's last attempt, and nothing of one never 
   );
   const byRepository = await listedOf(bound.partition);
   const lastImport = byRepository.get(attempted)?.lastImport;
+  const instants = [
+    byRepository.get(attempted)?.boundAt,
+    lastImport?.attemptedAt,
+  ];
+  for (const instant of instants)
+    assert.match(instant ?? "", configurationImportInstantForm);
   assert.deepEqual(lastImport && { ...lastImport, attemptedAt: "at" }, {
     attemptedAt: "at",
     commit: commitOf("1"),

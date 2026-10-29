@@ -202,22 +202,42 @@ function finalization(
   };
 }
 
+/** The update a simulation action submits over the graph it was taken at, or none for an action that is not one. */
+function simulatedUpdate(
+  action: string,
+  prior: TicketGraph,
+): TicketCommand | undefined {
+  const update = (ticket: number, dependencies: number[]): TicketCommand => ({
+    type: "UpdateTicket",
+    value: {
+      ticket,
+      expectedRevision: prior.tickets.get(ticket)?.revision ?? 1,
+      definition: released(ticket, dependencies, true),
+    },
+  });
+  switch (action) {
+    case "updateOne":
+      return update(1, []);
+    case "updateOneOnTwo":
+      return update(1, [2]);
+    case "updateTwoFree":
+      return update(2, []);
+    case "updateTwoOnOne":
+      return update(2, [1]);
+    default:
+      return undefined;
+  }
+}
+
 /** The command a simulation action submits over the graph it was taken at. */
 function simulated(action: string, prior: TicketGraph): TicketCommand {
+  const update = simulatedUpdate(action, prior);
+  if (update !== undefined) return update;
   switch (action) {
     case "createOne":
       return { type: "CreateTicket", value: released(1, []) };
     case "createTwo":
       return { type: "CreateTicket", value: released(2, [1]) };
-    case "updateOne":
-      return {
-        type: "UpdateTicket",
-        value: {
-          ticket: 1,
-          expectedRevision: prior.tickets.get(1)?.revision ?? 1,
-          definition: released(1, [], true),
-        },
-      };
     case "dispatchOne":
       return { type: "DispatchTicket", value: { ticket: 1, source: 1001 } };
     case "dispatchTwo":
@@ -443,6 +463,6 @@ for (const file of files) {
  */
 test("every step replays, and every step that names a command is decided", () => {
   assert.equal(tally.steps, tally.rebuilt + tally.evolveOnly.length);
-  assert.equal(tally.rebuilt, 299);
-  assert.equal(tally.evolveOnly.length, 20, tally.evolveOnly.join("\n"));
+  assert.equal(tally.rebuilt, 319);
+  assert.equal(tally.evolveOnly.length, 31, tally.evolveOnly.join("\n"));
 });
