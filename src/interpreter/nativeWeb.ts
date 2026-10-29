@@ -162,9 +162,10 @@ import {
 import {
   checkedLeadTranscriptQuery,
   leadNotNeeded,
+  leadAwaitingSelector,
   leadPaused,
-  leadPending,
   leadSelectorNotGranted,
+  leadSelectorUnnamed,
   leadTranscriptPage,
   sessionHeldWalk,
   sessionHeldWalkAsks,
@@ -1814,7 +1815,9 @@ type NativeLeadMethods = Pick<
  * the project, or one that may not read the project outranks the refusal it
  * keeps, since neither asks admission and a kept refusal may have stopped being
  * true. With neither and no refusal, a released ticket the selector has not yet
- * taken up is `Pending`, and only a project where none waits is `NotNeeded`.
+ * taken up is `AwaitingSelector`, or `SelectorUnnamed` where no selector is
+ * named whose reach could be read, and only a project where none waits is
+ * `NotNeeded`.
  */
 async function nativeLeadSessionAbsence(
   access: ProjectAccess,
@@ -1830,9 +1833,11 @@ async function nativeLeadSessionAbsence(
     return leadSelectorNotGranted;
   const refused = await ports.leads.leadRefusal(partition);
   if (refused !== undefined) return refused;
-  return (await nativeLeadDispatchWaits(ports.candidates, partition))
-    ? leadPending
-    : leadNotNeeded;
+  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
+    return leadNotNeeded;
+  return ports.selector === undefined
+    ? leadSelectorUnnamed
+    : leadAwaitingSelector;
 }
 
 /**

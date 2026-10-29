@@ -586,15 +586,17 @@ async function leadAbsenceOf(shape: LeadCase): Promise<unknown> {
  * A released ticket waiting on a dispatch decision in a project the selector
  * has kept no state for is not one that needs no lead: it waits on the
  * selector's next pass, or, where the site's selector may not read the project,
- * on a grant, since the selector sweeps only the projects it may read.
+ * on a grant, since the selector sweeps only the projects it may read. Where
+ * the API names no selector it cannot say whether any reaches the project, and
+ * says that rather than promising a pass.
  */
 test("a project with a released ticket and no selector state never answers NotNeeded", async () => {
   assert.deepEqual(await leadAbsenceOf({ waiting: true }), {
-    reason: "Pending",
+    reason: "SelectorUnnamed",
   });
   assert.deepEqual(
     await leadAbsenceOf({ waiting: true, selectorReads: true }),
-    { reason: "Pending" },
+    { reason: "AwaitingSelector" },
   );
   assert.deepEqual(
     await leadAbsenceOf({ waiting: true, selectorReads: false }),
@@ -603,6 +605,7 @@ test("a project with a released ticket and no selector state never answers NotNe
   assert.deepEqual(await leadAbsenceOf({ selectorReads: true }), {
     reason: "NotNeeded",
   });
+  assert.deepEqual(await leadAbsenceOf({}), { reason: "NotNeeded" });
 });
 
 /**

@@ -167,7 +167,10 @@ export const leadSelectorNotGranted: LeadAbsence = {
 };
 
 /** The absence of a project no refusal stands for and a released ticket waits in. */
-export const leadPending: LeadAbsence = { reason: "Pending" };
+export const leadAwaitingSelector: LeadAbsence = { reason: "AwaitingSelector" };
+
+/** The absence of a project a released ticket waits in where no selector is named to reach it. */
+export const leadSelectorUnnamed: LeadAbsence = { reason: "SelectorUnnamed" };
 
 /** How large the handoff note is, and as much of it as the lead read carries. */
 export interface HandoffNotePreview {

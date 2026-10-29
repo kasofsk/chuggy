@@ -542,8 +542,9 @@ async function leadAbsence(
 
 /**
  * A released ticket the dispatch view holds, in a project the selector has
- * written no state for, waits on the selector's next pass, or on a grant where
- * the site's selector may not read the project; it never needs no lead.
+ * written no state for, waits on the selector's next pass, on a grant where the
+ * site's selector may not read the project, or, where the API names no selector,
+ * on one being named; it never needs no lead.
  */
 test("a project with a released, undispatched ticket and no selector state never answers NotNeeded", async () => {
   const partition = await readableProject("http-released");
@@ -566,7 +567,7 @@ test("a project with a released, undispatched ticket and no selector state never
     0,
   );
   assert.deepEqual(await leadAbsence("http-released", partition), {
-    reason: "Pending",
+    reason: "SelectorUnnamed",
   });
   const selector = "http-released-selector";
   assert.deepEqual(await leadAbsence("http-released", partition, selector), {
@@ -578,7 +579,7 @@ test("a project with a released, undispatched ticket and no selector state never
     access: new Set(["Read"]),
   });
   assert.deepEqual(await leadAbsence("http-released", partition, selector), {
-    reason: "Pending",
+    reason: "AwaitingSelector",
   });
 });
 

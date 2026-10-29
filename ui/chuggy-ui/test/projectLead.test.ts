@@ -89,11 +89,18 @@ test("a project with no lead says why under the line, and since when where it wa
   ).toBe("Selector not granted this project");
   expect(
     projectLeadAbsenceLine(
-      ready({ lead: "None", absence: { reason: "Pending" } }),
+      ready({ lead: "None", absence: { reason: "AwaitingSelector" } }),
       sameDayMs,
       undefined,
     ),
   ).toBe("Opens at the selector's next pass");
+  expect(
+    projectLeadAbsenceLine(
+      ready({ lead: "None", absence: { reason: "SelectorUnnamed" } }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe("No selector named for this site");
   expect(
     projectLeadAbsenceLine(
       ready({
@@ -168,13 +175,14 @@ test("a refusal for no live runner is drawn only until the placement has said wh
  * reason, or none given, leaves it to a press. */
 test("a lead dispatches where one stands or will open, and not otherwise", () => {
   expect(projectLeadDispatches(ready(lead))).toBe(true);
-  for (const reason of ["NotNeeded", "Pending"] as const)
+  for (const reason of ["NotNeeded", "AwaitingSelector"] as const)
     expect(
       projectLeadDispatches(ready({ lead: "None", absence: { reason } })),
     ).toBe(true);
   for (const absence of [
     { reason: "Paused" },
     { reason: "SelectorNotGranted" },
+    { reason: "SelectorUnnamed" },
     { reason: "RunnerOffline", since: sinceIso },
     { reason: "HostedRunsNotGranted", since: sinceIso },
   ] as const)

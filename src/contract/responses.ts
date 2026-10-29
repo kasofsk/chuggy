@@ -1433,8 +1433,10 @@ export type LeadResponse = z.infer<typeof leadResponseSchema>;
  * project or the whole installation, then `SelectorNotGranted` while the site's
  * selector may not read the project, each ahead of any refusal it keeps, and
  * otherwise the admission refusal the last cycle that needed a lead met, which
- * has been the answer since `since`. Where none holds, `Pending` while a
- * released ticket waits on a dispatch decision and `NotNeeded` while none does.
+ * has been the answer since `since`. Where none holds and a released ticket
+ * waits on a dispatch decision, `AwaitingSelector`, or `SelectorUnnamed` where
+ * the API names no selector to say whether one reaches the project; `NotNeeded`
+ * where none waits.
  */
 export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.enum(leadAbsencesUntimed) }),

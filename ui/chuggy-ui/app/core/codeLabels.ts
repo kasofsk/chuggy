@@ -177,8 +177,10 @@ export function leadAbsenceLabel(
       return "Selector paused";
     case "SelectorNotGranted":
       return "Selector not granted this project";
-    case "Pending":
+    case "AwaitingSelector":
       return "Opens at the selector's next pass";
+    case "SelectorUnnamed":
+      return "No selector named for this site";
     case "HostedRunsNotGranted":
       return "Hosted runs not granted";
     case "RunnerOffline":
