@@ -4,10 +4,10 @@
  * the one word for why none can take the turn now.
  *
  * WHOSE RUNNER IS THE CALLER'S CHOICE. A member's thread runs only on their
- * chat host or their own personal runner, their inquiries only on their chat
- * host, and the lead on any of the project's pools, so the placement read
- * answers each standing and each surface passes the one its turns would wait
- * on.
+ * chat host or their own personal runner, their inquiries and their own chat
+ * only on their chat host, and the lead on any of the project's pools, so the
+ * placement read answers each standing and each surface passes the one its
+ * turns would wait on.
  */
 
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
@@ -50,20 +50,23 @@ export function sessionRefusedNoRunner(result: ApiResult<unknown>): boolean {
   return result.outcome === "Rejected" && result.code === noRunnerCode;
 }
 
-/** The session a notice speaks for: a member's thread, their inquiry, or the lead. */
-export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead";
+/** The session a notice speaks for: a member's thread in a project, their
+ * inquiry, the lead, or a thread of their own chat. */
+export type SessionRunnerSession = "Thread" | "Inquiry" | "Lead" | "Chat";
 
 /** Where a reader adds the runner a session's turn waits on. */
 export type SessionRunnerAdded = "MyRunner" | "Runners";
 
-/** A thread and an inquiry run only on their member's own machines, so one is
- * added on their own page; the lead runs on a project's pools. */
+/** A thread, an inquiry and a member's own chat run only on their member's own
+ * machines, so one is added on their own page; the lead runs on a project's
+ * pools. */
 export function sessionRunnerAdded(
   session: SessionRunnerSession,
 ): SessionRunnerAdded {
   switch (session) {
     case "Thread":
     case "Inquiry":
+    case "Chat":
       return "MyRunner";
     case "Lead":
       return "Runners";
@@ -80,12 +83,14 @@ export function sessionRunnerShortWord(short: SessionRunnerShort): string {
 }
 
 /** The word for why no runner can take one session's turn, said of the
- * machine it waits on: an inquiry waits on its member's chat host alone. */
+ * machine it waits on: an inquiry and a member's own chat wait on their
+ * member's chat host alone. */
 export function sessionRunnerNoticeWord(
   short: SessionRunnerShort,
   session: SessionRunnerSession,
 ): string {
-  if (session !== "Inquiry") return sessionRunnerShortWord(short);
+  if (session !== "Inquiry" && session !== "Chat")
+    return sessionRunnerShortWord(short);
   switch (short) {
     case "NoRunner":
       return "No chat host";

@@ -18,7 +18,8 @@
  * from the transcript instead from the moment the transcript holds it.
  *
  * AN IMAGE A MESSAGE NAMED IS DRAWN ON ITS TURN, from the project's own read
- * of it, whoever's thread it is.
+ * of it, whoever's thread it is. A member's own chat has no project to keep
+ * one, and so neither mentions nor images.
  *
  * A MESSAGE THE READER SENT IS DRAWN BEFORE THE MAILBOX LISTS IT, at the foot
  * of the column and under its turn's name, and from the read that lists that
@@ -89,6 +90,8 @@ import {
   sessionConversationItems,
   sessionConversationTurns,
 } from "../../core/sessionConversation.ts";
+import { threadHomeOf } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import {
   threadStoreDue,
   threadTakesMessages,
@@ -96,6 +99,7 @@ import {
   threadTurnsWait,
   threadWriting,
 } from "../../core/threads.ts";
+import type { ThreadDoor } from "../../core/threads.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import type { ProjectAbilities } from "../../core/projectAbilities.ts";
 import { Conversation } from "../conversation/Conversation.tsx";
@@ -107,9 +111,17 @@ import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { useThreadImage } from "./threadImage.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
-import { useThreadDoor, useThreadSend } from "./threadSend.tsx";
-import type { ThreadKeptAway } from "./threadSend.tsx";
-import type { ThreadSendHeld } from "./threadSend.tsx";
+import {
+  useMemberThreadDoor,
+  useMemberThreadSend,
+  useThreadDoor,
+  useThreadSend,
+} from "./threadSend.tsx";
+import type {
+  ThreadKeptAway,
+  ThreadSendHeld,
+  ThreadSendInput,
+} from "./threadSend.tsx";
 
 /** The turns named, as one set that is the same set while they are the same
  * turns. */
@@ -188,7 +200,7 @@ const threadJoinedNone: readonly string[] = [];
  * written in.
  */
 function useThreadExchanges(
-  partition: PartitionIdentity,
+  home: ThreadHome,
   thread: ThreadResponse,
   walked: LeadTranscriptWalk,
   stops: Pick<ThreadSendHeld, "stopping" | "takenBack">,
@@ -209,7 +221,7 @@ function useThreadExchanges(
   const reached =
     !walked.reading && leadTranscriptReached(held, leadStreamBatches(thread));
   const heard = useThreadLive({
-    partition,
+    home,
     session: thread.session,
     open: threadWriting(thread),
     turns,
@@ -263,39 +275,100 @@ function threadFoot(
     : { composer };
 }
 
-export function ThreadConversation(props: {
-  readonly partition: PartitionIdentity;
+/** What drawing one thread is given, wherever it is kept. */
+interface ThreadConversationProps {
   readonly thread: ThreadResponse;
   /** Whether the reader named this thread rather than arriving at it, which is
    * what puts the caret in the composer as it mounts. */
   readonly named?: boolean;
   /** What whoever mounts the thread keeps for it while it is not drawn. */
   readonly away?: ThreadKeptAway;
-}): ReactNode {
-  const thread = props.thread;
-  const walked = useLeadTranscript({
-    partition: props.partition,
-    session: thread.session,
-    stream: thread.agentReference,
-    highWaterBatch: leadStreamBatches(thread),
-  });
-  const sends = useThreadSend({
-    partition: props.partition,
+}
+
+/** What a thread's composer is made from, out of its own read. */
+function threadSendMade(
+  props: ThreadConversationProps,
+): Omit<ThreadSendInput, "partition"> {
+  const { thread } = props;
+  return {
     session: thread.session,
     takes: threadTakesMessages(thread),
     listed: thread.turns.map((turn) => turn.turn),
     ended: threadTurnsEnded(thread),
     away: props.away,
+  };
+}
+
+export function ThreadConversation(
+  props: ThreadConversationProps & { readonly partition: PartitionIdentity },
+): ReactNode {
+  const sends = useThreadSend({
+    ...threadSendMade(props),
+    partition: props.partition,
+  });
+  const mentions = useConversationMentions(props.partition);
+  const image = useThreadImage(props.partition);
+  const door = useThreadDoor(props.partition).door;
+  const abilities = useProjectAbilities(props.partition);
+  return (
+    <ThreadConversationAt
+      {...props}
+      home={threadHomeOf(props.partition)}
+      sends={sends}
+      door={door}
+      foot={(composer) => threadFoot(abilities, { ...composer, mentions })}
+      image={image}
+    />
+  );
+}
+
+/** One thread of the reader's own chat, which mentions nothing and carries no
+ * image, and is theirs to write to. */
+export function MemberThreadConversation(
+  props: ThreadConversationProps & {
+    readonly tenant: string;
+    readonly onSent: () => void;
+  },
+): ReactNode {
+  const sends = useMemberThreadSend({
+    ...threadSendMade(props),
+    tenant: props.tenant,
+    onSent: props.onSent,
+  });
+  const door = useMemberThreadDoor(props.tenant).door;
+  return (
+    <ThreadConversationAt
+      {...props}
+      home={{ scope: "Member", tenant: props.tenant }}
+      sends={sends}
+      door={door}
+      foot={(composer) => ({ composer })}
+    />
+  );
+}
+
+function ThreadConversationAt(
+  props: ThreadConversationProps & {
+    readonly home: ThreadHome;
+    readonly sends: ThreadSendHeld;
+    readonly door: ThreadDoor;
+    readonly foot: (
+      composer: ConversationComposerProps,
+    ) => Pick<ConversationProps, "composer" | "unsendable">;
+    readonly image?: (artifact: string) => ReactNode;
+  },
+): ReactNode {
+  const { thread, home, sends, door } = props;
+  const walked = useLeadTranscript({
+    of: { thread: thread.session, home },
+    stream: thread.agentReference,
+    highWaterBatch: leadStreamBatches(thread),
   });
   const sent = useMemo(
     () => sends.sending.map(conversationExchangeSent),
     [sends.sending],
   );
-  const mentions = useConversationMentions(props.partition);
-  const image = useThreadImage(props.partition);
-  const door = useThreadDoor(props.partition).door;
-  const abilities = useProjectAbilities(props.partition);
-  const drawn = useThreadExchanges(props.partition, thread, walked, sends);
+  const drawn = useThreadExchanges(home, thread, walked, sends);
   const [read, setRead] = useState(false);
   if (!walked.reading && !read) setRead(true);
   const exchanges = useThreadStood(
@@ -320,14 +393,13 @@ export function ThreadConversation(props: {
             : exchanges
         }
         {...(thread.mine
-          ? threadFoot(abilities, {
+          ? props.foot({
               ...sends.composer,
               focusOnMount: props.named === true,
-              mentions,
             })
           : {})}
         reading={walked.reading && !read}
-        image={image}
+        {...(props.image === undefined ? {} : { image: props.image })}
         paced
         pane
       />

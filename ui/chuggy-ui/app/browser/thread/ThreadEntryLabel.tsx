@@ -11,11 +11,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
-import { apiCloseThread, apiRenameThread } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
+import { apiCloseThreadAt, apiRenameThreadAt } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadActions } from "../../core/threads.ts";
 import { useApiPorts } from "../api.ts";
 
@@ -36,10 +36,12 @@ export interface ThreadEntryActions {
 }
 
 /** The rename and close state for one thread, called once and shared by the
- * title it swaps and the menu beside it. */
+ * title it swaps and the menu beside it. `changed` is told each change that
+ * lands, for a thread no frame names. */
 export function useThreadEntryActions(
-  partition: PartitionIdentity,
+  home: ThreadHome,
   thread: Pick<ThreadEntryResponse, "session" | "mine" | "state">,
+  changed: () => void = () => undefined,
 ): ThreadEntryActions {
   const ports = useApiPorts();
   const [renaming, setRenaming] = useState(false);
@@ -62,7 +64,7 @@ export function useThreadEntryActions(
     submitRename: (title: string) => {
       setBusy(true);
       setRefused(undefined);
-      void apiRenameThread(ports, partition, thread.session, title).then(
+      void apiRenameThreadAt(ports, home, thread.session, title).then(
         (result) => {
           setBusy(false);
           if (result.outcome !== "Ok") {
@@ -70,15 +72,17 @@ export function useThreadEntryActions(
             return;
           }
           setRenaming(false);
+          changed();
         },
       );
     },
     close: () => {
       setBusy(true);
       setRefused(undefined);
-      void apiCloseThread(ports, partition, thread.session).then((result) => {
+      void apiCloseThreadAt(ports, home, thread.session).then((result) => {
         setBusy(false);
         if (result.outcome !== "Ok") setRefused(panelReason(result));
+        else changed();
       });
     },
   };

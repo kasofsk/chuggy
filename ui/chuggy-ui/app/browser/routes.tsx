@@ -30,6 +30,7 @@ import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { lastProjectOrFirst, lastProjectRead } from "../core/lastProject.ts";
+import { memberChatRoutes } from "../core/memberChat.ts";
 import {
   projectCreationQueryOf,
   projectCreationRoutePath,
@@ -45,6 +46,7 @@ import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
 import { InvitePage } from "./InvitePage.tsx";
 import { LeadPage } from "./LeadPage.tsx";
+import { MemberChatPage } from "./MemberChatPage.tsx";
 import { persistentStore } from "./ports.ts";
 import {
   ProjectCreation,
@@ -198,6 +200,34 @@ const threadRoute = createRoute({
   component: ThreadRoute,
 });
 
+function MemberChatRoute(): ReactNode {
+  return (
+    <MemberChatPage
+      tenant={memberChatRoute.useParams().tenant}
+      session={undefined}
+    />
+  );
+}
+
+function MemberChatThreadRoute(): ReactNode {
+  const params = memberChatThreadRoute.useParams();
+  return <MemberChatPage tenant={params.tenant} session={params.session} />;
+}
+
+/** The reader's own chat at a tenant, outside every project as the
+ * workspace's settings are. */
+const memberChatRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: memberChatRoutes.chat,
+  component: MemberChatRoute,
+});
+
+const memberChatThreadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: memberChatRoutes.thread,
+  component: MemberChatThreadRoute,
+});
+
 /** One binding's own page. The repository is an address, which the router
  * encodes into the segment and decodes back out of it. */
 const repositoryRoute = createRoute({
@@ -284,6 +314,8 @@ const routeTree = rootRoute.addChildren([
   projectCreationRoute,
   inviteRoute,
   workspaceSettingsRoutes(rootRoute),
+  memberChatRoute,
+  memberChatThreadRoute,
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,

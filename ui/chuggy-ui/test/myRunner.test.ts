@@ -220,17 +220,20 @@ test("taking a member's runners off says whether there were any it could take", 
   ).toMatch(/^Refused · /u);
 });
 
-test("a thread's and an inquiry's missing runner is added on the member's own page, and the lead's on the project's", () => {
+test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's", () => {
   expect(sessionRunnerAdded("Thread")).toBe("MyRunner");
   expect(sessionRunnerAdded("Inquiry")).toBe("MyRunner");
+  expect(sessionRunnerAdded("Chat")).toBe("MyRunner");
   expect(sessionRunnerAdded("Lead")).toBe("Runners");
 });
 
-test("an inquiry's missing runner is named its member's chat host, and a thread's and the lead's a runner", () => {
-  expect(sessionRunnerNoticeWord("NoRunner", "Inquiry")).toBe("No chat host");
-  expect(sessionRunnerNoticeWord("RunnerOffline", "Inquiry")).toBe(
-    "Chat host offline",
-  );
+test("an inquiry's and a member's own chat's missing runner is named their chat host, and a thread's and the lead's a runner", () => {
+  for (const session of ["Inquiry", "Chat"] as const) {
+    expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No chat host");
+    expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(
+      "Chat host offline",
+    );
+  }
   for (const session of ["Thread", "Lead"] as const) {
     expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No runner");
     expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(

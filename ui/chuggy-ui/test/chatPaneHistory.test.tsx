@@ -30,6 +30,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { holderDouble, settled, turned } from "./screenHarness.tsx";
 import {
   threadEntry,
+  threadHome,
   threadMineSession,
   threadOtherSession,
   threadPartition,
@@ -224,7 +225,7 @@ async function renderedActions(
       <CopyProvider write={drawn.write ?? (() => Promise.resolve(true))}>
         <Routed>
           <ChatPaneThreadActions
-            partition={threadPartition}
+            home={threadHome}
             thread={threadEntry(thread)}
             viewOnly={drawn.viewOnly ?? false}
             at={drawn.at ?? "Pane"}

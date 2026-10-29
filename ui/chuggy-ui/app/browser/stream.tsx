@@ -258,24 +258,31 @@ function useStreamFallback(
   return exhausted;
 }
 
+/** The one transport and bearer a stream is opened through. */
+function useStreamPortsMade(
+  transport: StreamPorts["fetch"] | undefined,
+): StreamPorts {
+  const holder = useSessionHolder();
+  const fetch = transport ?? streamFetch;
+  return useMemo<StreamPorts>(
+    () => ({
+      fetch,
+      bearer: apiBearerOver(holder),
+      sleepMs,
+      nowMs,
+    }),
+    [fetch, holder],
+  );
+}
+
 /** The transport is a parameter so a suite can drive the provider with a double. */
 export function ProjectStreamProvider(props: {
   readonly partition: PartitionIdentity;
   readonly transport?: StreamPorts["fetch"];
   readonly children: ReactNode;
 }): ReactNode {
-  const holder = useSessionHolder();
   const folds = useMemo(() => new Set<ProjectListRegistration>(), []);
-  const transport = props.transport ?? streamFetch;
-  const ports = useMemo<StreamPorts>(
-    () => ({
-      fetch: transport,
-      bearer: apiBearerOver(holder),
-      sleepMs,
-      nowMs,
-    }),
-    [transport, holder],
-  );
+  const ports = useStreamPortsMade(props.transport);
   const status = useStreamConnection(props.partition, folds, ports);
   const fallbackExhausted = useStreamFallback(props.partition, status);
   const held = useMemo<ProjectStreamHeld>(
@@ -300,10 +307,32 @@ export function useProjectStreamStatus(): ProjectStreamStatus {
   return useProjectStreamHeld().status;
 }
 
+const StreamPortsContext = createContext<StreamPorts | undefined>(undefined);
+
+/** What a stream is opened through on a screen outside every project, which
+ * holds no project's stream to take them from. The transport is a parameter
+ * so a suite can drive the provider with a double. */
+export function StreamPortsProvider(props: {
+  readonly transport?: StreamPorts["fetch"];
+  readonly children: ReactNode;
+}): ReactNode {
+  const ports = useStreamPortsMade(props.transport);
+  return (
+    <StreamPortsContext.Provider value={ports}>
+      {props.children}
+    </StreamPortsContext.Provider>
+  );
+}
+
 /** What a stream beside the project's own is opened through, so every stream
  * this console holds reaches the network by one transport and one bearer. */
 export function useStreamPorts(): StreamPorts {
-  return useProjectStreamHeld().ports;
+  const project = useContext(ProjectStreamContext);
+  const outside = useContext(StreamPortsContext);
+  const ports = project?.ports ?? outside;
+  if (ports === undefined)
+    throw new Error("a stream was opened outside a provider of its ports");
+  return ports;
 }
 
 export function useProjectFallbackExhausted(): boolean {

@@ -16,7 +16,16 @@ import {
   apiAgenticRefusals,
   apiAskLead,
   apiBindProjectRepository,
+  apiChatAbilities,
+  apiChatThread,
+  apiChatThreads,
+  apiChatThreadTranscript,
+  apiCloseChatThread,
   apiForgeAuthorization,
+  apiOpenChatThread,
+  apiRenameChatThread,
+  apiSendChatThreadMessage,
+  apiStopChatThreadTurn,
   apiConfiguration,
   apiConfigureProjectRepository,
   apiDeregisterMemberRunner,
@@ -606,6 +615,45 @@ test("naming a thread posts one field to its own door", async () => {
     expect(request.init.method).toBe("POST");
     expect(request.init.headers["content-type"]).toBe(nativeHttpMediaType);
   }
+});
+
+/** A member's own chat answers at its tenant's chat segment the doors a
+ * project's thread answers under the partition, each by the same verb. */
+test("a member's own chat hangs from its tenant, door by door", async () => {
+  const held = recordingRequests(() => ({}));
+  const chatPath = `${nativeHttpBasePath}/tenants/acme/chat`;
+  await apiChatAbilities(held.ports, "acme");
+  await apiChatThreads(held.ports, "acme");
+  await apiOpenChatThread(held.ports, "acme", "thread-open-a");
+  await apiChatThread(held.ports, "acme", "thread/1");
+  await apiChatThreadTranscript(held.ports, "acme", "thread/1", {
+    stream: "stream-1",
+    after: 2,
+  });
+  await apiSendChatThreadMessage(held.ports, "acme", "thread/1", {
+    turn: "turn-1",
+    message: "hello",
+  });
+  await apiStopChatThreadTurn(held.ports, "acme", "thread/1", "turn-1");
+  await apiRenameChatThread(held.ports, "acme", "thread/1", "the footer");
+  await apiCloseChatThread(held.ports, "acme", "thread/1");
+  expect(
+    held.requests.map((request) => [request.init.method, request.url]),
+  ).toStrictEqual([
+    ["GET", `${chatPath}/abilities`],
+    ["GET", `${chatPath}/threads`],
+    ["POST", `${chatPath}/threads`],
+    ["GET", `${chatPath}/threads/thread%2F1`],
+    [
+      "GET",
+      `${chatPath}/threads/thread%2F1/transcript?stream=stream-1&after=2`,
+    ],
+    ["POST", `${chatPath}/threads/thread%2F1/messages`],
+    ["POST", `${chatPath}/threads/thread%2F1/turns/turn-1/stop`],
+    ["POST", `${chatPath}/threads/thread%2F1/rename`],
+    ["POST", `${chatPath}/threads/thread%2F1/close`],
+  ]);
+  expect(held.requests[2]?.init.body).toBe('{"key":"thread-open-a"}');
 });
 
 const boundRepository = "https://forge.test/kasofsk/scratch";

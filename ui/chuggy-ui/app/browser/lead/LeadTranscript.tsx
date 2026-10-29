@@ -21,10 +21,10 @@
  * and the compaction discipline is exactly the part that must not be re-derived.
  * What a caller chooses is the session; everything below is the same.
  *
- * THE SESSION IS A VALUE AND NOT A READER FUNCTION, so that what the walk's
- * effect depends on stays a string: a caller handing it a fresh closure each
- * render would re-run the walk every render, which is a read loop rather than a
- * live page.
+ * `OF` IS A VALUE AND NOT A READER FUNCTION, so that what the walk's effect
+ * depends on stays a string, `of` named as one: a caller handing it a fresh
+ * closure each render would re-run the walk every render, which is a read loop
+ * rather than a live page.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -34,10 +34,7 @@ import { sessionStorePageBatchesMax } from "../../../../../src/contract/http.ts"
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { LeadTranscriptResponse } from "../../../../../src/contract/responses.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
-import {
-  apiLeadTranscript,
-  apiThreadTranscript,
-} from "../../core/apiRoutes.ts";
+import { apiLeadTranscript } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
   leadTranscriptCursorsFrom,
@@ -52,15 +49,20 @@ import type {
   LeadTranscriptHeld,
   LeadTranscriptPane,
 } from "../../core/leadTranscript.ts";
+import { apiThreadTranscriptAt } from "../../core/threadHome.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import { useApiPorts } from "../api.ts";
 import { ConversationCard } from "../conversation/ConversationCard.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
+/** Whose store is walked: a project's own lead, or one member thread wherever
+ * it is kept. */
+export type LeadTranscriptOf =
+  | { readonly lead: PartitionIdentity }
+  | { readonly thread: string; readonly home: ThreadHome };
+
 export interface LeadTranscriptRead {
-  readonly partition: PartitionIdentity;
-  /** The member thread whose store is walked, and nothing for the project's
-   * own lead. */
-  readonly session?: string | undefined;
+  readonly of: LeadTranscriptOf;
   readonly stream: string | undefined;
   readonly highWaterBatch: number;
 }
@@ -90,11 +92,7 @@ function leadTranscriptSettledOn(
  * cursor the walk reaches has its answer already on the way. */
 function leadTranscriptReads(
   ports: ApiPorts,
-  at: {
-    readonly partition: PartitionIdentity;
-    readonly session: string | undefined;
-    readonly stream: string;
-  },
+  at: { readonly of: LeadTranscriptOf; readonly stream: string },
 ): {
   readonly asked: (after: number) => Promise<ApiResult<LeadTranscriptResponse>>;
   readonly taken: (after: number) => void;
@@ -113,10 +111,11 @@ function leadTranscriptReads(
         after,
         limit: sessionStorePageBatchesMax,
       };
+      const { of } = at;
       const asking =
-        at.session === undefined
-          ? apiLeadTranscript(ports, at.partition, page)
-          : apiThreadTranscript(ports, at.partition, at.session, page);
+        "lead" in of
+          ? apiLeadTranscript(ports, of.lead, page)
+          : apiThreadTranscriptAt(ports, of.home, of.thread, page);
       inFlight.set(after, asking);
       return asking;
     },
@@ -153,8 +152,8 @@ export function useLeadTranscript(
     held: leadTranscriptDrawn(leadTranscriptPaneEmpty),
     settled: undefined,
   });
-  const { session, stream, highWaterBatch } = read;
-  const { tenant, project } = read.partition;
+  const { stream, highWaterBatch } = read;
+  const of = JSON.stringify(read.of);
   useEffect(() => {
     let superseded = false;
     /** However the walk ended: a throw would leave the page reading forever. */
@@ -179,8 +178,7 @@ export function useLeadTranscript(
         stepped({ event: "StreamChange", stream });
       if (stream === undefined) return;
       const reads = leadTranscriptReads(ports, {
-        partition: { tenant, project },
-        session,
+        of: JSON.parse(of) as LeadTranscriptOf,
         stream,
       });
       for (let read = 0; read < highWaterBatch; read += 1) {
@@ -205,7 +203,7 @@ export function useLeadTranscript(
     return () => {
       superseded = true;
     };
-  }, [ports, tenant, project, session, stream, highWaterBatch]);
+  }, [ports, of, stream, highWaterBatch]);
   return { held: drawn.held, reading: !leadTranscriptSettledOn(drawn, stream) };
 }
 

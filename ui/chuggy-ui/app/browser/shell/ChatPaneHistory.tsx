@@ -1,6 +1,7 @@
 /**
  * Every thread the reader can reach, behind one control in the pane's header —
- * their own, then a divider, then everyone else's.
+ * their own, then a divider, then everyone else's; and in the reader's own
+ * chat, the threads projects keep of theirs, each a way to its project.
  *
  * This is the whole of what the Threads page used to be. The listing is a way
  * to choose which thread the pane holds rather than a screen of its own, and
@@ -15,11 +16,13 @@ import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
 import { agoText } from "../../core/figures.ts";
+import { memberChatRoutes } from "../../core/memberChat.ts";
+import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
+import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadLabel, threadsByStanding } from "../../core/threads.ts";
 import { threadStandingTone } from "../../core/tones.ts";
 import { useNowMs } from "../Freshness.tsx";
@@ -114,14 +117,79 @@ function ChatPaneHistoryRow(props: {
 
 const chatPaneHistoryLabel = "History";
 
+/** One of the reader's threads a project keeps, as a way to its own page there
+ * rather than a thread this history holds. */
+function ChatPaneHistoryElsewhere(props: {
+  readonly held: MemberChatProjectThread;
+}): ReactNode {
+  const { partition, thread } = props.held;
+  const label = `${partition.project} · ${threadLabel(thread)}`;
+  return (
+    <DropdownMenu.Item
+      className={`${menuItemClassName} chat-history-row text-ink-1 no-underline`}
+      asChild
+    >
+      <Link
+        to={navRoutes.thread}
+        params={{ ...partition, session: thread.session }}
+        aria-label={`${label}, ${thread.state}`}
+      >
+        <span className={`flex ${chatPaneStandingTones[thread.state]}`}>
+          <ChatPaneIcon
+            glyph={chatPaneStandingGlyphs[thread.state]}
+            label={thread.state}
+          />
+        </span>
+        <span className="max-w-[32ch] min-w-0 flex-1 truncate">{label}</span>
+      </Link>
+    </DropdownMenu.Item>
+  );
+}
+
+/** The threads projects keep of the reader's, under the history's own
+ * threads where it has any. */
+function ChatPaneHistoryElsewhereGroup(props: {
+  readonly elsewhere: readonly MemberChatProjectThread[];
+  readonly separated: boolean;
+}): ReactNode {
+  if (props.elsewhere.length === 0) return null;
+  return (
+    <>
+      {props.separated ? (
+        <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+      ) : null}
+      <DropdownMenu.Group>
+        <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
+          In projects
+        </DropdownMenu.Label>
+        {props.elsewhere.map((held) => (
+          <ChatPaneHistoryElsewhere
+            key={`${held.partition.project}/${held.thread.session}`}
+            held={held}
+          />
+        ))}
+      </DropdownMenu.Group>
+    </>
+  );
+}
+
 export function ChatPaneHistory(props: {
   readonly threads: readonly ThreadEntryResponse[];
   readonly session: string | undefined;
   readonly onChoose: (session: string) => void;
+  /** The reader's threads that projects keep, each read on its project's own
+   * page and offered here as the way there. */
+  readonly elsewhere?: readonly MemberChatProjectThread[];
 }): ReactNode {
   const rows = chatPaneHistoryRows(props.threads);
+  const elsewhere = props.elsewhere ?? [];
   const nowMs = useNowMs();
-  if (rows.mine.length === 0 && rows.others.length === 0) return null;
+  if (
+    rows.mine.length === 0 &&
+    rows.others.length === 0 &&
+    elsewhere.length === 0
+  )
+    return null;
   const drawn = (thread: ThreadEntryResponse): ReactNode => (
     <ChatPaneHistoryRow key={thread.session} thread={thread} nowMs={nowMs} />
   );
@@ -160,6 +228,10 @@ export function ChatPaneHistory(props: {
               </DropdownMenu.Group>
             )}
           </DropdownMenu.RadioGroup>
+          <ChatPaneHistoryElsewhereGroup
+            elsewhere={elsewhere}
+            separated={rows.mine.length > 0 || rows.others.length > 0}
+          />
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
@@ -249,18 +321,46 @@ function ChatPaneThreadItemFace(props: {
 /** The thread's own page, as a real anchor, so a modified press opens it in a
  * tab of its own. */
 function ChatPaneThreadOpenItem(props: {
-  readonly page: PartitionIdentity & { readonly session: string };
+  readonly home: ThreadHome;
+  readonly session: string;
 }): ReactNode {
+  const { home, session } = props;
+  const face = <ChatPaneThreadItemFace glyph="page" label="Open" />;
   return (
     <DropdownMenu.Item
       className={`${menuItemClassName} text-ink-1 no-underline`}
       asChild
     >
-      <Link to={navRoutes.thread} params={props.page}>
-        <ChatPaneThreadItemFace glyph="page" label="Open" />
-      </Link>
+      {home.scope === "Project" ? (
+        <Link to={navRoutes.thread} params={{ ...home.partition, session }}>
+          {face}
+        </Link>
+      ) : (
+        <Link
+          to={memberChatRoutes.thread}
+          params={{ tenant: home.tenant, session }}
+        >
+          {face}
+        </Link>
+      )}
     </DropdownMenu.Item>
   );
+}
+
+/** The address of the thread's own page, wherever the thread is kept. */
+function useThreadPageHref(home: ThreadHome, session: string): () => string {
+  const router = useRouter();
+  return () =>
+    (home.scope === "Project"
+      ? router.buildLocation({
+          to: navRoutes.thread,
+          params: { ...home.partition, session },
+        })
+      : router.buildLocation({
+          to: memberChatRoutes.thread,
+          params: { tenant: home.tenant, session },
+        })
+    ).href;
 }
 
 /**
@@ -269,16 +369,16 @@ function ChatPaneThreadOpenItem(props: {
  * copied; and Rename and Close where the reader may change the thread.
  */
 function ChatPaneThreadMenu(props: {
-  readonly partition: PartitionIdentity;
+  readonly home: ThreadHome;
   readonly session: string;
   readonly at: ChatPaneThreadActionsAt;
   readonly actions: ThreadEntryActions;
   readonly changes: boolean;
   readonly onConfirming: () => void;
 }): ReactNode {
-  const router = useRouter();
   const copy = useCopyPress();
-  const page = { ...props.partition, session: props.session };
+  const { home, session } = props;
+  const pageHref = useThreadPageHref(home, session);
   const renames = props.actions.renameable && props.changes;
   const closes = props.actions.closable && props.changes;
   return (
@@ -294,18 +394,14 @@ function ChatPaneThreadMenu(props: {
         <DropdownMenu.Portal>
           <MenuContent sideOffset={4} align="start">
             {props.at === "Pane" ? (
-              <ChatPaneThreadOpenItem page={page} />
+              <ChatPaneThreadOpenItem home={home} session={session} />
             ) : null}
             {copy === undefined ? null : (
               <DropdownMenu.Item
                 className={menuItemClassName}
                 onSelect={(event) => {
                   event.preventDefault();
-                  const located = router.buildLocation({
-                    to: navRoutes.thread,
-                    params: page,
-                  });
-                  copy.press(new URL(located.href, currentOrigin()).href);
+                  copy.press(new URL(pageHref(), currentOrigin()).href);
                 }}
               >
                 <ChatPaneThreadItemFace
@@ -345,13 +441,19 @@ function ChatPaneThreadMenu(props: {
  * what closing asks and what either was refused for go under the row.
  */
 export function ChatPaneThreadActions(props: {
-  readonly partition: PartitionIdentity;
+  readonly home: ThreadHome;
   readonly thread: ChatPaneThreadNamed;
   /** The reader may change no thread, so Rename and Close are not offered. */
   readonly viewOnly?: boolean;
   readonly at: ChatPaneThreadActionsAt;
+  /** Told each rename or close that lands, for a thread no frame names. */
+  readonly onChanged?: () => void;
 }): ReactNode {
-  const actions = useThreadEntryActions(props.partition, props.thread);
+  const actions = useThreadEntryActions(
+    props.home,
+    props.thread,
+    props.onChanged,
+  );
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -367,7 +469,7 @@ export function ChatPaneThreadActions(props: {
           <>
             <ChatPaneThreadTitle thread={props.thread} at={props.at} />
             <ChatPaneThreadMenu
-              partition={props.partition}
+              home={props.home}
               session={props.thread.session}
               at={props.at}
               actions={actions}
