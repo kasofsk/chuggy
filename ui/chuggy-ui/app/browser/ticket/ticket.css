@@ -20,6 +20,16 @@
     border-color: color-mix(in srgb, var(--tone-live) 30%, var(--edge));
   }
 
+  .ticket-status[data-tone="evaluation"] {
+    background: var(--wash-evaluation);
+    border-color: color-mix(in srgb, var(--tone-evaluation) 30%, var(--edge));
+  }
+
+  .ticket-status[data-tone="finalization"] {
+    background: var(--wash-finalization);
+    border-color: color-mix(in srgb, var(--tone-finalization) 30%, var(--edge));
+  }
+
   .ticket-status[data-tone="parked"] {
     background: var(--wash-parked);
     border-color: color-mix(in srgb, var(--tone-parked) 30%, var(--edge));

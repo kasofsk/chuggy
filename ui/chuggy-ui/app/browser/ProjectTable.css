@@ -262,6 +262,16 @@
     color: var(--tone-live);
   }
 
+  .ticket-list-state[data-tone="evaluation"] {
+    background: var(--wash-evaluation);
+    color: var(--tone-evaluation);
+  }
+
+  .ticket-list-state[data-tone="finalization"] {
+    background: var(--wash-finalization);
+    color: var(--tone-finalization);
+  }
+
   .ticket-list-state[data-tone="parked"] {
     background: var(--wash-parked);
     color: var(--tone-parked);

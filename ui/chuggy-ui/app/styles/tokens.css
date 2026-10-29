@@ -75,6 +75,16 @@
       var(--tone-live) var(--wash),
       var(--surface-1)
     );
+    --wash-evaluation: color-mix(
+      in srgb,
+      var(--tone-evaluation) var(--wash),
+      var(--surface-1)
+    );
+    --wash-finalization: color-mix(
+      in srgb,
+      var(--tone-finalization) var(--wash),
+      var(--surface-1)
+    );
     --wash-parked: color-mix(
       in srgb,
       var(--tone-parked) var(--wash),
