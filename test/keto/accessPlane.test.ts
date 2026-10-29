@@ -629,6 +629,7 @@ test("the site's administrator, holding no role in the tenant, is answered every
       roles: [],
       grantHostedRuns: true,
       grantPersonalRunners: false,
+      grantUnscopedChat: false,
       administerTenant: false,
       createAccount: true,
       manageAuthorities: true,
@@ -700,6 +701,7 @@ test("a tenant's administrator may grant both tenant roles and every project rol
     roles: ["Admin", "Member"],
     grantHostedRuns: false,
     grantPersonalRunners: true,
+    grantUnscopedChat: true,
     administerTenant: true,
     createAccount: false,
     manageAuthorities: true,
@@ -754,6 +756,43 @@ test("the tenant's administrator gives a member personal runners and takes them 
   );
   assert.equal(await listed(), false);
   assert.equal(await registers(), false);
+});
+
+test("unscoped chat is a member's until the tenant's administrator takes it, and given back is theirs again, the site's administrator is refused both and the member is absent", async () => {
+  const { tenant } = await tenantOf("unscoped-chat");
+  await plane.tenantRoleGranted(alice, tenant, "uma", "Member");
+  const uma = oidcPrincipal(ketoHarnessIssuer, "uma");
+  const listed = async () =>
+    (await plane.tenantPeople(alice, tenant))?.people.find(
+      (person) => person.subject === "uma",
+    )?.unscopedChat;
+  const opens = async () =>
+    (await access.authorizeTenant(uma, tenant, "OpenUnscopedChat")) !==
+    undefined;
+  assert.equal(await listed(), true);
+  assert.equal(await opens(), true);
+  assert.equal(
+    await plane.tenantUnscopedChatTaken(uma, tenant, "uma"),
+    "Absent",
+  );
+  await ketoHarnessWithSiteAdministrator(async (administrator) => {
+    assert.equal(
+      await plane.tenantUnscopedChatTaken(administrator, tenant, "uma"),
+      "Refused",
+    );
+  });
+  assert.equal(
+    await plane.tenantUnscopedChatTaken(alice, tenant, "uma"),
+    "Changed",
+  );
+  assert.equal(await listed(), false);
+  assert.equal(await opens(), false);
+  assert.equal(
+    await plane.tenantUnscopedChatGiven(alice, tenant, "uma"),
+    "Changed",
+  );
+  assert.equal(await listed(), true);
+  assert.equal(await opens(), true);
 });
 
 test("the site's administrator gives a member hosted runs and takes them back, the tenant's administrator is refused both and a stranger is absent", async () => {

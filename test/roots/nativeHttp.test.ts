@@ -65,7 +65,7 @@ function authenticationProgram(token: string): string {
         asked[named].push(statement.values);
         return { rows: [{
           tenant: 'tenant', project: 'project', session: 'session-' + named,
-          kind: 'Lead', principal,
+          kind: 'Lead', principal, scope: 'Project',
         }] };
       },
     });
@@ -1215,6 +1215,7 @@ test("a session bearer is answered by this deployment's own session authority", 
       viaSession: {
         session: "session-pool",
         partition: { tenant: "tenant", project: "project" },
+        scope: "Project",
       },
     },
   });

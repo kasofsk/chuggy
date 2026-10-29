@@ -638,8 +638,23 @@ export const sessionCapabilities = [
   "DraftOriginate",
   "TicketDispatch",
   "LeadDecision",
+  "MemberRead",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
+
+/** Whose a session is: a project's, or its member's own, opened with no project selected. */
+export const sessionScopes = ["Project", "Member"] as const;
+export type SessionScope = (typeof sessionScopes)[number];
+
+/** A project's operational availability, as a member's own chat lists it. */
+export const projectLifecycles = [
+  "Active",
+  "Suspended",
+  "IntegrityBlocked",
+  "Deleting",
+  "Retention",
+] as const;
+export type ProjectLifecycle = (typeof projectLifecycles)[number];
 
 /** Whether a session still takes turns, which is the whole of its lifecycle. */
 export const sessionStates = ["Open", "Closed"] as const;

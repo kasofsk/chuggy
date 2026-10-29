@@ -554,7 +554,10 @@ export function parseInventoryCursor(value: string): Partition {
   return partition;
 }
 
+/** A partition the wire names, which is never a member's own: a project identity beginning `@` is reserved for theirs. */
 export function parsePartition(tenant: string, project: string): Partition {
+  if (project.startsWith("@"))
+    throw new RangeError("project id: an identity beginning @ is reserved");
   return { tenant: asTenantId(tenant), project: asProjectId(project) };
 }
 

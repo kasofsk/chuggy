@@ -141,6 +141,7 @@ test("the defaults are answered as groups, every authority present in roster ord
     MemberGranters: ["TenantAdmins"],
     HostedRunsGranters: ["SiteAdmins"],
     PersonalRunnersGranters: ["TenantAdmins"],
+    UnscopedChatGranters: ["TenantAdmins"],
     AuthorityManagers: ["TenantAdmins"],
   });
   const projectList = await authorities.projectAuthorities(alice, web);
@@ -366,7 +367,7 @@ test("an authority is read as its own relation, so other tuples on the object fi
     );
   const answered = await accessMemoryAuthorities(memory, {
     ...accessPlaneBoundsDefault,
-    tuplesMax: 5,
+    tuplesMax: 6,
   }).tenantAuthorities(alice, tenant);
   assert.equal(answered?.truncated, false);
   assert.deepEqual(groupsOf(answered)["HostedRunsGranters"], ["SiteAdmins"]);

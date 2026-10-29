@@ -113,6 +113,11 @@ import type {
   ProjectRepositoryRetirementResult,
 } from "../../interpreter/repositoryOnboarding.ts";
 import type { Partition, TenantId } from "../../interpreter/projectStore.ts";
+import type { ChatAbilitiesResponse } from "../../contract/responses.ts";
+import type {
+  MemberChatProjectsRead,
+  MemberChatThreadsRead,
+} from "../../interpreter/memberChat.ts";
 import type {
   ProjectCreationField,
   ProjectCreationResult,
@@ -2472,6 +2477,87 @@ export function openThreadResponse(
     });
   return response(result.result === "Opened" ? 201 : 200, result.thread, {
     location: resourcePath(partition, "threads", result.thread.session),
+  });
+}
+
+/** What a member may do in their tenant, which every caller is answered, each question read live. */
+export function chatAbilitiesResponse(
+  abilities: ChatAbilitiesResponse,
+): NativeHttpResponse {
+  return response(200, abilities);
+}
+
+/** A member's own threads across their tenant, each naming the scope it is in. */
+export function chatThreadsResponse(
+  result: MemberChatThreadsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, { threads: result.threads });
+}
+
+/** The projects a member's own chat may see, and the project the next page is asked after. */
+export function chatProjectsResponse(
+  result: MemberChatProjectsRead,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        projects: result.projects,
+        ...(result.nextAfter === undefined
+          ? {}
+          : { nextAfter: result.nextAfter }),
+      });
+}
+
+/** What a member's own chat answers a caller with no chat host to run its turn. */
+function chatNoHostRefused(): NativeHttpResponse {
+  return response(
+    403,
+    nativeHttpError(
+      noRunnerCode,
+      "This caller has registered no chat host in the tenant.",
+    ),
+  );
+}
+
+/** A message to a member's own thread answers as one to a project's, refused for want of a chat host. */
+export function chatThreadMessageResponse(
+  result: ThreadMessageSent,
+): NativeHttpResponse {
+  return result.result === "NoRunner"
+    ? chatNoHostRefused()
+    : threadMessageResponse(result);
+}
+
+/**
+ * Opening one of a member's own threads answers as opening a project's does,
+ * located at their tenant's chat, and refused for want of a chat host rather
+ * than a runner on a project.
+ */
+export function openChatThreadResponse(
+  tenant: TenantId,
+  result: ThreadOpening,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "HostedRunsNotGranted") return hostedRunsRefused();
+  if (result.result === "NoRunner") return chatNoHostRefused();
+  if (result.result === "ThreadLimitReached")
+    return response(409, {
+      ...nativeHttpError(
+        threadLimitReachedCode,
+        "You hold as many open threads of your own as your limit allows.",
+      ),
+      threadsMax: result.threadsMax,
+    });
+  return response(result.result === "Opened" ? 201 : 200, result.thread, {
+    location: [
+      "/api/v1/tenants",
+      encodeURIComponent(tenant),
+      "chat/threads",
+      encodeURIComponent(result.thread.session),
+    ].join("/"),
   });
 }
 

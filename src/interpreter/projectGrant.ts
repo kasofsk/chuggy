@@ -62,6 +62,7 @@ export const allTenantGrantRelations = [
   "members",
   "hosted_execution",
   "personal_runners",
+  "unscoped_chat_revoked",
 ] as const;
 
 export type TenantGrantRelation = (typeof allTenantGrantRelations)[number];
@@ -89,6 +90,7 @@ export const allTenantAuthorityRelations = [
   "member_granters",
   "hosted_execution_granters",
   "personal_runners_granters",
+  "unscoped_chat_granters",
   "authority_managers",
 ] as const;
 
@@ -331,8 +333,8 @@ export function siteAuthorityDefaults(): readonly ProjectGrant[] {
 
 /**
  * The tuples one tenant starts with: its link to the site, its own
- * administrators granting its roles and personal runners and managing who may,
- * and the site's granting hosted runs.
+ * administrators granting its roles, personal runners and unscoped chat and
+ * managing who may, and the site's granting hosted runs.
  */
 export function tenantAuthorityDefaults(
   tenant: TenantId,
@@ -367,6 +369,7 @@ export function tenantAuthorityDefaults(
     held("admin_granters", administrators),
     held("member_granters", administrators),
     held("personal_runners_granters", administrators),
+    held("unscoped_chat_granters", administrators),
     held("authority_managers", administrators),
     held("hosted_execution_granters", siteAdministrators),
   ];

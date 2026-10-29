@@ -24,6 +24,7 @@ import type pg from "pg";
 import { sessionStoreStreamsAnswered } from "../../contract/http.ts";
 import {
   allSessionKinds,
+  allSessionScopes,
   allSessionTurnInputKinds,
   asSessionAttemptId,
   asSessionId,
@@ -87,13 +88,18 @@ function sessionSecretDigest(secret: SessionBearerSecret): string {
   return createHash("sha256").update(secret, "utf8").digest("hex");
 }
 
-/** One `authenticate_session_bearer` or `session_attempt_binding` row. */
+/** One `session_attempt_binding` row. */
 interface SessionIdentityRow {
   readonly tenant: string | null;
   readonly project: string | null;
   readonly session: string | null;
   readonly kind: string | null;
   readonly principal: string | null;
+}
+
+/** One `authenticate_session_bearer` row, which names its session's scope as well. */
+interface SessionBearerRow extends SessionIdentityRow {
+  readonly scope: string | null;
 }
 
 /** One `read_session_attempt` row, with the liveness the server computed. */
@@ -124,7 +130,9 @@ function sessionPartitionOf(row: SessionIdentityRow): Partition {
 }
 
 /** The roster columns a session identity carries, refused when the join lost one. */
-function sessionIdentityOf(row: SessionIdentityRow): SessionBearerIdentity {
+function sessionIdentityOf(
+  row: SessionIdentityRow,
+): Omit<SessionBearerIdentity, "scope"> {
   return {
     partition: sessionPartitionOf(row),
     session: asSessionId(sessionRowText(row.session, "session")),
@@ -223,7 +231,7 @@ async function sessionPlaneBinding(
   pool: pg.Pool,
   secret: SessionBearerSecret,
   generation: number,
-): Promise<SessionBearerIdentity | undefined> {
+): Promise<Omit<SessionBearerIdentity, "scope"> | undefined> {
   const found = await pool.query<SessionIdentityRow>(
     sql`SELECT tenant,project,session,kind,principal
           FROM session_attempt_binding(
@@ -464,12 +472,21 @@ export function postgresSessionBearerAuthority(
 ): SessionBearerAuthority {
   return {
     authenticate: async (secret) => {
-      const found = await pool.query<SessionIdentityRow>(
-        sql`SELECT tenant,project,session,kind,principal
+      const found = await pool.query<SessionBearerRow>(
+        sql`SELECT tenant,project,session,kind,principal,scope
               FROM authenticate_session_bearer(${sessionSecretDigest(secret)})`,
       );
       const row = found.rows[0];
-      return row === undefined ? undefined : sessionIdentityOf(row);
+      return row === undefined
+        ? undefined
+        : {
+            ...sessionIdentityOf(row),
+            scope: sessionRowMember(
+              allSessionScopes,
+              row.scope,
+              "session scope",
+            ),
+          };
     },
   };
 }

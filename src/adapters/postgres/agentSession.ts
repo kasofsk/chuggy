@@ -50,8 +50,8 @@ interface AgentSessionStoredRow {
   readonly agent_reference: string | null;
   readonly capabilities: string[];
   readonly credential_slot: string;
-  readonly account: string;
-  readonly cluster: string;
+  readonly account: string | null;
+  readonly cluster: string | null;
   readonly state: string;
 }
 

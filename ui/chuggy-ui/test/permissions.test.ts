@@ -45,6 +45,7 @@ test("every authority each level rosters has its own name", () => {
     "Grant Member",
     "Grant hosted runs",
     "Grant personal runners",
+    "Grant unscoped chat",
     "Change permissions",
   ]);
   expect(accessSiteAuthorities.map(sitePermissionName)).toStrictEqual([
@@ -144,6 +145,7 @@ const abilities: AccessTenantAbilities = {
   roles: [],
   grantHostedRuns: false,
   grantPersonalRunners: false,
+  grantUnscopedChat: false,
   administerTenant: false,
   createAccount: false,
   manageAuthorities: true,
@@ -157,15 +159,23 @@ test("a workspace's permissions, Grant personal runners among them, are changed 
     accessTenantAuthorities.map((authority) =>
       permissionChangeable("Tenant", authority, held),
     );
-  expect(changeable(abilities)).toStrictEqual([true, true, false, true, true]);
+  expect(changeable(abilities)).toStrictEqual([
+    true,
+    true,
+    false,
+    true,
+    true,
+    true,
+  ]);
   expect(
     changeable({
       ...abilities,
       manageAuthorities: false,
       manageSiteHeldAuthorities: true,
     }),
-  ).toStrictEqual([false, false, true, false, false]);
+  ).toStrictEqual([false, false, true, false, false, false]);
   expect(changeable(undefined)).toStrictEqual([
+    false,
     false,
     false,
     false,
@@ -229,6 +239,7 @@ test("only removing a holder of permission changes is asked first", () => {
     false,
     false,
     false,
+    false,
     true,
   ]);
 });
@@ -265,11 +276,13 @@ test("a workspace permission offers each group its record admits and it does not
     ["Site admins", "Workspace members", "Person"],
     ["Site admins", "Person"],
     ["Site admins", "Person"],
+    ["Site admins", "Person"],
     ["Person"],
   ]);
   expect(tenantChoicesWords(undefined)).toStrictEqual([
     ["Site admins"],
     ["Site admins", "Workspace members"],
+    ["Site admins"],
     ["Site admins"],
     ["Site admins"],
     [],
@@ -295,6 +308,7 @@ test("only Workspace members on Grant Member, and Person, carry a line", () => {
     "Grant Member: Person: From the People list",
     "Grant hosted runs: Person: From the People list",
     "Grant personal runners: Person: From the People list",
+    "Grant unscoped chat: Person: From the People list",
     "Change permissions: Person: From the People list",
   ]);
 });
@@ -359,6 +373,7 @@ const peopleListed: AccessTenantPeople = {
     tenantRoles: [],
     hostedRuns: false,
     personalRunners: false,
+    unscopedChat: true,
     projects: [],
   })),
   otherIssuers: 0,

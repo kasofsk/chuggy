@@ -60,6 +60,7 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/088-lead-reads-docs.ts";
 import { migration089 } from "../../src/adapters/postgres/schema/migrations/089-lead-reads-abilities.ts";
 import { migration090 } from "../../src/adapters/postgres/schema/migrations/090-chat-host.ts";
+import { migration094 } from "../../src/adapters/postgres/schema/migrations/094-unscoped-chat.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -3222,5 +3223,77 @@ test("090 names every attempt's holder kind from what it held, finished ones too
       );
 
     await poolHeldThrough090(subject);
+  });
+});
+
+test("094 names every session opened before it a project's, still keyed by its project, and a member's own thread then opens beside it drawing nothing", async () => {
+  await migrationDatabase("unscoped_chat", async (subject) => {
+    await installationBefore(subject, migration094.version);
+    await subject.query(`
+      ${tenantSeed("tenant-c94")}
+      INSERT INTO recovery_epoch(epoch) VALUES('epoch-c94');
+      INSERT INTO project(tenant,project,lifecycle)
+      VALUES('tenant-c94','project-c94','Active');
+      SELECT * FROM open_member_thread('tenant-c94','project-c94','principal-a',
+        'thread-c94','key-c94','slot-c94','objectives-c94')`);
+    assert.ok((await postgresMigrate(subject)).includes(migration094.version));
+
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT session,scope,project_ref,account IS NOT NULL AS drawn
+             FROM agent_session ORDER BY session`,
+        )
+      ).rows,
+      [
+        {
+          session: "thread-c94",
+          scope: "Project",
+          project_ref: "project-c94",
+          drawn: true,
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+            WHERE conname='agent_session_belongs_to_project'`,
+        )
+      ).rows,
+      [
+        {
+          definition:
+            "FOREIGN KEY (tenant, project_ref) REFERENCES project(tenant, project)",
+        },
+      ],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT opened FROM open_unscoped_thread('tenant-c94','principal-a',
+             'own-c94','key-c94','slot-c94','prompt-c94')`,
+        )
+      ).rows,
+      [{ opened: "Opened" }],
+    );
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT scope,project=member_scope_project(principal) AS reserved,
+                  project_ref,account,cluster
+             FROM agent_session WHERE session='own-c94'`,
+        )
+      ).rows,
+      [
+        {
+          scope: "Member",
+          reserved: true,
+          project_ref: null,
+          account: null,
+          cluster: null,
+        },
+      ],
+    );
   });
 });

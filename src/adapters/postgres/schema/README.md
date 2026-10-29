@@ -31,7 +31,8 @@ Owned by the control plane and `create_project` for insertion and by the
 ticket-service role for the ownership columns, which is why the runtime is
 granted UPDATE and not INSERT: provisioning is not a decision. Its composite key is
 `(tenant, project)` and it is the parent every other relation here points
-at. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
+at; a project identity never begins `@`, which names a member's own partition
+in the relations that hold one. Ownership is changed by `acquire`, `renew`, `release` and `fence`, each
 locking this row; the head is changed only by the decision transaction, in
 the same transaction as the entry it counts. Unfinished work is found by selecting
 active projects whose lease has expired by database time.
@@ -303,9 +304,24 @@ performs that close. The objectives and the roster are the two columns a later
 write may move — a project whose North Star changed must be able to tell the
 next session that opens, and a thread's roster is reconfigured by the
 provisioning identity rather than reopened — and everything that decides who the
-session acts as stays frozen. Unfinished work is found by selecting open
+session acts as stays frozen, its `scope` among it. A session is a project's or,
+where `scope` is `Member`, its principal's own: a thread kept in the partition
+`member_scope_project` names for them, which `project` refuses to hold since it
+begins `@`, so the project key is `project_ref`, the partition for a project's
+session and nothing for a member's, beside a key of the tenant's own. A
+member's session draws no account and no cluster, holds `MemberRead` and
+nothing else, which no project's session may hold, and is opened by
+`open_unscoped_thread` alone under the same per-member lock, limit and key as
+`open_member_thread`'s; `session_route` answers `Pool` for its partition and
+`enqueue_session_turn` refuses it any other route, so only its owner's chat host
+claims it. `read_member_threads` lists a member's own threads across the
+tenant, wherever each is kept, as the project listing pages its own: their open
+threads of their own partition first, which their limit bounds, then their
+other open threads, then the most recent of the rest, cut at the page's bound
+with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
-`sessions_awaiting_placement` answers.
+`sessions_awaiting_placement` answers for the cluster and the chat host's,
+personal runner's and pool's awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because

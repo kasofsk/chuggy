@@ -760,7 +760,11 @@ function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   settings: WorkerPoolPollSettings,
-  asked: { readonly wanted: number; readonly idleSecs?: number },
+  asked: {
+    readonly wanted: number;
+    readonly idleSecs?: number;
+    readonly contract?: string;
+  },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
   if (apiUrl === undefined) return Promise.resolve([]);
@@ -835,6 +839,7 @@ export async function workerPoolReconcile(
         settings.sessionsHeldMax - holding.sessions.length,
       ),
       ...(asked.idleSecs === undefined ? {} : { idleSecs: asked.idleSecs }),
+      ...(asked.contract === undefined ? {} : { contract: asked.contract }),
     }),
     stop,
   };

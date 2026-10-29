@@ -33,6 +33,7 @@ import {
   type PlacementRoute,
 } from "../../contract/rosters.ts";
 import {
+  allSessionScopes,
   allSessionStates,
   asSessionId,
   type SessionId,
@@ -45,6 +46,7 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
+  type TenantId,
 } from "../../interpreter/projectStore.ts";
 import {
   allThreadWakeReasons,
@@ -58,9 +60,9 @@ import type {
 } from "../../interpreter/threadWake.ts";
 import type {
   ThreadClosed,
+  MemberThreadRecord,
   ThreadHidden,
   ThreadMessageEnqueued,
-  ThreadOpenKey,
   ThreadOpened,
   ThreadRecord,
   ThreadRenamed,
@@ -293,6 +295,37 @@ async function threadListing(
   return found.rows.map((row) => threadRecordOf(row, row.state));
 }
 
+/** One `read_member_threads` row: a listing row, and where the thread is kept. */
+interface MemberThreadRow extends ThreadListingRow {
+  readonly project: string | null;
+  readonly scope: string | null;
+}
+
+/** One page of a member's own threads across the tenant, each named by where it is kept. */
+async function threadMemberListing(
+  pool: pg.Pool,
+  input: {
+    readonly tenant: TenantId;
+    readonly principal: Principal;
+    readonly limit: number;
+  },
+): Promise<readonly MemberThreadRecord[]> {
+  const found = await pool.query<MemberThreadRow>(
+    sql`SELECT project,scope,session,principal,state,agent_reference,
+               turns::text AS turns,first_message,member_title,
+               to_char(opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS opened_at,
+               to_char(last_activity_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS last_activity_at,
+               hidden_at::text AS hidden_at
+          FROM read_member_threads(
+                 ${input.tenant},${input.principal},${input.limit})`,
+  );
+  return found.rows.map((row) => ({
+    ...threadRecordOf(row, row.state),
+    project: asProjectId(sessionRowText(row.project, "thread project")),
+    scope: sessionRowMember(allSessionScopes, row.scope, "session scope"),
+  }));
+}
+
 /** The verdict `open_member_thread` answered: the session the key names, or the limit the member is at. */
 function threadOpening(row: {
   readonly opened: string | null;
@@ -317,30 +350,21 @@ function threadOpening(row: {
   };
 }
 
-async function threadOpen(
+/** The verdict row either open door answers. */
+interface ThreadOpeningRow {
+  readonly opened: string | null;
+  readonly session: string | null;
+  readonly threads_max: string | null;
+}
+
+/** What an open door answered, the thread read back in `partition` where the key names one. */
+async function threadOpenAnswered(
   pool: pg.Pool,
   streamsMax: number,
-  input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly session: SessionId;
-    readonly key: ThreadOpenKey;
-    readonly systemPrompt: string;
-    readonly credentialSlot: string;
-  },
+  partition: Partition,
+  rows: readonly ThreadOpeningRow[],
 ): Promise<ThreadOpened> {
-  const answered = await pool.query<{
-    opened: string | null;
-    session: string | null;
-    threads_max: string | null;
-  }>(
-    sql`SELECT opened,session,threads_max::text AS threads_max
-          FROM open_member_thread(
-            ${input.partition.tenant},${input.partition.project},
-            ${input.principal},${input.session},${input.key},
-            ${input.credentialSlot},${input.systemPrompt})`,
-  );
-  const row = answered.rows[0];
+  const row = rows[0];
   if (row === undefined)
     throw new Error("postgres thread: opening returned no verdict");
   const opening = threadOpening(row);
@@ -350,11 +374,41 @@ async function threadOpen(
     thread: await threadReadBack(
       pool,
       streamsMax,
-      input.partition,
+      partition,
       opening.session,
       "opened",
     ),
   };
+}
+
+async function threadOpen(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: Parameters<ThreadStore["open"]>[0],
+): Promise<ThreadOpened> {
+  const answered = await pool.query<ThreadOpeningRow>(
+    sql`SELECT opened,session,threads_max::text AS threads_max
+          FROM open_member_thread(
+            ${input.partition.tenant},${input.partition.project},
+            ${input.principal},${input.session},${input.key},
+            ${input.credentialSlot},${input.systemPrompt})`,
+  );
+  return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
+}
+
+/** Opens a member's own thread, the definer choosing its partition, roster and limit. */
+async function threadOpenUnscoped(
+  pool: pg.Pool,
+  streamsMax: number,
+  input: Parameters<ThreadStore["openUnscoped"]>[0],
+): Promise<ThreadOpened> {
+  const answered = await pool.query<ThreadOpeningRow>(
+    sql`SELECT opened,session,threads_max::text AS threads_max
+          FROM open_unscoped_thread(
+            ${input.partition.tenant},${input.principal},${input.session},
+            ${input.key},${input.credentialSlot},${input.systemPrompt})`,
+  );
+  return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
 }
 
 async function threadEnqueue(
@@ -525,6 +579,8 @@ export function postgresThreads(
     threads: (partition, reader, limit) =>
       threadListing(pool, partition, reader, limit),
     open: (input) => threadOpen(pool, bounds.streamsMax, input),
+    openUnscoped: (input) => threadOpenUnscoped(pool, bounds.streamsMax, input),
+    memberThreads: (input) => threadMemberListing(pool, input),
     standing: (input) =>
       threadStanding(
         pool,

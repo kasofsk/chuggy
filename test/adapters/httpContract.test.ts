@@ -103,6 +103,17 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/personal-runners/:subject",
   "/api/v1/tenants/:tenant/chat-host-registration-tokens",
   "/api/v1/tenants/:tenant/chat-host",
+  "/api/v1/tenants/:tenant/chat/abilities",
+  "/api/v1/tenants/:tenant/chat/projects",
+  "/api/v1/tenants/:tenant/chat/threads",
+  "/api/v1/tenants/:tenant/chat/threads/:session",
+  "/api/v1/tenants/:tenant/chat/threads/:session/transcript",
+  "/api/v1/tenants/:tenant/chat/threads/:session/messages",
+  "/api/v1/tenants/:tenant/chat/threads/:session/close",
+  "/api/v1/tenants/:tenant/chat/threads/:session/rename",
+  "/api/v1/tenants/:tenant/chat/threads/:session/hide",
+  "/api/v1/tenants/:tenant/chat/threads/:session/live",
+  "/api/v1/tenants/:tenant/chat/threads/:session/turns/:turn/stop",
   "/api/v1/tenants/:tenant/projects/:project/actions/:action/reports",
   "/api/v1/tenants/:tenant/projects/:project/drafts",
   "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
@@ -220,11 +231,19 @@ test("authoring DTOs reject duplicates, unknown fields, and noncanonical config"
   );
 });
 
-test("partition identities remain opaque strings", () => {
+test("partition identities remain opaque strings, but for the reserved one a member's own is", () => {
   assert.deepEqual(parsePartition("tenant/one", "project two"), {
     tenant: "tenant/one",
     project: "project two",
   });
+  assert.deepEqual(parsePartition("tenant", "project@one"), {
+    tenant: "tenant",
+    project: "project@one",
+  });
+  assert.throws(
+    () => parsePartition("tenant", "@member-one"),
+    /an identity beginning @ is reserved/u,
+  );
 });
 
 test("inventory cursors are opaque, canonical, and round trip", () => {

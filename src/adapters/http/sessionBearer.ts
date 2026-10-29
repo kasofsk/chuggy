@@ -75,6 +75,7 @@ export function twoBearerAuthentication(
           viaSession: {
             session: identity.session,
             partition: identity.partition,
+            scope: identity.scope,
           },
         },
       };

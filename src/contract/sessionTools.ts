@@ -213,6 +213,21 @@ export const chuggyToolTimeoutMs = 30_000;
 export const chuggyToolPagesMax = 1;
 
 /**
+ * What a member's own session reads of them and of nothing else: who they are
+ * in their tenant, the projects they may list, their own threads wherever each
+ * is kept, and their own machines. `read_docs` is held beside these, a tool
+ * that reaches no route and so names neither scope.
+ */
+const chuggyToolMemberReads = [
+  "read_my_abilities",
+  "list_projects",
+  "list_my_threads",
+  "read_my_thread",
+  "list_my_runners",
+  "read_chat_host",
+] as const;
+
+/**
  * Which capability admits which tool, written once and read both ways round. A
  * tool in no list would be a tool nothing gates, and a capability the roster
  * does not mention would be one nothing maps, so the keys are every capability
@@ -279,11 +294,13 @@ const chuggyToolRoster = {
     "set_handoff_note",
     "set_planning_intent",
   ],
+  MemberRead: [...chuggyToolMemberReads, "read_docs"],
 } as const satisfies Readonly<Record<SessionCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
- * session may see of the project, what it may author, and what it may decide.
+ * session may see of the project, what it may author, what it may decide, and
+ * what a member's own session reads of them, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -291,6 +308,7 @@ export const allChuggyTools = [
   ...chuggyToolRoster.DraftOriginate,
   ...chuggyToolRoster.TicketDispatch,
   ...chuggyToolRoster.LeadDecision,
+  ...chuggyToolMemberReads,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -329,6 +347,7 @@ export const builtInToolCapabilities: Readonly<
   DraftOriginate: [],
   TicketDispatch: [],
   LeadDecision: [],
+  MemberRead: [],
 };
 
 /**
@@ -376,4 +395,18 @@ export const chuggyToolRoutes = {
    * learning a permit from a refusal.
    */
   abilities: nativeHttpRoutes.abilities,
+  /**
+   * What a member's own session reads, each at its tenant and none at a
+   * project: `read_my_abilities` the tenant's questions, `list_projects` the
+   * projects its chat may see, `list_my_threads` its owner's threads wherever
+   * each is kept, a project's by its metadata alone, `read_my_thread` one of
+   * its owner's own, and `list_my_runners` and `read_chat_host` its owner's
+   * machines.
+   */
+  chatAbilities: nativeHttpRoutes.chatAbilities,
+  chatProjects: nativeHttpRoutes.chatProjects,
+  chatThreads: nativeHttpRoutes.chatThreads,
+  chatThread: nativeHttpRoutes.chatThread,
+  personalRunner: nativeHttpRoutes.personalRunner,
+  chatHost: nativeHttpRoutes.chatHost,
 } as const;

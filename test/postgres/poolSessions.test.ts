@@ -33,6 +33,8 @@ import {
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSessionPlacement } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresSessionBearerAuthority } from "../../src/adapters/postgres/sessionPlane.ts";
+import { postgresThreads } from "../../src/adapters/postgres/thread.ts";
 import { postgresWorkerTasks } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   postgresWorkerPoolAssignments,
@@ -55,6 +57,8 @@ import type {
 import {
   asSessionBearerSecret,
   asSessionId,
+  asSessionTurnId,
+  memberScopePartition,
   type SessionId,
   type SessionKind,
   type SessionTurnId,
@@ -91,6 +95,7 @@ import {
   type WorkerPoolClient,
   type WorkerPoolSessionEnd,
 } from "../../src/interpreter/workerPoolClient.ts";
+import { asThreadOpenKey } from "../../src/interpreter/threadRead.ts";
 import { sessionTaskInvocation } from "../../src/interpreter/workerTask.ts";
 import type {
   SessionLaunchFacts,
@@ -718,7 +723,7 @@ async function awaitingOf(
   pool: PoolPlaneIdentity,
 ): Promise<ReadonlySet<SessionId>> {
   return new Set(
-    (await store.awaiting(pool, launch.placementBackoffSecs, 4)).map(
+    (await store.awaiting(pool, launch.placementBackoffSecs, 4, true)).map(
       ({ session }) => session,
     ),
   );
@@ -782,7 +787,7 @@ async function candidatesRead(
   const read: WorkerPoolSessionCandidate[] = [];
   for (const reader of readers)
     read.push(
-      ...(await store.awaiting(reader, launch.placementBackoffSecs, 4)),
+      ...(await store.awaiting(reader, launch.placementBackoffSecs, 4, true)),
     );
   return (session) => {
     const found = read.find((waited) => waited.session === session);
@@ -926,8 +931,13 @@ function racing(between: () => Promise<void>): WorkerPoolPorts {
       ...ports.sessions,
       store: {
         ...store,
-        awaiting: async (identity, backoffSecs, max) => {
-          const found = await store.awaiting(identity, backoffSecs, max);
+        awaiting: async (identity, backoffSecs, max, memberScope) => {
+          const found = await store.awaiting(
+            identity,
+            backoffSecs,
+            max,
+            memberScope,
+          );
           await between();
           return found;
         },
@@ -1976,4 +1986,156 @@ test("an attempt a pool claimed under an epoch since restored away is no longer 
     false,
   );
   assert.deepEqual(await workerPoolHeldImages(ports, pool, settings), []);
+});
+
+const memberThreads = postgresThreads(apiPool, { streamsMax: 4 });
+
+/** One of `member`'s own threads in the tenant of `partition`, opened as the API opens one, with one message queued for runners. */
+async function ownWaiting(
+  partition: Partition,
+  member: Principal,
+  label: string,
+): Promise<{ readonly partition: Partition; readonly session: SessionId }> {
+  const own = memberScopePartition(partition.tenant, member);
+  const opened = await memberThreads.openUnscoped({
+    partition: own,
+    principal: member,
+    session: asSessionId(`thread-${label}-${randomUUID()}`),
+    key: asThreadOpenKey(randomUUID()),
+    systemPrompt: "you are a member's own thread",
+    credentialSlot: "claude-code",
+  });
+  if (opened.opened === "ThreadLimitReached")
+    throw new Error("pool session suite: a member's own thread was refused");
+  const queued = await memberThreads.enqueueMessage({
+    partition: own,
+    principal: member,
+    session: opened.thread.session,
+    turn: asSessionTurnId(`turn-${label}-${randomUUID()}`),
+    input: "which projects may I see?",
+    route: "Pool",
+  });
+  assert.equal(queued.enqueued, "Enqueued");
+  return { partition: own, session: opened.thread.session };
+}
+
+/** One poll of `caller` offering `contract`, with room for four sessions. */
+async function polledOffering(
+  caller: PoolPlaneIdentity,
+  contract: string,
+  through: WorkerPoolPorts = ports,
+): Promise<readonly WorkerPoolSessionAssignment[]> {
+  const answered = await workerPoolPoll(
+    through,
+    caller,
+    { held: [], wanted: 0, wantedSessions: 4, contract },
+    settings,
+  );
+  if (answered.polled !== "Answered")
+    throw new Error(`pool session suite: a poll answered ${answered.polled}`);
+  return answered.answer.sessions;
+}
+
+test("a member's own thread is handed to their chat host alone, on a contract that runs one, with no repository, and its bearer answers its member's scope", async () => {
+  const { partition, member, pool } = await routedProject("host-own");
+  const runs = await personal(partition, member);
+  const host = await chatHost(partition, member);
+  const another = await chatHost(partition, principal("host-own-other"));
+  const own = await ownWaiting(partition, member, "host-own");
+
+  assert.deepEqual(await polledOffering(host, "1.28.0"), []);
+  assert.deepEqual(await polledOffering(another, workerContractRelease), []);
+  assert.deepEqual(await polledOffering(runs, workerContractRelease), []);
+  assert.deepEqual(await polledOffering(pool, workerContractRelease), []);
+  const [claimed, ...more] = await polledOffering(host, workerContractRelease);
+  assert.deepEqual(more, []);
+  assert.ok(claimed !== undefined);
+  assert.equal(await sessionOf(claimed), own.session);
+  const [opened] = await rig.harness.query(
+    `SELECT holder_kind,invocation FROM session_attempt WHERE assignment=$1`,
+    [claimed.assignment],
+  );
+  assert.equal(opened?.["holder_kind"], "ChatHost");
+  assert.equal(documentOf(opened?.["invocation"])["repository"], undefined);
+  assert.deepEqual(documentOf(opened?.["invocation"])["capabilities"], [
+    "MemberRead",
+  ]);
+  assert.deepEqual(
+    await postgresSessionBearerAuthority(apiPool).authenticate(
+      asSessionBearerSecret(claimed.bearer),
+    ),
+    {
+      partition: own.partition,
+      session: own.session,
+      kind: "Thread",
+      principal: member,
+      scope: "Member",
+    },
+  );
+});
+
+test("a chat host is handed no member's own thread once its owner may no longer open unscoped chat, asking the tenant rather than any project", async () => {
+  const { partition, member } = await routedProject("host-own-revoked");
+  const host = await chatHost(partition, member);
+  const own = await ownWaiting(partition, member, "host-own-revoked");
+  const asked: string[] = [];
+  const refusing: WorkerPoolPorts = {
+    ...ports,
+    access: {
+      ...readingEverything,
+      authorize: (caller, at, kind) => {
+        asked.push(`${at.project}:${kind}`);
+        return Promise.resolve(memberAuthority(caller));
+      },
+      authorizeTenant: (caller, tenant, kind) => {
+        asked.push(`${tenant}:${kind}`);
+        return Promise.resolve(
+          kind === "OpenUnscopedChat" ? undefined : memberAuthority(caller),
+        );
+      },
+    },
+  };
+  assert.deepEqual(
+    await polledOffering(host, workerContractRelease, refusing),
+    [],
+  );
+  assert.deepEqual(asked, [`${partition.tenant}:OpenUnscopedChat`]);
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT assignment FROM session_attempt WHERE session=$1`,
+      [own.session],
+    ),
+    [],
+  );
+});
+
+test("a chat host's awaiting read naming no scope, as an earlier pool plane makes it, is answered its member's project sessions and none of their own", async () => {
+  const { partition, member } = await routedProject("host-unnamed");
+  const host = await chatHost(partition, member);
+  const thread = await waiting(
+    partition,
+    "host-unnamed-thread",
+    "Thread",
+    member,
+  );
+  const own = await ownWaiting(partition, member, "host-unnamed");
+  const read = async (scoped: readonly boolean[]) =>
+    new Set(
+      (
+        await poolPlanePool.query<{ session: string }>(
+          `SELECT session FROM chat_host_sessions_awaiting_claim(
+             $1,$2,$3,$4,$5${scoped.length === 0 ? "" : ",$6"})`,
+          [
+            host.tenant,
+            host.owner,
+            host.principal,
+            launch.placementBackoffSecs,
+            4,
+            ...scoped,
+          ],
+        )
+      ).rows.map(({ session }) => session),
+    );
+  assert.deepEqual(await read([]), new Set([thread.session]));
+  assert.deepEqual(await read([true]), new Set([thread.session, own.session]));
 });

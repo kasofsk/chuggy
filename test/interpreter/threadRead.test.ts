@@ -187,6 +187,11 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
       return Promise.resolve(doubles.threads);
     },
     open: openDouble(doubles),
+    openUnscoped: openDouble(doubles),
+    memberThreads: ({ principal, limit }) => {
+      doubles.calls.push(`memberThreads:${principal}:${String(limit)}`);
+      return Promise.resolve([]);
+    },
     standing: ({ session, query }) => {
       doubles.calls.push(
         `standing:${session}:${String(query.before)}:${String(query.limit)}`,

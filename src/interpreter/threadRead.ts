@@ -67,6 +67,7 @@ import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
   SessionId,
+  SessionScope,
   SessionState,
   SessionTurnFailure,
   SessionTurnId,
@@ -80,7 +81,7 @@ import {
 } from "./finalizerPreparation.ts";
 import type { Authority } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
-import type { Partition } from "./projectStore.ts";
+import type { Partition, ProjectId, TenantId } from "./projectStore.ts";
 import { projectArtifactFetched } from "./projectArtifact.ts";
 import type { PublicInstant } from "./publicResource.ts";
 import type { SessionStoreStreamRow } from "./sessionPlane.ts";
@@ -119,6 +120,15 @@ export interface ThreadRecord {
   readonly lastActivityAt: PublicInstant;
   /** Off its owner's rail. Nothing is deleted, so it is still listed and still readable. */
   readonly hidden: boolean;
+}
+
+/**
+ * One of a member's own threads wherever it is kept: a project's, named by its
+ * project, or their own, named by their reserved partition.
+ */
+export interface MemberThreadRecord extends ThreadRecord {
+  readonly project: ProjectId;
+  readonly scope: SessionScope;
 }
 
 /**
@@ -278,6 +288,25 @@ export interface ThreadStore {
     readonly systemPrompt: string;
     readonly credentialSlot: string;
   }): Promise<ThreadOpened>;
+  /**
+   * Opens one of the principal's own threads in their reserved partition,
+   * which draws no capacity and holds `MemberRead` alone; `partition` is that
+   * partition, the opened thread being read back there.
+   */
+  openUnscoped(input: {
+    readonly partition: Partition;
+    readonly principal: Principal;
+    readonly session: SessionId;
+    readonly key: ThreadOpenKey;
+    readonly systemPrompt: string;
+    readonly credentialSlot: string;
+  }): Promise<ThreadOpened>;
+  /** One page of the principal's own threads across the tenant, open ones and the latest first. */
+  memberThreads(input: {
+    readonly tenant: TenantId;
+    readonly principal: Principal;
+    readonly limit: number;
+  }): Promise<readonly MemberThreadRecord[]>;
   /** One thread's standing, or nothing where the session is not this project's own thread. */
   standing(input: {
     readonly partition: Partition;

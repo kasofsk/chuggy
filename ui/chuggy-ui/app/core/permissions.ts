@@ -135,6 +135,8 @@ export function tenantPermissionName(authority: AccessTenantAuthority): string {
       return "Grant hosted runs";
     case "PersonalRunnersGranters":
       return "Grant personal runners";
+    case "UnscopedChatGranters":
+      return "Grant unscoped chat";
     case "AuthorityManagers":
       return "Change permissions";
   }

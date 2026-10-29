@@ -112,6 +112,7 @@ export const accessTenantAuthorityRelations: Readonly<
   MemberGranters: "member_granters",
   HostedRunsGranters: "hosted_execution_granters",
   PersonalRunnersGranters: "personal_runners_granters",
+  UnscopedChatGranters: "unscoped_chat_granters",
   AuthorityManagers: "authority_managers",
 };
 

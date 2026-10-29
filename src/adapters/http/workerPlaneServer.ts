@@ -125,6 +125,7 @@ import {
   workerContractProjectReads,
   workerContractRunnerSessions,
   workerContractTicketDispatch,
+  workerContractUnscopedChat,
   type WorkerArtifactReservationPort,
   type WorkerArtifactStored,
   type WorkerArtifactUploadPort,
@@ -1210,19 +1211,21 @@ function sessionSettled(
 
 /**
  * The capabilities a session's facts name to the pod asking: all of them, or
- * all but `TicketDispatch` to a pod whose release predates it, which holds no
- * tool it admits.
+ * none of `TicketDispatch` and `MemberRead` to a pod whose release predates
+ * the one, which holds no tool it admits.
  */
 function sessionFactsCapabilities(
   request: FastifyRequest,
   capabilities: readonly SessionCapability[],
 ): readonly SessionCapability[] {
-  return contractVersionAccepted(
-    workerContractTicketDispatch,
-    workerContractOffered(request),
-  )
-    ? capabilities
-    : capabilities.filter((capability) => capability !== "TicketDispatch");
+  const offered = workerContractOffered(request);
+  return capabilities.filter(
+    (capability) =>
+      (capability !== "TicketDispatch" ||
+        contractVersionAccepted(workerContractTicketDispatch, offered)) &&
+      (capability !== "MemberRead" ||
+        contractVersionAccepted(workerContractUnscopedChat, offered)),
+  );
 }
 
 function sessionFactsRoute(register: SessionRegistrar): void {

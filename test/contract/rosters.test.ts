@@ -78,6 +78,8 @@ import {
   sessionTurnStates,
   sessionKinds,
   sessionCapabilities,
+  sessionScopes,
+  projectLifecycles,
   agentReportedTurnFailures,
   runEndedEvidences,
   runStepEvidences,
@@ -143,12 +145,14 @@ import {
 } from "../../src/interpreter/refusal.ts";
 import { allAgenticRefusalEvents } from "../../src/interpreter/agenticRefusal.ts";
 import { allThreadStandings } from "../../src/interpreter/thread.ts";
+import { allLifecycles } from "../../src/interpreter/projectStore.ts";
 import { allWorkerPoolOwnerFallbacks } from "../../src/interpreter/projectOwnerFallback.ts";
 import {
   allAgentReportedTurnFailures,
   allPlatformTurnFailures,
   allSessionCapabilities,
   allSessionKinds,
+  allSessionScopes,
   allSessionStates,
   allSessionTurnFailures,
   allSessionTurnInputKinds,
@@ -755,6 +759,8 @@ test("every session and refusal roster restates the interpreter's own", () => {
   assert.deepEqual(agenticRefusalEvents, allAgenticRefusalEvents);
   assert.deepEqual(sessionKinds, allSessionKinds);
   assert.deepEqual(sessionCapabilities, allSessionCapabilities);
+  assert.deepEqual(sessionScopes, allSessionScopes);
+  assert.deepEqual(projectLifecycles, allLifecycles);
   assert.deepEqual(agentReportedTurnFailures, allAgentReportedTurnFailures);
   assert.deepEqual(sessionStates, allSessionStates);
   assert.deepEqual(sessionTurnInputKinds, allSessionTurnInputKinds);
