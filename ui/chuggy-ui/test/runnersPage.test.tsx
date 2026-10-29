@@ -80,6 +80,7 @@ const pools = {
       pool: "shame",
       capabilities: ["Platform:Linux:Amd64"],
       registeredAt: "2026-09-29T00:00:00Z",
+      live: false,
     },
   ],
 };

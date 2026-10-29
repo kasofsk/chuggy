@@ -52,6 +52,7 @@ import type {
 } from "../../src/interpreter/workerPool.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
+import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import {
   postgresHarnessConfiguration,
   postgresHarnessNewEpoch,
@@ -724,7 +725,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
       [
         "worker_pool",
         "UPDATE",
-        "capabilities,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
       ],
     ].map(([table_name, privilege_type, columns]) => ({
       table_name,
@@ -809,6 +810,45 @@ test("a pool's poll keeps the runner it named under its current registration, wr
     ),
     [false],
   );
+});
+
+test("a pool is listed live only while its newest poll of either kind is inside the window, and only its current registration's poll for executions stamps it", async () => {
+  const project = await poolProject("pool-polled");
+  const { partition } = project;
+  const pool = "pool-polled";
+  const stale = await registered(partition, pool, [platform]);
+  const current = await poolRegisteredAgain(project, pool);
+  const directory = postgresWorkerPoolDirectory(apiPool);
+  const listed = async () => {
+    const [only] = (await directory.listed(partition)).pools;
+    return { polled: only?.polledAt !== undefined, live: only?.live };
+  };
+  const stamp = (column: string, secsAgo: number) =>
+    rig.harness.query(
+      `UPDATE worker_pool
+          SET ${column}=now()-make_interval(secs=>$4::double precision)
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool, secsAgo],
+    );
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(stale);
+  assert.deepEqual(await listed(), { polled: false, live: false });
+  await assignments.polled(current);
+  assert.deepEqual(await listed(), { polled: true, live: true });
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT last_polled_at IS NULL AS sessions FROM worker_pool
+        WHERE tenant=$1 AND project=$2 AND pool=$3`,
+      [partition.tenant, partition.project, pool],
+    ),
+    [{ sessions: true }],
+  );
+  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
+  assert.deepEqual(await listed(), { polled: true, live: false });
+  await stamp("last_polled_at", 1);
+  assert.deepEqual(await listed(), { polled: true, live: true });
+  await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
+  assert.deepEqual(await listed(), { polled: true, live: false });
 });
 
 test("a pool's row keeps a runner only whole, and only in the header's grammar", async () => {

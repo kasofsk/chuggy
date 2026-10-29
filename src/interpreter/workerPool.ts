@@ -111,6 +111,7 @@ import type {
   ChatHostIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
+  WorkerPoolExecutionPoller,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -119,6 +120,7 @@ export type {
   DedicatedPoolIdentity,
   PersonalRunnerIdentity,
   PoolPlaneIdentity,
+  WorkerPoolExecutionPoller,
   WorkerPoolIdentity,
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
@@ -203,11 +205,13 @@ export interface WorkerPoolRosterPage {
   readonly truncated: boolean;
 }
 
-/** One registered pool as a project's members read it, with the runner its newest poll named where it named one. */
+/** One registered pool as a project's members read it: its newest poll where it has polled, whether that poll is recent enough for it to be taking work, and the runner it named where it named one. */
 export interface WorkerPoolListed {
   readonly pool: string;
   readonly capabilities: readonly string[];
   readonly registeredAt: string;
+  readonly polledAt?: string;
+  readonly live: boolean;
   readonly runner?: WorkerRunnerListed;
 }
 
@@ -428,8 +432,8 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a personal runner's poll as one that could take an execution, under its current registration alone. */
-  polled(identity: PersonalRunnerIdentity): Promise<void>;
+  /** Records a pool's or a personal runner's poll as one that could take an execution, under its current registration alone. */
+  polled(identity: WorkerPoolExecutionPoller): Promise<void>;
 }
 
 export interface WorkerPoolPollSettings {
@@ -871,10 +875,11 @@ async function workerPoolHoldingRead(
  * memory ceiling it takes jobs under where it named them, and the poll as the
  * caller's last of each kind of work it could take: a session, with room for
  * one or holding one from a plane that names the API a session reaches, and,
- * for a personal runner, an execution, with room for one, holding one, or
- * naming a memory room above nothing, which a runner holding back from
+ * for a pool or a personal runner, an execution, with room for one, holding
+ * one, or naming a memory room above nothing, which a runner holding back from
  * claiming names while it would take what fits and a runner taking nothing
- * names as 0. That is what a pool's claim reads a personal runner as live by.
+ * names as 0. That is what a pool's claim reads a personal runner as live by,
+ * and what a project's pools are read as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -895,7 +900,7 @@ async function workerPoolPollRecorded(
   )
     await ports.sessions.store.polled(identity);
   if (
-    identity.kind === "Personal" &&
+    identity.kind !== "ChatHost" &&
     (asked.wanted > 0 ||
       holding.jobs.length > 0 ||
       (asked.memoryRoomMib ?? 0) > 0)
