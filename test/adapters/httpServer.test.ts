@@ -551,12 +551,15 @@ function fakeWorkerPools(calls: string[]): WorkerPoolRegistrationService {
                     pool: "shame",
                     capabilities: ["Platform:Linux:Amd64"],
                     registeredAt: "2026-09-30T12:00:00.000Z",
+                    polledAt: "2026-09-30T12:01:00.000Z",
+                    live: true,
                     runner: shameRunner,
                   },
                   {
                     pool: "spare",
                     capabilities: [],
                     registeredAt: "2026-09-30T12:00:00.000Z",
+                    live: false,
                   },
                 ],
                 truncated: false,
@@ -2189,7 +2192,7 @@ test("a placement is written whole, and a hosted route the tenant has not grante
   );
 });
 
-test("a project's registered pools are listed to a reader with the runner each named, and another project's are not found", async () => {
+test("a project's registered pools are listed to a reader with each one's newest poll, whether it is live and the runner it named, and another project's are not found", async () => {
   const calls: string[] = [];
   await using app = appOf(calls);
   const listed = await app.inject({
@@ -2203,6 +2206,8 @@ test("a project's registered pools are listed to a reader with the runner each n
         pool: "shame",
         capabilities: ["Platform:Linux:Amd64"],
         registeredAt: "2026-09-30T12:00:00.000Z",
+        polledAt: "2026-09-30T12:01:00.000Z",
+        live: true,
         runner: {
           package: "chuggy-linux",
           version: "0.14.0",
@@ -2213,6 +2218,7 @@ test("a project's registered pools are listed to a reader with the runner each n
         pool: "spare",
         capabilities: [],
         registeredAt: "2026-09-30T12:00:00.000Z",
+        live: false,
       },
     ],
     truncated: false,

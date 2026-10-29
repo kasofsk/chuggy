@@ -1070,6 +1070,10 @@ export function workerPoolsResponse(
           pool: listed.pool,
           capabilities: [...listed.capabilities],
           registeredAt: listed.registeredAt,
+          ...(listed.polledAt === undefined
+            ? {}
+            : { polledAt: listed.polledAt }),
+          live: listed.live,
           ...runnerListedBody(listed.runner),
         })),
         truncated: result.value.truncated,
