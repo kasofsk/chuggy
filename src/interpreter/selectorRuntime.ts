@@ -4,7 +4,7 @@ import type { LeadAdmission } from "./sessionPlacement.ts";
 import type { ProjectInventoryPage } from "./nativeWeb.ts";
 import {
   leadInputBytesMax,
-  observeSelectorProject,
+  observeSelectorProjectPass,
   runObservedSelectorCycle,
   type SelectorChangeTrigger,
   type SelectorRefusalLedger,
@@ -16,6 +16,7 @@ import {
   type SelectorOperationSource,
   type SelectorPolicyHost,
   selectorProjectMoved,
+  type SelectorProjectPass,
   type SelectorProjectState,
   selectorQuietCycle,
   type SelectorProposedDecision,
@@ -238,20 +239,16 @@ async function observeProject(
   if (settings.installationMode === "Paused") return stoppedProjectObservation;
   if (settings.mode === "Paused") return emptyProjectObservation;
   let state: SelectorProjectState;
-  let observation: SelectorObservation | undefined;
+  let pass: SelectorProjectPass | undefined;
   try {
     state = (await store.project(partition)) ?? selectorInitialState(partition);
-    observation = await projectObservation(
-      state,
-      refusals,
-      store,
-      source,
-      settings,
-    );
+    pass = await projectObservation(state, refusals, store, source, settings);
+    if (pass?.result === "Unmoved") await store.recordQuietCycle(pass.state);
   } catch {
     return projectObservationFailure("Observation", partition);
   }
-  if (observation === undefined) return emptyProjectObservation;
+  if (pass?.result !== "Observed") return emptyProjectObservation;
+  const observation = pass.observation;
   const quiet = selectorQuietCycle(state, observation);
   if (quiet !== undefined) return observeQuietProject(partition, store, quiet);
   const admission = await observeProjectAdmission(partition, policy, store);
@@ -397,9 +394,10 @@ async function observeProjectAdmissionKept(
 }
 
 /**
- * What this project has to decide about, or nothing. The notification page is
- * read once and handed to the observation, so a row cannot arrive between two
- * reads and be counted as the trigger for a window that does not contain it.
+ * What this project has to decide about, the step past changes that left its
+ * exhausted view where it was, or nothing. The notification page is read once
+ * and handed to the observation, so a row cannot arrive between two reads and
+ * be counted as the trigger for a window that does not contain it.
  */
 async function projectObservation(
   state: SelectorProjectState,
@@ -407,14 +405,14 @@ async function projectObservation(
   held: Pick<SelectorStateStore, "heldAmong">,
   source: SelectorRuntimeSource,
   settings: SelectorResolvedSettings,
-): Promise<SelectorObservation | undefined> {
+): Promise<SelectorProjectPass | undefined> {
   const changes = await source.moved(
     state.partition,
     state.notificationCursor,
     selectorNotificationPageLimit,
   );
   if (!selectorProjectMoved(state, changes)) return undefined;
-  return observeSelectorProject(
+  return observeSelectorProjectPass(
     state,
     source,
     refusals,

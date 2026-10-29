@@ -75,6 +75,8 @@ export const projectChangeRetainedFunction = "project_change_retains";
 export const projectChangeBridgeFunction =
   "project_notification_appends_a_change";
 export const projectChangeExecutionFunction = "execution_appends_a_change";
+export const projectChangeExecutionMoveFunction =
+  "execution_move_publishes_or_appends";
 export const projectChangeArtifactFunction =
   "execution_result_artifact_appends_a_change";
 export const projectChangeNativeActionFunction =

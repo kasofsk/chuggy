@@ -41,6 +41,7 @@ import {
   projectChangeSweepFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { postgresNotifications } from "../../src/adapters/postgres/notifications.ts";
 import { notificationKinds } from "../../src/contract/rosters.ts";
 import {
   projectChangeChannel,
@@ -359,6 +360,134 @@ test("each execution relation's own write appends one change naming the executio
     [...new Set(appended.map((row) => `${row.kind} ${row.resource}`))],
     [`Execution ${execution}`],
   );
+});
+
+/** What the project's notification log carries after the cursor, read as the selector reads it. */
+async function notificationsAfter(partition: Partition, after: number) {
+  return postgresNotifications(rig.harness.pool).read(partition, {
+    after,
+    limit: 10,
+  });
+}
+
+/** The cursor a reader standing on the latest notification of the project holds. */
+async function notificationCursor(partition: Partition): Promise<number> {
+  const read = await notificationsAfter(partition, 0);
+  return read.cursor;
+}
+
+test("an execution's placement and its cancellation each publish it, and the moves between publish nothing", async () => {
+  const registration = await schedulerRegistration("published-moves");
+  const partition = registration.partition;
+  const named = [partition.tenant, partition.project, registration.execution];
+  const where = "WHERE tenant=$1 AND project=$2 AND execution=$3";
+  const queued = await notificationCursor(partition);
+  const changed = await changeCount(partition);
+
+  await rig.pool.query(
+    `UPDATE execution SET status='Admitted' ${where}`,
+    named,
+  );
+  const placed = await notificationsAfter(partition, queued);
+  assert.deepEqual(placed, {
+    result: "Events",
+    cursor: queued + 1,
+    events: [
+      {
+        ordinal: queued + 1,
+        kind: "Execution",
+        resource: registration.execution,
+      },
+    ],
+  });
+
+  await rig.pool.query(
+    `UPDATE execution SET status='Launching' ${where}`,
+    named,
+  );
+  const attempt = await schedulerAttemptRow(registration, "published-moves");
+  await rig.pool.query(
+    `UPDATE execution_attempt SET state='Running' ${where} AND attempt=$4`,
+    [...named, attempt],
+  );
+  await rig.pool.query(`UPDATE execution SET status='Running' ${where}`, named);
+  await rig.pool.query(
+    `UPDATE execution SET placement_backoff_from=now() ${where}`,
+    named,
+  );
+  assert.deepEqual(await notificationsAfter(partition, queued + 1), {
+    result: "Events",
+    cursor: queued + 1,
+    events: [],
+  });
+
+  await rig.pool.query(
+    `UPDATE execution SET status='Cancelled',terminal_at=now() ${where}`,
+    named,
+  );
+  assert.deepEqual(await notificationsAfter(partition, queued + 1), {
+    result: "Events",
+    cursor: queued + 2,
+    events: [
+      {
+        ordinal: queued + 2,
+        kind: "Execution",
+        resource: registration.execution,
+      },
+    ],
+  });
+  assert.deepEqual(
+    (await changesOf(partition)).slice(changed),
+    Array.from({ length: 6 }, () => ({
+      kind: "Execution",
+      resource: registration.execution,
+    })),
+  );
+});
+
+test("an execution settling as Terminal publishes it once", async () => {
+  const registration = await schedulerRegistration("published-terminal");
+  const partition = registration.partition;
+  const named = [partition.tenant, partition.project, registration.execution];
+  await rig.pool.query(
+    "UPDATE execution SET status='Admitted' WHERE tenant=$1 AND project=$2 AND execution=$3",
+    named,
+  );
+  const placed = await notificationCursor(partition);
+  const changed = await changeCount(partition);
+  const operation = `operation-published-terminal-${randomUUID()}`;
+  await rig.harness.query(
+    `INSERT INTO operation (tenant,project,operation,authority_kind,authority_subject,
+       admission,key_version,key_digest,payload_digest,command,command_tag)
+     VALUES ($1,$2,$3,'ExecutionScheduler','subject','CorrectnessReducing','v1',$4,$5,'{}','ReportTaskTerminal')`,
+    [
+      partition.tenant,
+      partition.project,
+      operation,
+      `key-${operation}`,
+      `payload-${operation}`,
+    ],
+  );
+  await rig.harness.query(
+    `UPDATE execution SET status='Terminal',outcome='Blocked',
+       blocked_reason='ExecutionPolicyDenied',completion_operation=$4,terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...named, operation],
+  );
+  assert.deepEqual(await notificationsAfter(partition, placed), {
+    result: "Events",
+    cursor: placed + 1,
+    events: [
+      {
+        ordinal: placed + 1,
+        kind: "Execution",
+        resource: registration.execution,
+      },
+    ],
+  });
+  assert.deepEqual((await changesOf(partition)).slice(changed), [
+    { kind: "Execution", resource: registration.execution },
+  ]);
 });
 
 test("a native action's own write appends one change naming its ticket", async () => {
