@@ -39,6 +39,40 @@
           "mayCompleteTask": false
         }
       },
+      "build-targeted": {
+        "runner": "Agent",
+        "prompt": {
+          "path": ".chug/prompts/work-targeted.md"
+        },
+        "worker": {
+          "mode": {
+            "type": "SingleAgent",
+            "agent": "Claude",
+            "arguments": [
+              "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+              "--model=opus"
+            ]
+          },
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        },
+        "authority": {
+          "tools": [
+            "claude-code",
+            "shell"
+          ],
+          "credentials": [
+            "chuggy-github-worker",
+            "claude-code",
+            "track-record"
+          ],
+          "network": true,
+          "filesystem": "WriteWorkspace",
+          "mayCompleteTask": false
+        }
+      },
       "build-fable": {
         "runner": "Agent",
         "prompt": {
@@ -73,10 +107,78 @@
           "mayCompleteTask": false
         }
       },
+      "build-targeted-fable": {
+        "runner": "Agent",
+        "prompt": {
+          "path": ".chug/prompts/work-targeted.md"
+        },
+        "worker": {
+          "mode": {
+            "type": "SingleAgent",
+            "agent": "Claude",
+            "arguments": [
+              "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+              "--model=fable"
+            ]
+          },
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        },
+        "authority": {
+          "tools": [
+            "claude-code",
+            "shell"
+          ],
+          "credentials": [
+            "chuggy-github-worker",
+            "claude-code",
+            "track-record"
+          ],
+          "network": true,
+          "filesystem": "WriteWorkspace",
+          "mayCompleteTask": false
+        }
+      },
       "build-sonnet": {
         "runner": "Agent",
         "prompt": {
           "path": ".chug/prompts/work.md"
+        },
+        "worker": {
+          "mode": {
+            "type": "SingleAgent",
+            "agent": "Claude",
+            "arguments": [
+              "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
+              "--model=sonnet"
+            ]
+          },
+          "setup": [
+            "npm ci"
+          ],
+          "files": []
+        },
+        "authority": {
+          "tools": [
+            "claude-code",
+            "shell"
+          ],
+          "credentials": [
+            "chuggy-github-worker",
+            "claude-code",
+            "track-record"
+          ],
+          "network": true,
+          "filesystem": "WriteWorkspace",
+          "mayCompleteTask": false
+        }
+      },
+      "build-targeted-sonnet": {
+        "runner": "Agent",
+        "prompt": {
+          "path": ".chug/prompts/work-targeted.md"
         },
         "worker": {
           "mode": {

@@ -1400,6 +1400,26 @@ test("the orchestrated variant of the development work differs from it only in a
   assert.match(prompt, /subagents/u);
 });
 
+test("a targeted variant of the development work differs from its base only in a prompt that keeps ci.sh to the checks stage", () => {
+  const workloads = developmentWorkloads();
+  const prompts = new Set<string>();
+  for (const name of ["build", "build-fable", "build-sonnet"]) {
+    const base = workloads[name] as DevelopmentWorkload;
+    const targeted = workloads[
+      name.replace("build", "build-targeted")
+    ] as DevelopmentWorkload;
+    assert.deepEqual(targeted, { ...base, prompt: targeted.prompt });
+    assert.notEqual(targeted.prompt.path, base.prompt.path);
+    prompts.add(targeted.prompt.path);
+  }
+  assert.equal(prompts.size, 1, "every targeted variant shares one prompt");
+  const [path] = prompts;
+  assert.match(
+    readFileSync(path ?? "", "utf8"),
+    /Do not run\s+`\.chug\/tasks\/ci\.sh`/u,
+  );
+});
+
 test("a fault in one role's block does not refuse the other role's briefing", () => {
   const view = viewOf({
     block: { instructions: ["Change the importer and nothing beside it."] },
