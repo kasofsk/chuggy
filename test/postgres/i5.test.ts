@@ -1792,6 +1792,68 @@ test("rejecting a decision terminates all of its rows under one outcome", async 
 });
 
 /**
+ * A dispatch the lead proposed is not its candidate again while the selector
+ * is still delivering it, held for approval or not, and is once the delivery
+ * ends. Only the delivery that ends without a reviewer is named as delivering.
+ */
+test("a delivery not yet ended holds its ticket from the candidates", async () => {
+  const partition = await postgresHarnessProject(harness.store, "i5-in-flight");
+  const selectorPool = postgresRolePool(selectorServiceRole);
+  const state = postgresSelectorState(selectorPool);
+  await state.setAutomaticReadiness(true);
+  const automatic = `in-flight-${crypto.randomUUID()}`;
+  const approval = `in-flight-approval-${crypto.randomUUID()}`;
+  const held = async () =>
+    [...(await state.heldAmong(partition, [1, 2].map(asTicketId)))].sort(
+      (left, right) => left.ticket - right.ticket,
+    );
+  try {
+    const restore = await i5HeldDispatchMode("Automatic");
+    try {
+      await state.record(
+        selectorTestProposal(partition, automatic, [1]),
+        selectorTestState(partition, 0),
+      );
+    } finally {
+      await restore();
+    }
+    const restoreApproval = await i5HeldDispatchMode("ApprovalRequired");
+    try {
+      await state.record(
+        selectorTestProposal(partition, approval, [2]),
+        selectorTestState(partition, 1),
+      );
+    } finally {
+      await restoreApproval();
+    }
+    assert.deepEqual(
+      (await i5DeliveryRows(automatic)).map((row) => row["state"]),
+      ["Pending"],
+    );
+    assert.deepEqual(await held(), [
+      { ticket: 1, delivering: true },
+      { ticket: 2, delivering: false },
+    ]);
+    await state.submitted(automatic, asTicketId(1));
+    assert.deepEqual(
+      (await i5DeliveryRows(automatic)).map((row) => row["state"]),
+      ["Submitted"],
+    );
+    assert.deepEqual(await held(), [
+      { ticket: 1, delivering: true },
+      { ticket: 2, delivering: false },
+    ]);
+    await state.terminal(automatic, asTicketId(1), {
+      state: "Refused",
+      code: "SelectionChanged",
+    });
+    assert.deepEqual(await held(), [{ ticket: 2, delivering: false }]);
+  } finally {
+    await selectorPool.end();
+  }
+});
+
+/**
  * Every row of a decision is stamped from one settings read, so a decision is
  * never half awaiting a reviewer and half on its way.
  */

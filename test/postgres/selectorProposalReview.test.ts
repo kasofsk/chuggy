@@ -676,12 +676,12 @@ test("a held decision whose ticket moves is withdrawn, and answering it is stale
     });
     assert.deepEqual(
       [...(await on.state.heldAmong(partition, tickets))].sort(
-        (left, right) => left - right,
+        (left, right) => left.ticket - right.ticket,
       ),
-      tickets,
+      tickets.map((ticket) => ({ ticket, delivering: false })),
     );
     assert.deepEqual(await on.state.heldAmong(partition, [untouched]), [
-      untouched,
+      { ticket: untouched, delivering: false },
     ]);
     assert.equal(await manualDispatch(project, "proposal-moved"), "Committed");
     assert.deepEqual((await proposals(on, partition)).body, {

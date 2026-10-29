@@ -13,6 +13,7 @@ import type {
   JsonValue,
   SelectorDelivery,
   SelectorDeliveryRecord,
+  SelectorHeldTicket,
   SelectorCandidateScan,
   SelectorInteraction,
   SelectorInteractionRecord,
@@ -1629,13 +1630,19 @@ async function heldAmong(
   pool: pg.Pool,
   partition: Partition,
   tickets: readonly SelectorDelivery["ticket"][],
-): Promise<readonly SelectorDelivery["ticket"][]> {
-  const found = await pool.query<{ ticket: string }>(
-    sql`SELECT DISTINCT ticket::text AS ticket FROM selector_proposal_delivery
+): Promise<readonly SelectorHeldTicket[]> {
+  const found = await pool.query<{ ticket: string; delivering: boolean }>(
+    sql`SELECT ticket::text AS ticket,
+       coalesce(bool_or(state<>'AwaitingApproval'),false) AS delivering
+     FROM selector_proposal_delivery
      WHERE tenant=${partition.tenant} AND project=${partition.project}
-       AND state='AwaitingApproval' AND ticket=ANY(${[...tickets]}::bigint[])`,
+       AND state<>'Terminal' AND ticket=ANY(${[...tickets]}::bigint[])
+     GROUP BY ticket`,
   );
-  return found.rows.map((row) => asTicketId(Number(row.ticket)));
+  return found.rows.map((row) => ({
+    ticket: asTicketId(Number(row.ticket)),
+    delivering: row.delivering,
+  }));
 }
 
 interface ReviewFeedbackRow {
