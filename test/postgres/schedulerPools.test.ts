@@ -507,18 +507,24 @@ test("a waiting attempt is blocked once a registry change leaves no runner confi
   });
 });
 
-test("a waiting attempt of a project no longer Active is withdrawn, spending nothing", async () => {
+test("a waiting attempt of a project no longer Active is withdrawn, spending nothing, and opened again only once the project is Active", async () => {
   const routed = await poolRoutedExecution(rig, "pools-suspended");
   await poolRegistered(routed.project.partition, "amd", [
     "Platform:Linux:Amd64",
   ]);
   await executionSchedulerLaunch(service, routed.project.epoch);
-  await rig.harness.query(
-    `UPDATE project SET lifecycle='Suspended' WHERE tenant=$1 AND project=$2`,
-    [routed.project.partition.tenant, routed.project.partition.project],
-  );
+  const lifecycleSet = (lifecycle: string) =>
+    rig.harness.query(
+      `UPDATE project SET lifecycle=$3 WHERE tenant=$1 AND project=$2`,
+      [
+        routed.project.partition.tenant,
+        routed.project.partition.project,
+        lifecycle,
+      ],
+    );
+  await lifecycleSet("Suspended");
   await executionSchedulerLaunch(service, routed.project.epoch);
-  assert.deepEqual(await poolRoutedStanding(rig, routed), {
+  const withdrawn = {
     execution: {
       status: "Launching",
       ...poolRoutedUnsettled,
@@ -527,7 +533,54 @@ test("a waiting attempt of a project no longer Active is withdrawn, spending not
     attempts: [
       { state: "Withdrawn", evidence: "PlacementUnavailable", pool: null },
     ],
-  });
+  };
+  assert.deepEqual(await poolRoutedStanding(rig, routed), withdrawn);
+  await rig.harness.query(
+    `UPDATE execution
+        SET placement_backoff_from=placement_backoff_from-make_interval(secs=>$4)
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...poolRoutedKey(routed), service.config.placementBackoffSecs],
+  );
+  for (let pass = 0; pass < 2; pass++)
+    await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual(await poolRoutedStanding(rig, routed), withdrawn);
+  await lifecycleSet("Active");
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.deepEqual((await poolRoutedStanding(rig, routed)).attempts, [
+    ...withdrawn.attempts,
+    { state: "Placing", evidence: null, pool: null },
+  ]);
+});
+
+test("successive reads of the waiting attempts each start after where the last stopped, and start over after a short one, so a batch smaller than the attempts waiting reaches every one", async () => {
+  const routedAll = [];
+  for (const name of ["pools-turn-a", "pools-turn-b", "pools-turn-c"]) {
+    const routed = await poolRoutedExecution(rig, name);
+    await poolRegistered(routed.project.partition, "amd", [
+      "Platform:Linux:Amd64",
+    ]);
+    await executionSchedulerLaunch(service, routed.project.epoch);
+    routedAll.push(routed);
+  }
+  const [first] = routedAll;
+  assert.ok(first !== undefined);
+  const turn = async () => {
+    const read: string[] = [];
+    for (let call = 0; call < 1024; call++) {
+      const batch = await rig.store.waitingAttempts(first.project.epoch, 1);
+      assert.ok(batch.length <= 1);
+      const [attempt] = batch;
+      if (attempt === undefined) return read;
+      read.push(attempt.attempt);
+    }
+    assert.fail("the waiting attempts never ran short of a batch");
+  };
+  await turn();
+  const read = await turn();
+  assert.equal(new Set(read).size, read.length);
+  for (const routed of routedAll)
+    assert.ok(read.includes((await waitingRow(routed)).attempt));
+  assert.deepEqual(await turn(), read);
 });
 
 test("a check that read an attempt as waiting ends nothing once a runner has claimed it", async () => {

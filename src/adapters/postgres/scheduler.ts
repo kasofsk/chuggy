@@ -1204,13 +1204,14 @@ async function schedulerEndLapsed(
 
 /**
  * At most `attemptsMax` attempts of this epoch offered to pools, invoked, and
- * neither held nor refused by a runner, in key order, with whether their
- * project is still `Active`.
+ * neither held nor refused by a runner, in key order after `after` where one
+ * is named, with whether their project is still `Active`.
  */
 async function schedulerWaitingAttempts(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
   attemptsMax: number,
+  after: WaitingAttempt | undefined,
 ): Promise<readonly WaitingAttempt[]> {
   schedulerRequirePositive(attemptsMax, "attemptsMax");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
@@ -1231,6 +1232,12 @@ async function schedulerWaitingAttempts(
          WHERE a.state = 'Placing' AND a.pool IS NULL AND a.invoked
            AND a.lease_owner IS NULL AND a.pool_refusal IS NULL
            AND a.recovery_epoch = ${epoch} AND e.placement = 'Pool'
+           AND (${after === undefined}::boolean
+                OR (a.tenant, a.project, a.execution, a.attempt)
+                   > (${after?.partition.tenant ?? null}::text,
+                      ${after?.partition.project ?? null}::text,
+                      ${after?.execution ?? null}::text,
+                      ${after?.attempt ?? null}::text))
          ORDER BY a.tenant, a.project, a.execution, a.attempt
          LIMIT ${attemptsMax}`,
   );
@@ -1279,7 +1286,10 @@ async function schedulerWaitingWithdrawn(
   return true;
 }
 
-/** At most `executionsMax` executions that own a slot and have no live attempt. */
+/**
+ * At most `executionsMax` executions that own a slot and have no live attempt,
+ * leaving out one routed to pools of a project no runner may claim for.
+ */
 async function schedulerUnlaunched(
   client: pg.PoolClient,
   epoch: RecoveryEpoch,
@@ -1313,7 +1323,9 @@ async function schedulerUnlaunched(
         AND c.revision = e.configuration_revision AND c.digest = e.configuration_digest
        LEFT JOIN ticket_definition d
          ON d.tenant = e.tenant AND d.project = e.project AND d.ticket = e.ticket
+       JOIN project p ON p.tenant = e.tenant AND p.project = e.project
       WHERE e.status IN ('Admitted', 'Launching', 'Running')
+        AND (e.placement <> 'Pool' OR p.lifecycle = 'Active')
         AND NOT EXISTS (SELECT 1 FROM execution_attempt a
                          WHERE a.tenant = e.tenant AND a.project = e.project
                            AND a.execution = e.execution
@@ -1522,6 +1534,7 @@ function postgresExecutionSchedulerSweeps(
   | "fenceOldEpochAttempts"
   | "runnerLostTickets"
 > {
+  let waitingAfter: WaitingAttempt | undefined;
   return {
     refusedAttempts: (epoch, attemptsMax) =>
       postgresTransaction(pool, (client) =>
@@ -1539,10 +1552,13 @@ function postgresExecutionSchedulerSweeps(
       schedulerAttemptsAwaitingCleanup(pool, attemptsMax),
     attemptCleanupCompleted: (attempt) =>
       schedulerAttemptCleanupCompleted(pool, attempt),
-    waitingAttempts: (epoch, attemptsMax) =>
-      postgresTransaction(pool, (client) =>
-        schedulerWaitingAttempts(client, epoch, attemptsMax),
-      ),
+    waitingAttempts: async (epoch, attemptsMax) => {
+      const waiting = await postgresTransaction(pool, (client) =>
+        schedulerWaitingAttempts(client, epoch, attemptsMax, waitingAfter),
+      );
+      waitingAfter = waiting.length < attemptsMax ? undefined : waiting.at(-1);
+      return waiting;
+    },
     waitingAttemptWithdrawn: (attempt, evidence) =>
       postgresTransaction(pool, (client) =>
         schedulerWaitingWithdrawn(client, attempt, evidence, undefined),

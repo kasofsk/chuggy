@@ -93,15 +93,16 @@
  * placement until one can take it. Its place in the claims' order is its
  * opening, so waiting longer never sends it to the back.
  *
- * A WAITING ATTEMPT IS ASKED AGAIN, EVERY PASS, WHAT ITS OPENING ASKED. Once
- * no lapse ends it, nothing else would: a pass checks each one it reads for a
- * project no longer `Active`, the pools again, and a preparation that would
- * now record something else — a repinned runtime, a policy or a briefing that
- * moved. The first and the last withdraw it without spending the budget, for
- * the pass to open again; the pools and the preparation block it as they
- * would at opening, and a hold leaves it waiting. Every one of those ends is
- * fenced by `pool` being null in the statement that ends it, so a runner that
- * claimed it in between keeps it.
+ * A WAITING ATTEMPT IS ASKED AGAIN, IN TURN, WHAT ITS OPENING ASKED. Once no
+ * lapse ends it, nothing else would: a pass reads a bounded batch of them, each
+ * after where the last batch stopped, and checks each for a project no longer
+ * `Active`, the pools again, and a preparation that would now record something
+ * else — a repinned runtime, a policy or a briefing that moved. The first and
+ * the last withdraw it without spending the budget, for the pass to open again,
+ * which it does for a project only while it is `Active`; the pools and the
+ * preparation block it as they would at opening, and a hold leaves it waiting.
+ * Every one of those ends is fenced by `pool` being null in the statement that
+ * ends it, so a runner that claimed it in between keeps it.
  *
  * A POOL'S REFUSAL IS THE DEFINITIVE INABILITY. A pool that says it cannot run
  * what it claimed blocks the execution rather than holding it for another pool,

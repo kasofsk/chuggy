@@ -968,7 +968,9 @@ export interface ExecutionSchedulerStore {
   ): Promise<readonly RefusedAttempt[]>;
 
   /**
-   * At most `attemptsMax` waiting attempts of this epoch, in key order, and
+   * At most `attemptsMax` waiting attempts of this epoch, in key order after
+   * the last one the previous call answered, or from the first where that call
+   * answered fewer than `attemptsMax`, so successive calls reach every one; and
    * nothing under a superseded epoch.
    */
   waitingAttempts(
@@ -1024,7 +1026,10 @@ export interface ExecutionSchedulerStore {
   /** Acknowledges external cleanup only after the placement backend accepted removal. */
   attemptCleanupCompleted(attempt: FencedAttempt): Promise<boolean>;
 
-  /** At most `executionsMax` executions that own a slot and have no live attempt. */
+  /**
+   * At most `executionsMax` executions that own a slot and have no live
+   * attempt, and none routed to pools whose project is not `Active`.
+   */
   unlaunched(
     epoch: RecoveryEpoch,
     executionsMax: number,
