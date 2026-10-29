@@ -32,16 +32,16 @@
  * sessions apart, and what it holds is told apart by the rows each kind lives
  * in, so each kind is renewed, bounded and claimed on its own;
  * `./workerPoolSessions.ts` says what claiming one opens. A poll that could take
- * a session is what a member's runner reads as live for a session by, so only
- * it is recorded as one; a personal runner's poll that could take an execution
- * is recorded apart, as what a pool's claim reads it as live by.
+ * a session is what a pool or a chat host is read as live for a session by, so
+ * only it is recorded as one; a personal runner's poll that could take an
+ * execution is recorded apart, as what a pool's claim reads it as live by.
  *
  * A MEMBER'S PERSONAL RUNNER POLLS THE SAME CHANNEL. It is admitted by its row
  * in its tenant and its owner's standing permit to register one, since no
  * relation names its principal, and it claims its owner's executions in the
- * projects it allowlists that allow one, as its sessions are claimed: the
- * authority is asked whether its owner may still read each project before
- * anything is claimed, so an outage fails the poll with nothing claimed. Each
+ * projects it allowlists that allow one, and holds no session: the authority
+ * is asked whether its owner may still read each project before anything is
+ * claimed, so an outage fails the poll with nothing claimed. Each
  * execution it is assigned names its project, to a poll whose release reads
  * one, since an earlier runner refuses the whole answer over it.
  *
@@ -125,7 +125,9 @@ export type {
   WorkerPoolMint,
 } from "./workerPoolIdentity.ts";
 import {
+  workerPoolSessionClaimant,
   workerPoolSessionClaims,
+  type WorkerPoolSessionClaimant,
   type WorkerPoolSessionPorts,
 } from "./workerPoolSessions.ts";
 import type { WorkerRunnerListed } from "./workerRunnerRelease.ts";
@@ -432,8 +434,11 @@ export interface WorkerPoolAssignments extends WorkerPoolExecutionHolds<PoolPlan
   ): Promise<boolean>;
   /** The projects a personal runner's current registration allowlists. */
   allowlisted(identity: PersonalRunnerIdentity): Promise<readonly ProjectId[]>;
-  /** Records a pool's or a personal runner's poll as one that could take an execution, under its current registration alone. */
-  polled(identity: WorkerPoolExecutionPoller): Promise<void>;
+  /** Records a pool's or a personal runner's poll as one that could take an execution where `executions` says it could, and a personal runner's whatever it could take, under its current registration alone. */
+  polled(
+    identity: WorkerPoolExecutionPoller,
+    executions: boolean,
+  ): Promise<void>;
 }
 
 export interface WorkerPoolPollSettings {
@@ -759,10 +764,10 @@ async function workerPoolClaims(
   };
 }
 
-/** The sessions one pass claims, which is none on a plane that names no API for a session to reach. */
+/** The sessions one pass claims, which is none for a personal runner or on a plane that names no API for a session to reach. */
 function workerPoolSessionsClaimed(
   ports: WorkerPoolPorts,
-  identity: PoolPlaneIdentity,
+  identity: WorkerPoolSessionClaimant | undefined,
   settings: WorkerPoolPollSettings,
   asked: {
     readonly wanted: number;
@@ -771,7 +776,8 @@ function workerPoolSessionsClaimed(
   },
 ): Promise<WorkerPoolSessionAssignment[]> {
   const apiUrl = settings.sessionApiUrl;
-  if (apiUrl === undefined) return Promise.resolve([]);
+  if (identity === undefined || apiUrl === undefined)
+    return Promise.resolve([]);
   return workerPoolSessionClaims(
     ports.sessions,
     ports.access,
@@ -806,6 +812,7 @@ export async function workerPoolReconcile(
   >,
   settings: WorkerPoolPollSettings,
 ): Promise<WorkerPoolReconciliation> {
+  const claimant = workerPoolSessionClaimant(identity);
   const stop = [
     ...(await workerPoolHeldReconciled(
       ports.assignments,
@@ -813,12 +820,14 @@ export async function workerPoolReconcile(
       holding.jobs,
       settings.leaseSecs,
     )),
-    ...(await workerPoolHeldReconciled(
-      ports.sessions.store,
-      identity,
-      holding.sessions,
-      settings.leaseSecs,
-    )),
+    ...(claimant === undefined
+      ? []
+      : await workerPoolHeldReconciled(
+          ports.sessions.store,
+          claimant,
+          holding.sessions,
+          settings.leaseSecs,
+        )),
   ];
   const claimed = await workerPoolClaims(ports, identity, settings, {
     wanted: Math.min(
@@ -836,7 +845,7 @@ export async function workerPoolReconcile(
     ...(claimed.jobsWaiting === undefined
       ? {}
       : { jobsWaiting: claimed.jobsWaiting }),
-    sessions: await workerPoolSessionsClaimed(ports, identity, settings, {
+    sessions: await workerPoolSessionsClaimed(ports, claimant, settings, {
       wanted: Math.min(
         asked.wantedSessions,
         settings.sessionsPerPollMax,
@@ -857,13 +866,15 @@ export type WorkerPoolPolled =
     }
   | { readonly polled: "HeldOverBound" };
 
-/** What the pool holds, told apart by kind. */
+/** What the pool holds, told apart by kind, which for a personal runner is jobs alone. */
 async function workerPoolHoldingRead(
   ports: WorkerPoolPorts,
   identity: PoolPlaneIdentity,
   asked: WorkerPoolAsked,
 ): Promise<WorkerPoolHolding> {
-  const sessions = await ports.sessions.store.among(identity, asked.held);
+  const claimant = workerPoolSessionClaimant(identity);
+  if (claimant === undefined) return { jobs: asked.held, sessions: [] };
+  const sessions = await ports.sessions.store.among(claimant, asked.held);
   return {
     jobs: asked.held.filter((assignment) => !sessions.has(assignment)),
     sessions: asked.held.filter((assignment) => sessions.has(assignment)),
@@ -873,13 +884,15 @@ async function workerPoolHoldingRead(
 /**
  * Records the runner this poll named, and the capabilities it has and the
  * memory ceiling it takes jobs under where it named them, and the poll as the
- * caller's last of each kind of work it could take: a session, with room for
- * one or holding one from a plane that names the API a session reaches, and,
- * for a pool or a personal runner, an execution, with room for one, holding
- * one, or naming a memory room above nothing, which a runner holding back from
- * claiming names while it would take what fits and a runner taking nothing
- * names as 0. That is what a pool's claim reads a personal runner as live by,
- * and what a project's pools are read as live by.
+ * caller's last of each kind of work it could take: for a pool or a chat host,
+ * a session, with room for one or holding one from a plane that names the API
+ * a session reaches, and, for a pool or a personal runner, an execution, with
+ * room for one, holding one, or naming a memory room above nothing, which a
+ * runner holding back from claiming names while it would take what fits and a
+ * runner taking nothing names as 0. That is what a pool's claim reads a
+ * personal runner as live by, and what a project's pools are read as live by
+ * beside their session polls; every poll of a personal runner is recorded too,
+ * as what its owner reads it as live by.
  */
 async function workerPoolPollRecorded(
   ports: WorkerPoolPorts,
@@ -894,18 +907,22 @@ async function workerPoolPollRecorded(
     asked.capabilities,
     asked.memoryCeilingMib,
   );
+  const claimant = workerPoolSessionClaimant(identity);
   if (
+    claimant !== undefined &&
     settings.sessionApiUrl !== undefined &&
     (asked.wantedSessions > 0 || holding.sessions.length > 0)
   )
-    await ports.sessions.store.polled(identity);
+    await ports.sessions.store.polled(claimant);
+  const executions =
+    asked.wanted > 0 ||
+    holding.jobs.length > 0 ||
+    (asked.memoryRoomMib ?? 0) > 0;
   if (
-    identity.kind !== "ChatHost" &&
-    (asked.wanted > 0 ||
-      holding.jobs.length > 0 ||
-      (asked.memoryRoomMib ?? 0) > 0)
+    identity.kind === "Personal" ||
+    (identity.kind === "Dedicated" && executions)
   )
-    await ports.assignments.polled(identity);
+    await ports.assignments.polled(identity, executions);
 }
 
 /** How many passes a poll makes at most: the plane's own, or no more than the wait its poll named lets follow the first. */
@@ -1041,12 +1058,14 @@ export async function workerPoolSettled(
   assignment: string,
   offered: AssignmentOutcome,
 ): Promise<boolean> {
+  const claimant = workerPoolSessionClaimant(identity);
   if (
-    (await ports.sessions.store.among(identity, [assignment])).has(assignment)
+    claimant !== undefined &&
+    (await ports.sessions.store.among(claimant, [assignment])).has(assignment)
   )
     return workerPoolSettledOn(
       ports.sessions.store,
-      identity,
+      claimant,
       assignment,
       workerPoolSessionSettlement(offered),
     );
@@ -1077,12 +1096,15 @@ export async function workerPoolHeldImages(
   settings: WorkerPoolPollSettings,
 ): Promise<readonly string[]> {
   const chatImage = await workerPoolChatImage(ports, identity, settings);
+  const claimant = workerPoolSessionClaimant(identity);
   return [
     ...(await ports.assignments.heldImages(identity, settings.heldMax)),
-    ...(await ports.sessions.store.heldImages(
-      identity,
-      settings.sessionsHeldMax,
-    )),
+    ...(claimant === undefined
+      ? []
+      : await ports.sessions.store.heldImages(
+          claimant,
+          settings.sessionsHeldMax,
+        )),
     ...(chatImage === undefined ? [] : [chatImage]),
   ];
 }

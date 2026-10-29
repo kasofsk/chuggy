@@ -40,6 +40,7 @@ import { z } from "zod";
 import { taskPurposeForKind } from "../../interpreter/executionScheduler.ts";
 import {
   metricsPlaneDurationBoundsSecs,
+  metricsPlaneMemberProject,
   type MetricsPlaneBounds,
   type MetricsPlaneAttemptRow,
   type MetricsPlaneModelRow,
@@ -523,19 +524,23 @@ async function metricsPlaneSessionQuery(
         named AS (
           SELECT * FROM unnest(${labelling.principals}::text[],${labelling.owners}::text[])
                    AS o(principal,owner)),
+        session AS (
+          SELECT tenant,project,session,kind,principal,
+                 CASE WHEN scope='Member' THEN ${metricsPlaneMemberProject}::text ELSE project END AS label
+            FROM agent_session),
         turn AS (
-          SELECT s.tenant,s.project,coalesce(o.owner,'') AS owner,s.kind,u.state,u.model,
+          SELECT s.tenant,s.label AS project,coalesce(o.owner,'') AS owner,s.kind,u.state,u.model,
                  CASE WHEN u.model IS NOT NULL THEN (SELECT count(*) FROM unnest(b.secs) AS le
                                                       WHERE le*1000<u.duration_ms) END AS bucket,
                  count(*) AS ended,coalesce(sum(u.tokens),0) AS tokens,
                  coalesce(sum(u.cost_micros),0) AS cost_micros,coalesce(sum(u.duration_ms),0) AS duration_ms,
                  min(u.ended_at) AS created_at
             FROM session_turn u
-            JOIN agent_session s
+            JOIN session s
               ON s.tenant=u.tenant AND s.project=u.project AND s.session=u.session
             LEFT JOIN named o ON o.principal=s.principal
            CROSS JOIN bounds b WHERE u.ended_at IS NOT NULL
-           GROUP BY s.tenant,s.project,coalesce(o.owner,''),s.kind,u.state,u.model,bucket)
+           GROUP BY s.tenant,s.label,coalesce(o.owner,''),s.kind,u.state,u.model,bucket)
         SELECT
           (SELECT json_agg(f)::text FROM (
              SELECT tenant,project,owner,kind,state,model,

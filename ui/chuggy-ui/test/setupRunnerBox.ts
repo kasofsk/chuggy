@@ -6,7 +6,7 @@
  *
  * The runner package's own rules are written here a second time on purpose,
  * from the package and not from the program: how a pool file, the file of the
- * person's own runner and their units are named, what `register`, `doctor`
+ * person's chat host and their units are named, what `register`, `doctor`
  * and `install-service` print, and that a registration is a redemption at the
  * site. A case that moved one of them in
  * the program alone finds this box disagreeing with it. What a case wants to
@@ -17,13 +17,13 @@
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type { SetupChildEnded, SetupDiskPort } from "../app/core/setupPorts.ts";
 import type { SetupEngine } from "../app/core/setupRunnerSaid.ts";
-import { setupSiteOwnRedeemed, setupSiteRedeemed } from "./setupSite.ts";
+import { setupSiteChatRedeemed, setupSiteRedeemed } from "./setupSite.ts";
 import type { SetupSite } from "./setupSite.ts";
 
 export const boxHome = "/home/person";
 export const boxConfig = `${boxHome}/.config`;
 export const boxSettings = `${boxConfig}/chuggy-linux/runner.json`;
-export const boxLogin = `${boxConfig}/chuggy-linux/claude-token`;
+export const boxLogin = `${boxConfig}/chuggy-linux/claude/token`;
 export const boxPools = `${boxConfig}/chuggy/pools`;
 export const boxUnits = `${boxConfig}/systemd/user`;
 /** Where npm installs machine-wide on this machine, and the person's own prefix. */
@@ -34,7 +34,7 @@ export const boxPoolName = "shame";
 /** What the Claude login file holds, which nothing may read or print. */
 export const boxLoginSecret = "sk-ant-oat01-box-claude-login-never-read";
 /** The version an install puts here unless a case has the release be another. */
-export const boxVersion = "0.14.0";
+export const boxVersion = "0.35.0";
 
 /** Everything the command runs on the machine, by what it is for. */
 export type BoxAct =
@@ -75,6 +75,8 @@ interface BoxUnit {
 export interface RunnerBox {
   /** Every path outside the program's own directory: a file's text, or nothing for a directory. */
   readonly paths: Map<string, string | undefined>;
+  /** The paths that are themselves symbolic links, each to the file `paths` holds for it. */
+  readonly links: Set<string>;
   /** The directories this user may not write in, and the paths that will not be made. */
   readonly sealed: Set<string>;
   /** Every path whose text the program read. */
@@ -115,6 +117,7 @@ export function runnerBox(): RunnerBox {
       [`${boxPrefix}/lib/node_modules`, undefined],
       [boxLogin, boxLoginSecret],
     ]),
+    links: new Set(),
     sealed: new Set(),
     read: [],
     ran: [],
@@ -145,6 +148,7 @@ function kind(box: RunnerBox, path: string): ReturnType<SetupDiskPort["kind"]> {
 export function boxDisk(box: RunnerBox): SetupDiskPort {
   return {
     kind: (path) => kind(box, path),
+    linked: (path) => box.links.has(path),
     names: (directory) => [
       ...new Set(
         [...box.paths.keys()]
@@ -187,13 +191,13 @@ export function boxUnitName(tenant: string, project: string): string {
   return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(project)}.${boxPoolName}.service`;
 }
 
-/** The file the package writes for the person's own runner in a workspace, named for it and the member, and the unit it writes for that file. */
-export function boxOwnFile(tenant: string, member: string): string {
-  return `${boxPools}/${boxNamePart(tenant)}.${boxNamePart(member)}.json`;
+/** The file the package writes for the person's chat host in a workspace, named for it and the member, and the unit it writes for that file. */
+export function boxChatFile(tenant: string, member: string): string {
+  return `${boxPools}/${boxNamePart(tenant)}.${boxNamePart(member)}.chat.host.json`;
 }
 
-export function boxOwnUnitName(tenant: string, member: string): string {
-  return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(member)}.service`;
+export function boxChatUnitName(tenant: string, member: string): string {
+  return `chuggy-linux-${boxNamePart(tenant)}.${boxNamePart(member)}.chat.host.service`;
 }
 
 function unitOf(file: string): string {
@@ -239,14 +243,14 @@ function installed(box: RunnerBox, command: readonly string[]): void {
   );
 }
 
-/** Whether the package a command is run from is new enough to know `--personal`, as its manifest says. */
-function boxTakesPersonal(box: RunnerBox, program: string): boolean {
+/** Whether the package a command is run from is new enough to know `--chat`, as its manifest says. */
+function boxTakesChat(box: RunnerBox, program: string): boolean {
   const prefix = program.slice(0, -"/bin/chuggy-linux".length);
   const manifest = box.paths.get(
     `${prefix}/lib/node_modules/chuggy-linux/package.json`,
   );
   const version = /"version":"(\d+)\.(\d+)\./u.exec(manifest ?? "");
-  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 4;
+  return Number(version?.[1] ?? 0) > 0 || Number(version?.[2] ?? 0) >= 35;
 }
 
 interface BoxWorld {
@@ -254,22 +258,22 @@ interface BoxWorld {
   readonly origin: string;
 }
 
-/** A registration, as a pool's or with `--personal` as the person's own: the token redeemed at the site, and the file the package names for what it answered. */
+/** A registration, as a pool's or with `--chat` as the person's chat host: the token redeemed at the site, and the file the package names for what it answered. */
 function registered(
   box: RunnerBox,
   world: BoxWorld,
   command: readonly string[],
 ): SetupChildEnded {
   const [program = "", , ...words] = command;
-  const personal = words[0] === "--personal";
-  if (personal && !boxTakesPersonal(box, program))
-    return exited(1, "", "error: unknown option '--personal'\n");
-  const [flag, api, token = ""] = personal ? words.slice(1) : words;
+  const chat = words.at(-1) === "--chat";
+  if (chat && !boxTakesChat(box, program))
+    return exited(1, "", "error: unknown option '--chat'\n");
+  const [flag, api, token = ""] = chat ? words.slice(0, -1) : words;
   if (flag !== "--api" || api !== world.origin || !token.startsWith("--token="))
     return exited(2, "", "register needs --api and --token\n");
   const redeemed = token.slice("--token=".length);
-  const answer = personal
-    ? setupSiteOwnRedeemed(world.site(), redeemed)
+  const answer = chat
+    ? setupSiteChatRedeemed(world.site(), redeemed)
     : setupSiteRedeemed(world.site(), redeemed, boxPoolName);
   if (answer.status !== 201)
     return exited(
@@ -282,8 +286,8 @@ function registered(
     project?: string;
     owner?: string;
   };
-  const file = personal
-    ? boxOwnFile(held.tenant, held.owner ?? "")
+  const file = chat
+    ? boxChatFile(held.tenant, held.owner ?? "")
     : boxPoolFile(held.tenant, held.project ?? "");
   const unit = unitOf(file);
   const serves = box.paths.has(`${boxUnits}/${unit}`);
@@ -297,7 +301,8 @@ function registered(
   );
 }
 
-function checked(box: RunnerBox, file: string): SetupChildEnded {
+/** What `doctor` prints of a pool's file, or of a chat host's, which it checks for what the chat host runs too. */
+function checks(file: string): readonly string[] {
   const pool = file.slice(file.lastIndexOf("/") + 1).replace(/\.json$/u, "");
   const ok = [
     `ok    pool file: ${file} names pool ${pool.replaceAll(".", "/")}`,
@@ -309,6 +314,19 @@ function checked(box: RunnerBox, file: string): SetupChildEnded {
     "ok    pool token: issued by https://auth.example/oauth2/token",
     "ok    plane: https://pool.chuggy.example/ answered a poll",
   ];
+  return file.endsWith(".chat.host.json")
+    ? [
+        ...ok,
+        `ok    chat credential directory: ${boxLogin} is alone in its directory, which the chat supervisor is given read-only`,
+        "ok    chat settings: sessionsMax 4, sessionMemoryMib 2048, idleSecs 600",
+        "ok    chat supervisor: none is running",
+        "ok    chat image: ghcr.io/kasofsk/chuggy-chat is here",
+      ]
+    : ok;
+}
+
+function checked(box: RunnerBox, file: string): SetupChildEnded {
+  const ok = checks(file);
   if (!box.paths.has(boxSettings))
     return exited(
       1,
@@ -354,15 +372,14 @@ function served(
   );
 }
 
-/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's own runner, the one its file names. */
+/** What the site sees once the unit `name` is up and polls: a runner of every project this machine is registered for as live, or, for the unit of the person's chat host, that host where its file names it. */
 function polled(box: RunnerBox, world: BoxWorld, name: string): void {
   const site = world.site();
-  for (const [tenant, own] of site.own) {
-    if (name !== boxOwnUnitName(tenant, site.member)) continue;
-    const file = box.paths.get(boxOwnFile(tenant, site.member)) ?? "{}";
+  for (const [tenant, host] of site.chat) {
+    if (name !== boxChatUnitName(tenant, site.member)) continue;
+    const file = box.paths.get(boxChatFile(tenant, site.member)) ?? "{}";
     const { clientId } = JSON.parse(file) as { readonly clientId?: string };
-    for (const runner of own.runners)
-      if (runner.id === clientId) runner.live = true;
+    if (host.id === clientId) host.live = true;
   }
   if (!name.endsWith(`.${boxPoolName}.service`)) return;
   for (const project of site.projects)

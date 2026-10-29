@@ -826,10 +826,10 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
     hosted,
     ["done", "ticket 1 is done"],
   ]);
-  site.own.clear();
+  site.chat.clear();
   expect((await column(site))[4]).toEqual([
     "todo",
-    "the cluster runs its work; your own runner is not set up for it",
+    "the cluster runs its work; you have no chat host for your chats in it",
   ]);
   for (const held of site.projects) held.threads = "InCluster";
   expect((await column(site))[4]).toEqual(hosted);
@@ -840,50 +840,50 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
   ]);
 });
 
-test("where the person's chats run on runners the runner step is done only once the project's runner and their own serving it are both live, and the project's is said first", async () => {
+test("where the person's chats run on runners the runner step is done only once the project's runner and their chat host are both live, and the project's is said first", async () => {
   const said: Record<string, readonly unknown[]> = {};
   for (const runner of sessionRunnerStandings)
     for (const mine of sessionRunnerStandings) {
       const { site, project } = saidRunnable();
       project.runner = runner;
-      if (mine === "Unregistered") site.own.clear();
+      if (mine === "Unregistered") site.chat.clear();
       else
-        site.own.set("acme", {
-          projects: ["widgets"],
-          runners: [{ id: "chuggy-personal-1", live: mine === "Live" }],
-        });
+        site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
       const step = (await stood(site)).steps[4];
       said[`${runner} ${mine}`] = [step?.state, step?.detail, step?.lacks];
     }
-  const own = (lacks: "Own" | "OwnLive") => ({ lacks, pooled: true });
+  const chat = (lacks: "ChatHost" | "ChatHostLive") => ({
+    lacks,
+    pooled: true,
+  });
   expect(said).toEqual({
-    "Unregistered Unregistered": ["todo", "", { lacks: "Runner", own: true }],
-    "Unregistered Offline": ["todo", "", { lacks: "Runner", own: true }],
-    "Unregistered Live": ["todo", "", { lacks: "Runner", own: false }],
+    "Unregistered Unregistered": ["todo", "", { lacks: "Runner", chat: true }],
+    "Unregistered Offline": ["todo", "", { lacks: "Runner", chat: true }],
+    "Unregistered Live": ["todo", "", { lacks: "Runner", chat: false }],
     "Offline Unregistered": [
       "waiting",
       "registered, not running",
-      { lacks: "RunnerLive", own: true },
+      { lacks: "RunnerLive", chat: true },
     ],
     "Offline Offline": [
       "waiting",
       "registered, not running",
-      { lacks: "RunnerLive", own: true },
+      { lacks: "RunnerLive", chat: true },
     ],
     "Offline Live": [
       "waiting",
       "registered, not running",
-      { lacks: "RunnerLive", own: false },
+      { lacks: "RunnerLive", chat: false },
     ],
     "Live Unregistered": [
       "todo",
-      "live; your own runner is not set up for it",
-      own("Own"),
+      "live; you have no chat host for your chats in it",
+      chat("ChatHost"),
     ],
     "Live Offline": [
       "waiting",
-      "live; your own runner is set up for it, not running",
-      own("OwnLive"),
+      "live; your chat host is registered, not running",
+      chat("ChatHostLive"),
     ],
     "Live Live": ["done", "live", undefined],
   });

@@ -61,6 +61,8 @@ import {
 import { migration089 } from "../../src/adapters/postgres/schema/migrations/089-lead-reads-abilities.ts";
 import { migration090 } from "../../src/adapters/postgres/schema/migrations/090-chat-host.ts";
 import { migration094 } from "../../src/adapters/postgres/schema/migrations/094-unscoped-chat.ts";
+import { migration097 } from "../../src/adapters/postgres/schema/migrations/097-personal-runners-take-no-sessions.ts";
+import { migration098 } from "../../src/adapters/postgres/schema/migrations/098-personal-runners-hold-no-sessions.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -101,7 +103,15 @@ import {
   forgeInstallationRecordFunction,
   migrations,
   personalRunnerFenceFunction,
+  personalSessionAssignmentsFunction,
+  personalSessionHeldFunction,
+  personalSessionHoldingFunction,
+  personalSessionImagesFunction,
   personalSessionOpenFunction,
+  personalSessionRefuseFunction,
+  personalSessionReleaseFunction,
+  personalSessionRenewFunction,
+  personalSessionsAwaitingFunction,
   poolPlaneRole,
   projectCreateFunction,
   projectCreationGrantsFunction,
@@ -2502,9 +2512,7 @@ test("070 keeps every member's runner and allowlist, keys a runner by its client
        INSERT INTO personal_runner_project(tenant,owner,project)
        VALUES('tenant-5','owner-70','project-5')`,
       );
-      assert.ok(
-        (await postgresMigrate(subject)).includes(migration070.version),
-      );
+      await installationAt(subject, migration070.version);
       await subject.query(
         `INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
        VALUES('tenant-5','owner-70','{}','runner-principal-71','runner-client-71')`,
@@ -3296,4 +3304,276 @@ test("094 names every session opened before it a project's, still keyed by its p
       ],
     );
   });
+});
+
+/** A member's live personal runner serving their project, two of their threads each with a turn queued for runners, and the first held by that runner. */
+const personalSeed097 = `
+  ${tenantSeed("tenant-c97")}
+  INSERT INTO recovery_epoch(epoch) VALUES('epoch-c97');
+  INSERT INTO project(tenant,project,lifecycle)
+  VALUES('tenant-c97','project-c97','Active');
+  INSERT INTO personal_runner
+    (tenant,owner,capabilities,principal,client_id,last_polled_at)
+  VALUES('tenant-c97','principal-a','{}','runner-principal-c97',
+         'runner-client-c97',now());
+  INSERT INTO personal_runner_project(tenant,owner,project)
+  VALUES('tenant-c97','principal-a','project-c97');
+  SELECT * FROM open_member_thread('tenant-c97','project-c97','principal-a',
+    'held-c97','key-held-c97','slot-c97','objectives-c97');
+  SELECT * FROM open_member_thread('tenant-c97','project-c97','principal-a',
+    'waiting-c97','key-waiting-c97','slot-c97','objectives-c97');
+  INSERT INTO session_turn
+    (tenant,project,session,turn,ordinal,input_kind,input,route)
+  VALUES('tenant-c97','project-c97','held-c97','turn-held-c97',1,
+         'UserMessage','{}','Pool'),
+        ('tenant-c97','project-c97','waiting-c97','turn-waiting-c97',1,
+         'UserMessage','{}','Pool');
+  INSERT INTO session_attempt
+    (tenant,project,session,attempt,attempt_number,recovery_epoch,state,
+     lease_owner,lease_expires_at,bearer,bearer_secret_digest,idle_since,pool,
+     pool_principal,holder_kind,assignment,image,launch)
+  VALUES('tenant-c97','project-c97','held-c97','attempt-c97',1,'epoch-c97',
+         'Running','principal-a',now()+interval '1 hour','bearer-c97',
+         repeat('a',64),now(),'principal-a','runner-principal-c97','Personal',
+         'assignment-c97','image-c97','{}')`;
+
+const runner097 = `'tenant-c97','principal-a','runner-principal-c97'`;
+
+/** What the member's runner is offered, and how the member stands for a thread, an inquiry and the lead. */
+async function personalOffered097(subject: pg.Pool): Promise<unknown> {
+  return {
+    offered: (
+      await subject.query(
+        `SELECT session FROM personal_sessions_awaiting_claim(${runner097},0,4,120)`,
+      )
+    ).rows,
+    standing: (
+      await subject.query(
+        `SELECT member_standing,inquiry_standing,project_standing
+           FROM session_runner_standing('tenant-c97','project-c97',
+             'principal-a',120)`,
+      )
+    ).rows,
+  };
+}
+
+/** Asserts the runner that held the seed's thread before 097 still holds it after, and renews its lease. */
+async function personalHeldThrough097(subject: pg.Pool): Promise<void> {
+  assert.deepEqual(
+    (
+      await subject.query(
+        `SELECT assignment FROM personal_session_attempt_holding(${runner097})
+         UNION ALL
+         SELECT a FROM personal_session_assignments(${runner097},
+           '{assignment-c97}') a`,
+      )
+    ).rows,
+    [{ assignment: "assignment-c97" }, { assignment: "assignment-c97" }],
+  );
+  for (const call of [
+    `renew_personal_session_attempt(${runner097},'assignment-c97',60)`,
+    `personal_session_attempt_held(${runner097},'assignment-c97')`,
+  ])
+    assert.deepEqual(
+      (await subject.query(`SELECT ${call} AS answered`)).rows,
+      [{ answered: true }],
+      call,
+    );
+}
+
+test("097 offers a personal runner no session and opens none for it, stands a member on their chat host alone, and lets an attempt their runner held before it run on", async () => {
+  await migrationDatabase(
+    "personal_runners_take_no_sessions",
+    async (subject) => {
+      await installationBefore(subject, migration097.version);
+      await subject.query(personalSeed097);
+      const unregistered = {
+        inquiry_standing: "Unregistered",
+        project_standing: "Unregistered",
+      };
+      assert.deepEqual(await personalOffered097(subject), {
+        offered: [{ session: "waiting-c97" }],
+        standing: [{ member_standing: "Live", ...unregistered }],
+      });
+      await installationAt(subject, migration097.version);
+
+      assert.deepEqual(await personalOffered097(subject), {
+        offered: [],
+        standing: [{ member_standing: "Unregistered", ...unregistered }],
+      });
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT open_personal_session_attempt(${runner097},'project-c97',
+               'waiting-c97',s.capabilities,s.agent_reference,'attempt-c97-b',
+               'assignment-c97-b','bearer-c97-b',repeat('b',64),60,0,4,'{}',
+               'image-c97','{}',120) AS opened
+               FROM agent_session s WHERE s.session='waiting-c97'`,
+          )
+        ).rows,
+        [{ opened: "NotClaimable" }],
+      );
+      await personalHeldThrough097(subject);
+
+      await subject.query(
+        `INSERT INTO chat_host(tenant,owner,principal,client_id)
+         VALUES('tenant-c97','principal-a','host-principal-c97',
+                'host-client-c97')`,
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT member_standing,inquiry_standing
+               FROM session_runner_standing('tenant-c97','project-c97',
+                 'principal-a',120)`,
+          )
+        ).rows,
+        [{ member_standing: "Offline", inquiry_standing: "Offline" }],
+      );
+    },
+  );
+});
+
+/** A member's personal runner holding one thread's attempt live with its turn claimed, an earlier attempt of theirs ended, and the same member's chat host holding another thread. */
+const personalSeed098 = `
+  ${tenantSeed("tenant-c98")}
+  INSERT INTO recovery_epoch(epoch) VALUES('epoch-c98');
+  INSERT INTO project(tenant,project,lifecycle)
+  VALUES('tenant-c98','project-c98','Active');
+  INSERT INTO personal_runner(tenant,owner,capabilities,principal,client_id)
+  VALUES('tenant-c98','principal-a','{}','runner-principal-c98',
+         'runner-client-c98');
+  INSERT INTO chat_host(tenant,owner,principal,client_id)
+  VALUES('tenant-c98','principal-a','host-principal-c98','host-client-c98');
+  SELECT * FROM open_member_thread('tenant-c98','project-c98','principal-a',
+    'held-c98','key-held-c98','slot-c98','objectives-c98');
+  SELECT * FROM open_member_thread('tenant-c98','project-c98','principal-a',
+    'hosted-c98','key-hosted-c98','slot-c98','objectives-c98');
+  INSERT INTO session_attempt
+    (tenant,project,session,attempt,attempt_number,recovery_epoch,state,
+     lease_owner,lease_expires_at,bearer,bearer_secret_digest,idle_since,pool,
+     pool_principal,holder_kind,assignment,image,launch,evidence,ended_at)
+  VALUES('tenant-c98','project-c98','held-c98','ended-c98',1,'epoch-c98',
+         'Lost',NULL,NULL,'bearer-ended-c98',repeat('a',64),NULL,'principal-a',
+         'runner-principal-c98','Personal','assignment-ended-c98','image-c98',
+         '{}','LeaseExpired',now()),
+        ('tenant-c98','project-c98','held-c98','live-c98',2,'epoch-c98',
+         'Running','principal-a',now()+interval '1 hour','bearer-live-c98',
+         repeat('b',64),now(),'principal-a','runner-principal-c98','Personal',
+         'assignment-live-c98','image-c98','{}',NULL,NULL),
+        ('tenant-c98','project-c98','hosted-c98','hosted-c98',1,'epoch-c98',
+         'Running','principal-a',now()+interval '1 hour','bearer-hosted-c98',
+         repeat('c',64),now(),'principal-a','host-principal-c98','ChatHost',
+         'assignment-hosted-c98','image-c98','{}',NULL,NULL);
+  INSERT INTO session_turn
+    (tenant,project,session,turn,ordinal,input_kind,input,route,state,attempt,
+     claim_generation,claimed_at)
+  VALUES('tenant-c98','project-c98','held-c98','turn-held-c98',1,
+         'UserMessage','{}','Pool','Claimed','live-c98',1,now()),
+        ('tenant-c98','project-c98','hosted-c98','turn-hosted-c98',1,
+         'UserMessage','{}','Pool','Claimed','hosted-c98',1,now())`;
+
+/** The functions a personal runner claimed and held sessions through, by name. */
+const personalSessionFunctions098 = [
+  personalSessionsAwaitingFunction,
+  personalSessionOpenFunction,
+  personalSessionAssignmentsFunction,
+  personalSessionHoldingFunction,
+  personalSessionRenewFunction,
+  personalSessionHeldFunction,
+  personalSessionRefuseFunction,
+  personalSessionReleaseFunction,
+  personalSessionImagesFunction,
+].toSorted();
+
+/** The personal runner's session functions installed, by name. */
+async function personalSessionFunctionsOf098(
+  subject: pg.Pool,
+): Promise<readonly unknown[]> {
+  return (
+    await subject.query<{ proname: unknown }>(
+      `SELECT proname FROM pg_proc WHERE proname = ANY($1::text[])
+        ORDER BY proname`,
+      [personalSessionFunctions098],
+    )
+  ).rows.map((row) => row.proname);
+}
+
+/** Every attempt, as its state, evidence, generation, lease owner and whether it ended, and every turn, as its state, attempts spent and claiming attempt. */
+async function sessionWorkOf098(subject: pg.Pool): Promise<{
+  readonly attempts: readonly (readonly unknown[])[];
+  readonly turns: readonly (readonly unknown[])[];
+}> {
+  const attempts = await subject.query<Record<string, unknown>>(
+    `SELECT attempt,state,evidence,generation::int AS generation,lease_owner,
+            ended_at IS NOT NULL AS ended
+       FROM session_attempt ORDER BY attempt`,
+  );
+  const turns = await subject.query<Record<string, unknown>>(
+    `SELECT turn,state,attempts_spent::int AS spent,attempt
+       FROM session_turn ORDER BY turn`,
+  );
+  return {
+    attempts: attempts.rows.map((row) => Object.values(row)),
+    turns: turns.rows.map((row) => Object.values(row)),
+  };
+}
+
+/** A live attempt held `Personal`, as only a personal runner's open wrote one. */
+const personalAgain098 = `INSERT INTO session_attempt
+    (tenant,project,session,attempt,attempt_number,recovery_epoch,state,
+     lease_owner,lease_expires_at,bearer,bearer_secret_digest,idle_since,pool,
+     pool_principal,holder_kind,assignment,image,launch)
+  VALUES('tenant-c98','project-c98','held-c98','again-c98',3,'epoch-c98',
+         'Running','principal-a',now()+interval '1 hour','bearer-again-c98',
+         repeat('d',64),now(),'principal-a','runner-principal-c98','Personal',
+         'assignment-again-c98','image-c98','{}')`;
+
+test("098 ends what a personal runner still held as removing it would, its turn back in the queue, refuses one live again, and drops every session function it held one through", async () => {
+  await migrationDatabase(
+    "personal_runners_hold_no_sessions",
+    async (subject) => {
+      await installationBefore(subject, migration098.version);
+      await subject.query(personalSeed098);
+      assert.deepEqual(
+        await personalSessionFunctionsOf098(subject),
+        personalSessionFunctions098,
+      );
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration098.version),
+      );
+
+      assert.deepEqual(await sessionWorkOf098(subject), {
+        attempts: [
+          ["ended-c98", "Lost", "LeaseExpired", 1, null, true],
+          ["hosted-c98", "Running", null, 1, "principal-a", false],
+          ["live-c98", "Superseded", "Fenced", 2, null, true],
+        ],
+        turns: [
+          ["turn-held-c98", "Queued", 1, null],
+          ["turn-hosted-c98", "Claimed", 0, "hosted-c98"],
+        ],
+      });
+      await assert.rejects(subject.query(personalAgain098), {
+        constraint: "session_attempt_personal_is_finished",
+      });
+      assert.deepEqual(await personalSessionFunctionsOf098(subject), []);
+
+      await subject.query(
+        `DELETE FROM personal_runner WHERE tenant='tenant-c98'`,
+      );
+      await subject.query(
+        `SELECT ${personalRunnerFenceFunction}('tenant-c98','principal-a')`,
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT attempt,state FROM session_attempt
+              WHERE holder_kind='ChatHost'`,
+          )
+        ).rows,
+        [{ attempt: "hosted-c98", state: "Running" }],
+      );
+    },
+  );
 });

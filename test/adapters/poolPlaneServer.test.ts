@@ -1188,7 +1188,7 @@ const poolReplayPolls = [
  * whole.
  */
 function poolReplayPolled(older: WorkerContractReleasePool): void {
-  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and is handed the session it has room for`, async () => {
+  test(`a ${older.release} pool reads every reconciliation a poll answers it with, and a pool or a chat host is handed the session it has room for`, async () => {
     const seen = new Map<string, Set<boolean>>();
     for (const [
       what,
@@ -1241,7 +1241,11 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
       assert.deepEqual(older.reconciliation.parse(body), body, what);
       assert.deepEqual(
         offering.made.filter((call) => (call as unknown[])[0] === "open"),
-        Array(sessions).fill(["open", "session-waiting", "minted-1"]),
+        Array(token === runnerToken ? 0 : sessions).fill([
+          "open",
+          "session-waiting",
+          "minted-1",
+        ]),
         what,
       );
       workerContractOptionalsSeen(older.reconciliation, body, "answer", seen);
@@ -1863,7 +1867,7 @@ test("a caller that is no admitted pool is 403, and an outage of the issuer, the
   }
 });
 
-test("a personal runner is admitted by its owner's permit and renews the executions it names", async () => {
+test("a personal runner is admitted by its owner's permit, renews the executions it names and is handed no session, its session store asked nothing of one", async () => {
   const recorded = calls();
   const sessions = sessionCalls([], ["thread-one"]);
   const answered = await createPoolPlaneApp(
@@ -1877,8 +1881,13 @@ test("a personal runner is admitted by its owner's permit and renews the executi
   const body = workerPoolReconciliationSchema.parse(answered.json());
   assert.deepEqual(body.assignments, []);
   assert.deepEqual(body.stop, []);
-  assert.equal(body.sessions.length, 1);
+  assert.deepEqual(body.sessions, []);
   assert.deepEqual(recorded.made, [["renew", "live"]]);
+  assert.deepEqual(
+    sessions.made,
+    [],
+    "a personal runner's poll asked its session store",
+  );
 });
 
 test("a personal runner whose owner lost the permit to register one is told it is not there", async () => {
@@ -1917,12 +1926,11 @@ function readsRefused(read: unknown[]): ProjectAccess {
   };
 }
 
-test("a personal runner's session is opened only in a project its owner may still read", async () => {
+test("a personal runner polling with room for a session and none for an execution asks its owner's read of no project", async () => {
   const read: unknown[] = [];
   const sessions = sessionCalls([], ["thread-one"]);
-  const refusing = readsRefused(read);
   const answered = await createPoolPlaneApp(
-    plane(calls().ports, refusing, sessions.store),
+    plane(calls().ports, readsRefused(read), sessions.store),
   ).inject({
     method: "GET",
     url: polling([], 0, 1),
@@ -1933,14 +1941,10 @@ test("a personal runner's session is opened only in a project its owner may stil
     workerPoolReconciliationSchema.parse(answered.json()).sessions,
     [],
   );
-  assert.deepEqual(read, [[runner.owner, asProjectId("project"), "Read"]]);
-  assert.ok(
-    !sessions.made.some((call) => Array.isArray(call) && call[0] === "open"),
-    "a session was opened in a project its owner may not read",
-  );
+  assert.deepEqual(read, []);
 });
 
-test("a personal runner polling while its owner's read cannot be answered is told to retry", async () => {
+test("a personal runner polling for an execution while its owner's read cannot be answered is told to retry", async () => {
   const sessions = sessionCalls([], ["thread-one"]);
   const unanswered: ProjectAccess = {
     ...authority("Allow"),
@@ -1950,10 +1954,17 @@ test("a personal runner polling while its owner's read cannot be answered is tol
       ),
   };
   const answered = await createPoolPlaneApp(
-    plane(calls().ports, unanswered, sessions.store),
+    plane(
+      {
+        ...calls().ports,
+        allowlisted: () => Promise.resolve([asProjectId("project")]),
+      },
+      unanswered,
+      sessions.store,
+    ),
   ).inject({
     method: "GET",
-    url: polling([], 0, 1),
+    url: polling([], 1, 0),
     headers: runnerSpeaking,
   });
   assert.equal(answered.statusCode, 503);
@@ -2063,21 +2074,19 @@ test("a chat host's declared idle bound is capped at the launch's, recorded on i
   }
 });
 
-test("a pool's or a personal runner's declared idle bound is read from neither, and a bound of no seconds is refused", async () => {
-  for (const headers of [speaking, runnerSpeaking]) {
-    const sessions = idleCapped(60);
-    const answered = await createPoolPlaneApp(
-      plane(calls().ports, authority("Allow"), sessions.store),
-    ).inject({
-      method: "GET",
-      url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=30`,
-      headers,
-    });
-    assert.equal(answered.statusCode, 200);
-    const [opening] = sessions.opened;
-    assert.equal(opening?.idleSecs, undefined);
-    assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
-  }
+test("a pool's declared idle bound is not read, and a bound of no seconds is refused", async () => {
+  const sessions = idleCapped(60);
+  const answered = await createPoolPlaneApp(
+    plane(calls().ports, authority("Allow"), sessions.store),
+  ).inject({
+    method: "GET",
+    url: `${polling([], 0, 1)}&${workerPoolPollQuery.idleSecs}=30`,
+    headers: speaking,
+  });
+  assert.equal(answered.statusCode, 200);
+  const [opening] = sessions.opened;
+  assert.equal(opening?.idleSecs, undefined);
+  assert.equal(opening?.launch.bounds.idleMs, launch.bounds.idleMs);
   const refused = await createPoolPlaneApp(
     plane(calls().ports, authority("Allow"), idleCapped(60).store),
   ).inject({

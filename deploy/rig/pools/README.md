@@ -19,10 +19,10 @@ and `Lead`, and its `projectRoutes`, over the project's own session placement;
 an inquiry runs where the lead does. A turn keeps the route it was admitted
 on, so a placement changed later moves the next turn admitted and never one
 already queued, and the cluster places and claims only turns admitted
-`InCluster`. On `Pool` a thread is taken only by its member's personal runner,
-an inquiry by a pool its member registered on the project, and the lead by any
-of the project's pools. A member with no such runner for their thread or
-inquiry is refused a turn on `Pool` as `NoRunner`, and a `Pool` turn no runner takes within
+`InCluster`. On `Pool` a thread and an inquiry are taken only by their
+member's chat host, and the lead by any of the project's pools. A member with
+no chat host is refused a thread's or an inquiry's turn on `Pool` as
+`NoRunner`, and a `Pool` turn no runner takes within
 `sessionPoolTurnDwellSecs` (`src/interpreter/sessionPlacement.ts`) is withdrawn
 by the scheduler.
 
@@ -119,8 +119,8 @@ host the rig does not run and those controls say nothing about.
 ## Personal runners
 
 A personal runner is a member's own machine, and it takes nothing but that
-member's threads and, under the owner fallback, their executions, in the
-projects they allowlist and may still read. A member may hold several in a
+member's executions under the owner fallback, in the projects they allowlist
+and may still read; their threads and inquiries run on their chat host. A member may hold several in a
 tenant, each with its own room, and none until the tenant gives them personal
 runners, which a new tenant's administrators may (an older tenant:
 `deploy/rig/keto/README.md`, Default authority holders), save the person a
@@ -135,6 +135,12 @@ or all of theirs, a tenant administrator all of a member's, and the list goes
 with the last. A personal runner holds no relation and is admitted only while
 its owner keeps the permit, and the forge credentials it is given are for the
 project of work it holds.
+
+A member's chat host is their one machine for their threads and inquiries, in
+every project of the tenant they may read, under the same permit. It is
+registered the same way, with a token from
+`POST /api/v1/tenants/:tenant/chat-host-registration-tokens` and the runner's
+`register --chat`; registering another replaces it, ending what it held.
 
 ## The order an operator writes in
 

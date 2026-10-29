@@ -47,8 +47,8 @@ export const user = "1000";
 export const mint =
   "program POST /api/v1/tenants/acme/projects/widgets/worker-pool-registration-tokens";
 export const redemption = "runner POST /api/v1/worker-pool-registrations";
-export const ownFile = `acme.${machineNamePart(setupSiteMember)}.json`;
-export const ownUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.service`;
+export const chatFile = `acme.${machineNamePart(setupSiteMember)}.chat.host.json`;
+export const chatUnit = `chuggy-linux-acme.${machineNamePart(setupSiteMember)}.chat.host.service`;
 export const next = `next: node ${program} ${flags}`;
 export const again = `rule: Run node ${program} runner ${flags} only `;
 
@@ -117,8 +117,8 @@ export function lines(on: Stood, engine: "docker" | "podman" = "docker") {
     login: on.machine.login,
     pool: join(on.machine.pools, poolFile),
     unit,
-    own: join(on.machine.pools, ownFile),
-    ownUnit,
+    chat: join(on.machine.pools, chatFile),
+    chatUnit,
     engine,
   });
 }

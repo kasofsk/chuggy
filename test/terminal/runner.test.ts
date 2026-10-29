@@ -9,10 +9,9 @@
  * one child's arguments and is in nothing the program writes. Every child is
  * given nothing to read and a session of its own, so none can ask a person for
  * a password, and no command that asks for one is run. The site is sent the
- * mints and the project added to what the person's own runner serves, and none
- * of them where the machine and that runner already have what they need. Most
+ * mints, and none of them where the machine already has what it needs. Most
  * cases are of a project whose chats run on the cluster, so of the project's
- * runner alone; the person's own beside it has cases of its own. Every run
+ * runner alone; the person's chat host beside it has cases of its own. Every run
  * takes itself for the user the runner package takes docker from, whoever the
  * suite runs as. The last case is the control: everything every run here wrote
  * is searched for everything the stand-ins handed out and for the runner's
@@ -33,7 +32,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import { runnerPackageOffered } from "../../ui/chuggy-ui/app/core/runners.ts";
-import { setupSiteOwnAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
+import { setupSiteChatAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
 
 import { machineLoginSecret } from "./machine.ts";
 import { program, shellWords, userSaid } from "./program.ts";
@@ -41,13 +40,13 @@ import {
   type Stood,
   acts,
   again,
+  chatFile,
+  chatUnit,
   cleared,
   first,
   lines,
   mint,
   next,
-  ownFile,
-  ownUnit,
   poolFile,
   probes,
   ran,
@@ -62,11 +61,10 @@ import {
   words,
 } from "./runnerStood.ts";
 
-const ownMint =
-  "program POST /api/v1/tenants/acme/personal-runner-registration-tokens";
-const ownRedemption = "runner POST /api/v1/personal-runner-registrations";
-const serves =
-  "program PUT /api/v1/tenants/acme/personal-runner/projects/widgets";
+const chatMint =
+  "program POST /api/v1/tenants/acme/chat-host-registration-tokens";
+/** Where a chat host's token is redeemed, which is where a member's runner's is. */
+const chatRedemption = "runner POST /api/v1/personal-runner-registrations";
 
 /** The arguments of a command the program printed, as a shell makes words of it. */
 async function commanded(command: string): Promise<readonly string[]> {
@@ -174,19 +172,19 @@ test("a second run on a machine that has everything finds each thing as it is, r
   unasked(on);
 });
 
-/** The words each registration was run with, a pool's and the person's own. */
+/** The words each registration was run with, a pool's and the person's chat host's. */
 function registrations(on: Stood): readonly (readonly string[])[] {
   return words(on, "chuggy-linux").filter((argv) => argv[0] === "register");
 }
 
-test("where the person's chats run on runners and they have none, the bare command offers two services of theirs here, and the command its rule names makes this machine the project's runner and then their own, on one package, one settings file and one Claude login, and ends on a checklist that says the runner's step done", async () => {
+test("where the person's chats run on a chat host and they have none, the bare command offers two services of theirs here, and the command its rule names makes this machine the project's runner and then their chat host, on one package, one settings file and one Claude login, and ends on a checklist that says the runner's step done", async () => {
   const on = await stood("Pool");
   const { found, did } = lines(on);
   const offered = await ran(on, []);
   assert.equal(offered.code, 0, offered.stdout);
   assert.match(
     offered.lines.at(-3) ?? "",
-    / two background services of yours that start when you log in: one for the work on your project's tickets, one for your own chats, /u,
+    / two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, /u,
   );
   const rule = offered.lines.at(-2) ?? "";
   const yes = " only once the person says yes to a runner on this machine.";
@@ -211,37 +209,36 @@ test("where the person's chats run on runners and they have none, the bare comma
     did.linger,
     did.started,
     found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.chatStarted,
+    found.chatLive,
     next,
   ]);
   assert.deepEqual(on.installation.writes, [
     mint,
     redemption,
-    ownMint,
-    ownRedemption,
-    serves,
+    chatMint,
+    chatRedemption,
   ]);
   const [, token = ""] = on.installation.world.secrets.filter((secret) =>
     secret.includes("registration"),
   );
   assert.deepEqual(registrations(on)[1], [
     "register",
-    "--personal",
     "--api",
     on.installation.site,
     `--token=${token}`,
+    "--chat",
   ]);
   assert.deepEqual(words(on, "chuggy-linux").at(-1), [
     "install-service",
     "--pool",
-    join(on.machine.pools, ownFile),
+    join(on.machine.pools, chatFile),
   ]);
   assert.equal(acts(on).filter((act) => act === "install").length, 1);
-  assert.ok(existsSync(join(on.machine.units, ownUnit)));
+  assert.ok(existsSync(join(on.machine.units, chatUnit)));
   assert.equal(readFileSync(on.machine.login, "utf8"), machineLoginSecret);
   unasked(on);
 
@@ -249,16 +246,16 @@ test("where the person's chats run on runners and they have none, the bare comma
   assert.ok(after.lines.includes("step: runner      done     live"));
 });
 
-/** A fresh machine, where the person's chats run on runners, taken through `runner` to both runners the site sees live. */
+/** A fresh machine, where the person's chats run on a chat host, taken through `runner` to the project's runner and their chat host the site sees live. */
 async function setUpBoth(): Promise<Stood> {
   const on = await stood("Pool");
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.equal(done.lines.at(-2), lines(on).found.ownLive, done.stdout);
+  assert.equal(done.lines.at(-2), lines(on).found.chatLive, done.stdout);
   return on;
 }
 
-test("a second run where both runners are live and the person's own serves the project changes nothing, says each thing as found, writes both units again only as they were, and sends the site no write", async () => {
+test("a second run where the project's runner and the person's chat host are both live changes nothing, says each thing as found, writes both units again only as they were, and sends the site no write", async () => {
   const on = await setUpBoth();
   const { found } = lines(on);
   cleared(on);
@@ -266,27 +263,33 @@ test("a second run where both runners are live and the person's own serves the p
   assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines.slice(-7), [
     found.live,
-    found.own,
-    found.ownUnit,
-    found.ownRunning,
-    found.serves,
-    found.ownLive,
+    found.chat,
+    found.chatCheck,
+    found.chatUnit,
+    found.chatRunning,
+    found.chatLive,
     next,
   ]);
   assert.ok(!done.lines.some((line) => line.startsWith("did: ")));
-  assert.deepEqual(acts(on), [...rerun, "service", "enabled", "active"]);
+  assert.deepEqual(acts(on), [
+    ...rerun,
+    "doctor",
+    "service",
+    "enabled",
+    "active",
+  ]);
   assert.deepEqual(on.installation.writes, []);
 });
 
-test("a workspace that does not let the person register a runner of their own stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
+test("a workspace that does not let the person register a chat host stops the run once the project's runner is live, says an admin, who may be the person, turns on Personal runners for them with Edit on their row of the People page, and the run its rule names finishes the job", async () => {
   const on = await stood("Pool");
   on.installation.world.withheld.add("acme");
   const withheld = await ran(on);
   assert.equal(withheld.code, 0, withheld.stdout);
   assert.deepEqual(withheld.lines.slice(-5), [
     lines(on).found.live,
-    "found: the workspace does not let you register a runner of your own",
-    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on a runner of your own, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
+    "found: the workspace does not let you register a chat host",
+    `tell: The runner for the work on acme/widgets is set up and live. Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${on.installation.site}/tenants/acme/settings/people, with Edit on your row. Tell me once it is on.`,
     `${again}once the person says Personal runners is on for them in the workspace.`,
     "next: stop",
   ]);
@@ -297,64 +300,51 @@ test("a workspace that does not let the person register a runner of their own st
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-2), [lines(on).found.ownLive, next]);
-  assert.deepEqual(on.installation.writes, [ownMint, ownRedemption, serves]);
+  assert.deepEqual(done.lines.slice(-2), [lines(on).found.chatLive, next]);
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
 });
 
-test("the person's own runner on this machine that serves another project is given this one, and nothing is registered again", async () => {
+test("a chat host of the person's live on another machine is left serving their chats, and this machine is registered as nothing but the project's runner", async () => {
+  const on = await stood("Pool");
+  const { found } = lines(on);
+  const elsewhere = setupSiteChatAdded(on.installation.world, "acme", true);
+  const done = await ran(on);
+  assert.equal(done.code, 0, done.stdout);
+  assert.deepEqual(done.lines.slice(-3), [
+    found.live,
+    found.chatElsewhere,
+    next,
+  ]);
+  assert.deepEqual(on.installation.writes, [mint, redemption]);
+  assert.equal(registrations(on).length, 1);
+  assert.ok(!existsSync(join(on.machine.pools, chatFile)));
+  assert.deepEqual(on.installation.world.chat.get("acme"), {
+    id: elsewhere,
+    live: true,
+  });
+});
+
+test("a chat host of the person's removed on the My runners page is said, and this machine is registered as it again, its file replaced and its service restarted, and waited on until the site sees it live", async () => {
   const on = await setUpBoth();
   const { found, did } = lines(on);
-  const held = on.installation.world.own.get("acme");
-  assert.ok(held !== undefined);
-  held.projects = ["gadgets"];
+  on.installation.world.chat.delete("acme");
   cleared(on);
   const done = await ran(on);
   assert.equal(done.code, 0, done.stdout);
-  assert.deepEqual(done.lines.slice(-6), [
-    found.own,
-    found.ownUnit,
-    found.ownRunning,
-    did.serves,
-    found.ownLive,
-    next,
-  ]);
-  assert.deepEqual(on.installation.writes, [serves]);
-  assert.deepEqual(registrations(on), []);
-  assert.deepEqual(held.projects, ["gadgets", "widgets"]);
-});
-
-test("a runner of the person's own on another machine is kept, and this machine is registered as one more of theirs, with a file and a service of its own, and waited on until the site sees it live", async () => {
-  const on = await stood("Pool");
-  const { found, did } = lines(on);
-  const elsewhere = setupSiteOwnAdded(on.installation.world, "acme", true);
-  on.installation.world.own.get("acme")?.projects.push("gadgets");
-  const done = await ran(on);
-  assert.equal(done.code, 0, done.stdout);
   assert.deepEqual(done.lines.slice(-7), [
-    found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    found.chatGone,
+    did.chat,
+    found.chatCheck,
+    found.chatUnit,
+    did.chatRestarted,
+    found.chatLive,
     next,
   ]);
-  assert.deepEqual(on.installation.writes, [
-    mint,
-    redemption,
-    ownMint,
-    ownRedemption,
-    serves,
-  ]);
-  assert.equal(registrations(on).length, 2);
-  assert.ok(existsSync(join(on.machine.pools, ownFile)));
-  assert.ok(existsSync(join(on.machine.units, ownUnit)));
-  assert.deepEqual(on.installation.world.own.get("acme"), {
-    projects: ["gadgets", "widgets"],
-    runners: [
-      { id: elsewhere, live: true },
-      { id: "chuggy-personal-2", live: true },
-    ],
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
+  assert.equal(registrations(on).length, 1);
+  assert.deepEqual(on.installation.world.chat.get("acme"), {
+    id: "chuggy-chat-2",
+    live: true,
   });
 });
 
@@ -384,7 +374,7 @@ test("a machine whose project's runner was set up on a package older than the fi
     found.engine,
     found.settings,
     found.login,
-    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.14.0 or later`,
+    `found: the runner package is installed: chuggy-linux 0.13.0, at ${command}, and chuggy setup needs 0.35.0 or later`,
     did.package,
     found.pool,
     found.check,
@@ -392,16 +382,16 @@ test("a machine whose project's runner was set up on a package older than the fi
     found.linger,
     did.restarted,
     found.live,
-    did.own,
-    did.ownUnit,
-    did.ownStarted,
-    did.serves,
-    found.ownLive,
+    did.chat,
+    found.chatCheck,
+    did.chatUnit,
+    did.chatStarted,
+    found.chatLive,
     next,
   ]);
   assert.deepEqual(installs(), [install]);
   assert.equal(acts(on).filter((act) => act === "restart").length, 1);
-  assert.deepEqual(on.installation.writes, [ownMint, ownRedemption, serves]);
+  assert.deepEqual(on.installation.writes, [chatMint, chatRedemption]);
   unasked(on);
 });
 
@@ -553,7 +543,7 @@ test("where the machine's own prefix is not this person's to write, the package 
     const own = join(on.machine.own, "bin", "chuggy-linux");
     assert.ok(
       done.lines.includes(
-        `did: installed the runner package, chuggy-linux 0.14.0, at ${own}`,
+        `did: installed the runner package, chuggy-linux 0.35.0, at ${own}`,
       ),
       done.stdout,
     );
@@ -568,8 +558,8 @@ test("where the machine's own prefix is not this person's to write, the package 
 test("where the person keeps their configuration in a directory of their own choosing, the runner's things are looked for and put there and nowhere under the usual one", async () => {
   const on = await stood();
   const config = join(on.home.beside, "config");
-  mkdirSync(join(config, "chuggy-linux"), { recursive: true });
-  renameSync(on.machine.login, join(config, "chuggy-linux", "claude-token"));
+  mkdirSync(join(config, "chuggy-linux", "claude"), { recursive: true });
+  renameSync(on.machine.login, join(config, "chuggy-linux", "claude", "token"));
   const done = await ran(on, runner, { XDG_CONFIG_HOME: config });
   assert.equal(done.code, 0, done.stdout);
   assert.equal(done.lines.at(-1), next);

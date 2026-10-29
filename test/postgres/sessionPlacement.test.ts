@@ -254,7 +254,7 @@ function hosted(
   return { mine, inquiry, project: "Unregistered" };
 }
 
-test("a member's chat host is their own runner and their inquiries' in every project of its tenant, live only while its last poll is recent, and stands beside their personal runner, either live making a thread's standing live", async () => {
+test("a member's chat host is their own runner and their inquiries' in every project of its tenant, live only while its last poll is recent", async () => {
   const partition = await postgresHarnessProject(harness.store, "hosted");
   const beside = await postgresHarnessProject(harness.store, "hosted-beside", {
     tenant: partition.tenant,
@@ -262,23 +262,7 @@ test("a member's chat host is their own runner and their inquiries' in every pro
   });
   const member = asPrincipal("https://issuer.invalid#a-member");
   const key = { tenant: partition.tenant, owner: member };
-  const runners = postgresPersonalRunnerRegistry(apiPool);
   const reads = postgresSessionPlacement(apiPool);
-  assert.equal(
-    await runners.register({
-      ...key,
-      capabilities: [],
-      clientId: `chuggy-personal-${randomUUID()}`,
-      principal: asPrincipal(`https://issuer.invalid#runner-${randomUUID()}`),
-    }),
-    "Registered",
-  );
-  assert.equal(await runners.allow(key, partition.project), "Allowed");
-  await harness.query(
-    `UPDATE personal_runner SET last_polled_at=now() WHERE tenant=$1`,
-    [partition.tenant],
-  );
-  assert.equal((await reads.runners(partition, member)).mine, "Live");
   const clientId = `chuggy-personal-${randomUUID()}`;
   assert.deepEqual(
     await postgresChatHostRegistry(apiPool).register({
@@ -289,12 +273,8 @@ test("a member's chat host is their own runner and their inquiries' in every pro
     { written: "Registered" },
   );
   const stopped = async () => {
-    assert.deepEqual(
-      await reads.runners(partition, member),
-      hosted("Live", "Offline"),
-      "a live personal runner did not stand beside a chat host offline",
-    );
-    assert.deepEqual(await reads.runners(beside, member), hosted("Offline"));
+    for (const at of [partition, beside])
+      assert.deepEqual(await reads.runners(at, member), hosted("Offline"));
   };
   await stopped();
   const polled = async (secondsAgo: number) =>
@@ -318,16 +298,12 @@ test("a member's chat host is their own runner and their inquiries' in every pro
   );
   assert.deepEqual(
     await reads.runners(partition, member),
-    hosted("Live", "Unregistered"),
+    hosted("Unregistered"),
   );
 });
 
-test("a member's own runner is their personal runner, live only while its last poll is recent and only in a project it serves, and it is no runner of the project's", async () => {
+test("a member's personal runner is no runner of theirs or of the project's, however live and in a project it serves, beside a chat host or alone", async () => {
   const partition = await postgresHarnessProject(harness.store, "mine");
-  const beside = await postgresHarnessProject(harness.store, "mine-beside", {
-    tenant: partition.tenant,
-    project: asProjectId(`project-mine-beside-${randomUUID()}`),
-  });
   const member = asPrincipal("https://issuer.invalid#a-member");
   const key = { tenant: partition.tenant, owner: member };
   const registry = postgresPersonalRunnerRegistry(apiPool);
@@ -341,32 +317,24 @@ test("a member's own runner is their personal runner, live only while its last p
     }),
     "Registered",
   );
-  assert.equal((await reads.runners(partition, member)).mine, "Unregistered");
   assert.equal(await registry.allow(key, partition.project), "Allowed");
-  const polled = async (secondsAgo: number) =>
-    harness.query(
-      `UPDATE personal_runner SET last_polled_at=now()-make_interval(secs=>$3)
-        WHERE tenant=$1 AND owner=$2`,
-      [partition.tenant, member, secondsAgo],
-    );
-  assert.equal((await reads.runners(partition, member)).mine, "Offline");
-  await polled(1);
-  assert.deepEqual(await reads.runners(partition, member), {
-    mine: "Live",
-    inquiry: "Unregistered",
-    project: "Unregistered",
-  });
-  assert.equal((await reads.runners(beside, member)).mine, "Unregistered");
-  for (const elsewhere of [
-    asPrincipal("https://issuer.invalid#another"),
-    undefined,
-  ])
-    assert.equal(
-      (await reads.runners(partition, elsewhere)).mine,
-      "Unregistered",
-    );
-  await polled(sessionRunnerPolledSecsMax + 1);
-  assert.equal((await reads.runners(partition, member)).mine, "Offline");
+  await harness.query(
+    `UPDATE personal_runner SET last_polled_at=now() WHERE tenant=$1 AND owner=$2`,
+    [partition.tenant, member],
+  );
+  assert.deepEqual(
+    await reads.runners(partition, member),
+    hosted("Unregistered"),
+  );
+  assert.deepEqual(
+    await postgresChatHostRegistry(apiPool).register({
+      ...key,
+      clientId: `chuggy-personal-${randomUUID()}`,
+      principal: asPrincipal(`https://issuer.invalid#host-${randomUUID()}`),
+    }),
+    { written: "Registered" },
+  );
+  assert.deepEqual(await reads.runners(partition, member), hosted("Offline"));
 });
 
 test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {

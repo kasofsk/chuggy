@@ -182,8 +182,8 @@ export function runnerCapabilityLabel(capability: string): string {
     : platform[1].replaceAll(":", " ");
 }
 
-/** Whose a registered machine is: one of the project's pools, or the reader's own. */
-export type RunnerKind = "Pool" | "Personal";
+/** Whose a registered machine is: one of the project's pools, one of the reader's own runners, or the reader's chat host. */
+export type RunnerKind = "Pool" | "Personal" | "ChatHost";
 
 /** What a reader's choices ask, or why they cannot be asked. */
 export function runnerAskRead(
@@ -196,7 +196,7 @@ export function runnerAskRead(
   return { ask: { package: chosen, host, capabilities: read.capabilities } };
 }
 
-/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's or as the reader's own, declaring what the reader asked. */
+/** The command that registers the machine a package was installed on, with this console and a minted token, as a pool's, as the reader's own or as their chat host, declaring what the reader asked. */
 export function runnerRegisterCommand(
   installed: RunnerPackage,
   origin: string,
@@ -205,11 +205,12 @@ export function runnerRegisterCommand(
   ask: Pick<RunnerAsk, "host" | "capabilities"> = runnerAskDefault,
 ): string {
   const personal = kind === "Personal" ? " --personal" : "";
+  const chat = kind === "ChatHost" ? " --chat" : "";
   const host = ask.host ? " --host" : "";
   const declared = ask.capabilities
     .map((capability) => ` --capability ${capability}`)
     .join("");
-  return `${installed.program} register${personal} --api ${origin} --token=${token}${host}${declared}`;
+  return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
 }
 
 /**

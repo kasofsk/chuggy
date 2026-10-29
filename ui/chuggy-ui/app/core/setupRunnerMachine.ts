@@ -4,17 +4,17 @@
  *
  * The machine is the record of the machine's things: whether a container
  * engine answers this user, where the runner package is, what its settings
- * name, whether it is registered for a project or as the person's own runner,
+ * name, whether it is registered for a project or as the person's chat host,
  * whether a service is there and running. Nothing of that is kept by this
  * program, so every run reads it again. The names are the runner package's
  * own, since it has no command that says them: where it keeps its settings,
  * its Claude login, its registrations and its units, how it names a pool file
- * for a project and the file of the person's own runner for a workspace, and
+ * for a project and the file of the person's chat host in a workspace, and
  * the unit for either. A settings file is read for the engine and the Claude
- * credential it names and for nothing else, the file of the person's own
- * runner for the id the site lists that runner by and for nothing else, and a
- * pool's registration and a Claude credential's file are never read at all,
- * only looked for. The package is
+ * credential it names and for nothing else, the chat host's file for the id
+ * the site holds that host by and for nothing else, and a pool's registration
+ * and a Claude credential's file are never read at all, only looked for. The
+ * package is
  * installed by the console's own install command, under the person's own
  * prefix where the machine's is not theirs to write.
  */
@@ -64,7 +64,7 @@ export const setupRunnerPlatform = "linux";
 /** Where the runner package keeps its things on this machine, each a whole path. */
 export interface SetupRunnerPlaces {
   readonly settings: string;
-  /** Where the runner's Claude login is kept unless its settings name another place. */
+  /** Where the runner's Claude login is kept unless its settings name another place: alone in a directory of its own, which a chat host is handed whole. */
   readonly login: string;
   readonly pools: string;
   readonly units: string;
@@ -88,7 +88,7 @@ export function setupRunnerPlaces(
       : setupPath(home, ".config");
   return {
     settings: setupPath(config, setupProgram, "runner.json"),
-    login: setupPath(config, setupProgram, "claude-token"),
+    login: setupPath(config, setupProgram, "claude", "token"),
     pools: setupPath(config, "chuggy", "pools"),
     units: setupPath(config, "systemd", "user"),
     own: setupPath(home, ".local"),
@@ -399,17 +399,23 @@ const setupVersionSchema = z.object({
  */
 export const setupPackageLeast = "0.14.0";
 
+/** The first version of the runner package that registers a chat host, which a run that sets one up leaves a machine on. */
+export const setupChatPackageLeast = "0.35.0";
+
 function setupVersionParts(version: string): readonly number[] {
   return version.split(/[.+-]/u, 3).map(Number);
 }
 
-/** Whether a package found is one a run can use: its version read, and none older than the least. */
-export function setupPackageCurrent(found: SetupPackageFound): boolean {
+/** Whether a package found is one a run can use: its version read, and none older than `least`. */
+export function setupPackageCurrent(
+  found: SetupPackageFound,
+  least: string,
+): boolean {
   if (found.version === undefined) return false;
   const had = setupVersionParts(found.version);
-  const least = setupVersionParts(setupPackageLeast);
-  const at = had.findIndex((part, index) => part !== least[index]);
-  return at < 0 || (had[at] ?? 0) > (least[at] ?? 0);
+  const floor = setupVersionParts(least);
+  const at = had.findIndex((part, index) => part !== floor[index]);
+  return at < 0 || (had[at] ?? 0) > (floor[at] ?? 0);
 }
 
 function setupCommandIn(prefix: string): string {
@@ -443,10 +449,11 @@ function setupPrefixRead(printed: string | undefined): string | undefined {
     : undefined;
 }
 
-/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use. */
+/** Where the runner package is: under the prefix npm installs machine-wide, or under the person's own, and where both hold one, the one a run can use, none older than `least`. */
 export async function setupPackageProbed(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
+  least: string,
 ): Promise<SetupPackageProbe> {
   const prefix = setupPrefixRead(
     await ports.process.read(
@@ -463,7 +470,8 @@ export async function setupPackageProbed(
     prefix === undefined ? undefined : setupPackageIn(ports, prefix),
     setupPackageIn(ports, places.own),
   ].filter((there) => there !== undefined);
-  const found = held.find(setupPackageCurrent) ?? held[0];
+  const found =
+    held.find((there) => setupPackageCurrent(there, least)) ?? held[0];
   return { found, prefix, mine };
 }
 
@@ -503,12 +511,12 @@ export function setupInstallCommand(
     : [...words.slice(0, -1), "--prefix", places.own, ...words.slice(-1)];
 }
 
-/** The console's own register command, word for word, as a pool's or as the person's own, run as the installed command by its whole path. */
+/** The console's own register command, word for word, as a pool's or as the person's chat host, run as the installed command by its whole path. */
 export function setupRegisterCommand(
   command: string,
   site: string,
   token: string,
-  kind: RunnerKind,
+  kind: Exclude<RunnerKind, "Personal">,
 ): readonly string[] {
   const [, ...rest] = runnerRegisterCommand(
     runnerPackageOffered,
@@ -519,11 +527,11 @@ export function setupRegisterCommand(
   return [command, ...rest];
 }
 
-/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project and one as the person's own runner in its workspace, each a file's name and not yet whether the site knows it. */
+/** What the bare command reads of this machine where the runner's step is the one next: whether a runner could be put here, and whether it holds a registration for the project and one as the person's chat host in its workspace, each a file's name and not yet whether the site knows it. */
 export interface SetupRunnerHere {
   readonly room: SetupRunnerRoom;
   readonly held: boolean;
-  readonly own: boolean;
+  readonly chat: boolean;
   /** The kind of Claude credential work here would run on: the one the settings name, a subscription's where there are none, and nothing where they were not read. */
   readonly claude: SetupClaudeKind | undefined;
 }
@@ -546,6 +554,9 @@ export function setupPoolFilePrefix(partition: PartitionIdentity): string {
 }
 
 const setupPoolFileSuffix = ".json";
+
+/** What the package ends a chat host's file's name with, after the workspace and the member. */
+const setupChatFileSuffix = ".chat.host.json";
 
 /** A pool's name as the package takes one, which a pool file's name carries as itself. */
 const setupPoolNamed = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
@@ -585,13 +596,14 @@ export function setupPoolFiles(
 const setupNamePart = /^(?:[A-Za-z0-9-]|_[0-9a-f]{2})+$/u;
 
 /**
- * The files this machine has of the person's own runner in a workspace, found
- * by their names, in the order of those names. The package
- * names one for the workspace and the member, beside the pool files, and the
- * member is not known here, so a file is one of these by its first part and
- * by its second being one whole part, which no pool file's rest is.
+ * The files this machine has of the person's chat host in a workspace, found
+ * by their names, in the order of those names. The package names one for the
+ * workspace and the member, then `chat` and `host`, beside the pool files, and
+ * the member is not known here, so a file is one of these by its first part,
+ * its last two and the one between being one whole part, which no pool file's
+ * rest is.
  */
-export function setupOwnFiles(
+export function setupChatFiles(
   ports: SetupPorts,
   places: SetupRunnerPlaces,
   tenant: string,
@@ -601,9 +613,9 @@ export function setupOwnFiles(
     .names(places.pools)
     .toSorted()
     .flatMap((name) => {
-      if (!name.startsWith(prefix) || !name.endsWith(setupPoolFileSuffix))
+      if (!name.startsWith(prefix) || !name.endsWith(setupChatFileSuffix))
         return [];
-      const member = name.slice(prefix.length, -setupPoolFileSuffix.length);
+      const member = name.slice(prefix.length, -setupChatFileSuffix.length);
       const path = setupPath(places.pools, name);
       return setupNamePart.test(member) && ports.disk.kind(path) === "File"
         ? [{ path }]
@@ -611,15 +623,15 @@ export function setupOwnFiles(
     });
 }
 
-/** What of the person's own runner's file is read: the id the site lists that runner by, which is not its secret. */
-const setupOwnFileSchema = z.object({ clientId: identitySchema });
+/** What of the chat host's file is read: the id the site holds that host by, which is not its secret. */
+const setupChatFileSchema = z.object({ clientId: identitySchema });
 
-/** The id the site lists the person's own runner of `file` by, or nothing where the file says none this program reads. */
-export function setupOwnClient(
+/** The id the site holds the chat host of `file` by, or nothing where the file says none this program reads. */
+export function setupChatClient(
   ports: SetupPorts,
   file: SetupFile,
 ): string | undefined {
-  const parsed = setupOwnFileSchema.safeParse(
+  const parsed = setupChatFileSchema.safeParse(
     setupJson(ports.disk.text(file.path, setupTextBytesMax)),
   );
   return parsed.success ? parsed.data.clientId : undefined;
@@ -648,7 +660,7 @@ export async function setupRunnerHere(
     return {
       room: { room: "Mac" },
       held: false,
-      own: false,
+      chat: false,
       claude: undefined,
     };
   const places = setupRunnerPlaces(ports.surroundings);
@@ -661,7 +673,7 @@ export async function setupRunnerHere(
   return {
     room,
     held: open && setupPoolFiles(ports, places, partition).length > 0,
-    own: open && setupOwnFiles(ports, places, partition.tenant).length > 0,
+    chat: open && setupChatFiles(ports, places, partition.tenant).length > 0,
     claude: setupClaudeHere(settings),
   };
 }

@@ -62,6 +62,7 @@ import {
 } from "./harness.ts";
 import { leadRigDecision } from "./leadHarness.ts";
 import {
+  sessionRigPersonalRunner,
   sessionRigRouted,
   sessionRigRunner,
   sessionRigTurnRoutes,
@@ -587,12 +588,13 @@ test("a wake is admitted on the thread's own route rather than the lead's, and t
   );
 });
 
-/** The runner a wake needs is the member's own, so another member's on the project wakes nobody here. */
-test("a wake on a thread routed to runners is skipped where its member has registered none", async () => {
+/** The runner a wake needs is the member's own chat host, so another member's, or their own personal runner, wakes nobody here. */
+test("a wake on a thread routed to runners is skipped where its member has registered no chat host", async () => {
   const partition = await threadRigProject(rig, "wakerunnerless");
   const member = threadRigMember(rig, partition, "wakerunnerless");
   const other = threadRigMember(rig, partition, "wakerunnerless-other");
   await sessionRigRunner(rig.sessions, partition, other.principal);
+  await sessionRigPersonalRunner(rig.sessions, partition, member.principal);
   await sessionRigRouted(rig.sessions, partition, "Pool", "Pool");
   const thread = await threadRigThread(rig, partition, member);
   const revision = await configuration(partition);

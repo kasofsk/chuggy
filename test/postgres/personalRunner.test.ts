@@ -12,6 +12,7 @@ import {
   postgresPersonalRunnerRegistry,
 } from "../../src/adapters/postgres/personalRunner.ts";
 import {
+  postgresWorkerPoolAssignments,
   postgresWorkerPoolRoster,
   postgresWorkerPoolRunners,
 } from "../../src/adapters/postgres/workerPool.ts";
@@ -252,11 +253,12 @@ test("a second registration stands beside the first, each read by its client, an
   assert.deepEqual(read?.projects, [partition.project]);
 });
 
-test("a runner is read with its newest poll of either kind, live only while that poll is inside the window, and live for executions only by its poll for them", async () => {
+test("a runner is read with its newest poll, live only while that poll is inside the window, live with no room for an execution, and live for executions only by its poll for them", async () => {
   const partition = await project("runner-polled");
   const runners = postgresPersonalRunnerRegistry(api);
   const key = { tenant: partition.tenant, owner: member };
-  await runners.register(registration(key, `client-${partition.tenant}`));
+  const registered = registration(key, `client-${partition.tenant}`);
+  await runners.register(registered);
   const unpolled = (await runners.runners(key))?.runners[0];
   assert.equal(unpolled?.polledAt, undefined);
   assert.equal(unpolled?.live, false);
@@ -269,24 +271,27 @@ test("a runner is read with its newest poll of either kind, live only while that
       [partition.tenant, secsAgo],
     );
   await stamp("last_polled_at", sessionRunnerPolledSecsMax * 3);
-  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 2);
+  await stamp("executions_polled_at", sessionRunnerPolledSecsMax * 3);
   const stale = (await runners.runners(key))?.runners[0];
   assert.equal(stale?.live, false);
   assert.equal(stale?.executionsLive, false);
+  await postgresWorkerPoolAssignments(plane).polled(
+    { ...key, principal: registered.principal, kind: "Personal" },
+    false,
+  );
+  const full = (await runners.runners(key))?.runners[0];
+  assert.equal(full?.live, true, "a poll with no room for an execution");
+  assert.equal(full?.executionsLive, false);
   assert.deepEqual(
     await harness.query(
-      `SELECT abs(extract(epoch FROM executions_polled_at-$2::timestamptz))<0.001
+      `SELECT abs(extract(epoch FROM last_polled_at-$2::timestamptz))<0.001
                 AS newest
          FROM personal_runner WHERE tenant=$1`,
-      [partition.tenant, stale?.polledAt],
+      [partition.tenant, full?.polledAt],
     ),
     [{ newest: true }],
-    "the newer of the two polls is the one read",
+    "the poll read is the newest",
   );
-  await stamp("last_polled_at", 1);
-  const sessionPolled = (await runners.runners(key))?.runners[0];
-  assert.equal(sessionPolled?.live, true);
-  assert.equal(sessionPolled?.executionsLive, false);
   await stamp("executions_polled_at", 1);
   assert.equal((await runners.runners(key))?.runners[0]?.executionsLive, true);
 });

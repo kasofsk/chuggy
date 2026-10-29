@@ -791,11 +791,13 @@ function postgresExecutionHoldsRouted(
   };
 }
 
-/** Stamps a pool's poll as one that could take an execution, while this registration is the pool's. */
+/** Stamps a pool's poll as one that could take an execution where `executions` says it could, while this registration is the pool's; any other poll of a pool is its session store's to stamp. */
 async function workerPoolExecutionsPolled(
   pool: pg.Pool,
   identity: WorkerPoolIdentity,
+  executions: boolean,
 ): Promise<void> {
+  if (!executions) return;
   await pool.query(
     sql`UPDATE worker_pool w SET executions_polled_at=now()
           WHERE w.tenant=${identity.partition.tenant}
@@ -844,10 +846,10 @@ export function postgresWorkerPoolAssignments(
       return personalExecutionWaiting(pool, identity, terms, projects);
     },
     allowlisted: (identity) => personalExecutionsAllowlisted(pool, identity),
-    polled: (identity) =>
+    polled: (identity, executions) =>
       identity.kind === "Personal"
-        ? personalExecutionsPolled(pool, identity)
-        : workerPoolExecutionsPolled(pool, identity),
+        ? personalExecutionsPolled(pool, identity, executions)
+        : workerPoolExecutionsPolled(pool, identity, executions),
     ...postgresExecutionHoldsRouted(pool),
   };
 }

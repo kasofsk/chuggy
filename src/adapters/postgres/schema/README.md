@@ -320,8 +320,8 @@ threads of their own partition first, which their limit bounds, then their
 other open threads, then the most recent of the rest, cut at the page's bound
 with no cursor beyond it. Unfinished work is found by selecting open
 sessions with a queued turn and no live attempt, which is exactly what
-`sessions_awaiting_placement` answers for the cluster and the chat host's,
-personal runner's and pool's awaiting reads for theirs.
+`sessions_awaiting_placement` answers for the cluster and the chat host's and
+pool's awaiting reads for theirs.
 
 `thread_wake_cursor` — how far the wake pass has read the installation's change
 log. It is a single row, keyed `singleton` and held to it by a CHECK, because
@@ -350,10 +350,11 @@ scheduler's boundaries and the worker plane's run as; its composite key is
 `(tenant, project, session)` and its identity `(tenant, project, session,
 attempt_number)`, with the attempt, the bearer and the bearer's digest each
 unique globally. `holder_kind` names what holds a runner's attempt, `Pool`,
-`Personal` or `ChatHost`, and is NULL exactly where `pool` is, the cluster's;
-`idle_secs` is the idle bound a chat host declared for its own attempt. It is
-changed by opening, placing, ending, the two reapers and the fences of the
-epoch, a pool, a personal runner and a chat host, and
+`ChatHost` or, on an attempt that has ended, `Personal`, which
+`session_attempt_personal_is_finished` holds it to, and is NULL exactly where
+`pool` is, the cluster's; `idle_secs` is the idle bound a chat host declared
+for its own attempt. It is changed by opening, placing, ending, the two
+reapers and the fences of the epoch, a pool and a chat host, and
 `session_attempt_is_fenced` refuses a finished attempt any change but its
 cleanup acknowledgement. Unfinished work is found by selecting live attempts
 whose lease has expired by database time, whose epoch is not the current one,
@@ -479,19 +480,18 @@ it.
 
 `personal_runner` — one of a member's own runners in one tenant: its principal,
 the issuer client it is removed by, what it declares it can run, when it
-registered and last polled for a session and for an execution, and the runner
-package and version its newest poll named. Written by the API role, which
-registers and removes it whole, and by the pool plane, which stamps its polls
-and what they name; the pool plane, the scheduler and the boundary owner read
-it. Its key and identity are `(tenant, owner, client_id)`, so a member holds as
-many in a tenant as the API's bound admits, and it names no project; it points
-at `tenant`, and its principal and client id are each unique. Its runners
-claim their owner's threads only while their owner's `chat_host` has not
-polled within the window a runner's standing is bounded by. It is changed by
-a registration, by a poll's stamps and by its removal, which fences, in the
-same transaction, every live attempt it claimed and nothing another runner of
-its owner's holds. It has no unfinished work: a registration is committed or
-it was rolled back.
+registered, last polled and last polled as one that could take an execution,
+and the runner package and version its newest poll named. Written by the API
+role, which registers and removes it whole, and by the pool plane, which
+stamps its polls and what they name; the pool plane, the scheduler and the
+boundary owner read it. Its key and identity are `(tenant, owner, client_id)`,
+so a member holds as many in a tenant as the API's bound admits, and it names
+no project; it points at `tenant`, and its principal and client id are each
+unique. Its runners claim and hold no session. It is changed by a
+registration, by a poll's stamps and by its removal, which fences, in the same
+transaction, every live execution attempt it claimed and nothing another
+runner of its owner's holds. It has no unfinished work: a registration is
+committed or it was rolled back.
 
 `personal_runner_project` — a project a member's personal runners may serve.
 Written by the API role alone, for the runners' owner; the pool plane, the

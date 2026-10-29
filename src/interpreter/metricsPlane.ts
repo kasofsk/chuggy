@@ -19,7 +19,9 @@
  * a principal carries under the deployment's issuer, which is the login a
  * person signed in through that issuer holds, and empty where there is no
  * principal or it is another issuer's. No ticket, execution, attempt or
- * session is ever a label.
+ * session is ever a label. A member's own session names no project, and its
+ * turns carry `metricsPlaneMemberProject` rather than the partition reserved
+ * for them, so no digest of a principal is a label.
  */
 
 import {
@@ -35,6 +37,9 @@ import { oidcPrincipalSubject } from "./principal.ts";
 export const metricsPlaneDurationBoundsSecs: readonly number[] = [
   30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200,
 ];
+
+/** The project every member's own session is counted under: it begins `@`, which no project may, and is no member's partition. */
+export const metricsPlaneMemberProject = "@member";
 
 /** Where one execution's task ran and whose ticket it was, the owner as its label already. */
 export interface MetricsPlaneTask {

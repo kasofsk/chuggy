@@ -54,7 +54,7 @@ function running(pid: number): boolean {
   return !gone(pid);
 }
 
-test("what is at a path is said following a link to where it points, and a path nobody can be shown is nothing there", () => {
+test("what is at a path is said following a link to where it points, whether it is itself a link is said without following it, and a path nobody can be shown is nothing there", () => {
   const { beside } = made.machine();
   writeFileSync(join(beside, "file"), "text");
   mkdirSync(join(beside, "directory"));
@@ -66,6 +66,10 @@ test("what is at a path is said following a link to where it points, and a path 
   assert.equal(disk.kind(join(beside, "dangling")), "None");
   assert.equal(disk.kind(join(beside, "missing")), "None");
   assert.equal(disk.kind("/dev/null"), "Other");
+  assert.equal(disk.linked(join(beside, "link")), true);
+  assert.equal(disk.linked(join(beside, "dangling")), true);
+  assert.equal(disk.linked(join(beside, "file")), false);
+  assert.equal(disk.linked(join(beside, "missing")), false);
   assert.deepEqual(disk.names(join(beside, "missing")), []);
   assert.deepEqual(disk.names(join(beside, "file")), []);
   assert.ok(disk.names(beside).includes("directory"));

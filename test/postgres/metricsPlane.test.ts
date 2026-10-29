@@ -3,8 +3,8 @@
  * role: what each family totals to across two projects and their owners, the
  * owner as the bare subject, when each counter's and histogram's series began,
  * runs no label tells apart read as one series however many revisions they
- * pinned, a scrape past its bounds refused whole, and readiness only under that
- * role.
+ * pinned, members' own sessions counted under one project, a scrape past its
+ * bounds refused whole, and readiness only under that role.
  *
  * THE ROWS ARE WRITTEN DIRECTLY, AS THE OWNER, WITH REFERENTIAL CHECKS SET
  * ASIDE FOR THE SEEDING TRANSACTION. They are the rows a scheduler, a worker
@@ -14,6 +14,7 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
@@ -29,6 +30,7 @@ import {
 } from "../../src/adapters/postgres/schema/shared.ts";
 import {
   metricsPlane,
+  metricsPlaneMemberProject,
   metricsPlaneOwner,
 } from "../../src/interpreter/metricsPlane.ts";
 import { oidcPrincipal } from "../../src/interpreter/principal.ts";
@@ -86,6 +88,9 @@ const three = { tenant: "metrics-three", project: "ops" };
 
 /** How many revisions, each pinned by one run of the same task, project three holds. */
 const pinnedRevisions = 30;
+
+/** How many members another issuer signed in chat on their own, one turn each. */
+const foreignMembers = 4;
 
 let harness: PostgresHarness;
 let plane: pg.Pool;
@@ -226,6 +231,15 @@ async function metricsModel(
   );
 }
 
+/** The partition reserved for `principal`'s own sessions in `tenant`. */
+function metricsMemberPartition(
+  tenant: string,
+  principal: string,
+): { readonly tenant: string; readonly project: string } {
+  const digest = createHash("sha256").update(principal, "utf8").digest("hex");
+  return { tenant, project: `@member-${digest}` };
+}
+
 /** One session and its turns, each `[state, model, tokens, cost, duration]` with the model absent on an unmeasured one, the turn at each ordinal ending that many minutes into the second of January. */
 async function metricsSession(
   query: (sql: string, values?: readonly unknown[]) => Promise<unknown>,
@@ -234,11 +248,13 @@ async function metricsSession(
   kind: string,
   principal: string,
   turns: readonly (readonly [string, string | null, number, number, number])[],
+  scope: "Project" | "Member" = "Project",
 ): Promise<void> {
   await query(
-    `INSERT INTO agent_session (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster)
-     VALUES ($1,$2,$3,$4,$5,'{}','slot','account','cluster')`,
-    [partition.tenant, partition.project, session, kind, principal],
+    `INSERT INTO agent_session (tenant,project,session,kind,principal,capabilities,credential_slot,account,cluster,scope)
+     VALUES ($1,$2,$3,$4,$5,'{}','slot',CASE WHEN $6='Project' THEN 'account' END,
+       CASE WHEN $6='Project' THEN 'cluster' END,$6)`,
+    [partition.tenant, partition.project, session, kind, principal, scope],
   );
   for (const [
     ordinal,
@@ -491,6 +507,23 @@ async function metricsSessionsSeeded(
   await metricsSession(query, two, "session-thread", "Thread", alice, [
     ["Answered", "model-small", 300, 3_000, 10_000],
   ]);
+  const members = [
+    alice,
+    bob,
+    ...Array.from({ length: foreignMembers }, (_, index) =>
+      oidcPrincipal("https://another.issuer.test", `member-${String(index)}`),
+    ),
+  ];
+  for (const [index, member] of members.entries())
+    await metricsSession(
+      query,
+      metricsMemberPartition(one.tenant, member),
+      `session-own-${String(index)}`,
+      "Thread",
+      member,
+      [["Answered", "model-small", 100, 1_000, 5_000]],
+      "Member",
+    );
   await query(
     `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
      VALUES ($1,$2,1,'Work',1),($1,$2,2,'Work',2),($1,$2,3,'Done',3),($3,$4,1,'Pending',1)`,
@@ -699,6 +732,49 @@ test("session turns are counted by session kind and state, and measured ones spe
   ])
     assert.ok(samples.includes(expected), expected);
   assert.ok(!samples.some((line) => line.includes('state="Queued"')));
+});
+
+test("every member's own turns are counted under one project, beside each project's and named by no digest", async () => {
+  const page = await metricsPage(plane);
+  const samples = metricsSamples(page.body);
+  const own = (owner: string) =>
+    `tenant="metrics-one",project="${metricsPlaneMemberProject}",owner="${owner}",session="Thread"`;
+  for (const expected of [
+    `chuggy_session_turns_ended_total{${own("alice-id")},state="Answered"} 1`,
+    `chuggy_session_turns_ended_total{${own("bob-id")},state="Answered"} 1`,
+    `chuggy_session_turns_ended_total{${own("")},state="Answered"} ${String(foreignMembers)}`,
+    `chuggy_session_turn_tokens_total{${own("")},model="model-small"} ${String(foreignMembers * 100)}`,
+    `chuggy_session_turns_ended_total{tenant="metrics-two",project="api",owner="alice-id",session="Thread",state="Answered"} 1`,
+  ])
+    assert.ok(samples.includes(expected), expected);
+  assert.doesNotMatch(page.body, /@member-/u);
+});
+
+test("members' own turns that no label tells apart are one series under the cap, read as one", async () => {
+  const read = await postgresMetricsPlaneReads(plane, 10_000).read(
+    metricsBounds(7),
+  );
+  assert.ok(
+    read.read === "Read",
+    "one series for every foreign member's turns, which apart would pass the cap",
+  );
+  assert.deepEqual(
+    read.rows.turns
+      .filter((row) => row.project === metricsPlaneMemberProject)
+      .map(({ owner, ended }) => [owner, ended])
+      .sort(),
+    [
+      ["", foreignMembers],
+      ["alice-id", 1],
+      ["bob-id", 1],
+    ].sort(),
+  );
+  assert.equal(
+    read.rows.turns.filter((row) => row.project !== metricsPlaneMemberProject)
+      .length,
+    3,
+    "each project's turn series as they were",
+  );
 });
 
 test("each project's tickets are a gauge per phase", async () => {

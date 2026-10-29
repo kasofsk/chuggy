@@ -255,7 +255,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     "SELECT model,tokens_input,tokens_output,tokens_cache_creation,tokens_cache_read,cost_usd_micros FROM execution_run_model_usage",
     "SELECT tenant,project,revision,canonical FROM configuration_revision",
     "SELECT tenant,project,session,state,model,tokens,cost_micros,duration_ms,ended_at FROM session_turn",
-    "SELECT tenant,project,session,kind,principal FROM agent_session",
+    "SELECT tenant,project,session,kind,principal,scope FROM agent_session",
     "SELECT tenant,project,phase FROM ticket_projection",
   ])
     assert.equal(
@@ -272,6 +272,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT input FROM session_turn", "session_turn"],
     ["SELECT result FROM session_turn", "session_turn"],
     ["SELECT system_prompt FROM agent_session", "agent_session"],
+    ["SELECT project_ref FROM agent_session", "agent_session"],
     [
       "SELECT authority_subject FROM configuration_revision",
       "configuration_revision",

@@ -93,6 +93,9 @@ import { migration092 } from "./092-proposal-updates.ts";
 import { migration093 } from "./093-adopted-proposals.ts";
 import { migration094 } from "./094-unscoped-chat.ts";
 import { migration095 } from "./095-pool-execution-polls.ts";
+import { migration096 } from "./096-metrics-plane-session-scope.ts";
+import { migration097 } from "./097-personal-runners-take-no-sessions.ts";
+import { migration098 } from "./098-personal-runners-hold-no-sessions.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -191,4 +194,7 @@ export const migrations: readonly Migration[] = [
   migration093,
   migration094,
   migration095,
+  migration096,
+  migration097,
+  migration098,
 ];

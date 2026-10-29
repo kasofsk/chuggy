@@ -304,7 +304,7 @@ export function MyChatHost(props: {
   return (
     <SettingsListingSection
       heading="Chat host"
-      about="The machine of yours your questions run on, and your threads while it is online."
+      about="The machine of yours your threads and questions run on."
       action={
         props.granted ? (
           <Button

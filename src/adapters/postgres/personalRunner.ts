@@ -166,7 +166,7 @@ async function personalRunnerProjectInserted(
   return "Allowed";
 }
 
-/** A member's runners, oldest first, each with its newest poll of either kind and the runner that poll named. */
+/** A member's runners, oldest first, each with its newest poll, its newest that could take an execution and the runner its newest poll named. */
 async function personalRunnersListed(
   pool: pg.Pool,
   key: PersonalRunnerKey,
@@ -181,8 +181,8 @@ async function personalRunnersListed(
     runner_package: string | null;
     runner_version: string | null;
   }>(sql`SELECT r.client_id,r.capabilities,r.registered_at,r.runner_package,r.runner_version,
-      greatest(r.last_polled_at,r.executions_polled_at) AS polled_at,
-      greatest(r.last_polled_at,r.executions_polled_at)
+      r.last_polled_at AS polled_at,
+      r.last_polled_at
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS live,
       r.executions_polled_at
         > now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision) AS executions_live

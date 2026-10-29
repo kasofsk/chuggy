@@ -16,9 +16,9 @@ import type {
 } from "../app/core/setupRunnerSaid.ts";
 import {
   boxLogin,
+  boxChatFile,
+  boxChatUnitName,
   boxOwn,
-  boxOwnFile,
-  boxOwnUnitName,
   boxPoolFile,
   boxPoolName,
   boxPools,
@@ -34,8 +34,8 @@ const guide = runnerPackageOffered.guideAddress;
 export const rosterCommand = `${boxPrefix}/bin/chuggy-linux`;
 export const rosterPool = boxPoolFile("acme", "widgets");
 export const rosterUnit = boxUnitName("acme", "widgets");
-export const rosterOwn = boxOwnFile("acme", setupSiteMember);
-export const rosterOwnUnit = boxOwnUnitName("acme", setupSiteMember);
+export const rosterChat = boxChatFile("acme", setupSiteMember);
+export const rosterChatUnit = boxChatUnitName("acme", setupSiteMember);
 
 /** A Claude credential of each kind, and of Bedrock its API key and an AWS credentials file's profile, each where a stand-in machine keeps its login. */
 export const rosterCredentials: readonly SetupClaudeCredential[] = [
@@ -47,11 +47,11 @@ export const rosterCredentials: readonly SetupClaudeCredential[] = [
   { kind: "Foundry", path: boxLogin },
 ];
 
-/** The workspace's People page, where an admin lets a person register a runner of their own. */
+/** The workspace's People page, where an admin lets a person register a chat host. */
 export const rosterPeople =
   "https://chuggy.example/tenants/acme/settings/people";
 
-/** The page a person's own runners are listed and removed on. */
+/** The page a person's runners and chat host are listed and removed on. */
 export const rosterMyRunners =
   "https://chuggy.example/tenants/acme/settings/runner";
 
@@ -68,8 +68,9 @@ const acts: readonly SetupRunnerAct[] = [
   "Register",
   "Check",
   "Service",
-  "RegisterOwn",
-  "ServiceOwn",
+  "RegisterChat",
+  "CheckChat",
+  "ServiceChat",
   "Reload",
   "Start",
   "Restart",
@@ -89,7 +90,7 @@ export const runnerStops: {
     { stop: "Unread", read: "pools", outcome: "Refused" },
     { stop: "Unread", read: "threads", outcome: "Refused" },
     { stop: "Unread", read: "permit", outcome: "Fault" },
-    { stop: "Unread", read: "own", outcome: "Fault" },
+    { stop: "Unread", read: "chat", outcome: "Fault" },
   ],
   NotAdmin: [{ stop: "NotAdmin" }],
   Serviceless: [{ stop: "Serviceless", guide }],
@@ -165,16 +166,23 @@ export const runnerStops: {
       version: undefined,
       least: "0.14.0",
     },
+    {
+      stop: "Behind",
+      command: rosterCommand,
+      version: "0.14.0",
+      least: "0.35.0",
+    },
   ],
   Unseen: [
     { stop: "Unseen", act: "Install", path: rosterCommand },
     { stop: "Unseen", act: "Register", path: boxPools },
     { stop: "Unseen", act: "Service", path: `${boxUnits}/${rosterUnit}` },
-    { stop: "Unseen", act: "RegisterOwn", path: boxPools },
+    { stop: "Unseen", act: "RegisterChat", path: boxPools },
+    { stop: "Unseen", act: "RegisterChat", path: rosterChat },
     {
       stop: "Unseen",
-      act: "ServiceOwn",
-      path: `${boxUnits}/${rosterOwnUnit}`,
+      act: "ServiceChat",
+      path: `${boxUnits}/${rosterChatUnit}`,
     },
   ],
   ServiceRefused: [
@@ -190,8 +198,8 @@ export const runnerStops: {
     },
     {
       stop: "ServiceRefused",
-      act: "ServiceOwn",
-      path: `${boxUnits}/${rosterOwnUnit}`,
+      act: "ServiceChat",
+      path: `${boxUnits}/${rosterChatUnit}`,
       failed: {
         how: "Exit",
         exit: 1,
@@ -208,10 +216,28 @@ export const runnerStops: {
   CheckFailed: [
     {
       stop: "CheckFailed",
+      act: "Check",
       check: "container engine",
       line: "FAIL  container engine: docker did not answer",
     },
-    { stop: "CheckFailed", check: undefined, line: "FAIL  a new check: no" },
+    {
+      stop: "CheckFailed",
+      act: "Check",
+      check: undefined,
+      line: "FAIL  a new check: no",
+    },
+    {
+      stop: "CheckFailed",
+      act: "CheckChat",
+      check: undefined,
+      line: "FAIL  a new check: no",
+    },
+    {
+      stop: "CheckFailed",
+      act: "CheckChat",
+      check: "chat credential directory",
+      line: `FAIL  chat credential directory: ${boxLogin} shares its directory with other files`,
+    },
   ],
   LingerAsks: [
     { stop: "LingerAsks", command: "loginctl enable-linger", excerpt: "" },
@@ -247,17 +273,29 @@ export const runnerStops: {
     { stop: "PermitWithheld", people: rosterPeople, work: "Runner" },
     { stop: "PermitWithheld", people: rosterPeople, work: "Cluster" },
   ],
-  OwnMintRefused: [
-    { stop: "OwnMintRefused", outcome: "Absent", lapseMins: 60 },
-    { stop: "OwnMintRefused", outcome: "Conflict", lapseMins: 60 },
-    { stop: "OwnMintRefused", outcome: "Fault", lapseMins: 60 },
+  ChatMintRefused: [
+    { stop: "ChatMintRefused", outcome: "Absent", lapseMins: 60 },
+    { stop: "ChatMintRefused", outcome: "Conflict", lapseMins: 60 },
+    { stop: "ChatMintRefused", outcome: "Fault", lapseMins: 60 },
   ],
-  ServesRefused: [
-    { stop: "ServesRefused", outcome: "Absent" },
-    { stop: "ServesRefused", outcome: "Fault" },
+  ChatHostOffline: [{ stop: "ChatHostOffline", runners: rosterMyRunners }],
+  ChatLogin: [
+    ...rosterCredentials.map((credential) => ({
+      stop: "ChatLogin" as const,
+      how: "Shared" as const,
+      credential,
+      settings: boxSettings,
+      login: boxLogin,
+    })),
+    {
+      stop: "ChatLogin",
+      how: "Linked",
+      credential: { kind: "Subscription", path: boxLogin },
+      settings: boxSettings,
+      login: boxLogin,
+    },
   ],
-  OwnLimit: [{ stop: "OwnLimit", runners: rosterMyRunners }],
-  OwnNotLive: [{ stop: "OwnNotLive", waitedSecs: 90 }],
+  ChatHostNotLive: [{ stop: "ChatHostNotLive", waitedSecs: 90 }],
 };
 
 export const runnerNotes: {
@@ -314,14 +352,17 @@ export const runnerNotes: {
   UnitWritten: [{ note: "UnitWritten", unit: rosterUnit }],
   ProjectLive: [{ note: "ProjectLive" }],
   Hosted: [{ note: "Hosted" }],
-  Own: [{ note: "Own", path: rosterOwn }],
-  OwnGone: [{ note: "OwnGone", path: rosterOwn }],
-  OwnRegistered: [{ note: "OwnRegistered", path: rosterOwn }],
-  OwnUnit: [{ note: "OwnUnit", unit: rosterOwnUnit }],
-  OwnUnitWritten: [{ note: "OwnUnitWritten", unit: rosterOwnUnit }],
-  Serves: [{ note: "Serves" }],
-  ServesAdded: [{ note: "ServesAdded" }],
-  OwnLive: [{ note: "OwnLive" }],
+  ChatHost: [{ note: "ChatHost", path: rosterChat }],
+  ChatHostGone: [{ note: "ChatHostGone", path: rosterChat }],
+  ChatHostRegistered: [{ note: "ChatHostRegistered", path: rosterChat }],
+  ChatChecked: [
+    { note: "ChatChecked", warned: undefined },
+    { note: "ChatChecked", warned: "warn  chat image: it is old" },
+  ],
+  ChatUnit: [{ note: "ChatUnit", unit: rosterChatUnit }],
+  ChatUnitWritten: [{ note: "ChatUnitWritten", unit: rosterChatUnit }],
+  ChatHostLive: [{ note: "ChatHostLive" }],
+  ChatHostElsewhere: [{ note: "ChatHostElsewhere" }],
   Linger: [{ note: "Linger" }],
   LingerOn: [
     { note: "LingerOn", read: true },
@@ -340,14 +381,14 @@ export interface RosterPlaces {
   readonly login: string;
   readonly pool: string;
   readonly unit: string;
-  readonly own: string;
-  readonly ownUnit: string;
+  readonly chat: string;
+  readonly chatUnit: string;
   readonly engine?: SetupEngine;
 }
 
 /** What a run prints of each thing it found as it should be, and of each thing it did, for acme/widgets on a machine whose things are at `places`. */
 export function rosterLines(places: RosterPlaces) {
-  const { command, settings, login, pool, unit, own, ownUnit } = places;
+  const { command, settings, login, pool, unit, chat, chatUnit } = places;
   const engine = places.engine ?? "docker";
   return {
     found: {
@@ -361,13 +402,15 @@ export function rosterLines(places: RosterPlaces) {
       linger: "found: your services keep running after you log out",
       running: `found: ${unit} is enabled and running`,
       live: "found: the site sees a runner of acme/widgets live",
-      own: `found: this machine is registered as one of your own runners, in ${own}`,
-      ownGone: `found: ${own} registered this machine as your own runner, and the site no longer knows that registration`,
-      ownUnit: `found: your own runner's service is installed: ${ownUnit}`,
-      ownRunning: `found: ${ownUnit} is enabled and running`,
-      serves: "found: your own runners serve acme/widgets",
-      ownLive:
-        "found: the site sees this machine live as your own runner, so your chats in acme/widgets can run on it",
+      chat: `found: this machine is registered as your chat host, in ${chat}`,
+      chatGone: `found: ${chat} registered this machine as your chat host, and the site no longer knows that registration`,
+      chatCheck: "found: the chat host's own check passed",
+      chatUnit: `found: your chat host's service is installed: ${chatUnit}`,
+      chatRunning: `found: ${chatUnit} is enabled and running`,
+      chatLive:
+        "found: the site sees this machine live as your chat host, so your chats in acme/widgets can run on it",
+      chatElsewhere:
+        "found: the site sees your chat host live on another machine, so your chats in acme/widgets run there",
     },
     did: {
       package: `did: installed the runner package, chuggy-linux ${boxVersion}, at ${command}`,
@@ -378,11 +421,10 @@ export function rosterLines(places: RosterPlaces) {
       enabled: `did: set ${unit}, which was running, to start when you log in`,
       started: `did: started ${unit}, which also starts when you log in`,
       restarted: `did: restarted ${unit}, so it runs as it is now registered and installed`,
-      own: `did: registered this machine as one of your own runners, in ${own}`,
-      ownUnit: `did: installed your own runner's service, ${ownUnit}`,
-      ownStarted: `did: started ${ownUnit}, which also starts when you log in`,
-      ownRestarted: `did: restarted ${ownUnit}, so it runs as it is now registered and installed`,
-      serves: "did: added acme/widgets to the projects your own runners serve",
+      chat: `did: registered this machine as your chat host, in ${chat}`,
+      chatUnit: `did: installed your chat host's service, ${chatUnit}`,
+      chatStarted: `did: started ${chatUnit}, which also starts when you log in`,
+      chatRestarted: `did: restarted ${chatUnit}, so it runs as it is now registered and installed`,
     },
   } as const;
 }

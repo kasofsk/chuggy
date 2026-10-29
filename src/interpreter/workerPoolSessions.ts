@@ -21,12 +21,15 @@
  * was built from are still the session's — so a session another pool claimed
  * in between is skipped and one this pool has no room for ends the claims.
  *
- * A PERSONAL RUNNER'S OR A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. A
- * runner's candidates span the projects on its allowlist and a chat host's
- * every project of its tenant, and the authority answers whether its owner may
- * still read each one, so every project is asked before anything is opened and
- * a project the owner cannot read is skipped. A pool's candidates are all of
- * its own project, which its admission already answered for.
+ * A POOL CLAIMS ITS PROJECT'S LEAD AND A CHAT HOST ITS OWNER'S THREADS AND
+ * INQUIRIES; A PERSONAL RUNNER CLAIMS AND HOLDS NO SESSION, so nothing here is
+ * asked of one.
+ *
+ * A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. Its candidates span every
+ * project of its tenant, and the authority answers whether its owner may still
+ * read each one, so every project is asked before anything is opened and a
+ * project the owner cannot read is skipped. A pool's candidates are all of its
+ * own project, which its admission already answered for.
  *
  * A MEMBER'S OWN SESSION IS ITS OWNER'S CHAT HOST'S ALONE, and only while the
  * owner may still open unscoped chat and the host speaks a contract that runs
@@ -125,10 +128,23 @@ export interface WorkerPoolSessionOpening {
 /** `NotClaimable` skips one session; `PoolFull` ends the claims. */
 export type WorkerPoolSessionOpened = "Opened" | "NotClaimable" | "PoolFull";
 
+/** Whoever the pool plane admitted that claims and holds sessions: a project's pool, or a member's chat host. */
+export type WorkerPoolSessionClaimant = Exclude<
+  PoolPlaneIdentity,
+  { readonly kind: "Personal" }
+>;
+
+/** `identity` as a session claimant, and nothing for a personal runner, which claims and holds no session. */
+export function workerPoolSessionClaimant(
+  identity: PoolPlaneIdentity,
+): WorkerPoolSessionClaimant | undefined {
+  return identity.kind === "Personal" ? undefined : identity;
+}
+
 /**
- * The rows one kind of caller holds session attempts through, every call
- * scoped to its current registration and to what that registration claimed,
- * as an execution's assignment is.
+ * The rows one kind of claimant reads, opens and holds session attempts
+ * through, every call scoped to its current registration and to what that
+ * registration claimed, as an execution's assignment is.
  */
 export interface WorkerPoolSessionRows<Identity> {
   /** Which of `assignments` are session attempts this registration claimed, in any state. */
@@ -164,8 +180,8 @@ export interface WorkerPoolSessionRows<Identity> {
   polled(identity: Identity): Promise<void>;
 }
 
-/** The durable side of a runner-held session attempt, for whichever caller the pool plane admitted. */
-export interface WorkerPoolSessions extends WorkerPoolSessionRows<PoolPlaneIdentity> {
+/** The durable side of a runner-held session attempt, for whichever claimant the pool plane admitted. */
+export interface WorkerPoolSessions extends WorkerPoolSessionRows<WorkerPoolSessionClaimant> {
   launch(): Promise<SessionLaunchFacts | undefined>;
 }
 
@@ -204,13 +220,13 @@ function workerPoolSessionInvocation(
 }
 
 /**
- * Whether a personal runner's or a chat host's owner may still read `project`,
- * or for a chat host, open their own sessions where `project` is their
- * reserved partition; a pool's own project is answered by its admission.
+ * Whether a chat host's owner may still read `project`, or open their own
+ * sessions where `project` is their reserved partition; a pool's own project
+ * is answered by its admission.
  */
 async function workerPoolSessionProjectRead(
   access: ProjectAccess,
-  identity: PoolPlaneIdentity,
+  identity: WorkerPoolSessionClaimant,
   project: ProjectId,
 ): Promise<boolean> {
   switch (identity.kind) {
@@ -232,14 +248,6 @@ async function workerPoolSessionProjectRead(
           "Read",
         )) !== undefined
       );
-    case "Personal":
-      return (
-        (await access.authorize(
-          identity.owner,
-          { tenant: identity.tenant, project },
-          "Read",
-        )) !== undefined
-      );
   }
 }
 
@@ -251,7 +259,7 @@ async function workerPoolSessionProjectRead(
 async function workerPoolSessionProjectsServed(
   ports: WorkerPoolSessionPorts,
   access: ProjectAccess,
-  identity: PoolPlaneIdentity,
+  identity: WorkerPoolSessionClaimant,
   waiting: readonly WorkerPoolSessionCandidate[],
 ): Promise<ReadonlyMap<ProjectId, RepositoryBinding | undefined>> {
   const tenant =
@@ -327,7 +335,7 @@ function workerPoolSessionClaimsMemberScope(
 export async function workerPoolSessionClaims(
   ports: WorkerPoolSessionPorts,
   access: ProjectAccess,
-  identity: PoolPlaneIdentity,
+  identity: WorkerPoolSessionClaimant,
   terms: WorkerPoolSessionTerms,
   mint: WorkerPoolMint,
   asked: {

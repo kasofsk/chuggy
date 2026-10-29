@@ -2489,8 +2489,8 @@ test("a reader without the hosted grant is told so where threads run hosted", as
 /** The composer stays the reader's whatever their runner, and says, beneath,
  * only what stands in a turn's way. */
 test.each([
-  ["Unregistered", "No runner"],
-  ["Offline", "Runner offline"],
+  ["Unregistered", "No chat host"],
+  ["Offline", "Chat host offline"],
 ] as const)(
   "a reader whose runner is %s is told %s under a composer that still takes text",
   async (mine, said) => {
@@ -2504,8 +2504,8 @@ test.each([
   },
 );
 
-/** A thread runs only on its member's own runner, so it is added on their own page rather than as a project's pool. */
-test("a reader with no runner is pointed at their own runner's page", async () => {
+/** A thread runs only on its member's chat host, so it is added on their own page rather than as a project's pool. */
+test("a reader with no chat host is pointed at their own runners' page", async () => {
   await mounted(
     viewportDeskEm,
     placedServed(grantReadServed(true, []), {
@@ -2541,7 +2541,7 @@ test("a held thread that takes no messages points a reader with no runner at the
   );
   const conversation = within(conversationRegion());
   expect(conversation.getByText("Closed")).toBeTruthy();
-  expect(conversation.queryByText("No runner")).toBeNull();
+  expect(conversation.queryByText("No chat host")).toBeNull();
   expect(screen.getByRole("link", { name: "My runners" })).toBeTruthy();
   styleless();
 });
@@ -2551,8 +2551,8 @@ test("a reader whose runner is live is told nothing about it", async () => {
     viewportDeskEm,
     placedServed(grantReadServed(false, []), { thread: "Pool", mine: "Live" }),
   );
-  expect(screen.queryByText("No runner")).toBeNull();
-  expect(screen.queryByText("Runner offline")).toBeNull();
+  expect(screen.queryByText("No chat host")).toBeNull();
+  expect(screen.queryByText("Chat host offline")).toBeNull();
   styleless();
 });
 
@@ -2595,7 +2595,7 @@ test("a message the door refuses for no runner stays in the box, which still tak
   await sentRefusedNoRunner("/messages");
   expect(heldBox().value).toBe("hello");
   expect(heldBox().readOnly).toBe(false);
-  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  expect(within(conversationRegion()).getByText("No chat host")).toBeTruthy();
   styleless();
 });
 
@@ -2614,11 +2614,11 @@ test("New the door refuses for no runner closes nothing, and the box says so", a
     url.endsWith("/session-placement")
       ? Promise.resolve(answer(sessionPlacementBody({ thread: "Pool", mine })))
       : served(url, init)) as unknown as typeof fetch);
-  expect(screen.queryByText("No runner")).toBeNull();
+  expect(screen.queryByText("No chat host")).toBeNull();
   mine = "Unregistered";
   await pressed("New");
   expect(postsNamed(posts)).toStrictEqual(["open"]);
-  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  expect(within(conversationRegion()).getByText("No chat host")).toBeTruthy();
   expect(screen.queryByText(/^Refused/u)).toBeNull();
   styleless();
 });
@@ -3058,7 +3058,7 @@ test("a first message whose open the door refuses for no runner stays in the box
   await sentRefusedNoRunner("/threads");
   expect(heldBox().value).toBe("hello");
   expect(heldBox().readOnly).toBe(false);
-  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  expect(within(conversationRegion()).getByText("No chat host")).toBeTruthy();
   expect(screen.queryByText(/^Refused/u)).toBeNull();
   styleless();
 });
@@ -3067,11 +3067,11 @@ test("a first message whose open the door refuses for no runner stays in the box
  * of its own and the word goes with the text it was about. */
 test("editing a message the door refused for no runner takes the refusal away", async () => {
   await sentRefusedNoRunner("/messages");
-  expect(within(conversationRegion()).getByText("No runner")).toBeTruthy();
+  expect(within(conversationRegion()).getByText("No chat host")).toBeTruthy();
   await turned(() => {
     fireEvent.change(composerDrawn(), { target: { value: "hello again" } });
   });
-  expect(screen.queryByText("No runner")).toBeNull();
+  expect(screen.queryByText("No chat host")).toBeNull();
   styleless();
 });
 

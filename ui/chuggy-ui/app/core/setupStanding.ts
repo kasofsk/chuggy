@@ -13,7 +13,7 @@
  * repository, since the portal app's listing is what the console offers a
  * repository from and the worker app is what a ticket's work is given its
  * credential under; and a runner is waited on only where the project's work
- * goes to runners, and the person's own runner only where their chats in it
+ * goes to runners, and the person's chat host only where their chats in it
  * do. Which repositories the worker app lacks and whether work or a chat
  * waits on a runner are the console's own deciders, so this program and the
  * pages do not say different things. Beside its few words each step that is
@@ -111,12 +111,12 @@ export type SetupLack =
     }
   | { readonly lacks: "Binding" }
   | { readonly lacks: "Configuration"; readonly repository: string }
-  /** `own` where the person's own runner is lacking too, which `runner` sets up beside the project's. */
-  | { readonly lacks: "Runner"; readonly own: boolean }
-  | { readonly lacks: "RunnerLive"; readonly own: boolean }
+  /** `chat` where the person's chat host is lacking too, which `runner` sets up beside the project's runner. */
+  | { readonly lacks: "Runner"; readonly chat: boolean }
+  | { readonly lacks: "RunnerLive"; readonly chat: boolean }
   /** `pooled` where the project's work goes to runners, which `runner` registers a machine for where it holds no registration of the project. */
-  | { readonly lacks: "Own"; readonly pooled: boolean }
-  | { readonly lacks: "OwnLive"; readonly pooled: boolean }
+  | { readonly lacks: "ChatHost"; readonly pooled: boolean }
+  | { readonly lacks: "ChatHostLive"; readonly pooled: boolean }
   | { readonly lacks: "Ticket" }
   | { readonly lacks: "Release"; readonly ticket: number }
   | { readonly lacks: "Dispatch"; readonly ticket: number }
@@ -540,30 +540,30 @@ export function setupHosted(route: PlacementRoute): boolean {
 
 /**
  * Done where the project's work has a runner live or the cluster runs it, and
- * the person's chats in it have their own runner live or the cluster runs
+ * the person's chats in it have their chat host live or the cluster runs
  * them; waiting where a runner is registered and is not running. The
- * project's runner is said first, and the person's own once it is done.
+ * project's runner is said first, and the person's chat host once it is done.
  */
 function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
   if (work.read !== "Got")
     return none
-      ? setupUndone("runner", "todo", "", { lacks: "Runner", own: true })
+      ? setupUndone("runner", "todo", "", { lacks: "Runner", chat: true })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
   if (read.read !== "Got")
     return setupUnread("runner", "placement", setupFateOf(read));
   const route = work.value.work.route;
   const mine = sessionPlacementShort(read.value, "thread", "mine");
-  const own = mine !== undefined;
+  const chat = mine !== undefined;
   switch (sessionRunnerShort(route, read.value.runners.project)) {
     case "RunnerOffline":
       return setupUndone("runner", "waiting", "registered, not running", {
         lacks: "RunnerLive",
-        own,
+        chat,
       });
     case "NoRunner":
-      return setupUndone("runner", "todo", "", { lacks: "Runner", own });
+      return setupUndone("runner", "todo", "", { lacks: "Runner", chat });
     case undefined:
       break;
   }
@@ -576,15 +576,15 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone(
         "runner",
         "waiting",
-        `${said}; your own runner is set up for it, not running`,
-        { lacks: "OwnLive", pooled },
+        `${said}; your chat host is registered, not running`,
+        { lacks: "ChatHostLive", pooled },
       );
     case "NoRunner":
       return setupUndone(
         "runner",
         "todo",
-        `${said}; your own runner is not set up for it`,
-        { lacks: "Own", pooled },
+        `${said}; you have no chat host for your chats in it`,
+        { lacks: "ChatHost", pooled },
       );
   }
 }
