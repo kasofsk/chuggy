@@ -48,7 +48,8 @@
 # wrapped, every gate runs itself, and one line names the first reason why.
 #
 # ONE RUN AT A TIME HOLDS A CHECKOUT. A second is refused while the first is
-# alive, since two would share the logs and each other's machine.
+# alive, since two would share the logs and each other's machine, and of two
+# that find a dead run's lock, one takes it over and the other is refused.
 #
 # A QUIET RUN PRINTS VERDICTS, NOT TRANSCRIPTS, for a reader whose every line
 # costs it, such as an agent. Each gate's and each suite's output goes to its
@@ -91,30 +92,60 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-# The lock is a directory, since making one is atomic, and it names the run
-# holding it. A holder no longer alive was killed past its trap, and its lock
-# is taken over rather than left to refuse every run after it.
+# The lock is a symlink whose target is the pid of the run holding it, since
+# `ln -s` makes the name and its holder in one step and fails where the name
+# exists. A holder no longer alive was killed past its trap, and its lock is
+# taken over rather than left to refuse every run after it: one run claims it,
+# by a symlink named for the dead pid made the same way, and removes it only
+# if it still names that pid. A lock whose holder cannot be read is left alone.
 git_dir="$(git rev-parse --absolute-git-dir)" || exit 2
 lock="$git_dir/chug-ci.lock"
 log_dir="$git_dir/chug-ci"
-if ! mkdir "$lock" 2>/dev/null; then
-	holder="$(cat "$lock/pid" 2>/dev/null || true)"
-	if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+lock_held=""
+lock_claim=""
+record_dir=""
+trap 'rm -f ${lock_claim:+"$lock_claim"} ${lock_held:+"$lock"}; rm -rf ${record_dir:+"$record_dir"}' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+lock_attempts_max=3
+lock_attempt=0
+# `ln` would make a link inside a directory of the lock's name, which no run
+# of this script makes, so one is a holder that cannot be read.
+while { [ -d "$lock" ] && [ ! -L "$lock" ]; } || ! ln -s "$$" "$lock" 2>/dev/null; do
+	lock_attempt=$((lock_attempt + 1))
+	if [ "$lock_attempt" -ge "$lock_attempts_max" ]; then
+		echo "ci: LINTER ERROR — could not take $lock; this is not a pass"
+		exit 2
+	fi
+	holder="$(readlink "$lock" 2>/dev/null || true)"
+	case "$holder" in
+	"" | *[!0-9]*)
+		if [ -e "$lock" ] || [ -L "$lock" ]; then
+			echo "ci: LINTER ERROR — $lock names no holder that can be read, so it may still be being made;"
+			echo "ci: if no ci.sh is running in this checkout, remove it, then run again; this is not a pass"
+			exit 2
+		fi
+		continue
+		;;
+	esac
+	if kill -0 "$holder" 2>/dev/null; then
 		echo "ci: LINTER ERROR — another ci.sh (pid $holder) is running in this checkout, logging to $log_dir;"
 		echo "ci: wait for it to end or stop it, then run again; this is not a pass"
 		exit 2
 	fi
-	rm -rf "$lock"
-	if ! mkdir "$lock" 2>/dev/null; then
-		echo "ci: LINTER ERROR — could not take $lock; this is not a pass"
+	if ! ln -s "$$" "$lock.$holder" 2>/dev/null; then
+		echo "ci: LINTER ERROR — another ci.sh is taking over $lock from pid $holder, which is not running;"
+		echo "ci: if none is, remove $lock.$holder, then run again; this is not a pass"
 		exit 2
 	fi
-fi
-echo "$$" >"$lock/pid"
-record_dir=""
-trap 'rm -rf "$lock" ${record_dir:+"$record_dir"}' EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
+	lock_claim="$lock.$holder"
+	if [ "$(readlink "$lock" 2>/dev/null || true)" = "$holder" ]; then
+		rm -f "$lock"
+	fi
+	rm -f "$lock_claim"
+	lock_claim=""
+done
+lock_held=1
 rm -rf "$log_dir"
 mkdir -p "$log_dir/suites"
 
@@ -584,8 +615,13 @@ if [ "$ran" -eq 0 ]; then
 	echo "ci: no gate selected; nothing ran"
 	exit 0
 fi
-if [ -n "$record" ]; then
-	echo "ci: all gates clean ($reused reused)"
+if [ -n "$only" ]; then
+	clean="ci: only the gates named ran, and each was clean: $only_named"
 else
-	echo "ci: all gates clean"
+	clean="ci: all gates clean"
+fi
+if [ -n "$record" ]; then
+	echo "$clean ($reused reused)"
+else
+	echo "$clean"
 fi

@@ -43,7 +43,13 @@ Find the suites by what they import, not by name alone. A change no test can
 exercise, such as a Dockerfile or a doc, needs none; say so in the report
 rather than running something unrelated to stand in for it. Run anything slow
 in the background and wait for it to finish, never under a foreground timeout
-or a fixed sleep, and never start a run while another is still going.
+or a fixed sleep, and never start a run while another is still going. Start it
+with its exit code and its pid each in a file:
+`(<command>; echo "exit $?") >/tmp/<name>.out 2>&1 & echo $! >/tmp/<name>.pid`
+then wait on it, repeating this line if the tool call ends first:
+`while kill -0 "$(cat /tmp/<name>.pid)" 2>/dev/null; do sleep 15; done; tail -n 2 /tmp/<name>.out`
+A second run of the same command is not started while its pid file names a
+live process.
 
 Commit the change yourself, with a message that carries its why, as the
 reviewer's brief asks. The job has no git identity, so commit as the worker:
