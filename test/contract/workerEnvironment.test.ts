@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isHeldCredentialVariable,
   workerImageFaults,
   workerImageFaultStatuses,
   workerJobCommand,
@@ -62,4 +63,21 @@ test("a job's container works in the contract's workspace and has its repository
     !workerWorkspaceDirectory.startsWith(`${workerRuntimeDirectory}/`) &&
       !workerRuntimeDirectory.startsWith(`${workerWorkspaceDirectory}/`),
   );
+});
+
+test("a held credential is written under a variable ending _FILE, and never under one chuggy, its agent or git reads", () => {
+  for (const variable of ["TRACK_RECORD_TOKEN_FILE", "A_FILE", "X9_FILE"])
+    assert.ok(isHeldCredentialVariable(variable), variable);
+  for (const variable of [
+    "TRACK_RECORD_TOKEN",
+    "_FILE",
+    "9_FILE",
+    "track_record_FILE",
+    "TRACK-RECORD_FILE",
+    "TRACK_RECORD_FILE ",
+    "CHUG_TOKEN_FILE",
+    "CLAUDE_TOKEN_FILE",
+    "GIT_TOKEN_FILE",
+  ])
+    assert.ok(!isHeldCredentialVariable(variable), variable);
 });
