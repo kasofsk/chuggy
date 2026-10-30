@@ -135,6 +135,40 @@ for (const [plane, kind, pods, variable, schema] of [
       for (const pod of pods()) document.parse(carried(pod, read));
     });
 
+/** Each golden work pod's task, its worker a Codex mode naming `effort` where one is given. */
+function codexTasks(effort?: string): readonly object[] {
+  const mode = {
+    type: "SingleAgent",
+    agent: "Codex",
+    arguments: [],
+    model: "gpt-5",
+    ...(effort === undefined ? {} : { effort }),
+  };
+  return workPods().map((pod) => ({
+    ...carried(pod, workerTaskVariable),
+    worker: { mode, setup: [], files: [] },
+  }));
+}
+
+test("a task's Codex mode carries an effort Codex names, refuses one it does not, and carries none where it names none", () => {
+  for (const task of [...codexTasks(), ...codexTasks("xhigh")])
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(task), task);
+  for (const task of codexTasks("turbo"))
+    assert.ok(!workTaskDocumentSchema.safeParse(task).success);
+});
+
+for (const release of workerContractReplayed("job"))
+  test(`a ${release} image reads a task whose Codex mode names an effort, as it reads one naming none`, async () => {
+    const document = await workerContractReleaseExport(
+      release,
+      "workerTask",
+      "workTaskDocumentSchema",
+      workerContractReleaseSchema,
+    );
+    for (const task of [...codexTasks(), ...codexTasks("xhigh")])
+      assert.ok(document.safeParse(task).success);
+  });
+
 /** `document` less the fields `keys` names. */
 function without(document: object, keys: readonly string[]): object {
   return Object.fromEntries(

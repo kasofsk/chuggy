@@ -397,9 +397,10 @@ const workerModes: {
   Commands: { type: "Commands", commands: ["just check"] },
 };
 
-/** Every worker configuration a task carries: each mode, and the bare arguments that predate modes. */
+/** Every worker configuration a task carries: each mode, a Codex mode naming its effort, and the bare arguments that predate modes. */
 const workerConfigurations: readonly WorkerConfiguration[] = [
   ...Object.values(workerModes).map((mode) => ({ mode, setup: [], files: [] })),
+  { mode: { ...workerModes.Codex, effort: "high" }, setup: [], files: [] },
   { arguments: ["--verbose"], setup: [], files: [] },
 ];
 

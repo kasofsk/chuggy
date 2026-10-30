@@ -49,6 +49,7 @@ import {
 import { workerImageCharsMax } from "./workerPool.ts";
 import {
   briefingLineCharsMax,
+  codexReasoningEfforts,
   commandLinesMax,
   filesystemAccesses,
 } from "./workerTask.ts";
@@ -309,6 +310,7 @@ export const configurationWorkerModeSchema = z.discriminatedUnion("agent", [
     agent: z.literal("Codex"),
     arguments: configurationWorkerArgumentsSchema,
     model: configurationCodeUnitsText(workerModelCodeUnitsMax, "importer"),
+    effort: z.enum(codexReasoningEfforts).exactOptional(),
   }),
 ]);
 

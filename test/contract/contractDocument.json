@@ -320,6 +320,20 @@
                             },
                             "model": {
                               "type": "string"
+                            },
+                            "effort": {
+                              "type": "string",
+                              "enum": [
+                                "none",
+                                "minimal",
+                                "low",
+                                "medium",
+                                "high",
+                                "xhigh",
+                                "max",
+                                "ultra",
+                                "persistent"
+                              ]
                             }
                           },
                           "required": ["type", "agent", "arguments", "model"],
@@ -498,6 +512,20 @@
                                         "minLength": 1,
                                         "maxLength": 128,
                                         "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                      },
+                                      "effort": {
+                                        "type": "string",
+                                        "enum": [
+                                          "none",
+                                          "minimal",
+                                          "low",
+                                          "medium",
+                                          "high",
+                                          "xhigh",
+                                          "max",
+                                          "ultra",
+                                          "persistent"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -1154,6 +1182,20 @@
                         },
                         "model": {
                           "type": "string"
+                        },
+                        "effort": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra",
+                            "persistent"
+                          ]
                         }
                       },
                       "required": ["type", "agent", "arguments", "model"],
@@ -1332,6 +1374,20 @@
                                     "minLength": 1,
                                     "maxLength": 128,
                                     "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  },
+                                  "effort": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "minimal",
+                                      "low",
+                                      "medium",
+                                      "high",
+                                      "xhigh",
+                                      "max",
+                                      "ultra",
+                                      "persistent"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -1873,6 +1929,20 @@
                         },
                         "model": {
                           "type": "string"
+                        },
+                        "effort": {
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "minimal",
+                            "low",
+                            "medium",
+                            "high",
+                            "xhigh",
+                            "max",
+                            "ultra",
+                            "persistent"
+                          ]
                         }
                       },
                       "required": ["type", "agent", "arguments", "model"],
@@ -2051,6 +2121,20 @@
                                     "minLength": 1,
                                     "maxLength": 128,
                                     "description": "The importer also holds that it is at most 128 UTF-16 code units."
+                                  },
+                                  "effort": {
+                                    "type": "string",
+                                    "enum": [
+                                      "none",
+                                      "minimal",
+                                      "low",
+                                      "medium",
+                                      "high",
+                                      "xhigh",
+                                      "max",
+                                      "ultra",
+                                      "persistent"
+                                    ]
                                   }
                                 },
                                 "required": [

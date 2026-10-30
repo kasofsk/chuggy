@@ -129,7 +129,7 @@ function bootstrapSchemaLine(publicOrigin: string | undefined): string {
     publicOrigin === undefined
       ? `GET ${nativeHttpRoutes.configurationSchema} on the chuggy API`
       : `${publicOrigin}${nativeHttpRoutes.configurationSchema}`;
-  return `The JSON Schema at ${published} names every key chuggy reads, among them a catalog's finalizers and outputs, a workload's authority, framing, brief, practices, image, executionRequirement and resources, the model of a Codex mode, and agent workloads of the Check purpose. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`;
+  return `The JSON Schema at ${published} names every key chuggy reads, among them a catalog's finalizers and outputs, a workload's authority, framing, brief, practices, image, executionRequirement and resources, the model and effort of a Codex mode, and agent workloads of the Check purpose. A key it does not name is kept and ignored at the top level of C, and refused or dropped inside C as the schema describes.`;
 }
 
 /** The longest public origin a bootstrap configuration can name. */

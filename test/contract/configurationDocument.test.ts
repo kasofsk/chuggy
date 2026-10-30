@@ -295,6 +295,10 @@ const shapes: readonly unknown[] = [
     },
     configuration: "a key the format does not name",
   },
+  {
+    ...configuration,
+    worker: { mode: { ...codex, effort: "xhigh" }, setup: [], files: [] },
+  },
 ];
 
 const defaultBranch = asGitRefName("refs/heads/main");
@@ -488,6 +492,13 @@ const refusedShapes: readonly (readonly [unknown, string])[] = [
     "ConfigurationInvalid:WorkerInvalid",
   ],
   [
+    declared({
+      ...configuration,
+      worker: { mode: { ...codex, effort: "turbo" }, setup: [], files: [] },
+    }),
+    "ConfigurationInvalid:WorkerInvalid",
+  ],
+  [
     declared({ ...configuration, worker: { mode: claude, setup: [] } }),
     "ConfigurationInvalid:WorkerInvalid",
   ],
@@ -639,6 +650,8 @@ const mutationLeaves: readonly unknown[] = [
   "Review",
   "Claude",
   "Codex",
+  "persistent",
+  "Persistent",
   "RegressionCoverage",
   "NotAPractice",
   "Container",
@@ -672,6 +685,7 @@ const mutationKeys = [
   "mode",
   "arguments",
   "model",
+  "effort",
   "network",
   "platformDefault",
   "ticketDefault",

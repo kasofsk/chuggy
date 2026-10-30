@@ -13,7 +13,10 @@ import {
   allOperatingSystems,
   allPracticeIds,
 } from "../../../../../src/contract/configurationDocument.ts";
-import { filesystemAccesses } from "../../../../../src/contract/workerTask.ts";
+import {
+  codexReasoningEfforts,
+  filesystemAccesses,
+} from "../../../../../src/contract/workerTask.ts";
 
 import type { TicketYamlKey } from "./ticketYamlKey.ts";
 
@@ -156,6 +159,11 @@ const ticketYamlWorkloadFields: readonly (readonly [
   ["type", "how many agents run the workload", ["SingleAgent"]],
   ["agent", "which agent runs the workload", ["Claude", "Codex"]],
   ["model", "the model a Codex agent runs"],
+  [
+    "effort",
+    "the reasoning effort a Codex agent runs at; Codex's default where left out",
+    codexReasoningEfforts,
+  ],
   ["arguments", "the agent's command-line arguments, one a line"],
   ["setup", "commands run before the workload, one a line"],
   [
