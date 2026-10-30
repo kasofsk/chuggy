@@ -14,22 +14,36 @@ changed. If the ticket cannot be satisfied as written, report that rather than
 satisfying something adjacent to it.
 
 **Run only the tests that exercise your change.** Do not run
-`.chug/tasks/ci.sh`, `just check`, `just check-full`, or a gate whose scope is
-the whole tree, such as `.chug/tasks/check-source.sh`: the checks stage runs
-`ci.sh` on your commit after you, and running it here only repeats it. Instead:
+`.chug/tasks/ci.sh` on its own, `just check`, `just check-full`, or
+`.chug/tasks/check-source.sh --unit`: the checks stage runs `ci.sh` on your
+commit after you, and running it here only repeats it.
 
-- the suites that test what you changed, and the ones you added, by path:
-  `node --test --test-timeout=60000 <suite>...`;
-- `./node_modules/.bin/tsc --noEmit` where you changed TypeScript, and
-  `./node_modules/.bin/eslint` and `./node_modules/.bin/prettier --check` on
-  the files you changed;
-- for a gate you changed, its sibling `*.test.sh`.
+Every command's output lands in your context, so run each one to print its
+verdict and only what failed: send the output to a file outside the tree, print
+the exit code, and read the failures from the file, never the whole of it.
+
+- The suites that test what you changed, and the ones you added, by path. The
+  dot reporter prints a line of dots and then the failures, so dropping the
+  dots leaves nothing on a pass:
+  `node --test --test-reporter=dot --test-timeout=60000 <suite>... >/tmp/unit.out 2>&1; echo "exit $?"; grep -v '^[.X]*$' /tmp/unit.out | head -n 60`
+- On the files you changed:
+  `./node_modules/.bin/tsc --noEmit --pretty false >/tmp/tsc.out 2>&1; echo "exit $?"; head -n 40 /tmp/tsc.out`,
+  `env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint --quiet <file>... >/tmp/lint.out 2>&1; echo "exit $?"; head -n 40 /tmp/lint.out`
+  and `./node_modules/.bin/prettier --check --log-level warn <file>...; echo "exit $?"`.
+- For a gate you changed, its sibling suite:
+  `sh .chug/tasks/<gate>.test.sh >/tmp/suite.out 2>&1; echo "exit $?"; grep -A3 '^FAIL' /tmp/suite.out | head -n 40`.
+- For a gate whose rule your change may break, the gate itself through
+  `ci.sh`, which records a pass the checks stage then reuses instead of running
+  it again: `git add -A; CHUG_CI_QUIET=1 .chug/tasks/ci.sh --only <gate>... >/tmp/ci.out 2>&1; echo "exit $?"; tail -n 60 /tmp/ci.out`.
+  `ci.sh` refuses a file git does not track, which is why it is added first.
+  Name the gates by the ids `ci.sh --only` lists, and leave out
+  `source-unit` and the database gates, which are the checks stage's.
 
 Find the suites by what they import, not by name alone. A change no test can
 exercise, such as a Dockerfile or a doc, needs none; say so in the report
 rather than running something unrelated to stand in for it. Run anything slow
 in the background and wait for it to finish, never under a foreground timeout
-or a fixed sleep.
+or a fixed sleep, and never start a run while another is still going.
 
 Commit the change yourself, with a message that carries its why, as the
 reviewer's brief asks. The job has no git identity, so commit as the worker:

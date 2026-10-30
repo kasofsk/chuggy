@@ -47,11 +47,28 @@
 # without a token, a `track-record` that runs or a record directory, nothing is
 # wrapped, every gate runs itself, and one line names the first reason why.
 #
+# ONE RUN AT A TIME HOLDS A CHECKOUT. A second is refused while the first is
+# alive, since two would share the logs and each other's machine.
+#
+# A QUIET RUN PRINTS VERDICTS, NOT TRANSCRIPTS, for a reader whose every line
+# costs it, such as an agent. Each gate's and each suite's output goes to its
+# own log under the checkout's git directory, whose path the run prints first;
+# the run prints one line per gate, the end of a red one's log under it, and
+# the red ones again as its last lines, where a reader that keeps only the end
+# of the output still finds them.
+#
+# `--only <gate>...` runs those gates and nothing else, under the key a full
+# run gives each, so a pass it records is one a later run reuses.
+#
 # Env:
 #   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
 #   CHUG_CI_BASE=<ref>            override the default origin/main or main base
 #   CHUG_CI_FULL=1                force every gate and shell suite, each run
 #                                 fresh (TRACK_RECORD_FRESH=1)
+#   CHUG_CI_QUIET=1               log each gate's output instead of
+#                                 streaming it
+#   CHUG_CI_TAIL_LINES            lines of a red gate's log a quiet run
+#                                 prints, default 40
 #   CHUG_CI_SHELL_SUITES=0        skip the shell-suite stage (set for the
 #                                 suites themselves, so ci.test.sh cannot
 #                                 recurse into a real run)
@@ -74,9 +91,72 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
+# The lock is a directory, since making one is atomic, and it names the run
+# holding it. A holder no longer alive was killed past its trap, and its lock
+# is taken over rather than left to refuse every run after it.
+git_dir="$(git rev-parse --absolute-git-dir)" || exit 2
+lock="$git_dir/chug-ci.lock"
+log_dir="$git_dir/chug-ci"
+if ! mkdir "$lock" 2>/dev/null; then
+	holder="$(cat "$lock/pid" 2>/dev/null || true)"
+	if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+		echo "ci: LINTER ERROR — another ci.sh (pid $holder) is running in this checkout, logging to $log_dir;"
+		echo "ci: wait for it to end or stop it, then run again; this is not a pass"
+		exit 2
+	fi
+	rm -rf "$lock"
+	if ! mkdir "$lock" 2>/dev/null; then
+		echo "ci: LINTER ERROR — could not take $lock; this is not a pass"
+		exit 2
+	fi
+fi
+echo "$$" >"$lock/pid"
+record_dir=""
+trap 'rm -rf "$lock" ${record_dir:+"$record_dir"}' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+rm -rf "$log_dir"
+mkdir -p "$log_dir/suites"
+
+quiet=0
+if [ "${CHUG_CI_QUIET:-0}" = "1" ]; then quiet=1; fi
+tail_lines="${CHUG_CI_TAIL_LINES:-40}"
+
+# The gates `--only` may name are the ones this script runs, read off its own
+# calls so the list cannot drift from them.
+only=""
+if [ "${1:-}" = "--only" ]; then
+	shift
+	known="$(sed -n 's/^run_selected_gate \([a-z-]*\) .*/\1/p' .chug/tasks/ci.sh)"
+	if [ "$#" -eq 0 ]; then
+		echo "ci: LINTER ERROR — --only names no gate; this is not a pass. The gates are:"
+		printf '%s\n' "$known" | sed 's/^/ci:   /'
+		exit 2
+	fi
+	for gate in "$@"; do
+		if ! printf '%s\n' "$known" | grep -qxF -- "$gate"; then
+			echo "ci: LINTER ERROR — --only names $gate, which is no gate here; the gates are:"
+			printf '%s\n' "$known" | sed 's/^/ci:   /'
+			exit 2
+		fi
+	done
+	only=" $* "
+	only_named="$*"
+elif [ "$#" -gt 0 ]; then
+	echo "ci: LINTER ERROR — ci.sh takes no arguments but --only <gate>...; this is not a pass"
+	exit 2
+fi
+
 . ./.chug/tasks/_ci-select.sh
 ci_select_init
-echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
+if [ -n "$only" ]; then
+	echo "ci: only run (--only $only_named)"
+else
+	echo "ci: $CI_SELECT_MODE run ($CI_SELECT_REASON)"
+fi
+if [ "$quiet" = 1 ]; then
+	echo "ci: each gate's output is logged under $log_dir"
+fi
 
 # Every key carries the salt, so a new value disowns every pass on record. The
 # store keeps the first pass recorded for a key, and a fresh run does not
@@ -121,7 +201,6 @@ if [ -n "$record_off" ]; then
 	echo "ci: every gate runs fresh, and no pass on record is reused: $record_off"
 else
 	record=1
-	trap 'rm -rf "$record_dir"' EXIT
 	TRACK_RECORD_URL="${TRACK_RECORD_URL:-https://track-record.vteng.io}"
 	TRACK_RECORD_NAMESPACE="${TRACK_RECORD_NAMESPACE:-chuggy}"
 	export TRACK_RECORD_URL TRACK_RECORD_NAMESPACE
@@ -140,6 +219,7 @@ failed=0
 errored=0
 ran=0
 reused=0
+red=""
 
 untracked_shown_max=20
 untracked_count=0
@@ -264,6 +344,34 @@ record_gate() { # <gate-id> <script> [args...]
 	if record_reused "$record_name" "$record_dir/err"; then record_hit=1; fi
 }
 
+run_gate_itself() { # <gate-id> <script> [args...]
+	# check-roster and doc-lint run themselves, as each reads what no key holds
+	# for less than the gate costs to run: check-roster the plugins installed
+	# on this machine, down to whether their files are there, and doc-lint
+	# whatever a relative link names on disk, a console's build output
+	# included.
+	if [ -z "$record" ] || [ "$1" = "check-roster" ] || [ "$1" = "doc-lint" ]; then
+		shift
+		"$@"
+		rc=$?
+	else
+		record_gate "$@"
+	fi
+}
+
+# The end of a red gate's or suite's log, each line cut short, so a failure
+# reads in a screen and a line of minified output cannot fill one.
+show_log_tail() { # <log>
+	echo "ci: the end of $1:"
+	tail -n "$tail_lines" "$1" | cut -c 1-240 | sed 's/^/ci: | /'
+}
+
+# A red gate or suite as a line of the recap a quiet run ends on.
+note_red() { # <label> <log>
+	red="${red}ci:   $1 — $2
+"
+}
+
 run_gate() { # <gate-id> <label> <script> [args...]
 	gate_id="$1"
 	label="$2"
@@ -274,24 +382,27 @@ run_gate() { # <gate-id> <label> <script> [args...]
 		if [ -e "$1" ]; then why="is not executable"; else why="is missing"; fi
 		echo "ci: LINTER ERROR — $1 $why; this is not a pass"
 		errored=$((errored + 1))
+		note_red "$label" "$1 $why"
 		return 0
 	fi
+	gate_log="$log_dir/$gate_id.log"
+	gate_started="$(date +%s)"
 	set +e
 	record_hit=0
-	# check-roster and doc-lint run themselves, as each reads what no key holds
-	# for less than the gate costs to run: check-roster the plugins installed
-	# on this machine, down to whether their files are there, and doc-lint
-	# whatever a relative link names on disk, a console's build output
-	# included.
-	if [ -z "$record" ] || [ "$gate_id" = "check-roster" ] || [ "$gate_id" = "doc-lint" ]; then
-		"$@"
-		rc=$?
+	if [ "$quiet" = 1 ]; then
+		run_gate_itself "$gate_id" "$@" >"$gate_log" 2>&1
 	else
-		record_gate "$gate_id" "$@"
+		run_gate_itself "$gate_id" "$@"
 	fi
 	set -e
 	case "$rc" in
-	0) reused=$((reused + record_hit)) ;;
+	0)
+		reused=$((reused + record_hit))
+		if [ "$quiet" = 1 ]; then
+			if [ "$record_hit" = 1 ]; then how="reused"; else how="$(($(date +%s) - gate_started))s"; fi
+			echo "ci: clean — $label ($how)"
+		fi
+		;;
 	1)
 		echo "ci: FAILED — $label"
 		failed=$((failed + 1))
@@ -301,16 +412,25 @@ run_gate() { # <gate-id> <label> <script> [args...]
 		errored=$((errored + 1))
 		;;
 	esac
+	if [ "$rc" != 0 ] && [ "$quiet" = 1 ]; then
+		show_log_tail "$gate_log"
+		note_red "$label" "$gate_log"
+	fi
 }
 
 run_selected_gate() { # <gate-id> <label> <script> [args...]
 	gate_id="$1"
 	label="$2"
 	shift 2
-	if ci_gate_selected "$gate_id"; then
-		run_gate "$gate_id" "$label" "$@"
-	else
+	if [ -n "$only" ]; then
+		case "$only" in
+		*" $gate_id "*) run_gate "$gate_id" "$label" "$@" ;;
+		*) printf '\n--- %s: SKIPPED (not named by --only)\n' "$label" ;;
+		esac
+	elif ! ci_gate_selected "$gate_id"; then
 		printf '\n--- %s: SKIPPED (no relevant changes)\n' "$label"
+	else
+		run_gate "$gate_id" "$label" "$@"
 	fi
 }
 
@@ -329,6 +449,8 @@ run_selected_gate check-vendored "check-vendored" ./.chug/tasks/check-vendored.s
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'
+elif [ -n "$only" ]; then
+	printf '\n--- shell suites: SKIPPED (not named by --only)\n'
 else
 	printf '\n--- shell suites\n'
 	suite_cap="${CHUG_CI_SUITE_TIMEOUT_SECS:-900}"
@@ -372,15 +494,17 @@ else
 			echo "ci:           UNCAPPED. Install coreutils for the cap."
 		fi
 		# A suite's key takes the platform as well, since `sh` is not one
-		# program everywhere. Its stderr is kept only when it is wrapped,
-		# where track-record's last line there says whether it ran.
-		suite_err=/dev/null
-		if [ -n "$record" ]; then suite_err="$record_dir/err"; fi
+		# program everywhere. Its output goes to its own log, and its stderr
+		# apart from that only when it is wrapped, where track-record's last
+		# line there says whether it ran; the log takes a copy after.
 		started="$(date +%s)"
 		IFS='
 '
 		for suite in $suites; do
 			printf '  - %s\n' "$suite"
+			suite_log="$log_dir/suites/$(printf '%s' "$suite" | sed 's|^\.||' | tr '/ ' '__').log"
+			suite_err="$suite_log.err"
+			if [ -n "$record" ]; then suite_err="$record_dir/err"; fi
 			if [ -n "$record" ]; then
 				record_scoped="$(record_scope "$suite")"
 				eval "set -- track-record run --name \"\$suite\" --tool \"\$record_tool_node\" \
@@ -390,12 +514,14 @@ else
 			fi
 			set +e
 			if [ -n "$timeout_cmd" ]; then
-				CHUG_CI_SHELL_SUITES=0 "$timeout_cmd" "$suite_cap" "$@" >/dev/null 2>"$suite_err"
+				CHUG_CI_SHELL_SUITES=0 "$timeout_cmd" "$suite_cap" "$@" >"$suite_log" 2>"$suite_err"
 			else
-				CHUG_CI_SHELL_SUITES=0 "$@" >/dev/null 2>"$suite_err"
+				CHUG_CI_SHELL_SUITES=0 "$@" >"$suite_log" 2>"$suite_err"
 			fi
 			rc=$?
 			set -e
+			cat "$suite_err" >>"$suite_log"
+			if [ -z "$record" ]; then rm -f "$suite_err"; fi
 			if [ "$rc" -eq 124 ] && [ -n "$timeout_cmd" ]; then
 				echo "ci: FAILED — $suite ran past the ${suite_cap}s cap (CHUG_CI_SUITE_TIMEOUT_SECS); rerun with: sh $suite"
 				failed=$((failed + 1))
@@ -405,6 +531,10 @@ else
 			elif [ -n "$record" ] && record_reused "$suite" "$suite_err"; then
 				printf '    %s\n' "$(tail -n 1 "$suite_err")"
 				reused=$((reused + 1))
+			fi
+			if [ "$rc" -ne 0 ]; then
+				show_log_tail "$suite_log"
+				note_red "$suite" "$suite_log"
 			fi
 		done
 		unset IFS
@@ -436,6 +566,10 @@ if [ "$errored" -gt 0 ]; then
 elif [ "$failed" -gt 0 ]; then
 	echo "ci: $failed gate(s) failed"
 	status=1
+fi
+if [ -n "$red" ] && [ "$quiet" = 1 ]; then
+	echo "ci: red, with the log of each:"
+	printf '%s' "$red"
 fi
 if [ "$untracked_count" -gt 0 ] && [ "${CHUG_CI_ALLOW_UNTRACKED:-0}" != "1" ]; then
 	echo "ci: $untracked_count untracked file(s) went unchecked; git add them or ignore them"
