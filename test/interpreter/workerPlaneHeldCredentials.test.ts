@@ -177,4 +177,10 @@ test("a secret longer than the contract carries is none", () => {
   const atBound = "s".repeat(heldCredentialSecretCharsMax);
   assert.equal(heldCredentialSecret(` ${atBound}\n`), atBound);
   assert.equal(heldCredentialSecret(`${atBound}s`), undefined);
+  const astral = "\u{1F511}".repeat(heldCredentialSecretCharsMax);
+  assert.equal(
+    heldCredentialSecret(astral),
+    astral,
+    "a bound counted in UTF-16 units",
+  );
 });

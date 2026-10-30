@@ -21,7 +21,7 @@
 
 import { z } from "zod";
 
-import { identitySchema } from "../contract/http.ts";
+import { identitySchema, textCodePointsCount } from "../contract/http.ts";
 import { heldCredentialSecretCharsMax } from "../contract/workerPlane.ts";
 import { isHeldCredentialVariable } from "../contract/workerEnvironment.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
@@ -166,7 +166,7 @@ export function heldCredentialSecret(
   const secret = text?.trim();
   return secret === undefined ||
     secret.length === 0 ||
-    secret.length > heldCredentialSecretCharsMax
+    textCodePointsCount(secret) > heldCredentialSecretCharsMax
     ? undefined
     : secret;
 }
