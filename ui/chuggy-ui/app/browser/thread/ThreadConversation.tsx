@@ -49,6 +49,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
 import {
@@ -282,7 +283,7 @@ interface ThreadConversationProps {
 /** What a thread's composer is made from, out of its own read. */
 function threadSendMade(
   props: ThreadConversationProps,
-): Omit<ThreadSendInput, "partition"> {
+): Omit<ThreadSendInput, "partition" | "page"> {
   const { thread } = props;
   return {
     session: thread.session,
@@ -293,11 +294,16 @@ function threadSendMade(
 }
 
 export function ThreadConversation(
-  props: ThreadConversationProps & { readonly partition: PartitionIdentity },
+  props: ThreadConversationProps & {
+    readonly partition: PartitionIdentity;
+    /** The console page the reader is on, which a message is sent from. */
+    readonly page?: ConsolePage | undefined;
+  },
 ): ReactNode {
   const sends = useThreadSend({
     ...threadSendMade(props),
     partition: props.partition,
+    page: props.page,
   });
   const mentions = useConversationMentions(props.partition);
   const image = useThreadImage(props.partition);

@@ -385,9 +385,9 @@ export const threadMessageImagesMax = 4;
 
 /**
  * What a thread's seeding block weighs beyond the two settings texts inside it:
- * the headings, and the boundary over the member's message. It is a ceiling
- * rather than a measurement, and the interpreter's suite is what holds the
- * composed block under it.
+ * the headings, the page the member sent from, and the boundary over the
+ * member's message. It is a ceiling rather than a measurement, and the
+ * interpreter's suite is what holds the composed block under it.
  */
 export const threadSeedingFixedCharsMax = 4_096;
 

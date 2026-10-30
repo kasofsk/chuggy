@@ -70,11 +70,14 @@ import {
   conversationExchangeParts,
 } from "../../core/conversation.ts";
 import type {
+  ConversationAsk,
   ConversationDoing,
   ConversationExchange,
   ConversationPart,
 } from "../../core/conversation.ts";
+import { consolePageLabel } from "../../core/consolePage.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
+import { Chip } from "../ui/Chip.tsx";
 import { TicketReference } from "../ui/TicketReference.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -268,26 +271,33 @@ const conversationReportComponents = { Text: ConversationReport };
 
 /** The member's own words, on the right, as they were typed — with the block
  * the server composed in front of a thread's first message folded away above
- * them, because they neither typed it nor asked to read it, and the images the
- * message named drawn over them, as the page reads each. */
+ * them, because they neither typed it nor asked to read it, the page the
+ * message was sent from named in a chip, and the images it named drawn over
+ * them, as the page reads each. */
 function ConversationBubble(props: {
-  readonly context: string | undefined;
-  readonly images: readonly string[] | undefined;
+  readonly message: Extract<ConversationAsk, { readonly ask: "Message" }>;
 }): ReactNode {
   const image = useContext(ConversationImage);
+  const { context, page, images } = props.message;
   return (
     <div className="flex flex-col items-end gap-2">
-      {props.context === undefined ? null : (
+      {context === undefined ? null : (
         <ConversationCard label="Context">
-          <MarkdownReport text={props.context} bare />
+          <MarkdownReport text={context} bare />
         </ConversationCard>
       )}
-      {props.images === undefined || image === undefined ? null : (
+      {page === undefined ? null : (
+        <Chip>
+          <span className="visually-hidden">Sent from </span>
+          {consolePageLabel(page)}
+        </Chip>
+      )}
+      {images === undefined || image === undefined ? null : (
         <ul
           aria-label="Images"
           className="flex max-w-[85%] flex-wrap justify-end gap-2"
         >
-          {props.images.map((artifact, at) => (
+          {images.map((artifact, at) => (
             <li key={at}>{image(artifact)}</li>
           ))}
         </ul>
@@ -327,7 +337,7 @@ function ConversationAskBody(props: {
   if (ask === undefined) return null;
   switch (ask.ask) {
     case "Message":
-      return <ConversationBubble context={ask.context} images={ask.images} />;
+      return <ConversationBubble message={ask} />;
     case "Wake":
       return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
     case "Document":

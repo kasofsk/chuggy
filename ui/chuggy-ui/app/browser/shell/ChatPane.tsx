@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { partitionPath } from "../../../../../src/contract/http.ts";
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { apiOpenThread } from "../../core/apiRoutes.ts";
@@ -300,6 +301,7 @@ function ChatPaneThread(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly named: boolean;
+  readonly page: ConsolePage | undefined;
 }): ReactNode {
   const state = useThread(props.partition, props.session);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
@@ -308,6 +310,7 @@ function ChatPaneThread(props: {
       partition={props.partition}
       thread={state.value}
       named={props.named}
+      page={props.page}
     />
   );
 }
@@ -370,6 +373,7 @@ function ChatPaneFirst(props: {
   readonly opening: string | undefined;
   readonly onStarted: () => void;
   readonly onRead: () => void;
+  readonly page: ConsolePage | undefined;
 }): ReactNode {
   const [typed, setTyped] = useState(false);
   const sends = useThreadSend({
@@ -377,6 +381,7 @@ function ChatPaneFirst(props: {
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
+    page: props.page,
   });
   const composer = sends.composer;
   if (composer.back !== undefined && !typed) setTyped(true);
@@ -475,6 +480,7 @@ function ChatPaneBody(props: {
   readonly opening: string | undefined;
   readonly onStarted: () => void;
   readonly onRead: () => void;
+  readonly page: ConsolePage | undefined;
 }): ReactNode {
   if (chatPaneThreadDrawn(props.session, props.starting))
     return (
@@ -483,6 +489,7 @@ function ChatPaneBody(props: {
         partition={props.partition}
         session={props.session}
         named={props.named}
+        page={props.page}
       />
     );
   if (props.viewOnly)
@@ -499,6 +506,7 @@ function ChatPaneBody(props: {
       opening={props.opening}
       onStarted={props.onStarted}
       onRead={props.onRead}
+      page={props.page}
     />
   );
 }
@@ -592,12 +600,15 @@ function ChatPaneHeld(props: {
   );
 }
 
-function ChatPaneOpen(props: {
+interface ChatPaneOpenProps {
   readonly partition: PartitionIdentity;
   /** Where the pane is drawn, and whether it has the whole frame and so sets
    * its conversation as a column to read. */
   readonly chat: ChatPaneState;
-}): ReactNode {
+  readonly page: ConsolePage | undefined;
+}
+
+function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
   const { threads, holding } = pane;
@@ -654,6 +665,7 @@ function ChatPaneOpen(props: {
             door.met({ send: "Idle" });
           }}
           onRead={pane.read}
+          page={props.page}
         />
       </div>
     </section>
@@ -663,6 +675,9 @@ function ChatPaneOpen(props: {
 export function ChatPane(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  /** The page the pane is drawn with, which a message is sent from; nothing
+   * where the pane has the whole of a frame that divides. */
+  readonly page?: ConsolePage | undefined;
 }): ReactNode {
   return chatPaneStripped(props.chat) ? (
     <ChatPaneStrip placement={props.chat.placement} />
@@ -671,6 +686,7 @@ export function ChatPane(props: {
       key={partitionPath(props.partition)}
       partition={props.partition}
       chat={props.chat}
+      page={props.page}
     />
   );
 }

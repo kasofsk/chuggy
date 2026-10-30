@@ -24,6 +24,7 @@ import {
   threadMessageImagesMax,
 } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
 import { hostedRunsQuery } from "../../core/projectQueries.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
@@ -184,6 +185,9 @@ interface ThreadSendMade {
 /** What one project thread's composer is made from. */
 export interface ThreadSendInput extends ThreadSendMade {
   readonly partition: PartitionIdentity;
+  /** The console page the reader is on, which a press names as the one it
+   * was sent from. */
+  readonly page?: ConsolePage | undefined;
 }
 
 /** What one thread of the reader's own chat hands its composer. */
@@ -204,11 +208,12 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     input,
     threadHomeOf(input.partition),
     useThreadDoor(input.partition),
+    input.page,
   );
 }
 
 /** The composer of one thread of the reader's own chat, whose door is their
- * chat host and whose messages carry no images. */
+ * chat host and whose messages carry no images and no console page. */
 export function useMemberThreadSend(
   input: MemberThreadSendInput,
 ): ThreadSendHeld {
@@ -216,6 +221,7 @@ export function useMemberThreadSend(
     input,
     { scope: "Member", tenant: input.tenant },
     useMemberThreadDoor(input.tenant),
+    undefined,
   );
 }
 
@@ -280,6 +286,7 @@ function useThreadSendAt(
   input: ThreadSendMade,
   home: ThreadHome,
   door: ThreadDoor,
+  page: ConsolePage | undefined,
 ): ThreadSendHeld {
   const dispatch = useConsoleDispatch();
   const name = threadSendRecordName(home, input.session);
@@ -314,6 +321,7 @@ function useThreadSendAt(
           session: input.session,
           text,
           attached,
+          page,
           drawn,
         }),
       );

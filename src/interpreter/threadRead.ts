@@ -63,6 +63,8 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
+import { consolePageSchema } from "../contract/consolePage.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
 import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
@@ -664,6 +666,16 @@ export function checkedThreadMessageImages(
       `a thread message names at most ${String(threadMessageImagesMax)} images`,
     );
   return images;
+}
+
+/** The page a message was sent from, as the door accepts it: none, or one the
+ * contract's vocabulary names, for `checkedThreadMessage`'s own reason. */
+export function checkedThreadMessagePage(
+  page: ConsolePage | undefined,
+): ConsolePage | undefined {
+  if (page !== undefined && !consolePageSchema.safeParse(page).success)
+    throw new RangeError("a thread message names a page the console does not");
+  return page;
 }
 
 /** What checking a message's named images against this project's own artifacts came to. */

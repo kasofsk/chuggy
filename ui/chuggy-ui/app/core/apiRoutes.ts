@@ -115,6 +115,7 @@ import type {
   sessionPlacementSchema,
   submissionSchema,
   threadMessageSchema,
+  chatThreadMessageSchema,
 } from "../../../../src/contract/requests.ts";
 import type { AccountAgent } from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
@@ -1318,7 +1319,11 @@ export const apiChatThreadTranscript = apiTenantEndpoint(
 
 export const apiSendChatThreadMessage = apiTenantEndpoint(
   nativeHttpEndpoints.sendChatThreadMessage,
-  (tenant, session: string, message: z.infer<typeof threadMessageSchema>) => ({
+  (
+    tenant,
+    session: string,
+    message: z.infer<typeof chatThreadMessageSchema>,
+  ) => ({
     parameters: { tenant, session },
     body: message,
   }),

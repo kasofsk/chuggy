@@ -55,6 +55,20 @@ export function ticketDuplicateQueryOf(
   return from === undefined ? {} : { from };
 }
 
+/** What the new-ticket address says about the draft it names, read as the
+ * ticket it duplicates is. */
+export interface TicketDraftQuery {
+  readonly draft?: number;
+}
+
+/** The draft the address names, read off the query the router parsed. */
+export function ticketDraftQueryOf(
+  search: Readonly<Record<string, unknown>>,
+): TicketDraftQuery {
+  const draft = ticketDuplicateNumberOf(search["draft"]);
+  return draft === undefined ? {} : { draft };
+}
+
 /** What a duplicate could not carry, each named so the form can say it. */
 export interface TicketDuplicateDropped {
   readonly repository: string | undefined;

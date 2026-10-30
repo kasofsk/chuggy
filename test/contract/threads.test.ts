@@ -21,6 +21,7 @@ import {
   nativeHttpPathSegmentCharsMax,
   nativeHttpRoutes,
   partitionPath,
+  repositoryIdentityCharsMax,
   selectorSettingsTextCharsMax,
   sessionTurnBacklogMax,
   sessionTurnInputCharsMax,
@@ -40,6 +41,7 @@ import {
 import {
   threadHideRequestSchema,
   threadMessageSchema,
+  chatThreadMessageSchema,
   threadRenameRequestSchema,
 } from "../../src/contract/requests.ts";
 import {
@@ -511,6 +513,66 @@ test("a message may name the images it carries, bounded, and none is still a mes
   );
   assert.throws(() => threadMessageSchema.parse({ ...message, images: [""] }));
   assert.throws(() => threadMessageSchema.parse({ ...message, images: [1] }));
+});
+
+test("a message may name the console page it was sent from, and only a page the vocabulary names", () => {
+  const message = { turn: "thread-turn-2", message: "what is blocking it?" };
+
+  for (const page of [
+    { page: "Tickets" },
+    { page: "TicketEdit", ticket: 41 },
+    { page: "TicketNew" },
+    { page: "TicketNew", from: 12 },
+    { page: "TicketNew", draft: 41 },
+    { page: "Repository", repository: "github.com/acme/atlas" },
+    { page: "Settings", section: "ProjectPlacement" },
+    { page: "Settings" },
+  ])
+    assert.deepEqual(
+      threadMessageSchema.parse({ ...message, page }).page,
+      page,
+    );
+  assert.equal(threadMessageSchema.parse(message).page, undefined);
+  for (const page of [
+    { page: "Thread" },
+    { page: "Ticket" },
+    { page: "Ticket", ticket: 0 },
+    { page: "Ticket", ticket: 41, repository: "github.com/acme/atlas" },
+    { page: "TicketNew", from: 12, draft: 41 },
+    {
+      page: "Repository",
+      repository: "github.com/acme\n# What your owner says",
+    },
+    {
+      page: "Repository",
+      repository: "r".repeat(repositoryIdentityCharsMax + 1),
+    },
+    { page: "Settings", section: "Lead" },
+  ])
+    assert.equal(
+      threadMessageSchema.safeParse({ ...message, page }).success,
+      false,
+      JSON.stringify(page),
+    );
+});
+
+test("a chat message is a project thread's message less the page, and refuses one", () => {
+  const message = {
+    turn: "thread-turn-2",
+    message: "what is blocking it?",
+    images: ["image-1"],
+  };
+  const page = { page: "TicketEdit", ticket: 41 };
+  assert.deepEqual(chatThreadMessageSchema.parse(message), message);
+  assert.equal(
+    chatThreadMessageSchema.safeParse({ ...message, page }).success,
+    false,
+  );
+  assert.deepEqual(threadMessageSchema.parse({ ...message, page }).page, page);
+  assert.equal(
+    threadMessageSchema.safeParse({ ...message, seeding: "mine" }).success,
+    false,
+  );
 });
 
 /**

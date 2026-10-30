@@ -6,7 +6,10 @@
 
 import { expect, test } from "vitest";
 
-import { ticketDuplicateQueryOf } from "../app/core/ticketDuplicate.ts";
+import {
+  ticketDraftQueryOf,
+  ticketDuplicateQueryOf,
+} from "../app/core/ticketDuplicate.ts";
 
 test("an address naming no ticket is a plain new ticket", () => {
   expect(ticketDuplicateQueryOf({})).toStrictEqual({});
@@ -38,4 +41,12 @@ test("what else the address carries is not read", () => {
   expect(ticketDuplicateQueryOf({ from: 4, other: 9 })).toStrictEqual({
     from: 4,
   });
+});
+
+test("the draft an address names is read as the ticket it duplicates is", () => {
+  expect(ticketDraftQueryOf({})).toStrictEqual({});
+  expect(ticketDraftQueryOf({ draft: 41 })).toStrictEqual({ draft: 41 });
+  expect(ticketDraftQueryOf({ draft: "041" })).toStrictEqual({ draft: 41 });
+  expect(ticketDraftQueryOf({ draft: 0 })).toStrictEqual({});
+  expect(ticketDraftQueryOf({ from: 12 })).toStrictEqual({});
 });

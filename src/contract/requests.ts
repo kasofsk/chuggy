@@ -36,6 +36,7 @@ import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
+import { consolePageSchema } from "./consolePage.ts";
 import {
   briefFinalizationModes,
   forgeCredentialPermissions,
@@ -353,17 +354,26 @@ export const selectorProposalReviewSchema = z.strictObject({
 });
 
 /**
- * What a member puts in their own thread: a turn identity they mint themselves,
- * the text they typed, and the project-owned images it carries, each named by
- * the identity the upload route minted — a project's own, since no console
- * attaches one yet. The turn is the body's rather than a header's for the
+ * What a member puts in their own chat thread: a turn identity they mint
+ * themselves, the text they typed, and the images it names by the identity the
+ * upload route minted. The turn is the body's rather than a header's for the
  * reason `submissionSchema` gives — enqueuing is idempotent on it, so a
  * retried post answers the ordinal it already has instead of a second turn.
+ * It names no console page, a chat being sent from none.
  */
-export const threadMessageSchema = z.strictObject({
+export const chatThreadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
   images: z.array(bodyIdentitySchema).max(threadMessageImagesMax).optional(),
+});
+
+/**
+ * What a member puts in their own project thread: a chat message, whose
+ * images are the project's own, and the console page they sent it from, which
+ * a retried post answers with the page that turn was first sent from.
+ */
+export const threadMessageSchema = chatThreadMessageSchema.extend({
+  page: consolePageSchema.optional(),
 });
 
 /**

@@ -40,6 +40,7 @@
 
 import { z } from "zod";
 
+import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
@@ -128,6 +129,20 @@ export function chatPaneOnPage(
   route: { readonly session?: string | undefined },
 ): ChatPaneState | undefined {
   return route.session === undefined ? state : undefined;
+}
+
+/**
+ * The page a message from the pane is sent from: the one the router matched,
+ * which the frame draws beside the pane, or below two columns, where an open
+ * pane is the whole body, draws under it once a press of the bar strips the
+ * pane. A pane given the whole of a frame that divides is sent from no page.
+ */
+export function chatPanePageBeside(
+  state: ChatPaneState,
+  twoColumn: boolean,
+  page: ConsolePage | undefined,
+): ConsolePage | undefined {
+  return twoColumn && !chatPaneContentDrawn(state) ? undefined : page;
 }
 
 /** Whether the pane is drawn as the strip it is expanded back from, which is

@@ -31,6 +31,7 @@ export type { AuthorizedResult } from "./authorizedProject.ts";
 import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
@@ -217,6 +218,7 @@ import {
   checkedThreadMailboxQuery,
   checkedThreadMessage,
   checkedThreadMessageImages,
+  checkedThreadMessagePage,
   checkedThreadsLimit,
   threadEntry,
   threadMessageImages,
@@ -972,6 +974,7 @@ export interface NativeWeb {
       readonly turn: SessionTurnId;
       readonly message: string;
       readonly images?: readonly string[];
+      readonly page?: ConsolePage;
     },
   ): Promise<ThreadMessageSent>;
   stopThreadTurn(
@@ -2032,8 +2035,8 @@ function composedSessionRoutes(routes?: SessionRouteReads): SessionRouteReads {
 
 /**
  * What the member's turn carries: the seeding block on a first turn and no
- * later turn's, the images section on any turn that named one, and the
- * message itself — or the ceiling the three would not fit under. The overflow
+ * later turn's, the page and the images sections on any turn that named them,
+ * and the message itself — or the ceiling they would not fit under. The overflow
  * is a refusal rather than a raise because it is the project's texts or the
  * images that are too long and not the member's request: a bare
  * `InvalidRequest` would tell them their message was malformed, which is the
@@ -2046,12 +2049,13 @@ async function nativeThreadTurnInput(
   seeded: boolean,
   message: string,
   images: readonly ThreadSeededImage[] | undefined,
+  page: ConsolePage | undefined,
 ): Promise<string | { readonly charsMax: number }> {
   const seeding = seeded
     ? await threadSeeding(ports.seeding, partition, authority)
     : undefined;
   try {
-    return threadTurnInput(message, seeding, images);
+    return threadTurnInput(message, seeding, images, page);
   } catch (failure) {
     if (failure instanceof RangeError)
       return { charsMax: threadTurnInputCharsMax };
@@ -2214,6 +2218,7 @@ function nativeSendThreadMessageMethod(
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
     const named = checkedThreadMessageImages(input.images ?? []);
+    const page = checkedThreadMessagePage(input.page);
     const mine = await ports.threads.standing({
       partition,
       session: input.session,
@@ -2243,6 +2248,7 @@ function nativeSendThreadMessageMethod(
       mine.thread.agentReference === undefined,
       message,
       checked.images.length === 0 ? undefined : checked.images,
+      page,
     );
     if (typeof turnInput !== "string")
       return { result: "TooLarge", charsMax: turnInput.charsMax };

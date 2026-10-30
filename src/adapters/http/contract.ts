@@ -13,6 +13,7 @@ import {
 import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 import type { ConfigurationOverrides } from "../../contract/configurationOverrides.ts";
+import type { ConsolePage } from "../../contract/consolePage.ts";
 
 import {
   resumeTicketCommand,
@@ -696,16 +697,36 @@ export function parseSubmission(
 
 /**
  * What a member put in their own thread: the turn identity they minted, the
- * text they typed, and the images it names, where it names any. The turn is
- * the idempotency, exactly as `operation` is on a submission, so a retried
- * post answers the ordinal it already has.
+ * text they typed, and the images it names and the page it was sent from,
+ * where it names them. The turn is the idempotency, exactly as `operation` is
+ * on a submission, so a retried post answers the ordinal it already has.
  */
 export function parseThreadMessage(body: unknown): {
   readonly turn: SessionTurnId;
   readonly message: string;
   readonly images?: readonly string[];
+  readonly page?: ConsolePage;
 } {
   const value = nativeHttpEndpoints.sendThreadMessage.body.parse(body);
+  return {
+    turn: asSessionTurnId(value.turn),
+    message: value.message,
+    ...(value.images === undefined ? {} : { images: value.images }),
+    ...(value.page === undefined ? {} : { page: value.page }),
+  };
+}
+
+/**
+ * What a member put in their own chat thread: a project thread's message less
+ * the page, which the schema is strict against, so a body naming one is an
+ * `InvalidRequest` rather than a page nothing reads.
+ */
+export function parseChatThreadMessage(body: unknown): {
+  readonly turn: SessionTurnId;
+  readonly message: string;
+  readonly images?: readonly string[];
+} {
+  const value = nativeHttpEndpoints.sendChatThreadMessage.body.parse(body);
   return {
     turn: asSessionTurnId(value.turn),
     message: value.message,

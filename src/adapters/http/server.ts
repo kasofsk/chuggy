@@ -134,6 +134,7 @@ import {
   parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
+  parseChatThreadMessage,
   parseThreadOpen,
   parseThreadRename,
   parsePersonalRunnerRedemption,
@@ -2791,7 +2792,7 @@ function registerChatWrites(app: FastifyInstance, chat: MemberChat): void {
     (request, principal, tenant) =>
       chat.sendThreadMessage(principal, tenant, {
         session: registerEndpointSession(request),
-        ...parseThreadMessage(request.body),
+        ...parseChatThreadMessage(request.body),
       }),
     chatThreadMessageResponse,
   );

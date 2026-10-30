@@ -107,8 +107,10 @@ import type {
   SessionTurnInputKind,
   SessionTurnState,
 } from "../../../../src/contract/rosters.ts";
+import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import {
   threadImagesRead,
+  threadPageRead,
   threadSeedingHeadings,
   threadTurnBoundaryHeading,
   threadTurnRecordedLastLine,
@@ -354,6 +356,8 @@ export type ConversationAsk =
       /** The seeding block the server composed in front of a thread's first
        * message, where the input carried one. */
       readonly context?: string;
+      /** The console page the message was sent from, where it named one. */
+      readonly page?: ConsolePage;
       /** The project images the message named, by identity, where it named
        * any. */
       readonly images?: readonly string[];
@@ -608,7 +612,8 @@ function conversationSeedingSplit(
 
 /**
  * The member's own words, the seeding block the server put in front of them
- * where the input carries one, and the images the block's last section names.
+ * where the input carries one, the page the section before the images names,
+ * and the images the block's last section names.
  * Both sides read the contract's constants, so this is the writer's boundary
  * read backwards rather than a guess at one, and a text that carries neither
  * of them is the member's whole message.
@@ -624,12 +629,14 @@ export function conversationAskMessage(
   if (conversationTextIsJsonObject(said))
     return { ask: "Observation", text: said };
   if (split === undefined) return { ask: "Message", text: said };
-  const block = threadImagesRead(text.slice(0, split.ends));
+  const images = threadImagesRead(text.slice(0, split.ends));
+  const block = threadPageRead(images.before);
   return {
     ask: "Message",
     text: said,
     ...(block.before === "" ? {} : { context: block.before }),
-    ...(block.artifacts.length === 0 ? {} : { images: block.artifacts }),
+    ...(block.page === undefined ? {} : { page: block.page }),
+    ...(images.artifacts.length === 0 ? {} : { images: images.artifacts }),
   };
 }
 

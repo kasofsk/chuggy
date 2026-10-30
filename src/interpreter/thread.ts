@@ -43,12 +43,14 @@ import {
   threadSeedingCharsMax,
   threadWakeCharsMax,
 } from "../contract/http.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
 import {
   resolvedThreadStandingRules,
   threadDraftsHeading,
   threadImageLine,
   threadImagesHeading,
   threadNorthStarHeading,
+  threadPageSection,
   threadRefusalsHeading,
   threadStandingSection,
   threadTurnBoundaryHeading,
@@ -432,28 +434,32 @@ export const threadTurnInputCharsMax =
   threadMessageCharsMax + threadSeedingCharsMax;
 
 /**
- * The whole of one turn's input: the seeding block where the turn has one,
- * the images section where the message names any, the boundary the console
- * splits on, then the member's message, with the drafts shed oldest-first and
- * then the refusals until the two fit together. The North Star, the standing
- * rules and the images section are never shed, because they are what the turn
- * is bound by, and an input that will not fit without shedding one of them is
- * refused instead.
+ * The whole of one turn's input: the seeding block where the turn has one, the
+ * page section where the member sent it from a page, the images section where
+ * the message names any, the boundary the console splits on, then the
+ * member's message, with the drafts shed oldest-first and then the refusals
+ * until the two fit together. The North Star, the standing rules, the page and
+ * the images section are never shed, because they are what the turn is bound
+ * by, and an input that will not fit without shedding one of them is refused
+ * instead.
  */
 export function threadTurnInput(
   message: string,
   seeding?: ThreadSeeding,
   images?: readonly ThreadSeededImage[],
+  page?: ConsolePage,
 ): string {
-  const imagesSection =
-    images === undefined || images.length === 0
-      ? undefined
-      : threadImagesSection(images);
+  const sections = [
+    ...(page === undefined ? [] : [threadPageSection(page)]),
+    ...(images === undefined || images.length === 0
+      ? []
+      : [threadImagesSection(images)]),
+  ];
   if (seeding === undefined) {
     const input =
-      imagesSection === undefined
+      sections.length === 0
         ? message
-        : `${imagesSection}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
+        : [...sections, threadTurnBoundaryHeading, message].join("\n\n");
     if (textCodePointsCount(input) > threadTurnInputCharsMax)
       throw new RangeError(
         `a thread turn's input must be at most ${String(threadTurnInputCharsMax)} characters`,
@@ -465,7 +471,7 @@ export function threadTurnInput(
   for (;;) {
     const block = [
       threadSeedingText({ ...seeding, drafts, refusals }),
-      ...(imagesSection === undefined ? [] : [imagesSection]),
+      ...sections,
     ].join("\n\n");
     const input = `${block}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
     if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;

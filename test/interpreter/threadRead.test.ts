@@ -70,6 +70,7 @@ import {
 } from "../../src/interpreter/threadRead.ts";
 import {
   threadSystemPromptCharsMax,
+  threadTurnInput,
   threadTurnInputCharsMax,
 } from "../../src/interpreter/thread.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
@@ -1104,6 +1105,43 @@ test("a message to my own thread is enqueued and answers its ordinal", async () 
   assert.ok(held.calls.includes("enqueue:thread-turn-1:have a look at 42"));
   assert.ok(held.calls.includes("enqueue-route:InCluster"));
   assert.ok(held.calls.includes("authorize:Mutate"));
+});
+
+test("a message sent from a console page is enqueued with that page in front of it", async () => {
+  const { web, held } = boundary();
+  const page = { page: "TicketEdit", ticket: 41 } as const;
+
+  const sent = await web.sendThreadMessage(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-1"),
+    message: "what is blocking it?",
+    page,
+  });
+
+  assert.equal(sent.result, "Sent");
+  assert.ok(
+    held.calls.includes(
+      `enqueue:thread-turn-1:${threadTurnInput("what is blocking it?", undefined, undefined, page)}`,
+    ),
+  );
+});
+
+test("a page outside the vocabulary is refused for every other caller of the door as well", async () => {
+  const { web, held } = boundary();
+
+  await assert.rejects(
+    web.sendThreadMessage(geoff, partition, {
+      session: mine,
+      turn: asSessionTurnId("thread-turn-1"),
+      message: "what is blocking it?",
+      page: { page: "Ticket", ticket: 0 },
+    }),
+    RangeError,
+  );
+  assert.equal(
+    held.calls.filter((call) => call.startsWith("enqueue:")).length,
+    0,
+  );
 });
 
 /**

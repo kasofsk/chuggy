@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ConsolePage } from "../../src/contract/consolePage.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   hostedRunsNotGrantedCode,
@@ -137,18 +138,22 @@ interface ThreadCase {
   readonly opening?: ThreadOpening;
 }
 
-/** The call a send is logged under, the images it named appended where it named any. */
+/** The call a send is logged under, the images it named and the page it was
+ * sent from appended where it named them. */
 function sendCall(input: {
   readonly session: string;
   readonly turn: string;
   readonly message: string;
   readonly images?: readonly string[];
+  readonly page?: ConsolePage;
 }): string {
   const named =
     input.images === undefined || input.images.length === 0
       ? ""
       : `:images=${input.images.join(",")}`;
-  return `send:${input.session}:${input.turn}:${input.message}${named}`;
+  const from =
+    input.page === undefined ? "" : `:page=${JSON.stringify(input.page)}`;
+  return `send:${input.session}:${input.turn}:${input.message}${named}${from}`;
 }
 
 function threadWeb(held: ThreadCase): NativeThreadWeb {
@@ -904,6 +909,27 @@ test("a message names the images it carries, and the door is handed each one", a
   ]);
 });
 
+test("a message names the page it was sent from, and the door is handed it", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  const accepted = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/messages`,
+    headers: versioned,
+    payload: {
+      turn: "thread-turn-2",
+      message: "what is blocking it?",
+      page: { page: "TicketEdit", ticket: 41 },
+    },
+  });
+
+  assert.equal(accepted.statusCode, 202);
+  assert.deepEqual(held.calls, [
+    `send:${mine}:thread-turn-2:what is blocking it?:page={"page":"TicketEdit","ticket":41}`,
+  ]);
+});
+
 test("a message body outside the schema is refused at the door", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
@@ -923,6 +949,8 @@ test("a message body outside the schema is refused at the door", async () => {
       ),
     },
     { turn: "thread-turn-2", message: "hi", images: [""] },
+    { turn: "thread-turn-2", message: "hi", page: { page: "Thread" } },
+    { turn: "thread-turn-2", message: "hi", page: { page: "Ticket" } },
   ])
     assert.equal(
       (

@@ -22,12 +22,17 @@
  * left, and the details ask that column rather than the viewport whether they
  * fit beside a page.
  *
+ * The pane is told which page it is drawn with, so a message names the page
+ * its reader is looking at: the one beside it, or below two columns, where an
+ * open pane is the whole body, the one under it. A pane given the whole of a
+ * frame that divides is told none.
+ *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live. The toasts are the
  * only place a refusal is drawn whose screen the reader has left.
  */
 
-import { Outlet, useParams } from "@tanstack/react-router";
+import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
 import { memo, useLayoutEffect, useMemo, useState } from "react";
 import type { ReactNode, RefObject } from "react";
@@ -46,7 +51,9 @@ import type {
   PanelImperativeHandle,
 } from "react-resizable-panels";
 
+import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { consolePageOf } from "../core/consolePage.ts";
 import {
   chatPaneDragged,
   chatPaneKept,
@@ -58,6 +65,7 @@ import {
   chatPaneNarrowed,
   chatPaneOnPage,
   chatPaneOrientation,
+  chatPanePageBeside,
   chatPanePanels,
   chatPaneShareText,
   chatPaneSizes,
@@ -249,6 +257,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
   readonly id: string;
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelRef: RefObject<PanelImperativeHandle | null>;
 }): ReactNode {
@@ -266,7 +275,11 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
       )}
       className="@container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
-      <ChatPane partition={props.partition} chat={props.chat} />
+      <ChatPane
+        partition={props.partition}
+        chat={props.chat}
+        page={props.page}
+      />
     </Panel>
   );
 });
@@ -277,6 +290,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
 function shellBodyDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelIds: readonly string[];
   readonly chatPanel: RefObject<PanelImperativeHandle | null>;
@@ -302,6 +316,7 @@ function shellBodyDrawn(props: {
         id={id}
         partition={props.partition}
         chat={props.chat}
+        page={props.page}
         sizes={props.sizes}
         panelRef={props.chatPanel}
       />
@@ -377,6 +392,7 @@ function useShellBodyFollowed(along: {
 function ShellBody(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly page: ConsolePage | undefined;
 }): ReactNode {
   const held = useChatPane();
   const group = useGroupRef();
@@ -428,6 +444,7 @@ function ShellBody(props: {
       {shellBodyDrawn({
         partition: props.partition,
         chat: props.chat,
+        page: props.page,
         sizes,
         panelIds,
         chatPanel,
@@ -435,6 +452,23 @@ function ShellBody(props: {
       })}
     </Group>
   );
+}
+
+/** The page the router matched last, as the contract names it. */
+function useShellPage(): ConsolePage | undefined {
+  return useRouterState({
+    select: (state) => {
+      const leaf = state.matches.at(-1);
+      return leaf === undefined
+        ? undefined
+        : consolePageOf({
+            routeId: leaf.routeId,
+            params: leaf.params,
+            search: state.location.search,
+          });
+    },
+    structuralSharing: true,
+  });
 }
 
 function ShellDrawn(props: {
@@ -445,10 +479,19 @@ function ShellDrawn(props: {
     chatPaneNarrowed(useChatPane().state, props.twoColumn),
     useParams({ strict: false }),
   );
+  const page = useShellPage();
   return (
     <ShellFrame>
       <ShellHeader partition={props.partition} />
-      <ShellBody partition={props.partition} chat={chat} />
+      <ShellBody
+        partition={props.partition}
+        chat={chat}
+        page={
+          chat === undefined
+            ? undefined
+            : chatPanePageBeside(chat, props.twoColumn, page)
+        }
+      />
     </ShellFrame>
   );
 }

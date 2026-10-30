@@ -504,6 +504,22 @@ test("the seeding is a folded Context card, and the bubble is the words", () => 
   styleless();
 });
 
+test("the page a message was sent from is a chip over the words, and no Context card", () => {
+  const sent = exchangeOf({
+    ask: {
+      ask: "Message",
+      text: "what is blocking it?",
+      page: { page: "TicketEdit", ticket: 41 },
+    },
+    answer: "the review",
+  });
+  render(<Conversation exchanges={[sent]} empty="No conversation" />);
+  expect(screen.getByText("Edit ticket #41")).toBeDefined();
+  expect(screen.getByText("what is blocking it?")).toBeDefined();
+  expect(screen.queryByRole("button", { name: "Context" })).toBeNull();
+  styleless();
+});
+
 test("an Observation with text draws the line and its collapsed card", () => {
   const observed = exchangeOf({
     ask: { ask: "Observation", text: '{"version":1,"decision":"lead"}' },

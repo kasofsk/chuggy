@@ -140,6 +140,7 @@ test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
     "actionReport",
     "agentAccountSettings",
+    "chatThreadMessage",
     "draftCreation",
     "draftRevision",
     "executionPlacement",

@@ -2890,6 +2890,205 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "page": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Tickets"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Ticket"
+                },
+                "ticket": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["page", "ticket"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "TicketEdit"
+                },
+                "ticket": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["page", "ticket"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "TicketNew"
+                },
+                "from": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "TicketNew"
+                },
+                "draft": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["page", "draft"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Inbox"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Lead"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Catalog"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Repositories"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Repository"
+                },
+                "repository": {
+                  "type": "string"
+                }
+              },
+              "required": ["page", "repository"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Runners"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Settings"
+                },
+                "section": {
+                  "type": "string",
+                  "enum": [
+                    "ProjectLead",
+                    "ProjectPlacement",
+                    "ProjectPermissions",
+                    "WorkspacePeople",
+                    "WorkspaceAccounts",
+                    "WorkspacePermissions",
+                    "WorkspaceRunners",
+                    "WorkspaceUsage",
+                    "SiteWorkspaces",
+                    "SitePermissions"
+                  ]
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["turn", "message"],
+      "additionalProperties": false
+    },
+    "chatThreadMessage": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16384
+        },
+        "images": {
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         }
       },
       "required": ["turn", "message"],

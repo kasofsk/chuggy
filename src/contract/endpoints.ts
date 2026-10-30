@@ -11,6 +11,7 @@ import {
 } from "./http.ts";
 import {
   threadMessageSchema,
+  chatThreadMessageSchema,
   threadOpenSchema,
   threadRenameRequestSchema,
   threadHideRequestSchema,
@@ -240,7 +241,7 @@ export const nativeHttpEndpoints = {
   sendChatThreadMessage: {
     method: "POST",
     path: nativeHttpRoutes.chatThreadMessages,
-    body: threadMessageSchema,
+    body: chatThreadMessageSchema,
     response: threadMessageAcceptedSchema,
   },
   stopChatThreadTurn: {

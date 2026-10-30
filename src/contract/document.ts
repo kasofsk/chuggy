@@ -102,12 +102,22 @@ function nativeHttpContractDocumentSchemas(): unknown {
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
+    chatThreadMessage: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.sendChatThreadMessage.body,
+    ),
     threadRename: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.renameThread.body,
     ),
     threadHide: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.hideThread.body,
     ),
+    ...nativeHttpContractDocumentSchemasMachine(),
+  };
+}
+
+/** The request bodies a runner, a pool or a reporter sends rather than a member. */
+function nativeHttpContractDocumentSchemasMachine(): Record<string, unknown> {
+  return {
     workerPoolRegistrationToken: nativeHttpContractDocumentInput(
       registrationTokenRequestSchema,
     ),
