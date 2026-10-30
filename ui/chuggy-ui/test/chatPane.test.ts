@@ -13,7 +13,6 @@ import { expect, test } from "vitest";
 import {
   chatPaneChosenIn,
   chatPaneContentDrawn,
-  chatPaneCoversBar,
   chatPaneDefault,
   chatPaneDefaultAt,
   chatPaneDragged,
@@ -98,15 +97,12 @@ test("a stored value this console cannot parse is read as nothing chosen", () =>
   ).toBeUndefined();
 });
 
-test("a pane nobody moved is docked where the viewport divides and a strip under the pages where it does not", () => {
+test("a pane nobody moved is docked where the viewport divides and over the whole body where it does not", () => {
   expect(chatPaneDefaultAt(true)).toStrictEqual(chatPaneDefault);
   const narrow = chatPaneDefaultAt(false);
-  expect(narrow).toStrictEqual(chatPaneToggled(chatPaneDefault));
-  expect(chatPaneNarrowed(narrow, false)).toStrictEqual({
-    placement: "Bottom",
-    presentation: "Collapsed",
-  });
-  expect(chatPaneNarrowed(chatPaneToggled(narrow), false)).toStrictEqual({
+  expect(narrow).toStrictEqual(chatPaneFilled(chatPaneDefault));
+  expect(chatPaneNarrowed(narrow, false)).toStrictEqual(narrow);
+  expect(chatPaneNarrowed(chatPaneRestored(narrow), false)).toStrictEqual({
     placement: "Bottom",
     presentation: "Docked",
   });
@@ -136,15 +132,6 @@ test("a viewport too narrow to divide stacks a docked pane under the pages", () 
   expect(chatPaneNarrowed(chatPaneDefault, true)).toStrictEqual(
     chatPaneDefault,
   );
-});
-
-test("only a pane over the whole frame of a narrow viewport takes the bar's rows", () => {
-  const full = chatPaneFilled(chatPaneDefault);
-  expect(chatPaneCoversBar(full, true)).toBe(true);
-  expect(chatPaneCoversBar(full, false)).toBe(false);
-  expect(chatPaneCoversBar(chatPaneDefault, true)).toBe(false);
-  expect(chatPaneCoversBar(chatPaneToggled(chatPaneDefault), true)).toBe(false);
-  expect(chatPaneCoversBar(chatPaneRestored(full), true)).toBe(false);
 });
 
 test("a full pane is left where the reader put it, and a strip stacks under the pages", () => {
@@ -468,14 +455,13 @@ test("under the pages the pane keeps the share it was laid at as the frame's hei
 
 /** A reader who never chose is drawn the default the width decides, and a
  * drag that moves no presentation is not a choice. */
-test("narrowed before the reader chose, the pane is the strip under the pages, and docked again widened", () => {
+test("narrowed before the reader chose, the pane is over the whole body, and docked again widened", () => {
   const narrowed = trailWalked(draggedHalf, { move: "Narrowed" });
   expect(narrowed.chosen).toBeUndefined();
-  expect(chatPaneTrailDrawn(narrowed).state).toStrictEqual({
-    placement: "Bottom",
-    presentation: "Collapsed",
-  });
-  expect(chatPaneTrailDrawn(narrowed).share).toBe(5);
+  expect(chatPaneTrailDrawn(narrowed).state).toStrictEqual(
+    chatPaneFilled(chatPaneDefault),
+  );
+  expect(chatPaneTrailDrawn(narrowed).share).toBeUndefined();
   const widened = chatPaneTrailMoved(narrowed, { move: "Widened" });
   expect(chatPaneTrailDrawn(widened).state).toStrictEqual(chatPaneDefault);
   expect(chatPaneTrailDrawn(widened).share).toBe(50);
