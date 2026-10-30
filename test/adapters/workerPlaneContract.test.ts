@@ -130,6 +130,7 @@ import {
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import type { HeldCredentialsAnswered } from "../../src/interpreter/workerPlaneHeldCredentials.ts";
 import type { SessionTaskLaunch } from "../../src/interpreter/workerTask.ts";
 import {
   workerContractEnumsWalked,
@@ -258,6 +259,9 @@ const workerUploadPathsWritten = [
   workerErrorPath,
 ] as const;
 
+/** A credential an attempt's grant names, which a deployment may hold as a file. */
+const heldName = "track-record";
+
 /** A repository an attempt names for a credential beside its own. */
 const credentialRepository = "https://github.com/kasofsk/chuggy-common.git";
 
@@ -303,6 +307,7 @@ const workerPlaneCalls: Readonly<
   runTotals: { headers: json, payload: runTotalsBody },
   runEnded: { headers: json, payload: { evidence: "RunFailed" } },
   credential: {},
+  heldCredentials: { headers: json, payload: { credentials: [heldName] } },
 };
 
 /**
@@ -358,6 +363,7 @@ const workerPlaneRequests: Readonly<
     bodies: [{}, { repository: credentialRepository }],
     sent: workerContractProjectReads,
   },
+  heldCredentials: { schema: "workerHeldCredentialsSchema", bodies: [] },
 };
 
 function workerPlaneAuthority(
@@ -568,6 +574,70 @@ const credentialCases: readonly WorkerPlaneCase[] = [
       },
     }),
   ),
+];
+
+/** A live attempt whose recorded grant names the held credential. */
+const heldGrantedTask: WorkerTaskRead = {
+  ...liveTask,
+  invocation: {
+    ...liveInvocation,
+    authority: { ...liveInvocation.authority, credentials: [heldName] },
+  },
+};
+
+/** Every answer the held credentials can give, one served credential with an expiry and one without. */
+const heldAnswers: readonly HeldCredentialsAnswered[] = [
+  { answered: "Credentials", credentials: [] },
+  {
+    answered: "Credentials",
+    credentials: [
+      {
+        credential: heldName,
+        variable: "TRACK_RECORD_TOKEN_FILE",
+        secret: "s",
+      },
+    ],
+  },
+  {
+    answered: "Credentials",
+    credentials: [
+      {
+        credential: heldName,
+        variable: "TRACK_RECORD_TOKEN_FILE",
+        secret: "s",
+        expiresAtMs: 1,
+      },
+    ],
+  },
+  { answered: "Unavailable" },
+];
+
+const heldCredentialCases: readonly WorkerPlaneCase[] = [
+  workerContractStranger,
+  { name: "no bearer", anonymous: true },
+  { name: "an unknown bearer", service: workerPlaneTask(undefined) },
+  {
+    name: "an attempt no longer live",
+    service: workerPlaneTask({ ...heldGrantedTask, live: false }),
+  },
+  { ...workerPlaneMalformed, service: workerPlaneTask(heldGrantedTask) },
+  {
+    name: "an attempt not yet invoked",
+    service: workerPlaneTask({ live: true, identity: liveTask.identity }),
+    status: 409,
+  },
+  {
+    name: "a plane holding no credential",
+    service: workerPlaneTask(heldGrantedTask),
+    status: 200,
+  },
+  ...heldAnswers.map((answered) => ({
+    name: `the held credentials answering ${JSON.stringify(answered)}`,
+    service: {
+      ...workerPlaneTask(heldGrantedTask),
+      heldCredentials: { served: () => Promise.resolve(answered) },
+    },
+  })),
 ];
 
 const bothAnswers = [true, false] as const;
@@ -932,6 +1002,7 @@ const workerPlaneCases: Readonly<
       },
     },
   ],
+  heldCredentials: heldCredentialCases,
 };
 
 /** The call each session route is driven with where a case changes nothing about it. */

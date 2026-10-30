@@ -5,6 +5,7 @@ import type { z } from "zod";
 
 import {
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
   runModelCharsMax,
@@ -43,6 +44,8 @@ import {
   workerPlaneBytesMediaType,
   workerPlaneInputArtifactBytesMax,
   workerCredentialSchema,
+  workerHeldCredentialsMax,
+  workerHeldCredentialsSchema,
   workerPlaneRoutes,
   workerRunEndedSchema,
   workerRunTotalsSchema,
@@ -110,6 +113,7 @@ import type {
   WorkerPlaneCredentialMinting,
   WorkerPlaneCredentialUnreached,
 } from "../../interpreter/workerPlaneCredentials.ts";
+import type { WorkerPlaneHeldCredentials } from "../../interpreter/workerPlaneHeldCredentials.ts";
 import {
   artifactPathRejection,
   asArtifactDigest,
@@ -134,6 +138,7 @@ import {
   type WorkerPlaneAuthority,
   type WorkerReportPort,
   type WorkerTaskPort,
+  type WorkerTaskRead,
 } from "../../interpreter/workerPlane.ts";
 import {
   sessionTask,
@@ -171,6 +176,12 @@ interface WorkerAttemptCaller {
   readonly secret: AttemptCapabilitySecret;
 }
 
+/** A live attempt its own task read found by its bearer, and what that read found. */
+interface WorkerAttemptTaskCaller {
+  readonly task: WorkerTaskRead;
+  readonly secret: AttemptCapabilitySecret;
+}
+
 /** A live session its bearer was found by, and that bearer. */
 interface SessionCaller {
   readonly identity: SessionPlaneIdentity;
@@ -191,6 +202,8 @@ interface WorkerPlaneCallers {
   /** An attempt the authority knows, live or not, because a report from a fenced one is the ingest's to refuse. */
   readonly Attempt: WorkerAttemptCaller;
   readonly LiveAttempt: WorkerAttemptCaller;
+  /** A live attempt found by its task read, which is at once its authentication and the grant the scheduler recorded for it. */
+  readonly AttemptTask: WorkerAttemptTaskCaller;
   readonly Session: SessionCaller;
   readonly Task: WorkerTaskCaller;
 }
@@ -269,6 +282,16 @@ export function workerPlaneServed(uploadBytesMax: number) {
       caller: "LiveAttempt",
       stored: false,
       bodyBytesMax: planeJsonObjectBytesMax(repositoryIdentityCharsMax),
+    },
+    heldCredentials: {
+      caller: "AttemptTask",
+      stored: false,
+      bodyBytesMax: planeJsonObjectBytesMax(
+        ...Array.from(
+          { length: workerHeldCredentialsMax },
+          () => nativeHttpPathSegmentCharsMax,
+        ),
+      ),
     },
   } as const satisfies Readonly<
     Record<WorkerPlaneRouteName, WorkerPlaneServed>
@@ -392,6 +415,7 @@ function workerPlaneCallerFinders(
         ? Promise.resolve(undefined)
         : sessionCaller(sessions, request),
     Task: (request) => workerTaskCaller(sessions, request),
+    AttemptTask: (request) => workerAttemptTaskCaller(service, request),
   };
 }
 
@@ -503,6 +527,11 @@ export interface WorkerPlaneServerService {
    * launcher mounted for the repository it works in.
    */
   readonly credentials?: WorkerPlaneCredentialMinting;
+  /**
+   * The credentials a deployment holds as files. Without them the
+   * held-credential route answers every attempt that none is held.
+   */
+  readonly heldCredentials?: WorkerPlaneHeldCredentials;
   readonly ready: () => Promise<boolean>;
   readonly uploadBytesMax: number;
 }
@@ -611,6 +640,17 @@ async function workerTaskCaller(
   const caller =
     sessions === undefined ? undefined : await sessionCaller(sessions, request);
   return caller === undefined ? undefined : { bearer: "Session", ...caller };
+}
+
+/** A live attempt its task read finds by the request's bearer, or nothing. */
+async function workerAttemptTaskCaller(
+  service: WorkerPlaneServerService,
+  request: FastifyRequest,
+): Promise<WorkerAttemptTaskCaller | undefined> {
+  const secret = workerBearer(request);
+  if (secret === undefined) return undefined;
+  const task = await service.tasks.work(secret);
+  return task?.live === true ? { task, secret } : undefined;
 }
 
 /** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none. */
@@ -1106,6 +1146,43 @@ function workerCredentialRoute(
           reply,
           await credentials.attempt(authority, named),
         );
+  });
+}
+
+/** How long a pod leaves a plane that could not read a held credential's file before asking again. */
+const workerHeldCredentialRetryAfterSeconds = 1;
+
+/**
+ * The credentials a deployment holds as files that one attempt is served: those
+ * it asks for that the grant the scheduler recorded for it names and that are
+ * held for its project. The grant and the project are what its own task read
+ * found, so nothing the pod sends but the names it asks for is weighed.
+ */
+function workerHeldCredentialsRoute(
+  register: WorkerJobRegistrar,
+  service: WorkerPlaneServerService,
+): void {
+  register("heldCredentials", async (request, reply, { task }) => {
+    const offered = workerHeldCredentialsSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    if (task.invocation === undefined)
+      return reply
+        .code(409)
+        .send({ action: "stop", reason: "TaskNotRecorded" });
+    const held = service.heldCredentials;
+    if (held === undefined) return { credentials: [] };
+    const served = await held.served({
+      partition: task.identity.partition,
+      granted: task.invocation.authority.credentials,
+      asked: offered.data.credentials,
+    });
+    return served.answered === "Credentials"
+      ? { credentials: served.credentials }
+      : workerPlaneRefused(reply, {
+          status: 503,
+          body: { action: "retry" },
+          retryAfterSeconds: workerHeldCredentialRetryAfterSeconds,
+        });
   });
 }
 
@@ -1714,6 +1791,7 @@ export function createWorkerPlaneApp(
   workerRunTranscriptRoute(register, service);
   workerRunFigureRoutes(register, service);
   workerCredentialRoute(register, service);
+  workerHeldCredentialsRoute(register, service);
   const sessions = service.sessions;
   if (sessions !== undefined) {
     sessionBoundsChecked(sessions);

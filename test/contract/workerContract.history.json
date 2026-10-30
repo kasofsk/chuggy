@@ -148,5 +148,10 @@
     "release": "1.29.0",
     "wire": "ea30490de92572ed460e46eca6511afe7b985fd79b457ca7e04a848c9c9ab2dc",
     "files": "f731d0f89dd342b1096a23c5b9cff46319d28ca388fd626aa3928accf0dd3723"
+  },
+  {
+    "release": "1.30.0",
+    "wire": "f9aa16d86444adefce61bfe26d407b01a9863ebc7f036a8800da64d33a0d3f9f",
+    "files": "22a37d3b412db06f523fdb8a6703f205f70b17e3722b0b54a76bff09a8cdbb39"
   }
 ]
