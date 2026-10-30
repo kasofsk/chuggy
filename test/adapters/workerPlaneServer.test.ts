@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { planeBodyBytesDefault } from "../../src/adapters/http/planeRoutes.ts";
@@ -20,12 +23,14 @@ import {
 import {
   runEndedEvidences,
   workerCredentialAbsentSchema,
+  workerHeldCredentialsMax,
   workerPlaneRoutes,
   type WorkerPlaneRouteName,
 } from "../../src/contract/workerPlane.ts";
 import { resultManifestTextCharsMax } from "../../src/contract/workerDocuments.ts";
 import {
   nativeHttpPageItemsMax,
+  nativeHttpPathSegmentCharsMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
   runTranscriptBatchBytesMax,
@@ -50,6 +55,11 @@ import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import type { WorkerPlaneCredentialMinted } from "../../src/interpreter/workerPlaneCredentials.ts";
+import {
+  workerPlaneHeldCredentials,
+  type HeldCredential,
+} from "../../src/interpreter/workerPlaneHeldCredentials.ts";
+import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts";
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
@@ -115,6 +125,43 @@ const projectArtifactsService = {
     readArtifact: () => Promise.resolve({ read: "NotFound" as const }),
   },
 } as const;
+
+/** A live attempt's task read, its recorded grant naming `credentials` and its project `partition`. */
+function heldTask(
+  credentials: readonly string[] = [],
+  partition: WorkTaskIdentity["partition"] = authority.partition,
+): WorkerTaskRead {
+  return {
+    live: true,
+    identity: {
+      partition,
+      execution: authority.execution,
+      attempt: authority.attempt,
+      generation: authority.generation,
+      ticket: asTicketId(1),
+      task: asTaskId(1),
+      taskKind: "Work",
+      sourceRequest: "1:0:ExecuteTask",
+      inputBundle: authority.inputBundle,
+      inputBundleDigest: authority.inputBundleDigest,
+      configurationRevision: "revision",
+      configurationDigest: "configuration-digest",
+      requirementIdentity: "requirement",
+      requirementDigest: "requirement-digest",
+    },
+    invocation: {
+      profile: { profile: "standard", runtimeVersion: "1" },
+      briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
+      authority: {
+        tools: [],
+        credentials,
+        network: false,
+        filesystem: "WriteWorkspace",
+        mayCompleteTask: false,
+      },
+    },
+  };
+}
 
 test("the worker plane has no tenant-shaped or project-shaped route", () => {
   for (const { path } of [
@@ -1076,12 +1123,22 @@ const workerPlaneHeaviest: Readonly<
     }),
     status: 404,
   },
+  heldCredentials: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      credentials: Array.from({ length: workerHeldCredentialsMax }, () =>
+        planeTextHeaviest(nativeHttpPathSegmentCharsMax),
+      ),
+    }),
+    status: 200,
+  },
 };
 
 test("every job route takes the heaviest body its caller may send, and refuses a byte past its bound", async () => {
   const app = createWorkerPlaneApp({
     ...inertWorkerPlane(workerPlaneUploadBytesMax),
     authority: { authenticate: () => Promise.resolve(authority) },
+    tasks: { ...inertTasks, work: () => Promise.resolve(heldTask()) },
   });
   await planeHeaviestTaken(
     app,
@@ -1648,6 +1705,219 @@ test("every answer names the plane's release, the probes' and the framework's ow
       workerContractRelease,
       `${method} ${url} answered ${String(status)} naming no release`,
     );
+  }
+  await app.close();
+});
+
+/** A held credential's secret, which must reach the pod it is served to and nowhere else. */
+const heldSecret = "held-secret-value";
+
+const heldRoot = mkdtempSync(join(tmpdir(), "chuggy-held-credentials-"));
+test.after(() => {
+  rmSync(heldRoot, { recursive: true, force: true });
+});
+
+/** A roster holding `track-record` for the attempt's own project in `file`, read as the plane's root reads it. */
+function heldPlane(
+  found: WorkerTaskRead | undefined,
+  file?: string,
+): ReturnType<typeof createWorkerPlaneApp> {
+  const roster: readonly HeldCredential[] =
+    file === undefined
+      ? []
+      : [
+          {
+            credential: "track-record",
+            partition: authority.partition,
+            variable: "TRACK_RECORD_TOKEN_FILE",
+            file,
+          },
+        ];
+  return createWorkerPlaneApp({
+    ...inertWorkerPlane(workerPlaneUploadBytesMax),
+    tasks: { ...inertTasks, work: () => Promise.resolve(found) },
+    ...(file === undefined
+      ? {}
+      : {
+          heldCredentials: workerPlaneHeldCredentials(roster, async (path) =>
+            (await reporterSecretBytes(path))?.toString("utf8"),
+          ),
+        }),
+  });
+}
+
+async function heldAsked(
+  app: ReturnType<typeof createWorkerPlaneApp>,
+  payload: unknown,
+  headers: Readonly<Record<string, string>> = held,
+) {
+  const answered = await app.inject({
+    method: "POST",
+    url: workerPlaneRoutes.heldCredentials.path,
+    headers: { ...headers, ...json },
+    payload: JSON.stringify(payload),
+  });
+  return { status: answered.statusCode, body: answered.body };
+}
+
+test("an attempt granted a held credential is served its file's text, trimmed, and read again as it changes", async () => {
+  const file = join(heldRoot, "served");
+  writeFileSync(file, `  ${heldSecret}\n`);
+  const app = heldPlane(heldTask(["track-record"]), file);
+  const ask = { credentials: ["track-record", "track-record", "other"] };
+
+  const first = await heldAsked(app, ask);
+  writeFileSync(file, "rotated\n");
+  const second = await heldAsked(app, ask);
+
+  assert.deepEqual(
+    [first.status, JSON.parse(first.body)],
+    [
+      200,
+      {
+        credentials: [
+          {
+            credential: "track-record",
+            variable: "TRACK_RECORD_TOKEN_FILE",
+            secret: heldSecret,
+          },
+        ],
+      },
+    ],
+  );
+  assert.equal(second.status, 200);
+  assert.equal(
+    (JSON.parse(second.body) as { credentials: { secret: string }[] })
+      .credentials[0]?.secret,
+    "rotated",
+  );
+  await app.close();
+});
+
+test("a plane holding no roster serves an empty list to a granted attempt", async () => {
+  const app = heldPlane(heldTask(["track-record"]));
+  assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
+    status: 200,
+    body: JSON.stringify({ credentials: [] }),
+  });
+  await app.close();
+});
+
+test("a credential held for another project, or not granted, is not served", async () => {
+  const file = join(heldRoot, "unserved");
+  writeFileSync(file, heldSecret);
+  for (const found of [
+    heldTask(["track-record"], {
+      tenant: authority.partition.tenant,
+      project: asProjectId("another"),
+    }),
+    heldTask(["track-record"], {
+      tenant: asTenantId("another"),
+      project: authority.partition.project,
+    }),
+    heldTask([]),
+    heldTask(["other"]),
+  ]) {
+    const app = heldPlane(found, file);
+    const answered = await heldAsked(app, { credentials: ["track-record"] });
+    assert.deepEqual(
+      answered,
+      { status: 200, body: JSON.stringify({ credentials: [] }) },
+      JSON.stringify(found.identity.partition),
+    );
+    await app.close();
+  }
+});
+
+test("a granted attempt that asks for nothing is served nothing", async () => {
+  const file = join(heldRoot, "unasked");
+  writeFileSync(file, heldSecret);
+  const app = heldPlane(heldTask(["track-record"]), file);
+  assert.deepEqual(await heldAsked(app, { credentials: [] }), {
+    status: 200,
+    body: JSON.stringify({ credentials: [] }),
+  });
+  await app.close();
+});
+
+test("a body that is no ask is refused before any file is read", async () => {
+  const app = heldPlane(heldTask(["track-record"]), join(heldRoot, "absent"));
+  for (const payload of [
+    {},
+    { credentials: "track-record" },
+    { credentials: [""] },
+    { credentials: ["track-record"], unknown: true },
+    {
+      credentials: Array.from(
+        { length: workerHeldCredentialsMax + 1 },
+        () => "track-record",
+      ),
+    },
+  ]) {
+    const answered = await heldAsked(app, payload);
+    assert.deepEqual(
+      answered,
+      { status: 400, body: JSON.stringify({ action: "stop" }) },
+      JSON.stringify(payload),
+    );
+  }
+  await app.close();
+});
+
+test("a bearer that is no live attempt is refused, and one whose grant is not recorded is told so", async () => {
+  const file = join(heldRoot, "refused");
+  writeFileSync(file, heldSecret);
+  for (const [found, headers] of [
+    [undefined, held],
+    [{ ...heldTask(["track-record"]), live: false }, held],
+    [heldTask(["track-record"]), {}],
+    [
+      heldTask(["track-record"]),
+      { authorization: `Bearer chgs_${"a".repeat(32)}` },
+    ],
+  ] as const) {
+    const app = heldPlane(found, file);
+    assert.deepEqual(
+      await heldAsked(app, { credentials: ["track-record"] }, headers),
+      { status: 401, body: JSON.stringify({ action: "stop" }) },
+    );
+    await app.close();
+  }
+  const app = heldPlane({ live: true, identity: heldTask().identity }, file);
+  assert.deepEqual(await heldAsked(app, { credentials: ["track-record"] }), {
+    status: 409,
+    body: JSON.stringify({ action: "stop", reason: "TaskNotRecorded" }),
+  });
+  await app.close();
+});
+
+test("a held file that cannot be read is an outage to wait out, naming no secret", async () => {
+  const file = join(heldRoot, "vanishing");
+  writeFileSync(file, heldSecret);
+  const app = heldPlane(heldTask(["track-record"]), file);
+  for (const unreadable of [
+    () => {
+      rmSync(file);
+    },
+    () => {
+      writeFileSync(file, " \n");
+    },
+    () => {
+      rmSync(file);
+      mkdirSync(file);
+    },
+  ]) {
+    unreadable();
+    const answered = await app.inject({
+      method: "POST",
+      url: workerPlaneRoutes.heldCredentials.path,
+      headers: { ...held, ...json },
+      payload: { credentials: ["track-record"] },
+    });
+    assert.equal(answered.statusCode, 503);
+    assert.equal(answered.headers["retry-after"], "1");
+    assert.deepEqual(answered.json(), { action: "retry" });
+    assert.doesNotMatch(answered.body, new RegExp(heldSecret, "u"));
   }
   await app.close();
 });

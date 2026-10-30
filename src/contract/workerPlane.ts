@@ -32,6 +32,7 @@ import {
   artifactFailures,
   resultManifestRejections,
 } from "./workerDocuments.ts";
+import { isHeldCredentialVariable } from "./workerEnvironment.ts";
 import { workerTaskAnswerSchema } from "./workerTask.ts";
 
 /** One route as the plane registers it, a trailing `*` standing for the rest of the path. */
@@ -53,6 +54,7 @@ export const workerPlaneRoutes = {
   runTotals: { method: "POST", path: "/v1/run/totals" },
   runEnded: { method: "POST", path: "/v1/run/ended" },
   credential: { method: "POST", path: "/v1/credential" },
+  heldCredentials: { method: "POST", path: "/v1/credentials/held" },
 } as const satisfies Readonly<Record<string, WorkerPlaneRoute>>;
 export type WorkerPlaneRouteName = keyof typeof workerPlaneRoutes;
 
@@ -220,6 +222,36 @@ export type WorkerCredentialAbsent = z.infer<
   typeof workerCredentialAbsentSchema
 >;
 
+/** The most credentials one attempt asks the plane's held ones for. */
+export const workerHeldCredentialsMax = 32;
+
+/** The longest held secret, restating the bound on the file the plane reads it from. */
+export const heldCredentialSecretCharsMax = 4_096;
+
+/** The credentials an attempt asks for by the names its grant gives them. */
+export const workerHeldCredentialsSchema = z.strictObject({
+  credentials: z.array(identitySchema).max(workerHeldCredentialsMax),
+});
+
+/**
+ * One credential the plane holds for the attempt's project, the variable its
+ * file is named by in the job's environment, and when it stops working where
+ * it is one that does.
+ */
+export const workerHeldCredentialSchema = z.object({
+  credential: identitySchema,
+  variable: identitySchema.refine(isHeldCredentialVariable),
+  secret: z.string().min(1).max(heldCredentialSecretCharsMax),
+  expiresAtMs: countSchema.optional(),
+});
+
+/** Each credential asked for that the plane serves, and none it does not. */
+export const workerHeldCredentialsAnswerSchema = z.object({
+  credentials: z
+    .array(workerHeldCredentialSchema)
+    .max(workerHeldCredentialsMax),
+});
+
 /** The refusals every write keeping a run's bytes answers with, whichever run object it keeps. */
 const workerRunObjectAnswers = {
   204: "empty",
@@ -300,6 +332,13 @@ export const workerPlaneAnswers = workerPlaneAnswersRefusingVersions({
     400: workerPlaneStopSchema,
     401: workerPlaneStopSchema,
     404: workerCredentialAbsentSchema,
+    503: workerPlaneRetrySchema,
+  },
+  heldCredentials: {
+    200: workerHeldCredentialsAnswerSchema,
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["TaskNotRecorded"]),
     503: workerPlaneRetrySchema,
   },
 } as const satisfies WorkerPlaneAnswers<WorkerPlaneRouteName>);

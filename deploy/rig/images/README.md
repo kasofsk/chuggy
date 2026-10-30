@@ -271,6 +271,7 @@ database, artifact-root and session variables.
 | `CHUG_WORKER_PLANE_FORGE_APP_KEY_FILE` | with the app id, or neither | a file holding the worker App's RSA private key, in either PEM encoding; the plane refuses to start unless it can be read and used |
 | `CHUG_WORKER_PLANE_FORGE_API_URL` | `https://api.github.com` | where the mint request is sent |
 | `CHUG_WORKER_PLANE_FORGE_TIMEOUT_MS` | | how long one mint request may take before it is an outage |
+| `CHUG_WORKER_PLANE_HELD_CREDENTIALS` | none held | a JSON list of `{credential, tenant, project, variable, file}`, the credentials this deployment holds as files; the plane refuses to start unless the list is well formed and each file can be read |
 
 **A plane naming neither mints nothing, and no pod stops working.** Both
 credential routes answer not found, and a pod resolves `CHUG_WORKER_REPOSITORIES`
@@ -279,6 +280,13 @@ anything. The same not-found is what a pod gets for a repository whose owner thi
 pod's own tenant has not claimed — a claim by some other tenant is a not-found
 too — so a deployment can mint for some of its repositories and mount the rest.
 A plane naming one of the two meant to mint and cannot, so it refuses to start.
+
+**A held credential is served to an attempt that asks for it by name**, where
+the grant the scheduler recorded for it names that credential and the roster
+holds it for the attempt's project. Its file is read again on every request, so
+a rotated Secret needs no restart. `variable` is what a job's environment names
+the file by: it ends `_FILE` and starts with none of `CHUG_`, `CLAUDE_` and
+`GIT_`.
 
 **The key is the worker App's, and deliberately not the one the API mints
 with.** The branch ruleset admits the portal App to update protected `main`, so

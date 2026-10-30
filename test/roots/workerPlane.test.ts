@@ -287,3 +287,93 @@ test("a live burst smaller than one post is refused, because no session could ev
     /eventsBurstMax must cover the events of one post/u,
   );
 });
+
+/** A held credential's secret, which no line the plane writes may carry. */
+const heldSecret = "held-secret-value";
+
+/** A roster entry as a deployment writes it, its file holding `heldSecret`. */
+function heldEntry(over: Readonly<Record<string, string>> = {}) {
+  const file = join(root, "held-secret");
+  writeFileSync(file, `${heldSecret}\n`);
+  return {
+    credential: "track-record",
+    tenant: "tenant",
+    project: "project",
+    variable: "TRACK_RECORD_TOKEN_FILE",
+    file,
+    ...over,
+  };
+}
+
+test("a plane naming no held credentials, an empty roster, or one whose files it can read starts and answers the held route", async () => {
+  for (const named of [
+    {},
+    { CHUG_WORKER_PLANE_HELD_CREDENTIALS: "" },
+    { CHUG_WORKER_PLANE_HELD_CREDENTIALS: "[]" },
+    {
+      CHUG_WORKER_PLANE_HELD_CREDENTIALS: JSON.stringify([
+        heldEntry(),
+        heldEntry({ project: "other" }),
+      ]),
+    },
+  ]) {
+    const port = await freePort();
+    const child = planeProcess({ ...planeEnvironment(port), ...named });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    try {
+      await planeListening(port, child);
+      const answered = await fetch(
+        `http://127.0.0.1:${String(port)}/v1/credentials/held`,
+        { method: "POST" },
+      );
+      assert.equal(answered.status, 401, JSON.stringify(named));
+    } finally {
+      child.kill("SIGKILL");
+    }
+    assert.doesNotMatch(stderr, new RegExp(heldSecret, "u"));
+  }
+});
+
+test("a held-credential roster the plane cannot serve refuses to start, naming no secret", async () => {
+  const port = await freePort();
+  const empty = join(root, "held-empty");
+  writeFileSync(empty, " \n");
+  const directory = mkdtempSync(join(root, "held-directory-"));
+  for (const [roster, why] of [
+    ["not json", /is not JSON/u],
+    [JSON.stringify([heldEntry(), heldEntry()]), /twice/u],
+    [JSON.stringify([heldEntry(), heldEntry({ file: empty })]), /twice/u],
+    ...[
+      "TRACK_RECORD_TOKEN",
+      "lower_FILE",
+      "CHUG_TOKEN_FILE",
+      "CLAUDE_TOKEN_FILE",
+      "GIT_TOKEN_FILE",
+    ].map(
+      (variable) =>
+        [
+          JSON.stringify([heldEntry({ variable })]),
+          new RegExp(variable, "u"),
+        ] as const,
+    ),
+    ...[join(root, "held-absent"), empty, directory].map(
+      (file) =>
+        [
+          JSON.stringify([heldEntry({ file })]),
+          /track-record for tenant\/project in a file that is not a readable, non-empty regular file/u,
+        ] as const,
+    ),
+  ] as const) {
+    const refused = await planeRefusal({
+      ...planeEnvironment(port),
+      CHUG_WORKER_PLANE_HELD_CREDENTIALS: roster,
+    });
+    assert.equal(refused.code, 1, roster);
+    assert.match(refused.stderr, /CHUG_WORKER_PLANE_HELD_CREDENTIALS/u, roster);
+    assert.match(refused.stderr, why, roster);
+    assert.doesNotMatch(refused.stderr, new RegExp(heldSecret, "u"), roster);
+  }
+});

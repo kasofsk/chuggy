@@ -19,6 +19,28 @@ export const sessionTaskVariable = "CHUG_SESSION_TASK";
 /** Where each credential the grant named was mounted, which both pods read alike. */
 export const workerCredentialFilesVariable = "CHUG_WORKER_CREDENTIAL_FILES";
 
+/**
+ * The variables a credential the plane holds as a file may be written under in
+ * a job's environment: a name ending `_FILE`, and none in the prefixes chuggy,
+ * its agent runtime and git read their own settings from.
+ */
+export const heldCredentialVariablePattern = /^[A-Z][A-Z0-9_]*_FILE$/u;
+export const heldCredentialVariablePrefixesReserved = [
+  "CHUG_",
+  "CLAUDE_",
+  "GIT_",
+] as const;
+
+/** Whether `variable` is one a held credential may be written under. */
+export function isHeldCredentialVariable(variable: string): boolean {
+  return (
+    heldCredentialVariablePattern.test(variable) &&
+    !heldCredentialVariablePrefixesReserved.some((prefix) =>
+      variable.startsWith(prefix),
+    )
+  );
+}
+
 /** The writable directory a pod does its work in. */
 export const workerWorkspaceVariable = "CHUG_WORKER_WORKSPACE";
 
