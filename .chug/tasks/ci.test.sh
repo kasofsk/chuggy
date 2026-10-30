@@ -2131,20 +2131,83 @@ refute "--only wraps no other gate" 0 "$RC" "run|--name|check-figures|"
 check "--only keys its gate as a full run does" 0 \
 	"$(grep -F 'run|--name|check-paths|' "$TRLOG" | cmp -s - "$WORK/.full-key"; echo $?)" ""
 
+stub_repo 0
+ci_with -- --only check-paths source-static
+check "an --only run ends on the gates it ran" 0 "$RC" \
+	"ci: only the gates named ran, and each was clean: check-paths source-static"
+refute "an --only run does not say all gates were clean" 0 "$RC" "all gates clean"
+
+# A red gate in a quiet run shows as many lines of its log as CHUG_CI_TAIL_LINES.
+stub_repo 0
+printf '#!/bin/sh\nprintf "line %%s\\n" 1 2 3 4 5\nexit 1\n' > "$R/.chug/tasks/check-paths.sh"
+git -C "$R" add -A
+ci_with CHUG_CI_QUIET=1 CHUG_CI_TAIL_LINES=2
+check "a quiet run shows the last line of a red gate's log" 1 "$RC" "ci: | line 5"
+check "a quiet run shows CHUG_CI_TAIL_LINES lines of it" 2 "$(grep -c '^ci: | ' "$OUT")" ""
+
 # ONE RUN HOLDS A CHECKOUT. A live holder refuses a second run; a dead one's
-# lock is taken over.
+# lock is taken over, by one run of two that find it; a lock whose holder
+# cannot be read is left alone.
 stub_repo 0
 lock="$(git -C "$R" rev-parse --absolute-git-dir)/chug-ci.lock"
-mkdir "$lock"
 sleep 30 &
 holder=$!
-echo "$holder" > "$lock/pid"
+ln -s "$holder" "$lock"
 ci_with
 check "a second run while one is alive could not run" 2 "$RC" "another ci.sh (pid $holder) is running"
+check "a second run names where the first logs" 2 "$RC" "logging to $(dirname "$lock")/chug-ci;"
 kill "$holder" 2>/dev/null || true
 wait "$holder" 2>/dev/null || true
 ci_with
 check "a dead holder's lock is taken over" 0 "$RC" "all gates clean"
-check "a run releases its lock" 0 "$([ ! -e "$lock" ]; echo $?)" ""
+check "a run releases its lock" 0 "$([ ! -e "$lock" ] && [ ! -L "$lock" ]; echo $?)" ""
+
+mkdir "$lock"
+ci_with
+check "a lock whose holder is not yet readable could not run" 2 "$RC" "names no holder that can be read"
+check "a lock whose holder is not yet readable is not taken over" 0 "$([ -d "$lock" ]; echo $?)" ""
+rmdir "$lock"
+
+# The first run to claim a dead holder's lock stops, in a stub of the `rm` that
+# removes the lock, until the case releases it; a second run starts meanwhile.
+sleep 30 &
+holder=$!
+kill "$holder"
+wait "$holder" 2>/dev/null || true
+ln -s "$holder" "$lock"
+mkdir -p "$WORK/rmbin"
+cat > "$WORK/rmbin/rm" <<STUB
+#!/bin/sh
+if [ "\$*" = "-f $lock" ] && [ ! -e "$WORK/rm-paused" ]; then
+	: > "$WORK/rm-paused"
+	waited=0
+	while [ ! -e "$WORK/rm-released" ] && [ "\$waited" -lt 120 ]; do
+		sleep 1
+		waited=\$((waited + 1))
+	done
+fi
+exec $(command -v rm) "\$@"
+STUB
+chmod +x "$WORK/rmbin/rm"
+OUT="$WORK/.first"
+(cd "$R" && env PATH="$WORK/rmbin:$PATH" CHUG_CI_SHELL_SUITES=0 ./.chug/tasks/ci.sh) >"$OUT" 2>&1 &
+first=$!
+waited=0
+while [ ! -e "$WORK/rm-paused" ] && [ "$waited" -lt 120 ]; do
+	sleep 1
+	waited=$((waited + 1))
+done
+ci_with
+check "of two runs taking over a dead holder's lock, the second could not run" 2 "$RC" \
+	"another ci.sh is taking over $lock from pid $holder"
+: > "$WORK/rm-released"
+set +e
+wait "$first"
+RC=$?
+set -e
+OUT="$WORK/.first"
+check "of two runs taking over a dead holder's lock, the first runs" 0 "$RC" "all gates clean"
+check "a takeover leaves no lock and no claim" 0 \
+	"$([ ! -L "$lock" ] && [ ! -L "$lock.$holder" ]; echo $?)" ""
 
 done_ "ci.test.sh"
