@@ -1931,6 +1931,227 @@ test("New the hosted grant refuses closes nothing, and the refusal is drawn", as
   styleless();
 });
 
+/** A command typed into the pane's box and sent with Enter, and the turns that
+ * follow flushed. */
+async function commanded(text: string): Promise<void> {
+  const box = composerDrawn();
+  fireEvent.change(box, { target: { value: text } });
+  box.setSelectionRange(text.length, text.length);
+  fireEvent.select(box);
+  await settled();
+  await turned(() => {
+    fireEvent.keyDown(box, { key: "Enter" });
+  });
+  await settled();
+}
+
+/** What the last command said over the box. */
+function commandSaid(): string {
+  const said = within(conversationRegion())
+    .getAllByRole("status")
+    .find((line) => (line.textContent ?? "").startsWith("/"));
+  if (said === undefined) throw new Error("no command said anything");
+  return said.textContent ?? "";
+}
+
+/** The reader's own idle thread as `heldThreadServed` serves it, its close
+ * recorded among the posts and answered as `close` names. */
+function heldClosedServed(
+  posts: string[],
+  open: () => Promise<unknown>,
+  close: () => Promise<unknown>,
+): typeof fetch {
+  const served = heldThreadServed(posts, open);
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (init?.method !== "POST" || !url.endsWith("/close"))
+      return served(url, init);
+    posts.push(url);
+    return close();
+  }) as unknown as typeof fetch;
+}
+
+/** A close the door answers with the reader's thread, closed. */
+function closeDone(): Promise<unknown> {
+  return Promise.resolve(
+    answer(
+      threadEntry({
+        session: openedSession,
+        owner: "geoff",
+        mine: true,
+        state: "Closed",
+      }),
+    ),
+  );
+}
+
+test("/clear closes the reader's thread and only then opens another, and sends nothing", async () => {
+  const posts: string[] = [];
+  const closing = heldBack();
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, anotherOpened, () => closing.let.then(closeDone)),
+  );
+  await commanded("/clear");
+  expect(postsNamed(posts), "an open asked before the close answered").toEqual([
+    "close",
+  ]);
+  await turned(closing.go);
+  await settled();
+  expect(postsNamed(posts)).toStrictEqual(["close", "open"]);
+  expect(
+    posts.some((url) => url.endsWith("/messages")),
+    "/clear was sent to the agent",
+  ).toBe(false);
+  styleless();
+});
+
+test("/clear whose close is refused opens nothing, and says the refusal over the box", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, anotherOpened, () =>
+      Promise.resolve(answer({ error: { code: "Conflict" } }, 409)),
+    ),
+  );
+  await commanded("/clear");
+  expect(postsNamed(posts)).toStrictEqual(["close"]);
+  expect(commandSaid()).toBe("/clear·Refused");
+  styleless();
+});
+
+/** The thread posts a server saw when `first` starts a thread whose open is
+ * held back and /clear follows it, before the open is let go and after; the
+ * /clear that follows says a start is on its way. */
+async function clearedWhileOpening(
+  first: () => Promise<void>,
+): Promise<readonly (readonly string[])[]> {
+  const posts: string[] = [];
+  const opening = heldBack();
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, () => opening.let.then(anotherOpened), closeDone),
+  );
+  await first();
+  await commanded("/clear");
+  expect(commandSaid()).toBe("/clear·A thread is already starting");
+  const held = postsNamed(posts);
+  await turned(opening.go);
+  await settled();
+  return [held, postsNamed(posts)];
+}
+
+test("/clear while /clear's start is on its way closes and opens nothing more", async () => {
+  expect(await clearedWhileOpening(() => commanded("/clear"))).toStrictEqual([
+    ["close", "open"],
+    ["close", "open"],
+  ]);
+  styleless();
+});
+
+test("/clear while New's start is on its way closes and opens nothing", async () => {
+  expect(await clearedWhileOpening(() => pressed("New"))).toStrictEqual([
+    ["open"],
+    ["open"],
+  ]);
+  styleless();
+});
+
+test("/clear in the box of a reader with no thread opens nothing, and sends nothing", async () => {
+  const posts: string[] = [];
+  const served = threadServed([]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST") posts.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  await commanded("/clear");
+  expect(posts).toStrictEqual([]);
+  expect(commandSaid()).toBe("/clear·No thread to clear");
+  styleless();
+});
+
+test("/clear while the reader's thread answers closes nothing, and says why", async () => {
+  const posts: string[] = [];
+  const served = answeringThreadServed();
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST") posts.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  await commanded("/clear");
+  expect(posts).toStrictEqual([]);
+  expect(commandSaid()).toBe("/clear·Thread is answering");
+  styleless();
+});
+
+/** The reader's held thread over two pages of its mailbox, each turn measured
+ * alike, with the placement read answering runners. */
+function pagedThreadServed(): typeof fetch {
+  const served = placedServed(
+    threadServed([
+      threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+    ]),
+    { thread: "Pool" },
+  );
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (
+      init?.method === "POST" ||
+      !url.includes(`/threads/${openedSession}`) ||
+      url.includes("/transcript")
+    )
+      return served(url, init);
+    const older = url.includes("before=1");
+    return Promise.resolve(
+      answer(
+        threadBody({
+          session: openedSession,
+          streamless: true,
+          turns: [
+            threadTurn({
+              turn: older ? "thread-turn-1" : "thread-turn-2",
+              ordinal: older ? 1 : 2,
+              model: older ? "claude-sonnet-4" : "claude-opus-4",
+              tokens: 1_000,
+              costMicros: 10_000,
+              durationMs: 2_000,
+            }),
+          ],
+          ...(older ? {} : { nextBefore: 1 }),
+        }),
+      ),
+    );
+  }) as unknown as typeof fetch;
+}
+
+test("/status says the thread's standing, where it runs and its model, and sends nothing", async () => {
+  const posts: string[] = [];
+  const served = pagedThreadServed();
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST") posts.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  await commanded("/status");
+  const said = commandSaid();
+  for (const word of ["Thread Open", "Runs on Runners", "Model claude-opus-4"])
+    expect(said).toContain(word);
+  expect(posts).toStrictEqual([]);
+  styleless();
+});
+
+test("/usage sums every page of the thread's turns", async () => {
+  await mounted(viewportDeskEm, pagedThreadServed());
+  await commanded("/usage");
+  expect(commandSaid()).toBe("/usage·2 turns·2.0k tok·$0.02·4s");
+  styleless();
+});
+
 /** A server whose thread door refuses every open for the hosted grant until
  * the case grants it. */
 function grantedLaterServed(listed: readonly unknown[]): {

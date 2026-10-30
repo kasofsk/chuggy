@@ -47,6 +47,11 @@
  * is lost, and a second handed back goes under the first. Its images go back
  * ahead of any attached since.
  *
+ * A BOX THAT IS A COMMAND'S NAME RUNS IT AND SENDS NOTHING. A member who
+ * closed the `/` list or typed past it and pressed Enter wrote the command as
+ * surely as one who picked it, so the press is handed to the page as that
+ * command, and the images stay held for the next message.
+ *
  * THE IMAGES ARE HELD WHERE THE TEXT IS. Both live as long as this surface's
  * runtime, so a box that goes and comes back with its words still in it has
  * its images too, and one that lost its words lost both. A press holding more
@@ -95,6 +100,7 @@ import type {
   ConversationAttachment,
   ConversationAttachRefusal,
 } from "../../core/conversationAttachments.ts";
+import { conversationCommandTyped } from "../../core/conversationCommand.ts";
 import {
   conversationExchangeNamed,
   conversationExchangeParts,
@@ -401,6 +407,15 @@ async function conversationDispatched(
 ): Promise<void> {
   if (composer === undefined) return;
   const text = conversationAppendedText(message);
+  const commands = composer.commands;
+  const command =
+    commands === undefined
+      ? undefined
+      : conversationCommandTyped(commands.offered, text);
+  if (commands !== undefined && command !== undefined) {
+    commands.onCommand(command);
+    return;
+  }
   const attached = held.attachments.taken();
   if (attached.length > (composer.attaches?.countMax ?? 0)) {
     held.restore(text, attached);

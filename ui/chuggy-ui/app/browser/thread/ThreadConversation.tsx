@@ -102,6 +102,7 @@ import {
 } from "../../core/threads.ts";
 import type { ThreadDoor } from "../../core/threads.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import type { ThreadCleared } from "../../core/threadCommands.ts";
 import type { ProjectAbilities } from "../../core/projectAbilities.ts";
 import { Conversation } from "../conversation/Conversation.tsx";
 import type { ConversationProps } from "../conversation/Conversation.tsx";
@@ -110,6 +111,7 @@ import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
 import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { useThreadImage } from "./threadImage.tsx";
+import { useThreadCommands } from "./threadCommands.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
 import {
@@ -298,6 +300,8 @@ export function ThreadConversation(
     readonly partition: PartitionIdentity;
     /** The console page the reader is on, which a message is sent from. */
     readonly page?: ConsolePage | undefined;
+    /** Closes this thread and opens another, which `/clear` runs. */
+    readonly clear?: ((session: string) => Promise<ThreadCleared>) | undefined;
   },
 ): ReactNode {
   const sends = useThreadSend({
@@ -306,6 +310,12 @@ export function ThreadConversation(
     page: props.page,
   });
   const mentions = useConversationMentions(props.partition);
+  const commands = useThreadCommands({
+    partition: props.partition,
+    thread: props.thread,
+    sending: sends.sending.length,
+    clear: props.clear,
+  });
   const image = useThreadImage(props.partition);
   const door = useThreadDoor(props.partition);
   const abilities = useProjectAbilities(props.partition);
@@ -315,14 +325,17 @@ export function ThreadConversation(
       home={threadHomeOf(props.partition)}
       sends={sends}
       door={door}
-      foot={(composer) => threadFoot(abilities, { ...composer, mentions })}
+      foot={(composer) =>
+        threadFoot(abilities, { ...composer, mentions, commands })
+      }
       image={image}
     />
   );
 }
 
 /** One thread of the reader's own chat, which mentions nothing and carries no
- * image, and is theirs to write to. */
+ * image, and is theirs to write to. Its box runs no `/` command: `/status`
+ * says where a thread runs from a project's placement. */
 export function MemberThreadConversation(
   props: ThreadConversationProps & { readonly tenant: string },
 ): ReactNode {

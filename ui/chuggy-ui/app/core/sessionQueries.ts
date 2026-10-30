@@ -1,5 +1,6 @@
 /**
- * The reads of a project's sessions — its lead, its threads, the inquiries
+ * The reads of a project's sessions — its lead, its threads and a thread's
+ * usage summed over its mailbox, the inquiries
  * put to it, the selector's decisions and the refusals it raised — each a list
  * a `Session` or `AgenticRefusal` frame stales, except the decisions, which no
  * frame names and the partition's refetch reaches.
@@ -26,6 +27,8 @@ import { consoleListQuery, consolePartitionQuery } from "./consoleQuery.ts";
 import { inquirySessionKind } from "./leadInquiries.ts";
 import { leadSessionNamed, sessionChangeKindNamed } from "./leadTranscript.ts";
 import { projectLeadSessionKind } from "./projectLead.ts";
+import { threadUsagePaged } from "./threadCommands.ts";
+import type { ThreadUsage } from "./threadCommands.ts";
 import {
   projectListReread,
   projectListRereadNamed,
@@ -82,6 +85,25 @@ export function threadQuery(partition: PartitionIdentity, session: string) {
       (change) => leadSessionNamed(change.resource) === session,
     ),
     (ports) => apiThread(ports, partition, session),
+  );
+}
+
+/** One thread's turns summed over every page of its mailbox, an entry apart
+ * from the thread's own read because it holds every page rather than the
+ * newest. */
+export function threadUsageQuery(
+  partition: PartitionIdentity,
+  session: string,
+) {
+  return consoleListQuery(
+    projectListRereadNamed<ThreadUsage>(
+      partition,
+      "Session",
+      `thread-usage-${session}`,
+      (change) => leadSessionNamed(change.resource) === session,
+    ),
+    (ports) =>
+      threadUsagePaged((page) => apiThread(ports, partition, session, page)),
   );
 }
 

@@ -38,6 +38,11 @@
  * is drawn as a button that takes no press, and it stays one a press can
  * land on, so the pointer and the caret are where they were when it ends.
  *
+ * A `/` COMMAND IS THE PAGE'S, AND WHAT IT SAYS STANDS OVER THE BOX UNTIL IT
+ * IS DISMISSED. The list offers what the page hands as `commands`, a pick is
+ * handed up by name, and the page's answer is drawn as a line of this box
+ * rather than as a turn: nothing of it was sent, and nothing of it is kept.
+ *
  * A POINTER'S PRESS OF A CONTROL LEAVES THE CARET IN THE BOX. The button
  * turns into another or goes inert under the pointer, and focus it had taken
  * would fall to the page, where what a member types next goes nowhere.
@@ -63,13 +68,24 @@ import type {
   ConversationAttachment,
   ConversationAttachRefusal,
 } from "../../core/conversationAttachments.ts";
+import type { ConversationCommandName } from "../../core/conversationCommand.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
+import { ConversationCommandsOffered } from "./ConversationCommands.tsx";
 import { ConversationMentions } from "./ConversationMentions.tsx";
 
 import "./conversation.css";
 
 /** Whether the page took the message, or handed it back. */
 export type ConversationSent = "Sent" | "Kept";
+
+/** The `/` commands a page runs for its box, and what the last one said. */
+export interface ConversationCommands {
+  readonly offered: readonly ConversationCommandName[];
+  readonly onCommand: (name: ConversationCommandName) => void;
+  /** What the last command said, drawn over the box; nothing once dismissed. */
+  readonly said: ReactNode;
+  readonly onDismiss: () => void;
+}
 
 /** What the composer's one button is at a press. */
 export type ConversationComposerButton = "Stop" | "Send";
@@ -116,6 +132,9 @@ export interface ConversationComposerProps {
    * be the box knowing. Absent where the page offers none, and the list is then
    * never opened. */
   readonly mentions?: readonly ConversationMentionItem[];
+  /** The commands the `/` list offers, which the page runs. Absent where the
+   * page runs none, and a `/` is then text like any other. */
+  readonly commands?: ConversationCommands;
 }
 
 /** The most rows the box grows to before it scrolls itself. */
@@ -316,6 +335,55 @@ function ConversationAttachPicker(props: {
   );
 }
 
+/** What the last command said, with the control that puts it away. */
+function ConversationCommandSaid(props: {
+  readonly commands: ConversationCommands;
+}): ReactNode {
+  const commands = props.commands;
+  if (commands.said === undefined || commands.said === null) return null;
+  return (
+    <div className="bg-surface-1 border-edge rounded-2 flex items-start gap-2 border px-3 py-2 text-xs">
+      <div role="status" className="min-w-0 flex-1">
+        {commands.said}
+      </div>
+      <button
+        type="button"
+        className="text-ink-3 border-0 bg-transparent px-1"
+        aria-label="Dismiss"
+        onMouseDown={conversationCaretKept}
+        onClick={commands.onDismiss}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+/** What the page offers over the box: the `@` list, the `/` list, and what
+ * the last command said. */
+function ConversationComposerOffers(props: {
+  readonly mentions: readonly ConversationMentionItem[] | undefined;
+  readonly commands: ConversationCommands | undefined;
+}): ReactNode {
+  const commands = props.commands;
+  return (
+    <>
+      {props.mentions === undefined ? null : (
+        <ConversationMentions items={props.mentions} />
+      )}
+      {commands === undefined ? null : (
+        <>
+          <ConversationCommandsOffered
+            offered={commands.offered}
+            onCommand={commands.onCommand}
+          />
+          <ConversationCommandSaid commands={commands} />
+        </>
+      )}
+    </>
+  );
+}
+
 /** The line over the box: what the page says of the last press, why the last
  * paste took less than it held, and the count once it is near the bound. */
 function ConversationComposerNote(props: {
@@ -444,9 +512,10 @@ export function ConversationComposer(
   return (
     <ComposerPrimitive.Unstable_TriggerPopoverRoot>
       <ComposerPrimitive.Root className="relative flex flex-col gap-1">
-        {props.mentions === undefined ? null : (
-          <ConversationMentions items={props.mentions} />
-        )}
+        <ConversationComposerOffers
+          mentions={props.mentions}
+          commands={props.commands}
+        />
         <ConversationComposerNote
           note={props.note}
           attaches={props.attaches}
