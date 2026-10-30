@@ -13,9 +13,9 @@
  * has to keep, so they are read from and written to a key-value store here
  * rather than held only in a component, and so is the share the reader dragged
  * the column to. A reader who has chosen nothing is drawn a default the
- * viewport decides: docked where it divides, and the strip where it does not,
- * since docked there the pane takes a share of every page. The presentation
- * stays the one record of whether the pane is collapsed: a drag across the
+ * viewport decides: docked where it divides, and the whole body where it does
+ * not, since docked there the pane takes a share of every page. The
+ * presentation stays the one record of whether the pane is collapsed: a drag across the
  * collapse threshold moves it, as the pane's own control does.
  *
  * THE TRAIL IS THE PANE AFTER A READER'S MOVES, a model the frame is held to:
@@ -78,11 +78,11 @@ const chatPaneSchema = z.object({
 
 const chatPaneDefaultNarrow: ChatPaneState = {
   placement: chatPaneDefault.placement,
-  presentation: "Collapsed",
+  presentation: "Full",
 };
 
-/** Where a pane the reader has never moved is drawn from, which is the strip
- * on a viewport too narrow to divide. */
+/** Where a pane the reader has never moved is drawn from, which is the whole
+ * body on a viewport too narrow to divide. */
 export function chatPaneDefaultAt(twoColumn: boolean): ChatPaneState {
   return twoColumn ? chatPaneDefault : chatPaneDefaultNarrow;
 }
@@ -147,19 +147,6 @@ export function chatPaneNarrowed(
 ): ChatPaneState {
   if (twoColumn || state.presentation === "Full") return state;
   return { placement: "Bottom", presentation: state.presentation };
-}
-
-/**
- * Whether the pane takes the bar's rows as well as the body, which a pane over
- * the whole frame does on a viewport too narrow to spare them: there the bar
- * wraps to a share of the screen a conversation cannot give up, and leaving
- * the full screen draws it again.
- */
-export function chatPaneCoversBar(
-  state: ChatPaneState,
-  narrow: boolean,
-): boolean {
-  return narrow && state.presentation === "Full";
 }
 
 /** The pane moved to a placement the reader picked, keeping how it takes the

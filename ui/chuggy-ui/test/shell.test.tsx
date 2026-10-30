@@ -326,22 +326,22 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
   styleless();
 });
 
-/** A docked pane under the pages takes a share of every page's height, which
- * a narrow viewport cannot spare until the reader asks for the chat. */
-test("under that width it starts as a strip under the pages, and expands there", async () => {
+/** A docked pane under the pages takes a share of every page's height, so a
+ * narrow viewport starts with the chat over the body under the bar. */
+test("under that width it starts over the whole body, and leaving it docks it under the pages", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  expect(chatDrawn()).toBeNull();
+  expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).not.toBeNull();
-  expect(frameDivided()).toBe("down pages | chat-bottom");
-  expect(edgeDrawn().getAttribute("aria-orientation")).toBe("horizontal");
+  expect(frameDivided()).toBe("across chat-right");
   expect(document.querySelector("[data-chat]")?.getAttribute("data-chat")).toBe(
-    "collapsed",
+    "full",
   );
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
-  await pressed("Expand chat");
+  await pressed("Exit full screen");
   expect(chatDrawn()).not.toBeNull();
   expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(edgeDrawn().getAttribute("aria-orientation")).toBe("horizontal");
   styleless();
 });
 
@@ -518,6 +518,7 @@ test("the edge is a hairline in the edge's colour, and the stronger one while ho
 });
 
 test("the edge under the pages is a hairline across the frame", async () => {
+  paneDocked();
   await mounted(viewportTwoColumnEm - 1);
   const edge = edgeDrawn();
   expect(edge.getAttribute("aria-orientation")).toBe("horizontal");
@@ -1008,30 +1009,23 @@ function paneDocked(): void {
   );
 }
 
-/** A phone's bar wraps to rows a conversation cannot spare, so a chat given
- * the frame there takes them too. The banner's place stands through it, since
- * what the banner says is true of the chat as well. */
-test("on a narrow viewport a full screen takes the bar's rows, and leaving it draws the bar again", async () => {
-  paneDocked();
+/** On a phone the chat starts over the whole body, and the bar stays over
+ * it, so every screen is still one press away. */
+test("on a phone a full screen keeps the banner and the bar, and pressing a screen draws it", async () => {
+  pageDrawn = () => <p>the screen</p>;
   await mounted(viewportNarrowEm - 1);
-  expect(navDrawn()).not.toBeNull();
-  await pressed("Full screen");
+  expect(frameDivided()).toBe("across chat-right");
   expect(chatDrawn()).not.toBeNull();
-  expect(navDrawn()).toBeNull();
-  expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
-  expect(document.querySelector(".shell-banner")).not.toBeNull();
-  styleless();
-  await pressed("Exit full screen");
   expect(navDrawn()).not.toBeNull();
   expect(screen.queryByRole("button", { name: "Settings" })).not.toBeNull();
-  styleless();
-});
-
-test("a viewport at the narrow width keeps the bar over a full screen", async () => {
-  paneDocked();
-  await mounted(viewportNarrowEm);
-  await pressed("Full screen");
-  expect(chatDrawn()).not.toBeNull();
+  expect(document.querySelector(".shell-banner")).not.toBeNull();
+  expect(screen.queryByText("the screen")).toBeNull();
+  await turned(() => {
+    screen.getByRole("link", { name: /Inbox/u }).click();
+  });
+  await settled();
+  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(screen.getByText("the screen")).toBeDefined();
   expect(navDrawn()).not.toBeNull();
   styleless();
 });
@@ -1599,8 +1593,14 @@ test.each([
     ],
   ],
   [
-    "narrowed to the strip under the pages on a short frame, the frame heightened, and expanded",
-    [shortened, { move: "Narrowed" }, heightened, { move: "Expanded" }],
+    "narrowed on a short frame, collapsed to the strip under the pages, the frame heightened, and expanded",
+    [
+      shortened,
+      { move: "Narrowed" },
+      { move: "Collapsed" },
+      heightened,
+      { move: "Expanded" },
+    ],
   ],
   [
     "placed under the pages, the frame shortened, placed right and back, and collapsed and expanded",
@@ -1676,11 +1676,11 @@ test.each([
     ],
   ],
   [
-    "dragged, narrowed past the two-column width, expanded, and widened",
+    "dragged, narrowed past the two-column width, restored, and widened",
     [
       draggedAcross,
       { move: "Narrowed" },
-      { move: "Expanded" },
+      { move: "Restored" },
       { move: "Widened" },
     ],
   ],
@@ -1739,8 +1739,7 @@ async function panePlaced(placement: string): Promise<void> {
 }
 
 /** The thread is the page at its own address, so however the reader left the
- * pane it is not drawn there, nor its strip, and on a narrow viewport a pane
- * left over the whole frame does not take the bar from the page. */
+ * pane it is not drawn there, nor its strip. */
 test.each(["Docked", "Collapsed", "Full"] as const)(
   "on a thread's own page the pages are drawn alone under the bar, with the pane left %s",
   async (presentation) => {

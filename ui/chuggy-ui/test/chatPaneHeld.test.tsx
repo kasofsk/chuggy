@@ -51,9 +51,8 @@ function shown(): string {
 }
 
 test("a pane nobody has moved follows the viewport across a change of width", () => {
-  expect(named(chatPaneDefaultAt(false))).not.toBe(
-    named(chatPaneDefaultAt(true)),
-  );
+  expect(named(chatPaneDefaultAt(false))).toBe("Right Full");
+  expect(named(chatPaneDefaultAt(true))).toBe("Right Docked");
   const view = render(drawn(false));
   expect(shown()).toBe(named(chatPaneDefaultAt(false)));
   view.rerender(drawn(true));

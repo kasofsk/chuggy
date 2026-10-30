@@ -7,18 +7,14 @@
  * and a reader who filled the frame with the chat still has every screen one
  * press away.
  *
- * ON A NARROW VIEWPORT A FULL SCREEN IS THE WHOLE SCREEN. The bar wraps there
- * to rows a conversation cannot spare, so a chat given the frame takes them
- * too and leaving the full screen draws the bar again. The banner stands
- * through it, since what it says is true of the chat as well.
- *
  * The chat pane is where the reader talks to the project, so it outlives every
  * navigation between the pages: they change beneath the bar and the
  * conversation does not. It takes the body three ways and no fourth — a column
  * beside the pages, the whole body, or the strip its own control expands — and
  * a viewport too narrow to divide stacks the column or the strip under the
- * pages instead, starting as the strip until the reader expands it. A thread's
- * own page is drawn with no pane at all, since the thread is the page there.
+ * pages instead, starting over the whole body until the reader leaves it. A
+ * thread's own page is drawn with no pane at all, since the thread is the page
+ * there.
  *
  * THE READER DRAGS THE EDGE. The column is as wide as the reader leaves it,
  * or under the pages as great a share of the height, and dragging it past its
@@ -51,7 +47,6 @@ import type {
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
-  chatPaneCoversBar,
   chatPaneDragged,
   chatPaneKept,
   chatPaneLayoutId,
@@ -94,7 +89,6 @@ import {
   useViewportAtLeastEm,
   viewportColumnAsideEm,
   ViewportColumnAsideProvider,
-  viewportNarrowEm,
   viewportTwoColumnEm,
 } from "./shell/viewport.ts";
 import {
@@ -154,23 +148,17 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
 
 /** The banner and the bar under it, across the whole frame: the banner speaks
  * for every screen and the nav reaches every one of them, so neither is a
- * thing the chat pane takes width from. The bar is not drawn where the pane
- * covers it. */
+ * thing the chat pane takes width from, nor one a full screen covers. */
 function ShellHeader(props: {
   readonly partition: PartitionIdentity;
-  readonly covered: boolean;
 }): ReactNode {
   return (
     <div className="grid grid-cols-[minmax(0,1fr)]">
       <div className="shell-banner">
         <StreamBanner />
       </div>
-      {props.covered ? null : (
-        <>
-          <TopBar partition={props.partition} />
-          <Separator.Root decorative className="h-px bg-edge" />
-        </>
-      )}
+      <TopBar partition={props.partition} />
+      <Separator.Root decorative className="h-px bg-edge" />
     </div>
   );
 }
@@ -426,17 +414,13 @@ function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly twoColumn: boolean;
 }): ReactNode {
-  const narrow = !useViewportAtLeastEm(viewportNarrowEm);
   const chat = chatPaneOnPage(
     chatPaneNarrowed(useChatPane().state, props.twoColumn),
     useParams({ strict: false }),
   );
   return (
     <ShellFrame>
-      <ShellHeader
-        partition={props.partition}
-        covered={chat !== undefined && chatPaneCoversBar(chat, narrow)}
-      />
+      <ShellHeader partition={props.partition} />
       <ShellBody partition={props.partition} chat={chat} />
     </ShellFrame>
   );
