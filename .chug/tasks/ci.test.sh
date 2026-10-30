@@ -1325,22 +1325,33 @@ recorded_log() {
 }
 
 # Without a token, with a token file that is missing or holds none, with a
-# track-record that does not run, and with TRACK_RECORD_OFF=1, the run is the
-# one it is with no track-record at all.
+# track-record that does not run, with no record directory, and with
+# TRACK_RECORD_OFF=1, the run is the one it is with no track-record at all but
+# for one line, which names the first reason and never the token.
+fresh_line="ci: every gate runs fresh, and no pass on record is reused: "
 stub_repo 0
 run_gates_only
-cp "$OUT" "$WORK/.plain"
+grep -vF "$fresh_line" "$OUT" > "$WORK/.plain"
+check "a plain run says it reuses nothing, and why" 0 "$RC" "${fresh_line}no Track Record token"
 printf ' \n' > "$WORK/blank-token"
-for case in "no token|" "a token file that is not there|TRACK_RECORD_TOKEN_FILE=$WORK/absent-token" \
-	"a token file that holds none|TRACK_RECORD_TOKEN_FILE=$WORK/blank-token" \
-	"a track-record that does not run|TRACK_RECORD_TOKEN=t STUB_TR_VERSION_RC=1" \
-	"TRACK_RECORD_OFF=1|TRACK_RECORD_TOKEN=t TRACK_RECORD_OFF=1"; do
+for case in "no token|no Track Record token|" \
+	"a token file that is not there|TRACK_RECORD_TOKEN_FILE names no readable file holding a token|TRACK_RECORD_TOKEN_FILE=$WORK/absent-token" \
+	"a token file that holds none|TRACK_RECORD_TOKEN_FILE names no readable file holding a token|TRACK_RECORD_TOKEN_FILE=$WORK/blank-token" \
+	"a track-record that does not run|no track-record that runs|TRACK_RECORD_TOKEN=trk_secret STUB_TR_VERSION_RC=1" \
+	"no record directory|no record directory could be made|TRACK_RECORD_TOKEN=trk_secret TMPDIR=$WORK/absent-tmp" \
+	"TRACK_RECORD_OFF=1|TRACK_RECORD_OFF=1|TRACK_RECORD_TOKEN=trk_secret TRACK_RECORD_OFF=1"; do
+	name="${case%%|*}" rest="${case#*|}"
+	reason="${rest%%|*}"
 	# shellcheck disable=SC2086 # the case's assignments are words by construction
-	run_recorded ${case#*|}
-	if cmp -s "$OUT" "$WORK/.plain"; then echo "same output" >> "$OUT"; fi
-	check "${case%%|*} leaves the run as it is with no track-record" 0 "$RC" "same output"
+	run_recorded ${rest#*|}
+	check "$name says every gate runs fresh, and why" 0 "$RC" "$fresh_line$reason"
+	refute "$name prints no token" 0 "$RC" "trk_secret"
+	if [ "$(grep -cF "$fresh_line" "$OUT")" = 1 ] && grep -vF "$fresh_line" "$OUT" | cmp -s - "$WORK/.plain"; then
+		echo "same output" >> "$OUT"
+	fi
+	check "$name leaves the rest of the run as it is with no track-record" 0 "$RC" "same output"
 	recorded_log
-	check "${case%%|*} wraps nothing" 0 "$RC" "calls 0"
+	check "$name wraps nothing" 0 "$RC" "calls 0"
 done
 
 # A token, in the variable or in a file, wraps every gate the sequencer calls
@@ -1350,6 +1361,7 @@ done
 printf 'trk_stub\n' > "$WORK/token"
 run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
 check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
+refute "a run that reuses says nothing of running fresh" 0 "$RC" "$fresh_line"
 check "a wrapped clean run counts what it reused" 0 "$RC" "ci: all gates clean (0 reused)"
 check "check-roster still runs" 0 "$RC" "stub check-roster"
 check "doc-lint still runs" 0 "$RC" "stub doc-lint"
@@ -1504,6 +1516,7 @@ check "the store and namespace can be named" 0 "$RC" "env|FRESH=unset|URL=http:/
 # does the same without forcing every gate.
 run_recorded TRACK_RECORD_TOKEN=t CHUG_CI_FULL=1
 check "a full run says it reuses nothing" 0 "$RC" "and none on record is reused"
+refute "a run that only records says nothing of running fresh" 0 "$RC" "$fresh_line"
 recorded_log
 check "a full run wraps every gate" 0 "$RC" "calls $gate_calls"
 refute "a full run asks no gate for a pass on record" 0 "$RC" "FRESH=unset"
