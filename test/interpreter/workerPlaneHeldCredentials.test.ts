@@ -7,9 +7,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { heldCredentialSecretCharsMax } from "../../src/contract/workerPlane.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   heldCredentialRoster,
+  heldCredentialSecret,
   heldCredentialsMax,
   heldCredentialsSelected,
   workerPlaneHeldCredentials,
@@ -169,4 +171,10 @@ test("a selected file is read as asked, trimmed, and an unreadable or blank one 
     credentials: [],
   });
   assert.equal(read.length, 5, "an unserved credential's file was read");
+});
+
+test("a secret longer than the contract carries is none", () => {
+  const atBound = "s".repeat(heldCredentialSecretCharsMax);
+  assert.equal(heldCredentialSecret(` ${atBound}\n`), atBound);
+  assert.equal(heldCredentialSecret(`${atBound}s`), undefined);
 });

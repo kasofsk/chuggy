@@ -22,6 +22,7 @@
 import { z } from "zod";
 
 import { identitySchema } from "../contract/http.ts";
+import { heldCredentialSecretCharsMax } from "../contract/workerPlane.ts";
 import { isHeldCredentialVariable } from "../contract/workerEnvironment.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 
@@ -158,12 +159,16 @@ export function heldCredentialsSelected(
   });
 }
 
-/** The secret a file's text is, its surrounding whitespace trimmed, or nothing where it holds none. */
+/** The secret a file's text is, its surrounding whitespace trimmed, or nothing where it holds none or more than the contract carries. */
 export function heldCredentialSecret(
   text: string | undefined,
 ): string | undefined {
   const secret = text?.trim();
-  return secret === undefined || secret.length === 0 ? undefined : secret;
+  return secret === undefined ||
+    secret.length === 0 ||
+    secret.length > heldCredentialSecretCharsMax
+    ? undefined
+    : secret;
 }
 
 /** Answers an attempt from `held`, reading each selected credential's file through `read` as it is asked. */

@@ -225,7 +225,7 @@ export type WorkerCredentialAbsent = z.infer<
 /** The most credentials one attempt asks the plane's held ones for. */
 export const workerHeldCredentialsMax = 32;
 
-/** The longest held secret, restating the bound on the file the plane reads it from. */
+/** The longest held secret the plane serves. */
 export const heldCredentialSecretCharsMax = 4_096;
 
 /** The credentials an attempt asks for by the names its grant gives them. */
