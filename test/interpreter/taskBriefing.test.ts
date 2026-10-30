@@ -240,6 +240,34 @@ test("the single-agent mode admits Codex and refuses an unknown mode", () => {
   );
 });
 
+test("a Codex mode keeps the effort it names and refuses one Codex does not name", () => {
+  const worker = {
+    mode: {
+      type: "SingleAgent",
+      agent: "Codex",
+      model: "gpt-5.3-codex",
+      arguments: [],
+      effort: "xhigh",
+    },
+    setup: [],
+    files: [],
+  } as const;
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({ ...authoredConfiguration, worker }),
+    {
+      readiness: "Ready",
+      configuration: { ...authoredConfiguration, worker },
+    },
+  );
+  assert.deepEqual(
+    authoredTaskConfigurationReadiness({
+      ...authoredConfiguration,
+      worker: { ...worker, mode: { ...worker.mode, effort: "turbo" } },
+    }),
+    { readiness: "Incomplete", fault: "WorkerInvalid" },
+  );
+});
+
 test("an immutable worker configuration from before modes keeps its shape", () => {
   const worker = { arguments: ["--model", "opus"], setup: [], files: [] };
   assert.deepEqual(

@@ -217,9 +217,25 @@ test("lines are sent as the form holds them, the empty ones among them", () => {
   });
 });
 
+test("a Codex mode naming its effort is sent with the model typed and the effort kept", () => {
+  const effortful = {
+    worker: { mode: { ...(modeOf(codex) as object), effort: "high" } },
+  };
+  const body = creationBodyFrom(
+    creationOffers,
+    creationForm({ overrides: overrideModelChosen({}, effortful, "o3") }),
+    [],
+  );
+  expect(body.assembled === "Body" && body.body.overrides).toStrictEqual({
+    worker: {
+      mode: { ...(modeOf(effortful) as object), model: "o3" },
+    },
+  });
+});
+
 test("a mode the contract refuses is a fault at the model, before submit", () => {
   const unread = {
-    worker: { mode: { ...(modeOf(codex) as object), effort: "high" } },
+    worker: { mode: { ...(modeOf(codex) as object), effort: "turbo" } },
   };
   const body = creationBodyFrom(
     creationOffers,

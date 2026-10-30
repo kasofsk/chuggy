@@ -62,6 +62,36 @@ test("a named field replaces the configuration's whole and leaves its siblings",
   );
 });
 
+test("a Codex mode override may name an effort Codex names, and one naming none parses as written", () => {
+  const codex = {
+    type: "SingleAgent",
+    agent: "Codex",
+    arguments: [],
+    model: "gpt-5",
+  } as const;
+  for (const mode of [codex, { ...codex, effort: "high" }])
+    assert.deepEqual(configurationOverridesSchema.parse({ worker: { mode } }), {
+      worker: { mode },
+    });
+  assert.ok(
+    !configurationOverridesSchema.safeParse({
+      worker: { mode: { ...codex, effort: "turbo" } },
+    }).success,
+  );
+  assert.ok(
+    !configurationOverridesSchema.safeParse({
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Claude",
+          arguments: [],
+          effort: "high",
+        },
+      },
+    }).success,
+  );
+});
+
 test("the pinned document is not changed by applying an override to it", () => {
   const before = structuredClone(pinned);
   configurationWithOverrides(pinned, { work: { instructions: [] } });

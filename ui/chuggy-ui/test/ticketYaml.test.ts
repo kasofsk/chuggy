@@ -13,6 +13,7 @@ import {
   ticketYamlVocabulary,
 } from "../app/browser/editor/ticketYaml.ts";
 import type { TicketYamlContext } from "../app/browser/editor/ticketYaml.ts";
+import { codexReasoningEfforts } from "../../../src/contract/workerTask.ts";
 import {
   creationConfigurationChosen,
   creationFaultSentence,
@@ -554,6 +555,16 @@ test("a workload a form overrides is written whole under workloads and reads bac
   const read = ticketYamlRead(text, catalogContext);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
+});
+
+test("the vocabulary offers a workload's Codex effort as the efforts Codex names", () => {
+  const effort = ticketYamlVocabulary(catalogContext.base, catalogContext).find(
+    (key) => key.key === "effort",
+  );
+  expect(effort?.place).toBe("Workload");
+  expect(effort?.values.map((value) => value.label)).toStrictEqual([
+    ...codexReasoningEfforts,
+  ]);
 });
 
 test("a workloads key that is no map, or names a workload the catalog lacks, is refused", () => {

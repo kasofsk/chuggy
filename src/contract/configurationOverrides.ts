@@ -39,6 +39,7 @@ import {
   configurationCatalogNameSchema,
   workloadOverrideSchema,
 } from "./configurationDocument.ts";
+import { codexReasoningEfforts } from "./workerTask.ts";
 
 const overrideLinesSchema = z.array(z.string());
 
@@ -58,6 +59,7 @@ export const configurationOverridesSchema = z.strictObject({
             agent: z.literal("Codex"),
             arguments: overrideLinesSchema,
             model: z.string(),
+            effort: z.enum(codexReasoningEfforts).exactOptional(),
           }),
         ])
         .optional(),

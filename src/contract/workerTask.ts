@@ -23,6 +23,19 @@ export const filesystemAccesses = [
   "WriteWorkspace",
 ] as const;
 
+/** The reasoning efforts Codex names for `model_reasoning_effort`, in its own order. */
+export const codexReasoningEfforts = [
+  "none",
+  "minimal",
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "ultra",
+  "persistent",
+] as const;
+
 /** What task policy granted one attempt, restating the interpreter's `PolicyAuthorityGrant`. */
 const policyAuthorityGrantSchema = z.object({
   tools: z.array(z.string()),
@@ -44,6 +57,7 @@ const workerModeSchema = z.union([
     agent: z.literal("Codex"),
     arguments: z.array(z.string()),
     model: z.string(),
+    effort: z.enum(codexReasoningEfforts).exactOptional(),
   }),
   z.object({ type: z.literal("Commands"), commands: z.array(z.string()) }),
 ]);
