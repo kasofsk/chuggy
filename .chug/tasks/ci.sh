@@ -43,8 +43,9 @@
 # server behind the same URL, a container reused by name, a file outside the
 # tree or outside the scope `_ignored-inputs.sh` keys, such as a package
 # changed under node_modules by hand, and git's own state: HEAD, the index and
-# history, except where a gate keys them itself. Without a token, or with
-# TRACK_RECORD_OFF=1, nothing is wrapped and every gate runs itself.
+# history, except where a gate keys them itself. With TRACK_RECORD_OFF=1, or
+# without a token, a `track-record` that runs or a record directory, nothing is
+# wrapped, every gate runs itself, and one line names the first reason why.
 #
 # Env:
 #   CHUG_CI_ALLOW_UNTRACKED=1     let a run with untracked files end clean
@@ -101,11 +102,24 @@ record=""
 # is not there wraps nothing rather than announcing reuse that cannot happen.
 # The binary is probed functionally — `command -v` says it exists, not that
 # it runs.
-if [ "${TRACK_RECORD_OFF:-0}" != "1" ] &&
-	{ [ -n "${TRACK_RECORD_TOKEN:-}" ] ||
-		grep -q '[^[:space:]]' "${TRACK_RECORD_TOKEN_FILE:-/dev/null}" 2>/dev/null; } &&
-	track-record --version >/dev/null 2>&1 &&
-	record_dir="$(mktemp -d 2>/dev/null)"; then
+record_off=""
+if [ "${TRACK_RECORD_OFF:-0}" = "1" ]; then
+	record_off="TRACK_RECORD_OFF=1"
+elif [ -z "${TRACK_RECORD_TOKEN:-}" ] &&
+	! grep -q '[^[:space:]]' "${TRACK_RECORD_TOKEN_FILE:-/dev/null}" 2>/dev/null; then
+	if [ -n "${TRACK_RECORD_TOKEN_FILE:-}" ]; then
+		record_off="TRACK_RECORD_TOKEN_FILE names no readable file holding a token"
+	else
+		record_off="no Track Record token"
+	fi
+elif ! track-record --version >/dev/null 2>&1; then
+	record_off="no track-record that runs"
+elif ! record_dir="$(mktemp -d 2>/dev/null)"; then
+	record_off="no record directory could be made"
+fi
+if [ -n "$record_off" ]; then
+	echo "ci: every gate runs fresh, and no pass on record is reused: $record_off"
+else
 	record=1
 	trap 'rm -rf "$record_dir"' EXIT
 	TRACK_RECORD_URL="${TRACK_RECORD_URL:-https://track-record.vteng.io}"
