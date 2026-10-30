@@ -11,10 +11,7 @@ import { consolePageSchema } from "../../../src/contract/consolePage.ts";
 import { consoleRouter } from "../app/browser/routes.tsx";
 import { chatPaneDefault, chatPaneOnPage } from "../app/core/chatPane.ts";
 import { consolePageLabel, consolePageOf } from "../app/core/consolePage.ts";
-import {
-  ticketDraftQueryOf,
-  ticketDuplicateQueryOf,
-} from "../app/core/ticketDuplicate.ts";
+import { ticketCreationQueryOf } from "../app/core/ticketCreationQuery.ts";
 
 const partitionRouteId = "/$tenant/$project";
 
@@ -86,11 +83,11 @@ test("a page names the ticket its route reads from the same address", () => {
   const from = "041";
   expect(consolePageOf(matched(ticketNew, {}, { from }))).toEqual({
     page: "TicketNew",
-    ...ticketDuplicateQueryOf({ from }),
+    ...ticketCreationQueryOf({ from }),
   });
   expect(consolePageOf(matched(ticketNew, {}, { draft: from }))).toEqual({
     page: "TicketNew",
-    ...ticketDraftQueryOf({ draft: from }),
+    ...ticketCreationQueryOf({ draft: from }),
   });
   expect(
     consolePageOf(

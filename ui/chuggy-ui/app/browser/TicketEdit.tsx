@@ -6,14 +6,17 @@
  *
  * One submit revises the draft and releases it as the ticket's update, written
  * against the revision the ticket read carries, and the navigation back to the
- * ticket happens on a settled success alone. A ticket that has left Pending is
- * not offered the form, because the update it would send is refused.
+ * ticket happens on a settled success alone. The form follows the draft as it
+ * is revised elsewhere, and its revision is written over the draft revision it
+ * stands on, so one that moved past it is refused rather than overwritten. A
+ * ticket that has left Pending is not offered the form, because the update it
+ * would send is refused.
  */
 
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import type { QueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -54,7 +57,7 @@ import type {
   TicketUpdateRequest,
 } from "../core/ticketCreationRun.ts";
 import {
-  editFormFrom,
+  editFormOf,
   editOfferListed,
   editOffersFrom,
   editRevisionFrom,
@@ -70,6 +73,8 @@ import {
   ticketYamlStoreKey,
   useAuthoringGuards,
 } from "./editor/authoringGuards.tsx";
+import { DraftFollowNotice, useDraftFollow } from "./editor/DraftFollow.tsx";
+import type { DraftFollowing } from "./editor/DraftFollow.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import { DraftScreen } from "./ticket/DraftScreen.tsx";
@@ -167,31 +172,34 @@ function editWrite(
   };
 }
 
+interface EditSubmit {
+  readonly attempt: Attempt;
+  readonly busy: boolean;
+  /** Submits a form as a revision of the draft it is drawn from. */
+  readonly submit: (form: TicketCreationForm, draft: DraftResponse) => void;
+}
+
 /** One submit, from the revision it assembles to the state it leaves behind. */
 function useEditSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
-  readonly subject: EditSubject;
+  readonly ticket: TicketResponse;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
   readonly standing: AuthoringStanding;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onUpdated: () => void;
-}): {
-  readonly attempt: Attempt;
-  readonly busy: boolean;
-  readonly submit: (form: TicketCreationForm) => void;
-} {
-  const { partition, subject } = props;
+}): EditSubmit {
+  const { partition, ticket } = props;
   const writing = useConsoleWrite(
-    editWrite(props.ports, partition, subject.ticket.ticket),
+    editWrite(props.ports, partition, ticket.ticket),
     { drawn: true },
   );
   const step = useConsoleWriteProgress(writing.variables?.progress);
 
-  const submit = (form: TicketCreationForm): void => {
+  const submit = (form: TicketCreationForm, draft: DraftResponse): void => {
     const assembled = editRevisionFrom(
-      subject.draft,
+      draft,
       props.offers,
       form,
       props.repositories,
@@ -203,7 +211,7 @@ function useEditSubmit(props: {
     }
     props.onFaults([]);
     const request: TicketUpdateRequest = {
-      ticket: subject.ticket,
+      ticket,
       body: assembled.body,
       operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
     };
@@ -223,8 +231,11 @@ function useEditSubmit(props: {
 interface EditFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
+  /** The ticket, and its draft as the project's cache holds it now. */
   readonly subject: EditSubject;
-  readonly edit: EditOffers;
+  /** What the edit chooses among, the draft's own revision first where the
+   * project no longer offers it. */
+  readonly offers: readonly CreationOffer[];
   /** What the project binds, retired bindings among them. */
   readonly bound: readonly ProjectRepositoryResponse[];
   readonly partial?: boolean;
@@ -234,26 +245,46 @@ interface EditFormProps {
   readonly onDirty?: (dirty: boolean) => void;
 }
 
+/** The edit's form over its draft as the project's cache holds it, its own
+ * writes being the revisions a failed attempt left the draft at. */
+function useEditFollow(
+  props: EditFormProps,
+  repositories: readonly ProjectRepositoryResponse[],
+  running: EditSubmit,
+  storeKey: string,
+): DraftFollowing<TicketCreationForm> {
+  const attempt = running.attempt;
+  const offers = props.offers;
+  const formOf = useCallback(
+    (draft: DraftResponse) => editFormOf(draft, offers, repositories),
+    [offers, repositories],
+  );
+  return useDraftFollow({
+    current: props.subject.draft,
+    own: attempt.attempt === "Failed" ? attempt.held?.draft : undefined,
+    busy: running.busy,
+    formOf,
+    storeKey,
+  });
+}
+
 /**
- * The form over one draft. What was typed is held from the first keystroke, so
- * a draft read again after a refusal re-seeds only a form nobody has touched.
+ * The form over one draft, following it as it is revised: a form nobody has
+ * touched is drawn again from each revision, and a touched one is told of a
+ * revision that moved past it and asked whose to keep.
  */
 export function EditForm(props: EditFormProps): ReactNode {
-  const [edited, setEdited] = useState<TicketCreationForm | undefined>(
-    undefined,
-  );
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const bound = props.bound;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
-  const draft = props.subject.draft;
-  const { offers, configuration } = props.edit;
-  const storeKey = ticketYamlStoreKey(props.partition, draft.ticket);
+  const { offers, subject } = props;
+  const storeKey = ticketYamlStoreKey(props.partition, subject.draft.ticket);
   const standing = props.standing ?? { mayOverride: true };
   const running = useEditSubmit({
     standing,
     ports: props.ports,
     partition: props.partition,
-    subject: props.subject,
+    ticket: subject.ticket,
     offers,
     repositories,
     onFaults: setFaults,
@@ -262,31 +293,37 @@ export function EditForm(props: EditFormProps): ReactNode {
       props.onUpdated();
     },
   });
-  const initial = useMemo(
-    () => editFormFrom(draft, repositories, configuration),
-    [draft, repositories, configuration],
-  );
-  const form = edited ?? initial;
+  const follow = useEditFollow(props, repositories, running, storeKey);
+  const base = follow.base;
   return (
     <div className="creation">
+      <DraftFollowNotice
+        standing={follow.standing}
+        onTaken={follow.taken}
+        onKept={follow.kept}
+        released={() => null}
+      />
       <TicketAuthoring
-        initial={initial}
-        form={form}
-        onForm={setEdited}
+        initial={follow.initial}
+        form={follow.form}
+        onForm={follow.changed}
         offers={offers}
         repositories={repositories}
         assemble={(held) =>
-          editRevisionFrom(draft, offers, held, repositories, standing)
+          editRevisionFrom(base, offers, held, repositories, standing)
         }
         storeKey={storeKey}
         submitLabel="revise and release"
         busy={running.busy}
-        onSubmit={running.submit}
+        onSubmit={(held) => {
+          running.submit(held, base);
+        }}
         onDirty={props.onDirty}
+        following={follow.authoring}
         fields={
           <CreationFields
-            form={form}
-            onChange={setEdited}
+            form={follow.form}
+            onChange={follow.changed}
             faults={faults}
             offers={offers}
             partial={props.partial === true}
@@ -374,7 +411,7 @@ function EditOffered(props: {
           ports={props.ports}
           partition={partition}
           subject={subject}
-          edit={edit}
+          offers={edit.offers}
           bound={context.repositories}
           partial={context.partial}
           standing={standing}

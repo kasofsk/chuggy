@@ -20,6 +20,7 @@ import {
   draftReleaseOf,
   draftUnreleasedLabel,
   editFormFrom,
+  editFormOf,
   editOfferListed,
   editOffersFrom,
   editRevisionFrom,
@@ -348,6 +349,14 @@ test("an edit starts on the name its draft holds, at that name's newest revision
     configuration: "development",
   });
   expect(revisionPinned(draft, edit)).toBe("n-development");
+});
+
+test("the form an edit follows its draft with is drawn under the configuration its offers hold for it", () => {
+  const draft = pinned("development", "o-development");
+  const bound = [creationBinding(repository)];
+  expect(editFormOf(draft, declared, bound)).toStrictEqual(
+    editFormFrom(draft, bound, "development"),
+  );
 });
 
 test("a draft at a revision still offered starts on it", () => {

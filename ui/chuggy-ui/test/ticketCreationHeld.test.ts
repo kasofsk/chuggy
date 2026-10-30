@@ -14,6 +14,10 @@ import { creationStageOf } from "../app/core/ticketCreation.ts";
 import { consoleWriteRefusedDetail } from "../app/core/consoleWrite.ts";
 import {
   createAndReleaseTicket,
+  creationDraftChangedSentence,
+  creationDraftDeletedSentence,
+  creationDraftHeldSentence,
+  creationTicketExistsSentence,
   TicketCreationRefused,
 } from "../app/core/ticketCreationRun.ts";
 import type {
@@ -23,7 +27,11 @@ import type {
 } from "../app/core/ticketCreationRun.ts";
 import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
-import { creationBody, creationPartition } from "./ticketCreationFixture.ts";
+import {
+  creationBody,
+  creationDraft,
+  creationPartition,
+} from "./ticketCreationFixture.ts";
 import {
   ticketDoor,
   ticketDoorAnswers,
@@ -800,4 +808,98 @@ test("a release refused over an override is released again once the override alo
   expect(
     (sent[1]?.body as { readonly overrides?: unknown }).overrides,
   ).toStrictEqual({ worker: { setup: ["npm ci"] } });
+});
+
+/** A draft some other writer made, as a form following it holds it: its
+ * body unknown, so a submit always revises it first. */
+function followedHeld(door: TicketDoor): CreationDraftHeld {
+  return {
+    draft: { ...creationDraft, authoringVersion: door.version },
+    origin: "Followed",
+    body: undefined,
+    operation: "op-0",
+    unsettled: false,
+  };
+}
+
+test("a form following its draft revises it at the version it stands on, and releases that same draft", async () => {
+  const door = ticketDoor();
+  const api = answeringApi(ticketDoorAnswers(door, () => "Succeeded"));
+  const ended = await createAndReleaseTicket(
+    api.ports,
+    creationPartition,
+    {
+      body: changed,
+      operation: "op-1",
+      held: followedHeld(door),
+      expectedVersion: 3,
+    },
+    () => undefined,
+  );
+  expect(ended).toStrictEqual({ created: "Created", ticket: 12 });
+  expect(lines(api.sent)).toStrictEqual([
+    draftRead,
+    "PUT /drafts/12 at 3 saying ship that",
+    ...released("op-1", 4),
+  ]);
+});
+
+test("a form following its draft is refused where the draft moved past what it stands on, and nothing is released", async () => {
+  const door = ticketDoor();
+  const held = followedHeld(door);
+  door.version = 5;
+  const api = answeringApi(ticketDoorAnswers(door, () => "Succeeded"));
+  const ended = await createAndReleaseTicket(
+    api.ports,
+    creationPartition,
+    { body: changed, operation: "op-1", held, expectedVersion: 3 },
+    () => undefined,
+  );
+  expect(endedSaid(ended)).toBe(
+    `${creationDraftChangedSentence} · Draft 12 · Not released`,
+  );
+  expect(lines(api.sent)).toStrictEqual([
+    draftRead,
+    "PUT /drafts/12 at 3 saying ship that",
+  ]);
+  expect(door.releases).toStrictEqual([]);
+});
+
+test("a draft a following form finds deleted says nothing will be released, and the next submit finds it deleted again", async () => {
+  const door = ticketDoor();
+  door.state = "Deleted";
+  const api = answeringApi(ticketDoorAnswers(door, () => "Succeeded"));
+  const submit = () =>
+    createAndReleaseTicket(
+      api.ports,
+      creationPartition,
+      { body: changed, operation: "op-1", held: followedHeld(door) },
+      () => undefined,
+    );
+  const said = "Draft 12 deleted · Nothing here will be released";
+  expect(await submit()).toStrictEqual({
+    created: "Refused",
+    reason: said,
+    held: undefined,
+  });
+  expect(endedSaid(await submit())).toBe(said);
+  expect(lines(api.sent)).toStrictEqual([draftRead]);
+});
+
+test("a following form's endings say what became of the draft, not that this form created or released it", () => {
+  const held = { ...followedHeld(ticketDoor()), unsettled: true };
+  const created = { ...held, origin: "Created" } as const;
+  expect(creationDraftHeldSentence(held)).toBe("Draft 12 · Maybe released");
+  expect(creationDraftHeldSentence(created)).toBe(
+    "Draft 12 kept · Maybe released",
+  );
+  expect(creationTicketExistsSentence(held)).toBe(
+    "#12 already exists · Changes here are not in it",
+  );
+  expect(creationTicketExistsSentence(created)).toBe(
+    "#12 already exists · Changes since are not in it",
+  );
+  expect(creationDraftDeletedSentence(created)).toBe(
+    "Draft 12 deleted · Submit again for a new one",
+  );
 });

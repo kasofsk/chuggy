@@ -2,7 +2,8 @@
  * What stands between a dirty authoring screen and leaving it: a route away
  * asks and the answer decides, the tab's unload is refused, and the exits a
  * submit's own ending makes are let through without asking. Beside it, what
- * this browser keeps of a screen's images, read back whatever is stored.
+ * this browser keeps of a screen's images and of the draft version its YAML
+ * was typed over, read back whatever is stored.
  */
 
 import {
@@ -19,9 +20,14 @@ import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
+  ticketYamlForgotten,
   ticketYamlImagesKept,
   ticketYamlImagesStored,
+  ticketYamlKept,
+  ticketYamlStored,
   ticketYamlStoreKey,
+  ticketYamlVersionKept,
+  ticketYamlVersionStored,
   useAuthoringGuards,
 } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationTicketLink } from "../app/browser/TicketCreation.tsx";
@@ -215,3 +221,27 @@ test.each([
   planted(key, stored);
   expect(ticketYamlImagesStored(key)).toStrictEqual(read);
 });
+
+test("the draft version kept beside a screen's YAML is read back, and forgotten with it", () => {
+  const key = ticketYamlStoreKey(atlas, 12);
+  expect(ticketYamlVersionStored(key)).toBeUndefined();
+  ticketYamlKept(key, "title: Mine\n");
+  ticketYamlVersionKept(key, 7);
+  expect(ticketYamlVersionStored(key)).toBe(7);
+  expect(
+    ticketYamlVersionStored(ticketYamlStoreKey(atlas, 13)),
+  ).toBeUndefined();
+  ticketYamlForgotten(key);
+  expect(ticketYamlStored(key)).toBeUndefined();
+  expect(ticketYamlVersionStored(key)).toBeUndefined();
+});
+
+test.each([["-1"], ["7.5"], ["seven"], [""], ["9".repeat(20)]])(
+  "a version stored as %o is read as none",
+  (stored) => {
+    const key = ticketYamlStoreKey(atlas, 12);
+    ticketYamlVersionKept(key, 1);
+    window.localStorage.setItem(`${key}.version`, stored);
+    expect(ticketYamlVersionStored(key)).toBeUndefined();
+  },
+);

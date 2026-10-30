@@ -18,7 +18,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
-import { TicketCreationFrom } from "../app/browser/TicketDuplicate.tsx";
+import { TicketCreationFrom } from "../app/browser/TicketCreationStart.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,

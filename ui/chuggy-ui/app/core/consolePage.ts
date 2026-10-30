@@ -15,10 +15,7 @@ import type {
   ConsolePageSettingsSection,
 } from "../../../../src/contract/consolePage.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
-import {
-  ticketDraftQueryOf,
-  ticketDuplicateQueryOf,
-} from "./ticketDuplicate.ts";
+import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
 /** The route a router matched, as plain data: its identity, the parameters
  * its address carries, and the query it was given. */
@@ -46,10 +43,7 @@ function consolePageSettings(
 /** A new ticket, as its route reads the address: the draft it names where it
  * names one, which wins over the ticket it would otherwise duplicate. */
 function consolePageTicketNew(match: ConsolePageMatch): unknown {
-  const { draft } = ticketDraftQueryOf(match.search);
-  return draft === undefined
-    ? { page: "TicketNew", ...ticketDuplicateQueryOf(match.search) }
-    : { page: "TicketNew", draft };
+  return { page: "TicketNew", ...ticketCreationQueryOf(match.search) };
 }
 
 /** Each route under a project, by the identity the router gives it, and the

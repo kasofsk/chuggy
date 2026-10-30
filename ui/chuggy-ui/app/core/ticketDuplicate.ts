@@ -30,45 +30,6 @@ import {
 } from "./ticketEdit.ts";
 import { overridesHeldOf } from "./ticketOverrides.ts";
 
-/** What the new-ticket address says about where it starts: from nothing, or
- * from the ticket it names. */
-export interface TicketDuplicateQuery {
-  readonly from?: number;
-}
-
-function ticketDuplicateNumberOf(value: unknown): number | undefined {
-  const read =
-    typeof value === "string" && /^[0-9]+$/u.test(value)
-      ? Number(value)
-      : value;
-  return typeof read === "number" && Number.isSafeInteger(read) && read > 0
-    ? read
-    : undefined;
-}
-
-/** The ticket the address names, read off the query the router parsed, which
- * hands a number back as one and a quoted one as text. */
-export function ticketDuplicateQueryOf(
-  search: Readonly<Record<string, unknown>>,
-): TicketDuplicateQuery {
-  const from = ticketDuplicateNumberOf(search["from"]);
-  return from === undefined ? {} : { from };
-}
-
-/** What the new-ticket address says about the draft it names, read as the
- * ticket it duplicates is. */
-export interface TicketDraftQuery {
-  readonly draft?: number;
-}
-
-/** The draft the address names, read off the query the router parsed. */
-export function ticketDraftQueryOf(
-  search: Readonly<Record<string, unknown>>,
-): TicketDraftQuery {
-  const draft = ticketDuplicateNumberOf(search["draft"]);
-  return draft === undefined ? {} : { draft };
-}
-
 /** What a duplicate could not carry, each named so the form can say it. */
 export interface TicketDuplicateDropped {
   readonly repository: string | undefined;

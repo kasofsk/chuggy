@@ -121,7 +121,7 @@ function draw(
           ports={ports}
           partition={creationPartition}
           subject={{ ticket, draft: held }}
-          edit={editOffersFrom(held, offers, undefined)}
+          offers={editOffersFrom(held, offers, undefined).offers}
           bound={[]}
           onUpdated={() => updated.push("updated")}
         />

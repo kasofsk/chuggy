@@ -61,6 +61,9 @@ export interface TicketYamlAuthoringProps {
   readonly form: TicketCreationForm;
   readonly onForm: (form: TicketCreationForm) => void;
   readonly onReadable: (readable: boolean) => void;
+  /** Told when the text becomes its author's, and when a discard makes it the
+   * form's again. */
+  readonly onAuthored?: ((authored: boolean) => void) | undefined;
   readonly faultsOf: (form: TicketCreationForm) => readonly CreationFault[];
   readonly storeKey: string;
   readonly submitLabel: string;
@@ -201,11 +204,13 @@ function useYamlText(props: TicketYamlAuthoringProps) {
       setAuthored(true);
       ticketYamlKept(storeKey, next);
       ticketYamlImagesKept(storeKey, context.images);
+      props.onAuthored?.(true);
     },
     discarded: (): void => {
       ticketYamlForgotten(storeKey);
       setText(ticketYamlOf(context.base, context));
       setRestored(false);
+      props.onAuthored?.(false);
     },
   };
 }
