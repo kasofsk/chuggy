@@ -32,7 +32,7 @@ R="$WORK/repo"
 # guard, which each case that reaches the suite stage sets for itself.
 unset CHUG_CI_ALLOW_UNTRACKED CHUG_CI_FULL CHUG_CI_BASE GITHUB_BASE_REF CHUG_CI_SUITE_TIMEOUT_SECS \
 	TRACK_RECORD_TOKEN TRACK_RECORD_TOKEN_FILE TRACK_RECORD_URL TRACK_RECORD_NAMESPACE \
-	TRACK_RECORD_FRESH TRACK_RECORD_OFF
+	TRACK_RECORD_FRESH TRACK_RECORD_OFF CHUG_CI_QUIET CHUG_CI_TAIL_LINES
 
 ROOT="$(cd "$HERE/../.." && pwd)"
 grep -F '    ./.chug/tasks/ci.sh' "$ROOT/justfile" >/dev/null
@@ -2064,5 +2064,87 @@ set +e
 RC=$?
 set -e
 check "outside a git checkout exits 2, not 0" 2 "$RC" "LINTER ERROR"
+
+# A QUIET RUN PRINTS VERDICTS, NOT TRANSCRIPTS. A gate's output is in its log,
+# a clean gate is one line, a red one shows the end of its log, and the run
+# ends on every red one, past which it carries on.
+ci_with() { # [VAR=value...] [-- <ci.sh argument>...]
+	OUT="$WORK/.out"
+	ci_env=""
+	while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+		ci_env="$ci_env $(printf '%s' "$1")"
+		shift
+	done
+	[ "$#" -eq 0 ] || shift
+	set +e
+	# shellcheck disable=SC2086
+	(cd "$R" && env CHUG_CI_SHELL_SUITES=0 $ci_env ./.chug/tasks/ci.sh "$@") >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+stub_repo 0
+ci_with CHUG_CI_QUIET=1
+refute "a quiet run does not print a clean gate's output" 0 "$RC" "stub check-figures"
+check "a quiet run names each clean gate" 0 "$RC" "ci: clean — check-figures"
+check "a quiet run says where the logs are" 0 "$RC" "logged under"
+check "a clean gate's output is in its log" 0 \
+	"$(grep -q 'stub check-figures' "$(git -C "$R" rev-parse --absolute-git-dir)/chug-ci/check-figures.log"; echo $?)" ""
+
+stub_failing check-paths 1
+ci_with CHUG_CI_QUIET=1
+check "a red gate shows the end of its log" 1 "$RC" "ci: | stub check-paths"
+check "the gates after a red one still run" 1 "$RC" "ci: clean — check-shell-quoting"
+check "a quiet run ends on its red gates" 1 "$RC" "ci:   check-paths — "
+ci_with
+check "a run streams by default" 1 "$RC" "stub check-figures"
+
+stub_repo 0
+printf '#!/bin/sh\necho first failure\nexit 1\n' > "$R/.chug/tasks/aa.test.sh"
+git -C "$R" add -A
+ci_with CHUG_CI_SHELL_SUITES=1
+check "a red suite shows the end of its log" 1 "$RC" "ci: | first failure"
+
+# `--only` runs the gates it names and nothing else, through the same wrapping.
+stub_repo 0
+ci_with CHUG_CI_SHELL_SUITES=1 -- --only check-paths source-static
+check "--only runs a gate it names" 0 "$RC" "stub check-paths"
+check "--only runs every gate it names" 0 "$RC" "stub check-source"
+check "--only skips the rest" 0 "$RC" "check-figures: SKIPPED (not named by --only)"
+check "--only skips the shell suites" 0 "$RC" "shell suites: SKIPPED (not named by --only)"
+ci_with -- --only check-nothing
+check "--only refuses a gate that is not one" 2 "$RC" "--only names check-nothing, which is no gate here"
+ci_with -- --only
+check "--only naming nothing could not run" 2 "$RC" "--only names no gate"
+ci_with -- --everything
+check "an argument that is not --only could not run" 2 "$RC" "takes no arguments but --only"
+run_recorded TRACK_RECORD_TOKEN=t
+grep -F 'run|--name|check-paths|' "$TRLOG" > "$WORK/.full-key"
+: > "$TRLOG"
+set +e
+(cd "$R" && env PATH="$TRBIN:$PATH" STUB_TR_LOG="$TRLOG" TRACK_RECORD_TOKEN=t CHUG_CI_SHELL_SUITES=0 \
+	./.chug/tasks/ci.sh --only check-paths) >/dev/null 2>&1
+RC=$?
+set -e
+recorded_log
+check "--only wraps the gate it names" 0 "$RC" "run|--name|check-paths|"
+refute "--only wraps no other gate" 0 "$RC" "run|--name|check-figures|"
+check "--only keys its gate as a full run does" 0 \
+	"$(grep -F 'run|--name|check-paths|' "$TRLOG" | cmp -s - "$WORK/.full-key"; echo $?)" ""
+
+# ONE RUN HOLDS A CHECKOUT. A live holder refuses a second run; a dead one's
+# lock is taken over.
+stub_repo 0
+lock="$(git -C "$R" rev-parse --absolute-git-dir)/chug-ci.lock"
+mkdir "$lock"
+sleep 30 &
+holder=$!
+echo "$holder" > "$lock/pid"
+ci_with
+check "a second run while one is alive could not run" 2 "$RC" "another ci.sh (pid $holder) is running"
+kill "$holder" 2>/dev/null || true
+wait "$holder" 2>/dev/null || true
+ci_with
+check "a dead holder's lock is taken over" 0 "$RC" "all gates clean"
+check "a run releases its lock" 0 "$([ ! -e "$lock" ]; echo $?)" ""
 
 done_ "ci.test.sh"
