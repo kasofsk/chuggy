@@ -7,6 +7,8 @@ import {
   apiRole,
   boundaryOwnerRole,
   cancellationFunction,
+  configurationFollowingCandidatesFunction,
+  configurationFollowingMoveFunction,
   configurationImporterRole,
   finalizerRole,
   metricsPlaneRole,
@@ -1017,6 +1019,33 @@ test("only the scheduler finds and resumes a job lost on its runner, and only th
       `${runnerLossResumeFunction}(text,text,bigint,bigint,text,text,bigint,bigint)`,
     ),
     [schedulerRole],
+  );
+});
+
+test("only the importer reads the tickets following a head and moves one, and it still accepts and revises nothing itself", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${configurationFollowingCandidatesFunction}(text,text,text,text,text,bigint,integer)`,
+    ),
+    [configurationImporterRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${configurationFollowingMoveFunction}(text,text,bigint,bigint,text,text,text,text,bigint,bigint)`,
+    ),
+    [configurationImporterRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${acceptanceFunction}(text,text,text,text,text,text,text,text,text[],text[],text,bigint,bigint,text)`,
+    ),
+    [apiRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      "revise_draft(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)",
+    ),
+    [apiRole],
   );
 });
 
