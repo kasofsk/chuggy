@@ -12,7 +12,8 @@
  *
  * A REPRESENTATION IS THE GET'S OWN BODY, taken from the same builder the route
  * takes it from rather than assembled again here, and a status that is not a
- * 200 is the tombstone: the resource the row named is no longer readable.
+ * 200 is the tombstone: the resource the row named is no longer readable. An
+ * execution's is the row its list answers, read without its attempts or result.
  */
 
 import type { FastifyReply } from "fastify";
@@ -35,7 +36,7 @@ import { asExecutionId } from "../../interpreter/schedulerIdentity.ts";
 import {
   configurationResponse,
   draftResponse,
-  executionResponse,
+  executionSummaryResponse,
   operationResponse,
   projectEntryResponse,
   ticketNativeActionsResponse,
@@ -50,7 +51,7 @@ export type StreamedNativeWeb = Pick<
   NativeWeb,
   | "configuration"
   | "draft"
-  | "execution"
+  | "executionSummary"
   | "operation"
   | "project"
   | "ticket"
@@ -129,8 +130,8 @@ export function projectResourceReader(
           );
         case "Execution":
           return representationOf(
-            executionResponse(
-              await web.execution(
+            executionSummaryResponse(
+              await web.executionSummary(
                 principal,
                 partition,
                 asExecutionId(resource),

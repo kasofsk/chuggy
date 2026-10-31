@@ -59,6 +59,7 @@ import {
   type Held,
 } from "./heldStream.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
+import { executionSummary } from "../contract/representations.ts";
 import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
 
 const partition = partitionOf("project");
@@ -78,9 +79,12 @@ const notFound = () => Promise.resolve({ result: "NotFound" } as const);
  * three copies of one roster is where a method added to the app stops being
  * added to the suites that drive it.
  */
-type ServedWeb = Parameters<typeof createNativeHttpApp>[0];
+type ServedWeb = Parameters<typeof createNativeHttpApp>[0] &
+  Parameters<typeof projectResourceReader>[0];
 
 const unreadExecutions = {
+  execution: () => Promise.resolve(undefined),
+  executionSummary: () => Promise.resolve(executionSummary),
   executions: notFound,
   latestExecutions: notFound,
 };
@@ -140,7 +144,6 @@ function servedWeb(
         revokedDependencies: [],
         openDependencies: [],
       }),
-    execution: () => Promise.resolve(undefined),
     ...unreadExecutions,
     operationalStatus: notFound,
     hostedRuns: notFound,
@@ -385,6 +388,28 @@ test("every kind the log can name reaches the stream as its own schema", async (
       .nullable()
       .parse(changeData(opened));
   }
+});
+
+test("an execution change carries the list's row and reads none of its attempts or result", async () => {
+  const web: ServedWeb = {
+    ...servedWeb(true, () => []),
+    execution: () => {
+      assert.fail("an execution change read the execution whole");
+    },
+  };
+  const reader = projectResourceReader(web);
+  const read = await reader.read(
+    asPrincipal("issuer-subject"),
+    partition,
+    "Execution",
+    "execution-one",
+  );
+  assert.deepEqual(read, executionSummary);
+  assert.ok(read !== null && !("attempts" in read) && !("result" in read));
+  assert.deepEqual(
+    projectChangeRepresentationSchemas.Execution.parse(read),
+    executionSummary,
+  );
 });
 
 test("an approval reaches the stream when it opens and again when it is answered", async () => {

@@ -98,8 +98,9 @@ const projectStreamedIdentity = /^[^/=]+$/u;
 
 /**
  * The kinds a frame carries a one-resource read's whole body for, under the
- * key that read is held at, and what the resource is for each: a ticket number,
- * or an identity with nothing under it. A part below one is past a `/` and a
+ * key that read is held at, or for `Execution` marks that key to be read again,
+ * and what the resource is for each: a ticket number, or an identity with
+ * nothing under it. A part below one is past a `/` and a
  * view carries a `=`, and no frame names either; nor does a `Project` frame,
  * which invalidates the partition rather than naming what it changed.
  */

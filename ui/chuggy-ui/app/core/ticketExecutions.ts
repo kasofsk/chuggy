@@ -11,9 +11,8 @@
  * reaches further than it does.
  */
 
-import { executionResponseSchema } from "../../../../src/contract/responses.ts";
+import { executionSummarySchema } from "../../../../src/contract/responses.ts";
 import type {
-  ExecutionResponse,
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../src/contract/responses.ts";
@@ -21,8 +20,8 @@ import type { ProjectListChange } from "./projectQueryKeys.ts";
 import { runStageRows } from "./runTotals.ts";
 import type { RunStageRow } from "./runTotals.ts";
 
-function executionOf(representation: unknown): ExecutionResponse | undefined {
-  const parsed = executionResponseSchema.safeParse(representation);
+function executionOf(representation: unknown): ExecutionSummary | undefined {
+  const parsed = executionSummarySchema.safeParse(representation);
   return parsed.success ? parsed.data : undefined;
 }
 
@@ -41,7 +40,7 @@ function executionsWithout(
 /** In place where it is already listed, at its own position where it is not. */
 function executionsWith(
   previous: ExecutionsResponse,
-  arrived: ExecutionResponse,
+  arrived: ExecutionSummary,
 ): ExecutionsResponse {
   const held = previous.executions;
   const at = held.findIndex((row) => row.execution === arrived.execution);

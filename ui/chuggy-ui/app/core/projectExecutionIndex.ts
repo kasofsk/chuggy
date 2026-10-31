@@ -142,8 +142,8 @@ export async function projectExecutionIndexRead(
 }
 
 /**
- * An `Execution` frame folded in: the representation is the execution read's own
- * body, and a frame that will not read — a tombstone among them — or that is
+ * An `Execution` frame folded in: the representation is the executions list's
+ * row, and a frame that will not read — a tombstone among them — or that is
  * older than the one held leaves every row where it was.
  */
 export function projectExecutionIndexFold(

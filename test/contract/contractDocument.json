@@ -10,6 +10,7 @@
   },
   "notifications": "bounded-polling",
   "events": "sse",
+  "eventRepresentations": "a change frame carries the body its kind's own read answers, except Execution, which carries the row the executions list answers for that execution and none of its attempts or result; a page showing the execution reads those from the execution's own route",
   "caching": "no-store",
   "cors": "same-origin",
   "credentials": "authorization bearer header; no cookies",

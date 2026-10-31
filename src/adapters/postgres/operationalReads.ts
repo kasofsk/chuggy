@@ -673,6 +673,20 @@ async function resultResource(
   };
 }
 
+/** One execution as the list answers it, from the row the list's own query reads. */
+async function executionSummaryResource(
+  pool: pg.Pool,
+  partition: Partition,
+  row: ExecutionViewRow,
+): Promise<ExecutionSummary> {
+  const [summary] = await executionPageAnswered(pool, partition, [
+    executionSummary(row),
+  ]);
+  if (summary === undefined)
+    throw new Error("operational read: execution summary is absent");
+  return summary;
+}
+
 /** One execution whole: its summary, its attempts, and its result where it has one. */
 async function executionResource(
   pool: pg.Pool,
@@ -693,15 +707,8 @@ async function executionResource(
         );
   if (row.result_manifest !== null && result === undefined)
     throw new Error("operational read: execution result is absent");
-  const summary = executionSummary(row);
   return {
-    ...executionSummaryTotalled(
-      executionSummaryLabelled(
-        summary,
-        await postgresWorkerCatalog(pool, executionSummaryImages([summary])),
-      ),
-      await postgresExecutionRunTotals(pool, partition, [execution]),
-    ),
+    ...(await executionSummaryResource(pool, partition, row)),
     attempts: await attempts(pool, partition, execution),
     ...(result === undefined ? {} : { result }),
   } satisfies ExecutionResource;
@@ -750,5 +757,11 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
       latestExecutionPage(pool, partition, query, reader),
     execution: (partition, execution, reader) =>
       executionResource(pool, partition, execution, reader),
+    executionSummary: async (partition, execution, reader) => {
+      const row = await oneExecution(pool, partition, execution, reader);
+      return row === undefined
+        ? undefined
+        : executionSummaryResource(pool, partition, row);
+    },
   };
 }

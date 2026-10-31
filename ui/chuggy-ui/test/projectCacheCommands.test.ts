@@ -22,6 +22,7 @@ import {
 } from "../app/core/projectQueryKeys.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
 import { leadSession, leadSessionResource } from "./leadFixture.ts";
+import { runSummary } from "./runPageFixture.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
@@ -144,6 +145,33 @@ test("a null representation has the entry read again rather than left stale", ()
     resource: "3",
     representation: null,
   });
+});
+
+/**
+ * An execution's frame carries the list's row, which is less than its key
+ * holds, so the key is read again rather than written over with the row.
+ */
+test("an execution frame has its key read again and offers its row to the lists", () => {
+  const commands = projectCacheCommands(
+    partition,
+    decoded({
+      event: "Execution",
+      id: "15",
+      data: { version: 1, resource: "e1", representation: runSummary() },
+    }),
+  );
+  expect(commands).toEqual([
+    {
+      command: "RereadResource",
+      key: projectResourceKey(partition, "Execution", "e1"),
+    },
+    {
+      command: "FoldLists",
+      kind: "Execution",
+      resource: "e1",
+      representation: runSummary(),
+    },
+  ]);
 });
 
 test("a Project frame invalidates the partition rather than writing", () => {

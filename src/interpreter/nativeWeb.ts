@@ -114,6 +114,7 @@ import {
   type ExecutionListQuery,
   type ExecutionPage,
   type ExecutionResource,
+  type ExecutionSummary,
   type LatestExecutionListQuery,
   type LatestExecutionPage,
   type OperationalReadStore,
@@ -787,6 +788,11 @@ export interface NativeWeb {
     partition: Partition,
     execution: ExecutionId,
   ): Promise<ExecutionResource | undefined>;
+  executionSummary(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+  ): Promise<ExecutionSummary | undefined>;
   outputContent(
     principal: Principal,
     partition: Partition,
@@ -1482,8 +1488,39 @@ type NativeOperationalMethods = Pick<
   | "executions"
   | "latestExecutions"
   | "execution"
+  | "executionSummary"
   | "outputContent"
 >;
+
+/** An output's bytes, found by its ordinal among the artifacts of the execution's result. */
+function nativeOperationalOutputContent(
+  access: ProjectAccess,
+  operations: () => OperationalReadStore,
+  contents: () => OutputContentPort,
+): NativeWeb["outputContent"] {
+  return async (principal, partition, execution, ordinal) => {
+    if ((await access.authorize(principal, partition, "Read")) === undefined)
+      return { read: "NotFound" };
+    if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > 256)
+      throw new RangeError("artifact ordinal is invalid");
+    const resource = await operations().execution(
+      partition,
+      execution,
+      principal,
+    );
+    const artifact = resource?.result?.artifacts.find(
+      (candidate) => candidate.ordinal === ordinal,
+    );
+    if (resource?.result === undefined || artifact === undefined)
+      return { read: "NotFound" };
+    return contents().read({
+      partition,
+      execution,
+      attempt: resource.result.attempt,
+      artifact,
+    });
+  };
+}
 
 function nativeOperationalMethods(
   access: ProjectAccess,
@@ -1530,28 +1567,11 @@ function nativeOperationalMethods(
       (await access.authorize(principal, partition, "Read")) === undefined
         ? undefined
         : operations().execution(partition, execution, principal),
-    outputContent: async (principal, partition, execution, ordinal) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > 256)
-        throw new RangeError("artifact ordinal is invalid");
-      const resource = await operations().execution(
-        partition,
-        execution,
-        principal,
-      );
-      const artifact = resource?.result?.artifacts.find(
-        (candidate) => candidate.ordinal === ordinal,
-      );
-      if (resource?.result === undefined || artifact === undefined)
-        return { read: "NotFound" };
-      return contents().read({
-        partition,
-        execution,
-        attempt: resource.result.attempt,
-        artifact,
-      });
-    },
+    executionSummary: async (principal, partition, execution) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? undefined
+        : operations().executionSummary(partition, execution, principal),
+    outputContent: nativeOperationalOutputContent(access, operations, contents),
   };
 }
 
