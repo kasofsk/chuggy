@@ -402,27 +402,81 @@ test("a list of two reads goes on to the second as the first ends, and draws a r
   expect(second.next).toBeUndefined();
 });
 
-test("a read gathers past a page that adds no row, into the next read", async () => {
+/** Reads the same answers on every pass, recording what each pass asked for. */
+function readingTwoReads(answers: readonly (readonly ProjectResponse[])[]): {
+  readonly readPage: (
+    cursor: string | undefined,
+    read: number,
+  ) => Promise<ApiResult<ProjectResponse>>;
+  readonly asked: [string | undefined, number][];
+} {
   const asked: [string | undefined, number][] = [];
-  const answers = [
-    page([]),
-    page([{ ticket: 1, phase: "Done", sequence: 1, ...ticketInstants }]),
-  ];
-  const answered = await projectTicketRowsRead(
-    undefined,
-    (cursor, read) => {
+  return {
+    asked,
+    readPage: (cursor, read) => {
       asked.push([cursor, read]);
-      const answer = answers[asked.length - 1];
+      const pages = answers[read] ?? [];
+      const answer =
+        cursor === undefined ? pages[0] : pages[Number(cursor.slice(-1))];
       if (answer === undefined) throw new Error("a page nobody offered");
       return Promise.resolve({ outcome: "Ok", value: answer });
     },
+  };
+}
+
+test("a first read is its first page even where that page is empty", async () => {
+  const held = readingTwoReads([
+    [page([])],
+    [page([{ ticket: 1, phase: "Done", sequence: 1, ...ticketInstants }])],
+  ]);
+  const answered = await projectTicketRowsRead(undefined, held.readPage, 2);
+  expect(held.asked).toStrictEqual([[undefined, 0]]);
+  expect(ticketsOf(answered)).toStrictEqual([]);
+  expect(answered.outcome === "Ok" && answered.value.next).toStrictEqual({
+    read: 1,
+    cursor: undefined,
+  });
+});
+
+test("a refetch over an empty active page reads the pages the reader had, however often it runs", async () => {
+  const held = readingTwoReads([
+    [page([])],
+    [
+      page(
+        [{ ticket: 2, phase: "Done", sequence: 1, ...ticketInstants }],
+        "finished-1",
+      ),
+      page([{ ticket: 1, phase: "Done", sequence: 1, ...ticketInstants }]),
+    ],
+  ]);
+  const first = await projectTicketRowsRead(undefined, held.readPage, 2);
+  if (first.outcome !== "Ok") throw new Error("the first read was refused");
+  const pressed = { value: first.value };
+  await projectTicketRowsMore(
+    first.value,
+    (update) => (pressed.value = update(pressed.value)),
+    held.readPage,
     2,
   );
-  expect(asked).toStrictEqual([
+  expect(pressed.value.pagesRead).toBe(2);
+  const refetched = await projectTicketRowsRead(
+    pressed.value,
+    held.readPage,
+    2,
+  );
+  if (refetched.outcome !== "Ok") throw new Error("the refetch was refused");
+  const again = await projectTicketRowsRead(refetched.value, held.readPage, 2);
+  expect(refetched.value.pagesRead).toBe(2);
+  expect(again.outcome === "Ok" && again.value.pagesRead).toBe(2);
+  expect(ticketsOf(again)).toStrictEqual([2]);
+  expect(held.asked).toStrictEqual([
+    [undefined, 0],
+    [undefined, 1],
+    [undefined, 0],
+    [undefined, 1],
     [undefined, 0],
     [undefined, 1],
   ]);
-  expect(ticketsOf(answered)).toStrictEqual([1]);
 });
 
 test("the count a search matched is the last page's", () => {

@@ -315,6 +315,20 @@ test("a Show more whose first finished page holds only rows already drawn reads 
   expect(showMores()).toBe(0);
 });
 
+test("an empty active list says so and offers the finished tickets behind one Show more", async () => {
+  const drawn = await drawnAt({}, (asked) =>
+    asked.get("active") === "true" ? served([]) : served([held(120, "Done")]),
+  );
+  expect(screen.getByRole("status").textContent).toBe(
+    "No active or recently finished tickets.",
+  );
+  expect(drawn.asked.filter((asked) => asked.has("phase"))).toStrictEqual([]);
+  expect(showMores()).toBe(1);
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);
+  expect(showMores()).toBe(0);
+});
+
 test("leaving a search that matched nothing keeps the list's controls drawn until the default list answers", async () => {
   const active = heldAnswer();
   const drawn = await drawnAt({ q: "nomatch" }, (asked) => {
