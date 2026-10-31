@@ -26,6 +26,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../src/contract/events.ts";
 import {
+  projectListAlongside,
   projectListFolded,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
@@ -294,6 +295,16 @@ test("a registered list fold is offered the same representation", async () => {
 test("a fold registered for one kind is not offered another kind's change", async () => {
   const client = await refreshedEntry(namingList("Draft", "drafts"), []);
   expect(client.getQueryData(namingList("Draft", "drafts").key)).toEqual([]);
+});
+
+test("a list folds a frame of a kind alongside its own by that kind's fold", async () => {
+  const list = projectListAlongside(
+    namingList("Draft", "alongside"),
+    "Ticket",
+    (previous, change) => [...(previous ?? []), `ticket:${change.resource}`],
+  );
+  const client = await refreshedEntry(list, []);
+  expect(client.getQueryData(list.key)).toEqual(["ticket:3"]);
 });
 
 /**

@@ -12,6 +12,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
+import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
 import type {
   ExecutionSummary,
   TicketResponse,
@@ -74,10 +75,15 @@ function ledgerDrawnOf(execution: ExecutionSummary): Drawn {
   };
 }
 
-/** What the list's cell draws for the row this execution is joined to. */
+/** What the list's cell draws for the row carrying this execution. */
 function cellDrawnOf(execution: ExecutionSummary): Drawn {
   const { container } = render(
-    <TicketRowExecutionCell row={projectTableRow(working, execution)} />,
+    <TicketRowExecutionCell
+      row={projectTableRow({
+        ...working,
+        latestExecution: ticketLatestExecutionSchema.parse(execution),
+      })}
+    />,
   );
   const pill = container.querySelector(".pill");
   const drawn = {

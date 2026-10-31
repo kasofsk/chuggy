@@ -20,6 +20,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import {
   answer,
@@ -92,15 +93,18 @@ const working = {
   ...ticketInstants,
 };
 
-/** One escalated ticket, nothing else open, and nothing that has run. */
-function served(url: string): Response {
+/** One escalated ticket, nothing else open, and nothing that has run, or the
+ * tickets a case names in its place. */
+function served(
+  url: string,
+  tickets: readonly unknown[] = [escalated],
+): Response {
   if (url.includes("/agentic-refusals"))
     return answer({ refusals: [], more: false });
   if (url.includes("/native-actions")) return answer({ actions: [] });
-  if (url.includes("/executions")) return answer({ executions: [] });
   if (url.includes("/selector-proposals"))
     return answer({ proposals: [], more: false });
-  return answer({ partition: atlas, sequence: 9, tickets: [escalated] });
+  return answer({ partition: atlas, sequence: 9, tickets });
 }
 
 /** The same project with a ticket the lead is refusing to dispatch, which no
@@ -294,12 +298,17 @@ const failedRun = {
   terminalAt: "2026-08-26T10:30:00.000Z",
 };
 
+/** The project above, its escalated ticket carrying `run` as its latest. */
+function servedCarrying(run: unknown): (url: string) => Response {
+  const carrying = {
+    ...escalated,
+    latestExecution: ticketLatestExecutionSchema.parse(run),
+  };
+  return (url) => served(url, [carrying]);
+}
+
 test("a row says how its last run ended, and never Terminal", async () => {
-  drawInbox((url) =>
-    url.includes("/executions")
-      ? answer({ executions: [failedRun] })
-      : served(url),
-  );
+  drawInbox(servedCarrying(failedRun));
   await settled();
   expect(screen.getByText("Failed").className).toContain("pill-fail");
   expect(document.body.textContent).not.toContain("Terminal");
@@ -315,35 +324,26 @@ const admittedRun = {
 };
 
 test("a row draws a run still waiting for its worker as its ticket page does", async () => {
-  drawInbox((url) =>
-    url.includes("/executions")
-      ? answer({ executions: [admittedRun] })
-      : served(url),
-  );
+  drawInbox(servedCarrying(admittedRun));
   await settled();
   expect(screen.getByText("Starting").className).toBe("pill pill-queued");
   expect(document.body.textContent).not.toContain("Admitted");
 });
 
-test("no row says not read and no sentence names a page budget, while the index loads or after", async () => {
+test("opening the inbox issues no executions read", async () => {
+  const asked: string[] = [];
   drawInbox(
-    served,
+    servedCarrying(failedRun),
     (served) =>
-      ((url: string, init?: RequestInit) =>
-        url.includes("/executions")
-          ? new Promise<Response>(() => undefined)
-          : served(url, init)) as typeof fetch,
+      ((url: string, init?: RequestInit) => {
+        asked.push(url);
+        return served(url, init);
+      }) as typeof fetch,
   );
   await settled();
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
-  cleanup();
-  drawInbox(served);
-  await settled();
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
+  expect(await screen.findByText("Failed")).toBeDefined();
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.filter((url) => url.includes("/executions"))).toStrictEqual([]);
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {

@@ -1,20 +1,35 @@
 /**
- * The join behind one row: the ticket's own fields, and the columns that come
- * from whatever it is running.
+ * One row: the ticket's own fields, and the columns that come from the latest
+ * execution the tickets list carries on it.
  */
 
 import { expect, test } from "vitest";
 
+import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
 import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
 import {
   projectTableRow,
-  projectTableRows,
   projectTableRunsOn,
 } from "../app/core/projectTableRows.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+
+/** The row of a ticket carrying `execution` as the list would, or none. */
+function rowOf(
+  ticket: TicketResponse,
+  execution: ExecutionSummary | undefined,
+): ReturnType<typeof projectTableRow> {
+  return projectTableRow(
+    execution === undefined
+      ? ticket
+      : {
+          ...ticket,
+          latestExecution: ticketLatestExecutionSchema.parse(execution),
+        },
+  );
+}
 
 const container: ExecutionSummary = {
   execution: "e1",
@@ -62,7 +77,7 @@ const tickets: readonly TicketResponse[] = [
 ];
 
 test("a running ticket's row carries its verdict and what it runs on", () => {
-  const row = projectTableRow(working, container);
+  const row = rowOf(working, container);
   expect(row.executionVerdict).toBe("Running");
   expect(row.runsOn).toEqual({
     text: "worker:1",
@@ -72,7 +87,7 @@ test("a running ticket's row carries its verdict and what it runs on", () => {
 });
 
 test("a row names the worker the wire named", () => {
-  const row = projectTableRow(working, {
+  const row = rowOf(working, {
     ...container,
     configurationVersion: { name: "work", number: 12 },
     worker: { name: "chuggy-worker", version: "3" },
@@ -85,29 +100,27 @@ test("a row names the worker the wire named", () => {
 
 test("a row's title is the ticket's own, and absent where the wire names none", () => {
   expect(
-    projectTableRow({ ...working, title: "Fix the importer" }, undefined).title,
+    rowOf({ ...working, title: "Fix the importer" }, undefined).title,
   ).toBe("Fix the importer");
-  expect(projectTableRow(working, undefined).title).toBeUndefined();
+  expect(rowOf(working, undefined).title).toBeUndefined();
 });
 
 test("a row names the repository the ticket works in, and none where the wire names none", () => {
   const repository = "https://github.com/acme/widgets.git";
-  expect(
-    projectTableRow({ ...working, repository }, undefined).repository,
-  ).toBe(repository);
-  expect(projectTableRow(working, undefined).repository).toBeUndefined();
+  expect(rowOf({ ...working, repository }, undefined).repository).toBe(
+    repository,
+  );
+  expect(rowOf(working, undefined).repository).toBeUndefined();
 });
 
 test("a row names the member who filed the ticket, and nobody where the wire names none", () => {
   const creator = "23:https://issuer.example/user-0123456789abcdef0123";
-  expect(projectTableRow({ ...working, creator }, undefined).creator).toBe(
-    creator,
-  );
-  expect(projectTableRow(working, undefined).creator).toBeUndefined();
+  expect(rowOf({ ...working, creator }, undefined).creator).toBe(creator);
+  expect(rowOf(working, undefined).creator).toBeUndefined();
 });
 
 test("a ticket running nothing states no execution rather than a blank one", () => {
-  const row = projectTableRow(
+  const row = rowOf(
     { ticket: 4, phase: "Pending", sequence: 1, ...ticketInstants },
     undefined,
   );
@@ -124,7 +137,7 @@ const failedOlder: ExecutionSummary = {
 };
 
 test("a terminal execution older than the ticket's own last move reads as the ticket's", () => {
-  const row = projectTableRow(working, failedOlder);
+  const row = rowOf(working, failedOlder);
   expect(row.activityAt).toBe(ticketInstants.changedAt);
   expect(row.executionVerdict).toBe("Failed");
 });
@@ -137,7 +150,7 @@ const failedNewer: ExecutionSummary = {
 };
 
 test("a row takes the later of the ticket's own last move and its execution's", () => {
-  const row = projectTableRow(working, failedNewer);
+  const row = rowOf(working, failedNewer);
   expect(row.activityAt).toBe("2026-08-28T00:00:00.000Z");
 });
 
@@ -148,7 +161,7 @@ test("a row takes the later of the ticket's own last move and its execution's", 
  * pick the ticket.
  */
 test("the later instant is read chronologically, not lexically", () => {
-  const row = projectTableRow(
+  const row = rowOf(
     { ...working, changedAt: "2026-08-27T00:30:00Z" },
     {
       ...container,
@@ -160,10 +173,17 @@ test("the later instant is read chronologically, not lexically", () => {
   expect(row.activityAt).toBe("2026-08-27T00:30:00Z");
 });
 
-test("a row joined to its ticket's latest draws it, and one with nothing joined draws none", () => {
-  const rows = projectTableRows(tickets, {
-    latest: { "2": { ...failedOlder, ticket: 2 } },
-  });
+test("a row carrying its ticket's latest execution draws it, and one carrying none draws none", () => {
+  const rows = tickets.map((ticket) =>
+    projectTableRow(
+      ticket.ticket === 2
+        ? {
+            ...ticket,
+            latestExecution: ticketLatestExecutionSchema.parse(failedOlder),
+          }
+        : ticket,
+    ),
+  );
   expect(rows.map((row) => row.executionVerdict)).toStrictEqual([
     undefined,
     "Failed",

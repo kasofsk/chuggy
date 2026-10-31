@@ -30,7 +30,10 @@ import {
 } from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
-import { checkOutputOutput } from "../../src/interpreter/operationsView.ts";
+import {
+  checkOutputOutput,
+  executionSummaryTotalled,
+} from "../../src/interpreter/operationsView.ts";
 import {
   schedulerArtifact,
   schedulerClaimFor,
@@ -1176,4 +1179,142 @@ test("an execution's summary is the list's row, read without its attempts or res
     ),
     undefined,
   );
+});
+
+/** Each named ticket's latest execution as `(ticket, task)`, ticket ascending. */
+async function operationalTicketLatest(
+  reads: OperationalReadStore,
+  partition: Partition,
+  tickets: readonly number[],
+): Promise<number[][]> {
+  return (
+    await reads.ticketLatestExecutions(partition, tickets.map(id), reader)
+  )
+    .map((row) => [row.ticket, row.task])
+    .sort(([a = 0], [b = 0]) => a - b);
+}
+
+/**
+ * Two tickets of several tasks and a number nothing ran: each ticket answers
+ * the summary the latest read answers for it, untotalled, and the number
+ * answers nothing. Every task of the first is registered at one instant, and
+ * its identities sort as text away from its history, so the answer is the
+ * highest task and not the greatest identity.
+ */
+test("each ticket's latest execution is the one the latest read answers, a tie included", async () => {
+  const label = "operational-ticket-latest";
+  const tasks = 11;
+  const project = await schedulerProject(rig, label, { tasks });
+  await operationalRegistered(project, project.request, label);
+  const further = await schedulerFurtherTicket(
+    rig,
+    project,
+    project.memory,
+    `${label}-next`,
+    2,
+  );
+  await operationalRegistered(project, further.request, `${label}-next`);
+  await rig.harness.query(
+    `UPDATE execution SET registered_at=(SELECT min(registered_at) FROM execution
+        WHERE tenant=$1 AND project=$2 AND ticket=$3)
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  const orders = await operationalOrders(project.partition, project.ticket);
+  assert.notEqual(orders.byIdentity.at(-1), orders.byTask.at(-1));
+
+  const reads = postgresOperationalReads(ingress);
+  const unrun = further.ticket + 1;
+  const latest = await reads.ticketLatestExecutions(
+    project.partition,
+    [id(project.ticket), id(further.ticket), id(unrun)],
+    reader,
+  );
+  const page = await reads.latestExecutions(
+    project.partition,
+    { limit: 10 },
+    reader,
+  );
+  const totals = new Map(
+    page.executions.flatMap((summary) =>
+      summary.runTotals === undefined
+        ? []
+        : [[summary.execution, summary.runTotals] as const],
+    ),
+  );
+  assert.deepEqual(
+    latest
+      .map((summary) => executionSummaryTotalled(summary, totals))
+      .sort((a, b) => a.ticket - b.ticket),
+    [...page.executions].sort((a, b) => a.ticket - b.ticket),
+  );
+  assert.deepEqual(
+    await operationalTicketLatest(reads, project.partition, [
+      project.ticket,
+      further.ticket,
+      unrun,
+    ]),
+    [
+      [project.ticket, tasks],
+      [further.ticket, further.tasks],
+    ],
+  );
+  assert.equal(
+    orders.byTask.at(-1),
+    latest.find((summary) => summary.ticket === project.ticket)?.execution,
+  );
+  assert.deepEqual(
+    await reads.ticketLatestExecutions(project.partition, [], reader),
+    [],
+  );
+});
+
+/** A cycle that ended, and a later one registered after it: the later is the latest. */
+test("a ticket that ran again reads its later execution as its latest", async () => {
+  const label = "operational-ticket-again";
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  await operationalRegistered(project, project.request, label);
+  await operationalCancelled(project.partition, project.ticket, 1);
+  const reads = postgresOperationalReads(ingress);
+  assert.deepEqual(
+    await operationalTicketLatest(reads, project.partition, [project.ticket]),
+    [[project.ticket, 1]],
+  );
+  const again = await schedulerEvaluationRequest(rig, project, label, {
+    cycle: 2,
+    stage: 1,
+    generation: 1,
+    evaluator: 1,
+  });
+  await operationalRegistered(project, again, label);
+  const [latest] = await reads.ticketLatestExecutions(
+    project.partition,
+    [id(project.ticket)],
+    reader,
+  );
+  assert.deepEqual(
+    [latest?.task, latest?.status, latest?.identity.type],
+    [2, "Queued", "EvaluationTask"],
+  );
+});
+
+/** A page's worth of tickets is one statement on the executions, whatever ran. */
+test("the latest executions of a whole page are read in one execution query", async () => {
+  const label = "operational-ticket-page";
+  const project = await schedulerProject(rig, label, { tasks: 2 });
+  await operationalRegistered(project, project.request, label);
+  const tickets = Array.from(
+    { length: nativeHttpPageItemsMax },
+    (_unused, at) => project.ticket + at,
+  );
+  const { reads, heard } = operationalQueriesHeard(ingress);
+  assert.deepEqual(
+    await operationalTicketLatest(reads, project.partition, tickets),
+    [[project.ticket, 2]],
+  );
+  assert.equal(
+    heard.filter((text) => /\bFROM execution e\b/u.test(text)).length,
+    1,
+  );
+  assert.ok(heard.length <= 2);
 });

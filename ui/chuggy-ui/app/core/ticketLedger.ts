@@ -165,11 +165,17 @@ function taskSetOf(
   };
 }
 
+/** What a verdict is read from, which a tickets list row carries too. */
+export type SetVerdictRow = Pick<
+  ExecutionSummary,
+  "status" | "outcome" | "identity" | "carrier" | "runStartedAt"
+>;
+
 /**
  * An execution that answered nothing: a wall, or an evaluator whose process
  * died, which the machine treats as a stop to resume rather than a judgement.
  */
-function executionStopped(row: ExecutionSummary): boolean {
+function executionStopped(row: SetVerdictRow): boolean {
   return (
     row.outcome === "Blocked" ||
     (row.outcome === "ProcessFailed" && row.identity.type === "EvaluationTask")
@@ -182,7 +188,7 @@ function executionStopped(row: ExecutionSummary): boolean {
  * ends, so a commanded task, or one a server names no carrier for, reads as
  * begun once an attempt opens.
  */
-export function executionStarting(row: ExecutionSummary): boolean {
+export function executionStarting(row: SetVerdictRow): boolean {
   if (row.status === "Queued" || row.status === "Admitted") return true;
   return (
     (row.status === "Launching" || row.status === "Running") &&
@@ -197,9 +203,7 @@ export function executionStarting(row: ExecutionSummary): boolean {
  * wall of its own rather than a failure the unanimous rule gets to weigh, and
  * an execution read on its own is a set of one and settles like one.
  */
-export function setVerdict(
-  executions: readonly ExecutionSummary[],
-): SetVerdict {
+export function setVerdict(executions: readonly SetVerdictRow[]): SetVerdict {
   if (
     executions.some(
       (row) => row.status !== "Terminal" && row.status !== "Cancelled",

@@ -373,9 +373,10 @@ function selectedStatuses(
 /**
  * One page of the project's executions in `(ticket, task)` ascending order,
  * which is the order the machine authorized them in, narrowed to `executions`
- * where it names any. Execution identity is a random stem with the task
- * appended, so ordering by it would order a ticket's history arbitrarily; the
- * cursor is the position in this order, and the row comparison keeps it total.
+ * or to the highest task of each of `latestOf`'s tickets where it names any.
+ * Execution identity is a random stem with the task appended, so ordering by
+ * it would order a ticket's history arbitrarily; the cursor is the position in
+ * this order, and the row comparison keeps it total.
  */
 async function executionRows(
   pool: pg.Pool,
@@ -383,6 +384,7 @@ async function executionRows(
   query: ExecutionListQuery,
   reader: Principal,
   executions: string[] | null = null,
+  latestOf: string[] | null = null,
 ): Promise<readonly ExecutionViewRow[]> {
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
@@ -393,12 +395,8 @@ async function executionRows(
                e.requirement_digest,e.requirement_source,e.source_request,
                e.platform_default_version::text AS platform_default_version,
                e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
-               (SELECT d.selection::text FROM ticket_definition d
-                 WHERE d.tenant=e.tenant AND d.project=e.project
-                   AND d.ticket=e.ticket) AS selection,
-               (SELECT d.overrides::text FROM ticket_definition d
-                 WHERE d.tenant=e.tenant AND d.project=e.project
-                   AND d.ticket=e.ticket) AS overrides,
+               (SELECT d.selection::text FROM ticket_definition d WHERE d.tenant=e.tenant AND d.project=e.project AND d.ticket=e.ticket) AS selection,
+               (SELECT d.overrides::text FROM ticket_definition d WHERE d.tenant=e.tenant AND d.project=e.project AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
                  WHERE a.tenant=e.tenant AND a.project=e.project
@@ -442,6 +440,8 @@ async function executionRows(
                 OR (e.ticket,e.task)>(${query.after?.ticket ?? null}::bigint,${query.after?.task ?? null}::bigint))
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
            AND (${executions}::text[] IS NULL OR e.execution=ANY(${executions}::text[]))
+           AND (${latestOf}::bigint[] IS NULL OR e.execution IN (SELECT DISTINCT ON (x.ticket) x.execution FROM execution x
+                WHERE x.tenant=e.tenant AND x.project=e.project AND x.ticket=ANY(${latestOf}::bigint[]) ORDER BY x.ticket,x.task DESC))
            AND s.status=ANY(${[...selectedStatuses(query)]}::text[])
          ORDER BY e.ticket,e.task LIMIT ${query.limit + 1}`,
   );
@@ -535,6 +535,35 @@ async function latestExecutionPage(
     executions: await executionPageAnswered(pool, partition, summaries),
     ...(next === undefined ? {} : { nextAfter: next.ticket }),
   };
+}
+
+/**
+ * Each of `tickets`' highest task, as `latestExecutionPositions` picks it, in
+ * one statement for them all, labelled by the worker catalog.
+ */
+async function ticketLatestExecutions(
+  pool: pg.Pool,
+  partition: Partition,
+  tickets: readonly TicketId[],
+  reader: Principal,
+): Promise<readonly ExecutionSummary[]> {
+  if (tickets.length === 0) return [];
+  const rows = await executionRows(
+    pool,
+    partition,
+    { limit: tickets.length },
+    reader,
+    null,
+    tickets.map(String),
+  );
+  if (rows.length > tickets.length)
+    throw new Error("operational read: a ticket has two latest executions");
+  const summaries = rows.map(executionSummary);
+  const workers = await postgresWorkerCatalog(
+    pool,
+    executionSummaryImages(summaries),
+  );
+  return summaries.map((summary) => executionSummaryLabelled(summary, workers));
 }
 
 async function oneExecution(
@@ -755,6 +784,8 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
       executionPage(pool, partition, query, reader),
     latestExecutions: (partition, query, reader) =>
       latestExecutionPage(pool, partition, query, reader),
+    ticketLatestExecutions: (partition, tickets, reader) =>
+      ticketLatestExecutions(pool, partition, tickets, reader),
     execution: (partition, execution, reader) =>
       executionResource(pool, partition, execution, reader),
     executionSummary: async (partition, execution, reader) => {

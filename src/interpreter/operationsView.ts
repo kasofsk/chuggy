@@ -202,6 +202,44 @@ export function executionSummaryTotalled(
   return runTotals === undefined ? summary : { ...summary, runTotals };
 }
 
+/** What a row of the tickets list draws of its ticket's latest execution. */
+export type TicketLatestExecution = Pick<
+  ExecutionSummary,
+  | "execution"
+  | "task"
+  | "identity"
+  | "status"
+  | "outcome"
+  | "carrier"
+  | "runStartedAt"
+  | "requirement"
+  | "worker"
+  | "registeredAt"
+  | "terminalAt"
+>;
+
+export function ticketLatestExecution(
+  summary: ExecutionSummary,
+): TicketLatestExecution {
+  return {
+    execution: summary.execution,
+    task: summary.task,
+    identity: summary.identity,
+    status: summary.status,
+    ...(summary.outcome === undefined ? {} : { outcome: summary.outcome }),
+    ...(summary.carrier === undefined ? {} : { carrier: summary.carrier }),
+    ...(summary.runStartedAt === undefined
+      ? {}
+      : { runStartedAt: summary.runStartedAt }),
+    requirement: summary.requirement,
+    ...(summary.worker === undefined ? {} : { worker: summary.worker }),
+    registeredAt: summary.registeredAt,
+    ...(summary.terminalAt === undefined
+      ? {}
+      : { terminalAt: summary.terminalAt }),
+  };
+}
+
 /** Every image the given summaries pin, which is what a catalog is asked for. */
 export function executionSummaryImages(
   summaries: readonly ExecutionSummary[],
@@ -305,6 +343,16 @@ export interface OperationalReadStore {
     execution: ExecutionId,
     reader: Principal,
   ): Promise<ExecutionResource | undefined>;
+  /**
+   * The execution `latestExecutions` answers for each of `tickets` that has
+   * run one, as the list answers it but untotalled, read in one statement
+   * however many tickets it names.
+   */
+  ticketLatestExecutions(
+    partition: Partition,
+    tickets: readonly TicketId[],
+    reader: Principal,
+  ): Promise<readonly ExecutionSummary[]>;
   /** One execution as the list answers it, reading none of its attempts and no result. */
   executionSummary(
     partition: Partition,

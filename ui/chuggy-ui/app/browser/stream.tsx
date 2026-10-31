@@ -493,9 +493,10 @@ export function useProjectStreamOutdated(): boolean {
 }
 
 /**
- * A list's refresh, registered for as long as the screen is mounted — past the
- * registration budget too, with the overrun logged, because the budget only
- * makes a leak visible and a screen that stopped drawing would be worse.
+ * A list's refresh, and a fold for each kind alongside it, registered for as
+ * long as the screen is mounted — past the registration budget too, with the
+ * overrun logged, because the budget only makes a leak visible and a screen
+ * that stopped drawing would be worse.
  * `usePanelList` is the caller that matters: this is exported for the suite
  * that drives the registry with no panel under it, and a registration with no
  * query beneath it refreshes nothing.
@@ -508,28 +509,50 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
   }, [list]);
   const kind = list.kind;
   const named = JSON.stringify(list.key);
+  const alongside = (Object.keys(list.alongside) as ProjectChangeKind[])
+    .sort()
+    .join(",");
   useEffect(() => {
     if (folds.size >= projectListFoldsMax)
       logWarned(
         `more than ${String(projectListFoldsMax)} list folds are registered, which is a leak`,
       );
-    const registration: ProjectListRegistration = {
-      kind,
-      key: JSON.parse(named) as ProjectQueryKey,
-      refresh: () => {
-        const current = held.current.refresh;
-        if (current.refresh === "Reread" || current.refresh === "RereadNamed")
-          return current;
-        return {
-          refresh: "Fold",
-          fold: (previous, change) =>
-            current.fold(previous as T | undefined, change),
-        };
+    const key = JSON.parse(named) as ProjectQueryKey;
+    const registrations: ProjectListRegistration[] = [
+      {
+        kind,
+        key,
+        refresh: () => {
+          const current = held.current.refresh;
+          if (current.refresh === "Reread" || current.refresh === "RereadNamed")
+            return current;
+          return {
+            refresh: "Fold",
+            fold: (previous, change) =>
+              current.fold(previous as T | undefined, change),
+          };
+        },
       },
-    };
-    folds.add(registration);
+      ...(alongside === ""
+        ? []
+        : (alongside.split(",") as ProjectChangeKind[])
+      ).map((other): ProjectListRegistration => ({
+        kind: other,
+        key,
+        refresh: () => ({
+          refresh: "Fold",
+          fold: (previous, change) => {
+            const fold = held.current.alongside[other];
+            return fold === undefined
+              ? previous
+              : fold(previous as T | undefined, change);
+          },
+        }),
+      })),
+    ];
+    for (const registration of registrations) folds.add(registration);
     return () => {
-      folds.delete(registration);
+      for (const registration of registrations) folds.delete(registration);
     };
-  }, [folds, kind, named]);
+  }, [folds, kind, named, alongside]);
 }

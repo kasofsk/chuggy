@@ -153,6 +153,8 @@ const listingFilterNotes = {
     order:
       "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",
     composition: "each composes with phase and with the others",
+    latestExecution:
+      "each row carries latestExecution, what the row draws of the execution latest=true answers for its ticket, and a ticket nothing has run carries none; neither the ticket's own read nor its change frame carries it",
   },
   configurationLatestFilter: {
     query: "latest",

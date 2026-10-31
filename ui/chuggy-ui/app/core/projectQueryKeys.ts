@@ -188,11 +188,19 @@ export type ProjectListRefresh<T> =
  * what the brand stops is a list assembled rather than one taken apart. */
 const projectListWitness: unique symbol = Symbol("projectListWitness");
 
+/** What a frame of a kind other than the list's own does to its entry. */
+export type ProjectListFold<T> = (
+  previous: T | undefined,
+  change: ProjectListChange,
+) => T | undefined;
+
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
   readonly kind: ProjectChangeKind;
   readonly key: ProjectQueryKey;
   readonly refresh: ProjectListRefresh<T>;
+  /** The other kinds whose frames fold into the entry, each by its own fold. */
+  readonly alongside: Partial<Record<ProjectChangeKind, ProjectListFold<T>>>;
   readonly [projectListWitness]: true;
 }
 
@@ -206,6 +214,7 @@ function projectListOf<T>(
     kind,
     key: projectListKey(partition, kind, name),
     refresh,
+    alongside: {},
     [projectListWitness]: true,
   };
 }
@@ -249,4 +258,19 @@ export function projectListRereadNamed<T>(
     refresh: "RereadNamed",
     names,
   });
+}
+
+/**
+ * The same list, with frames of a further kind folded into its entry too —
+ * where a list of one kind's rows carries a fact of another's, as a ticket's
+ * row carries its latest execution.
+ */
+export function projectListAlongside<T>(
+  list: ProjectList<T>,
+  kind: ProjectChangeKind,
+  fold: ProjectListFold<T>,
+): ProjectList<T> {
+  if (kind === list.kind)
+    throw new RangeError(`a list's own kind ${kind} folds by its own refresh`);
+  return { ...list, alongside: { ...list.alongside, [kind]: fold } };
 }

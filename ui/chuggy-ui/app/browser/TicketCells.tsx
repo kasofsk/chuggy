@@ -84,9 +84,9 @@ export function TicketTitleCell(props: {
   );
 }
 
-/** An execution column drawn as its own chip where an execution is joined, in
- * the word and hue the ticket's ledger draws it in, and as the dim dash where
- * nothing is joined. */
+/** An execution column drawn as its own chip where the row carries an
+ * execution, in the word and hue the ticket's ledger draws it in, and as the
+ * dim dash where it carries none. */
 export function TicketRowExecutionCell(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {

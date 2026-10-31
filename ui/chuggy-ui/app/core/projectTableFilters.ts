@@ -17,7 +17,10 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
 import { projectListFolded, projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
-import { projectTicketRowsFold } from "./projectTicketPages.ts";
+import {
+  projectTicketRowsFold,
+  projectTicketRowsLive,
+} from "./projectTicketPages.ts";
 import type {
   ProjectTicketRows,
   ProjectTicketRowsNext,
@@ -62,8 +65,9 @@ function ticketListAskActive(ask: TicketListAsk): boolean {
  * One entry per filter, order and search, since a shared entry would let one's
  * page walk answer another's. The active list folds a frame in, within the
  * phases its filter admits; a list under a search or an order by number is read
- * again on a frame, because whether the ticket belongs to it, and where, is the
- * server's to say.
+ * again on a ticket's frame, because whether the ticket belongs to it, and
+ * where, is the server's to say; every one folds an execution's frame into its
+ * ticket's row.
  */
 export function ticketFilterList(
   partition: PartitionIdentity,
@@ -71,18 +75,22 @@ export function ticketFilterList(
 ): ProjectList<ProjectTicketRows> {
   const name = `table:${ask.filter}:${ask.order}:${ask.search ?? ""}`;
   if (!ticketListAskActive(ask))
-    return projectListReread<ProjectTicketRows>(partition, "Ticket", name);
-  return projectListFolded<ProjectTicketRows>(
-    partition,
-    "Ticket",
-    name,
-    (previous, change) =>
-      projectTicketRowsFold(
-        previous,
-        change.resource,
-        change.representation,
-        ticketFilterPhases(ask.filter),
-      ),
+    return projectTicketRowsLive(
+      projectListReread<ProjectTicketRows>(partition, "Ticket", name),
+    );
+  return projectTicketRowsLive(
+    projectListFolded<ProjectTicketRows>(
+      partition,
+      "Ticket",
+      name,
+      (previous, change) =>
+        projectTicketRowsFold(
+          previous,
+          change.resource,
+          change.representation,
+          ticketFilterPhases(ask.filter),
+        ),
+    ),
   );
 }
 
