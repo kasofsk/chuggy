@@ -1102,17 +1102,20 @@ async function operationalRunTotalled(attempt: PhysicalAttempt): Promise<void> {
 function operationalQueriesHeard(pool: pg.Pool): {
   reads: OperationalReadStore;
   heard: string[];
+  bound: unknown[][];
 } {
   const heard: string[] = [];
+  const bound: unknown[][] = [];
   const query = (config: pg.QueryConfig) => {
     heard.push(config.text);
+    bound.push(config.values ?? []);
     return pool.query(config);
   };
   const listened = new Proxy(pool, {
     get: (target, key, receiver): unknown =>
       key === "query" ? query : Reflect.get(target, key, receiver),
   });
-  return { reads: postgresOperationalReads(listened), heard };
+  return { reads: postgresOperationalReads(listened), heard, bound };
 }
 
 /**
@@ -1298,7 +1301,11 @@ test("a ticket that ran again reads its later execution as its latest", async ()
   );
 });
 
-/** A page's worth of tickets is one statement on the executions, whatever ran. */
+/**
+ * A page's worth of tickets is one statement on the executions' rows, whatever
+ * ran, and it is bounded by the page: the positions are read by ticket, and the
+ * rows by the positions alone.
+ */
 test("the latest executions of a whole page are read in one execution query", async () => {
   const label = "operational-ticket-page";
   const project = await schedulerProject(rig, label, { tasks: 2 });
@@ -1307,14 +1314,27 @@ test("the latest executions of a whole page are read in one execution query", as
     { length: nativeHttpPageItemsMax },
     (_unused, at) => project.ticket + at,
   );
-  const { reads, heard } = operationalQueriesHeard(ingress);
-  assert.deepEqual(
-    await operationalTicketLatest(reads, project.partition, tickets),
-    [[project.ticket, 2]],
+  const { reads, heard, bound } = operationalQueriesHeard(ingress);
+  const [latest] = await reads.ticketLatestExecutions(
+    project.partition,
+    tickets.map(id),
+    reader,
   );
-  assert.equal(
-    heard.filter((text) => /\bFROM execution e\b/u.test(text)).length,
-    1,
+  assert.deepEqual([latest?.ticket, latest?.task], [project.ticket, 2]);
+  const onExecutions = heard.flatMap((text, at) =>
+    /\bFROM execution e\b/u.test(text) ? [at] : [],
   );
-  assert.ok(heard.length <= 2);
+  assert.equal(onExecutions.length, 2);
+  const [positions = 0, rows = 0] = onExecutions;
+  assert.match(heard[positions] ?? "", /\be\.ticket=ANY\(/u);
+  assert.doesNotMatch(heard[rows] ?? "", /\bFROM execution x\b/u);
+  assert.ok(
+    bound[rows]?.some(
+      (value) =>
+        Array.isArray(value) &&
+        value.length === 1 &&
+        value[0] === latest?.execution,
+    ),
+  );
+  assert.ok(heard.length <= 3);
 });
