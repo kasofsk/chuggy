@@ -25,6 +25,7 @@ import {
   allTaskPurposes,
   briefingFailedLandingCommand,
   briefingLabels,
+  briefingPipelinesUnwritable,
   briefingReworkPreface,
   briefingSectionOrder,
   briefingTemplateSections,
@@ -502,6 +503,7 @@ function viewOf(parts: {
   readonly worker?: WorkerConfiguration;
   readonly runtime?: RuntimeFacts;
   readonly readOnlyRepositories?: readonly RepositoryId[];
+  readonly pipelinesWritable?: boolean;
   readonly dependencyDeliveries?: readonly DependencyDelivery[];
   readonly priorWorkReports?: readonly string[];
   readonly priorEvaluationReports?: readonly string[];
@@ -529,6 +531,9 @@ function viewOf(parts: {
     },
     runtime: parts.runtime ?? noFacts,
     readOnlyRepositories: parts.readOnlyRepositories ?? [],
+    ...(parts.pipelinesWritable === undefined
+      ? {}
+      : { pipelinesWritable: parts.pipelinesWritable }),
     dependencyDeliveries: parts.dependencyDeliveries ?? [],
     priorWorkReports: { reports: parts.priorWorkReports ?? [] },
     priorEvaluationReports: { reports: parts.priorEvaluationReports ?? [] },
@@ -1695,6 +1700,37 @@ test("the project's other repositories are one read-only line of the runtime con
       undefined,
     );
   }
+});
+
+test("a work task whose own binding writes no pipelines is told it cannot change workflows, beside the read-only line", () => {
+  const runtimeLines = (view: BriefingView): readonly string[] | undefined =>
+    composed(view).briefing.sections.find(
+      (section) => section.section === "RuntimeContext",
+    )?.lines;
+  assert.deepEqual(
+    runtimeLines(
+      viewOf({
+        purpose: "Work",
+        readOnlyRepositories: readOnly,
+        pipelinesWritable: false,
+      }),
+    ),
+    [
+      "Other repositories of this project, read-only: https://github.com/mimage/argus.git, https://github.com/mimage/rust-libs.git",
+      ...briefingPipelinesUnwritable,
+    ],
+  );
+  assert.deepEqual(
+    runtimeLines(viewOf({ purpose: "Work", pipelinesWritable: false })),
+    briefingPipelinesUnwritable,
+  );
+  for (const view of [
+    viewOf({ purpose: "Work", pipelinesWritable: true }),
+    viewOf({ purpose: "Work" }),
+    viewOf({ purpose: "Review", pipelinesWritable: false }),
+    viewOf({ purpose: "Check", pipelinesWritable: false }),
+  ])
+    assert.equal(runtimeLines(view), undefined);
 });
 
 test("read-only repositories past their bound, or unprintable, are refused rather than told", () => {

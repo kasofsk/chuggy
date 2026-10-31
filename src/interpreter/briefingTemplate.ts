@@ -126,7 +126,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 11;
+export const briefingTemplateVersion = 12;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -187,6 +187,12 @@ export const briefingLabels = {
   workReports: "Worker reports:",
   evaluationReports: "Evaluation reports:",
 } as const;
+
+/** What a work task is told where its own repository's binding does not let pipelines be written. */
+export const briefingPipelinesUnwritable: readonly string[] = [
+  "This job cannot change .github/workflows/: its repository's binding does not let it write pipelines, and a push carrying such a change is refused whole.",
+  "If the ticket needs a change there, report that rather than making it.",
+];
 
 /**
  * What a work task is told before the failed reports of the evaluation before

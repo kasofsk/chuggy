@@ -18,7 +18,10 @@ import { projectRepositoriesAnsweredMax } from "../../contract/http.ts";
 import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 
-import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import {
+  asRepositoryId,
+  type RepositoryId,
+} from "../../interpreter/finalizer.ts";
 import {
   asProjectId,
   asTenantId,
@@ -124,7 +127,8 @@ export function postgresProjectRepositoryBindings(
 
 /**
  * The repositories one execution's project binds live beside the one its own
- * input bundle pins, oldest first, through the same per-project door, which the
+ * input bundle pins, oldest first, and whether that one's binding lets
+ * pipelines be written, through the same per-project door, which the
  * scheduler holds for this read alone. A failed read is `Unavailable` rather
  * than a throw, because the scheduler holds an attempt it could not brief
  * instead of losing its loop.
@@ -137,42 +141,59 @@ export function postgresReadOnlyRepositories(
       partition,
       execution,
     ): Promise<ReadOnlyRepositoriesRead> => {
-      let found: pg.QueryResult<{ repository: string | null }>;
+      let found: pg.QueryResult<ReadOnlyRepositoryRow>;
       try {
-        found = await pool.query<{ repository: string | null }>(
-          sql`SELECT l.repository
+        found = await pool.query<ReadOnlyRepositoryRow>(
+          sql`SELECT l.repository,l.pipelines_writable,
+                     EXISTS (
+                       SELECT 1
+                         FROM execution e
+                         JOIN execution_request q
+                           ON q.tenant=e.tenant AND q.project=e.project
+                          AND q.request=e.source_request
+                         JOIN input_bundle_reference b
+                           ON b.tenant=q.tenant AND b.project=q.project
+                          AND b.bundle=q.input_bundle AND b.reference_kind='Repository'
+                        WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+                          AND e.execution=${execution}
+                          AND b.reference_id=l.repository) AS own
                 FROM list_project_repository_bindings(
                   ${partition.tenant},${partition.project},
                   ${projectRepositoriesAnsweredMax}) l
                WHERE l.retired_at IS NULL
-                 AND NOT EXISTS (
-                   SELECT 1
-                     FROM execution e
-                     JOIN execution_request q
-                       ON q.tenant=e.tenant AND q.project=e.project
-                      AND q.request=e.source_request
-                     JOIN input_bundle_reference b
-                       ON b.tenant=q.tenant AND b.project=q.project
-                      AND b.bundle=q.input_bundle AND b.reference_kind='Repository'
-                    WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
-                      AND e.execution=${execution}
-                      AND b.reference_id=l.repository)
                ORDER BY l.bound_at,l.repository`,
         );
       } catch {
         return { read: "Unavailable" };
       }
-      return {
-        read: "Repositories",
-        repositories: found.rows.map((row) => {
-          if (row.repository === null)
-            throw new Error(
-              "repository binding: a binding names no repository",
-            );
-          return asRepositoryId(row.repository);
-        }),
-      };
+      return postgresReadOnlyRepositoriesRead(found.rows);
     },
+  };
+}
+
+/** One live binding of an execution's project, and whether it is the one the execution's bundle pins. */
+interface ReadOnlyRepositoryRow {
+  readonly repository: string | null;
+  readonly pipelines_writable: boolean | null;
+  readonly own: boolean;
+}
+
+function postgresReadOnlyRepositoriesRead(
+  rows: readonly ReadOnlyRepositoryRow[],
+): ReadOnlyRepositoriesRead {
+  const repositories: RepositoryId[] = [];
+  let pipelinesWritable: boolean | undefined;
+  for (const row of rows) {
+    if (row.repository === null || row.pipelines_writable === null)
+      throw new Error("repository binding: a binding is half a row");
+    if (!row.own) repositories.push(asRepositoryId(row.repository));
+    else
+      pipelinesWritable = (pipelinesWritable ?? true) && row.pipelines_writable;
+  }
+  return {
+    read: "Repositories",
+    repositories,
+    ...(pipelinesWritable === undefined ? {} : { pipelinesWritable }),
   };
 }
 

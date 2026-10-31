@@ -590,12 +590,20 @@ async function schedulerRuntimeFacts(
   }
 }
 
-/** Reads the repositories this execution's project binds beside its own, which its pod reads and never delivers to. */
+/**
+ * Reads the repositories this execution's project binds beside its own, which
+ * its pod reads and never delivers to, and whether its own binding lets
+ * pipelines be written.
+ */
 async function schedulerReadOnlyRepositories(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<
-  { readonly readOnlyRepositories: readonly RepositoryId[] } | BriefingUnready
+  | {
+      readonly readOnlyRepositories: readonly RepositoryId[];
+      readonly pipelinesWritable?: boolean;
+    }
+  | BriefingUnready
 > {
   const read = await service.readOnlyRepositories.repositories(
     execution.partition,
@@ -603,7 +611,12 @@ async function schedulerReadOnlyRepositories(
   );
   switch (read.read) {
     case "Repositories":
-      return { readOnlyRepositories: read.repositories };
+      return {
+        readOnlyRepositories: read.repositories,
+        ...(read.pipelinesWritable === undefined
+          ? {}
+          : { pipelinesWritable: read.pipelinesWritable }),
+      };
     case "Unavailable":
       return { gathered: "Unavailable" };
   }
@@ -629,13 +642,14 @@ async function schedulerDependencyDeliveries(
   }
 }
 
-/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, and what its dependencies delivered. */
+/** What a job is told of its project beyond its own ticket: the repositories it reads beside its own, whether its own lets pipelines be written, and what its dependencies delivered. */
 async function schedulerProjectContext(
   service: ExecutionSchedulerService,
   execution: LogicalExecution,
 ): Promise<
   | {
       readonly readOnlyRepositories: readonly RepositoryId[];
+      readonly pipelinesWritable?: boolean;
       readonly dependencyDeliveries: readonly DependencyDelivery[];
     }
   | BriefingUnready
