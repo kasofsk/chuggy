@@ -305,12 +305,13 @@ function changeEvent(
   }
 }
 
-function readyEvent(): ProjectStreamEvent {
-  return { event: "ready", data: { version: projectStreamVersion } };
+/** Both name the sequence a console resumes from once it has acted on them. */
+function readyEvent(sequence: number): ProjectStreamEvent {
+  return { event: "ready", sequence, data: { version: projectStreamVersion } };
 }
 
-function resetEvent(): ProjectStreamEvent {
-  return { event: "reset", data: { version: projectStreamVersion } };
+function resetEvent(sequence: number): ProjectStreamEvent {
+  return { event: "reset", sequence, data: { version: projectStreamVersion } };
 }
 
 function sourceEvent(state: ProjectSourceState): ProjectStreamEvent {
@@ -459,7 +460,7 @@ async function fanOut(
       const frames = await framesForRow(state, streams, row);
       for (const stream of [...streams]) {
         const event = frames?.get(stream.principal);
-        deliver(state, stream, event ?? resetEvent());
+        deliver(state, stream, event ?? resetEvent(row.sequence));
       }
     }
   }
@@ -509,7 +510,7 @@ async function recovered(state: HubState): Promise<void> {
   const latest = await state.parts.log.latest();
   if (latest === state.cursor) return;
   state.cursor = latest;
-  broadcast(state, resetEvent());
+  broadcast(state, resetEvent(latest));
 }
 
 function sourced(state: HubState, source: ProjectSourceState): void {
@@ -553,20 +554,26 @@ function started(state: HubState): Promise<void> {
   return state.starting;
 }
 
-/** Everything a stream opens with, read before it has a socket to fail on. */
+/**
+ * Everything a stream opens with, read before it has a socket to fail on. The
+ * head a `ready` or `reset` names is read once the stream is admitted, so a
+ * change committed past it reaches the stream through what it holds.
+ */
 async function openingFrames(
   state: HubState,
   stream: OpenStream,
   after: number | undefined,
 ): Promise<readonly ProjectStreamEvent[]> {
-  if (after === undefined) return [readyEvent()];
-  if (!(await state.parts.log.retains(after))) return [resetEvent()];
-  const rows = await state.parts.log.after(
+  const log = state.parts.log;
+  if (after === undefined) return [readyEvent(await log.latest())];
+  if (!(await log.retains(after))) return [resetEvent(await log.latest())];
+  const rows = await log.after(
     stream.partition,
     after,
     state.limits.replayRowsMax + 1,
   );
-  if (rows.length > state.limits.replayRowsMax) return [resetEvent()];
+  if (rows.length > state.limits.replayRowsMax)
+    return [resetEvent(await log.latest())];
   const frames: ProjectStreamEvent[] = [];
   for (const row of deduplicated(rows)) {
     const representation = await state.parts.reader.read(

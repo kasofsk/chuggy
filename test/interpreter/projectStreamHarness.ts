@@ -126,9 +126,29 @@ export interface FakeLog {
   sweepBelow(sequence: number): void;
   /** Holds every later replay read until the returned release is called. */
   holdsReplays(): () => void;
+  /** Holds every later read of the head, answering the head it was asked at, until the release. */
+  holdsLatest(): () => void;
   /** Makes every later replay read reject, which is a read that failed rather than a gap. */
   failsReplays(): void;
   readonly reads: string[];
+}
+
+/** A read that waits on whatever the case last held, which is nothing until it holds something. */
+function fakeLogHold(): {
+  readonly hold: () => () => void;
+  readonly wait: () => Promise<void>;
+} {
+  let held = Promise.resolve();
+  return {
+    hold: () => {
+      let release = (): void => undefined;
+      held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return release;
+    },
+    wait: () => held,
+  };
 }
 
 export function fakeLog(seed: readonly ProjectChangeRow[] = []): FakeLog {
@@ -136,8 +156,8 @@ export function fakeLog(seed: readonly ProjectChangeRow[] = []): FakeLog {
   const reads: string[] = [];
   const swept: number[] = [];
   let removed = 0;
-  let held: Promise<void> | undefined;
-  let release: (() => void) | undefined;
+  const replays = fakeLogHold();
+  const heads = fakeLogHold();
   let replaysFail = false;
   let refuses = false;
   const samePartition = (row: ProjectChangeRow, partition: Partition) =>
@@ -158,17 +178,17 @@ export function fakeLog(seed: readonly ProjectChangeRow[] = []): FakeLog {
     sweepBelow: (sequence) => {
       rows = rows.filter((row) => row.sequence >= sequence);
     },
-    holdsReplays: () => {
-      held = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return () => release?.();
-    },
+    holdsReplays: replays.hold,
+    holdsLatest: heads.hold,
     failsReplays: () => {
       replaysFail = true;
     },
     log: {
-      latest: () => Promise.resolve(rows.at(-1)?.sequence ?? 0),
+      latest: async () => {
+        const head = rows.at(-1)?.sequence ?? 0;
+        await heads.wait();
+        return head;
+      },
       since: (after, limit) => {
         reads.push(`since:${String(after)}`);
         return Promise.resolve(
@@ -185,7 +205,7 @@ export function fakeLog(seed: readonly ProjectChangeRow[] = []): FakeLog {
             (row) => samePartition(row, partition) && row.sequence > sequence,
           )
           .slice(0, limit);
-        await held;
+        await replays.wait();
         if (replaysFail) throw new Error("the replay could not be read");
         return answer;
       },

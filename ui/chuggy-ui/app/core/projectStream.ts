@@ -1,10 +1,11 @@
 /**
  * The project event stream, and how it recovers.
  *
- * Recovery is the contract's: the last sequence seen goes back as
- * `Last-Event-ID`, a `reset` says the replay is past retention, and `source`
- * says whether the log behind the stream is live. The transport and the
- * ladder that reopens it are `streamConnection.ts`'s.
+ * Recovery is the contract's: the last sequence seen — a change's, or the one
+ * a `ready` or `reset` names — goes back as `Last-Event-ID`, a `reset` says the
+ * replay is past retention, and `source` says whether the log behind the
+ * stream is live. The transport and the ladder that reopens it are
+ * `streamConnection.ts`'s.
  *
  * THE SERVER CUTS THIS STREAM AS A MATTER OF COURSE, at the greatest age it
  * lets one reach and when the bearer it was opened with expires, and it sends
@@ -219,8 +220,7 @@ function projectStreamTaken(
     return;
   }
   if (event.event === "source") held.source = event.data.state;
-  else if (event.event !== "ready" && event.event !== "reset")
-    held.lastSequence = event.sequence;
+  else held.lastSequence = event.sequence ?? held.lastSequence;
   handlers.onEvent(event);
   publish("Open", undefined);
 }

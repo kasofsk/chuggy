@@ -121,6 +121,38 @@ test("a fresh stream is told it is ready and then hears live changes", async () 
   });
 });
 
+test("a fresh stream's ready names the log's head, from which it can resume", async () => {
+  const rig = rigOf([changeRow(5, other, "Ticket", "9")]);
+  const socket = await opened(rig, one);
+  assert.deepEqual(socket.frames[0], {
+    event: "ready",
+    sequence: 5,
+    data: { version: 1 },
+  });
+});
+
+test("a change committed past the head a fresh stream was told still reaches it", async () => {
+  const rig = rigOf([changeRow(1, one, "Ticket", "7")]);
+  await opened(rig, other);
+  const release = rig.log.holdsLatest();
+  const socket = fakeSocket();
+  const opening = rig.hub.open({ partition: one, principal: streamPrincipal });
+  await settled();
+  rig.log.append(changeRow(2, one, "Ticket", "8"));
+  rig.doorbell.ring();
+  await settled();
+  release();
+  const result = await opening;
+  assert.equal(result.opened, "Opened");
+  if (result.opened === "Opened") result.stream.begin(socket.sink);
+  assert.deepEqual(frameNames(socket), ["ready", "source:live", "Ticket:8:2"]);
+  assert.deepEqual(socket.frames[0], {
+    event: "ready",
+    sequence: 1,
+    data: { version: 1 },
+  });
+});
+
 test("a reconnect from a retained id replays only what it missed", async () => {
   const rig = rigOf([
     changeRow(1, one, "Ticket", "7"),
@@ -136,6 +168,11 @@ test("a reconnect from a swept id is reset rather than served a gap", async () =
   rig.log.sweepBelow(9);
   const socket = await opened(rig, one, { after: 3 });
   assert.deepEqual(frameNames(socket), ["reset", "source:live"]);
+  assert.deepEqual(socket.frames[0], {
+    event: "reset",
+    sequence: 9,
+    data: { version: 1 },
+  });
 });
 
 test("a change reaches only the streams of its own partition", async () => {
@@ -276,6 +313,11 @@ test("a lost doorbell degrades every stream and a recovered one resets it", asyn
     "source:live",
     "reset",
   ]);
+  assert.deepEqual(socket.frames.at(-1), {
+    event: "reset",
+    sequence: 1,
+    data: { version: 1 },
+  });
 });
 
 test("a doorbell that came back having missed nothing resets nobody", async () => {
