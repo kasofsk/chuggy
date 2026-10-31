@@ -2197,6 +2197,17 @@ type BoundedCandidatePage =
       readonly notificationCursor: number;
     };
 
+/** What candidates weigh as JSON, which writes no member that is undefined. */
+function boundedCandidatePageBytes(candidates: readonly unknown[]): number {
+  return new TextEncoder().encode(JSON.stringify(candidates)).length;
+}
+
+/**
+ * The longest page of candidates within `bytesMax`, halving until one fits.
+ * A lone candidate is measured as a lead's turn holds it, without its
+ * canonical, so a configuration at its longest is still one a turn can show;
+ * the page stored keeps the canonical either way.
+ */
 async function boundedCandidatePage(
   source: Pick<SelectorObservationSource, "dispatchView">,
   partition: Partition,
@@ -2207,13 +2218,12 @@ async function boundedCandidatePage(
   for (;;) {
     const page = await source.dispatchView(partition, { ...query, limit });
     if (page.result === "Reset") return page;
-    const bytes = new TextEncoder().encode(
-      JSON.stringify(page.candidates),
-    ).length;
-    if (bytes <= bytesMax) return page;
+    if (boundedCandidatePageBytes(page.candidates) <= bytesMax) return page;
     if (limit === 1) {
       const candidate = page.candidates[0];
       if (candidate === undefined) return page;
+      const turned = { ...candidate, configurationCanonical: undefined };
+      if (boundedCandidatePageBytes([turned]) <= bytesMax) return page;
       return {
         result: "Oversized",
         token: page.token,

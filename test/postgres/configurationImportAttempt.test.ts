@@ -15,6 +15,7 @@ import type pg from "pg";
 
 import {
   configurationCanonicalCharsMax,
+  configurationPromptTextCharsMax,
   repositoryConfigurationImportRefusalsKeptMax,
 } from "../../src/contract/http.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -66,6 +67,7 @@ import {
 import {
   importBoundRepositories,
   type RepositoryConfigurationImportAttempt,
+  type RepositoryConfigurationReferenced,
   type RepositoryConfigurationSnapshotRead,
   type RepositoryDefaultBranchRead,
 } from "../../src/interpreter/repositoryConfiguration.ts";
@@ -149,6 +151,8 @@ interface ImportCase {
   readonly label: string;
   readonly head: RepositoryDefaultBranchRead;
   readonly snapshot: RepositoryConfigurationSnapshotRead;
+  /** The files the snapshot's declarations name, where they name any. */
+  readonly referenced?: readonly RepositoryConfigurationReferenced[];
   readonly kept: Omit<RepositoryConfigurationImportAttempt, "attemptedAt">;
 }
 
@@ -288,8 +292,13 @@ function fixtureRepositories(answered: BoundCases["answered"]) {
     snapshot: (request: {
       readonly repository: { readonly repository: RepositoryId };
     }) => Promise.resolve(of(request.repository.repository).snapshot),
-    referenced: () =>
-      Promise.resolve({ read: "Referenced" as const, files: [] }),
+    referenced: (request: {
+      readonly repository: { readonly repository: RepositoryId };
+    }) =>
+      Promise.resolve({
+        read: "Referenced" as const,
+        files: of(request.repository.repository).referenced ?? [],
+      }),
   };
 }
 
@@ -671,5 +680,110 @@ test("a refusal of a configuration too long is kept with its length and the limi
   assert.deepEqual(
     (await listedOf(partition)).get(repository)?.lastImport?.outcome,
     outcome,
+  );
+});
+
+/** A catalog whose every workload names its prompt by path, each prompt that long. */
+function longCatalogCase(
+  label: string,
+  commit: GitObjectId,
+  promptChars: number,
+  workloads: number,
+): ImportCase & { readonly prompts: readonly string[] } {
+  const worker = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+    files: [],
+  };
+  const names = Array.from(
+    { length: workloads },
+    (_, at) => `workload-${String(at)}`,
+  );
+  const pathOf = (name: string) => [".chug", "prompts", `${name}.md`].join("/");
+  const prompts = names.map((name) => name.slice(-1).repeat(promptChars));
+  const configuration = {
+    version: 2,
+    image: "worker:v2",
+    workloads: Object.fromEntries(
+      names.map((name) => [
+        name,
+        { runner: "Agent", prompt: { path: pathOf(name) }, worker },
+      ]),
+    ),
+    plans: { standard: [{ name: "review", evaluators: names.slice(1) }] },
+    defaults: { work: names[0], evaluation: "standard" },
+  };
+  return {
+    label,
+    head: branchAt(commit),
+    snapshot: declarationFiles(
+      JSON.stringify({ version: 1, name: "work", configuration }),
+    ),
+    referenced: names.map((name, at) => ({
+      path: pathOf(name),
+      found: "File",
+      content: prompts[at] ?? "",
+    })),
+    kept: { commit, outcome: { result: "Imported" } },
+    prompts,
+  };
+}
+
+/**
+ * A catalog longer than any one file may be, its prompts by path, is stored
+ * whole and read back whole: every prompt's text beside its path, in a
+ * revision the server's own column admits.
+ */
+test("a catalog longer than one file may be, its prompts by path, imports and is read back whole", async () => {
+  const long = longCatalogCase("long-catalog", commitOf("c"), 25_000, 4);
+  const bound = await bindCases("import-attempt-long-catalog", [long]);
+  await importerRun(bound);
+  assert.deepEqual(await keptOf(bound), expectedOf([long]));
+  const read = await harness.authoring.configuration(
+    bound.partition,
+    asConfigurationRevisionId(`repository:${commitOf("c")}:work`),
+  );
+  assert.ok(read !== undefined);
+  assert.ok(read.canonical.length > configurationPromptTextCharsMax);
+  assert.ok(read.canonical.length <= configurationCanonicalCharsMax);
+  const stored = JSON.parse(read.canonical) as {
+    readonly workloads: Readonly<
+      Record<string, { readonly prompt: { readonly text: string } }>
+    >;
+  };
+  assert.deepEqual(
+    Object.values(stored.workloads).map((workload) => workload.prompt.text),
+    long.prompts,
+  );
+});
+
+test("a catalog longer than a configuration may be is refused as too long, with its length and the limit", async () => {
+  const over = longCatalogCase(
+    "over-catalog",
+    commitOf("d"),
+    configurationPromptTextCharsMax,
+    2,
+  );
+  const bound = await bindCases("import-attempt-over-catalog", [over]);
+  await importerRun(bound);
+  const kept = (await keptOf(bound))["over-catalog"] as {
+    readonly outcome: {
+      readonly refusals?: readonly {
+        readonly fault: string;
+        readonly chars?: number;
+        readonly charsMax?: number;
+      }[];
+    };
+  };
+  const [refusal] = kept.outcome.refusals ?? [];
+  assert.equal(refusal?.fault, "ConfigurationTooLong");
+  assert.equal(refusal.charsMax, configurationCanonicalCharsMax);
+  assert.ok((refusal.chars ?? 0) > configurationCanonicalCharsMax);
+  assert.equal(
+    await harness.authoring.configuration(
+      bound.partition,
+      asConfigurationRevisionId(`repository:${commitOf("d")}:work`),
+    ),
+    undefined,
   );
 });

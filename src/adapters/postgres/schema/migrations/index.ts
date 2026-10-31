@@ -98,6 +98,7 @@ import { migration097 } from "./097-personal-runners-take-no-sessions.ts";
 import { migration098 } from "./098-personal-runners-hold-no-sessions.ts";
 import { migration099 } from "./099-attempt-claimed-at.ts";
 import { migration100 } from "./100-configuration-import-refusals.ts";
+import { migration101 } from "./101-longer-configurations.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -201,4 +202,5 @@ export const migrations: readonly Migration[] = [
   migration098,
   migration099,
   migration100,
+  migration101,
 ];
