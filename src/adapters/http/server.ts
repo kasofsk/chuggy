@@ -34,6 +34,7 @@ import type { Principal } from "../../interpreter/nativeWeb.ts";
 import {
   executionSelectionRefused,
   type ExecutionListQuery,
+  type LatestExecutionListQuery,
 } from "../../interpreter/operationsView.ts";
 import {
   asProjectId,
@@ -94,6 +95,7 @@ import {
   parseConfigurationCursor,
   parseDraftCursor,
   parseExecutionCursor,
+  parseLatestExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
@@ -163,6 +165,7 @@ import {
   ticketResponse,
   executionResponse,
   executionsResponse,
+  latestExecutionsResponse,
   operationalStatusResponse,
   agenticRefusalsResponse,
   hostedRunsResponse,
@@ -310,6 +313,7 @@ type InitialNativeWeb = Pick<
   | "nativeActions"
   | "execution"
   | "executions"
+  | "latestExecutions"
   | "operationalStatus"
   | "selectorOperationalContext"
   | "hostedRuns"
@@ -1012,16 +1016,26 @@ function registerOperationalRoutes(
   );
   app.get(`${root}/executions`, async (request, reply) => {
     const partition = partitionOf(request);
+    const latest = record(request.query)["latest"];
     nativeHttpSend(
       reply,
-      executionsResponse(
-        partition,
-        await web.executions(
-          principalOf(request),
-          partition,
-          executionListQuery(request.query, partition),
-        ),
-      ),
+      latest !== undefined && latestField(latest)
+        ? latestExecutionsResponse(
+            partition,
+            await web.latestExecutions(
+              principalOf(request),
+              partition,
+              latestExecutionListQuery(request.query, partition),
+            ),
+          )
+        : executionsResponse(
+            partition,
+            await web.executions(
+              principalOf(request),
+              partition,
+              executionListQuery(request.query, partition),
+            ),
+          ),
     );
   });
   registerEndpoint(
@@ -1829,12 +1843,37 @@ function registerProjectRepositoryConfigurations(
   );
 }
 
+/** The latest read's parameters: its own cursor and its size, and no narrowing. */
+function latestExecutionListQuery(
+  value: unknown,
+  partition: Partition,
+): LatestExecutionListQuery {
+  const query = fieldsOnly(value, ["cursor", "latest", "limit"]);
+  return {
+    ...(query["cursor"] === undefined
+      ? {}
+      : {
+          after: parseLatestExecutionCursor(
+            textField(query, "cursor"),
+            partition,
+          ),
+        }),
+    limit: integerField(query, "limit", 50),
+  };
+}
+
 /** The executions read's own parameters: its cursor, its size and what it narrows to. */
 function executionListQuery(
   value: unknown,
   partition: Partition,
 ): ExecutionListQuery {
-  const query = fieldsOnly(value, ["cursor", "limit", "state", "ticket"]);
+  const query = fieldsOnly(value, [
+    "cursor",
+    "latest",
+    "limit",
+    "state",
+    "ticket",
+  ]);
   return {
     ...(query["cursor"] === undefined
       ? {}
@@ -1955,7 +1994,7 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
-function registerConfigurationsLatest(value: unknown): boolean {
+function latestField(value: unknown): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
   throw new TypeError("latest is not true or false");
@@ -1981,9 +2020,7 @@ function registerConfigurations(
             ),
           }),
       limit: integerField(query, "limit", 50),
-      ...(latest === undefined
-        ? {}
-        : { latest: registerConfigurationsLatest(latest) }),
+      ...(latest === undefined ? {} : { latest: latestField(latest) }),
     });
     nativeHttpSend(reply, configurationsResponse(result));
   });

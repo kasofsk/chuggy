@@ -321,6 +321,27 @@ test("a row draws a run still waiting for its worker as its ticket page does", a
   expect(document.body.textContent).not.toContain("Admitted");
 });
 
+test("no row says not read and no sentence names a page budget, while the index loads or after", async () => {
+  drawInbox(
+    served,
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.includes("/executions")
+          ? new Promise<Response>(() => undefined)
+          : served(url, init)) as typeof fetch,
+  );
+  await settled();
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+  expect(document.body.textContent).not.toContain("not read");
+  expect(document.body.textContent).not.toContain("page budget");
+  cleanup();
+  drawInbox(served);
+  await settled();
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+  expect(document.body.textContent).not.toContain("not read");
+  expect(document.body.textContent).not.toContain("page budget");
+});
+
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {
   drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
   await settled();

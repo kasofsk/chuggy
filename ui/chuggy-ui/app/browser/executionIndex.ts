@@ -1,11 +1,11 @@
 /**
- * The index of what every ticket ran, as the one read two screens share.
+ * The index of each ticket's latest execution, as the one read two screens
+ * share.
  *
- * The project table and the inbox draw the same three columns from the same
- * resource, so they read it under one key and one page budget rather than
- * twice: two entries would double the walk, and the two screens could then
- * disagree about whether the index was cut short. The fold is registered here
- * too, which is what keeps the columns live while either screen is open.
+ * The project table and the inbox draw the same columns from the same
+ * resource, so they read it under one key rather than walking it twice. The
+ * fold is registered here too, which is what keeps the columns live while
+ * either screen is open.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";

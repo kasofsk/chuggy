@@ -50,6 +50,7 @@ import {
 import {
   encodeDraftCursor,
   encodeExecutionCursor,
+  encodeLatestExecutionCursor,
   parsePartition,
 } from "../../src/adapters/http/contract.ts";
 import {
@@ -214,6 +215,7 @@ function fakeOperations(
   | "operationalStatus"
   | "selectorOperationalContext"
   | "executions"
+  | "latestExecutions"
   | "execution"
   | "outputContent"
   | "uploadProjectArtifact"
@@ -239,6 +241,12 @@ function fakeOperations(
           : `${String(query.after.ticket)}.${String(query.after.task)}`;
       calls.push(
         `executions:${String(query.limit)}:${String(query.ticket ?? "")}:${after}`,
+      );
+      return Promise.resolve({ result: "NotFound" });
+    },
+    latestExecutions: (_principal, _partition, query) => {
+      calls.push(
+        `latestExecutions:${String(query.limit)}:${String(query.after ?? "")}`,
       );
       return Promise.resolve({ result: "NotFound" });
     },
@@ -1357,6 +1365,33 @@ test("operational routes parse bounded filters and artifact identities", async (
     "executions:7:3:3.5",
     "execution:execution-1",
     "output:execution-1:2",
+  ]);
+});
+
+test("the latest read takes its own cursor and refuses a narrowing", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const executions = "/api/v1/tenants/tenant/projects/project/executions";
+  const headers = { authorization: "Bearer valid" };
+  const latestCursor = encodeLatestExecutionCursor(
+    { tenant: asTenantId("tenant"), project: asProjectId("project") },
+    asTicketId(9),
+  );
+  const status = async (query: string) =>
+    (await app.inject({ url: `${executions}?${query}`, headers })).statusCode;
+  assert.equal(await status("latest=true&limit=7"), 404);
+  assert.equal(await status(`latest=true&cursor=${latestCursor}`), 404);
+  assert.equal(await status("latest=false&limit=7"), 404);
+  assert.equal(await status("latest=true&ticket=3"), 400);
+  assert.equal(await status("latest=true&state=NonTerminal"), 400);
+  assert.equal(await status("latest=yes"), 400);
+  assert.equal(await status(`latest=true&cursor=${executionsCursor}`), 400);
+  assert.equal(await status(`cursor=${latestCursor}`), 400);
+  assert.equal(await status(`latest=false&cursor=${latestCursor}`), 400);
+  assert.deepEqual(calls, [
+    "latestExecutions:7:",
+    "latestExecutions:50:9",
+    "executions:7::",
   ]);
 });
 

@@ -32,6 +32,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   AgenticRefusalsResponse,
+  ExecutionSummary,
   RunnerLoss,
   RunStepFailure,
   TicketResponse,
@@ -91,12 +92,9 @@ import {
 import type { OperationStep } from "../core/operationFollow.ts";
 import {
   projectExecutionIndexAt,
-  projectExecutionIndexUnread,
+  projectExecutionIndexEmpty,
 } from "../core/projectExecutionIndex.ts";
-import type {
-  ProjectExecutionIndex,
-  ProjectExecutionKnown,
-} from "../core/projectExecutionIndex.ts";
+import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   projectNativeActionRowsFold,
   projectNativeActionRowsRead,
@@ -140,7 +138,6 @@ import {
 } from "./ticket/TicketRevoke.tsx";
 import {
   cellAbsent,
-  cellExecutionUnread,
   TicketActivityCell,
   TicketRowExecutionCell,
   TicketTitleCell,
@@ -525,17 +522,12 @@ function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
   );
 }
 
-/**
- * One row, drawn from the phase page's ticket or, where the page did not carry
- * it, from the ticket's own read. Until that read answers the row has nothing
- * to join, so its execution column says it was not read rather than that the
- * ticket never ran.
- */
+/** One row, drawn from the phase page's ticket or, where the page did not carry
+ * it, from the ticket's own read. */
 function InboxRow(props: {
   readonly entry: InboxEntry;
   readonly read: TicketResponse | undefined;
-  readonly known: ProjectExecutionKnown | undefined;
-  readonly truncated: boolean;
+  readonly execution: ExecutionSummary | undefined;
   readonly partition: PartitionIdentity;
   readonly answer: InboxAnswer | undefined;
   readonly proposed: InboxProposalAnswers;
@@ -544,9 +536,7 @@ function InboxRow(props: {
 }): ReactNode {
   const ticket = props.entry.held ?? props.read;
   const row =
-    ticket === undefined
-      ? undefined
-      : projectTableRow(ticket, props.known, props.truncated);
+    ticket === undefined ? undefined : projectTableRow(ticket, props.execution);
   return (
     <tr>
       <TicketTitleCell
@@ -563,11 +553,7 @@ function InboxRow(props: {
         <InboxRefusal entry={props.entry} />
       </td>
       <td>
-        {row === undefined ? (
-          cellExecutionUnread
-        ) : (
-          <TicketRowExecutionCell row={row} />
-        )}
+        {row === undefined ? cellAbsent : <TicketRowExecutionCell row={row} />}
       </td>
       <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
       <td>
@@ -619,8 +605,7 @@ function InboxTable(props: {
             key={entry.ticket}
             entry={entry}
             read={props.read.get(entry.ticket)}
-            known={projectExecutionIndexAt(props.index, entry.ticket)}
-            truncated={props.index.truncated}
+            execution={projectExecutionIndexAt(props.index, entry.ticket)}
             partition={props.partition}
             answer={props.answers[String(entry.ticket)]}
             proposed={props.proposed}
@@ -674,7 +659,6 @@ function useInboxAnswers(partition: PartitionIdentity): {
  */
 function InboxNotices(props: {
   readonly executions: PanelState<ProjectExecutionIndex>;
-  readonly index: ProjectExecutionIndex;
   readonly held: InboxRowsHeld;
 }): ReactNode {
   const held = props.held;
@@ -716,12 +700,6 @@ function InboxNotices(props: {
           what each ticket ran could not be read — {props.executions.reason}
         </p>
       ) : null}
-      {props.executions.state === "Ready" && props.index.truncated ? (
-        <p className="panel-absent">
-          the index of what each ticket ran was truncated at its page budget, so
-          the rows it did not reach say “not read” rather than nothing
-        </p>
-      ) : null}
       {held.pageFailure === undefined ? null : (
         <p className="panel-failed">
           a further page could not be read — {held.pageFailure}
@@ -743,7 +721,7 @@ export function InboxScreen(props: {
   const index =
     executions.state === "Ready"
       ? executions.value
-      : projectExecutionIndexUnread;
+      : projectExecutionIndexEmpty;
   const answering = useInboxAnswers(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
@@ -751,7 +729,7 @@ export function InboxScreen(props: {
     <>
       <ScreenTitle>Inbox</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
-      <InboxNotices executions={executions} index={index} held={inbox} />
+      <InboxNotices executions={executions} held={inbox} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(union) =>

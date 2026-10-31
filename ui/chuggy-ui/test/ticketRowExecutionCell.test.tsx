@@ -77,9 +77,7 @@ function ledgerDrawnOf(execution: ExecutionSummary): Drawn {
 /** What the list's cell draws for the row this execution is joined to. */
 function cellDrawnOf(execution: ExecutionSummary): Drawn {
   const { container } = render(
-    <TicketRowExecutionCell
-      row={projectTableRow(working, { execution, complete: true }, false)}
-    />,
+    <TicketRowExecutionCell row={projectTableRow(working, execution)} />,
   );
   const pill = container.querySelector(".pill");
   const drawn = {

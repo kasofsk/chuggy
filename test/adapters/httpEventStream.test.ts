@@ -80,6 +80,11 @@ const notFound = () => Promise.resolve({ result: "NotFound" } as const);
  */
 type ServedWeb = Parameters<typeof createNativeHttpApp>[0];
 
+const unreadExecutions = {
+  executions: notFound,
+  latestExecutions: notFound,
+};
+
 function servedWeb(
   readable: boolean,
   actions: () => readonly TicketNativeAction[] | undefined,
@@ -136,7 +141,7 @@ function servedWeb(
         openDependencies: [],
       }),
     execution: () => Promise.resolve(undefined),
-    executions: notFound,
+    ...unreadExecutions,
     operationalStatus: notFound,
     hostedRuns: notFound,
     abilities: notFound,

@@ -178,6 +178,8 @@ export function nativeHttpContractDocument(): unknown {
       order: "ticket then task, ascending",
       cursor: "a position in that order; the ticket filter narrows it",
       mismatch: "a cursor resuming an unselected ticket is refused",
+      latest:
+        "latest=true: each ticket's highest task, of any status, highest ticket first, under a cursor of its own that the other order refuses; it takes no ticket or state",
     },
     briefFinalization:
       "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",

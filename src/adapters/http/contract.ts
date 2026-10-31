@@ -64,7 +64,7 @@ import type {
   SelectorProjectLimitOverrides,
   SelectorProjectOverrides,
 } from "../../interpreter/selector.ts";
-import { asTaskId, asTicketId } from "../../domain/ids.ts";
+import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asConfigurationRevisionId,
   type ConfigurationPageCursor,
@@ -144,6 +144,10 @@ const draftCursorSchema = inventoryCursorSchema.extend({
 const executionCursorSchema = inventoryCursorSchema.extend({
   ticket: z.number().int().safe().positive(),
   task: z.number().int().safe().positive(),
+});
+
+const latestExecutionCursorSchema = inventoryCursorSchema.extend({
+  ticket: z.number().int().safe().positive(),
 });
 
 const nativeActionCursorSchema = inventoryCursorSchema.extend({
@@ -504,6 +508,16 @@ export const { encode: encodeExecutionCursor, parse: parseExecutionCursor } =
     }),
     (cursor) => ({ ticket: cursor.ticket, task: cursor.task }),
   );
+
+export const {
+  encode: encodeLatestExecutionCursor,
+  parse: parseLatestExecutionCursor,
+} = projectCursorCodec(
+  "latest execution",
+  latestExecutionCursorSchema,
+  (cursor): TicketId => asTicketId(cursor.ticket),
+  (ticket) => ({ ticket }),
+);
 
 export const {
   encode: encodeNativeActionCursor,
