@@ -150,3 +150,29 @@ test("an own read of the same revision lacking a field keeps the held one", () =
     representation: ticketOf({ phase: "Work", sequence: 9, ...ownRead }),
   });
 });
+
+const heldFollowing = ticketOf({
+  phase: "Pending",
+  sequence: 4,
+  ...ownRead,
+  following: { verdict: "Held", code: "ConfigurationInvalid" },
+});
+
+test("an own read of the same revision without the following drops the held one", () => {
+  const dispatched = ticketOf({ phase: "Work", sequence: 9, ...ownRead });
+  expect(
+    ticketArrival(heldFollowing, { carried: "OwnRead", ticket: dispatched }),
+  ).toEqual({ arrival: "Write", representation: dispatched });
+});
+
+test("a row of the same revision keeps the held following", () => {
+  expect(
+    ticketArrival(heldFollowing, {
+      carried: "ProjectRow",
+      ticket: ticketOf({ phase: "Pending", sequence: 9 }),
+    }),
+  ).toMatchObject({
+    arrival: "Write",
+    representation: { following: heldFollowing.following },
+  });
+});
