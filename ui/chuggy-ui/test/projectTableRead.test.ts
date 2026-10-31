@@ -58,7 +58,9 @@ function recording(): { readonly ports: ApiPorts; readonly urls: string[] } {
 }
 
 test("the ticket read takes its page count from the entry it is replacing", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   client.setQueryData(ticketFilterList(partition, ticketFilterAll).key, {
     ...projectTicketRowsEmpty,
     pagesRead: 3,
@@ -72,7 +74,7 @@ test("the ticket read takes its page count from the entry it is replacing", asyn
 test("a first read of an entry nothing has written asks for one page", async () => {
   const held = recording();
   await ticketRowsRead(
-    new QueryClient(),
+    new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     held.ports,
     partition,
     ticketFilterAll,

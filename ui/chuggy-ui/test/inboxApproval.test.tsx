@@ -121,7 +121,9 @@ function mounted(route: (url: string) => Response): {
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <Shell partition={atlas} />

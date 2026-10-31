@@ -244,7 +244,9 @@ export async function stagePaneMounted(): Promise<{
   const view = render(
     <ScreenHarness
       partition={threadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <Routed>

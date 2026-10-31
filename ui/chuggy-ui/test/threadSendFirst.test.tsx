@@ -73,7 +73,11 @@ function doorAnswering(messageStatuses: readonly number[]): Posted[] {
 
 function wrapper(props: { readonly children: ReactNode }): ReactNode {
   return (
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <SessionProvider holder={holderDouble()}>
         {props.children}
       </SessionProvider>

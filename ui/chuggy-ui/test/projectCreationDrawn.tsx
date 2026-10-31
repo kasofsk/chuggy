@@ -106,7 +106,7 @@ export function served(
  * hands in to mount them again over what an earlier mount read. */
 export async function drawn(
   children: ReactNode,
-  client = new QueryClient(),
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ): Promise<void> {
   render(
     <SessionProvider holder={holderDouble()}>

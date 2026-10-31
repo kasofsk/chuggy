@@ -169,6 +169,11 @@ export type TicketCreationEnded =
 export const creationStaleSentence =
   "the project moved while this form was open — it has been read again, so submitting now uses the current one";
 
+/** The same conflict where the project could not be read again after it, so the
+ * form still stands on what it was opened over. */
+export const creationStaleUnreadSentence =
+  "the project moved while this form was open, and could not be read again";
+
 /** The conflict it answers instead where the project takes no new ticket at any fence. */
 export const creationProjectNotActiveSentence =
   "the project is not active, so it takes no new tickets";

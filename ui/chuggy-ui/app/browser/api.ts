@@ -33,11 +33,7 @@ import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
-import {
-  panelReason,
-  panelStateFromQuery,
-  panelStatePolled,
-} from "../core/freshness.ts";
+import { panelReason, panelStateFromQuery } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   callerResourceKey,
@@ -81,46 +77,45 @@ function panelQueryOptions<T>(
     queryKey: key,
     queryFn: async ({ signal }) =>
       apiOrThrow(await read(ports, signal), panelReason),
-    retry: false,
     refetchInterval: polledMs ?? false,
   });
 }
 
-function panelQueryState<T>(
-  query: UseQueryResult<T>,
-  polledMs: number | undefined,
-): PanelState<T> {
-  const state = {
+/** The query's state, carrying a press that reads it again where its last read
+ * failed. */
+function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
+  const state = panelStateFromQuery<T>({
     data: query.data,
     error: query.error,
     isPending: query.isPending,
     dataUpdatedAt: query.dataUpdatedAt,
+  });
+  const retry = (): void => {
+    void query.refetch();
   };
-  return polledMs === undefined
-    ? panelStateFromQuery<T>(state)
-    : panelStatePolled<T>(state);
+  if (state.state === "Failed") return { ...state, retry };
+  if (state.state === "Ready" && state.rereadFailed === true)
+    return { ...state, retry };
+  return state;
 }
 
 /**
- * An answer of absent, kept through the read after it, and for a polled read
- * through a poll that failed, as a polled read's data is. A query holding no
- * data is pending again from the moment it is read again, its error and all,
- * so a resource the reader has none of would be drawn unread on every poll,
- * and what a screen holds beneath that answer taken away with it.
+ * An answer of absent, kept through the read after it and through a read that
+ * fails, as an answer of data is. A query holding no data is pending again from
+ * the moment it is read again, its error and all, so a resource the reader has
+ * none of would be drawn unread on every poll, and what a screen holds beneath
+ * that answer taken away with it.
  */
 function usePanelAbsenceKept<T>(
   key: ProjectQueryKey,
   query: UseQueryResult<T>,
   state: PanelState<T>,
-  polledMs: number | undefined,
 ): PanelState<T> {
   const keyed = hashKey(key);
   const [kept, setKept] = useState<
     { readonly keyed: string; readonly reason: string } | undefined
   >(undefined);
-  const stands =
-    state.state === "Pending" ||
-    (state.state === "Failed" && polledMs !== undefined);
+  const stands = state.state === "Pending" || state.state === "Failed";
   if (state.state === "Absent") {
     if (kept?.keyed !== keyed || kept.reason !== state.reason)
       setKept({ keyed, reason: state.reason });
@@ -141,18 +136,13 @@ function usePanelQuery<T>(
     ...panelQueryOptions(ports, key, read, polledMs),
     enabled: asked,
   });
-  return usePanelAbsenceKept(
-    key,
-    query,
-    panelQueryState(query, polledMs),
-    polledMs,
-  );
+  return usePanelAbsenceKept(key, query, panelQueryState(query));
 }
 
 /** One resource of one kind, written by the frame that names it — or a part
  * under one, which no frame names and the partition's refetch reaches. One
  * that moves where no frame says so is read again every `polledMs` while a
- * screen draws it and the tab is in view, keeping its last answer if one fails. */
+ * screen draws it and the tab is in view. */
 export function usePanelResource<T>(
   partition: PartitionIdentity,
   kind: ProjectChangeKind,
@@ -200,12 +190,7 @@ export function usePanelResourceSettled<T>(
   const key = projectResourceKey(partition, kind, resource);
   const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
   return {
-    state: usePanelAbsenceKept(
-      key,
-      query,
-      panelQueryState(query, polledMs),
-      polledMs,
-    ),
+    state: usePanelAbsenceKept(key, query, panelQueryState(query)),
     settled: query.isFetched,
   };
 }
@@ -264,7 +249,7 @@ function usePanelResourcesRead<T>(
       enabled: requested,
     })),
   });
-  return queries.map((query) => panelQueryState<T>(query, undefined));
+  return queries.map((query) => panelQueryState<T>(query));
 }
 
 /** A list entry, whose refresh the list itself carries and this registers,

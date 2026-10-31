@@ -125,7 +125,9 @@ async function drawn(
   const view = render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={stream.ports.fetch}
     >
       <TicketPage />

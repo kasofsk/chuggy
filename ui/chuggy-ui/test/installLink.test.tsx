@@ -65,7 +65,9 @@ async function drawLinks(
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       {apps.map((app) => (

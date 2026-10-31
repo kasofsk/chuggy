@@ -166,7 +166,11 @@ async function drawnSettings(
   await router.load();
   render(
     <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
         <RouterProvider router={router} />
       </QueryClientProvider>
     </SessionProvider>,

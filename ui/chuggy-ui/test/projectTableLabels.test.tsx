@@ -187,7 +187,9 @@ async function drawTableWith(
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <ProjectTable />

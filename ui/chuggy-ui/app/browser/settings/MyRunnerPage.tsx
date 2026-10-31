@@ -56,11 +56,7 @@ import {
   usePanelTenantResource,
 } from "../api.ts";
 import { useNowMs } from "../Freshness.tsx";
-import {
-  personalRunnerForgotten,
-  personalRunnerReread,
-  usePersonalRunner,
-} from "../personalRunner.ts";
+import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
 import { RunnerAskForm } from "../RunnerAsk.tsx";
 import { RunnerSteps } from "../RunnerSteps.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
@@ -113,8 +109,7 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
       const answered = await sent;
       const done =
         answered.outcome === "Ok" || (removal && answered.outcome === "Absent");
-      if (removal && done) await personalRunnerForgotten(client, tenant);
-      else await personalRunnerReread(client, tenant);
+      await personalRunnerReread(client, tenant);
       setWrite(
         done
           ? { write: "Idle" }

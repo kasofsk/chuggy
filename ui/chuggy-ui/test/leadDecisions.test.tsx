@@ -77,7 +77,9 @@ async function drawDecisions(history?: unknown): Promise<readonly string[]> {
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <LeadDecisions

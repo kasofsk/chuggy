@@ -109,7 +109,11 @@ function draw(
   offers: readonly CreationOffer[] = creationOffers,
 ): void {
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <EditForm
         ports={ports}
         partition={creationPartition}

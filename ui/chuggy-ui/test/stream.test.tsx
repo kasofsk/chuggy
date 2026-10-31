@@ -108,7 +108,9 @@ async function settled(): Promise<void> {
 }
 
 test("a live frame is written into the cache and nothing is refetched", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const server = streamServer([
     {
       status: 200,
@@ -144,7 +146,9 @@ test("a stream under a session with no bearer to send is not opened", async () =
   render(
     <Harness
       holder={{ ...holderDouble(), bearer: () => Promise.resolve(undefined) }}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       partition={atlas}
       transport={server.ports.fetch}
     />,
@@ -181,7 +185,9 @@ async function refreshedEntry<T>(
   held: unknown,
   change = ticketChange,
 ): Promise<QueryClient> {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   client.setQueryData(list.key, held);
   const server = streamServer([{ status: 200, chunks: [change], hold: true }]);
   function Registered(): ReactNode {
@@ -247,7 +253,9 @@ test("the creation context is left alone by a ticket frame", async () => {
 });
 
 test("a project change abandons the connection and opens the next one", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const server = streamServer([
     { status: 200, chunks: [], hold: true },
     { status: 200, chunks: [], hold: true },
@@ -276,7 +284,9 @@ test("a project change abandons the connection and opens the next one", async ()
 });
 
 test("a renewed token reopens the stream rather than carrying the old one", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const server = streamServer([
     { status: 200, chunks: [], hold: true },
     { status: 200, chunks: [], hold: true },
@@ -301,7 +311,9 @@ test("a renewed token reopens the stream rather than carrying the old one", asyn
 });
 
 test("a stream that is not live says so where a reader will see it", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const server = streamServer([
     {
       status: 200,
@@ -331,7 +343,9 @@ async function banner(
   const view = render(
     <Harness
       holder={holderDouble()}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       partition={atlas}
       transport={transport}
     >
@@ -350,7 +364,9 @@ async function shellStream(
   const view = render(
     <Harness
       holder={holderDouble()}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       partition={atlas}
       transport={transport}
     >
@@ -433,7 +449,9 @@ test("a reopen after a token renewal is not read as a first open", async () => {
   const view = render(
     <Harness
       holder={holder}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       partition={atlas}
       transport={openingThenHanging(server)}
     >
@@ -470,7 +488,9 @@ test("a project change is a first open again rather than a reopen", async () => 
       hold: true,
     },
   ]);
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const transport = openingThenHanging(server);
   const view = render(
     <Harness

@@ -85,7 +85,9 @@ function draw(ports: ApiPorts, created: number[], from?: CreationDuplicate) {
   render(
     <ScreenHarness
       partition={creationPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <CreationForm

@@ -16,7 +16,6 @@ import {
   panelObservedAtMs,
   panelReason,
   panelStateFromQuery,
-  panelStatePolled,
 } from "../app/core/freshness.ts";
 
 const nowMs = Date.parse("2026-08-26T12:00:00Z");
@@ -109,32 +108,80 @@ test("a live write with no cache timestamp yet is ready without a claim", () => 
   });
 });
 
-/** A poll is asked on a clock, so one that failed leaves its last answer
- * standing; a polled read that never answered is still failed. */
-test("a polled read keeps its last answer across a failed poll, and only that", () => {
-  const fault = {
-    outcome: "Fault",
-    code: "InternalError",
-    status: 500,
-  } as const;
-  const error = new ApiOutcomeError(fault, panelReason(fault));
-  const kept = panelStatePolled({
-    data: { route: "Pool" },
-    error,
-    isPending: false,
-    dataUpdatedAt: nowMs,
-  });
-  expect(kept).toStrictEqual({
-    state: "Ready",
-    value: { route: "Pool" },
-    observedAtMs: nowMs,
-  });
-  expect(
-    panelStatePolled({
-      data: undefined,
-      error,
+const fault = {
+  outcome: "Fault",
+  code: "InternalError",
+  status: 500,
+} as const;
+const unreachable = { outcome: "Unreachable", reason: "offline" } as const;
+const absent = { outcome: "Absent" } as const;
+
+/** Any run of reads after an answer: the answer, then failures of either kind. */
+const failedRereads = [
+  [fault],
+  [unreachable],
+  [fault, unreachable],
+  [unreachable, fault, fault],
+] as const;
+
+test("an answer held stays ready through any run of reads that fail after it, saying it was not updated", () => {
+  for (const failures of failedRereads) {
+    let query = {
+      data: { route: "Pool" },
+      error: null as unknown,
       isPending: false,
-      dataUpdatedAt: 0,
-    }).state,
-  ).toBe("Failed");
+      dataUpdatedAt: nowMs,
+    };
+    expect(panelStateFromQuery(query)).toStrictEqual({
+      state: "Ready",
+      value: { route: "Pool" },
+      observedAtMs: nowMs,
+    });
+    for (const failure of failures) {
+      query = {
+        ...query,
+        error: new ApiOutcomeError(failure, panelReason(failure)),
+      };
+      expect(panelStateFromQuery(query)).toStrictEqual({
+        state: "Ready",
+        value: { route: "Pool" },
+        observedAtMs: nowMs,
+        rereadFailed: true,
+      });
+    }
+  }
+});
+
+test("an answer held stays ready through a read that failed with no outcome", () => {
+  expect(
+    panelStateFromQuery({
+      data: { route: "Pool" },
+      error: new Error("boom"),
+      isPending: false,
+      dataUpdatedAt: nowMs,
+    }),
+  ).toMatchObject({ state: "Ready", rereadFailed: true });
+});
+
+test("an answer of absent wins over an answer held, because the resource is gone", () => {
+  expect(
+    panelStateFromQuery({
+      data: { route: "Pool" },
+      error: new ApiOutcomeError(absent, panelReason(absent)),
+      isPending: false,
+      dataUpdatedAt: nowMs,
+    }),
+  ).toStrictEqual({ state: "Absent", reason: panelReason(absent) });
+});
+
+test("a read that never answered is failed, however it failed", () => {
+  for (const failure of [fault, unreachable])
+    expect(
+      panelStateFromQuery({
+        data: undefined,
+        error: new ApiOutcomeError(failure, panelReason(failure)),
+        isPending: false,
+        dataUpdatedAt: 0,
+      }),
+    ).toStrictEqual({ state: "Failed", reason: panelReason(failure) });
 });

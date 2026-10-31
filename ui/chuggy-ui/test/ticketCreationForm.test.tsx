@@ -158,7 +158,11 @@ function drawOffered(
   partition = creationPartition,
 ): { readonly rerender: (next: Omit<ReadyContext, "context">) => void } {
   const tree = (next: Omit<ReadyContext, "context">) => (
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <CreationForm
         ports={ports}
         partition={partition}

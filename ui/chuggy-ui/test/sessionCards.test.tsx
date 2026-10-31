@@ -82,7 +82,11 @@ async function mounted(
   const holder = createSessionHolder({ ...harness.ports, fetchJson, ...ports });
   render(
     <SessionProvider holder={holder}>
-      <App queryClient={new QueryClient()} />
+      <App
+        queryClient={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      />
     </SessionProvider>,
   );
   await act(() => sessionBegin(holder));
