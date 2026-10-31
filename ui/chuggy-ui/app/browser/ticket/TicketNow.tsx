@@ -272,6 +272,8 @@ export function TicketNow(props: {
     "Execution",
     execution.execution,
     (ports) => apiExecution(ports, partition, execution.execution),
+    undefined,
+    "Streamed",
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const attempt = read === undefined ? undefined : runNowAttempt(read);

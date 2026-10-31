@@ -45,6 +45,7 @@ import {
   openProjectStream,
   projectStreamCarrying,
   projectStreamHeldInitial,
+  projectStreamHolding,
 } from "../core/projectStream.ts";
 import type {
   ProjectStreamHeld,
@@ -440,6 +441,13 @@ function useProjectStreamSaying(): ProjectStreamSaying {
 
 export function useProjectStreamStatus(): ProjectStreamStatus {
   return useProjectStreamSaying().status;
+}
+
+/** Whether the partition's stream holds a position, which no stream does where
+ * there is no provider to hold one. */
+export function useProjectStreamHolding(): boolean {
+  const saying = useContext(ProjectStreamSayingContext);
+  return saying !== undefined && projectStreamHolding(saying.status);
 }
 
 /** Whether the stream has not carried for the grace. */

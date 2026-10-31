@@ -16,6 +16,11 @@
  * artifact's body — while the change log names the bare execution id. Those
  * entries are reached by the partition's own refetch and by nothing else, which
  * is the freshness a finished run's evidence needs and is not live.
+ *
+ * A READ IS KEPT ONLY WHERE ITS CALLER SAYS SO. `Streamed` marks a key a frame
+ * writes or rereads, which is not read again on a visit while the stream holds
+ * its position, since the frames have kept it; a key `projectStreamedNamed`
+ * does not admit is refused when it is read.
  */
 
 import {
@@ -38,18 +43,23 @@ import type { PanelState } from "../core/freshness.ts";
 import {
   callerResourceKey,
   projectResourceKey,
+  projectStreamedNamed,
   projectsInventoryKey,
   tenantResourceKey,
 } from "../core/projectQueryKeys.ts";
 import type { ProjectList, ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
-import { useProjectListRefresh } from "./stream.tsx";
+import { useProjectListRefresh, useProjectStreamHolding } from "./stream.tsx";
 
 type PanelRead<T> = (
   ports: ApiPorts,
   signal: AbortSignal,
 ) => Promise<ApiResult<T>>;
+
+/** Whether a resource read is kept while the stream holds its position, as
+ * one a frame writes or rereads is, or read again whenever a screen mounts. */
+export type PanelResourceKept = "Streamed" | "Read";
 
 /**
  * The ports every read runs on, where a refusal the session could not see
@@ -72,13 +82,33 @@ function panelQueryOptions<T>(
   key: ProjectQueryKey,
   read: PanelRead<T>,
   polledMs: number | undefined,
+  staleMs = 0,
 ) {
   return queryOptions({
     queryKey: key,
     queryFn: async ({ signal }) =>
       apiOrThrow(await read(ports, signal), panelReason),
     refetchInterval: polledMs ?? false,
+    staleTime: staleMs,
   });
+}
+
+/** How long the resources' reads stay fresh: for ever while the stream holds
+ * its position under a `Streamed` read, whose frames keep them, and never
+ * otherwise. */
+function usePanelResourceStaleMs(
+  kind: ProjectChangeKind,
+  resources: readonly string[],
+  kept: PanelResourceKept,
+): number {
+  const holding = useProjectStreamHolding();
+  if (kept === "Read") return 0;
+  for (const resource of resources)
+    if (!projectStreamedNamed(kind, resource))
+      throw new Error(
+        `a ${kind} read of ${resource} is kept, and no frame names it`,
+      );
+  return holding ? Infinity : 0;
 }
 
 /** The query's state, carrying a press that reads it again where its last read
@@ -130,10 +160,11 @@ function usePanelQuery<T>(
   read: PanelRead<T>,
   polledMs?: number,
   asked = true,
+  staleMs = 0,
 ): PanelState<T> {
   const ports = useApiPorts();
   const query = useQuery({
-    ...panelQueryOptions(ports, key, read, polledMs),
+    ...panelQueryOptions(ports, key, read, polledMs, staleMs),
     enabled: asked,
   });
   return usePanelAbsenceKept(key, query, panelQueryState(query));
@@ -149,11 +180,15 @@ export function usePanelResource<T>(
   resource: string,
   read: PanelRead<T>,
   polledMs?: number,
+  kept: PanelResourceKept = "Read",
 ): PanelState<T> {
+  const staleMs = usePanelResourceStaleMs(kind, [resource], kept);
   return usePanelQuery(
     projectResourceKey(partition, kind, resource),
     read,
     polledMs,
+    true,
+    staleMs,
   );
 }
 
@@ -166,12 +201,15 @@ export function usePanelResourceAsked<T>(
   read: PanelRead<T>,
   polledMs: number | undefined,
   asked: boolean,
+  kept: PanelResourceKept = "Read",
 ): PanelState<T> {
+  const staleMs = usePanelResourceStaleMs(kind, [resource], kept);
   const state = usePanelQuery(
     projectResourceKey(partition, kind, resource),
     read,
     polledMs,
     asked,
+    staleMs,
   );
   return asked ? state : { state: "Pending" };
 }
@@ -206,8 +244,10 @@ export function usePanelResources<T>(
     ports: ApiPorts,
     signal: AbortSignal,
   ) => Promise<ApiResult<T>>,
+  kept: PanelResourceKept = "Read",
 ): readonly PanelState<T>[] {
-  return usePanelResourcesRead(partition, kind, resources, read, true);
+  const staleMs = usePanelResourceStaleMs(kind, resources, kept);
+  return usePanelResourcesRead(partition, kind, resources, read, true, staleMs);
 }
 
 /** Several resources as `usePanelResources` reads them, answered from what a
@@ -223,7 +263,7 @@ export function usePanelResourcesHeld<T>(
     signal: AbortSignal,
   ) => Promise<ApiResult<T>>,
 ): readonly PanelState<T>[] {
-  return usePanelResourcesRead(partition, kind, resources, read, false);
+  return usePanelResourcesRead(partition, kind, resources, read, false, 0);
 }
 
 function usePanelResourcesRead<T>(
@@ -236,6 +276,7 @@ function usePanelResourcesRead<T>(
     signal: AbortSignal,
   ) => Promise<ApiResult<T>>,
   requested: boolean,
+  staleMs: number,
 ): readonly PanelState<T>[] {
   const ports = useApiPorts();
   const queries = useQueries({
@@ -245,6 +286,7 @@ function usePanelResourcesRead<T>(
         projectResourceKey(partition, kind, resource),
         (readPorts, signal) => read(resource, readPorts, signal),
         undefined,
+        staleMs,
       ),
       enabled: requested,
     })),

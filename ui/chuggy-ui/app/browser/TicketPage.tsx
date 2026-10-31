@@ -422,12 +422,16 @@ export function TicketPage(): ReactNode {
     "Ticket",
     String(ticket),
     (ports) => apiTicket(ports, partition, ticket),
+    undefined,
+    "Streamed",
   );
   const draftState = usePanelResource(
     partition,
     "Draft",
     String(ticket),
     (ports) => apiDraft(ports, partition, ticket),
+    undefined,
+    "Streamed",
   );
   const openState = usePanelResource(
     partition,

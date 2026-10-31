@@ -259,6 +259,8 @@ export function ExecutionDetail(props: {
     "Execution",
     props.execution,
     (ports) => apiExecution(ports, props.partition, props.execution),
+    undefined,
+    "Streamed",
   );
   return (
     <DataPanel title="Runs" state={state}>

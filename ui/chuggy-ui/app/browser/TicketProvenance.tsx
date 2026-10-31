@@ -1045,6 +1045,8 @@ function ConfigurationPanel(props: {
     "Configuration",
     props.revision,
     (ports) => apiConfiguration(ports, props.partition, props.revision),
+    undefined,
+    "Streamed",
   );
   return (
     <Panel
