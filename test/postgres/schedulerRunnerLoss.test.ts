@@ -606,6 +606,18 @@ test("work whose run ended itself out of turns is the run's own outcome, and is 
   assert.equal(await readLoss(routed), undefined);
 });
 
+test("work a usage limit stopped says so rather than that its attempt ended", async () => {
+  const { routed, execution } = await routedTicket("loss-rate-limited");
+  const pool = await poolOf(routed);
+  const { bearer } = await claimed(routed, execution, pool);
+  await lostOnRunner(routed, bearer, undefined, "RunRateLimited");
+  assert.deepEqual(await standing(routed), workLost);
+  assert.equal(
+    await settledReport(routed, execution),
+    "The account's usage limit stopped the run.",
+  );
+});
+
 test("work its worker reported failed is never resumed, and its read names no runner", async () => {
   const { routed, execution } = await routedTicket("loss-reported-fail");
   const pool = await poolOf(routed);

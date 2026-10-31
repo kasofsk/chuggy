@@ -322,10 +322,25 @@ test("the envelope carries the callback and the bearer and no material at all", 
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: "/workspace",
-    timeoutSecsMax: 1_800,
+    timeoutSecsMax: assignment.deadlineSecs,
     outputBytesMax: 4_096,
     providerCredentialFile: "/var/run/chuggy/codex/auth.json",
   });
+});
+
+/** Catches a harness told it has longer than the pod it runs in, which a run deciding whether it can wait out a limit reads. */
+test("the envelope's bound is the pod's, whichever of the plane's and the pool's is sooner", async () => {
+  for (const timeoutSecsMax of [30, config.timeoutSecsMax]) {
+    const placing = { ...config, timeoutSecsMax };
+    const { reached } = await jobPlaced(placing);
+    const secret = reached.find((made) => made.path.includes("/secrets"))
+      ?.body as { stringData: { task: string } };
+    assert.equal(
+      (JSON.parse(secret.stringData.task) as { timeoutSecsMax: number })
+        .timeoutSecsMax,
+      (await placedPod(placing)).spec.activeDeadlineSeconds,
+    );
+  }
 });
 
 /** Catches the launcher writing a field the contract's envelope does not name. */
