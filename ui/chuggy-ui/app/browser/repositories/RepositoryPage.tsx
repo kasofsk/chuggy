@@ -52,7 +52,7 @@ export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
 
 /** No frame names either read, so the partition's own refetch is what reaches
  * them; the revisions are the project's, so every repository's page shares one. */
-export const repositoryConfigurationsResource = "repository-configurations";
+const repositoryConfigurationsResource = "repository-configurations";
 
 /** What this repository declares under `.chug/configurations`, and when it was last imported. */
 function RepositoryDeclared(props: {
@@ -65,7 +65,7 @@ function RepositoryDeclared(props: {
     partition,
     "Configuration",
     repositoryConfigurationsResource,
-    (ports) => readProjectConfigurations(ports, partition),
+    (ports) => readProjectConfigurations(ports, partition, true),
   );
   const importing = useRepositoryImportNow(
     partition,

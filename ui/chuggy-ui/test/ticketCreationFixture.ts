@@ -75,6 +75,44 @@ export function creationDeclared(
   return { ...creationSummary(revision, readiness), provenance };
 }
 
+/**
+ * A project's listing, answered by path, in which `repository` is found only
+ * by its newest revisions: every revision is page after page of another
+ * repository's imports, past any budget, and the newest of each name is one
+ * page holding this repository's newest commit, the other repository, and a
+ * name an older commit declared and the newest dropped.
+ */
+export function creationHistoryDeep(
+  repository: string,
+  other: string,
+): (path: string) => unknown {
+  let pages = 0;
+  return (path) => {
+    if (path.includes("latest=true"))
+      return {
+        configurations: [
+          creationDeclared("d-sonnet", repository, "development-sonnet"),
+          creationDeclared("d-development", repository, "development"),
+          creationDeclared("x-other", other, "other"),
+          creationDeclared(
+            "d-dropped",
+            repository,
+            "dropped",
+            "Ready",
+            "0b5c1d0",
+          ),
+        ],
+      };
+    pages += 1;
+    return {
+      configurations: Array.from({ length: 50 }, (_, row) =>
+        creationDeclared(`x-${String(pages)}-${String(row)}`, other, "other"),
+      ),
+      nextCursor: "more",
+    };
+  };
+}
+
 export const creationInitialization: DraftInitializationResponse = {
   configuration: {
     partition: creationPartition,

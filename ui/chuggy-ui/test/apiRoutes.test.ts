@@ -27,6 +27,7 @@ import {
   apiSendChatThreadMessage,
   apiStopChatThreadTurn,
   apiConfiguration,
+  apiConfigurations,
   apiConfigureProjectRepository,
   apiDeregisterMemberRunner,
   apiDeregisterPersonalRunner,
@@ -268,6 +269,20 @@ test("an executions page asks for each ticket's latest by name", async () => {
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
       `/executions?cursor=next&limit=100&latest=true`,
   );
+});
+
+test("a configurations page asks for the newest of each name by name, and for every revision by saying nothing", async () => {
+  const held = recording(() => ({ configurations: [] }));
+  await apiConfigurations(held.ports, partition, {
+    cursor: "next",
+    latest: true,
+  });
+  await apiConfigurations(held.ports, partition);
+  expect(held.urls).toStrictEqual([
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `/configurations?cursor=next&latest=true`,
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/configurations`,
+  ]);
 });
 
 test("the inventory carries its cursor and stops when there is none", async () => {
