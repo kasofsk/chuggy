@@ -1375,7 +1375,7 @@ test("the listing asks the forge for reach unless reach=false, and refuses any o
   assert.deepEqual(unasked.json(), { repositories: [listed] });
   assert.deepEqual(listing.recorder.calls, []);
   for (const url of [repositoriesRoot, `${repositoriesRoot}?reach=true`]) {
-    const asked = listing.recorder.calls.length;
+    const asked: number = listing.recorder.calls.length;
     const served = await listing.app.inject({ url, headers: authorized });
     assert.deepEqual(
       served.json(),

@@ -107,8 +107,8 @@ interface RepositoryLandingWriting {
 /**
  * The one door the binding's settings write through. A write that landed IS
  * the newest read of its row, so it is written into the bindings the page
- * holds rather than left for a refetch nothing schedules: the route raises no
- * frame. The read that asks for reach holds the row too, and is refetched.
+ * holds, and the read with reach is staled, rather than left for a refetch
+ * nothing schedules: the route raises no frame.
  */
 function useRepositoryLandingWriting(
   partition: PartitionIdentity,
