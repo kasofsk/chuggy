@@ -121,7 +121,7 @@ function project(
   bound: Answer = bindings(),
 ): ReturnType<typeof answering> {
   return answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bound;
+    if (path.endsWith("/repositories?reach=false")) return bound;
     if (path.includes("/configurations")) return ok(pages(path));
     return initialization(path);
   });
@@ -143,7 +143,7 @@ test("a project binding nothing is walked, newest first, until a revision is rea
       : undefined,
   ).toStrictEqual(["r3"]);
   expect(held.calls).toStrictEqual([
-    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/repositories?reach=false`,
     `GET ${partitionBase}/configurations?latest=true`,
     `GET ${partitionBase}/configurations?cursor=next&latest=true`,
     `GET ${partitionBase}/draft-initializations/r3`,
@@ -188,7 +188,7 @@ test("a repository declaring several is read as each of them, with its own initi
   ]);
   expect(read.value.partial).toBe(false);
   expect(held.calls).toStrictEqual([
-    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/repositories?reach=false`,
     `GET ${partitionBase}/configurations?latest=true`,
     `GET ${partitionBase}/draft-initializations/n-development`,
     `GET ${partitionBase}/draft-initializations/n-sonnet`,
@@ -208,7 +208,7 @@ test("a repository whose newest revisions lie past the budget's reach of every r
     ["development", "development-sonnet"],
   ]);
   expect(held.calls.slice(0, 2)).toStrictEqual([
-    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/repositories?reach=false`,
     `GET ${partitionBase}/configurations?latest=true`,
   ]);
   expect(
@@ -326,7 +326,7 @@ function declaringProject(
     nextCursor: "next",
   };
   return answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings(...bound);
+    if (path.endsWith("/repositories?reach=false")) return bindings(...bound);
     if (path.includes("/configurations")) return ok(page);
     return path.endsWith(bootstrapPath(scratch)) && bootstrap !== undefined
       ? bootstrap
@@ -342,7 +342,7 @@ function bootstrapPath(repository: string): string {
 /** The walk's one page, and then each offer read in name order. */
 function firstPageAndOffers(...bootstraps: readonly string[]) {
   return [
-    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/repositories?reach=false`,
     `GET ${partitionBase}/configurations?latest=true`,
     ...bootstraps.map(
       (repository) => `GET ${partitionBase}${bootstrapPath(repository)}`,
@@ -464,7 +464,8 @@ const unavailable = refusal(503, "Unavailable");
  * them, so one that was not is left out and the shortfall said. */
 test("an offer whose initialization cannot be read is left out, and the read says so", async () => {
   const held = answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
+    if (path.endsWith("/repositories?reach=false"))
+      return bindings(imported(chuggy));
     if (path.includes("/configurations")) return ok(declaredPage);
     return path.endsWith("/n-sonnet") ? unavailable : initialization(path);
   });
@@ -497,7 +498,8 @@ test.each([
  * offers are read in name order, and so is what went wrong with them. */
 test("offers of which none can be read are the first one's failure, not a form with nothing to choose", async () => {
   const held = answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings(imported(chuggy));
+    if (path.endsWith("/repositories?reach=false"))
+      return bindings(imported(chuggy));
     if (path.includes("/configurations")) return ok(declaredPage);
     return path.endsWith("/n-development")
       ? refusal(500, "InternalError")
@@ -511,18 +513,18 @@ test("offers of which none can be read are the first one's failure, not a form w
  * as that, it would be offered its first ready row, whatever declared it. */
 test("bindings that cannot be read are the outcome, and nothing is offered without them", async () => {
   const held = answering((_method, path) =>
-    path.endsWith("/repositories") ? unavailable : ok(declaredPage),
+    path.endsWith("/repositories?reach=false") ? unavailable : ok(declaredPage),
   );
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome).toBe("Retryable");
   expect(
-    held.calls.filter((call) => !call.endsWith("/repositories")),
+    held.calls.filter((call) => !call.endsWith("/repositories?reach=false")),
   ).toStrictEqual([]);
 });
 
 test("an initialization that cannot be read is the outcome, not a blank form", async () => {
   const held = answering((_method, path) => {
-    if (path.endsWith("/repositories")) return bindings();
+    if (path.endsWith("/repositories?reach=false")) return bindings();
     return path.includes("/configurations")
       ? ok(configurationsPage)
       : unavailable;

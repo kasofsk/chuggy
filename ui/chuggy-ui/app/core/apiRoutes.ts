@@ -350,13 +350,20 @@ export function apiForgeInstallationPermissions(
   );
 }
 
-/** Every repository one project binds, oldest first. */
+/** Every repository one project binds, oldest first; `reach` asks the forge
+ * what the worker App reaches of each, and a read without it holds no
+ * `workerReach` whatever the worker App reaches. */
 export function apiProjectRepositories(
   ports: ApiPorts,
   partition: PartitionIdentity,
+  query: { readonly reach: boolean },
 ): Promise<ApiResult<ProjectRepositoriesResponse>> {
-  return apiGet(ports, apiSegments(partition, "repositories"), (value) =>
-    projectRepositoriesResponseSchema.parse(value),
+  return apiGet(
+    ports,
+    apiPath(apiSegments(partition, "repositories"), {
+      reach: query.reach ? undefined : "false",
+    }),
+    (value) => projectRepositoriesResponseSchema.parse(value),
   );
 }
 

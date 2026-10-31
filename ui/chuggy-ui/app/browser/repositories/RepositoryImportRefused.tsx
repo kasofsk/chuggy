@@ -17,7 +17,7 @@ import {
 } from "../../core/repositoryImport.ts";
 import { usePanelResource } from "../api.ts";
 import { Notice } from "../ui/Notice.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { projectRepositoriesReachUnaskedResource } from "./AddRepository.tsx";
 import { repositoryRoutePath } from "./RepositoryPage.tsx";
 
 export function RepositoryImportRefusedNotice(props: {
@@ -27,8 +27,8 @@ export function RepositoryImportRefusedNotice(props: {
   const bindings = usePanelResource(
     partition,
     "Project",
-    projectRepositoriesResource,
-    (ports) => apiProjectRepositories(ports, partition),
+    projectRepositoriesReachUnaskedResource,
+    (ports) => apiProjectRepositories(ports, partition, { reach: false }),
   );
   if (bindings.state !== "Ready") return null;
   const [first, ...more] = repositoryImportsRefused(

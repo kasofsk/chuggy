@@ -199,7 +199,7 @@ function routed(
     if (url.includes("/draft-initializations/"))
       return drawing.unread?.(url) ?? initialization(url);
     if (url.includes("/configurations")) return answer(listing);
-    if (url.endsWith("/repositories"))
+    if (url.endsWith("/repositories?reach=false"))
       return answer({
         repositories: [creationListed(creationBinding(chuggy), "Imported")],
       });

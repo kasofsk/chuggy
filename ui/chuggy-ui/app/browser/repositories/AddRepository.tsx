@@ -42,6 +42,7 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -100,9 +101,28 @@ import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
  * picker that draws it. */
 export const forgeReachableResource = "forge-reachable";
 
-/** No frame names this read, so the partition's own refetch is what reaches
- * it: a bind raises none, so the bindings key is invalidated by the bind. */
+/** No frame names these reads, so the partition's own refetch is what
+ * reaches them: a bind raises none, so the bind invalidates both. The first
+ * asks what the worker App reaches of each binding and the second does not, so
+ * they hold different answers under different keys. */
 export const projectRepositoriesResource = "project-repositories";
+export const projectRepositoriesReachUnaskedResource =
+  "project-repositories-reach-unasked";
+
+/** Both reads of a project's bindings, which a write to a binding leaves stale. */
+export async function projectRepositoriesInvalidated(
+  client: QueryClient,
+  partition: PartitionIdentity,
+): Promise<void> {
+  await Promise.all(
+    [projectRepositoriesResource, projectRepositoriesReachUnaskedResource].map(
+      (resource) =>
+        client.invalidateQueries({
+          queryKey: projectResourceKey(partition, "Project", resource),
+        }),
+    ),
+  );
+}
 
 interface Reachable {
   readonly repositories: readonly ForgeRepositoryResponse[];
@@ -381,13 +401,7 @@ function useRepositoryBind(
         setNote(repositoryBindNote(outcome));
         if (outcome.outcome === "Refused") return;
         bound();
-        await client.invalidateQueries({
-          queryKey: projectResourceKey(
-            partition,
-            "Project",
-            projectRepositoriesResource,
-          ),
-        });
+        await projectRepositoriesInvalidated(client, partition);
       })();
     },
   };

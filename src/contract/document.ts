@@ -137,6 +137,28 @@ const runnerNotes = {
     "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };
 
+/** The query parameters that narrow what a listing reads, and what each answers. */
+const listingFilterNotes = {
+  ticketPhaseFilter: {
+    query: "phase",
+    all: "omit phase",
+    nonTerminal: "phase=NonTerminal",
+    selected: "repeat phase with one or more exact phase names",
+  },
+  configurationLatestFilter: {
+    query: "latest",
+    all: "omit latest, or latest=false: every revision, newest first",
+    latest:
+      "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing",
+  },
+  repositoryReachFilter: {
+    query: "reach",
+    all: "omit reach, or reach=true: each live binding with what the worker App reaches of it, asked of the forge",
+    unasked:
+      "reach=false: the same bindings, the forge not asked and no binding carrying workerReach, which says nothing of what the worker App reaches",
+  },
+};
+
 export function nativeHttpContractDocument(): unknown {
   return {
     version: nativeHttpVersion,
@@ -154,18 +176,7 @@ export function nativeHttpContractDocument(): unknown {
     caching: "no-store",
     cors: "same-origin",
     credentials: "authorization bearer header; no cookies",
-    ticketPhaseFilter: {
-      query: "phase",
-      all: "omit phase",
-      nonTerminal: "phase=NonTerminal",
-      selected: "repeat phase with one or more exact phase names",
-    },
-    configurationLatestFilter: {
-      query: "latest",
-      all: "omit latest, or latest=false: every revision, newest first",
-      latest:
-        "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing",
-    },
+    ...listingFilterNotes,
     identities: {
       installation: "canonical UUID authority identity",
       tenant: "percent-encoded opaque UTF-8 path segment",

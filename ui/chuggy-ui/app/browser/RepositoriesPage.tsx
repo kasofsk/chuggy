@@ -371,7 +371,7 @@ export function RepositoriesPage(): ReactNode {
     partition,
     "Project",
     projectRepositoriesResource,
-    (ports) => apiProjectRepositories(ports, partition),
+    (ports) => apiProjectRepositories(ports, partition, { reach: true }),
   );
   const returned = useForgeReturned(partition.tenant);
   const runner = useWorkRunner(partition, "Reader");

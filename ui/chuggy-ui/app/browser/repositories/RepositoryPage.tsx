@@ -37,7 +37,7 @@ import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { projectRepositoriesReachUnaskedResource } from "./AddRepository.tsx";
 import {
   RepositoryImportButton,
   RepositoryImportLine,
@@ -116,8 +116,8 @@ export function RepositoryPage(): ReactNode {
   const bindings = usePanelResource(
     partition,
     "Project",
-    projectRepositoriesResource,
-    (ports) => apiProjectRepositories(ports, partition),
+    projectRepositoriesReachUnaskedResource,
+    (ports) => apiProjectRepositories(ports, partition, { reach: false }),
   );
   const binding =
     bindings.state === "Ready"

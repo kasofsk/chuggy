@@ -18,7 +18,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiRetireProjectRepository } from "../../core/apiRoutes.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoryUnbindNote,
   repositoryUnbindQuestion,
@@ -27,7 +26,7 @@ import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
 
 /** One unbind at a time across the listing, from its press to its answer. */
 export interface RepositoryUnbinding {
@@ -69,13 +68,7 @@ export function useRepositoryUnbinding(
           await apiRetireProjectRepository(ports, partition, { repository }),
         );
         if (refused === undefined)
-          await client.invalidateQueries({
-            queryKey: projectResourceKey(
-              partition,
-              "Project",
-              projectRepositoriesResource,
-            ),
-          });
+          await projectRepositoriesInvalidated(client, partition);
         setBusy(false);
         if (refused === undefined) setAsking(undefined);
         else setNote(refused);

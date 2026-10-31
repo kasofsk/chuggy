@@ -297,7 +297,9 @@ export async function readCreationContext(
   ports: ApiPorts,
   partition: PartitionIdentity,
 ): Promise<ApiResult<CreationContext>> {
-  const bound = await apiProjectRepositories(ports, partition);
+  const bound = await apiProjectRepositories(ports, partition, {
+    reach: false,
+  });
   if (bound.outcome !== "Ok") return bound;
   const repositories = bound.value.repositories;
   const walked = await readProjectConfigurations(

@@ -1346,6 +1346,52 @@ test("a bind is created at its own address and read back by the listing", async 
 });
 
 /**
+ * A worker installation is claimed on the repository's owner, so a read that
+ * asks for reach asks the forge, and a fixture forge answering nothing makes
+ * that reach `Unknown`. `reach=false` asks it nothing and answers no reach.
+ */
+test("the listing asks the forge for reach unless reach=false, and refuses any other value", async (t) => {
+  const store = fixtureStore();
+  store.held.push({ ...claimed, app: worker });
+  store.bound.push({
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: "Push" },
+    pipelinesWritable: false,
+  });
+  const listing = fixtureCase(t, { granted: ["Read"], store });
+  const listed = {
+    repository,
+    boundAt: "2026-09-11T01:00:00Z",
+    landing: { mode: "Push" },
+    pipelinesWritable: false,
+    configured: false,
+  };
+  const unasked = await listing.app.inject({
+    url: `${repositoriesRoot}?reach=false`,
+    headers: authorized,
+  });
+  assert.equal(unasked.statusCode, 200);
+  assert.deepEqual(unasked.json(), { repositories: [listed] });
+  assert.deepEqual(listing.recorder.calls, []);
+  for (const url of [repositoriesRoot, `${repositoriesRoot}?reach=true`]) {
+    const asked = listing.recorder.calls.length;
+    const served = await listing.app.inject({ url, headers: authorized });
+    assert.deepEqual(
+      served.json(),
+      { repositories: [{ ...listed, workerReach: { reach: "Unknown" } }] },
+      url,
+    );
+    assert.ok(listing.recorder.calls.length > asked, url);
+  }
+  const refused = await listing.app.inject({
+    url: `${repositoriesRoot}?reach=no`,
+    headers: authorized,
+  });
+  assert.equal(refused.statusCode, 400);
+});
+
+/**
  * The attempt is the one kept for the binding, carried as it was kept, and a
  * binding no import was attempted of carries none rather than an empty one.
  */
