@@ -4,6 +4,7 @@
  * as, and of the page's address.
  */
 
+import { defaultParseSearch } from "@tanstack/react-router";
 import { expect, test } from "vitest";
 
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
@@ -96,7 +97,22 @@ test("the address holds a search and a sort, and drops what names neither", () =
     sort: "Oldest",
   });
   expect(ticketListQueryOf({ q: "  ", sort: "Sideways" })).toStrictEqual({});
-  expect(ticketListQueryOf({ q: 121 })).toStrictEqual({});
+  expect(ticketListQueryOf({ q: ["gate"] })).toStrictEqual({});
+});
+
+test("a search written by hand in the address is read as the text it was", () => {
+  for (const [address, q] of [
+    ["?q=121", "121"],
+    ["?q=%23121", "#121"],
+    ["?q=true", "true"],
+    ["?q=null", "null"],
+    ["?q=%20", undefined],
+    ["?q=%22121%22", "121"],
+  ] as const) {
+    expect(ticketListQueryOf(defaultParseSearch(address))).toStrictEqual(
+      q === undefined ? {} : { q },
+    );
+  }
 });
 
 test("a search or a sort written to the address keeps the other, and State is written as no sort", () => {

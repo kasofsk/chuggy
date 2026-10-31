@@ -83,12 +83,19 @@ export function ticketListQueryWith(
   };
 }
 
+/** The view an address names. The router parses each value as JSON, so a
+ * search written by hand as `?q=121`, `?q=true` or `?q=null` arrives as
+ * something other than text, and is read back as the text it was. */
 export function ticketListQueryOf(
   search: Readonly<Record<string, unknown>>,
 ): TicketListQuery {
+  const typed = search["q"];
   const q =
-    typeof search["q"] === "string"
-      ? ticketListSearchOf(search["q"])
+    typeof typed === "string" ||
+    typeof typed === "number" ||
+    typeof typed === "boolean" ||
+    typed === null
+      ? ticketListSearchOf(String(typed))
       : undefined;
   const sort = ticketListSorts.find((each) => each === search["sort"]);
   return {
