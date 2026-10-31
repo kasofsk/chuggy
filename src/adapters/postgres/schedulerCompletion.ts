@@ -726,10 +726,18 @@ function schedulerStepOf(evidence: string | null): RunStepEvidence | undefined {
   return runStepEvidences.find((step) => step === evidence);
 }
 
+/** What the manifest says of a run `evidence` has a report for: a failed step's, or a usage limit's. */
+function schedulerEndedReport(evidence: string | null): string | undefined {
+  if (evidence === "RunRateLimited")
+    return "The account's usage limit stopped the run.";
+  const step = schedulerStepOf(evidence);
+  return step === undefined ? undefined : schedulerStepReport(step);
+}
+
 /**
  * Why an execution is settled with no worker's report: the attempt its
- * manifest names, and what it says where that attempt's run did not end on a
- * failed step, whose own report it says otherwise.
+ * manifest names, and what it says where that attempt's run did not end under
+ * a label with a report of its own.
  */
 interface SchedulerUnreported {
   readonly reporter: (
@@ -792,14 +800,13 @@ async function schedulerSettleUnreported(
       ).reason,
     );
   }
-  const step = schedulerStepOf(reporter.evidence);
   return schedulerSettle(
     client,
     standing.execution,
     schedulerEmptyManifest(
       standing.execution,
       reporter.attempt,
-      step === undefined ? unreported.report : schedulerStepReport(step),
+      schedulerEndedReport(reporter.evidence) ?? unreported.report,
     ),
     "ProcessFailed",
   );

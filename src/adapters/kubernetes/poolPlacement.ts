@@ -230,7 +230,7 @@ function poolPlacementEnvelope(
     callbackUrl: assignment.callbackUrl,
     bearer: assignment.bearer,
     workspace: workerWorkspaceDirectory,
-    timeoutSecsMax: config.timeoutSecsMax,
+    timeoutSecsMax: poolPlacementDeadlineSecs(config, assignment),
     outputBytesMax: config.outputBytesMax,
     ...(providerCredentialFile === undefined ? {} : { providerCredentialFile }),
   };
