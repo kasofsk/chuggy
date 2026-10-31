@@ -60,11 +60,11 @@ export type AgenticRefusalRecord = SelectorStandingRefusal;
  * the limit it is given rather than clamping to the answered bound.
  */
 export interface AgenticRefusalRead {
-  /** Every ticket in the project whose latest entry is a refusal. */
+  /** Every ticket in the project whose latest entry is a refusal, each compared against the ticket it names. */
   standing(
     partition: Partition,
     limit: number,
-  ): Promise<readonly AgenticRefusalRecord[]>;
+  ): Promise<readonly AgenticRefusalStanding[]>;
   /** One ticket's whole ledger, oldest first. */
   ledger(
     partition: Partition,
@@ -89,7 +89,7 @@ export type AgenticRefusalsResult =
   | { readonly result: "NotFound" }
   | {
       readonly result: "Found";
-      readonly refusals: readonly AgenticRefusalRecord[];
+      readonly refusals: readonly AgenticRefusalStanding[];
     };
 
 export type TicketAgenticRefusalsResult =

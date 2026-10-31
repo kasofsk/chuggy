@@ -1,5 +1,5 @@
 /**
- * The pool's bounds and its idle-failure path.
+ * The pool's bounds, its idle-failure path, and what it plans with.
  *
  * A POOLED CONNECTION STAYS ATTACHED TO A LIVE BACKEND, so terminating that
  * backend raises an error on a client nobody is using. With no listener on the
@@ -17,6 +17,11 @@ import {
   postgresLimitsDefault,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
+import {
+  ticketRunStepFailureFunction,
+  ticketRunnerLossFunction,
+  ticketUpdatedDependenciesFunction,
+} from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 
 let admin: pg.Pool;
@@ -66,4 +71,27 @@ test("the pool bounds the wait for a connection as well as the wait for an answe
     held.release();
     await oneConnection.end();
   }
+});
+
+test("a pooled connection plans with JIT off", async () => {
+  const jit = await admin.query<{ jit: string }>("SHOW jit");
+  assert.equal(jit.rows[0]?.jit, "off");
+});
+
+test("the functions a ticket read joins per ticket are planned at one row each", async () => {
+  const names = [
+    ticketRunStepFailureFunction,
+    ticketRunnerLossFunction,
+    ticketUpdatedDependenciesFunction,
+  ];
+  const declared = await admin.query<{ name: string; rows: number }>(
+    `SELECT proname AS name, prorows::int AS rows FROM pg_proc
+      WHERE pronamespace = 'public'::regnamespace AND proname = ANY($1::text[])
+      ORDER BY proname`,
+    [names],
+  );
+  assert.deepEqual(
+    declared.rows,
+    names.map((name) => ({ name, rows: 1 })),
+  );
 });

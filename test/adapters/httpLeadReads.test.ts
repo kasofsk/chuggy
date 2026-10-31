@@ -33,7 +33,11 @@ import {
   type NativeReadStore,
   type ProjectAccess,
 } from "../../src/interpreter/nativeWeb.ts";
-import type { AgenticRefusalEntry } from "../../src/interpreter/agenticRefusal.ts";
+import {
+  agenticRefusalIsSuperseded,
+  type AgenticRefusalEntry,
+  type AgenticRefusalStanding,
+} from "../../src/interpreter/agenticRefusal.ts";
 import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
 import type {
   LeadRefused,
@@ -54,7 +58,7 @@ import {
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
-import { asTicketId } from "../../src/domain/ids.ts";
+import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalsAnsweredMax,
@@ -215,7 +219,10 @@ interface LeadCase {
   /** Whether the site's selector may read the project, where the deployment names one. */
   readonly selectorReads?: boolean;
   readonly draws?: readonly SessionStoreRead[];
+  /** The version every ticket the read store answers holds, and what each standing refusal is compared against. */
   readonly ticketVersion?: number;
+  /** Where the read store records each ticket it is asked for, so a case can hold that a route asked for none. */
+  readonly ticketsRead?: TicketId[];
   /** How many rows each refusal read answers, so a short page can be driven. */
   readonly refusalRows?: number;
   /** Whether the ledger's newest entry lifts the refusal before it. */
@@ -244,7 +251,10 @@ function ledgerOf(
   }));
 }
 
-function readStore(ticketVersion: number): NativeReadStore {
+function readStore(
+  ticketVersion: number,
+  ticketsRead: TicketId[] = [],
+): NativeReadStore {
   return {
     operation: () => Promise.resolve(undefined),
     project: () =>
@@ -252,8 +262,9 @@ function readStore(ticketVersion: number): NativeReadStore {
         result: "Found",
         project: { partition, sequence: 0, tickets: [] },
       }),
-    ticket: (_partition, ticket) =>
-      Promise.resolve({
+    ticket: (_partition, ticket) => {
+      ticketsRead.push(ticket);
+      return Promise.resolve({
         ticket,
         phase: "Work",
         sequence: ticketVersion,
@@ -261,9 +272,28 @@ function readStore(ticketVersion: number): NativeReadStore {
         revision: 1,
         revokedDependencies: [],
         openDependencies: [],
-      }),
+      });
+    },
     ticketNativeActions: () => Promise.resolve([]),
     nativeActions: () => Promise.resolve({ actions: [] }),
+  };
+}
+
+/** The standing refusal of the ticket `index` past 42, compared against the version the case's tickets hold. */
+function leadPortsStandingRefusal(
+  shape: LeadCase,
+  index: number,
+): AgenticRefusalStanding {
+  const refusal = {
+    ticket: asTicketId(42 + index),
+    ticketVersion: 2,
+    reason: "the dependency is still failing",
+    decision: "selector-decision-one",
+    recordedAt: "2026-09-02T00:00:00.000Z",
+  };
+  return {
+    ...refusal,
+    superseded: agenticRefusalIsSuperseded(refusal, shape.ticketVersion ?? 2),
   };
 }
 
@@ -306,13 +336,7 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         Promise.resolve(
           Array.from(
             { length: Math.min(shape.refusalRows ?? 1, limit) },
-            (_unused, index) => ({
-              ticket: asTicketId(42 + index),
-              ticketVersion: 2,
-              reason: "the dependency is still failing",
-              decision: "selector-decision-one",
-              recordedAt: "2026-09-02T00:00:00.000Z",
-            }),
+            (_unused, index) => leadPortsStandingRefusal(shape, index),
           ),
         ),
       ledger: (_partition, _ticket, limit) =>
@@ -405,7 +429,7 @@ function appOf(shape: LeadCase = {}) {
   };
   const web = nativeWeb(
     access,
-    readStore(shape.ticketVersion ?? 2),
+    readStore(shape.ticketVersion ?? 2, shape.ticketsRead),
     inbox,
     {} as AuthoringStore,
     notifications,
@@ -923,8 +947,13 @@ test("a lead that has bound no stream has no transcript to answer", async () => 
   assert.equal(found.statusCode, 404);
 });
 
-test("standing refusals carry the supersession the reader computes", async () => {
-  await using standing = appOf({ ticketVersion: 2 });
+test("standing refusals carry the supersession the reader computes, reading no ticket for it", async () => {
+  const ticketsRead: TicketId[] = [];
+  await using standing = appOf({
+    ticketVersion: 2,
+    refusalRows: 3,
+    ticketsRead,
+  });
   const held = agenticRefusalsResponseSchema.parse(
     (
       await standing.inject({
@@ -933,9 +962,16 @@ test("standing refusals carry the supersession the reader computes", async () =>
       })
     ).json(),
   );
-  assert.equal(held.refusals[0]?.superseded, false);
+  assert.deepEqual(
+    held.refusals.map((refusal) => refusal.superseded),
+    [false, false, false],
+  );
   assert.equal(held.more, false);
-  await using authored = appOf({ ticketVersion: 3 });
+  await using authored = appOf({
+    ticketVersion: 3,
+    refusalRows: 3,
+    ticketsRead,
+  });
   const cleared = agenticRefusalsResponseSchema.parse(
     (
       await authored.inject({
@@ -944,7 +980,15 @@ test("standing refusals carry the supersession the reader computes", async () =>
       })
     ).json(),
   );
-  assert.equal(cleared.refusals[0]?.superseded, true);
+  assert.deepEqual(
+    cleared.refusals.map((refusal) => refusal.superseded),
+    [true, true, true],
+  );
+  assert.deepEqual(
+    ticketsRead,
+    [],
+    "the page is answered without a ticket read",
+  );
 });
 
 test("a page that stops short of the ledger says so and claims no standing", async () => {
