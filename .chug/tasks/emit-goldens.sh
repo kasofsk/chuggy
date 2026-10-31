@@ -45,7 +45,7 @@ cd "$root" || exit 2
 
 GOLDEN_DIR="${CHUG_GOLDEN_DIR:-test/golden}"
 MANIFEST="$GOLDEN_DIR/manifest.json"
-QUINT_VERSION="0.32.0"
+QUINT_VERSION="0.33.1"
 
 if [ ! -f "$MANIFEST" ]; then
 	echo "emit-goldens: LINTER ERROR — no $MANIFEST; there is nothing to regenerate"
