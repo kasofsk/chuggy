@@ -50,7 +50,7 @@ one_row_manifest() { # <dir> [<extra-json>]
 	      "maxSteps": 6,
 	      "invariant": "",
 	      "steps": 6,
-	      "quintVersion": "0.32.0",
+	      "quintVersion": "0.33.1",
 	      "purpose": "a suite fixture"
 	    }
 	  ]
@@ -163,7 +163,7 @@ cat > "$WORK/aimed/manifest.json" <<'JSON'
       "maxSteps": 4,
       "invariant": "lastEvent != \"no-such-event-exists\"",
       "steps": 0,
-      "quintVersion": "0.32.0",
+      "quintVersion": "0.33.1",
       "purpose": "an aim that cannot be met"
     }
   ]

@@ -79,7 +79,7 @@ run_in_repo() {
 # THE COVERAGE FIGURE. The gate calls `quint test` once per unit suite, witness
 # module and refinement suite; the stub reports one passing test for each, so
 # the total the success line prints is a fixture size this suite knows.
-model_repo 0.32.0
+model_repo 0.33.1
 run_in_repo
 check "a clean model run exits 0" 0 "$RC" "0 failure(s), 14 test(s) run"
 
@@ -88,7 +88,7 @@ check "a clean model run exits 0" 0 "$RC" "0 failure(s), 14 test(s) run"
 # suite that selected nothing — a clean model reported as a wall of findings,
 # out of an environment variable the gate never set. `NO_COLOR` does not answer
 # it, because FORCE_COLOR beats NO_COLOR and the stub above behaves that way.
-model_repo 0.32.0
+model_repo 0.33.1
 FORCE_COLOR=1
 export FORCE_COLOR
 run_in_repo
@@ -99,7 +99,7 @@ check "a caller's FORCE_COLOR does not hide a suite that ran" 0 "$RC" "14 test(s
 # names its match selects and exits 0 when that is none of them, so a renamed
 # run would otherwise leave the gate reporting a clean unit suite over a file
 # it never executed.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_OUT_test=""
 run_in_repo
 check "a suite selecting no tests is a finding" 1 "$RC" "selected no tests"
@@ -107,7 +107,7 @@ check "a suite selecting no tests is a finding" 1 "$RC" "selected no tests"
 # A SUITE THAT RAN AND FAILED IS A FINDING, and what it said is kept: a witness
 # that fails once and passes on the rerun leaves nothing to diagnose if the run
 # that failed went to /dev/null.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_test=1
 STUB_OUT_test="  1 passing (1ms)
   1 failed — the witness said something worth reading"
@@ -118,7 +118,7 @@ check "a failing suite prints what it said" 1 "$RC" "worth reading"
 # THE PACKAGE'S SUITE IS THIS TREE'S. Its text is vendored into the model, so a
 # case of it failing under the pinned quint is a finding here, not a stage that
 # could not run.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_PKG_RC=1
 STUB_PKG_OUT="  21 passing (1ms)
   1 failed"
@@ -129,7 +129,7 @@ check "a failing package suite is a finding" 1 "$RC" "ticket_tests.qnt failed"
 
 # A VIOLATED INVARIANT IS A FINDING, and its seed reaches the reader, because
 # the whole value of a randomized refutation is reproducing it.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_run=1
 STUB_OUT_run="[violation] Found an issue
 Use --seed=0x1c6f70db7e06ad9b to reproduce."
@@ -142,7 +142,7 @@ check "a refuted invariant prints its seed" 1 "$RC" "0x1c6f70db7e06ad9b"
 # says so; without one, neither is seeded. A key that is no key seeds nothing
 # and runs nothing.
 key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_LOG="$WORK/quint.log"
 export STUB_LOG
 : > "$STUB_LOG"
@@ -175,23 +175,23 @@ unset STUB_LOG
 # and for a module it cannot parse alike, and the crash on #12 leaves on a
 # signal saying nothing at all — so a stage that printed no verdict is a
 # could-not-run however it exited, and must not be counted as a finding.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_run=139
 run_in_repo
 check "a crash mid-sweep is a could-not-run, not a violation" 2 "$RC" "could not run"
 
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_test=139
 run_in_repo
 check "a crashed suite is a could-not-run" 2 "$RC" "could not run"
 
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_typecheck=1
 run_in_repo
 check "a typecheck that said nothing is a could-not-run" 2 "$RC" "could not run"
 
 # The same stage, exiting the same way, with something to say: a real refusal.
-model_repo 0.32.0
+model_repo 0.33.1
 STUB_RC_typecheck=1
 STUB_OUT_typecheck="error: typechecking failed"
 run_in_repo
@@ -201,9 +201,9 @@ check "a typecheck that reported an error is a finding" 1 "$RC" "does not typech
 # mismatch is a refusal to judge rather than a pass on the wrong tool.
 model_repo 0.31.0
 run_in_repo
-check "an unpinned quint version exits 2" 2 "$RC" "expected 0.32.0"
+check "an unpinned quint version exits 2" 2 "$RC" "expected 0.33.1"
 
-model_repo 0.32.0
+model_repo 0.33.1
 rm -f "$R/node_modules/.bin/quint"
 OUT="$WORK/.out"
 set +e
@@ -223,7 +223,7 @@ mkdir -p "$R/node_modules/.bin"
 git -C "$R" init -q -b main
 git -C "$R" config user.email t@example.com
 git -C "$R" config user.name t
-printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.32.0; exit 0; fi\nexit 0\n' \
+printf '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 0.33.1; exit 0; fi\nexit 0\n' \
 	> "$R/node_modules/.bin/quint"
 chmod +x "$R/node_modules/.bin/quint"
 printf 'placeholder\n' > "$R/README.md"

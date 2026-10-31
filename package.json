@@ -34,7 +34,7 @@
     "@chuggy/worker-contract-1.8.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.8.0/chuggy-worker-contract-1.8.0.tgz",
     "@chuggy/worker-contract-1.9.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.9.0/chuggy-worker-contract-1.9.0.tgz",
     "@eslint/js": "^10.0.1",
-    "@informalsystems/quint": "0.32.0",
+    "@informalsystems/quint": "0.33.1",
     "@ts-safeql/eslint-plugin": "^5.4.1",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
