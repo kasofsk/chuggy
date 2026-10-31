@@ -20,6 +20,7 @@
 
 import {
   hashKey,
+  notifyManager,
   queryOptions,
   useQueries,
   useQuery,
@@ -289,11 +290,15 @@ export function usePanelTenantResource<T>(
 }
 
 /** How many times one key's read has answered: every read that landed and
- * every write held as one moves it, and a failed read does not. */
+ * every write held as one moves it, and a failed read does not. The cache
+ * tells its listeners inside another component's render whenever a query is
+ * built there, so this hears it once the cache's batch is over, as the
+ * library's own hooks of the cache do. */
 export function usePanelAnswers(key: ProjectQueryKey): number {
   const client = useQueryClient();
   const subscribe = useCallback(
-    (changed: () => void) => client.getQueryCache().subscribe(changed),
+    (changed: () => void) =>
+      client.getQueryCache().subscribe(notifyManager.batchCalls(changed)),
     [client],
   );
   return useSyncExternalStore(
