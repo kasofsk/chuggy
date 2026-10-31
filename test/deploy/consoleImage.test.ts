@@ -1,6 +1,6 @@
 /**
- * The console image against this tree: the setup program is answered as a
- * file or not at all.
+ * The console image against this tree: the setup program and the manifest are
+ * each answered as a file or not at all, and the policy admits the manifest.
  *
  * The image's fallback answers every path with no file behind it with the
  * console's document and a 200, and a terminal that fetched the program from
@@ -43,4 +43,19 @@ test("the image answers the setup program's own path with its file, or with a 40
 test("what the exact location stands ahead of is a fallback that answers any path with the document", () => {
   const served = locations(readFileSync(configurationPath, "utf8"));
   assert.equal(served.get("/"), "try_files $uri $uri/ /index.html;");
+});
+
+test("the image answers the manifest as a manifest, or with a 404", () => {
+  const served = locations(readFileSync(configurationPath, "utf8"));
+  assert.equal(
+    served.get("= /manifest.webmanifest"),
+    "default_type application/manifest+json; try_files $uri =404;",
+  );
+});
+
+test("the image's policy admits a same-origin manifest", () => {
+  const policy = /content-security-policy\s+"([^"]*)"/u.exec(
+    readFileSync(configurationPath, "utf8"),
+  )?.[1];
+  assert.match(policy ?? "", /(?:^|; )manifest-src 'self'(?:;|$)/u);
 });
