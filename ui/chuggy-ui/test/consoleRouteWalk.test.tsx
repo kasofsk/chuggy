@@ -1,7 +1,8 @@
 /**
  * Every route the console's tree declares, visited over the site: each draws
- * without throwing and without `Page failed`, and every read it makes is one
- * the site has a fixture for. The list is the router's own, so a route added
+ * without throwing and without `Page failed`, every read it makes is one
+ * the site has a fixture for, and no state is set during another component's
+ * render. The list is the router's own, so a route added
  * to the tree is visited here without a case of its own.
  */
 
@@ -14,6 +15,7 @@ import {
   consoleAdvanced,
   consoleMounted,
   consoleRouteParameters,
+  consoleSiteClean,
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
@@ -61,6 +63,5 @@ test.each(consoleRoutePaths)("%s draws over the site", async (path) => {
   await consoleAdvanced(consoleRouteWalkSettleMs);
   expect(screen.queryByText("Page failed")).toBeNull();
   expect(screen.queryByText("Not found")).toBeNull();
-  expect(site.drifted).toEqual([]);
-  expect(site.unrouted).toEqual([]);
+  consoleSiteClean(site);
 });
