@@ -95,8 +95,9 @@ export interface ProjectConfigurationsRead {
 }
 
 /**
- * The project's revisions, newest first, read to the listing's end under a
- * page budget, or only until a caller has enough of them.
+ * The project's revisions newest first, every one or with `latest` only the
+ * newest of each repository and name, read to the listing's end under a page
+ * budget or until a caller has enough of them.
  *
  * A WALK THAT STOPS SAYS SO: a page whose rows all fall past the budget would
  * otherwise read as a repository that declares nothing.
@@ -104,12 +105,16 @@ export interface ProjectConfigurationsRead {
 export async function readProjectConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
+  latest: boolean,
   enough: (held: readonly ConfigurationSummary[]) => boolean = () => false,
 ): Promise<ApiResult<ProjectConfigurationsRead>> {
   const held: ConfigurationSummary[] = [];
   let cursor: string | undefined;
   for (let page = 0; page < configurationPagesMax; page += 1) {
-    const answered = await apiConfigurations(ports, partition, { cursor });
+    const answered = await apiConfigurations(ports, partition, {
+      cursor,
+      latest: latest ? true : undefined,
+    });
     if (answered.outcome !== "Ok") return answered;
     held.push(...answered.value.configurations);
     cursor = answered.value.nextCursor;
@@ -117,4 +122,36 @@ export async function readProjectConfigurations(
       return { outcome: "Ok", value: { configurations: held, partial: false } };
   }
   return { outcome: "Ok", value: { configurations: held, partial: true } };
+}
+
+/**
+ * Every configuration's newest revision, with as many older ones as the budget
+ * reaches: the walk is a prefix of the listing read after the newest, so a
+ * newest revision it did not reach is older than all it did and follows them.
+ * Only the newest read can leave a configuration out, so only it makes the
+ * read partial.
+ */
+export async function readProjectConfigurationsVersions(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+): Promise<ApiResult<ProjectConfigurationsRead>> {
+  const newest = await readProjectConfigurations(ports, partition, true);
+  if (newest.outcome !== "Ok") return newest;
+  const walked = await readProjectConfigurations(ports, partition, false);
+  if (walked.outcome !== "Ok") return walked;
+  const reached = new Set(
+    walked.value.configurations.map((summary) => summary.revision),
+  );
+  return {
+    outcome: "Ok",
+    value: {
+      configurations: [
+        ...walked.value.configurations,
+        ...newest.value.configurations.filter(
+          (summary) => !reached.has(summary.revision),
+        ),
+      ],
+      partial: newest.value.partial,
+    },
+  };
 }

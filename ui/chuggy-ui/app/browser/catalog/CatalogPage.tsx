@@ -35,12 +35,11 @@ import { configurationCommitShort } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import {
   configurationsPartialLabel,
-  readProjectConfigurations,
+  readProjectConfigurationsVersions,
 } from "../../core/repositoryConfigurations.ts";
 import { usePanelResource } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
-import { repositoryConfigurationsResource } from "../repositories/RepositoryPage.tsx";
 import { ScreenTitle } from "../shell/slots.tsx";
 import { ConfigurationBody } from "../TicketProvenance.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -269,6 +268,9 @@ function CatalogDrawn(props: {
   );
 }
 
+/** Not the repository page's read, which holds only the newest revisions. */
+const catalogConfigurationsResource = "catalog-configurations";
+
 export function CatalogPage(props: {
   readonly query: CatalogQuery;
 }): ReactNode {
@@ -276,8 +278,8 @@ export function CatalogPage(props: {
   const state = usePanelResource(
     partition,
     "Configuration",
-    repositoryConfigurationsResource,
-    (ports) => readProjectConfigurations(ports, partition),
+    catalogConfigurationsResource,
+    (ports) => readProjectConfigurationsVersions(ports, partition),
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const configurations =
