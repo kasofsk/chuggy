@@ -2,8 +2,8 @@
  * The platform capabilities the decision layer takes as arguments.
  *
  * Every ambient thing this console touches — the clock, the network, the
- * timers, the draws, the digest, the two stores, the cookies, the address bar
- * and the worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
+ * timers, the draws, the digest, the two stores, the cookies, the address bar,
+ * the log and the worker — is spelled once here, so `ui/chuggy-ui/app/core/` names none of them and a suite can hand it
  * something else. A store a browser refuses in a private window is read as
  * empty rather than thrown from.
  */
@@ -216,6 +216,11 @@ export function replaceLocation(url: string): void {
 /** Loads this document again, at the address and the fragment it is at. */
 export function reloadLocation(): void {
   location.reload();
+}
+
+/** A note for whoever has the developer tools open, which nothing on screen draws. */
+export function logWarned(message: string): void {
+  console.warn(message);
 }
 
 /** Tells `heard` each time the fragment changes under this document, which loads nothing. */

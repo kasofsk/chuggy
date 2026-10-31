@@ -282,7 +282,20 @@ test("a fresh stream is answered with an unbuffered event stream head", async ()
   assert.equal(opened.headers["cache-control"], "no-store");
   assert.equal(opened.headers["x-accel-buffering"], "no");
   assert.ok(await reaches(() => opened.body().includes("event: source")));
-  assert.deepEqual(identities(opened), ["event: ready", "event: source"]);
+  assert.deepEqual(identities(opened), [
+    "event: ready",
+    "id: 0",
+    "event: source",
+  ]);
+});
+
+test("a fresh stream's ready names the log's head and carries the body it always did", async () => {
+  const rig = await rigOf();
+  rig.log.append(changeRow(41, partition, "Ticket", "3"));
+  const opened = await stream(rig);
+  assert.ok(await reaches(() => opened.body().includes("event: source")));
+  assert.deepEqual(identities(opened).slice(0, 2), ["event: ready", "id: 41"]);
+  assert.deepEqual(payloads(opened)[0], { version: 1 });
 });
 
 test("a live change arrives as the kind's own GET representation", async () => {
@@ -292,7 +305,7 @@ test("a live change arrives as the kind's own GET representation", async () => {
   rig.log.append(changeRow(41, partition, "Ticket", "3"));
   rig.doorbell.ring();
   assert.ok(await reaches(() => opened.body().includes("event: Ticket")));
-  assert.deepEqual(identities(opened).slice(2), ["event: Ticket", "id: 41"]);
+  assert.deepEqual(identities(opened).slice(3), ["event: Ticket", "id: 41"]);
   assert.deepEqual(
     projectChangeRepresentationSchemas.Ticket.parse(changeData(opened)),
     {

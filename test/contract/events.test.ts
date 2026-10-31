@@ -265,6 +265,21 @@ test("the control frames carry their version and the source its state", () => {
     }),
     { event: "reset", data: { version: projectStreamVersion } },
   );
+  assert.deepEqual(
+    parseProjectStreamEvent({
+      event: "reset",
+      id: "12",
+      data: { version: projectStreamVersion },
+    }),
+    { event: "reset", sequence: 12, data: { version: projectStreamVersion } },
+  );
+  assert.throws(() =>
+    parseProjectStreamEvent({
+      event: "ready",
+      id: "007",
+      data: { version: projectStreamVersion },
+    }),
+  );
   const source = parseProjectStreamEvent({
     event: "source",
     data: { version: projectStreamVersion, state: "degraded" },

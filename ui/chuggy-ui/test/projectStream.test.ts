@@ -256,6 +256,20 @@ test("a held body is not cut by its deadline while it stays open", async () => {
   expect(server.headersSeen.length).toBe(1);
 });
 
+test("a ready or reset naming the log's head is where the next open resumes", async () => {
+  const server = streamServer([
+    { status: 200, chunks: [frame("ready", "4", { version: 1 })] },
+    { status: 200, chunks: [frame("reset", "9", { version: 1 })] },
+    { status: 200, chunks: [frame("ready", undefined, { version: 1 })] },
+    { status: 401 },
+  ]);
+  await openProjectStream(server.ports, partition, collector().handlers)
+    .finished;
+  expect(server.headersSeen.map((headers) => headers["last-event-id"])).toEqual(
+    [undefined, "4", "9", "9"],
+  );
+});
+
 /** A console older than the API it reads is handed frames it cannot parse,
  * and replaying one of them at every open would leave it never live. */
 test("a frame the contract rejects is skipped, its sequence taken and the partition read again", async () => {

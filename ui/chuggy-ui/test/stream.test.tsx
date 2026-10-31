@@ -19,7 +19,7 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -33,10 +33,16 @@ import type { ProjectList } from "../app/core/projectQueryKeys.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { ShellFrame, StreamBanner } from "../app/browser/Shell.tsx";
+import {
+  ShellFrame,
+  StreamBanner,
+  VersionBanner,
+} from "../app/browser/Shell.tsx";
 import { usePanelList } from "../app/browser/api.ts";
+import { ApiOutcomeError } from "../app/core/apiRequest.ts";
 import {
   ProjectStreamProvider,
+  projectListFoldsMax,
   streamGraceMs,
   useProjectListRefresh,
   useProjectStreamStatus,
@@ -48,9 +54,15 @@ import type { StreamServer } from "./streamDouble.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const graces = vi.hoisted(() => ({ parked: [] as (() => void)[] }));
+const platform = vi.hoisted(() => ({
+  reloadLocation: vi.fn<() => void>(),
+  logWarned: vi.fn<(message: string) => void>(),
+}));
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
+  reloadLocation: platform.reloadLocation,
+  logWarned: platform.logWarned,
   sleepMs: (ms: number, signal?: AbortSignal) => {
     if (signal?.aborted === true) return Promise.reject(new Error("abandoned"));
     if (ms === streamReopenDelayMsMin) return Promise.resolve();
@@ -826,4 +838,150 @@ test("a tombstone leaves what is mounted on its key in place until the read agai
   });
   await settled();
   expect(screen.getByText(JSON.stringify("answered again"))).toBeDefined();
+});
+
+test("a console that has seen no change resumes from the head its ready named, and applies what the gap held", async () => {
+  const client = clientMade();
+  const replayed = { ...ticket, sequence: 10 };
+  const server = streamServer([
+    { status: 200, chunks: [frame("ready", "4", { version: 1 }), sourceLive] },
+    {
+      status: 200,
+      chunks: [
+        frame("Ticket", "5", {
+          version: 1,
+          resource: "3",
+          representation: replayed,
+        }),
+        sourceLive,
+      ],
+      hold: true,
+    },
+  ]);
+  shellDrawn(holderDouble(), client, server.ports.fetch);
+  await settled();
+  expect(server.headersSeen[1]?.["last-event-id"]).toBe("4");
+  expect(client.getQueryData(projectResourceKey(atlas, "Ticket", "3"))).toEqual(
+    replayed,
+  );
+});
+
+/** A change whose data carries a field the contract's strict schema does not
+ * name, which is what an API newer than this console sends. */
+function changeUnread(id: string): string {
+  return frame("Ticket", id, {
+    version: 1,
+    resource: "3",
+    representation: ticket,
+    novel: true,
+  });
+}
+
+function versionDrawn(
+  client: QueryClient,
+  server: StreamServer,
+  children?: ReactNode,
+) {
+  const view = render(
+    <Harness
+      holder={holderDouble()}
+      client={client}
+      partition={atlas}
+      transport={server.ports.fetch}
+    >
+      <VersionBanner />
+      {children}
+    </Harness>,
+  );
+  return within(view.container);
+}
+
+test("a frame this console cannot read offers a reload once, keeps offering it, and reloads only when pressed", async () => {
+  platform.reloadLocation.mockClear();
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [ready, sourceLive, changeUnread("5"), changeUnread("6")],
+      hold: true,
+    },
+  ]);
+  const drawn = versionDrawn(clientMade(), server);
+  await settled();
+  expect(drawn.getAllByText("New version")).toHaveLength(1);
+  act(() => {
+    server.push(ticketChange);
+    server.push(changeUnread("8"));
+  });
+  await settled();
+  expect(drawn.getAllByText("New version")).toHaveLength(1);
+  expect(platform.reloadLocation).not.toHaveBeenCalled();
+  fireEvent.click(drawn.getByRole("button", { name: "Reload" }));
+  expect(platform.reloadLocation).toHaveBeenCalledTimes(1);
+});
+
+test("a read this console's schema refuses offers the same reload", async () => {
+  platform.reloadLocation.mockClear();
+  const server = streamServer([
+    { status: 200, chunks: [ready, sourceLive], hold: true },
+  ]);
+  function Unread(): ReactNode {
+    useQuery({
+      queryKey: ["unread"],
+      queryFn: () => {
+        throw new ApiOutcomeError(
+          { outcome: "Unreadable", reason: "unrecognized key" },
+          "unrecognized key",
+        );
+      },
+    });
+    return null;
+  }
+  const drawn = versionDrawn(clientMade(), server, <Unread />);
+  await settled();
+  expect(drawn.getAllByText("New version")).toHaveLength(1);
+  expect(platform.reloadLocation).not.toHaveBeenCalled();
+});
+
+test("a console that reads what it is answered offers no reload", async () => {
+  const server = streamServer([
+    { status: 200, chunks: [ready, sourceLive, ticketChange], hold: true },
+  ]);
+  const drawn = versionDrawn(clientMade(), server);
+  await settled();
+  expect(drawn.queryByText("New version")).toBeNull();
+});
+
+test("a list registered past the budget is logged, still drawn, and still offered its changes", async () => {
+  platform.logWarned.mockClear();
+  const client = clientMade();
+  const lists = Array.from({ length: projectListFoldsMax + 1 }, (_, index) =>
+    namingList("Ticket", `list-${String(index)}`),
+  );
+  for (const list of lists) client.setQueryData(list.key, []);
+  const server = streamServer([
+    { status: 200, chunks: [ticketChange], hold: true },
+  ]);
+  function Registered(props: {
+    readonly list: ProjectList<readonly string[]>;
+  }): ReactNode {
+    useProjectListRefresh(props.list);
+    return null;
+  }
+  const view = render(
+    <Harness
+      holder={holderDouble()}
+      client={client}
+      partition={atlas}
+      transport={server.ports.fetch}
+    >
+      {lists.map((list) => (
+        <Registered key={list.key.join("/")} list={list} />
+      ))}
+      <p>drawn</p>
+    </Harness>,
+  );
+  await settled();
+  expect(within(view.container).getByText("drawn")).toBeTruthy();
+  expect(platform.logWarned).toHaveBeenCalledTimes(1);
+  expect(client.getQueryData(lists.at(-1)?.key ?? [])).toEqual(["3"]);
 });

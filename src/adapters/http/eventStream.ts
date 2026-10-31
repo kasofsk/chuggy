@@ -166,12 +166,8 @@ export function projectResourceReader(
 }
 
 function frameOf(event: ProjectStreamEvent): string {
-  const identity =
-    event.event === "ready" ||
-    event.event === "reset" ||
-    event.event === "source"
-      ? ""
-      : `id: ${String(event.sequence)}\n`;
+  const sequence = event.event === "source" ? undefined : event.sequence;
+  const identity = sequence === undefined ? "" : `id: ${String(sequence)}\n`;
   return `event: ${event.event}\n${identity}data: ${JSON.stringify(event.data)}\n\n`;
 }
 

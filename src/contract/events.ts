@@ -20,8 +20,9 @@
  * carries the lead read, so a page watching a lead sees a turn move without
  * polling for it. `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
- * routes, and `source` reports whether the change log behind the stream is live
- * or degraded.
+ * routes — each naming in `id:` a sequence the console can resume from, so a
+ * console that has seen no change still has a place to keep — and `source`
+ * reports whether the change log behind the stream is live or degraded.
  */
 
 import { z } from "zod";
@@ -180,10 +181,19 @@ export type ProjectChangeEvent = {
   };
 }[ProjectChangeKind];
 
+/** A control frame's sequence is optional, because a server that predates it names none. */
 export type ProjectStreamEvent =
   | ProjectChangeEvent
-  | { readonly event: "ready"; readonly data: ProjectReadyData }
-  | { readonly event: "reset"; readonly data: ProjectResetData }
+  | {
+      readonly event: "ready";
+      readonly sequence?: number;
+      readonly data: ProjectReadyData;
+    }
+  | {
+      readonly event: "reset";
+      readonly sequence?: number;
+      readonly data: ProjectResetData;
+    }
   | { readonly event: "source"; readonly data: ProjectSourceData };
 
 /** One frame as a transport hands it over, before its `data:` is understood. */
@@ -235,14 +245,31 @@ function projectChangeEvent(
   }
 }
 
+/** The sequence a control frame names, where it names one. */
+function projectControlSequence(frame: ProjectStreamFrame): {
+  readonly sequence?: number;
+} {
+  return frame.id === undefined
+    ? {}
+    : { sequence: sequenceSchema.parse(frame.id) };
+}
+
 export function parseProjectStreamEvent(
   frame: ProjectStreamFrame,
 ): ProjectStreamEvent {
   switch (frame.event) {
     case "ready":
-      return { event: "ready", data: projectReadyDataSchema.parse(frame.data) };
+      return {
+        event: "ready",
+        ...projectControlSequence(frame),
+        data: projectReadyDataSchema.parse(frame.data),
+      };
     case "reset":
-      return { event: "reset", data: projectResetDataSchema.parse(frame.data) };
+      return {
+        event: "reset",
+        ...projectControlSequence(frame),
+        data: projectResetDataSchema.parse(frame.data),
+      };
     case "source":
       return {
         event: "source",
