@@ -19,6 +19,7 @@ import {
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
+  briefingPipelinesUnwritable,
   briefingRequiredResult,
   briefingReworkPreface,
   briefingRoleInstructions,
@@ -168,6 +169,7 @@ function templateWording(): readonly string[] {
     ...briefingSectionOrder,
     ...briefingTemplateSections,
     ...briefingReworkPreface,
+    ...briefingPipelinesUnwritable,
     ...failedLandings.flatMap(briefingFailedLandingLines),
     ...dependencyWording(),
   ];
@@ -201,7 +203,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [11, "c419f95a23ef8fb7797f09430f046f417f8f62121c6bbcda155d0fdbdfd84275"],
+    [12, "5acfbe9948a76a6665ad19bc3debc898af5fa7b0d27a45e9cd47118b6cb0231b"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });
@@ -227,6 +229,7 @@ test("the digest reads every string the template states", () => {
   for (const text of [
     ...Object.values(briefingLabels),
     ...briefingReworkPreface,
+    ...briefingPipelinesUnwritable,
     ...failedLandings.flatMap(briefingFailedLandingLines),
     ...dependencyWording(),
   ]) {

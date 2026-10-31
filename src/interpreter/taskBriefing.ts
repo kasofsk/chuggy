@@ -172,6 +172,7 @@ import {
   briefingFailedLandingLines,
   briefingHeading,
   briefingLabels,
+  briefingPipelinesUnwritable,
   briefingRequiredResult,
   briefingReworkPreface,
   briefingRoleInstructions,
@@ -290,12 +291,15 @@ export interface RuntimeFacts {
 /**
  * What reading the repositories an execution's project binds live beside the
  * one its own bundle pins found, which its pod may read and never deliver to,
- * an outage kept apart from a project that binds no other.
+ * an outage kept apart from a project that binds no other. Whether its own
+ * repository's binding lets pipelines be written is read with them, and is
+ * absent where that repository is not bound live.
  */
 export type ReadOnlyRepositoriesRead =
   | {
       readonly read: "Repositories";
       readonly repositories: readonly RepositoryId[];
+      readonly pipelinesWritable?: boolean;
     }
   | { readonly read: "Unavailable" };
 
@@ -561,6 +565,8 @@ export interface BriefingView {
   readonly configuration: PinnedConfiguration;
   readonly runtime: RuntimeFacts;
   readonly readOnlyRepositories: readonly RepositoryId[];
+  /** Whether the task's own repository's binding lets pipelines be written, absent where it is not bound live. */
+  readonly pipelinesWritable?: boolean;
   /** What each of the ticket's dependencies delivered, in the order they ascend. */
   readonly dependencyDeliveries: readonly DependencyDelivery[];
   readonly priorWorkReports: PriorWorkReports;
@@ -1002,12 +1008,12 @@ function briefingCriteriaLines(brief: TicketBrief): readonly string[] {
 /**
  * The runtime facts as lines, each of them absent when the adapter observed
  * nothing, and the project's other repositories as one line beside the
- * workspace, absent where the project binds no other.
+ * workspace, absent where the project binds no other. A work task whose own
+ * binding does not let pipelines be written is told so beside them, because
+ * its push is what would be refused.
  */
-function briefingRuntimeLines(
-  runtime: RuntimeFacts,
-  readOnlyRepositories: readonly RepositoryId[],
-): readonly string[] {
+function briefingRuntimeLines(view: BriefingView): readonly string[] {
+  const { runtime, readOnlyRepositories } = view;
   return [
     ...(runtime.workspace === undefined
       ? []
@@ -1017,6 +1023,9 @@ function briefingRuntimeLines(
       : [
           `${briefingLabels.readOnlyRepositories} ${readOnlyRepositories.join(", ")}`,
         ]),
+    ...(view.purpose === "Work" && view.pipelinesWritable === false
+      ? briefingPipelinesUnwritable
+      : []),
     ...briefingLabelled(briefingLabels.changedFiles, runtime.changedFiles),
     ...briefingLabelled(briefingLabels.handoff, runtime.handoff),
   ];
@@ -1068,10 +1077,7 @@ function briefingBodies(
     Practices: practices.map((practice) =>
       briefingBullet(practice.instruction),
     ),
-    RuntimeContext: briefingRuntimeLines(
-      view.runtime,
-      view.readOnlyRepositories,
-    ),
+    RuntimeContext: briefingRuntimeLines(view),
     RequiredResult: task.framed
       ? briefingRequiredResult(view.purpose, carrier)
       : [],

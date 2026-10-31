@@ -82,7 +82,10 @@ import {
   asRepositoryId,
   finalizerDefaults,
 } from "../../src/interpreter/finalizer.ts";
-import { briefingLabels } from "../../src/interpreter/briefingTemplate.ts";
+import {
+  briefingLabels,
+  briefingPipelinesUnwritable,
+} from "../../src/interpreter/briefingTemplate.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
 import { asOperationId } from "../../src/interpreter/operationInbox.ts";
 import { recordingMetrics, throwingMetrics } from "./schedulerSinks.ts";
@@ -1492,6 +1495,32 @@ test("the project's other repositories read for this execution reach its briefin
       `${briefingLabels.readOnlyRepositories} ${sibling}`,
     ),
   );
+});
+
+test("a work task's own binding read as writing no pipelines reaches its briefing, and one that writes them does not", async () => {
+  const briefed = async (pipelinesWritable: boolean): Promise<string> => {
+    const placements: AttemptPlacement[] = [];
+    await executionSchedulerLaunch(
+      {
+        ...placingService([], placements),
+        readOnlyRepositories: {
+          repositories: () =>
+            Promise.resolve({
+              read: "Repositories" as const,
+              repositories: [],
+              pipelinesWritable,
+            }),
+        },
+      },
+      epoch,
+    );
+    assert.equal(placements.length, 1);
+    return placements[0]?.invocation.briefing.text ?? "";
+  };
+  const [line] = briefingPipelinesUnwritable;
+  assert.ok(line !== undefined);
+  assert.ok((await briefed(false)).includes(line));
+  assert.ok(!(await briefed(true)).includes(line));
 });
 
 test("what the dependencies delivered, when it cannot be read, holds the attempt instead", async () => {
