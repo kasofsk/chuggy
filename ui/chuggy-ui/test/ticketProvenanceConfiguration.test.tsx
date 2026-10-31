@@ -25,6 +25,7 @@ import type { ReactNode } from "react";
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../src/contract/configurationSelection.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type { TicketFollowing } from "../../../src/contract/responses.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
@@ -95,6 +96,7 @@ async function drawTicket(
   overrides?: ConfigurationOverrides,
   creator?: string,
   selection?: ConfigurationSelection,
+  following?: TicketFollowing,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -130,6 +132,7 @@ async function drawTicket(
         ...(overrides === undefined ? {} : { overrides }),
         ...(creator === undefined ? {} : { creator }),
         ...(selection === undefined ? {} : { selection }),
+        ...(following === undefined ? {} : { following }),
       });
     },
   });
@@ -440,6 +443,41 @@ test("a catalog ticket draws the revision it runs on: its own choice, else its c
     if (!(cell instanceof HTMLElement)) throw new Error("no Version cell");
     expect(within(cell).getByText(value)).toBeDefined();
     expect(within(cell).getByText(meta)).toBeDefined();
+    cleanup();
+  }
+});
+
+test("a following ticket held on its revision, or trimmed, says why in one line, and one that is current or would move says nothing", async () => {
+  const cases = [
+    [
+      { verdict: "Held", code: "SelectionUnknown" },
+      "Stays on this revision rather than the newest: the draft selects a workload, plan or finalizer the configuration's catalog does not hold",
+    ],
+    [
+      { verdict: "Held", code: "ConfigurationInvalid" },
+      "Stays on this revision rather than the newest: the configuration is not one the project will run, as written or as overridden",
+    ],
+    [
+      { verdict: "Trimmed" },
+      "Stays on this revision rather than the newest: its program runs less than its plan, and was signed off against this one",
+    ],
+    [{ verdict: "Current" }, undefined],
+    [{ verdict: "Moves" }, undefined],
+    [undefined, undefined],
+  ] as const;
+  for (const [following, line] of cases) {
+    await drawTicket(
+      catalogFollowing("Latest"),
+      undefined,
+      undefined,
+      undefined,
+      following,
+    );
+    await sectionOpened("Provenance");
+    const drawn = document.querySelectorAll(".ticket-config-following");
+    expect([...drawn].map((element) => element.textContent)).toEqual(
+      line === undefined ? [] : [line],
+    );
     cleanup();
   }
 });

@@ -19,11 +19,18 @@
  */
 
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
-import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
+import {
+  configurationFollowingOf,
+  type ConfigurationSelection,
+} from "../contract/configurationSelection.ts";
+import type { TicketFollowing } from "../contract/responses.ts";
+import { assertNever } from "../domain/assertNever.ts";
 import {
   declaredConfigurationVersion,
   draftInitializationProgram,
   draftReleaseReadiness,
+  draftReleaseRefusalCode,
+  releaseConfigurationReadiness,
   ticketConfigurationReadiness,
   ticketProgramShort,
   type CanonicalConfiguration,
@@ -141,4 +148,37 @@ export function configurationFollowingVerdict(
       configurationFollowingSurface(head.ticket)
     ? { verdict: "Current" }
     : { verdict: "Moves", program };
+}
+
+/**
+ * What a ticket's own read says of its following: the verdict the importer
+ * would reach against `head`, a held one under the code a release would be
+ * refused with, and nothing where the ticket's choice, then its held catalog's
+ * default, pins it. A ticket holding the head's own revision is `Current`, as
+ * the importer never judges it.
+ */
+export function configurationFollowingRead(
+  ticket: ConfigurationFollowingTicket,
+  holdsHead: boolean,
+): TicketFollowing | undefined {
+  const declared = releaseConfigurationReadiness(ticket.held);
+  const defaults =
+    declared.readiness === "Ready" && declared.configuration.version === 2
+      ? declared.configuration.defaults
+      : undefined;
+  if (configurationFollowingOf(ticket.selection, defaults) !== "Latest")
+    return undefined;
+  if (holdsHead) return { verdict: "Current" };
+  const followed = configurationFollowingVerdict(ticket);
+  switch (followed.verdict) {
+    case "Current":
+    case "Trimmed":
+      return { verdict: followed.verdict };
+    case "Moves":
+      return { verdict: "Moves" };
+    case "Held":
+      return { verdict: "Held", code: draftReleaseRefusalCode(followed.fault) };
+    default:
+      return assertNever(followed);
+  }
 }

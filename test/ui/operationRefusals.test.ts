@@ -13,7 +13,10 @@ import test from "node:test";
 
 import { operationResponse } from "../../src/adapters/http/outcomes.ts";
 import { operationResponseSchema } from "../../src/contract/responses.ts";
-import { operationRefusalCodes } from "../../src/contract/rosters.ts";
+import {
+  draftReleaseRefusalCodes,
+  operationRefusalCodes,
+} from "../../src/contract/rosters.ts";
 import {
   allBoundaryRefusalCodes,
   boundaryRefusal,
@@ -24,7 +27,10 @@ import {
   ticketRefusals,
 } from "../contract/representations.ts";
 import { operationStepLabel } from "../../ui/chuggy-ui/app/core/codeLabels.ts";
-import { operationRefusalSentence } from "../../ui/chuggy-ui/app/core/codeSentences.ts";
+import {
+  operationRefusalSentence,
+  ticketFollowingSentence,
+} from "../../ui/chuggy-ui/app/core/codeSentences.ts";
 import {
   operationAdvanced,
   operationFollowing,
@@ -72,4 +78,27 @@ test("a refusal over dependencies reaches the reader with each one named", () =>
   const sentence = operationRefusalSentence(step.refusal);
   for (const ticket of ["#3", "#5", "#7"])
     assert.ok(sentence.includes(ticket), sentence);
+});
+
+test("a ticket held on its revision is told why in the words its release would be refused with, and a trimmed one in its own", () => {
+  for (const code of draftReleaseRefusalCodes) {
+    const line = ticketFollowingSentence({ verdict: "Held", code });
+    assert.ok(line !== undefined, code);
+    assert.ok(
+      line.includes(operationRefusalSentence({ type: code })),
+      `${code}: ${line}`,
+    );
+    for (const word of operationRefusalCodes)
+      assert.ok(!line.includes(word), `${code}: ${line}`);
+  }
+  const trimmed = ticketFollowingSentence({ verdict: "Trimmed" });
+  assert.ok(trimmed !== undefined);
+  for (const word of operationRefusalCodes)
+    assert.ok(!trimmed.includes(word), trimmed);
+  for (const following of [
+    undefined,
+    { verdict: "Current" },
+    { verdict: "Moves" },
+  ] as const)
+    assert.equal(ticketFollowingSentence(following), undefined);
 });

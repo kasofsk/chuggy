@@ -56,10 +56,16 @@ import type { Partition } from "../../interpreter/projectStore.ts";
 import type { Refusal } from "../../interpreter/refusal.ts";
 import { parseStoredRefusal } from "../../interpreter/wire.ts";
 import {
+  asCanonicalConfiguration,
   asConfigurationRevisionId,
   parseDraftAuthoring,
   type ReleaseAuthoring,
 } from "../../interpreter/authoring.ts";
+import {
+  configurationFollowingRead,
+  type ConfigurationFollowingTicket,
+} from "../../interpreter/configurationFollowing.ts";
+import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
@@ -803,6 +809,55 @@ function ticketReleasedAuthoring(
   };
 }
 
+/**
+ * The revision a ticket holds and the one its repository's newest import
+ * declares under the same name, each as its canonical, with that repository
+ * and whether the two are one revision. There is no row where the held revision was imported from no repository,
+ * where that repository's newest import did not import, or where it declares
+ * no revision of that name.
+ */
+interface TicketFollowingRow {
+  readonly repository: string;
+  readonly held: string;
+  readonly head: string;
+  readonly holds_head: boolean;
+}
+
+/** Where one Pending ticket stands against its configuration's newest revision, as of its repository's newest import. */
+async function readTicketFollowing(
+  pool: pg.Pool,
+  partition: Partition,
+  revision: string,
+  ticket: Omit<ConfigurationFollowingTicket, "held" | "head" | "repository">,
+): Promise<TicketResource["following"]> {
+  const found = await pool.query<TicketFollowingRow>(
+    sql`SELECT p.repository, c.canonical AS held, k.canonical AS head,
+               k.revision=p.revision AS holds_head
+          FROM repository_configuration_provenance p
+          JOIN configuration_revision c
+            ON c.tenant=p.tenant AND c.project=p.project AND c.revision=p.revision
+          JOIN repository_configuration_import i
+            ON i.tenant=p.tenant AND i.project=p.project
+           AND i.repository=p.repository AND i.result='Imported'
+          JOIN configuration_revision k
+            ON k.tenant=p.tenant AND k.project=p.project
+           AND k.revision='repository:'||i.repository_commit||':'||p.name
+         WHERE p.tenant=${partition.tenant} AND p.project=${partition.project}
+           AND p.revision=${revision}`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) return undefined;
+  return configurationFollowingRead(
+    {
+      ...ticket,
+      held: asCanonicalConfiguration(row.held),
+      head: asCanonicalConfiguration(row.head),
+      repository: asRepositoryId(row.repository),
+    },
+    row.holds_head,
+  );
+}
+
 /** One ticket with its brief and its run totals, which a project's page carries neither of. */
 async function readTicket(
   pool: pg.Pool,
@@ -815,6 +870,22 @@ async function readTicket(
   const overrides = storedOverridesOf(row.overrides);
   const selection = storedSelectionOf(row.selection);
   const configurationVersion = configurationVersionOf(row);
+  const authoring =
+    row.released_authoring === null
+      ? undefined
+      : parseDraftAuthoring(row.released_authoring);
+  const following =
+    row.phase !== "Pending" ||
+    row.configuration_revision === null ||
+    authoring === undefined
+      ? undefined
+      : await readTicketFollowing(pool, partition, row.configuration_revision, {
+          brief,
+          overrides,
+          selection,
+          program: authoring.prog,
+          dependencies: authoring.deps,
+        });
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
     ...ticketResource(row),
@@ -829,9 +900,8 @@ async function readTicket(
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
     ...(overrides === undefined ? {} : { overrides }),
     ...(selection === undefined ? {} : { selection }),
-    ...(row.released_authoring === null
-      ? {}
-      : ticketReleasedAuthoring(parseDraftAuthoring(row.released_authoring))),
+    ...(authoring === undefined ? {} : ticketReleasedAuthoring(authoring)),
+    ...(following === undefined ? {} : { following }),
     ...(runTotals === undefined ? {} : { runTotals }),
   };
 }

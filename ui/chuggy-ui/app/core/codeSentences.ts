@@ -24,6 +24,7 @@ import {
 import type {
   OperationResponse,
   TaskIdentity,
+  TicketFollowing,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 
@@ -181,6 +182,26 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
       return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
     case "OverridesMoveDefinition":
       return "these overrides would change the definition the ticket was released with; while it is parked only how its worker is started may change";
+  }
+}
+
+/**
+ * Why a ticket that follows its configuration's newest revision stays on the
+ * one it holds, as one line: a held one in the words its release would be
+ * refused with. A ticket that is current or would move has nothing to say.
+ */
+export function ticketFollowingSentence(
+  following: TicketFollowing | undefined,
+): string | undefined {
+  switch (following?.verdict) {
+    case undefined:
+    case "Current":
+    case "Moves":
+      return undefined;
+    case "Held":
+      return `Stays on this revision rather than the newest: ${operationRefusalSentence({ type: following.code })}`;
+    case "Trimmed":
+      return "Stays on this revision rather than the newest: its program runs less than its plan, and was signed off against this one";
   }
 }
 

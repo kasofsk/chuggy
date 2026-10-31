@@ -101,6 +101,7 @@ import {
   changeProposalStatuses,
   changeProposalMerges,
   draftLandingSources,
+  draftReleaseRefusalCodes,
   draftStates,
   escalationKinds,
   executionOutcomes,
@@ -326,6 +327,25 @@ export const configurationVersionSchema = z.strictObject({
 });
 
 /**
+ * Whether a Pending ticket following its configuration's newest revision
+ * would move to the revision its repository's newest import declares under the
+ * same name, as the importer decides it. `Moves` is judged against the released
+ * ticket, though a person's unreleased revision of its draft still stops the
+ * move; `Held` carries the code a release would be refused with, and `Trimmed`
+ * is a program running less than its plan.
+ */
+export const ticketFollowingSchema = z.discriminatedUnion("verdict", [
+  z.strictObject({ verdict: z.literal("Current") }),
+  z.strictObject({ verdict: z.literal("Moves") }),
+  z.strictObject({
+    verdict: z.literal("Held"),
+    code: z.enum(draftReleaseRefusalCodes),
+  }),
+  z.strictObject({ verdict: z.literal("Trimmed") }),
+]);
+export type TicketFollowing = z.infer<typeof ticketFollowingSchema>;
+
+/**
  * A ticket as the project table and its own read both carry it. The table
  * carries the brief's title, because a table of documents needs a heading, and
  * its repository, because a project spans several; the rest of the brief is
@@ -413,6 +433,13 @@ export const ticketResponseSchema = z.object({
    * it, and only where a draft revision records it.
    */
   dependencies: page(ticketNumberSchema).optional(),
+  /**
+   * Where the ticket stands against its configuration's newest revision, as of
+   * the newest import of the repository it holds one from. Only the ticket's
+   * own read carries it, and only for a Pending ticket that follows and whose
+   * repository's newest import declares that revision's name.
+   */
+  following: ticketFollowingSchema.optional(),
   runTotals: runTotalsSchema.optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;

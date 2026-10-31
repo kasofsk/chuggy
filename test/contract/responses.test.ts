@@ -100,6 +100,7 @@ import {
   leadReadResponseSchema,
   leadResponseSchema,
   ticketAgenticRefusalsResponseSchema,
+  ticketFollowingSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
   workerPoolCredentialsSchema,
@@ -109,6 +110,7 @@ import { briefRepositoryCharsMax } from "../../src/contract/brief.ts";
 import { classify } from "../../src/contract/outcomes.ts";
 import { draftRevisionSchema } from "../../src/contract/requests.ts";
 import {
+  draftReleaseRefusalCodes,
   leadAbsencesUntimed,
   leadAdmissionRefusals,
   projectRepositoryConfigurationDeferrals,
@@ -229,6 +231,27 @@ test("a project read and a ticket read parse as the contract names them", () => 
   );
 });
 
+test("a ticket's following parses as each verdict, a held one only under a code a release is refused with", () => {
+  for (const following of [
+    { verdict: "Current" },
+    { verdict: "Moves" },
+    { verdict: "Trimmed" },
+    ...draftReleaseRefusalCodes.map((code) => ({ verdict: "Held", code })),
+  ])
+    assert.deepEqual(ticketFollowingSchema.parse(following), following);
+  for (const refused of [
+    { verdict: "Held" },
+    { verdict: "Held", code: "TicketChanged" },
+    { verdict: "Moves", program: [{ key: 1, evaluators: [{ key: 1 }] }] },
+    { verdict: "Current", code: "ConfigurationInvalid" },
+  ])
+    assert.equal(
+      ticketFollowingSchema.safeParse(refused).success,
+      false,
+      JSON.stringify(refused),
+    );
+});
+
 test("a ticket is always dated by its change and may be undated by its release", () => {
   const parsed = ticketResponseSchema.parse(
     ticketResponse({
@@ -289,6 +312,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     selection: { work: "build" },
     program: [{ key: 1, evaluators: [{ key: 1 }] }],
     dependencies: [asTicketId(1), asTicketId(2)],
+    following: { verdict: "Held", code: "SelectionUnknown" },
     runTotals,
     ...ticketCarried,
   }).body as Record<string, unknown>;
