@@ -70,7 +70,7 @@ import type {
 } from "../core/chatPane.ts";
 import {
   projectStreamCarrying,
-  projectStreamUnanswered,
+  projectStreamNotice,
 } from "../core/projectStream.ts";
 import {
   clipboardWritten,
@@ -93,6 +93,7 @@ import {
 } from "./shell/viewport.ts";
 import {
   useProjectFallbackExhausted,
+  useProjectStreamLapsed,
   useProjectStreamStatus,
 } from "./stream.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
@@ -100,27 +101,21 @@ import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Notice } from "./ui/Notice.tsx";
 import "./shell/shell.css";
 
-/**
- * What the reader is told, which is the other half of what `useStreamFallback`
- * reads on: the fallback runs while the stream is not carrying, and this speaks
- * while it is not carrying and has opened at least once. So a reopen is drawn —
- * the screen is stale and the reader should know it — and a first paint is not,
- * because nothing has stopped arriving yet.
- */
+/** What the reader is told, as `projectStreamNotice` decides it: the other
+ * half of what the fallback reads on, after the same grace. */
 export function StreamBanner(): ReactNode {
-  const status = useProjectStreamStatus();
-  const exhausted = useProjectFallbackExhausted();
-  if (projectStreamCarrying(status) || projectStreamUnanswered(status))
-    return null;
-  const detail =
-    status.reason ??
-    (status.source === "degraded" ? "Change log degraded" : "Stream not open");
+  const notice = projectStreamNotice(
+    useProjectStreamStatus(),
+    useProjectStreamLapsed(),
+    useProjectFallbackExhausted(),
+  );
+  if (notice.notice === "Quiet") return null;
   return (
     <Notice
       tone="parked"
       role="status"
-      heading="Not live"
-      detail={exhausted ? "Stream closed · fallback exhausted" : detail}
+      heading={notice.notice === "Reconnecting" ? "Reconnecting" : "Not live"}
+      detail={notice.detail}
     />
   );
 }
@@ -128,7 +123,7 @@ export function StreamBanner(): ReactNode {
 /**
  * The shell's own element, which states whether the stream is carrying because
  * the banner no longer answers that: the banner is silent when the stream is
- * live and silent again when a first connection has not been answered.
+ * live, through the grace, and when a first connection has not been answered.
  *
  * It is also the containing block for anything positioned inside it, so a
  * hidden caption placed absolutely is clipped with the frame rather than

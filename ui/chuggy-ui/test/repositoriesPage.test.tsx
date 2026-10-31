@@ -25,6 +25,7 @@ import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
+import { streamGraceMs } from "../app/browser/stream.tsx";
 import {
   repositoryAddHow,
   repositoryRosterPolledMs,
@@ -999,6 +1000,14 @@ async function parkedWoken(): Promise<void> {
   await settled();
 }
 
+/** The fallback's first poll, after the grace before it, which is as long as
+ * its interval and so parked with it. */
+async function fallbackBegun(): Promise<void> {
+  expect(streamGraceMs).toBe(fallbackIntervalMs);
+  await parkedWoken();
+  await parkedWoken();
+}
+
 /**
  * A listing is a request to the forge each time it is asked for, and nothing
  * the project's stream reports changes what an installation grants. So behind
@@ -1010,7 +1019,7 @@ test("the fallback's polls behind a stream that is down raise no reading of an o
   held.parkedMs = fallbackIntervalMs;
   const sent = await drawAtPicker({ stream: streamServer([]) });
   expect(pickerRows()).toStrictEqual(unmarked);
-  await parkedWoken();
+  await fallbackBegun();
   await parkedWoken();
   expect(bindingsRead(sent)).toBe(3);
   expect(listingsRead(sent)).toStrictEqual(["11", "13", "12"]);
@@ -1318,7 +1327,7 @@ test("the fallback's polls raise no reading of a roster the open picker reads by
   const sent = await drawAtPicker({ stream: streamServer([]) });
   await rosterIntervalPassed();
   expect(readingsBegun(sent)).toBe(2);
-  await parkedWoken();
+  await fallbackBegun();
   await parkedWoken();
   expect(bindingsRead(sent)).toBe(3);
   expect(readingsBegun(sent)).toBe(2);

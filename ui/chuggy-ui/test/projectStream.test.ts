@@ -4,6 +4,9 @@
  * What is checked is the recovery the contract asks for — the replay id, the
  * refusals that end an attempt and the ones that do not, the backoff, and that
  * stopping really abandons the request rather than leaving it reading.
+ *
+ * The double's project route answers 401 once its script runs out, so every
+ * case that does not stop the stream itself ends there.
  */
 
 import { expect, test } from "vitest";
@@ -12,6 +15,9 @@ import type { ProjectStreamEvent } from "../../../src/contract/events.ts";
 import {
   openProjectStream,
   projectStreamCarrying,
+  projectStreamHeldInitial,
+  projectStreamNotice,
+  projectStreamSilenceMs,
   projectStreamUnanswered,
   projectStreamUrl,
 } from "../app/core/projectStream.ts";
@@ -30,19 +36,24 @@ const partition = { tenant: "acme", project: "atlas" };
 function collector(): {
   readonly events: ProjectStreamEvent[];
   readonly statuses: ProjectStreamStatus[];
+  readonly skipped: number[];
   readonly handlers: {
     onEvent: (event: ProjectStreamEvent) => void;
     onStatus: (status: ProjectStreamStatus) => void;
+    onSkipped: () => void;
   };
 } {
   const events: ProjectStreamEvent[] = [];
   const statuses: ProjectStreamStatus[] = [];
+  const skipped: number[] = [];
   return {
     events,
     statuses,
+    skipped,
     handlers: {
       onEvent: (event) => events.push(event),
       onStatus: (status) => statuses.push(status),
+      onSkipped: () => skipped.push(1),
     },
   };
 }
@@ -136,54 +147,118 @@ test("a 401 before any stream byte ends the attempt for good", async () => {
   expect(seen.statuses.at(-1)?.connection).toBe("Stopped");
 });
 
-test("opens that will not stay open are given up after the budget", async () => {
-  const server = streamServer([]);
+test("opens that will not stay open are asked again at the ceiling past the budget, and only a 401 stops them", async () => {
+  const failing = streamOpenFailuresMax + 2;
+  const server = streamServer(
+    Array.from({ length: failing }, () => ({ status: 500 })),
+  );
   const seen = collector();
   await openProjectStream(server.ports, partition, seen.handlers).finished;
-  expect(server.headersSeen.length).toBe(streamOpenFailuresMax);
-  expect(seen.statuses.at(-1)?.reason).toBe("the stream would not stay open");
+  expect(server.headersSeen.length).toBe(failing + 1);
+  expect(server.delaysMs).toEqual(
+    Array.from({ length: failing }, (_unused, at) =>
+      at + 1 < streamOpenFailuresMax
+        ? streamDelayMs(at + 1)
+        : streamReopenDelayMsMax,
+    ),
+  );
+  expect(
+    seen.statuses.filter((status) => status.connection === "Stopped"),
+  ).toEqual([
+    {
+      connection: "Stopped",
+      source: "unknown",
+      cause: "Refused",
+      answered: true,
+    },
+  ]);
 });
 
-/**
- * The thread live stream asks the shared transport for a ladder of its own,
- * and this stream does not: an open that hands frames over and ends soon is
- * still one that did not last, and a wait a 503 names is not read.
- */
-test("opens that hand frames over and end soon are counted like any other, and given up after the budget", async () => {
+/** The server ends every open at an age of its own, so an open that handed a
+ * frame over and ended soon is a stream that worked. */
+test("opens that hand frames over and end soon keep being asked, and never stop the stream", async () => {
   const delivering = {
     status: 200,
     chunks: [frame("source", undefined, { version: 1, state: "live" })],
-    cut: true,
   };
-  const server = streamServer(
-    Array.from({ length: streamOpenFailuresMax + 1 }, () => delivering),
-  );
+  const closes = streamOpenFailuresMax;
+  const server = streamServer(Array.from({ length: closes }, () => delivering));
   const seen = collector();
   await openProjectStream(server.ports, partition, seen.handlers).finished;
-  expect(server.headersSeen.length).toBe(streamOpenFailuresMax);
+  expect(server.headersSeen.length).toBe(closes + 1);
   expect(server.delaysMs).toEqual(
-    Array.from({ length: streamOpenFailuresMax - 1 }, (_unused, at) =>
-      streamDelayMs(at + 1),
-    ),
+    Array.from({ length: closes }, (_unused, at) => streamDelayMs(at + 1)),
   );
-  expect(seen.statuses.at(-1)?.reason).toBe("the stream would not stay open");
+  expect(
+    seen.statuses.filter((status) => status.connection === "Stopped").length,
+  ).toBe(1);
+  expect(seen.statuses.at(-1)?.cause).toBe("Refused");
 });
 
-test("a 503 naming a wait is waited on the ladder and not for what it names", async () => {
+test("a 404 at open is an open that failed, and is asked again", async () => {
+  const server = streamServer([{ status: 404 }, { status: 404 }]);
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(server.headersSeen.length).toBe(3);
+  expect(seen.statuses.at(-1)?.cause).toBe("Refused");
+});
+
+test("a 503 naming a wait is waited for what it names, and reads degraded", async () => {
+  const server = streamServer([{ status: 503, retryAfter: "7" }]);
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(server.delaysMs).toEqual([7_000]);
+  expect(seen.statuses).toContainEqual({
+    connection: "Waiting",
+    source: "degraded",
+    cause: "Busy",
+    answered: true,
+  });
+});
+
+test("a body silent past the deadline is a close, and the stream is opened again", async () => {
   const server = streamServer([
-    { status: 503, retryAfter: "7" },
-    { status: 401 },
+    {
+      status: 200,
+      chunks: [frame("ready", undefined, { version: 1 })],
+      silent: true,
+    },
   ]);
   const seen = collector();
   await openProjectStream(server.ports, partition, seen.handlers).finished;
-  expect(server.delaysMs).toEqual([streamDelayMs(1)]);
+  expect(server.silencesMs).toEqual([projectStreamSilenceMs]);
+  expect(server.headersSeen.length).toBe(2);
+  expect(seen.statuses).toContainEqual({
+    connection: "Waiting",
+    source: "unknown",
+    cause: "Silent",
+    answered: true,
+  });
 });
 
-/**
- * The handling a representation the wire rejects gets, now that the contract
- * parses it: the connection ends and the reopen budget bounds the retrying.
- */
-test("a frame the contract rejects ends the connection rather than being skipped", async () => {
+test("a held body is not cut by its deadline while it stays open", async () => {
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [frame("ready", undefined, { version: 1 })],
+      hold: true,
+    },
+  ]);
+  const opened = openProjectStream(
+    server.ports,
+    partition,
+    collector().handlers,
+  );
+  await server.holding;
+  opened.stop();
+  await opened.finished;
+  expect(server.silencesMs).toEqual([]);
+  expect(server.headersSeen.length).toBe(1);
+});
+
+/** A console older than the API it reads is handed frames it cannot parse,
+ * and replaying one of them at every open would leave it never live. */
+test("a frame the contract rejects is skipped, its sequence taken and the partition read again", async () => {
   const server = streamServer([
     {
       status: 200,
@@ -209,9 +284,72 @@ test("a frame the contract rejects ends the connection rather than being skipped
   ]);
   const seen = collector();
   await openProjectStream(server.ports, partition, seen.handlers).finished;
-  expect(seen.events).toEqual([]);
+  expect(seen.skipped.length).toBe(1);
+  expect(seen.events.map((event) => event.event)).toEqual(["Ticket"]);
   expect(server.headersSeen.length).toBe(2);
-  expect(server.headersSeen[1]?.["last-event-id"]).toBeUndefined();
+  expect(server.headersSeen[1]?.["last-event-id"]).toBe("10");
+});
+
+test("a frame naming an event this console does not know is skipped and its sequence taken", async () => {
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [frame("Unheard", "12", { version: 1 })],
+    },
+  ]);
+  const seen = collector();
+  await openProjectStream(server.ports, partition, seen.handlers).finished;
+  expect(seen.skipped.length).toBe(1);
+  expect(seen.events).toEqual([]);
+  expect(server.headersSeen[1]?.["last-event-id"]).toBe("12");
+});
+
+test("a status is published once for as long as it does not change", async () => {
+  const live = frame("source", undefined, { version: 1, state: "live" });
+  const server = streamServer([
+    {
+      status: 200,
+      chunks: [live, live, live, live],
+      hold: true,
+    },
+  ]);
+  const seen = collector();
+  const opened = openProjectStream(server.ports, partition, seen.handlers);
+  await server.holding;
+  opened.stop();
+  await opened.finished;
+  expect(seen.statuses.map((status) => status.connection)).toEqual([
+    "Opening",
+    "Open",
+    "Open",
+  ]);
+  expect(seen.statuses.map((status) => status.source)).toEqual([
+    "unknown",
+    "unknown",
+    "live",
+  ]);
+});
+
+/** A renewal hands the next run what the last one learnt. */
+test("a run handed what an earlier one held replays from its cursor and is answered", async () => {
+  const server = streamServer([{ status: 200, chunks: [], hold: true }]);
+  const held = {
+    ...projectStreamHeldInitial(),
+    lastSequence: 41,
+    answered: true,
+  };
+  const seen = collector();
+  const opened = openProjectStream(
+    server.ports,
+    partition,
+    seen.handlers,
+    held,
+  );
+  await server.holding;
+  opened.stop();
+  await opened.finished;
+  expect(server.headersSeen[0]?.["last-event-id"]).toBe("41");
+  expect(seen.statuses[0]?.answered).toBe(true);
 });
 
 test("the reopen delay doubles from the floor and stops at the ceiling", () => {
@@ -242,13 +380,7 @@ function statusAt(
   source: ProjectStreamStatus["source"],
   answered = true,
 ): ProjectStreamStatus {
-  return {
-    connection,
-    source,
-    answered,
-    reason: undefined,
-    lastSequence: undefined,
-  };
+  return { connection, source, answered, cause: undefined };
 }
 
 test("only an open connection on a live log is carrying what a screen shows", () => {
@@ -297,4 +429,34 @@ test("a reopen is answered even when no open has ever succeeded", async () => {
     (status) => status.connection === "Opening",
   );
   expect(opening.map((status) => status.answered)).toEqual([false, true]);
+});
+
+test("nothing is said until the grace has lapsed, nor while the stream carries", () => {
+  expect(
+    projectStreamNotice(statusAt("Waiting", "live"), false, false),
+  ).toEqual({ notice: "Quiet" });
+  expect(projectStreamNotice(statusAt("Open", "live"), true, true)).toEqual({
+    notice: "Quiet",
+  });
+  expect(
+    projectStreamNotice(statusAt("Opening", "unknown", false), true, false),
+  ).toEqual({ notice: "Quiet" });
+});
+
+test("a stream past the grace is reconnecting while it climbs, and not live once nothing reads", () => {
+  expect(
+    projectStreamNotice(statusAt("Waiting", "live"), true, false).notice,
+  ).toBe("Reconnecting");
+  expect(
+    projectStreamNotice(statusAt("Opening", "live"), true, false).notice,
+  ).toBe("Reconnecting");
+  expect(
+    projectStreamNotice(statusAt("Waiting", "live"), true, true).notice,
+  ).toBe("NotLive");
+  expect(
+    projectStreamNotice(statusAt("Stopped", "live"), true, false).notice,
+  ).toBe("NotLive");
+  expect(
+    projectStreamNotice(statusAt("Open", "degraded"), true, false),
+  ).toEqual({ notice: "NotLive", detail: "Change log degraded" });
 });

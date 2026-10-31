@@ -44,12 +44,19 @@ import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import type * as BrowserPorts from "../app/browser/ports.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
 /** The ticket the page's address names, which `addressedAt` moves. */
 const addressed = vi.hoisted(() => ({ ticket: "11" }));
 
+/** The clock moves past many heartbeats the double does not send, so the
+ * stream's silence deadline never passes here. */
+vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof BrowserPorts>()),
+  deadlineMs: () => new Promise<void>(() => undefined),
+}));
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
   Link: (props: { readonly children?: ReactNode }) => (
