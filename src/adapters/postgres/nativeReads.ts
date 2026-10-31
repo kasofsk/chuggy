@@ -811,8 +811,8 @@ function ticketReleasedAuthoring(
 
 /**
  * The revision a ticket holds and the one its repository's newest import
- * declares under the same name, each as its canonical, with that repository.
- * There is no row where the held revision was imported from no repository,
+ * declares under the same name, each as its canonical, with that repository
+ * and whether the two are one revision. There is no row where the held revision was imported from no repository,
  * where that repository's newest import did not import, or where it declares
  * no revision of that name.
  */
@@ -820,6 +820,7 @@ interface TicketFollowingRow {
   readonly repository: string;
   readonly held: string;
   readonly head: string;
+  readonly holds_head: boolean;
 }
 
 /** Where one Pending ticket stands against its configuration's newest revision, as of its repository's newest import. */
@@ -830,7 +831,8 @@ async function readTicketFollowing(
   ticket: Omit<ConfigurationFollowingTicket, "held" | "head" | "repository">,
 ): Promise<TicketResource["following"]> {
   const found = await pool.query<TicketFollowingRow>(
-    sql`SELECT p.repository, c.canonical AS held, k.canonical AS head
+    sql`SELECT p.repository, c.canonical AS held, k.canonical AS head,
+               k.revision=p.revision AS holds_head
           FROM repository_configuration_provenance p
           JOIN configuration_revision c
             ON c.tenant=p.tenant AND c.project=p.project AND c.revision=p.revision
@@ -845,12 +847,15 @@ async function readTicketFollowing(
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
-  return configurationFollowingRead({
-    ...ticket,
-    held: asCanonicalConfiguration(row.held),
-    head: asCanonicalConfiguration(row.head),
-    repository: asRepositoryId(row.repository),
-  });
+  return configurationFollowingRead(
+    {
+      ...ticket,
+      held: asCanonicalConfiguration(row.held),
+      head: asCanonicalConfiguration(row.head),
+      repository: asRepositoryId(row.repository),
+    },
+    row.holds_head,
+  );
 }
 
 /** One ticket with its brief and its run totals, which a project's page carries neither of. */

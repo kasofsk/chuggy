@@ -261,26 +261,50 @@ test("a ticket's own read answers the verdict without the program, and a held on
   const shapeless = catalog((value) => {
     field(value, "workloads")["review"] = { runner: "Agent" };
   });
-  assert.deepEqual(configurationFollowingRead(ticket(catalog())), {
+  assert.deepEqual(configurationFollowingRead(ticket(catalog()), false), {
     verdict: "Current",
   });
-  assert.deepEqual(configurationFollowingRead(ticket(changed)), {
+  assert.deepEqual(configurationFollowingRead(ticket(changed), false), {
     verdict: "Moves",
   });
   assert.deepEqual(
-    configurationFollowingRead(ticket(changed, { held: trimmedHeld })),
+    configurationFollowingRead(ticket(changed, { held: trimmedHeld }), false),
     { verdict: "Trimmed" },
   );
   assert.deepEqual(
     configurationFollowingRead(
       ticket(canonicalConfigurationOf({ version: 1 })),
+      false,
     ),
     { verdict: "Held", code: "SelectionUnsupported" },
   );
-  assert.deepEqual(configurationFollowingRead(ticket(shapeless)), {
+  assert.deepEqual(configurationFollowingRead(ticket(shapeless), false), {
     verdict: "Held",
     code: "ConfigurationInvalid",
   });
+});
+
+test("a ticket's own read answers Current where it holds the head's own revision, which the importer never judges", () => {
+  const trimmed = catalog((value) => {
+    field(value, "plans")["standard"] = [
+      { name: "review", evaluators: ["review"] },
+      { name: "tests", evaluators: ["tests"] },
+    ];
+  });
+  assert.deepEqual(
+    configurationFollowingRead(ticket(trimmed, { held: trimmed }), true),
+    { verdict: "Current" },
+  );
+  assert.equal(
+    configurationFollowingRead(
+      ticket(trimmed, {
+        held: trimmed,
+        selection: { configuration: "Pinned" },
+      }),
+      true,
+    ),
+    undefined,
+  );
 });
 
 test("a ticket's own read answers nothing where its choice, or else its held catalog's default, pins it", () => {
@@ -293,11 +317,12 @@ test("a ticket's own read answers nothing where its choice, or else its held cat
   assert.equal(
     configurationFollowingRead(
       ticket(changed, { selection: { configuration: "Pinned" } }),
+      false,
     ),
     undefined,
   );
   assert.equal(
-    configurationFollowingRead(ticket(changed, { held: unchosen })),
+    configurationFollowingRead(ticket(changed, { held: unchosen }), false),
     undefined,
   );
   assert.deepEqual(
@@ -306,6 +331,7 @@ test("a ticket's own read answers nothing where its choice, or else its held cat
         held: unchosen,
         selection: { configuration: "Latest" },
       }),
+      false,
     ),
     { verdict: "Moves" },
   );

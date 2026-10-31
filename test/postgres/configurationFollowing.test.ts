@@ -839,6 +839,25 @@ test("the ticket's own read answers Held under the release's code, and Trimmed",
   assert.deepEqual(await following(project, trimmed), { verdict: "Trimmed" });
 });
 
+test("a trimmed ticket on its repository's newest import reads Current, as the importer never judges it", async () => {
+  const project = await followingProject("read-trimmed-head");
+  const ticket = await released(
+    project,
+    await imported(
+      project,
+      commits.first,
+      catalog((value) => {
+        part(value, "plans")["standard"] = [
+          { name: "review", evaluators: ["review"] },
+          { name: "tests", evaluators: ["tests"] },
+        ];
+      }),
+    ),
+  );
+  await attempted(project, commits.first);
+  assert.deepEqual(await following(project, ticket), { verdict: "Current" });
+});
+
 test("a following ticket whose repository has no stored head carries no following", async () => {
   const project = await followingProject("read-headless");
   const ticket = await released(

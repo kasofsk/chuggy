@@ -154,10 +154,12 @@ export function configurationFollowingVerdict(
  * What a ticket's own read says of its following: the verdict the importer
  * would reach against `head`, a held one under the code a release would be
  * refused with, and nothing where the ticket's choice, then its held catalog's
- * default, pins it.
+ * default, pins it. A ticket holding the head's own revision is `Current`, as
+ * the importer never judges it.
  */
 export function configurationFollowingRead(
   ticket: ConfigurationFollowingTicket,
+  holdsHead: boolean,
 ): TicketFollowing | undefined {
   const declared = releaseConfigurationReadiness(ticket.held);
   const defaults =
@@ -166,6 +168,7 @@ export function configurationFollowingRead(
       : undefined;
   if (configurationFollowingOf(ticket.selection, defaults) !== "Latest")
     return undefined;
+  if (holdsHead) return { verdict: "Current" };
   const followed = configurationFollowingVerdict(ticket);
   switch (followed.verdict) {
     case "Current":
