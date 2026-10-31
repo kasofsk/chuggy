@@ -325,9 +325,9 @@ test("where there is nothing to choose, or the project was named, the remote is 
   expect(reads.proposal).toEqual({ proposal: "Unsought" });
   expect(reads.choice).toEqual(made("Only", "acme", "widgets"));
   expect((await stood(one, { remote })).found).toEqual([]);
-  expect(sent.filter((asked) => asked.endsWith("/repositories"))).toHaveLength(
-    1,
-  );
+  expect(
+    sent.filter((asked) => asked.endsWith("/repositories?reach=false")),
+  ).toHaveLength(1);
   const named = { remote, answers: { project: "widgets" } };
   const two = bound(["acme"], pair, ["acme/gadgets"]);
   expect((await siteRead(two, named)).choice).toEqual(
@@ -524,7 +524,7 @@ const reads = [
   "GET /api/v1/projects",
   "GET /api/v1/tenants/acme/forge-installations",
   `GET ${project}/selector-settings`,
-  `GET ${project}/repositories`,
+  `GET ${project}/repositories?reach=false`,
   `GET ${project}/execution-placement`,
   `GET ${project}/session-placement`,
   `GET ${project}?limit=1&phase=Done`,
@@ -631,9 +631,11 @@ test("a project the remote was looked for in has its repositories read once, whe
   const sent = await sentFor(bound(["acme"], pair, ["acme/widgets"]), {
     remote,
   });
-  expect(sent.filter((asked) => asked.endsWith("/repositories"))).toEqual([
-    `GET ${project}/repositories`,
-    "GET /api/v1/tenants/acme/projects/gadgets/repositories",
+  expect(
+    sent.filter((asked) => asked.endsWith("/repositories?reach=false")),
+  ).toEqual([
+    `GET ${project}/repositories?reach=false`,
+    "GET /api/v1/tenants/acme/projects/gadgets/repositories?reach=false",
   ]);
 });
 

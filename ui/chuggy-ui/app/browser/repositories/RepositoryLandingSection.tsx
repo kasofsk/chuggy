@@ -41,7 +41,11 @@ import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import {
+  projectRepositoriesInvalidated,
+  projectRepositoriesReachUnaskedResource,
+  projectRepositoriesResource,
+} from "./AddRepository.tsx";
 
 const landingOptions = briefFinalizationModes.map((mode) => ({
   value: mode,
@@ -103,8 +107,8 @@ interface RepositoryLandingWriting {
 /**
  * The one door the binding's settings write through. A write that landed IS
  * the newest read of its row, so it is written into the bindings the page
- * holds rather than left for a refetch nothing schedules: the route raises no
- * frame.
+ * holds, and the read with reach is staled, rather than left for a refetch
+ * nothing schedules: the route raises no frame.
  */
 function useRepositoryLandingWriting(
   partition: PartitionIdentity,
@@ -117,12 +121,12 @@ function useRepositoryLandingWriting(
   const key = projectResourceKey(
     partition,
     "Project",
-    projectRepositoriesResource,
+    projectRepositoriesReachUnaskedResource,
   );
   return {
     saved,
     reload: () => {
-      void client.invalidateQueries({ queryKey: key });
+      void projectRepositoriesInvalidated(client, partition);
     },
     write: (wrote) => {
       setSaved({ saved: "Writing" });
@@ -143,6 +147,13 @@ function useRepositoryLandingWriting(
                 ? bindings
                 : projectRepositoriesWith(bindings, answered.binding),
           );
+          void client.invalidateQueries({
+            queryKey: projectResourceKey(
+              partition,
+              "Project",
+              projectRepositoriesResource,
+            ),
+          });
           wrote();
         }
         if (answered.saved === "Conflict")

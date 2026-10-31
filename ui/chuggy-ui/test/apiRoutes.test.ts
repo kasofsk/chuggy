@@ -285,6 +285,17 @@ test("a configurations page asks for the newest of each name by name, and for ev
   ]);
 });
 
+test("a project's bindings are read without reach by saying reach=false, and with it by saying nothing", async () => {
+  const held = recording(() => ({ repositories: [] }));
+  await apiProjectRepositories(held.ports, partition, { reach: false });
+  await apiProjectRepositories(held.ports, partition, { reach: true });
+  expect(held.urls).toStrictEqual([
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `/repositories?reach=false`,
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/repositories`,
+  ]);
+});
+
 test("the inventory carries its cursor and stops when there is none", async () => {
   const held = recording((url) =>
     url.includes("cursor=next")
@@ -715,7 +726,7 @@ async function askForgeRoutes(ports: ApiPorts): Promise<void> {
     codeVerifier: "v".repeat(43),
   });
   await apiForgeInstallationRepositories(ports, "acme", "42");
-  await apiProjectRepositories(ports, partition);
+  await apiProjectRepositories(ports, partition, { reach: true });
   await apiBindProjectRepository(
     ports,
     partition,

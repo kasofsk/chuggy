@@ -331,15 +331,19 @@ async function chooseFree(): Promise<void> {
   await settled();
 }
 
-/** The key the page's own bindings are cached under, written out rather than
- * built, because what a case holds is the key the page reads under. */
-const bindingsKey = [
+/** The keys a project's bindings are cached under, the page's own read with
+ * reach and the one without it every other screen draws, written out rather
+ * than built, because what a case holds is the key each reads under. */
+const bindingsKeys = [
+  "project-repositories",
+  "project-repositories-reach-unasked",
+].map((resource) => [
   "project",
   leadPartition.tenant,
   leadPartition.project,
   "Project",
-  "project-repositories",
-];
+  resource,
+]);
 
 /**
  * The keys a write stales, watched from after the draw so the reads the draw
@@ -415,7 +419,7 @@ const workerSettingsUrl =
  * with that installation's page on GitHub; one it reaches says nothing.
  */
 test("a binding the worker app's installation does not select is marked on its row, with the installation's page", async () => {
-  await drawPage({
+  const sent = await drawPage({
     bound: {
       repositories: [
         {
@@ -438,6 +442,17 @@ test("a binding the worker app's installation does not select is marked on its r
       .getByRole("link", { name: "Review on GitHub" })
       .getAttribute("href"),
   ).toBe(workerSettingsUrl);
+  expect([
+    ...new Set(
+      sent
+        .map((one) => one.url)
+        .filter((url) =>
+          url.includes(`/${leadPartition.project}/repositories`),
+        ),
+    ),
+  ]).toStrictEqual([
+    `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories`,
+  ]);
 });
 
 test("a binding the worker app reaches carries no mark, and one GitHub said nothing of is unread", async () => {
@@ -1861,7 +1876,7 @@ test("a bind stales the bindings the page drew", async () => {
   });
   const raised = invalidationsAfterDraw();
   await chooseFree();
-  expect(raised).toStrictEqual([bindingsKey]);
+  expect(raised).toStrictEqual(bindingsKeys);
 });
 
 /** Nothing was bound, so there is nothing to re-read: a refusal that staled the
@@ -1952,7 +1967,7 @@ test("a retry asks for the step again by address and stales the bindings the pag
       body: { repository: boundUrl },
     },
   ]);
-  expect(raised).toStrictEqual([bindingsKey]);
+  expect(raised).toStrictEqual(bindingsKeys);
 });
 
 /** The reason is what says whether retrying again can help, so the row takes it in place of the bare word. */
@@ -2005,7 +2020,7 @@ test("a retry that meets the binding retired stales the bindings the page drew",
   const raised = invalidationsAfterDraw();
   await retryFirst();
   expect(bindingRowsText()[0]).toBe("kasofsk/chuggyUnbound");
-  expect(raised).toStrictEqual([bindingsKey]);
+  expect(raised).toStrictEqual(bindingsKeys);
 });
 
 /** The line drawn under Add, which is none where nothing is missing. */

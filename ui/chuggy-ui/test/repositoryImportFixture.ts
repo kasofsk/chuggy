@@ -37,13 +37,19 @@ export function repositoryImportRefusedBinding(
   };
 }
 
+/** The listing as the screens that draw the notice read it, which asks the
+ * forge nothing of what the worker App reaches. */
+export const repositoryImportListingReachUnasked = "/repositories?reach=false";
+
 /** `served`, answering the repository listing with `repositories` and anything else as it does. */
 export function repositoryImportListed(
   repositories: readonly unknown[],
   served: (url: string) => Response,
 ): (url: string) => Response {
   return (url) =>
-    url.endsWith("/repositories") ? answer({ repositories }) : served(url);
+    url.endsWith(repositoryImportListingReachUnasked)
+      ? answer({ repositories })
+      : served(url);
 }
 
 /** What lays the repository listing over a case's own `fetch`. */
@@ -52,7 +58,7 @@ export function repositoryImportListedOver(
 ): (served: typeof fetch) => typeof fetch {
   return (served) =>
     ((url: string, init?: RequestInit) =>
-      url.endsWith("/repositories")
+      url.endsWith(repositoryImportListingReachUnasked)
         ? Promise.resolve(answer({ repositories }))
         : served(url, init)) as typeof fetch;
 }

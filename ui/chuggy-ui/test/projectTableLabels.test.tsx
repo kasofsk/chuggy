@@ -49,6 +49,7 @@ import {
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   repositoryImportListedOver,
+  repositoryImportListingReachUnasked,
   repositoryImportRefusedBinding,
 } from "./repositoryImportFixture.ts";
 
@@ -581,6 +582,26 @@ test("a live binding whose newest import was refused raises one notice over the 
     "Import refused · acme/widgets",
   );
   expect(screen.getByRole("link", { name: "acme/widgets" })).toBeDefined();
+});
+
+/** What the worker App reaches is the forge's to answer, and only the
+ * Repositories page draws it, so the tickets and their notice ask it nothing. */
+test("the tickets and their notice read the project's bindings only without reach", async () => {
+  const asked = new Set<string>();
+  const listed = repositoryImportListedOver([
+    repositoryImportRefusedBinding(repository),
+  ]);
+  await drawTableWith([ticket], [execution], (served) => {
+    const over = listed(served);
+    return ((url: string, init?: RequestInit) => {
+      if (url.includes("/repositories")) asked.add(url);
+      return over(url, init);
+    }) as typeof fetch;
+  });
+  expect(screen.getByText(/^Import refused/u)).toBeDefined();
+  expect([...asked]).toStrictEqual([
+    `/api/v1/tenants/${atlas.tenant}/projects/${atlas.project}${repositoryImportListingReachUnasked}`,
+  ]);
 });
 
 test("a project with no tickets still carries the notice of a refused import", async () => {

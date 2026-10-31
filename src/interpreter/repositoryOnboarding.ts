@@ -321,6 +321,15 @@ export type ProjectRepositoryListed = ProjectRepositoryBound & {
       }
   );
 
+/**
+ * Whether a read of a project's bindings asks the forge what the worker App
+ * reaches of each. A read that does not ask answers no `workerReach` on any
+ * row, which says nothing about whether the worker App reaches it.
+ */
+export interface ProjectRepositoriesQuery {
+  readonly reach: boolean;
+}
+
 /** What reading a project's bindings came to. */
 export type ProjectRepositoriesResult =
   | {
@@ -509,6 +518,7 @@ export interface RepositoryOnboarding {
   projectRepositories(
     principal: Principal,
     partition: Partition,
+    query: ProjectRepositoriesQuery,
   ): Promise<ProjectRepositoriesResult>;
 
   setLanding(
@@ -1162,11 +1172,12 @@ function listedRepository(
     : { ...listed, configured: true, configurationsHeld };
 }
 
-/** Every binding a reader may see, each with what the step has left the project for it and, where it is live, what the worker App reaches of it. */
+/** Every binding a reader may see, each with what the step has left the project for it and, where it is live and the query asks, what the worker App reaches of it. */
 async function projectRepositories(
   ports: RepositoryOnboardingPorts,
   principal: Principal,
   partition: Partition,
+  query: ProjectRepositoriesQuery,
 ): Promise<ProjectRepositoriesResult> {
   if (
     (await ports.access.authorize(principal, partition, "Read")) === undefined
@@ -1179,13 +1190,15 @@ async function projectRepositories(
     partition,
     repositories,
   });
-  const reaches = await boundRepositoryWorkerReaches(
-    ports,
-    partition,
-    bound
-      .filter((row) => row.retiredAt === undefined)
-      .map((row) => row.repository),
-  );
+  const reaches = query.reach
+    ? await boundRepositoryWorkerReaches(
+        ports,
+        partition,
+        bound
+          .filter((row) => row.retiredAt === undefined)
+          .map((row) => row.repository),
+      )
+    : new Map<RepositoryId, RepositoryWorkerReach>();
   return {
     result: "Repositories",
     repositories: bound.map((row) =>
@@ -1267,8 +1280,8 @@ export function repositoryOnboarding(
     bindRepository: (principal, partition, request) =>
       bindRepository(ports, principal, partition, request),
 
-    projectRepositories: (principal, partition) =>
-      projectRepositories(ports, principal, partition),
+    projectRepositories: (principal, partition, query) =>
+      projectRepositories(ports, principal, partition, query),
 
     setLanding: (principal, partition, written) =>
       setLanding(ports, principal, partition, written),

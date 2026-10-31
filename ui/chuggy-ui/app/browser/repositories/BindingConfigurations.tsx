@@ -14,7 +14,6 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiConfigureProjectRepository } from "../../core/apiRoutes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoryConfigureStatus,
   type RepositoryStepStatus,
@@ -23,7 +22,7 @@ import { useApiPorts } from "../api.ts";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
 
 /** One retry, from the request it sends to the status it leaves on the row. */
 function useBindingConfigurationsRetry(
@@ -57,13 +56,7 @@ function useBindingConfigurationsRetry(
           (answered.outcome === "Conflict" &&
             answered.code === "RepositoryRetired");
         if (!redrawn) return;
-        await client.invalidateQueries({
-          queryKey: projectResourceKey(
-            partition,
-            "Project",
-            projectRepositoriesResource,
-          ),
-        });
+        await projectRepositoriesInvalidated(client, partition);
       })();
     },
   };

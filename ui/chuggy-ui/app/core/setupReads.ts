@@ -463,7 +463,7 @@ async function setupRepositoriesRead(
   partition: PartitionIdentity,
 ): Promise<SetupRepositories> {
   return setupGot(
-    await apiProjectRepositories(ports, partition),
+    await apiProjectRepositories(ports, partition, { reach: false }),
     (answered) => answered.repositories,
     (answered) => answered.repositories.length < projectRepositoriesAnsweredMax,
   );
