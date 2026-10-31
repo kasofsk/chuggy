@@ -15,6 +15,10 @@
  * a fault until it heals. The stream is `streamDouble.ts`'s, answered by what
  * the site is at each open, and the site sends a heartbeat down it on the
  * server's cadence, so a connection is cut only when a case cuts it.
+ *
+ * REACT'S ACCOUNT OF A STATE SET DURING ANOTHER COMPONENT'S RENDER IS
+ * REMEMBERED as a drifted fixture is, because React says it once and only on
+ * the console, where a suite that passes is never read.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -22,7 +26,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { act, cleanup, render } from "@testing-library/react";
 import { StrictMode, useState } from "react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import type { z } from "zod";
 
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
@@ -507,6 +511,9 @@ export interface ConsoleSite extends ConsoleNetwork {
   readonly unrouted: string[];
   /** Every fixture its route's schema refused, with why. */
   readonly drifted: string[];
+  /** Every component whose state was set while a different one rendered,
+   * with the one rendering. */
+  readonly updatesInRender: string[];
   /** Every open that asked for no replay after the stream had handed over a
    * frame with an id, by the newest id it had handed over: what the gap held
    * is lost to that console. */
@@ -626,6 +633,7 @@ export function consoleSiteOpened(): ConsoleSite {
     failing: undefined,
     unrouted: [],
     drifted: [],
+    updatesInRender: [],
     cursorsDropped: [],
     stream: streamServer(() => {
       if (!site.up) {
@@ -747,6 +755,36 @@ function consoleBrowserStubbed(): void {
   Element.prototype.releasePointerCapture = () => undefined;
 }
 
+/** What React logs, in its own words, for a state set while a different
+ * component renders. */
+const consoleUpdateInRenderSaid = "while rendering a different component";
+
+/** React's log heard, and each state it says was set during another
+ * component's render remembered on the site, the log still passed on. */
+function consoleUpdatesInRenderHeard(site: ConsoleSite): void {
+  const logged = console.error.bind(console);
+  vi.spyOn(console, "error").mockImplementation((...said: unknown[]) => {
+    const [format, updated, rendering] = said;
+    if (
+      typeof format === "string" &&
+      format.includes(consoleUpdateInRenderSaid)
+    )
+      site.updatesInRender.push(
+        `${String(updated)} while rendering ${String(rendering)}`,
+      );
+    logged(...said);
+  });
+}
+
+/** What every case over the site ends by holding: every read was one the site
+ * has a route and a true fixture for, and no state was set during another
+ * component's render. */
+export function consoleSiteClean(site: ConsoleSite): void {
+  expect(site.unrouted, "reads with no route").toEqual([]);
+  expect(site.drifted, "fixtures the contract refuses").toEqual([]);
+  expect(site.updatesInRender, "states set in another's render").toEqual([]);
+}
+
 /** A site made for each case of a file, on a fake clock and in a browser
  * stubbed as the console needs, and taken away after it; `made` is told each
  * one. The file's own `vi.mock` of `ports.ts` is what reaches it. */
@@ -755,6 +793,7 @@ export function consoleSiteEachCase(made: (site: ConsoleSite) => void): void {
     vi.useFakeTimers();
     consoleBrowserStubbed();
     const site = consoleSiteOpened();
+    consoleUpdatesInRenderHeard(site);
     consoleNetworkHeld.current = site;
     made(site);
   });

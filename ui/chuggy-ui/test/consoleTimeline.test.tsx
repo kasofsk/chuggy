@@ -1,16 +1,18 @@
 /**
  * The whole console over the site, stepped through what a server does over
  * time, with a reader's text typed into each of the places a reader writes:
- * New ticket's form and the chat pane's composer, and an open North Star edit
+ * New ticket's form and the chat pane's composer, an open North Star edit and
+ * the same composer, and a ticket's edit form, drawn on the ticket's own read,
  * and the same composer.
  *
  * WHAT IS ASSERTED IS WHAT HOLDS THROUGHOUT, not what a screen says. After
  * every tick of every timeline the text typed is still there, in the same
- * element it was typed into, so nothing under it was mounted again; no banner
- * draws while the site carries, nor before the stream has been lost for the
- * grace; and the stream has never been reopened from nowhere once it had
- * handed over a frame. Each
- * timeline ends with the site up and the console live again with no banner.
+ * element it was typed into, so nothing under it was mounted again; no stream
+ * banner draws while the site carries, nor before the stream has been lost
+ * for the grace; and the stream has never been reopened from nowhere once it
+ * had handed over a frame. Each timeline ends with the site up and the
+ * console live again with no stream banner, and with the version banner
+ * where the timeline answered the console in a shape it cannot read.
  */
 
 import { fireEvent, screen, within } from "@testing-library/react";
@@ -19,10 +21,15 @@ import { expect, test, vi } from "vitest";
 
 import { streamGraceMs } from "../app/browser/stream.tsx";
 import {
+  streamBusyOpensMax,
+  streamReopenDelayMsMax,
+} from "../app/core/streamConnection.ts";
+import {
   consoleAdvanced,
   consoleMounted,
   consolePartition,
   consoleSession,
+  consoleSiteClean,
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSession, ConsoleSite } from "./consoleSite.tsx";
@@ -84,6 +91,12 @@ interface ConsoleDesk {
 
 const projectAddress = `/${consolePartition.tenant}/${consolePartition.project}`;
 
+function consoleTicketForm(): ConsoleBox {
+  return screen.getByPlaceholderText<HTMLTextAreaElement>(
+    "what this ticket is for",
+  );
+}
+
 const consoleDesks: readonly ConsoleDesk[] = [
   {
     name: "New ticket's form and the composer",
@@ -92,10 +105,7 @@ const consoleDesks: readonly ConsoleDesk[] = [
       Promise.resolve([
         consoleTypedInto(
           "New ticket's form",
-          () =>
-            screen.getByPlaceholderText<HTMLTextAreaElement>(
-              "what this ticket is for",
-            ),
+          consoleTicketForm,
           "a ticket the reader is writing",
         ),
         consoleTypedInto(
@@ -134,12 +144,41 @@ const consoleDesks: readonly ConsoleDesk[] = [
       ];
     },
   },
+  {
+    name: "the ticket's edit form and the composer",
+    path: `${projectAddress}/tickets/${String(ticketPageTicket.ticket)}/edit`,
+    typed: () =>
+      Promise.resolve([
+        consoleTypedInto(
+          "the ticket's edit form",
+          consoleTicketForm,
+          "a revision the reader is writing",
+        ),
+        consoleTypedInto(
+          "the composer",
+          consoleComposer,
+          "a message the reader is writing",
+        ),
+      ]),
+  },
 ];
 
-function consoleBanner(): string {
+/** What the version banner is headed, which is no account of the stream. */
+const consoleVersionHeading = "New version";
+
+/** The heading of each banner the shell draws. */
+function consoleBanners(): readonly string[] {
   const banner = document.querySelector(".shell-banner");
   if (banner === null) throw new Error("no shell is drawn to hold a banner");
-  return banner.textContent;
+  return [...banner.querySelectorAll(".notice-head")].map(
+    (heading) => heading.textContent,
+  );
+}
+
+function consoleStreamBanners(): readonly string[] {
+  return consoleBanners().filter(
+    (heading) => heading !== consoleVersionHeading,
+  );
 }
 
 /** What holds after every step of every timeline. */
@@ -152,7 +191,7 @@ function consoleHeld(typed: readonly ConsoleTyped[]): void {
   }
   const lostAtMs = site.carryingLostAtMs();
   if (lostAtMs === undefined || Date.now() - lostAtMs < streamGraceMs)
-    expect(consoleBanner(), "no banner inside the grace").toBe("");
+    expect(consoleStreamBanners(), "no banner inside the grace").toEqual([]);
   expect(site.cursorsDropped, "no reopen from nowhere").toEqual([]);
 }
 
@@ -175,6 +214,8 @@ async function consoleWalked(
 interface ConsoleTimeline {
   readonly name: string;
   readonly renewEveryMs?: number;
+  /** Whether the console is answered in a shape it cannot read. */
+  readonly outdates?: boolean;
   readonly run: (
     walked: (ms: number) => Promise<void>,
     session: ConsoleSession,
@@ -258,6 +299,7 @@ const consoleTimelines: readonly ConsoleTimeline[] = [
    * it was down, which the reopen replays from the console's cursor. */
   {
     name: "a redeploy: 503s for 30 s, then a new API",
+    outdates: true,
     run: async (walked) => {
       site.emit("Ticket", {
         version: 1,
@@ -274,6 +316,33 @@ const consoleTimelines: readonly ConsoleTimeline[] = [
       });
       site.emit("Workflow", { version: 1, resource: "w-1" });
       await walked(30_000);
+      site.up = true;
+    },
+  },
+  /** Every answer names a wait no longer than the ladder's ceiling, so an
+   * outage of that many ceilings outlasts the opens the ladder would bound. */
+  {
+    name: "an outage that spends the stream's bound, then a new API",
+    run: async (walked) => {
+      site.emit("Ticket", {
+        version: 1,
+        resource: String(ticketPageTicket.ticket),
+        representation: { ...ticketPageTicket, sequence: 43 },
+      });
+      await walked(consoleTimelineTickMs);
+      site.up = false;
+      site.cut();
+      const opensBefore = site.stream.headersSeen.length;
+      site.emit("Ticket", {
+        version: 1,
+        resource: String(ticketPageTicket.ticket),
+        representation: { ...ticketPageTicket, sequence: 44 },
+      });
+      await walked(streamBusyOpensMax * streamReopenDelayMsMax);
+      expect(
+        site.stream.headersSeen.length - opensBefore,
+        "opens the outage refused",
+      ).toBeGreaterThanOrEqual(streamBusyOpensMax);
       site.up = true;
     },
   },
@@ -297,8 +366,9 @@ test.each(consoleCases)(
     expect(
       document.querySelector("[data-stream]")?.getAttribute("data-stream"),
     ).toBe("live");
-    expect(consoleBanner()).toBe("");
-    expect(site.unrouted).toEqual([]);
-    expect(site.drifted).toEqual([]);
+    expect(consoleBanners()).toEqual(
+      timeline.outdates === true ? [consoleVersionHeading] : [],
+    );
+    consoleSiteClean(site);
   },
 );

@@ -85,6 +85,7 @@ test("the placement's reads count every answer and no failure", async () => {
     client.setQueryData(key, sessionPlacementBody({ thread: "Pool" }));
     client.setQueryData(key, sessionPlacementBody({ thread: "Pool" }));
   });
+  await settled();
   expect(result.current).toBe(2);
   await act(() =>
     client
