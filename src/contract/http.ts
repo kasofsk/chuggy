@@ -94,6 +94,15 @@ export const nativeHttpPathSegmentCharsMax = 256;
 export const nativeHttpPageItemsMax = 100;
 export const nativeHttpPageItemsDefault = 50;
 
+/** The longest search a ticket list is read under, counted after trimming. */
+export const ticketSearchCharsMax = 200;
+
+/**
+ * How long a finished ticket stays in the active list: one is active while it
+ * is neither Done nor Revoked, or for this long after it became either.
+ */
+export const ticketActiveFinishedHours = 24;
+
 /** The version a dispatch view token carries, so a stale reader is refused. */
 export const dispatchViewSchemaVersion = 1;
 

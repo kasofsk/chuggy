@@ -34,7 +34,7 @@ import type { ConfigurationOverrides } from "../contract/configurationOverrides.
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
-import type { TicketId } from "../domain/ids.ts";
+import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
   Accepted,
   Cancelled,
@@ -237,7 +237,12 @@ import {
   type ThreadStore,
   type ThreadsRead,
 } from "./threadRead.ts";
-import { inquiriesAnsweredMax, threadsAnsweredMax } from "../contract/http.ts";
+import {
+  inquiriesAnsweredMax,
+  isBoundedText,
+  threadsAnsweredMax,
+  ticketSearchCharsMax,
+} from "../contract/http.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import {
   projectArtifactFetched,
@@ -507,6 +512,9 @@ export interface ProjectResource {
   readonly tickets: readonly TicketResource[];
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
+  readonly nextNumberAfter?: TicketNumberPosition;
+  /** How many tickets the search matched across the project, where the read named one. */
+  readonly matched?: number;
 }
 
 export interface TicketActivityPosition {
@@ -514,15 +522,28 @@ export interface TicketActivityPosition {
   readonly ticket: TicketId;
 }
 
-export type TicketListOrder = "Identity" | "RecentActivity";
+/** A position in one of the two orders by ticket number, which names its order so the other refuses it. */
+export interface TicketNumberPosition {
+  readonly order: TicketNumberOrder;
+  readonly ticket: TicketId;
+}
+
+export type TicketNumberOrder = "Newest" | "Oldest";
+
+export type TicketListOrder = "Identity" | "RecentActivity" | TicketNumberOrder;
 
 export interface ProjectReadQuery {
   readonly after?: TicketId;
   readonly recentActivityAfter?: TicketActivityPosition;
+  readonly numberAfter?: TicketNumberPosition;
   readonly order?: TicketListOrder;
   readonly limit: number;
   readonly minimumSequence?: number;
   readonly phaseFilter?: TicketPhaseFilter;
+  /** Trimmed text a ticket's title holds, ignoring case, or its number, with or without a leading `#`. */
+  readonly search?: string;
+  /** Only the tickets `ticketActiveFinishedHours` names active. */
+  readonly active?: boolean;
 }
 
 export type TicketPhaseFilter =
@@ -542,11 +563,30 @@ export function checkedProjectReadQuery(
   if (
     query.order !== undefined &&
     query.order !== "Identity" &&
-    query.order !== "RecentActivity"
+    query.order !== "RecentActivity" &&
+    query.order !== "Newest" &&
+    query.order !== "Oldest"
   )
     throw new RangeError("ticket list order is invalid");
-  if (query.order === "RecentActivity" && query.after !== undefined)
-    throw new RangeError("ticket identity cursor cannot order recent activity");
+  if (
+    query.order !== undefined &&
+    query.order !== "Identity" &&
+    query.after !== undefined
+  )
+    throw new RangeError("ticket identity cursor orders identity alone");
+  if (
+    query.numberAfter !== undefined &&
+    query.numberAfter.order !== query.order
+  )
+    throw new RangeError("ticket number cursor belongs to another order");
+  if (
+    query.search !== undefined &&
+    (query.search.trim() !== query.search ||
+      !isBoundedText(query.search, ticketSearchCharsMax))
+  )
+    throw new RangeError(
+      `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
+    );
   if (
     query.order !== "RecentActivity" &&
     query.recentActivityAfter !== undefined
@@ -586,6 +626,16 @@ export function checkedProjectReadQuery(
       throw new RangeError("ticket phase selection is invalid");
   }
   return query;
+}
+
+/** The ticket a search names by number, where it is a whole number with or without a leading `#`. */
+export function ticketSearchNumber(search: string): TicketId | undefined {
+  const digits = /^#?(\d+)$/u.exec(search)?.[1];
+  if (digits === undefined) return undefined;
+  const number = Number(digits);
+  return Number.isSafeInteger(number) && number >= 1
+    ? asTicketId(number)
+    : undefined;
 }
 
 /** Projection and operation reads answered without activating a project writer. */

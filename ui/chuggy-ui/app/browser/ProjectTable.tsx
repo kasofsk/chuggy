@@ -5,10 +5,11 @@
  *
  * The tickets and what they ran are two reads under two keys, so a `Ticket`
  * frame moves a row and an `Execution` frame changes what one row says it is
- * running, without either disturbing the other. The filter is a phase the read
- * asks the wire for; the search, the sort and what finished long enough ago to
- * be held back are `ticketListView`'s, over the rows the read holds. A project
- * holding no ticket at all offers the first instead.
+ * running, without either disturbing the other. The filter, the search and the
+ * order a sort reads in are asked of the wire, and the rows on screen stand
+ * until the read under a new choice answers; the search and the sort are the
+ * page's address, so a link holds the view. A project holding no ticket at all
+ * offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
  * dispatch view for the version a dispatch names, and its chip is the button;
@@ -18,14 +19,14 @@
  * A read gathers as many pages as the reader had asked for, because the entry
  * it writes is under the partition prefix that the degraded stream's fallback
  * and a `Project` frame both invalidate; rebuilding it from the first page
- * would take a reader's pages away on a timer. "Show more" draws what the read
- * holds back first, and appends one page to the entry once nothing is.
+ * would take a reader's pages away on a timer. "Show more" appends to the entry
+ * the next page that adds a row.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -42,34 +43,41 @@ import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
-  ticketFilterMoreCursor,
   ticketFilterPage,
   ticketFilterProjectEmpty,
+  ticketFilterReadsCount,
 } from "../core/projectTableFilters.ts";
-import type { TicketFilter } from "../core/projectTableFilters.ts";
+import type {
+  TicketFilter,
+  TicketListAsk,
+} from "../core/projectTableFilters.ts";
 import { projectTableRows } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
-  projectTicketRowsAfterPage,
+  projectTicketRowsHaveMore,
+  projectTicketRowsMore,
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import {
-  ticketListOlderPage,
+  ticketListQueryWith,
+  ticketListSearchOf,
+  ticketListSearchWaitMs,
   ticketListShown,
   ticketListSortOf,
+  ticketListSortOrder,
   ticketListSorts,
   ticketListSortTitles,
   ticketListStandingOf,
 } from "../core/ticketListView.ts";
 import type {
-  TicketListShown,
+  TicketListQuery,
   TicketListSort,
   TicketListStanding,
 } from "../core/ticketListView.ts";
 import { phaseTone } from "../core/tones.ts";
 import type { Tone } from "../core/tones.ts";
-import { useApiPorts, usePanelList } from "./api.ts";
+import { useApiPorts, usePanelListKept } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useProjectExecutionIndex } from "./executionIndex.ts";
@@ -111,56 +119,63 @@ export function ticketRowsRead(
   client: QueryClient,
   ports: ApiPorts,
   partition: PartitionIdentity,
-  filter: TicketFilter,
+  ask: TicketListAsk,
 ): Promise<ApiResult<ProjectTicketRows>> {
-  const key = ticketFilterList(partition, filter).key;
+  const key = ticketFilterList(partition, ask).key;
   return projectTicketRowsRead(
     client.getQueryData<ProjectTicketRows>(key),
-    (cursor) => apiProject(ports, partition, ticketFilterPage(filter, cursor)),
+    (cursor, read) =>
+      apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
+    ticketFilterReadsCount(ask),
   );
 }
 
-/** The rows for one filter, the fold that keeps them live, and the read that
- * appends the next page to them. */
+/** The rows for one filter, order and search, the refresh that keeps them
+ * live, and the read that appends the next page to them. */
 function useTicketRows(
   partition: PartitionIdentity,
-  filter: TicketFilter,
+  ask: TicketListAsk,
 ): TicketRowsHeld {
-  const list = ticketFilterList(partition, filter);
+  const list = ticketFilterList(partition, ask);
   const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const state = usePanelList(list, (at) =>
-    ticketRowsRead(client, at, partition, filter),
+  const { state, kept } = usePanelListKept(list, (at) =>
+    ticketRowsRead(client, at, partition, ask),
   );
-  const rows = state.state === "Ready" ? state.value : undefined;
-  const cursor = rows === undefined ? undefined : ticketFilterMoreCursor(rows);
-  const readMore = () => {
+  const rows = state.state === "Ready" && !kept ? state.value : undefined;
+  const more =
+    rows === undefined || !projectTicketRowsHaveMore(rows) ? undefined : rows;
+  const readMore = (from: ProjectTicketRows) => {
     setReading(true);
     void (async () => {
-      const answered = await apiProject(
-        ports,
-        partition,
-        ticketFilterPage(filter, cursor),
-      );
-      client.setQueryData<ProjectTicketRows>(key, (previous) =>
-        previous === undefined
-          ? previous
-          : projectTicketRowsAfterPage(previous, answered),
+      await projectTicketRowsMore(
+        from,
+        (update) =>
+          client.setQueryData<ProjectTicketRows>(key, (previous) =>
+            previous === undefined ? previous : update(previous),
+          ),
+        (cursor, read) =>
+          apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
+        ticketFilterReadsCount(ask),
       );
       setReading(false);
     })();
   };
   return {
     state,
-    readMore: cursor === undefined || reading ? undefined : readMore,
+    readMore:
+      more === undefined || reading
+        ? undefined
+        : () => {
+            readMore(more);
+          },
     reading,
   };
 }
 
-/** Where this browser keeps the reader's sort and filter. */
-const ticketListSortStoreKey = "chug.ticket-list.sort";
+/** Where this browser keeps the reader's filter. */
 const ticketListFilterStoreKey = "chug.ticket-list.filter";
 
 function ticketListFilterOf(stored: string | null): TicketFilter {
@@ -436,42 +451,40 @@ function TicketListControls(props: {
   );
 }
 
-/** One line under the controls where the list needs one: how many rows a
- * search matched, or that everything live has finished. */
+/** One line under the controls where the list needs one: how many tickets a
+ * search matched across the project, or that the list holds none. */
 function ticketListStatus(
-  shown: TicketListShown,
+  rows: ProjectTicketRows,
   searching: boolean,
 ): string | undefined {
   if (searching)
-    return `${String(shown.shown.length)} matching ${shown.shown.length === 1 ? "ticket" : "tickets"}`;
-  return shown.active === 0 && shown.shown.length === 0
+    return rows.matched === undefined
+      ? undefined
+      : `${String(rows.matched)} matching ${rows.matched === 1 ? "ticket" : "tickets"}`;
+  return rows.tickets.length === 0
     ? "No active or recently finished tickets."
     : undefined;
 }
 
-/** The rows the filter's read holds, drawn as the list the controls ask for,
- * or the one line a read that is not ready is drawn as. */
+/** The rows the list's read holds, drawn in the order the sort asks for, or
+ * the one line a read that is not ready is drawn as. */
 function TicketListRows(props: {
   readonly state: PanelState<ProjectTicketRows>;
   readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
-  readonly search: string;
+  readonly searching: boolean;
   readonly readMore: (() => void) | undefined;
 }): ReactNode {
-  const [older, setOlder] = useState(0);
   const creatorEmails = useCreatorEmails(props.partition);
   const state = props.state;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
-  const rows = projectTableRows(state.value.tickets, props.index);
-  const shown = ticketListShown(rows, {
-    sort: props.sort,
-    search: props.search,
-    older,
-    nowMs: props.nowMs,
-  });
-  const status = ticketListStatus(shown, props.search.trim() !== "");
+  const shown = ticketListShown(
+    projectTableRows(state.value.tickets, props.index),
+    props.sort,
+  );
+  const status = ticketListStatus(state.value, props.searching);
   return (
     <>
       {status === undefined ? null : (
@@ -479,9 +492,9 @@ function TicketListRows(props: {
           {status}
         </p>
       )}
-      {shown.shown.length === 0 ? null : (
+      {shown.length === 0 ? null : (
         <ul className="ticket-list" aria-label="Tickets">
-          {shown.shown.map((row) => (
+          {shown.map((row) => (
             <TicketListRow
               key={row.ticket}
               row={row}
@@ -492,17 +505,7 @@ function TicketListRows(props: {
           ))}
         </ul>
       )}
-      {shown.remaining > 0 ? (
-        <div className="ticket-list-more">
-          <Button
-            onClick={() => {
-              setOlder(older + ticketListOlderPage);
-            }}
-          >
-            Show more ({shown.remaining} older)
-          </Button>
-        </div>
-      ) : props.readMore === undefined ? null : (
+      {props.readMore === undefined ? null : (
         <div className="ticket-list-more">
           <Button onClick={props.readMore}>Show more</Button>
         </div>
@@ -548,21 +551,13 @@ function ProjectTableEmpty(props: {
   );
 }
 
-/** The reader's sort and filter, as this browser last kept them. */
-function useTicketListChoices() {
-  const [sort, setSort] = useState(() =>
-    ticketListSortOf(persistentStore.read(ticketListSortStoreKey)),
-  );
+/** The reader's filter, as this browser last kept it. */
+function useTicketListFilter() {
   const [filter, setFilter] = useState(() =>
     ticketListFilterOf(persistentStore.read(ticketListFilterStoreKey)),
   );
   return {
-    sort,
     filter,
-    sorted: (next: TicketListSort): void => {
-      setSort(next);
-      persistentStore.write(ticketListSortStoreKey, next);
-    },
     filtered: (next: TicketFilter): void => {
       setFilter(next);
       persistentStore.write(ticketListFilterStoreKey, next);
@@ -570,11 +565,48 @@ function useTicketListChoices() {
   };
 }
 
-export function ProjectTable(): ReactNode {
+/**
+ * What the reader is typing, and the address it is written into once it has
+ * stood `ticketListSearchWaitMs`. A search the address moves to by any other
+ * way, a link or going back, replaces what is typed.
+ */
+function useTicketListTyped(
+  query: TicketListQuery,
+  onQuery: (query: TicketListQuery) => void,
+): readonly [string, (typed: string) => void] {
+  const [typed, setTyped] = useState(query.q ?? "");
+  const [addressed, setAddressed] = useState(query.q);
+  if (addressed !== query.q) {
+    setAddressed(query.q);
+    if (ticketListSearchOf(typed) !== query.q) setTyped(query.q ?? "");
+  }
+  useEffect(() => {
+    const q = ticketListSearchOf(typed);
+    if (q === query.q) return undefined;
+    const waiting = setTimeout(() => {
+      onQuery(ticketListQueryWith(query, { q }));
+    }, ticketListSearchWaitMs);
+    return () => {
+      clearTimeout(waiting);
+    };
+  }, [typed, query, onQuery]);
+  return [typed, setTyped];
+}
+
+export function ProjectTable(props: {
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
+}): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
-  const choices = useTicketListChoices();
-  const [search, setSearch] = useState("");
-  const tickets = useTicketRows(partition, choices.filter);
+  const choices = useTicketListFilter();
+  const [typed, setTyped] = useTicketListTyped(props.query, props.onQuery);
+  const sort = ticketListSortOf(props.query.sort);
+  const ask: TicketListAsk = {
+    filter: choices.filter,
+    order: ticketListSortOrder(sort),
+    search: props.query.q,
+  };
+  const tickets = useTicketRows(partition, ask);
   const executions = useProjectExecutionIndex(partition);
   const nowMs = useNowMs();
   const authoring = !projectAbilityRefused(
@@ -587,7 +619,7 @@ export function ProjectTable(): ReactNode {
       : projectExecutionIndexEmpty;
   if (
     tickets.state.state === "Ready" &&
-    ticketFilterProjectEmpty(choices.filter, tickets.state.value)
+    ticketFilterProjectEmpty(ask, tickets.state.value)
   )
     return <ProjectTableEmpty partition={partition} authoring={authoring} />;
   const partialFailure =
@@ -597,10 +629,12 @@ export function ProjectTable(): ReactNode {
       <ProjectTableTitle />
       <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
-        search={search}
-        onSearch={setSearch}
-        sort={choices.sort}
-        onSort={choices.sorted}
+        search={typed}
+        onSearch={setTyped}
+        sort={sort}
+        onSort={(next) => {
+          props.onQuery(ticketListQueryWith(props.query, { sort: next }));
+        }}
         filter={choices.filter}
         onFilter={choices.filtered}
       />
@@ -615,13 +649,12 @@ export function ProjectTable(): ReactNode {
         </p>
       )}
       <TicketListRows
-        key={choices.filter}
         state={tickets.state}
         index={index}
         partition={partition}
         nowMs={nowMs}
-        sort={choices.sort}
-        search={search}
+        sort={sort}
+        searching={props.query.q !== undefined}
         readMore={tickets.readMore}
       />
       {tickets.reading ? <p className="panel-note">reading…</p> : null}
