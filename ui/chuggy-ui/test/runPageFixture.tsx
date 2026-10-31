@@ -174,7 +174,8 @@ export function runSnapshot(
 export interface RunPageServed {
   readonly ticket: Record<string, unknown>;
   readonly executions: readonly Record<string, unknown>[];
-  readonly execution: Record<string, unknown>;
+  /** The execution's own read, as it answers at the moment it is asked. */
+  readonly execution: Record<string, unknown> | (() => Record<string, unknown>);
   readonly transcripts: readonly Record<string, unknown>[];
   /** The run's snapshot, and a `404` where a case keeps none. */
   readonly configuration?: Record<string, unknown>;
@@ -222,7 +223,12 @@ function runPageRoute(
       return served.artifactContent === undefined
         ? answer({}, 404)
         : answer(served.artifactContent);
-    if (url.includes("/executions/")) return answer(served.execution);
+    if (url.includes("/executions/"))
+      return answer(
+        typeof served.execution === "function"
+          ? served.execution()
+          : served.execution,
+      );
     if (url.includes("/executions"))
       return answer({ executions: served.executions });
     if (url.includes("/drafts/")) return answer({}, 404);

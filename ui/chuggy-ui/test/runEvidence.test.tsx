@@ -70,13 +70,15 @@ const ticket = {
   ...ticketInstants,
 };
 
-/** The high-water mark rides the frame the browser already receives; a pane
- * that re-read from the first batch would cost the transcript twice over. */
+/** The high-water mark rides the read a frame has the run's execution read
+ * again by; a pane that re-read from the first batch would cost the transcript
+ * twice over. */
 test("a rising high-water mark reads exactly the batches above what is held", async () => {
+  let attempt = runAttempt("a1");
   const rendered = await ticketPage({
     ticket,
     executions: [runSummary()],
-    execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+    execution: () => ({ ...runSummary(), attempts: [attempt] }),
     transcripts: [
       runTranscriptPage([1, 2], false),
       runTranscriptPage([3, 4], false),
@@ -84,29 +86,25 @@ test("a rising high-water mark reads exactly the batches above what is held", as
   });
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
 
+  attempt = runAttempt("a1", {
+    run: {
+      startedAt: "2026-08-27T00:00:00Z",
+      turnsRecorded: 3,
+      totals: runTotals(100_000),
+      transcript: {
+        batches: 4,
+        bytes: 80,
+        highWaterBatch: 4,
+        observedAt: "2026-08-27T00:00:20Z",
+      },
+    },
+  });
   await turned(() => {
     rendered.push(
       frame("Execution", "1", {
         version: 1,
         resource: "e1",
-        representation: {
-          ...runSummary(),
-          attempts: [
-            runAttempt("a1", {
-              run: {
-                startedAt: "2026-08-27T00:00:00Z",
-                turnsRecorded: 3,
-                totals: runTotals(100_000),
-                transcript: {
-                  batches: 4,
-                  bytes: 80,
-                  highWaterBatch: 4,
-                  observedAt: "2026-08-27T00:00:20Z",
-                },
-              },
-            }),
-          ],
-        },
+        representation: runSummary(),
       }),
     );
   });
@@ -124,10 +122,11 @@ test("a rising high-water mark reads exactly the batches above what is held", as
 /** Complete is the attempt no longer being live, not the pane having caught up,
  * and a pane that kept reading a sealed run would read forever. */
 test("a run whose attempt has ended draws complete and reads no further", async () => {
+  let attempt = runAttempt("a1");
   const rendered = await ticketPage({
     ticket,
     executions: [runSummary()],
-    execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+    execution: () => ({ ...runSummary(), attempts: [attempt] }),
     transcripts: [runTranscriptPage([1, 2], true)],
   });
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
@@ -137,15 +136,13 @@ test("a run whose attempt has ended draws complete and reads no further", async 
       .querySelector(".freshness")?.textContent,
   ).toBe("complete");
 
+  attempt = runAttempt("a1", { endedAt: "2026-08-27T00:01:00Z" });
   await turned(() => {
     rendered.push(
       frame("Execution", "1", {
         version: 1,
         resource: "e1",
-        representation: {
-          ...runSummary(),
-          attempts: [runAttempt("a1", { endedAt: "2026-08-27T00:01:00Z" })],
-        },
+        representation: runSummary(),
       }),
     );
   });

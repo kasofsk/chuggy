@@ -15,6 +15,11 @@
  * the page's own confirmations are written by too, so the command carries that
  * rule as a function of whatever the key holds when it is applied.
  *
+ * `Execution` IS THE KIND WHOSE KEY IS REREAD RATHER THAN WRITTEN: its frame
+ * carries the executions list's row, which is less than the execution's own
+ * read holds under that key, so the row is folded into lists and the key is
+ * invalidated, which reads it again only where a screen has it mounted.
+ *
  * The commands are returned rather than performed, which is what lets every
  * case be held against the contract's own events with no cache present.
  */
@@ -68,8 +73,9 @@ function projectCacheInvalidation(
 }
 
 /** Every writer of a ticket's key writes a ticket, which is what lets the held
- * value be taken as one. A tombstone has its key read again rather than
- * removed, so what is mounted on it stays until that read answers. */
+ * value be taken as one. A tombstone, and an execution's row, has its key read
+ * again rather than removed, so what is mounted on it stays until that read
+ * answers. */
 function projectCacheResource(
   key: ProjectQueryKey,
   event: ProjectChangeEvent,
@@ -87,7 +93,7 @@ function projectCacheResource(
     };
   }
   const representation: unknown = event.data.representation;
-  return representation === null
+  return representation === null || event.event === "Execution"
     ? { command: "RereadResource", key }
     : { command: "WriteResource", key, representation };
 }

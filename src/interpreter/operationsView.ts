@@ -305,6 +305,12 @@ export interface OperationalReadStore {
     execution: ExecutionId,
     reader: Principal,
   ): Promise<ExecutionResource | undefined>;
+  /** One execution as the list answers it, reading none of its attempts and no result. */
+  executionSummary(
+    partition: Partition,
+    execution: ExecutionId,
+    reader: Principal,
+  ): Promise<ExecutionSummary | undefined>;
 }
 
 export interface ProjectOperationalStatus {

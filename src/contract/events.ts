@@ -11,7 +11,9 @@
  * longer readable and the cache entry is dropped. `Project` is the one kind
  * that is not written: its representation is the inventory entry, which is less
  * than a project read returns, so a `Project` frame invalidates the project
- * head and the browser refetches it. `NativeAction` names a ticket as its
+ * head and the browser refetches it. `Execution` carries the executions list's
+ * row rather than the execution's own read, so a browser folds it into a list
+ * and re-reads the execution where it is shown. `NativeAction` names a ticket as its
  * identity too, and carries what that ticket has open for a person to answer
  * rather than the ticket itself: an approval is opened and answered without the
  * ticket's own phase or sequence moving, so the two are separate resources
@@ -40,7 +42,7 @@ import { sessionStates } from "./rosters.ts";
 import {
   configurationResponseSchema,
   draftResponseSchema,
-  executionResponseSchema,
+  executionSummarySchema,
   leadResponseSchema,
   operationResponseSchema,
   ticketAgenticRefusalsResponseSchema,
@@ -74,8 +76,8 @@ const versionSchema = z.literal(projectStreamVersion);
 
 /**
  * The body each kind's GET route answers with. `Project` is the entry
- * `GET /api/v1/projects` lists, which is the identity a project is addressed
- * by rather than the ticket page reading it returns.
+ * `GET /api/v1/projects` lists and `Execution` the row the executions list
+ * answers, each less than the route that reads the one resource returns.
  */
 export const projectChangeRepresentationSchemas = {
   Operation: operationResponseSchema,
@@ -83,7 +85,7 @@ export const projectChangeRepresentationSchemas = {
   Draft: draftResponseSchema,
   Configuration: configurationResponseSchema,
   Project: partitionSchema,
-  Execution: executionResponseSchema,
+  Execution: executionSummarySchema,
   NativeAction: ticketNativeActionsResponseSchema,
   AgenticRefusal: ticketAgenticRefusalsResponseSchema,
   Session: leadResponseSchema,

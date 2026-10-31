@@ -52,6 +52,7 @@ import type {
 import type {
   ExecutionPage,
   ExecutionResource,
+  ExecutionSummary,
   LatestExecutionPage,
   ProjectOperationalStatus,
   OutputContentRead,
@@ -706,6 +707,14 @@ export function executionResponse(
   return resource === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, resource);
+}
+
+export function executionSummaryResponse(
+  summary: ExecutionSummary | undefined,
+): NativeHttpResponse {
+  return summary === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, summary);
 }
 
 export function outputContentResponse(

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
+import type pg from "pg";
+
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -1060,4 +1063,117 @@ test("a summary names what carries out its stage, read from the revision it pinn
     reader,
   );
   assert.equal(detail?.carrier, "Commands");
+});
+
+/** Records what the attempt's run spent, as its worker does once the run ends. */
+async function operationalRunTotalled(attempt: PhysicalAttempt): Promise<void> {
+  const workerPool = postgresHarnessRolePool(workerPlaneRole);
+  try {
+    assert.equal(
+      await postgresWorkerRunTotal(workerPool).record({
+        secret: attempt.capability.secret,
+        generation: attempt.generation,
+        totals: {
+          turns: 2,
+          durationMs: 10,
+          durationApiMs: 5,
+          tokensInput: 1,
+          tokensOutput: 2,
+          tokensCacheCreation: 3,
+          tokensCacheRead: 4,
+          costUsdMicros: 11,
+          costBasis: "List",
+          models: [],
+          permissionDenials: 0,
+          stopReason: "end_turn",
+        },
+      }),
+      "Stored",
+    );
+  } finally {
+    await workerPool.end();
+  }
+}
+
+/** The reads over a pool, each query's text heard before the pool runs it. */
+function operationalQueriesHeard(pool: pg.Pool): {
+  reads: OperationalReadStore;
+  heard: string[];
+} {
+  const heard: string[] = [];
+  const query = (config: pg.QueryConfig) => {
+    heard.push(config.text);
+    return pool.query(config);
+  };
+  const listened = new Proxy(pool, {
+    get: (target, key, receiver): unknown =>
+      key === "query" ? query : Reflect.get(target, key, receiver),
+  });
+  return { reads: postgresOperationalReads(listened), heard };
+}
+
+/**
+ * An execution change's representation is the summary alone: a stream frame
+ * for every live run reaches every open console, and only a page on that
+ * execution needs its attempts and result.
+ */
+test("an execution's summary is the list's row, read without its attempts or result", async () => {
+  const label = "operational-summary";
+  const project = await schedulerProject(rig, label, { tasks: 1 });
+  await operationalRegistered(project, project.request, label);
+  const placed = await schedulerPlacedAttempt(rig, project, label);
+  await operationalRunTotalled(placed.attempt);
+  assert.equal(
+    (await rig.store.terminalize(schedulerReport(placed.attempt, "Pass")))
+      .terminalized,
+    "Terminalized",
+  );
+  const { reads, heard } = operationalQueriesHeard(ingress);
+  const whole = await reads.execution(
+    project.partition,
+    placed.execution,
+    reader,
+  );
+  assert.ok(whole?.result !== undefined && whole.attempts.length === 1);
+  heard.length = 0;
+  const summary = await reads.executionSummary(
+    project.partition,
+    placed.execution,
+    reader,
+  );
+  assert.ok(summary !== undefined && summary.runTotals !== undefined);
+  assert.ok(!("attempts" in summary) && !("result" in summary));
+  assert.ok(heard.length > 0);
+  for (const text of heard)
+    assert.doesNotMatch(
+      text,
+      /execution_result|execution_run_transcript_batch|worker_artifact_reservation/u,
+    );
+  const page = await reads.executions(
+    project.partition,
+    { limit: 10, ticket: id(project.ticket) },
+    reader,
+  );
+  assert.deepEqual(
+    summary,
+    page.executions.find((each) => each.execution === placed.execution),
+  );
+  assert.deepEqual(
+    { ...summary, attempts: whole.attempts, result: whole.result },
+    whole,
+  );
+  assert.deepEqual(
+    projectChangeRepresentationSchemas.Execution.parse(
+      JSON.parse(JSON.stringify(summary)),
+    ),
+    JSON.parse(JSON.stringify(summary)),
+  );
+  assert.equal(
+    await reads.executionSummary(
+      project.partition,
+      asExecutionId("absent"),
+      reader,
+    ),
+    undefined,
+  );
 });
