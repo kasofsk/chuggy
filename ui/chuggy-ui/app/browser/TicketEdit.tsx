@@ -369,12 +369,16 @@ function TicketEditRead(props: {
     "Ticket",
     String(ticket),
     (readPorts) => apiTicket(readPorts, partition, ticket),
+    undefined,
+    "Streamed",
   );
   const draftState = usePanelResource(
     partition,
     "Draft",
     String(ticket),
     (readPorts) => apiDraft(readPorts, partition, ticket),
+    undefined,
+    "Streamed",
   );
   const contextState = usePanelList(
     creationContextList(partition),

@@ -93,6 +93,39 @@ export function projectResourceKey(
   return [...projectPartitionKey(partition), kind, resource];
 }
 
+const projectStreamedTicket = /^[1-9][0-9]*$/u;
+const projectStreamedIdentity = /^[^/=]+$/u;
+
+/**
+ * The kinds a frame carries a one-resource read's whole body for, under the
+ * key that read is held at, and what the resource is for each: a ticket number,
+ * or an identity with nothing under it. A part below one is past a `/` and a
+ * view carries a `=`, and no frame names either; nor does a `Project` frame,
+ * which invalidates the partition rather than naming what it changed.
+ */
+export const projectStreamedResources: Readonly<
+  Partial<Record<ProjectChangeKind, RegExp>>
+> = {
+  Ticket: projectStreamedTicket,
+  Draft: projectStreamedTicket,
+  Configuration: projectStreamedIdentity,
+  Operation: projectStreamedIdentity,
+  Execution: projectStreamedIdentity,
+};
+
+/** Whether a frame names this resource of this kind, and so keeps its key. */
+export function projectStreamedNamed(
+  kind: ProjectChangeKind,
+  resource: string,
+): boolean {
+  const pattern = projectStreamedResources[kind];
+  return (
+    pattern !== undefined &&
+    resource !== projectListMarker &&
+    pattern.test(resource)
+  );
+}
+
 /** Every held entry of one partition, which is what an option registered for
  * all of them at once is registered against. */
 export function projectHeldScope(
