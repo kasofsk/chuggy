@@ -65,6 +65,8 @@ import { migration097 } from "../../src/adapters/postgres/schema/migrations/097-
 import { migration098 } from "../../src/adapters/postgres/schema/migrations/098-personal-runners-hold-no-sessions.ts";
 import { migration099 } from "../../src/adapters/postgres/schema/migrations/099-attempt-claimed-at.ts";
 import { migration100 } from "../../src/adapters/postgres/schema/migrations/100-configuration-import-refusals.ts";
+import { migration101 } from "../../src/adapters/postgres/schema/migrations/101-longer-configurations.ts";
+import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -3786,6 +3788,79 @@ test("100 keeps refusals only on a refusal, bounded and counted, and the next at
           refusal,
           `${result} ${JSON.stringify(refusals)} ${String(count)}`,
         );
+    },
+  );
+});
+
+/** Writes one revision of a canonical that many characters long, answering the refusal where there is one. */
+async function configurationRevisionWritten101(
+  subject: pg.Pool,
+  revision: string,
+  chars: number,
+): Promise<string | undefined> {
+  try {
+    await subject.query(
+      `INSERT INTO configuration_revision
+         (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+       VALUES('tenant-5','project-5',$1,$2,repeat('e',64),'User','subject-5')`,
+      [revision, `"${"x".repeat(chars - 2)}"`],
+    );
+    return undefined;
+  } catch (error) {
+    return String(error);
+  }
+}
+
+test("101 keeps every revision that stood, and admits a canonical as long as a configuration may be and none longer", async () => {
+  await migrationDatabaseAt(
+    migration101.version - 1,
+    "longer_configurations",
+    async (subject) => {
+      await subject.query(deletionPartition);
+      assert.equal(
+        await configurationRevisionWritten101(subject, "stood", 2),
+        undefined,
+      );
+      assert.match(
+        String(
+          await configurationRevisionWritten101(
+            subject,
+            "refused-before",
+            configurationCanonicalCharsMax,
+          ),
+        ),
+        /configuration_revision_content_is_bounded/u,
+      );
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration101.version),
+      );
+      assert.equal(
+        await configurationRevisionWritten101(
+          subject,
+          "at-limit",
+          configurationCanonicalCharsMax,
+        ),
+        undefined,
+      );
+      assert.match(
+        String(
+          await configurationRevisionWritten101(
+            subject,
+            "over-limit",
+            configurationCanonicalCharsMax + 1,
+          ),
+        ),
+        /configuration_revision_content_is_bounded/u,
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            `SELECT revision FROM configuration_revision
+              WHERE tenant='tenant-5' ORDER BY revision`,
+          )
+        ).rows,
+        [{ revision: "at-limit" }, { revision: "stood" }],
+      );
     },
   );
 });
