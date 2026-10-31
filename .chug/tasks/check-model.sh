@@ -33,7 +33,7 @@ cd "$root" || exit 2
 unset FORCE_COLOR
 export NO_COLOR=1
 
-QUINT_VERSION="0.32.0"
+QUINT_VERSION="0.33.1"
 
 if [ -x ./node_modules/.bin/quint ]; then
 	QUINT=./node_modules/.bin/quint

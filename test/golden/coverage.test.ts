@@ -54,7 +54,7 @@ test("every manifest row records what reproduces it", () => {
     assert.ok(row.maxSteps > 0, `${row.name}: no step bound`);
     assert.equal(
       row.quintVersion,
-      "0.32.0",
+      "0.33.1",
       `${row.name}: pinned to another quint`,
     );
   }
