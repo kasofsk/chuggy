@@ -46,7 +46,7 @@ export function threadLiveUrl(home: ThreadHome, session: string): string {
  * that is not there is answered the same way however often they ask. */
 function threadLiveRefused(status: number): StreamEnd | undefined {
   return status === 401 || status === 403 || status === 404
-    ? { stop: `the API answered ${String(status)}` }
+    ? { stop: "Refused" }
     : undefined;
 }
 

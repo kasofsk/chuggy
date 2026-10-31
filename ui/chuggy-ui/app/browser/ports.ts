@@ -52,6 +52,11 @@ export function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
   });
 }
 
+/** A deadline, which is a timer apart from the waits `sleepMs` stands for. */
+export function deadlineMs(ms: number, signal: AbortSignal): Promise<void> {
+  return sleepMs(ms, signal);
+}
+
 export function apiFetch(url: string, init: ApiFetchInit): Promise<Response> {
   return fetch(url, {
     method: init.method,

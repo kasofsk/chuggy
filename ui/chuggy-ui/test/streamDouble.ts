@@ -14,6 +14,11 @@
  * the read after its last chunk, and `cutLive` fails the read that is waiting.
  * The clock moves only when the client sleeps, so `lastsMs` is how an opening
  * is said to have stayed open.
+ *
+ * A read's silence deadline never passes on its own, so a held body stays
+ * open however long the suite takes; it passes at once for the read of an
+ * opening that is `silent`, which never answers, and is counted in
+ * `silencesMs`.
  */
 
 import type {
@@ -32,6 +37,9 @@ export interface StreamOpening {
   readonly lastsMs?: number;
   /** The `retry-after` header the opening is answered with. */
   readonly retryAfter?: string;
+  /** Whether the read after the last chunk never answers, so the client's
+   * deadline for it is what passes. */
+  readonly silent?: boolean;
 }
 
 export interface StreamServer {
@@ -43,6 +51,8 @@ export interface StreamServer {
     readonly headers: Record<string, string>;
   }[];
   readonly delaysMs: number[];
+  /** Each silence deadline that passed, in the order they did. */
+  readonly silencesMs: number[];
   readonly aborts: number[];
   /** Settles once a held body is waiting, so a suite aborts a real read. */
   readonly holding: Promise<void>;
@@ -82,6 +92,8 @@ interface StreamBodyRoute {
   /** Called once the opening's chunks have all been read. */
   readonly drained: () => void;
   readonly waiting: (waiter: StreamChunkWaiter | undefined) => void;
+  /** Called by a read that will never answer, before its deadline is set. */
+  readonly silenced: () => void;
 }
 
 function bodyOf(route: StreamBodyRoute): StreamBody {
@@ -93,6 +105,13 @@ function bodyOf(route: StreamBodyRoute): StreamBody {
         if (chunk !== undefined)
           return { done: false, value: encoder.encode(chunk) };
         route.drained();
+        if (opening.silent === true)
+          return new Promise<StreamChunkRead>((resolve) => {
+            route.silenced();
+            signal.addEventListener("abort", () => {
+              resolve({ done: true });
+            });
+          });
         if (opening.cut === true) throw streamCut();
         if (opening.hold !== true) return { done: true };
         if (signal.aborted) {
@@ -135,6 +154,7 @@ function routeOf(
   aborts: number[],
   held: () => void,
   lasted: (ms: number) => void,
+  silenced: () => void,
 ): StreamRoute {
   let opened = 0;
   let pending: StreamChunkWaiter | undefined;
@@ -158,6 +178,7 @@ function routeOf(
         waiting: (waiter) => {
           pending = waiter;
         },
+        silenced,
       });
       return {
         status: opening.status,
@@ -184,6 +205,63 @@ function routeOf(
   };
 }
 
+/** A deadline that passes only by being abandoned. */
+function streamDeadlineUnpassed(signal: AbortSignal): Promise<void> {
+  return new Promise<void>((_resolve, reject) => {
+    const abandoned = (): void => {
+      reject(new Error("abandoned"));
+    };
+    if (signal.aborted) abandoned();
+    else signal.addEventListener("abort", abandoned, { once: true });
+  });
+}
+
+/** The double's time: it moves when the client sleeps, when an opening has
+ * lasted, and when a silent read's deadline passes. */
+interface StreamClock {
+  readonly delaysMs: number[];
+  readonly silencesMs: number[];
+  readonly lasted: (ms: number) => void;
+  readonly silenced: () => void;
+  readonly ports: Pick<StreamPorts, "sleepMs" | "deadlineMs" | "nowMs">;
+}
+
+function streamClock(): StreamClock {
+  const delaysMs: number[] = [];
+  const silencesMs: number[] = [];
+  let clockMs = 0;
+  let silent = false;
+  return {
+    delaysMs,
+    silencesMs,
+    lasted: (ms) => {
+      clockMs += ms;
+    },
+    silenced: () => {
+      silent = true;
+    },
+    ports: {
+      deadlineMs: (ms, signal) => {
+        if (!silent) return streamDeadlineUnpassed(signal);
+        silent = false;
+        silencesMs.push(ms);
+        clockMs += ms;
+        return Promise.resolve();
+      },
+      sleepMs: (ms, signal) => {
+        delaysMs.push(ms);
+        clockMs += ms;
+        return signal.aborted
+          ? Promise.reject(new Error("abandoned"))
+          : Promise.resolve();
+      },
+      nowMs: () => clockMs,
+    },
+  };
+}
+
+/** The project route answers a session it no longer knows once its script runs
+ * out, which is the one answer that stops a stream that persists. */
 export function streamServer(
   openings: readonly StreamOpening[],
   bearer = "token",
@@ -191,26 +269,30 @@ export function streamServer(
 ): StreamServer {
   const headersSeen: Record<string, string>[] = [];
   const liveSeen: StreamServer["liveSeen"] = [];
-  const delaysMs: number[] = [];
   const aborts: number[] = [];
   let held = (): void => undefined;
   const holding = new Promise<void>((resolve) => {
     held = resolve;
   });
-  let clockMs = 0;
-  const lasted = (ms: number): void => {
-    clockMs += ms;
-  };
+  const clock = streamClock();
   const project = routeOf(
     openings,
-    500,
+    401,
     aborts,
     () => {
       held();
     },
-    lasted,
+    clock.lasted,
+    clock.silenced,
   );
-  const live = routeOf(liveOpenings, 404, aborts, () => undefined, lasted);
+  const live = routeOf(
+    liveOpenings,
+    404,
+    aborts,
+    () => undefined,
+    clock.lasted,
+    clock.silenced,
+  );
   const ports: StreamPorts = {
     fetch: (url, init) => {
       if (liveRoutePattern.test(url)) {
@@ -221,20 +303,14 @@ export function streamServer(
       return Promise.resolve(project.answered(init.signal));
     },
     bearer: () => Promise.resolve(bearer),
-    sleepMs: (ms, signal) => {
-      delaysMs.push(ms);
-      clockMs += ms;
-      return signal.aborted
-        ? Promise.reject(new Error("abandoned"))
-        : Promise.resolve();
-    },
-    nowMs: () => clockMs,
+    ...clock.ports,
   };
   return {
     ports,
     headersSeen,
     liveSeen,
-    delaysMs,
+    delaysMs: clock.delaysMs,
+    silencesMs: clock.silencesMs,
     aborts,
     holding,
     push: project.push,

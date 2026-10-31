@@ -7,10 +7,18 @@
  * where it only says the entry is stale. The stream is reopened when the
  * partition changes and when the session's token generation does, because both
  * make the connection in flight the wrong one.
+ *
+ * ONE GRACE IS READ ON BOTH SIDES OF A STREAM THAT STOPS CARRYING: the banner
+ * draws nothing and the fallback reads nothing until it has not carried for
+ * `streamGraceMs`, so a reopen the server asked for is seen by neither.
+ *
+ * THE WIRING AND THE STATUS ARE TWO CONTEXTS. Every list holder reads the
+ * wiring, which never changes under a partition, so a frame or a status that
+ * changes draws only what reads the status.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
+import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
   useContext,
@@ -30,11 +38,16 @@ import type {
   ProjectResourceArrival,
 } from "../core/projectCacheCommands.ts";
 import { runProjectFallback } from "../core/projectFallback.ts";
+import type { ProjectFallbackTick } from "../core/projectFallback.ts";
 import {
   openProjectStream,
   projectStreamCarrying,
+  projectStreamHeldInitial,
 } from "../core/projectStream.ts";
-import type { ProjectStreamStatus } from "../core/projectStream.ts";
+import type {
+  ProjectStreamHeld,
+  ProjectStreamStatus,
+} from "../core/projectStream.ts";
 import { projectPartitionKey } from "../core/projectQueryKeys.ts";
 import type {
   ProjectList,
@@ -43,10 +56,11 @@ import type {
   ProjectQueryKey,
 } from "../core/projectQueryKeys.ts";
 import type { StreamPorts } from "../core/streamConnection.ts";
-import { nowMs, sleepMs, streamFetch } from "./ports.ts";
+import { deadlineMs, nowMs, sleepMs, streamFetch } from "./ports.ts";
 import { useSessionGeneration, useSessionHolder } from "./session.tsx";
 
 export const projectListFoldsMax = 32;
+export const streamGraceMs = 10_000;
 
 /**
  * One mounted list, with its entry's type erased because the registry holds
@@ -59,24 +73,33 @@ interface ProjectListRegistration {
   readonly refresh: () => ProjectListRefresh<unknown>;
 }
 
-interface ProjectStreamHeld {
+/** What a partition's stream is reached through, constant under it. */
+interface ProjectStreamWiring {
   readonly ports: StreamPorts;
   readonly folds: Set<ProjectListRegistration>;
+}
+
+/** What a partition's stream is saying, and whether the grace has run out. */
+interface ProjectStreamSaying {
   readonly status: ProjectStreamStatus;
+  readonly lapsed: boolean;
   readonly fallbackExhausted: boolean;
 }
 
 const streamStatusInitial: ProjectStreamStatus = {
   connection: "Opening",
   source: "unknown",
-  reason: undefined,
-  lastSequence: undefined,
+  cause: undefined,
   answered: false,
 };
 
-const ProjectStreamContext = createContext<ProjectStreamHeld | undefined>(
+const ProjectStreamContext = createContext<ProjectStreamWiring | undefined>(
   undefined,
 );
+
+const ProjectStreamSayingContext = createContext<
+  ProjectStreamSaying | undefined
+>(undefined);
 
 /**
  * THE REREAD KEEPS `cancelRefetch`'S DEFAULT, which restarts the read in
@@ -148,8 +171,8 @@ function applyCommand(
         command.revise(client.getQueryData(command.key)),
       );
       return;
-    case "DropResource":
-      client.removeQueries({ queryKey: command.key, exact: true });
+    case "RereadResource":
+      void client.invalidateQueries({ queryKey: command.key, exact: true });
       return;
     case "InvalidatePartition":
       void client.invalidateQueries({ queryKey: command.key });
@@ -183,14 +206,13 @@ function useStreamConnection(
   /**
    * What this console has learnt about this partition's stream, which outlives
    * any one run of it: a token renewal replaces the run under a reader who has
-   * gone nowhere, and a run counting from nothing would report that reopen as a
-   * first open and take the banner down over a screen that had stopped
-   * updating. A different project is a first open of its own, and this effect
-   * is declared before the one below so the forgetting happens first.
+   * gone nowhere, and the next run replays from its cursor and knows it is not
+   * a first open. A different project is a first open of its own, and this
+   * effect is declared before the one below so the forgetting happens first.
    */
-  const answered = useRef(false);
+  const held = useRef<ProjectStreamHeld>(projectStreamHeldInitial());
   useEffect(() => {
-    answered.current = false;
+    held.current = projectStreamHeldInitial();
   }, [tenant, project]);
 
   useEffect(() => {
@@ -205,12 +227,14 @@ function useStreamConnection(
           ))
             applyCommand(client, folds, command);
         },
-        onStatus: (reported) => {
-          if (reported.answered) answered.current = true;
-          setStatus(reported);
+        onStatus: setStatus,
+        onSkipped: () => {
+          void client.invalidateQueries({
+            queryKey: projectPartitionKey({ tenant, project }),
+          });
         },
       },
-      answered.current,
+      held.current,
     );
     return () => {
       opened.stop();
@@ -220,31 +244,60 @@ function useStreamConnection(
 }
 
 /**
- * The bounded stand-in for a stream that is not carrying changes.
- *
- * `projectStreamCarrying` is false through `Opening`, which is what makes this
- * boolean constant across a reopen: the connection passes back through
- * `Opening` at every rung of the backoff ladder, and a condition that excluded
- * it aborted and restarted the loop five times over — while the loop sleeps
- * before its first refetch, so none of the five ever reached one.
+ * Whether the stream has not carried for the grace. `projectStreamCarrying` is
+ * false through `Opening` and `Waiting` alike, so this stays constant across a
+ * whole reopen ladder rather than restarting its wait at every rung.
  */
+function useStreamLapsed(
+  partition: PartitionIdentity,
+  carrying: boolean,
+): boolean {
+  const [lapsed, setLapsed] = useState(false);
+  const { tenant, project } = partition;
+  useEffect(() => {
+    if (carrying) return;
+    const controller = new AbortController();
+    sleepMs(streamGraceMs, controller.signal).then(
+      () => {
+        setLapsed(true);
+      },
+      () => undefined,
+    );
+    return () => {
+      controller.abort();
+      setLapsed(false);
+    };
+  }, [carrying, tenant, project]);
+  return lapsed;
+}
+
+/** What one tick's reads came to: failed where every query it read failed. */
+function streamFallbackTick(queries: readonly Query[]): ProjectFallbackTick {
+  return queries.length > 0 &&
+    queries.every((query) => query.state.status === "error")
+    ? "Failed"
+    : "Read";
+}
+
+/** The bounded stand-in for a stream that has not carried for the grace. */
 function useStreamFallback(
   partition: PartitionIdentity,
-  status: ProjectStreamStatus,
+  lapsed: boolean,
 ): boolean {
   const client = useQueryClient();
   const [exhausted, setExhausted] = useState(false);
   const { tenant, project } = partition;
-  const degraded = !projectStreamCarrying(status);
   useEffect(() => {
-    if (!degraded) return;
+    if (!lapsed) return;
     const controller = new AbortController();
+    const queryKey = projectPartitionKey({ tenant, project });
     void runProjectFallback(
       { sleepMs },
-      () => {
-        void client.invalidateQueries({
-          queryKey: projectPartitionKey({ tenant, project }),
-        });
+      async () => {
+        await client.invalidateQueries({ queryKey });
+        return streamFallbackTick(
+          client.getQueryCache().findAll({ queryKey, type: "active" }),
+        );
       },
       controller.signal,
     ).then((end) => {
@@ -254,8 +307,33 @@ function useStreamFallback(
       controller.abort();
       setExhausted(false);
     };
-  }, [client, degraded, tenant, project]);
+  }, [client, lapsed, tenant, project]);
   return exhausted;
+}
+
+/**
+ * A stream that carries again after a gap has replayed what the gap held, so
+ * what is healthy is left alone and only what failed in the gap is read again.
+ */
+function useStreamRecovered(
+  partition: PartitionIdentity,
+  carrying: boolean,
+): void {
+  const client = useQueryClient();
+  const { tenant, project } = partition;
+  const carried = useRef(false);
+  useEffect(() => {
+    carried.current = false;
+  }, [tenant, project]);
+  useEffect(() => {
+    if (!carrying) return;
+    if (carried.current)
+      void client.invalidateQueries({
+        queryKey: projectPartitionKey({ tenant, project }),
+        predicate: (query) => query.state.status === "error",
+      });
+    carried.current = true;
+  }, [client, carrying, tenant, project]);
 }
 
 /** The one transport and bearer a stream is opened through. */
@@ -269,6 +347,7 @@ function useStreamPortsMade(
       fetch,
       bearer: apiBearerOver(holder),
       sleepMs,
+      deadlineMs,
       nowMs,
     }),
     [fetch, holder],
@@ -284,27 +363,48 @@ export function ProjectStreamProvider(props: {
   const folds = useMemo(() => new Set<ProjectListRegistration>(), []);
   const ports = useStreamPortsMade(props.transport);
   const status = useStreamConnection(props.partition, folds, ports);
-  const fallbackExhausted = useStreamFallback(props.partition, status);
-  const held = useMemo<ProjectStreamHeld>(
-    () => ({ ports, folds, status, fallbackExhausted }),
-    [ports, folds, status, fallbackExhausted],
+  const carrying = projectStreamCarrying(status);
+  const lapsed = useStreamLapsed(props.partition, carrying);
+  const fallbackExhausted = useStreamFallback(props.partition, lapsed);
+  useStreamRecovered(props.partition, carrying);
+  const wiring = useMemo<ProjectStreamWiring>(
+    () => ({ ports, folds }),
+    [ports, folds],
+  );
+  const saying = useMemo<ProjectStreamSaying>(
+    () => ({ status, lapsed, fallbackExhausted }),
+    [status, lapsed, fallbackExhausted],
   );
   return (
-    <ProjectStreamContext.Provider value={held}>
-      {props.children}
+    <ProjectStreamContext.Provider value={wiring}>
+      <ProjectStreamSayingContext.Provider value={saying}>
+        {props.children}
+      </ProjectStreamSayingContext.Provider>
     </ProjectStreamContext.Provider>
   );
 }
 
-function useProjectStreamHeld(): ProjectStreamHeld {
-  const held = useContext(ProjectStreamContext);
-  if (held === undefined)
+function useProjectStreamWiring(): ProjectStreamWiring {
+  const wiring = useContext(ProjectStreamContext);
+  if (wiring === undefined)
     throw new Error("the stream was read outside the provider that holds it");
-  return held;
+  return wiring;
+}
+
+function useProjectStreamSaying(): ProjectStreamSaying {
+  const saying = useContext(ProjectStreamSayingContext);
+  if (saying === undefined)
+    throw new Error("the stream was read outside the provider that holds it");
+  return saying;
 }
 
 export function useProjectStreamStatus(): ProjectStreamStatus {
-  return useProjectStreamHeld().status;
+  return useProjectStreamSaying().status;
+}
+
+/** Whether the stream has not carried for the grace. */
+export function useProjectStreamLapsed(): boolean {
+  return useProjectStreamSaying().lapsed;
 }
 
 const StreamPortsContext = createContext<StreamPorts | undefined>(undefined);
@@ -336,7 +436,7 @@ export function useStreamPorts(): StreamPorts {
 }
 
 export function useProjectFallbackExhausted(): boolean {
-  return useProjectStreamHeld().fallbackExhausted;
+  return useProjectStreamSaying().fallbackExhausted;
 }
 
 /**
@@ -346,7 +446,7 @@ export function useProjectFallbackExhausted(): boolean {
  * and a registration with no query beneath it refreshes nothing.
  */
 export function useProjectListRefresh<T>(list: ProjectList<T>): void {
-  const { folds } = useProjectStreamHeld();
+  const { folds } = useProjectStreamWiring();
   const held = useRef(list);
   useEffect(() => {
     held.current = list;
