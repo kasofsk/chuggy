@@ -3,8 +3,10 @@
  *
  * It answers a scripted list of openings, so a suite says what the server does
  * on the first connection and the second and reads what the client did about
- * it; a body that never ends is how an abort is observed, and `push` is how a
- * suite sends a frame after the screen it is testing has done something.
+ * it, or a function of how many came before, for a server whose answer moves
+ * with something the suite drives; a body that never ends is how an abort is
+ * observed, and `push` is how a suite sends a frame after the screen it is
+ * testing has done something.
  *
  * A thread's live route is a second script beside the project's, told apart by
  * the address asked: a suite that scripts none has it answered as a thread that
@@ -64,6 +66,10 @@ export interface StreamServer {
   readonly closeLive: () => void;
   /** Fails the read the live connection is waiting on, as a reset does. */
   readonly cutLive: () => void;
+  /** Ends the project connection that is open, as a server closing it does. */
+  readonly close: () => void;
+  /** Fails the read the project connection is waiting on, as a reset does. */
+  readonly cut: () => void;
 }
 
 type StreamChunkRead =
@@ -148,8 +154,13 @@ interface StreamRoute {
   readonly cut: () => void;
 }
 
+/** What a server answers each open with: a list in order, or a function of
+ * how many opens came before this one. */
+export type StreamOpenings =
+  readonly StreamOpening[] | ((opened: number) => StreamOpening);
+
 function routeOf(
-  openings: readonly StreamOpening[],
+  openings: StreamOpenings,
   exhaustedStatus: number,
   aborts: number[],
   held: () => void,
@@ -161,7 +172,10 @@ function routeOf(
   let queued: string[] = [];
   return {
     answered: (signal) => {
-      const opening = openings[opened] ?? { status: exhaustedStatus };
+      const opening =
+        typeof openings === "function"
+          ? openings(opened)
+          : (openings[opened] ?? { status: exhaustedStatus });
       opened += 1;
       queued = [...(opening.chunks ?? [])];
       let drained = false;
@@ -263,7 +277,7 @@ function streamClock(): StreamClock {
 /** The project route answers a session it no longer knows once its script runs
  * out, which is the one answer that stops a stream that persists. */
 export function streamServer(
-  openings: readonly StreamOpening[],
+  openings: StreamOpenings,
   bearer = "token",
   liveOpenings: readonly StreamOpening[] = [],
 ): StreamServer {
@@ -317,6 +331,8 @@ export function streamServer(
     pushLive: live.push,
     closeLive: live.close,
     cutLive: live.cut,
+    close: project.close,
+    cut: project.cut,
   };
 }
 

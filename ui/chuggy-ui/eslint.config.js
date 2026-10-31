@@ -70,6 +70,29 @@ export default tseslint.config(
       /* jscpd:ignore-end — the rule list above is the root's, deliberately */
     },
   },
+  // `removeQueries` and `resetQueries` take a cache entry away before anything
+  // is read in its place, so every screen drawn from it unmounts, and what a
+  // reader had typed into it goes with it. `invalidateQueries` reads again and
+  // keeps what is drawn until the answer lands. A call that truly has no
+  // screen under it carries an inline disable saying why.
+  {
+    files: ["app/**/*.ts", "app/**/*.tsx"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "MemberExpression[property.name='removeQueries']",
+          message:
+            "removing an entry unmounts what is drawn from it; invalidate it instead",
+        },
+        {
+          selector: "MemberExpression[property.name='resetQueries']",
+          message:
+            "resetting an entry unmounts what is drawn from it; invalidate it instead",
+        },
+      ],
+    },
+  },
   // This file, which no program of the console's typechecks and which runs on
   // Node rather than in a browser.
   {
