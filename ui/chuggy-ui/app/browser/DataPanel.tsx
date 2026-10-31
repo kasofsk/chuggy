@@ -17,11 +17,7 @@ import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 
-/**
- * A read that is not ready, as the one line it is drawn as. Said here once
- * because a panel is not the only place a read is waited on: a part of a ready
- * panel may be waiting on a read of its own, and it says so in these words.
- */
+/** Retry for a failed read, or nothing when the read carries no retry. */
 function PanelRetry(props: {
   readonly retry: (() => void) | undefined;
 }): ReactNode {
@@ -33,6 +29,11 @@ function PanelRetry(props: {
   );
 }
 
+/**
+ * A read that is not ready, as the one line it is drawn as. Said here once
+ * because a panel is not the only place a read is waited on: a part of a ready
+ * panel may be waiting on a read of its own, and it says so in these words.
+ */
 export function PanelUnready<T>(props: {
   readonly state: PanelState<T>;
 }): ReactNode {
