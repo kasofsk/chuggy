@@ -7,7 +7,7 @@
  * differently.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { DataPanel } from "../app/browser/DataPanel.tsx";
@@ -64,4 +64,57 @@ test("a ready read draws its value and when it was observed", () => {
   );
   expect(screen.getByText("Cycle 3")).toBeDefined();
   expect(screen.getByText("0s ago")).toBeDefined();
+});
+
+test("a ready read whose last read failed keeps its value and says Not updated where its freshness was, with Retry", () => {
+  let retried = 0;
+  const view = render(
+    <DataPanel
+      title="Cycles"
+      state={{
+        state: "Ready",
+        value: "Cycle 3",
+        observedAtMs: Date.now(),
+        rereadFailed: true,
+        retry: () => {
+          retried += 1;
+        },
+      }}
+    >
+      {(value: string) => <p>{value}</p>}
+    </DataPanel>,
+  );
+  expect(screen.getByText("Cycle 3")).toBeDefined();
+  expect(screen.queryByText("0s ago")).toBeNull();
+  const meta = view.container.querySelector(".panel-meta");
+  expect(meta?.textContent).toBe("Not updatedRetry");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(retried).toBe(1);
+});
+
+test("a failed read offers Retry beside its line where it can be read again, and nothing where it cannot", () => {
+  let retried = 0;
+  render(
+    <DataPanel
+      title="Cycles"
+      state={{
+        state: "Failed",
+        reason: "API unreachable",
+        retry: () => {
+          retried += 1;
+        },
+      }}
+    >
+      {(value: string) => <p>{value}</p>}
+    </DataPanel>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(retried).toBe(1);
+  cleanup();
+  render(
+    <DataPanel title="Cycles" state={{ state: "Failed", reason: "gone" }}>
+      {(value: string) => <p>{value}</p>}
+    </DataPanel>,
+  );
+  expect(screen.queryByRole("button")).toBeNull();
 });

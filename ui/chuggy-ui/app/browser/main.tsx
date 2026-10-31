@@ -5,8 +5,8 @@
  *
  * Loading happens after the first render rather than before it, so a slow or
  * missing configuration is a drawn state instead of a blank document. A live
- * frame is what updates a query, so nothing here refetches on a window event.
- * The theme is read and put on the document before the first paint. The tokens
+ * frame is what updates a query, so a window event reads again only a query
+ * whose last read failed, as `panelQueryDefaults` says. The theme is read and put on the document before the first paint. The tokens
  * and the element defaults are imported above everything that draws, because a
  * bundler emits a sheet where it first reaches it; what holds the emitted
  * order to the system's is `scripts/console-policy.ts`, over the stylesheet the
@@ -27,6 +27,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { createInviteHolder } from "../core/inviteHolder.ts";
+import { panelQueryDefaults } from "../core/panelQueryDefaults.ts";
 import { App } from "./App.tsx";
 import { InviteProvider } from "./InvitePage.tsx";
 import {
@@ -49,13 +50,7 @@ import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: false,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-    },
-  },
+  defaultOptions: { queries: panelQueryDefaults },
 });
 
 const holder = sessionHolderOpened();

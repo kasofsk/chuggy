@@ -41,7 +41,9 @@ function gcTimeOf(client: QueryClient, ticket: number): number | undefined {
 }
 
 test("a held record is built with no expiry of the cache's own", () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   ticketAttemptHeld(client, atlas, 11, resuming(11, "op-one"));
   expect(gcTimeOf(client, 11)).toBe(Number.POSITIVE_INFINITY);
   expect(ticketAttemptRead(client, atlas, 11)).toEqual(resuming(11, "op-one"));
@@ -50,7 +52,9 @@ test("a held record is built with no expiry of the cache's own", () => {
 /** One registration covers the partition's held scope, so a reader who submits
  * on many tickets leaves one behind and not one per ticket. */
 test("the one registration answers for a ticket nothing has been held for", () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   ticketAttemptHeld(client, atlas, 11, resuming(11, "op-one"));
   expect(client.getQueryDefaults(ticketAttemptKey(atlas, 12)).gcTime).toBe(
     Number.POSITIVE_INFINITY,
@@ -60,7 +64,9 @@ test("the one registration answers for a ticket nothing has been held for", () =
 });
 
 test("what ends a held record is the console dropping it", () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   ticketAttemptHeld(client, atlas, 11, resuming(11, "op-one"));
   ticketAttemptHeld(client, atlas, 12, resuming(12, "op-two"));
   ticketAttemptDropped(client, atlas, 11);

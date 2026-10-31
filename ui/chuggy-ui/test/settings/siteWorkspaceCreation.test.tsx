@@ -253,15 +253,12 @@ test("a creation's line stands until the dialog is opened again, which starts as
   expect(create().disabled).toBe(true);
 });
 
-test("a creation whose reread fails still leaves its line, over the read's own", async () => {
+test("a creation whose reread fails still leaves its line, over the list it held", async () => {
   await filled(listedAfterCreation(() => answer({}, 500)));
   expect(screen.getByRole("table")).toBeTruthy();
   await press("Create");
   expect(screen.getByRole("status").textContent).toBe(createdLine);
-  expect(
-    screen.getByText("Failed to load · the API failed with InternalError"),
-  ).toBeTruthy();
-  expect(screen.queryByRole("table")).toBeNull();
+  expect(screen.getByRole("table")).toBeTruthy();
 });
 
 const refusals = [

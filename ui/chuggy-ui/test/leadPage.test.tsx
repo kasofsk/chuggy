@@ -114,7 +114,9 @@ async function mountLead(): Promise<ReturnType<typeof openedStream>> {
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <ShellSlotHarness>
@@ -210,7 +212,9 @@ async function drawLeadBeside(
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <ViewportColumnAsideProvider value={beside}>
@@ -739,7 +743,7 @@ test("a lead whose read failed is still woken by its own Session frame", async (
     return reads - before;
   };
   expect(await woken("43")).toBeGreaterThan(0);
-  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(screen.getByText("Not updated")).toBeDefined();
   expect(
     await woken("44"),
     "a panel whose read had already failed was deaf to the next frame",
@@ -1761,7 +1765,9 @@ interface LeadNavigation {
 async function drawLeadPage(fetching: typeof fetch): Promise<LeadNavigation> {
   vi.stubGlobal("fetch", fetching);
   const server = openedStream();
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const under = (partition: PartitionIdentity) => (
     <ScreenHarness
       partition={partition}

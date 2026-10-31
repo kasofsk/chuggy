@@ -74,7 +74,9 @@ interface Reviewed {
 /** The inbox over whatever `fetch` the case has stubbed, and the cache it
  * reads into. */
 function inboxDrawn(): QueryClient {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
     <ScreenHarness
       partition={atlas}

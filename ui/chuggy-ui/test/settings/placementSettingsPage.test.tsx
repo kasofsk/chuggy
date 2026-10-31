@@ -111,7 +111,10 @@ async function drawPage(
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={drawing.client ?? new QueryClient()}
+      client={
+        drawing.client ??
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <PlacementSettingsPage />
@@ -306,7 +309,9 @@ async function movedUnderEditor(
   move: (moving: Moving) => void,
   chosen?: readonly [kind: string, route: string],
 ): Promise<readonly SentRequest[]> {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const moving: Moving = {
     sessionsFailing: false,
     sessionsHeld: undefined,

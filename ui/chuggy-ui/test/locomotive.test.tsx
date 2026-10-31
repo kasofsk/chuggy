@@ -61,7 +61,11 @@ test("the locomotive draws an animated sprite and carries an accessible name, wi
 test("the Loading card draws the locomotive", () => {
   render(
     <SessionProvider holder={holderAt("Loading")}>
-      <App queryClient={new QueryClient()} />
+      <App
+        queryClient={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      />
     </SessionProvider>,
   );
   expect(screen.getByRole("img", { name: /chuggy/i })).not.toBeNull();
@@ -71,7 +75,11 @@ test("the Loading card draws the locomotive", () => {
 test("a phase that is not Loading draws no locomotive", () => {
   render(
     <SessionProvider holder={holderAt("SignedOut")}>
-      <App queryClient={new QueryClient()} />
+      <App
+        queryClient={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      />
     </SessionProvider>,
   );
   expect(screen.getByRole("button", { name: "Sign in" })).not.toBeNull();

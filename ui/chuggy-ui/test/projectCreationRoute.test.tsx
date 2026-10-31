@@ -49,7 +49,11 @@ async function fieldsAt(address: string): Promise<readonly string[]> {
   render(
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>
-        <App queryClient={new QueryClient()} />
+        <App
+          queryClient={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        />
       </InviteProvider>
     </SessionProvider>,
   );

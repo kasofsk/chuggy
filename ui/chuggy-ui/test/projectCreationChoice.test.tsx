@@ -281,7 +281,9 @@ async function mountedAgain(again: {
   readonly posted: readonly ProjectCreationPosted[];
   readonly arrives: (response: Response) => Promise<void>;
 }> {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const page = <ProjectCreationPage workspace={again.workspace} />;
   for (const access of again.earlier) {
     served([], again.creation, access);
@@ -351,7 +353,7 @@ test.each([
   ["workspaces", accessHolding(several)],
   ["abilities", accessHolding(several, true)],
 ] as const)(
-  "the %s read failing again after a pick leaves the picked workspace as the name to type, not the one the address names",
+  "the %s read failing again after a pick leaves the choice on the picked workspace, not the one the address names",
   async (held, first) => {
     const again = await mountedAgain({
       earlier: [first],
@@ -365,7 +367,9 @@ test.each([
     await workspaceChosen("northwind");
     typed("Project", "atlas");
     await again.arrives(answer({}, 500));
-    expect(workspaceBox()).toHaveProperty("value", "northwind");
+    expect(
+      screen.getByRole("button", { name: "Workspace northwind" }),
+    ).toBeDefined();
     await pressed();
     expect(again.posted.map((one) => one.body)).toStrictEqual([
       { tenant: "northwind", project: "atlas" },
@@ -373,7 +377,7 @@ test.each([
   },
 );
 
-test("picking the entry the choice started on is a pick, kept as the name to type where the address names another workspace", async () => {
+test("picking the entry the choice started on is a pick, kept through a read failing where the address names another workspace", async () => {
   const again = await mountedAgain({
     earlier: [accessHolding([administered("mimage"), joined("vteng")])],
     held: "workspaces",
@@ -385,7 +389,9 @@ test("picking the entry the choice started on is a pick, kept as the name to typ
   ).toBeDefined();
   await workspaceChosen("mimage");
   await again.arrives(answer({}, 500));
-  expect(workspaceBox()).toHaveProperty("value", "mimage");
+  expect(
+    screen.getByRole("button", { name: "Workspace mimage" }),
+  ).toBeDefined();
 });
 
 test("a read failing again after New workspace was picked and nothing typed leaves no name, not the one the address names", async () => {
@@ -436,18 +442,18 @@ test("a read arriving again that takes away the making of a workspace leaves not
   expect(again.posted).toStrictEqual([]);
 });
 
-/** A mount after a read that failed over an earlier answer draws the typed
- * name at once and reads again. */
+/** A mount after a read that answered none over an earlier answer draws the
+ * typed name at once and reads again. */
 test.each([
   ["a workspace the reader may add to", "that workspace", "northwind"],
   ["what no workspace of theirs is called", "no entry", "elsewhere"],
 ] as const)(
-  "a name typed over a failed read that is %s leaves the choice on %s once the read answers, not on the one the address names",
+  "a name typed over a read that answered none that is %s leaves the choice on %s once the read answers, not on the one the address names",
   async (_named, stands, name) => {
     const again = await mountedAgain({
       earlier: [
         accessHolding(several),
-        { ...accessHolding(several), workspaces: () => answer({}, 500) },
+        { ...accessHolding(several), workspaces: () => answer({}, 404) },
       ],
       held: "workspaces",
       creation: created,
@@ -466,10 +472,10 @@ test.each([
   },
 );
 
-test("a name typed over a failed read that no workspace is called is held by New workspace once the read answers, for a reader who may make one", async () => {
+test("a name typed over a read that answered none that no workspace is called is held by New workspace once the read answers, for a reader who may make one", async () => {
   const creator = accessHolding(several, true);
   const again = await mountedAgain({
-    earlier: [creator, { ...creator, workspaces: () => answer({}, 500) }],
+    earlier: [creator, { ...creator, workspaces: () => answer({}, 404) }],
     held: "workspaces",
     creation: created,
     workspace: "acme",
@@ -491,7 +497,7 @@ test("free text nobody typed into gives way to where the choice starts once the 
   const again = await mountedAgain({
     earlier: [
       accessHolding(several),
-      { ...accessHolding(several), workspaces: () => answer({}, 500) },
+      { ...accessHolding(several), workspaces: () => answer({}, 404) },
     ],
     held: "workspaces",
     creation: created,

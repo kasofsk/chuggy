@@ -222,7 +222,9 @@ async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
   render(
     <ScreenHarness
       partition={creationPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <TicketEdit />

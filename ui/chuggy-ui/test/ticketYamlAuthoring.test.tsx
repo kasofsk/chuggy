@@ -74,7 +74,11 @@ function draw(
 ): boolean[] {
   const dirty: boolean[] = [];
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <CreationForm
         ports={ports}
         partition={creationPartition}

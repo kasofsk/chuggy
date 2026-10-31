@@ -123,7 +123,9 @@ async function drawn(
   });
   vi.stubGlobal("fetch", api.fetch);
   stream = openedStream();
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const transport = stream.ports.fetch;
   const page = (): ReactNode => (
     <ScreenHarness partition={atlas} client={client} transport={transport}>
@@ -448,7 +450,9 @@ function polled(reach: () => Response | Promise<Response>): {
     asked += 1;
     return Promise.resolve(reach());
   });
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const { result } = renderHook(() => useTicketDelivery(atlas, 11), {
     wrapper: (props: { readonly children: ReactNode }) => (
       <QueryClientProvider client={client}>

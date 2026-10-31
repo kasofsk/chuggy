@@ -420,7 +420,9 @@ export async function drawProjectPermissions(
   render(
     <ScreenHarness
       partition={{ tenant: permissionsTenant, project: permissionsProject }}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <ProjectPermissionsPage />

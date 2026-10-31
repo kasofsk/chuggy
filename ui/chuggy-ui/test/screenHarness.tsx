@@ -29,6 +29,11 @@ import type { StreamServer } from "./streamDouble.ts";
  * rather than once. */
 export const settleFlushesMax = 8;
 
+/** A cache that never retries a read, so a case's failed read is one read. */
+export function queryClientUnretried(): QueryClient {
+  return new QueryClient({ defaultOptions: { queries: { retry: false } } });
+}
+
 export function holderDouble(): SessionHolder {
   return {
     load: () => Promise.resolve(),
@@ -183,7 +188,7 @@ export async function drawnStrict(
   const scripted = scriptedFetch(answered);
   vi.stubGlobal("fetch", scripted.fetch);
   const sent = scripted.sent;
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   const holder = holderDouble();
   const drawn = (nudge: number): ReactNode => (
     <StrictMode>
