@@ -1,7 +1,8 @@
 /**
  * What frames do to the latest execution a ticket's row carries: an
  * `Execution` frame moves it where it is the latest, in the order
- * `latest=true` answers, and a `Ticket` frame, which carries none, keeps it.
+ * `latest=true` answers, and a `Ticket` frame, which carries none, keeps it or,
+ * for a ticket the rows have not got, has the list read again.
  */
 
 import { expect, test } from "vitest";
@@ -114,7 +115,7 @@ test("a tombstone, an unreadable frame or a ticket the rows lack leaves them", (
   expect(projectTicketRowsExecutionFold(undefined, running)).toBeUndefined();
 });
 
-test("a ticket's frame keeps the cell its row holds, and a row arriving holds none", () => {
+test("a ticket's frame keeps the cell its row holds", () => {
   const moved = projectTicketRowsFold(
     rows,
     "7",
@@ -123,13 +124,6 @@ test("a ticket's frame keeps the cell its row holds, and a row arriving holds no
   );
   expect(moved?.tickets[0]?.sequence).toBe(9);
   expect(latestOf(moved, 7)).toEqual(rows.tickets[0]?.latestExecution);
-  const arriving = projectTicketRowsFold(
-    rows,
-    "9",
-    { ticket: 9, phase: "Pending", sequence: 10, ...ticketInstants },
-    undefined,
-  );
-  expect(latestOf(arriving, 9)).toBeUndefined();
 });
 
 test("every ticket list folds execution frames, and a list's own kind cannot be alongside it", () => {

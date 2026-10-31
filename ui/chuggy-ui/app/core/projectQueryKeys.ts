@@ -160,8 +160,9 @@ export interface ProjectListChange {
 /**
  * What a frame of the list's kind does to its entry — `Fold` where the frame
  * carries the whole truth about it, `Reread` where the server derives it and
- * the frame does not — neither being optional, since an entry with no refresh
- * is the defect this pair exists to make unwritable.
+ * the frame does not, `FoldElseReread` where a frame carries the whole of a
+ * row the entry holds but not of one it lacks — none being optional, since an
+ * entry with no refresh is the defect this exists to make unwritable.
  *
  * `Reread` NAMES NO RESOURCE AND THE KIND IS THE WHOLE OF ITS FILTER, because a
  * derived entry is derived from more than the resource a frame happens to carry
@@ -178,6 +179,18 @@ export type ProjectListRefresh<T> =
       ) => T | undefined;
     }
   | { readonly refresh: "Reread" }
+  | {
+      readonly refresh: "FoldElseReread";
+      readonly fold: (
+        previous: T | undefined,
+        change: ProjectListChange,
+      ) => T | undefined;
+      /** Whether the frame stales the entry rather than folding into it. */
+      readonly rereads: (
+        previous: T | undefined,
+        change: ProjectListChange,
+      ) => boolean;
+    }
   | {
       readonly refresh: "RereadNamed";
       readonly names: (change: ProjectListChange) => boolean;
@@ -226,6 +239,22 @@ export function projectListFolded<T>(
   fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
 ): ProjectList<T> {
   return projectListOf(partition, kind, name, { refresh: "Fold", fold });
+}
+
+/** `projectListFolded`, except that a frame `rereads` answers for stales the
+ * entry and the server is asked again. */
+export function projectListFoldedElseReread<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  name: string,
+  fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
+  rereads: (previous: T | undefined, change: ProjectListChange) => boolean,
+): ProjectList<T> {
+  return projectListOf(partition, kind, name, {
+    refresh: "FoldElseReread",
+    fold,
+    rereads,
+  });
 }
 
 /** Every frame of the kind stales the entry, this being for entries no frame

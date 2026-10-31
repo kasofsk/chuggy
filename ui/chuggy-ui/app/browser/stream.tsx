@@ -125,6 +125,17 @@ function applyListRefresh(
         refresh.fold(previous, change),
       );
       return;
+    case "FoldElseReread":
+      if (refresh.rereads(client.getQueryData(registered.key), change))
+        void client.invalidateQueries({
+          queryKey: registered.key,
+          exact: true,
+        });
+      else
+        client.setQueryData(registered.key, (previous: unknown) =>
+          refresh.fold(previous, change),
+        );
+      return;
     case "Reread":
       void client.invalidateQueries({
         queryKey: registered.key,
@@ -492,6 +503,31 @@ export function useProjectStreamOutdated(): boolean {
   return useProjectStreamSaying().outdated;
 }
 
+/** A list's own refresh, over an entry whose type the registry has erased. */
+function projectListRefreshErased<T>(
+  current: ProjectListRefresh<T>,
+): ProjectListRefresh<unknown> {
+  switch (current.refresh) {
+    case "Reread":
+    case "RereadNamed":
+      return current;
+    case "Fold":
+      return {
+        refresh: "Fold",
+        fold: (previous, change) =>
+          current.fold(previous as T | undefined, change),
+      };
+    case "FoldElseReread":
+      return {
+        refresh: "FoldElseReread",
+        fold: (previous, change) =>
+          current.fold(previous as T | undefined, change),
+        rereads: (previous, change) =>
+          current.rereads(previous as T | undefined, change),
+      };
+  }
+}
+
 /**
  * A list's refresh, and a fold for each kind alongside it, registered for as
  * long as the screen is mounted — past the registration budget too, with the
@@ -522,16 +558,7 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       {
         kind,
         key,
-        refresh: () => {
-          const current = held.current.refresh;
-          if (current.refresh === "Reread" || current.refresh === "RereadNamed")
-            return current;
-          return {
-            refresh: "Fold",
-            fold: (previous, change) =>
-              current.fold(previous as T | undefined, change),
-          };
-        },
+        refresh: () => projectListRefreshErased(held.current.refresh),
       },
       ...(alongside === ""
         ? []

@@ -19,7 +19,14 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -32,6 +39,11 @@ import {
 } from "../app/core/projectQueryKeys.ts";
 import type { ProjectList } from "../app/core/projectQueryKeys.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import {
+  ticketFilterList,
+  ticketListAskDefault,
+} from "../app/core/projectTableFilters.ts";
+import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
@@ -305,6 +317,19 @@ test("a list folds a frame of a kind alongside its own by that kind's fold", asy
   );
   const client = await refreshedEntry(list, []);
   expect(client.getQueryData(list.key)).toEqual(["ticket:3"]);
+});
+
+/** A `Ticket` frame carries no latest execution, so a ticket the rows have not
+ * got is the read's to answer, and one they hold is folded with its cell. */
+test("a ticket list reads again for a ticket it has not got, and folds one it holds", async () => {
+  const list = ticketFilterList(atlas, ticketListAskDefault);
+  const absent = await refreshedEntry(list, projectTicketRowsEmpty);
+  expect(absent.getQueryState(list.key)?.isInvalidated).toBe(true);
+  cleanup();
+  const holding = { ...projectTicketRowsEmpty, tickets: [{ ...ticket }] };
+  const held = await refreshedEntry(list, holding);
+  expect(held.getQueryState(list.key)?.isInvalidated).toBe(false);
+  expect(held.getQueryData(list.key)).toStrictEqual(holding);
 });
 
 /**

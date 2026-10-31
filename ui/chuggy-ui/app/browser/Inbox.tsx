@@ -103,8 +103,7 @@ import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
-  projectTicketRowsFold,
-  projectTicketRowsLive,
+  projectTicketRowsFolded,
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
@@ -210,20 +209,7 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 } {
-  const list = projectTicketRowsLive(
-    projectListFolded<ProjectTicketRows>(
-      partition,
-      "Ticket",
-      inboxListName,
-      (previous, change) =>
-        projectTicketRowsFold(
-          previous,
-          change.resource,
-          change.representation,
-          inboxPhases,
-        ),
-    ),
-  );
+  const list = projectTicketRowsFolded(partition, inboxListName, inboxPhases);
   const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();

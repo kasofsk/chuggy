@@ -41,11 +41,15 @@ import type {
   TicketLatestExecution,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
-import { projectListAlongside } from "./projectQueryKeys.ts";
+import {
+  projectListAlongside,
+  projectListFoldedElseReread,
+} from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 
 export const projectTicketPagesMax = 20;
@@ -293,35 +297,29 @@ function projectTicketRowsWithout(
   };
 }
 
-/** A ticket the filter no longer admits leaves; one it admits and the list has
- * not got is the most recent activity there is, so it arrives at the top. A
- * ticket's frame carries no latest execution, so a row keeps the one it has. */
+/** A ticket's frame carries no latest execution, so a row keeps the one it has. */
 function projectTicketRowsWith(
   rows: ProjectTicketRows,
   arriving: TicketResponse,
 ): ProjectTicketRows {
-  const held = rows.tickets.some((ticket) => ticket.ticket === arriving.ticket);
-  if (held)
-    return {
-      ...rows,
-      tickets: rows.tickets.map((ticket) =>
-        ticket.ticket !== arriving.ticket
-          ? ticket
-          : ticket.latestExecution === undefined
-            ? arriving
-            : { ...arriving, latestExecution: ticket.latestExecution },
-      ),
-    };
   return {
     ...rows,
-    tickets: [arriving, ...rows.tickets].slice(0, projectTicketRowsMax),
+    tickets: rows.tickets.map((ticket) =>
+      ticket.ticket !== arriving.ticket
+        ? ticket
+        : ticket.latestExecution === undefined
+          ? arriving
+          : { ...arriving, latestExecution: ticket.latestExecution },
+    ),
   };
 }
 
 /**
  * A `Ticket` frame folded into the rows: the representation is the ticket read's
- * own body, a null one is a tombstone, and anything else leaves the rows alone
- * because a list that cannot read a frame is better stale than wrong.
+ * own body, a null one is a tombstone, a ticket the phases no longer admit
+ * leaves, and anything else leaves the rows alone because a list that cannot
+ * read a frame is better stale than wrong. A ticket the rows have not got is
+ * left to the read `projectTicketRowsRereads` asks for.
  */
 export function projectTicketRowsFold(
   previous: ProjectTicketRows | undefined,
@@ -342,6 +340,48 @@ export function projectTicketRowsFold(
   if (phases !== undefined && !phases.includes(arriving.phase))
     return projectTicketRowsWithout(previous, arriving.ticket);
   return projectTicketRowsWith(previous, arriving);
+}
+
+/**
+ * Whether a `Ticket` frame brings in a ticket the phases admit and the rows
+ * have not got, which the list reads again for: the frame carries no latest
+ * execution, and the read answers the row with one.
+ */
+export function projectTicketRowsRereads(
+  previous: ProjectTicketRows | undefined,
+  representation: unknown,
+  phases: readonly TicketPhase[] | undefined,
+): boolean {
+  const read = ticketResponseSchema.safeParse(representation);
+  if (previous === undefined || !read.success) return false;
+  const arriving = read.data;
+  if (phases !== undefined && !phases.includes(arriving.phase)) return false;
+  return !previous.tickets.some((held) => held.ticket === arriving.ticket);
+}
+
+/** The list of the rows within `phases`, kept live by `Ticket` and
+ * `Execution` frames alike. */
+export function projectTicketRowsFolded(
+  partition: PartitionIdentity,
+  name: string,
+  phases: readonly TicketPhase[] | undefined,
+): ProjectList<ProjectTicketRows> {
+  return projectTicketRowsLive(
+    projectListFoldedElseReread<ProjectTicketRows>(
+      partition,
+      "Ticket",
+      name,
+      (previous, change) =>
+        projectTicketRowsFold(
+          previous,
+          change.resource,
+          change.representation,
+          phases,
+        ),
+      (previous, change) =>
+        projectTicketRowsRereads(previous, change.representation, phases),
+    ),
+  );
 }
 
 /** Whether an execution is its ticket's latest over the one held, in the order

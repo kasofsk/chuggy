@@ -346,6 +346,49 @@ test("opening the inbox issues no executions read", async () => {
   expect(asked.filter((url) => url.includes("/executions"))).toStrictEqual([]);
 });
 
+/** The frame carries no latest execution, so the row it brings in is the one
+ * the list's read answers, which does. */
+test("a ticket escalating while the inbox is open draws how its last run ended", async () => {
+  let tickets: readonly unknown[] = [];
+  const api = apiDouble({
+    operation: operationAt("Pending"),
+    route: (url) => served(url, tickets),
+  });
+  vi.stubGlobal("fetch", api.fetch);
+  const server = openedStream();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+      transport={server.ports.fetch}
+    >
+      <InboxScreen partition={atlas} />
+    </ScreenHarness>,
+  );
+  await settled();
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
+  tickets = [
+    {
+      ...escalated,
+      latestExecution: ticketLatestExecutionSchema.parse(failedRun),
+    },
+  ];
+  await turned(() => {
+    server.push(
+      frame("Ticket", "7", {
+        version: 1,
+        resource: "4",
+        representation: escalated,
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.getByText("Failed").className).toContain("pill-fail");
+});
+
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {
   drawInbox(served, abilitiesOver({ ...abilitiesEvery, mutate: false }));
   await settled();
