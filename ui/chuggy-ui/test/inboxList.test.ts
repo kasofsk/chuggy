@@ -130,6 +130,8 @@ test("the open-actions page states its own size and carries its cursor", () => {
   expect(inboxActionsPage("after-eleven").cursor).toBe("after-eleven");
 });
 
+/** A ticket escalating into the inbox is read again for rather than folded,
+ * so the count is the page's own until that read lands. */
 test("the count is the rows a page gave, and follows a frame that moves one", () => {
   const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
   expect(phaseCountLabel(held)).toBe("2");
@@ -155,13 +157,13 @@ test("the count is the rows a page gave, and follows a frame that moves one", ()
     },
     inboxPhases,
   );
-  expect(phaseCountLabel(arriving)).toBe("2");
+  expect(phaseCountLabel(arriving)).toBe("1");
 });
 
 test("folding one frame twice counts the same as folding it once", () => {
   const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
   const arriving = {
-    ticket: 9,
+    ticket: 4,
     phase: "Escalated" as const,
     sequence: 14,
     escalation: {
@@ -170,11 +172,11 @@ test("folding one frame twice counts the same as folding it once", () => {
     },
     ...ticketInstants,
   };
-  const once = projectTicketRowsFold(held, "9", arriving, inboxPhases);
-  const twice = projectTicketRowsFold(once, "9", arriving, inboxPhases);
+  const once = projectTicketRowsFold(held, "4", arriving, inboxPhases);
+  const twice = projectTicketRowsFold(once, "4", arriving, inboxPhases);
   expect(twice?.tickets).toStrictEqual(once?.tickets);
   expect(phaseCountLabel(twice)).toBe(phaseCountLabel(once));
-  expect(phaseCountLabel(twice)).toBe("3");
+  expect(phaseCountLabel(twice)).toBe("2");
 });
 
 test("an empty inbox is counted as nothing rather than as a zero", () => {

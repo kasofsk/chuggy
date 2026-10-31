@@ -20,6 +20,7 @@ import {
   projectTicketRowsAppend,
   projectTicketRowsEmpty,
   projectTicketRowsFold,
+  projectTicketRowsRereads,
   projectTicketRowsHaveMore,
   projectTicketRowsMax,
   projectTicketRowsMore,
@@ -164,17 +165,23 @@ test("a ticket frame moves a row into another section without disturbing the res
   expect(folded?.tickets[1]?.phase).toBe("Pending");
 });
 
-test("a ticket the list has not got arrives at the top", () => {
+/** The frame carries no latest execution, so the row is the read's to answer. */
+test("a ticket the list has not got is read again for rather than folded in", () => {
   const rows = projectTicketRowsAppend(projectTicketRowsEmpty, firstPage);
-  const folded = projectTicketRowsFold(
+  const arriving = { ticket: 9, phase: "Work", sequence: 8, ...ticketInstants };
+  expect(projectTicketRowsFold(rows, "9", arriving, undefined)).toStrictEqual(
     rows,
-    "9",
-    { ticket: 9, phase: "Work", sequence: 8, ...ticketInstants },
-    undefined,
   );
-  expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([
-    9, 1, 2,
-  ]);
+  expect(projectTicketRowsRereads(rows, arriving, undefined)).toBe(true);
+  expect(projectTicketRowsRereads(rows, arriving, ["Pending"])).toBe(false);
+  expect(
+    projectTicketRowsRereads(rows, { ...arriving, ticket: 1 }, undefined),
+  ).toBe(false);
+  expect(projectTicketRowsRereads(rows, null, undefined)).toBe(false);
+  expect(projectTicketRowsRereads(rows, { ticket: "x" }, undefined)).toBe(
+    false,
+  );
+  expect(projectTicketRowsRereads(undefined, arriving, undefined)).toBe(false);
 });
 
 test("a filtered list drops the ticket that left the filter", () => {

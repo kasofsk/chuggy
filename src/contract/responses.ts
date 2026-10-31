@@ -444,17 +444,6 @@ export const ticketResponseSchema = z.object({
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 
-export const projectResponseSchema = z.object({
-  partition: partitionValueSchema,
-  sequence: countSchema,
-  tickets: page(ticketResponseSchema),
-  nextAfter: ticketNumberSchema.optional(),
-  nextCursor: cursorSchema.optional(),
-  /** How many tickets a search matched across the project, its phases and activity included; only a read naming `q` carries it. */
-  matched: countSchema.optional(),
-});
-export type ProjectResponse = z.infer<typeof projectResponseSchema>;
-
 /**
  * One open native action: the fence a `ResolveNativeAction` must name, and the
  * answers this action admits. Those are a subset of what its kind may ask for —
@@ -762,6 +751,42 @@ export const executionSummarySchema = z.object({
   mine: z.boolean().optional(),
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
+
+/**
+ * What a row of the tickets list draws of its ticket's latest execution, the
+ * one `latest=true` answers for it: how it stands, what it runs on, and when.
+ */
+export const ticketLatestExecutionSchema = executionSummarySchema.pick({
+  execution: true,
+  task: true,
+  identity: true,
+  status: true,
+  outcome: true,
+  carrier: true,
+  runStartedAt: true,
+  requirement: true,
+  worker: true,
+  registeredAt: true,
+  terminalAt: true,
+});
+export type TicketLatestExecution = z.infer<typeof ticketLatestExecutionSchema>;
+
+/** A row of the tickets list: the ticket, and its latest execution where one has run. */
+export const projectTicketSchema = ticketResponseSchema.extend({
+  latestExecution: ticketLatestExecutionSchema.optional(),
+});
+export type ProjectTicket = z.infer<typeof projectTicketSchema>;
+
+export const projectResponseSchema = z.object({
+  partition: partitionValueSchema,
+  sequence: countSchema,
+  tickets: page(projectTicketSchema),
+  nextAfter: ticketNumberSchema.optional(),
+  nextCursor: cursorSchema.optional(),
+  /** How many tickets a search matched across the project, its phases and activity included; only a read naming `q` carries it. */
+  matched: countSchema.optional(),
+});
+export type ProjectResponse = z.infer<typeof projectResponseSchema>;
 
 /**
  * One page of the project's executions, ordered by `(ticket, task)` ascending.

@@ -20,6 +20,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import {
   answer,
@@ -92,15 +93,18 @@ const working = {
   ...ticketInstants,
 };
 
-/** One escalated ticket, nothing else open, and nothing that has run. */
-function served(url: string): Response {
+/** One escalated ticket, nothing else open, and nothing that has run, or the
+ * tickets a case names in its place. */
+function served(
+  url: string,
+  tickets: readonly unknown[] = [escalated],
+): Response {
   if (url.includes("/agentic-refusals"))
     return answer({ refusals: [], more: false });
   if (url.includes("/native-actions")) return answer({ actions: [] });
-  if (url.includes("/executions")) return answer({ executions: [] });
   if (url.includes("/selector-proposals"))
     return answer({ proposals: [], more: false });
-  return answer({ partition: atlas, sequence: 9, tickets: [escalated] });
+  return answer({ partition: atlas, sequence: 9, tickets });
 }
 
 /** The same project with a ticket the lead is refusing to dispatch, which no
@@ -132,13 +136,8 @@ function drawInbox(
   return api;
 }
 
-test("a row names the ticket it is about beside its number", async () => {
-  drawInbox(served);
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-});
-
-test("an answered row stays until a Ticket frame moves it out of the section", async () => {
-  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+/** The inbox over `api`, and the stream its frames are pushed down. */
+function drawInboxOver(api: ApiDouble): ReturnType<typeof openedStream> {
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(
@@ -152,6 +151,17 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
       <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
+  return server;
+}
+
+test("a row names the ticket it is about beside its number", async () => {
+  drawInbox(served);
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+});
+
+test("an answered row stays until a Ticket frame moves it out of the section", async () => {
+  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+  const server = drawInboxOver(api);
   await settled();
   expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
 
@@ -294,12 +304,17 @@ const failedRun = {
   terminalAt: "2026-08-26T10:30:00.000Z",
 };
 
+/** The project above, its escalated ticket carrying `run` as its latest. */
+function servedCarrying(run: unknown): (url: string) => Response {
+  const carrying = {
+    ...escalated,
+    latestExecution: ticketLatestExecutionSchema.parse(run),
+  };
+  return (url) => served(url, [carrying]);
+}
+
 test("a row says how its last run ended, and never Terminal", async () => {
-  drawInbox((url) =>
-    url.includes("/executions")
-      ? answer({ executions: [failedRun] })
-      : served(url),
-  );
+  drawInbox(servedCarrying(failedRun));
   await settled();
   expect(screen.getByText("Failed").className).toContain("pill-fail");
   expect(document.body.textContent).not.toContain("Terminal");
@@ -315,35 +330,57 @@ const admittedRun = {
 };
 
 test("a row draws a run still waiting for its worker as its ticket page does", async () => {
-  drawInbox((url) =>
-    url.includes("/executions")
-      ? answer({ executions: [admittedRun] })
-      : served(url),
-  );
+  drawInbox(servedCarrying(admittedRun));
   await settled();
   expect(screen.getByText("Starting").className).toBe("pill pill-queued");
   expect(document.body.textContent).not.toContain("Admitted");
 });
 
-test("no row says not read and no sentence names a page budget, while the index loads or after", async () => {
+test("opening the inbox issues no executions read", async () => {
+  const asked: string[] = [];
   drawInbox(
-    served,
+    servedCarrying(failedRun),
     (served) =>
-      ((url: string, init?: RequestInit) =>
-        url.includes("/executions")
-          ? new Promise<Response>(() => undefined)
-          : served(url, init)) as typeof fetch,
+      ((url: string, init?: RequestInit) => {
+        asked.push(url);
+        return served(url, init);
+      }) as typeof fetch,
   );
   await settled();
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
-  cleanup();
-  drawInbox(served);
+  expect(await screen.findByText("Failed")).toBeDefined();
+  expect(asked.length).toBeGreaterThan(0);
+  expect(asked.filter((url) => url.includes("/executions"))).toStrictEqual([]);
+});
+
+/** The frame carries no latest execution, so the row it brings in is the one
+ * the list's read answers, which does. */
+test("a ticket escalating while the inbox is open draws how its last run ended", async () => {
+  let tickets: readonly unknown[] = [];
+  const api = apiDouble({
+    operation: operationAt("Pending"),
+    route: (url) => served(url, tickets),
+  });
+  const server = drawInboxOver(api);
   await settled();
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
+  expect(screen.getByText("Inbox is clear")).toBeDefined();
+  tickets = [
+    {
+      ...escalated,
+      latestExecution: ticketLatestExecutionSchema.parse(failedRun),
+    },
+  ];
+  await turned(() => {
+    server.push(
+      frame("Ticket", "7", {
+        version: 1,
+        resource: "4",
+        representation: escalated,
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.getByText("Failed").className).toContain("pill-fail");
 });
 
 test("a reader who may not mutate keeps the row and is offered no answer", async () => {

@@ -24,7 +24,8 @@
     "search": "q: from 1 to 200 characters once trimmed; a ticket matches where its title holds them, ignoring case and with every character as itself, or where they are its number, whole, with or without a leading #; the answer carries matched, how many tickets the read selects across the project",
     "active": "active=true: the tickets neither Done nor Revoked, and those that became either within the last 24 hours",
     "order": "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",
-    "composition": "each composes with phase and with the others"
+    "composition": "each composes with phase and with the others",
+    "latestExecution": "each row carries latestExecution, what the row draws of the execution latest=true answers for its ticket, and a ticket nothing has run carries none; neither the ticket's own read nor its change frame carries it"
   },
   "configurationLatestFilter": {
     "query": "latest",

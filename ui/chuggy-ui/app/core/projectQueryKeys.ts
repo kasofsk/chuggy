@@ -160,8 +160,9 @@ export interface ProjectListChange {
 /**
  * What a frame of the list's kind does to its entry — `Fold` where the frame
  * carries the whole truth about it, `Reread` where the server derives it and
- * the frame does not — neither being optional, since an entry with no refresh
- * is the defect this pair exists to make unwritable.
+ * the frame does not, `FoldElseReread` where a frame carries the whole of a
+ * row the entry holds but not of one it lacks — none being optional, since an
+ * entry with no refresh is the defect this exists to make unwritable.
  *
  * `Reread` NAMES NO RESOURCE AND THE KIND IS THE WHOLE OF ITS FILTER, because a
  * derived entry is derived from more than the resource a frame happens to carry
@@ -179,6 +180,18 @@ export type ProjectListRefresh<T> =
     }
   | { readonly refresh: "Reread" }
   | {
+      readonly refresh: "FoldElseReread";
+      readonly fold: (
+        previous: T | undefined,
+        change: ProjectListChange,
+      ) => T | undefined;
+      /** Whether the frame stales the entry rather than folding into it. */
+      readonly rereads: (
+        previous: T | undefined,
+        change: ProjectListChange,
+      ) => boolean;
+    }
+  | {
       readonly refresh: "RereadNamed";
       readonly names: (change: ProjectListChange) => boolean;
     };
@@ -188,11 +201,19 @@ export type ProjectListRefresh<T> =
  * what the brand stops is a list assembled rather than one taken apart. */
 const projectListWitness: unique symbol = Symbol("projectListWitness");
 
+/** What a frame of a kind other than the list's own does to its entry. */
+export type ProjectListFold<T> = (
+  previous: T | undefined,
+  change: ProjectListChange,
+) => T | undefined;
+
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
   readonly kind: ProjectChangeKind;
   readonly key: ProjectQueryKey;
   readonly refresh: ProjectListRefresh<T>;
+  /** The other kinds whose frames fold into the entry, each by its own fold. */
+  readonly alongside: Partial<Record<ProjectChangeKind, ProjectListFold<T>>>;
   readonly [projectListWitness]: true;
 }
 
@@ -206,6 +227,7 @@ function projectListOf<T>(
     kind,
     key: projectListKey(partition, kind, name),
     refresh,
+    alongside: {},
     [projectListWitness]: true,
   };
 }
@@ -217,6 +239,22 @@ export function projectListFolded<T>(
   fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
 ): ProjectList<T> {
   return projectListOf(partition, kind, name, { refresh: "Fold", fold });
+}
+
+/** `projectListFolded`, except that a frame `rereads` answers for stales the
+ * entry and the server is asked again. */
+export function projectListFoldedElseReread<T>(
+  partition: PartitionIdentity,
+  kind: ProjectChangeKind,
+  name: string,
+  fold: (previous: T | undefined, change: ProjectListChange) => T | undefined,
+  rereads: (previous: T | undefined, change: ProjectListChange) => boolean,
+): ProjectList<T> {
+  return projectListOf(partition, kind, name, {
+    refresh: "FoldElseReread",
+    fold,
+    rereads,
+  });
 }
 
 /** Every frame of the kind stales the entry, this being for entries no frame
@@ -249,4 +287,19 @@ export function projectListRereadNamed<T>(
     refresh: "RereadNamed",
     names,
   });
+}
+
+/**
+ * The same list, with frames of a further kind folded into its entry too —
+ * where a list of one kind's rows carries a fact of another's, as a ticket's
+ * row carries its latest execution.
+ */
+export function projectListAlongside<T>(
+  list: ProjectList<T>,
+  kind: ProjectChangeKind,
+  fold: ProjectListFold<T>,
+): ProjectList<T> {
+  if (kind === list.kind)
+    throw new RangeError(`a list's own kind ${kind} folds by its own refresh`);
+  return { ...list, alongside: { ...list.alongside, [kind]: fold } };
 }

@@ -8,9 +8,9 @@
  * this panel both take those reads through `useInboxRows`, so the
  * count and the rows are one value: a read that refused becomes a notice beside
  * the rows the other one supplied rather than an empty panel under a badge that
- * still counts them. What a row ran is the project table's own index under the
- * project table's own key, and a ticket the phase page did not carry is the
- * ticket page's own read under its key. What a row offers is the core's
+ * still counts them. What a row ran is the latest execution the phase page
+ * carries on its ticket, and a ticket the phase page did not carry is the
+ * ticket page's own read under its key, which carries none. What a row offers is the core's
  * decision and what happens after the click is `followOperation`'s, both shared
  * with the ticket page, because a second account of what the machine accepts
  * is a second account that drifts.
@@ -32,7 +32,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   AgenticRefusalsResponse,
-  ExecutionSummary,
+  ProjectTicket,
   RunnerLoss,
   RunStepFailure,
   TicketResponse,
@@ -91,11 +91,6 @@ import {
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import {
-  projectExecutionIndexAt,
-  projectExecutionIndexEmpty,
-} from "../core/projectExecutionIndex.ts";
-import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
-import {
   projectNativeActionRowsFold,
   projectNativeActionRowsRead,
 } from "../core/projectNativeActionPages.ts";
@@ -108,7 +103,7 @@ import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsAfterPage,
-  projectTicketRowsFold,
+  projectTicketRowsFolded,
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
@@ -119,7 +114,6 @@ import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelList, usePanelResources } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
-import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
 import {
   InboxProposalActions,
@@ -215,18 +209,7 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 } {
-  const list = projectListFolded<ProjectTicketRows>(
-    partition,
-    "Ticket",
-    inboxListName,
-    (previous, change) =>
-      projectTicketRowsFold(
-        previous,
-        change.resource,
-        change.representation,
-        inboxPhases,
-      ),
-  );
+  const list = projectTicketRowsFolded(partition, inboxListName, inboxPhases);
   const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();
@@ -527,8 +510,7 @@ function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
  * it, from the ticket's own read. */
 function InboxRow(props: {
   readonly entry: InboxEntry;
-  readonly read: TicketResponse | undefined;
-  readonly execution: ExecutionSummary | undefined;
+  readonly read: ProjectTicket | undefined;
   readonly partition: PartitionIdentity;
   readonly answer: InboxAnswer | undefined;
   readonly proposed: InboxProposalAnswers;
@@ -536,8 +518,7 @@ function InboxRow(props: {
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const ticket = props.entry.held ?? props.read;
-  const row =
-    ticket === undefined ? undefined : projectTableRow(ticket, props.execution);
+  const row = ticket === undefined ? undefined : projectTableRow(ticket);
   return (
     <tr>
       <TicketTitleCell
@@ -581,7 +562,6 @@ function InboxRow(props: {
 function InboxTable(props: {
   readonly entries: readonly InboxEntry[];
   readonly read: ReadonlyMap<number, TicketResponse>;
-  readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly answers: InboxAnswers;
   readonly proposed: InboxProposalAnswers;
@@ -606,7 +586,6 @@ function InboxTable(props: {
             key={entry.ticket}
             entry={entry}
             read={props.read.get(entry.ticket)}
-            execution={projectExecutionIndexAt(props.index, entry.ticket)}
             partition={props.partition}
             answer={props.answers[String(entry.ticket)]}
             proposed={props.proposed}
@@ -658,10 +637,7 @@ function useInboxAnswers(partition: PartitionIdentity): {
  * that refused while the other answered is a notice here rather than an empty
  * panel, so the half a person can still act on stays on screen.
  */
-function InboxNotices(props: {
-  readonly executions: PanelState<ProjectExecutionIndex>;
-  readonly held: InboxRowsHeld;
-}): ReactNode {
+function InboxNotices(props: { readonly held: InboxRowsHeld }): ReactNode {
   const held = props.held;
   return (
     <>
@@ -696,11 +672,6 @@ function InboxNotices(props: {
           {held.openPageFailure}
         </p>
       )}
-      {props.executions.state === "Failed" ? (
-        <p className="panel-failed">
-          what each ticket ran could not be read — {props.executions.reason}
-        </p>
-      ) : null}
       {held.pageFailure === undefined ? null : (
         <p className="panel-failed">
           a further page could not be read — {held.pageFailure}
@@ -718,11 +689,6 @@ export function InboxScreen(props: {
   const partition = props.partition;
   const inbox = useInboxRows(partition);
   const read = useInboxTicketsUnheld(partition, inbox.union);
-  const executions = useProjectExecutionIndex(partition);
-  const index =
-    executions.state === "Ready"
-      ? executions.value
-      : projectExecutionIndexEmpty;
   const answering = useInboxAnswers(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
@@ -730,7 +696,7 @@ export function InboxScreen(props: {
     <>
       <ScreenTitle>Inbox</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
-      <InboxNotices executions={executions} held={inbox} />
+      <InboxNotices held={inbox} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(union) =>
@@ -740,7 +706,6 @@ export function InboxScreen(props: {
             <InboxTable
               entries={union.entries}
               read={read}
-              index={index}
               partition={partition}
               answers={answering.answers}
               proposed={proposed}
