@@ -15,8 +15,13 @@ satisfying something adjacent to it.
 
 `.chug/tasks/ci.sh` runs the gates the change affects and no others. While you
 work, the test file or the single gate in hand is enough. Run `ci.sh` once the
-change is complete; if a gate is red, fix it, run that gate until it is clean,
-and run `ci.sh` again. A gate that could not run is not a pass.
+change is complete, in the foreground, with the Bash tool's longest timeout,
+as exactly this command:
+`CHUG_CI_QUIET=1 .chug/tasks/ci.sh >/tmp/ci.out 2>&1; echo "exit $?"; tail -n 60 /tmp/ci.out`
+A run can take a while; that is normal. Never wrap it in `timeout`, never wait
+on it with a fixed sleep, and never start a second run while one is still
+going. If a gate is red, fix it, run that gate until it is clean, and run
+`ci.sh` again. A gate that could not run is not a pass.
 
 Commit the change yourself, with a message that carries its why, as the
 reviewer's brief asks. The job has no git identity, so commit as the worker:

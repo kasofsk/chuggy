@@ -42,14 +42,10 @@ the exit code, and read the failures from the file, never the whole of it.
 Find the suites by what they import, not by name alone. A change no test can
 exercise, such as a Dockerfile or a doc, needs none; say so in the report
 rather than running something unrelated to stand in for it. Run anything slow
-in the background and wait for it to finish, never under a foreground timeout
-or a fixed sleep, and never start a run while another is still going. Start it
-with its exit code and its pid each in a file:
-`(<command>; echo "exit $?") >/tmp/<name>.out 2>&1 & echo $! >/tmp/<name>.pid`
-then wait on it, repeating this line if the tool call ends first:
-`while kill -0 "$(cat /tmp/<name>.pid)" 2>/dev/null; do sleep 15; done; tail -n 2 /tmp/<name>.out`
-A second run of the same command is not started while its pid file names a
-live process.
+in the foreground, with the Bash tool's longest timeout, and wait for it to
+finish. A run can take a while; that is normal. Never wrap it in `timeout`,
+never wait on it with a fixed sleep, and never start a second run while one is
+still going.
 
 Commit the change yourself, with a message that carries its why, as the
 reviewer's brief asks. The job has no git identity, so commit as the worker:
