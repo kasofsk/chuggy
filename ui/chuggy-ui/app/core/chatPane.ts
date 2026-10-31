@@ -716,9 +716,31 @@ export function chatPaneChosenIn(
 }
 
 /**
- * The thread the pane draws: the one the reader named, else the open thread of
- * their own that moved last, and none while the listing has not answered and
- * where they hold none.
+ * The thread the pane holds for a reader who named none: the one it already
+ * holds while a listing that answered still carries it open, else the open
+ * thread of their own that moved last, and what it holds while the listing has
+ * not answered.
+ *
+ * ONE ANSWER DECIDES IT, AND A LATER ONE DOES NOT MOVE IT: the box under the
+ * pane belongs to the thread it draws, so a pane following whichever thread
+ * moved last would take the text being typed whenever another thread took a
+ * turn, and a listing that failed once would take it to New.
+ */
+export function chatPaneDefaulted(
+  threads: readonly ThreadEntryResponse[] | undefined,
+  held: string | undefined,
+): string | undefined {
+  if (threads === undefined) return held;
+  const open = threads.filter((thread) => thread.state !== "Closed");
+  if (open.some((thread) => thread.session === held)) return held;
+  const mine = open.filter((thread) => thread.mine);
+  return threadsByStanding(mine)[0]?.session;
+}
+
+/**
+ * The thread the pane draws: the one the reader named, else the one it holds
+ * for them, and none while the listing has not answered and where they hold
+ * none.
  *
  * A THREAD THE READER NAMED WINS OVER THE LISTING — they name one by picking it
  * out of the history and by starting one, and a thread just started is not in
@@ -729,12 +751,9 @@ export function chatPaneChosenIn(
 export function chatPaneHolding(
   threads: readonly ThreadEntryResponse[] | undefined,
   chosen: string | undefined,
+  held: string | undefined,
 ): string | undefined {
-  if (chosen !== undefined || threads === undefined) return chosen;
-  const mine = threads.filter(
-    (thread) => thread.mine && thread.state !== "Closed",
-  );
-  return threadsByStanding(mine)[0]?.session;
+  return chosen ?? chatPaneDefaulted(threads, held);
 }
 
 /** What the header says of the reader's thread door: whether it would refuse

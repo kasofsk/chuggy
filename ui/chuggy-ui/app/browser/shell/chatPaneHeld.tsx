@@ -11,7 +11,8 @@
  *
  * The thread the reader picked is held here too, and in no store: the pane is
  * not drawn on a thread's own page, and returning from one draws it holding
- * that pick again.
+ * that pick again. So is the thread the pane holds for a reader who picked
+ * none, for the same reason.
  */
 
 import {
@@ -38,6 +39,8 @@ interface ChatPaneHeld {
   readonly moveTo: (next: ChatPaneState) => void;
   readonly chosen: ChatPaneChosen | undefined;
   readonly choose: (next: ChatPaneChosen) => void;
+  readonly defaulted: ChatPaneChosen | undefined;
+  readonly holdDefault: (next: ChatPaneChosen | undefined) => void;
 }
 
 const chatPaneContext = createContext<ChatPaneHeld | undefined>(undefined);
@@ -56,9 +59,20 @@ export function ChatPaneProvider(props: {
     [hold, twoColumn],
   );
   const [chosen, choose] = useState<ChatPaneChosen | undefined>(undefined);
+  const [defaulted, holdDefault] = useState<ChatPaneChosen | undefined>(
+    undefined,
+  );
   const held = useMemo<ChatPaneHeld>(
-    () => ({ state, twoColumn, moveTo, chosen, choose }),
-    [state, twoColumn, moveTo, chosen],
+    () => ({
+      state,
+      twoColumn,
+      moveTo,
+      chosen,
+      choose,
+      defaulted,
+      holdDefault,
+    }),
+    [state, twoColumn, moveTo, chosen, defaulted],
   );
   return (
     <chatPaneContext.Provider value={held}>
