@@ -29,6 +29,7 @@ import {
   proposalMergeStateCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
+  repositoryConfigurationImportRefusalsKeptMax,
   repositoryConfigurationIgnoredAnsweredMax,
   digestSchema,
   dispatchViewSchemaVersion,
@@ -1166,7 +1167,14 @@ export const repositoryConfigurationRefusalSchema = z.object({
   configurationFault: identitySchema.optional(),
   /** The file the refused one names by reference, where that file is what was refused. */
   reference: z.string().min(1).optional(),
+  /** A `ConfigurationTooLong` configuration's canonical length in UTF-16 code units, and the longest one may be. */
+  chars: z.number().int().positive().optional(),
+  charsMax: z.number().int().positive().optional(),
 });
+
+export type RepositoryConfigurationRefusalResponse = z.infer<
+  typeof repositoryConfigurationRefusalSchema
+>;
 
 export const repositoryConfigurationRefusalsSchema = z.object({
   faults: page(repositoryConfigurationRefusalSchema),
@@ -2006,7 +2014,9 @@ export type ProjectRepositoryResponse = z.infer<
 /**
  * The configuration import of one binding that finished last: when it was
  * recorded, the commit it was read at where one was, and how it came out. `absent` is what a
- * `SnapshotAbsent` lacked, and no other outcome carries it.
+ * `SnapshotAbsent` lacked, and a `DeclarationsRefused` carries its first
+ * refusals and `refusalCount`, how many there were, except one kept before
+ * refusals were.
  */
 export const repositoryConfigurationImportAttemptSchema = z.object({
   attemptedAt: instantSchema,
@@ -2017,9 +2027,18 @@ export const repositoryConfigurationImportAttemptSchema = z.object({
       absent: z.enum(repositoryConfigurationImportAbsences),
     }),
     z.object({
+      result: z.literal("DeclarationsRefused"),
+      refusals: z
+        .array(repositoryConfigurationRefusalSchema)
+        .min(1)
+        .max(repositoryConfigurationImportRefusalsKeptMax)
+        .optional(),
+      refusalCount: z.number().int().positive().optional(),
+    }),
+    z.object({
       result: z
         .enum(repositoryConfigurationImportResults)
-        .exclude(["SnapshotAbsent"]),
+        .exclude(["SnapshotAbsent", "DeclarationsRefused"]),
     }),
   ]),
 });

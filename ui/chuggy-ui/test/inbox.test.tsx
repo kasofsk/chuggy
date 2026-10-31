@@ -41,6 +41,10 @@ import {
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import {
+  repositoryImportListed,
+  repositoryImportRefusedBinding,
+} from "./repositoryImportFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -334,3 +338,40 @@ test.each(abilitiesUnrefusing)(
     expect(screen.getByRole("button", { name: "revoke" })).toBeDefined();
   },
 );
+
+/** The notice a refused import raises over the rows, as a reader reads it. */
+function importRefusedNotice(): string | null {
+  return screen.queryByText(/^Import refused/u)?.textContent ?? null;
+}
+
+test("a live binding whose newest import was refused raises one notice naming it, and how many more were", async () => {
+  drawInbox(
+    repositoryImportListed(
+      [
+        repositoryImportRefusedBinding("https://github.com/acme/widgets.git"),
+        repositoryImportRefusedBinding("https://github.com/acme/gears.git"),
+      ],
+      served,
+    ),
+  );
+  await settled();
+  expect(importRefusedNotice()).toBe("Import refused · acme/widgets · 1 more");
+  expect(screen.getByRole("link", { name: "acme/widgets" })).toBeDefined();
+});
+
+test("a retired binding's refused import raises no notice", async () => {
+  drawInbox(
+    repositoryImportListed(
+      [
+        repositoryImportRefusedBinding(
+          "https://github.com/acme/widgets.git",
+          "2026-10-18T00:00:00Z",
+        ),
+      ],
+      served,
+    ),
+  );
+  await settled();
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+  expect(importRefusedNotice()).toBeNull();
+});

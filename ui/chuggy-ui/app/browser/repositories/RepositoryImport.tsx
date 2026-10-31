@@ -4,7 +4,8 @@
  * The route keeps every attempt it makes, a refused one included, so whatever
  * it answers the listing is read again and the line is drawn from that; the
  * button stays working until it has been. A refusal the line does not already
- * draw as no fault is said under it.
+ * draw as no fault is said under it, and a refused import names the file it
+ * was refused for under it too.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,6 +22,7 @@ import {
   repositoryImportLine,
   repositoryImportNote,
   repositoryImportPress,
+  repositoryImportRefusedFile,
   type RepositoryImportPressed,
 } from "../../core/repositoryImport.ts";
 import { repositoryImportTone } from "../../core/tones.ts";
@@ -102,6 +104,7 @@ export function RepositoryImportLine(props: {
   const nowMs = useNowMs();
   const line = repositoryImportLine(props.lastImport);
   const note = repositoryImportNote(props.pressed, line);
+  const refusal = repositoryImportRefusedFile(props.lastImport);
   return (
     <div className="grid gap-1">
       <p className="flex flex-wrap items-center gap-2 text-sm">
@@ -114,6 +117,9 @@ export function RepositoryImportLine(props: {
           <Identity label={line.commit} />
         ) : null}
       </p>
+      {refusal === undefined ? null : (
+        <p className="text-sm text-ink-2">{refusal}</p>
+      )}
       {note === undefined ? null : (
         <Notice
           tone="danger"

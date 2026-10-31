@@ -18,6 +18,8 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
+import { canonicalJson } from "../../src/interpreter/authoring.ts";
 import {
   importRepositoryConfigurations,
   repositoryConfigurationImportReadiness,
@@ -423,4 +425,71 @@ test("this tree's own catalogs import, and each runs the gates before any agent 
       `${declared.name}: the shell gate is the first stage, so a model never reviews a change the gates refuse`,
     );
   }
+});
+
+/** Every file the catalog names, its two prompts long enough that the catalog stored inline is longer than a configuration may be. */
+const longWorkPrompt = "w".repeat(configurationCanonicalCharsMax / 2);
+const longReviewPrompt = "r".repeat(configurationCanonicalCharsMax / 2);
+const longFiles: readonly RepositoryConfigurationReferenced[] = [
+  file(workPrompt, longWorkPrompt),
+  file(reviewWorkload, JSON.stringify(reviewWorkloadFile)),
+  file(reviewPrompt, longReviewPrompt),
+];
+
+test("a configuration longer than a configuration may be once its files are inline is refused as too long, with its length and the limit", () => {
+  const chars = canonicalJson({
+    ...catalog,
+    workloads: {
+      build: {
+        runner: "Agent",
+        prompt: { path: workPrompt, text: longWorkPrompt },
+        worker,
+      },
+      review: {
+        runner: "Agent",
+        prompt: { path: reviewPrompt, text: longReviewPrompt },
+        worker,
+      },
+    },
+  }).length;
+  assert.ok(chars > configurationCanonicalCharsMax);
+  assert.deepEqual(
+    repositoryConfigurationImportReadiness({
+      repository,
+      commit,
+      files: [catalogDeclaration()],
+      referenced: referencedOf(longFiles),
+    }),
+    {
+      readiness: "Refused",
+      faults: [
+        {
+          path: `${repositoryConfigurationRoot}catalog.json`,
+          fault: "ConfigurationTooLong",
+          chars,
+          charsMax: configurationCanonicalCharsMax,
+        },
+      ],
+    },
+  );
+});
+
+test("a configuration too long that also holds a secret-bearing key is refused as invalid, not as too long", () => {
+  assert.deepEqual(
+    repositoryConfigurationImportReadiness({
+      repository,
+      commit,
+      files: [catalogDeclaration({ ...catalog, apiToken: "held" })],
+      referenced: referencedOf(longFiles),
+    }),
+    {
+      readiness: "Refused",
+      faults: [
+        {
+          path: `${repositoryConfigurationRoot}catalog.json`,
+          fault: "ConfigurationInvalid",
+        },
+      ],
+    },
+  );
 });

@@ -572,6 +572,7 @@ export const repositoryConfigurationFaults = [
   "EnvelopeInvalid",
   "NameInvalid",
   "ConfigurationInvalid",
+  "ConfigurationTooLong",
   "DuplicateName",
   "DuplicatePath",
   "ReferenceAbsent",

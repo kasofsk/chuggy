@@ -413,6 +413,9 @@ export const forgeAuthorizationVerifierCharsMax = 128;
 /** How many bindings one project's repository listing answers with, oldest first. */
 export const projectRepositoriesAnsweredMax = 200;
 
+/** How many of a refused import's refusals its kept attempt holds, in the order they were found. */
+export const repositoryConfigurationImportRefusalsKeptMax = 5;
+
 /** How many registered pools one project's listing answers with, in name order. */
 export const workerPoolsAnsweredMax = 64;
 
