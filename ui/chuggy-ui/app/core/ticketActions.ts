@@ -121,7 +121,21 @@ export function ticketAttemptKey(
   return projectHeldKey(partition, `attempt:${String(ticket)}`);
 }
 
+/** The Dispatch that names the ticket version its press expects, which the
+ * actor refuses as `TicketChanged` once the ticket has moved past it. */
 export function manualDispatchAction(
+  ticket: number,
+  expectedTicketVersion: number,
+): TicketAction {
+  return {
+    action: "Dispatch",
+    mutation: { mutation: "ManualDispatch", ticket, expectedTicketVersion },
+  };
+}
+
+/** The Dispatch the dispatch view offers the ticket, at the version it gives
+ * the candidate, and none where it lists no such candidate. */
+export function manualDispatchActionOf(
   ticket: number,
   view: DispatchViewResponse,
 ): TicketAction | undefined {
@@ -129,14 +143,7 @@ export function manualDispatchAction(
   const candidate = view.candidates.find((entry) => entry.ticket === ticket);
   return candidate === undefined
     ? undefined
-    : {
-        action: "Dispatch",
-        mutation: {
-          mutation: "ManualDispatch",
-          ticket,
-          expectedTicketVersion: candidate.ticketVersion,
-        },
-      };
+    : manualDispatchAction(ticket, candidate.ticketVersion);
 }
 
 /**

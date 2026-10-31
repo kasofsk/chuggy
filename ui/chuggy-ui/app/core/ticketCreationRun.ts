@@ -67,7 +67,7 @@ import type { OperationStep } from "./operationFollow.ts";
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 import { readProjectConfigurations } from "./repositoryConfigurations.ts";
-import { manualDispatchAction } from "./ticketActions.ts";
+import { manualDispatchActionOf } from "./ticketActions.ts";
 import {
   creationConfigurationsDecided,
   creationConfigurationsOffered,
@@ -552,7 +552,7 @@ async function creationTicketDispatched(
 ): Promise<void> {
   const view = await apiTicketDispatchView(ports, partition, ticket);
   if (view.outcome !== "Ok") return;
-  const dispatch = manualDispatchAction(ticket, view.value);
+  const dispatch = manualDispatchActionOf(ticket, view.value);
   if (dispatch === undefined) return;
   const deferred = new AbortController();
   await followOperation(

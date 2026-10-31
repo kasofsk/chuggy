@@ -327,6 +327,7 @@ function TicketListRow(props: {
             <TicketRowDispatchScope
               partition={props.partition}
               ticket={row.ticket}
+              sequence={row.sequence}
             >
               {(dispatch, notes) => (
                 <>
