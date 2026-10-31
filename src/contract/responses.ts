@@ -329,10 +329,10 @@ export const configurationVersionSchema = z.strictObject({
 /**
  * Whether a Pending ticket following its configuration's newest revision
  * would move to the revision its repository's newest import declares under the
- * same name, as the importer decides it. `Moves` is what that revision would do
- * to the released ticket, which a person's unreleased revision of its draft
- * still stops the importer from moving. `Held` carries the code a release
- * would be refused with, and `Trimmed` is a program running less than its plan.
+ * same name, as the importer decides it. `Moves` is judged against the released
+ * ticket, though a person's unreleased revision of its draft still stops the
+ * move; `Held` carries the code a release would be refused with, and `Trimmed`
+ * is a program running less than its plan.
  */
 export const ticketFollowingSchema = z.discriminatedUnion("verdict", [
   z.strictObject({ verdict: z.literal("Current") }),
